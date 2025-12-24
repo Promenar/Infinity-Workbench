@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --surface-primary: #ffffff;
+    --surface-secondary: #f8fafc; /* Slate 50 */
+    --surface-tertiary: #f1f5f9; /* Slate 100 */
+    --text-primary: #0f172a; /* Slate 900 */
+    --text-secondary: #64748b; /* Slate 500 */
+    --text-tertiary: #94a3b8; /* Slate 400 */
+    --border-default: #e2e8f0; /* Slate 200 */
+  }
+
+  .dark {
+    --surface-primary: #020617; /* Slate 950 */
+    --surface-secondary: #0f172a; /* Slate 900 */
+    --surface-tertiary: #1e293b; /* Slate 800 */
+    --text-primary: #f1f5f9; /* Slate 100 */
+    --text-secondary: #94a3b8; /* Slate 400 */
+    --text-tertiary: #64748b; /* Slate 500 */
+    --border-default: #1e293b; /* Slate 800 */
+  }
+}
