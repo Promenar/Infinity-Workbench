@@ -7,9 +7,11 @@ import { FlashList } from '@shopify/flash-list';
 import { MOCK_CONVERSATIONS } from '../../src/data/mock';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { useI18n } from '../../src/lib/i18n';
 
 export default function ChatListScreen() {
     const router = useRouter();
+    const { t } = useI18n();
 
     const renderItem = ({ item, index }: { item: typeof MOCK_CONVERSATIONS[0], index: number }) => (
         <TouchableOpacity
@@ -45,11 +47,11 @@ export default function ChatListScreen() {
     );
 
     const ListHeader = () => (
-        <View className="pt-16 pb-4 px-6 bg-white dark:bg-black">
-            <View className="flex-row justify-between items-center mb-6">
+        <View className="pt-16 pb-2 px-6 bg-white dark:bg-black">
+            <View className="flex-row justify-between items-center mb-6 h-14">
                 <View>
-                    <Typography variant="h1" className="text-[32px] font-black text-gray-900 dark:text-white tracking-tight">Chats</Typography>
-                    <Typography variant="body" className="text-gray-400 font-bold uppercase text-[11px] tracking-widest mt-1">Neuralflow Intelligence</Typography>
+                    <Typography variant="h1" className="text-[32px] font-black text-gray-900 dark:text-white tracking-tight leading-none">{t.chat.title}</Typography>
+                    <Typography variant="body" className="text-gray-400 font-bold uppercase text-[11px] tracking-widest mt-1 leading-none">{t.chat.subtitle}</Typography>
                 </View>
                 <TouchableOpacity
                     onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
@@ -60,9 +62,9 @@ export default function ChatListScreen() {
             </View>
 
             {/* Flat Modern Search Bar */}
-            <View className="h-12 bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl flex-row items-center px-4 mb-4">
-                <Search size={18} color="#94a3b8" strokeWidth={2} />
-                <Text className="text-gray-400 font-semibold ml-3 text-[16px]">Search conversations...</Text>
+            <View className="flex-row items-center bg-gray-50 dark:bg-zinc-900 px-4 h-12 rounded-2xl border border-gray-100 dark:border-zinc-800">
+                <Search size={18} color="#94a3b8" />
+                <Typography className="ml-3 text-gray-400 font-medium text-[14px]">{t.chat.searchPlaceholder}</Typography>
             </View>
         </View>
     );

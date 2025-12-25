@@ -8,6 +8,8 @@ import { clsx } from 'clsx';
 import { Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { useSettingsStore, Language } from '../../src/store/settings-store';
+import { useI18n } from '../../src/lib/i18n';
 
 // Lumina-style Section Header
 function SettingsGroup({ title, children }: { title?: string, children: React.ReactNode }) {
@@ -85,16 +87,40 @@ function SettingsItem({
 export default function SettingsScreen() {
     const { theme, setTheme } = useTheme();
     const { showToast } = useToast();
+    const { language, setLanguage } = useSettingsStore();
+    const { t, hasHydrated } = useI18n();
     const [activeTab, setActiveTab] = useState<'app' | 'account'>('app');
+
+    // Handle language change toast
+    React.useEffect(() => {
+        if (hasHydrated) {
+            const timer = setTimeout(() => {
+                showToast(t.common.languageChanged, 'success');
+            }, 300); // 稍微延迟，等待布局稳定
+            return () => clearTimeout(timer);
+        }
+    }, [language]);
+
+    const toggleLanguage = () => {
+        const nextLang: Language = language === 'zh' ? 'en' : 'zh';
+        setLanguage(nextLang);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Note: The toast will show the NEW language's message because components re-render
+        // However, it's safer to use the constant here or trigger it inside an effect if needed.
+        // For simplicity, we use the next value's translation via a manual check if needed,
+        // or just rely on the re-render.
+    };
 
     return (
         <PageLayout className="bg-white dark:bg-black" safeArea={false}>
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* 页面头部 */}
-            <View className="pt-16 px-6 pb-4">
-                <Typography variant="h1" className="text-[32px] font-black text-gray-900 dark:text-white tracking-tight">Settings</Typography>
-                <Typography variant="body" className="text-gray-400 font-bold uppercase text-[11px] tracking-widest mt-1">Configure your experience</Typography>
+            <View className="pt-16 px-6 pb-2">
+                <View className="h-14 justify-center">
+                    <Typography variant="h1" className="text-[32px] font-black text-gray-900 dark:text-white tracking-tight leading-none">{t.settings.title}</Typography>
+                    <Typography variant="body" className="text-gray-400 font-bold uppercase text-[11px] tracking-widest mt-1 leading-none">{t.settings.subtitle}</Typography>
+                </View>
             </View>
 
             <ScrollView className="flex-1 px-6" contentContainerStyle={{ paddingBottom: 100 }}>
@@ -106,63 +132,56 @@ export default function SettingsScreen() {
                         className={`flex-1 py-3 rounded-xl items-center flex-row justify-center gap-2 ${activeTab === 'app' ? 'bg-white dark:bg-zinc-800 shadow-sm' : ''}`}
                     >
                         <SettingsIcon size={16} color={activeTab === 'app' ? '#6366f1' : '#9ca3af'} />
-                        <Text className={`font-bold ${activeTab === 'app' ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>App</Text>
+                        <Text className={`font-bold ${activeTab === 'app' ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>{t.settings.appSettings}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setActiveTab('account'); }}
                         className={`flex-1 py-3 rounded-xl items-center flex-row justify-center gap-2 ${activeTab === 'account' ? 'bg-white dark:bg-zinc-800 shadow-sm' : ''}`}
                     >
                         <Server size={16} color={activeTab === 'account' ? '#6366f1' : '#9ca3af'} />
-                        <Text className={`font-bold ${activeTab === 'account' ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>Providers</Text>
+                        <Text className={`font-bold ${activeTab === 'account' ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>{t.settings.serverSettings}</Text>
                     </TouchableOpacity>
                 </View>
 
                 {activeTab === 'app' ? (
                     <Animated.View entering={FadeIn.duration(150)}>
-                        <SettingsGroup title="General">
+                        <SettingsGroup>
                             <SettingsItem
                                 icon={<Globe />}
-                                label="Language"
-                                subtitle="System Default (English)"
-                                onPress={() => showToast("Language Selector", 'info')}
+                                label={t.settings.language}
+                                subtitle={language === 'zh' ? '简体中文' : 'English'}
+                                showChevron={false}
+                                value={
+                                    <View className="flex-row bg-gray-200 dark:bg-zinc-800 rounded-full p-1">
+                                        <TouchableOpacity
+                                            onPress={() => setLanguage('zh')}
+                                            className={clsx("px-3 py-1 rounded-full", language === 'zh' ? "bg-white dark:bg-zinc-700 shadow-sm" : "")}
+                                        >
+                                            <Text className={clsx("text-[12px] font-bold", language === 'zh' ? "text-indigo-600" : "text-gray-400")}>中</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => setLanguage('en')}
+                                            className={clsx("px-3 py-1 rounded-full", language === 'en' ? "bg-white dark:bg-zinc-700 shadow-sm" : "")}
+                                        >
+                                            <Text className={clsx("text-[12px] font-bold", language === 'en' ? "text-indigo-600" : "text-gray-400")}>EN</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                }
                             />
                             <SettingsItem
                                 icon={<Bell />}
-                                label="Notifications"
-                                subtitle="Manage alerts and sounds"
+                                label={t.settings.notifications}
+                                subtitle={t.settings.notificationsDesc}
                                 isLast
-                                onPress={() => showToast("Notifications Settings", 'info')}
+                                onPress={() => showToast(t.settings.notifications, 'info')}
                             />
                         </SettingsGroup>
 
-                        <SettingsGroup title="Notification Test">
-                            <View className="p-2 flex-row gap-2">
-                                <TouchableOpacity
-                                    onPress={() => showToast("操作执行成功", 'success')}
-                                    className="flex-1 bg-white dark:bg-zinc-800 py-3 rounded-xl border border-gray-100 dark:border-zinc-700 items-center justify-center shadow-sm"
-                                >
-                                    <Typography className="text-indigo-600 font-bold text-[13px]">成功</Typography>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => showToast("检测到异常情况", 'error')}
-                                    className="flex-1 bg-white dark:bg-zinc-800 py-3 rounded-xl border border-gray-100 dark:border-zinc-700 items-center justify-center shadow-sm"
-                                >
-                                    <Typography className="text-red-500 font-bold text-[13px]">错误</Typography>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => showToast("这是一条系统信息", 'info')}
-                                    className="flex-1 bg-white dark:bg-zinc-800 py-3 rounded-xl border border-gray-100 dark:border-zinc-700 items-center justify-center shadow-sm"
-                                >
-                                    <Typography className="text-gray-500 font-bold text-[13px]">信息</Typography>
-                                </TouchableOpacity>
-                            </View>
-                        </SettingsGroup>
-
-                        <SettingsGroup title="Appearance">
+                        <SettingsGroup title={t.settings.appearance}>
                             <SettingsItem
                                 icon={<Moon />}
-                                label="Dark Mode"
-                                subtitle="Adaptive theme switching"
+                                label={t.settings.appearance}
+                                subtitle={t.settings.themeDark}
                                 showChevron={false}
                                 isLast
                                 value={
@@ -181,25 +200,25 @@ export default function SettingsScreen() {
                     </Animated.View>
                 ) : (
                     <Animated.View entering={FadeIn.duration(150)}>
-                        <SettingsGroup title="Providers">
+                        <SettingsGroup>
                             <SettingsItem
                                 icon={<Database />}
-                                label="Data & Storage"
-                                subtitle="Clear cache and downloads"
-                                onPress={() => showToast("Storage Management", 'info')}
+                                label={t.settings.dataStorage}
+                                subtitle={t.settings.dataStorageDesc}
+                                onPress={() => showToast(t.settings.dataStorage, 'info')}
                             />
                             <SettingsItem
                                 icon={<Lock />}
-                                label="Privacy & Security"
-                                subtitle="Biometric lock and keys"
-                                onPress={() => showToast("Security Settings", 'info')}
+                                label={t.settings.privacy}
+                                subtitle={t.settings.privacyDesc}
+                                onPress={() => showToast(t.settings.privacy, 'info')}
                             />
                             <SettingsItem
                                 icon={<Info />}
-                                label="About"
-                                subtitle="v1.0.0 (Build 42)"
+                                label={t.settings.about}
+                                subtitle={`${t.settings.version} v1.0.0 (Build 42)`}
                                 isLast
-                                onPress={() => showToast("About NeuralFlow", 'info')}
+                                onPress={() => showToast(t.settings.about, 'info')}
                             />
                         </SettingsGroup>
                     </Animated.View>
