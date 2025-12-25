@@ -14,8 +14,8 @@ export default function TabLayout() {
             key={language} // 强制在语言切换时重装导航器，这是最稳健的解决黑屏方案
             screenOptions={{
                 headerShown: false,
-                lazy: false,
-                animation: 'none',
+                lazy: true,
+                animation: 'shift',
                 tabBarStyle: {
                     backgroundColor: isDark ? '#000000' : '#FFFFFF',
                     borderTopColor: isDark ? '#1e1e1e' : '#f1f1f1',

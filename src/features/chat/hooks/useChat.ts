@@ -1,58 +1,52 @@
-import { useState, useCallback } from 'react';
-import { db } from '../../../lib/db'; // Import connection for future use
-// import { useToast } from '../../../components/ui/Toast';
+import { useState, useCallback, useMemo } from 'react';
+import { useChatStore } from '../../../store/chat-store';
+import { Message } from '../../../types/chat';
 
-export interface Message {
-    id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    created_at: number;
-}
-
-export function useChat(sessionId: string = 'default') {
-    // const { showToast } = useToast();
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            id: '1',
-            role: 'assistant',
-            content: '# Hello! \nI am **NeuralFlow**, your AI assistant. \n\nHow can I help you today?',
-            created_at: Date.now(),
-        },
-    ]);
+export function useChat(sessionId: string) {
+    const { getSession, addMessage, updateSession } = useChatStore();
+    const session = getSession(sessionId);
     const [loading, setLoading] = useState(false);
-    const [mode, setMode] = useState<'chat' | 'writer'>('chat');
+
+    const messages = session?.messages || [];
 
     const sendMessage = useCallback(async (content: string) => {
-        if (!content.trim()) return;
+        if (!content.trim() || !sessionId) return;
 
         const userMsg: Message = {
-            id: Date.now().toString(), // Temp ID
+            id: `msg_${Date.now()}`,
             role: 'user',
             content,
-            created_at: Date.now(),
+            timestamp: Date.now(),
         };
 
-        setMessages((prev) => [...prev, userMsg]);
+        // 1. Add user message to store
+        addMessage(sessionId, userMsg);
         setLoading(true);
 
-        // Mock API delay
+        // 2. Mock API Response (In future, this will call real AI with Agent's System Prompt)
         setTimeout(() => {
             const responseMsg: Message = {
-                id: (Date.now() + 1).toString(),
+                id: `msg_ai_${Date.now()}`,
                 role: 'assistant',
-                content: `[${mode.toUpperCase()}] I received your message: "${content}". \n\n*This is a mock response.*`,
-                created_at: Date.now(),
+                content: `I am processing your request. You said: "${content}"`,
+                timestamp: Date.now(),
             };
-            setMessages((prev) => [...prev, responseMsg]);
+
+            // Add assistant response to store
+            addMessage(sessionId, responseMsg);
+
+            // If it's the first message, update session title
+            if (messages.length === 0) {
+                updateSession(sessionId, { title: content.substring(0, 30) + (content.length > 30 ? '...' : '') });
+            }
+
             setLoading(false);
-        }, 1000);
-    }, [mode]);
+        }, 1200);
+    }, [sessionId, messages.length]);
 
     return {
         messages,
         loading,
         sendMessage,
-        mode,
-        setMode,
     };
 }

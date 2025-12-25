@@ -1,32 +1,32 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { View, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { PageLayout, Typography, Header, useToast } from '../../src/components/ui';
+import { PageLayout, Typography, Header } from '../../src/components/ui';
 import { ChatBubble, ChatInput, useChat } from '../../src/features/chat';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { BookOpen, MessageSquare, ChevronLeft } from 'lucide-react-native';
-
-import { MOCK_CONVERSATIONS } from '../../src/data/mock';
+import { ChevronLeft, Info } from 'lucide-react-native';
+import { useChatStore } from '../../src/store/chat-store';
+import { useAgentStore } from '../../src/store/agent-store';
 
 export default function ChatDetailScreen() {
-    const { id } = useLocalSearchParams();
+    const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
-    const { messages, sendMessage, mode, setMode } = useChat();
+    const { getSession } = useChatStore();
+    const { getAgent } = useAgentStore();
+
+    const session = useMemo(() => getSession(id), [id]);
+    const agent = useMemo(() => session ? getAgent(session.agentId) : undefined, [session]);
+
+    // @ts-ignore
+    const { messages, sendMessage, loading } = useChat(id);
     const listRef = useRef<any>(null);
-    const insets = useSafeAreaInsets();
 
-    const conversation = MOCK_CONVERSATIONS.find(c => c.id === id);
-    const title = conversation ? conversation.title : `Chat ${id}`;
-
-    // Auto scroll to bottom
     const handleContentSizeChange = () => {
         listRef.current?.scrollToEnd({ animated: true });
     };
 
-    const toggleMode = () => {
-        setMode(mode === 'chat' ? 'writer' : 'chat');
-    };
+    if (!session || !agent) return null;
 
     return (
         <PageLayout safeArea={false} className="bg-surface-secondary dark:bg-black">
@@ -34,7 +34,8 @@ export default function ChatDetailScreen() {
             <View style={{ flex: 1 }}>
 
                 <Header
-                    title={title}
+                    title={agent.name}
+                    subtitle={agent.defaultModel.toUpperCase()}
                     leftAction={
                         <TouchableOpacity
                             onPress={() => router.back()}
@@ -45,20 +46,10 @@ export default function ChatDetailScreen() {
                     }
                     rightAction={
                         <TouchableOpacity
-                            className="flex-row items-center bg-surface-secondary dark:bg-slate-800 px-3 py-1.5 rounded-full border border-border-default dark:border-slate-700 active:bg-surface-tertiary"
-                            onPress={toggleMode}
+                            className="w-10 h-10 items-center justify-center rounded-full bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800"
+                            onPress={() => { }}
                         >
-                            {mode === 'chat' ? (
-                                <>
-                                    <MessageSquare size={16} color="#6366f1" />
-                                    <Typography variant="label" className="ml-2 font-bold text-primary-500">CHAT</Typography>
-                                </>
-                            ) : (
-                                <>
-                                    <BookOpen size={16} color="#ec4899" />
-                                    <Typography variant="label" className="ml-2 font-bold text-pink-500">WRITER</Typography>
-                                </>
-                            )}
+                            <Info size={20} color={agent.color} />
                         </TouchableOpacity>
                     }
                 />
@@ -79,9 +70,8 @@ export default function ChatDetailScreen() {
                         keyboardDismissMode="on-drag"
                         style={{ flex: 1 }}
                     />
-                    {/* Fixed padding since no tab bar */}
                     <View style={{ paddingBottom: 10 }}>
-                        <ChatInput onSend={sendMessage} />
+                        <ChatInput onSend={sendMessage} disabled={loading} />
                     </View>
                 </KeyboardAvoidingView>
 

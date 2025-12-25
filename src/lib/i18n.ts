@@ -37,9 +37,9 @@ export const translations = {
         },
         settings: {
             title: '设置',
-            subtitle: '管理应用和服务器',
+            subtitle: '管理应用与 AI 供应商',
             appSettings: '应用设置',
-            serverSettings: '服务器管理',
+            providerSettings: '供应商管理',
             language: '语言设置',
             appearance: '外观设置',
             themeSystem: '跟随系统',
@@ -110,9 +110,9 @@ export const translations = {
         },
         settings: {
             title: 'Settings',
-            subtitle: 'Manage app and servers',
+            subtitle: 'Manage app and AI providers',
             appSettings: 'APP SETTINGS',
-            serverSettings: 'SERVERS',
+            providerSettings: 'PROVIDERS',
             language: 'Language',
             appearance: 'APPEARANCE',
             themeSystem: 'System',

@@ -7,6 +7,7 @@ import { Menu } from 'lucide-react-native';
 
 interface HeaderProps {
     title: string;
+    subtitle?: string;
     rightAction?: React.ReactNode;
     leftAction?: React.ReactNode;
     showMenu?: boolean;
@@ -14,7 +15,7 @@ interface HeaderProps {
     className?: string; // Additional classes
 }
 
-export function Header({ title, rightAction, leftAction, showMenu, onMenuPress, className }: HeaderProps) {
+export function Header({ title, subtitle, rightAction, leftAction, showMenu, onMenuPress, className }: HeaderProps) {
     const insets = useSafeAreaInsets();
 
     return (
@@ -38,9 +39,16 @@ export function Header({ title, rightAction, leftAction, showMenu, onMenuPress, 
                         {leftAction ? leftAction : <Menu size={24} color="#64748b" />}
                     </TouchableOpacity>
 
-                    <Typography variant="h2" className="text-slate-900 dark:text-white font-black tracking-tight" numberOfLines={1}>
-                        {title}
-                    </Typography>
+                    <View>
+                        <Typography variant="h2" className="text-slate-900 dark:text-white font-black tracking-tight leading-none" numberOfLines={1}>
+                            {title}
+                        </Typography>
+                        {subtitle && (
+                            <Typography className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-1 leading-none">
+                                {subtitle}
+                            </Typography>
+                        )}
+                    </View>
                 </View>
 
                 {rightAction && (
