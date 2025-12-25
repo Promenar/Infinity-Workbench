@@ -11,16 +11,15 @@ export default function TabLayout() {
         <Tabs
             screenOptions={{
                 headerShown: false,
-                animation: 'fade',
+                lazy: false,
+                animation: 'none', // Handled locally by PageLayout for Lumina feel
                 sceneContainerStyle: {
-                    backgroundColor: isDark ? '#000000' : '#F9FAFB', // Fixes flicker by matching page bg
+                    backgroundColor: isDark ? '#000000' : '#FFFFFF',
                 },
                 tabBarStyle: {
-                    backgroundColor: Platform.OS === 'ios'
-                        ? 'transparent'
-                        : (isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)'),
-                    borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                    elevation: 0,
+                    backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                    borderTopColor: isDark ? '#1e1e1e' : '#f1f1f1',
+                    elevation: 8,
                     position: 'absolute',
                     bottom: 0,
                     height: 60,

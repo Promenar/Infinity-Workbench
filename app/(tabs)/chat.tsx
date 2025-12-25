@@ -1,90 +1,85 @@
-import React, { useRef } from 'react';
-import { View, KeyboardAvoidingView, Platform, TouchableOpacity, Keyboard } from 'react-native';
+import React from 'react';
+import { View, TouchableOpacity, Text } from 'react-native';
+import { PageLayout, Typography } from '../../src/components/ui';
+import { Stack, useRouter } from 'expo-router';
+import { MessageSquare, Search, Edit } from 'lucide-react-native';
 import { FlashList } from '@shopify/flash-list';
-import { PageLayout, Typography, Header, useToast } from '../../src/components/ui';
-import { ChatBubble, ChatInput, useChat, Message } from '../../src/features/chat';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Stack } from 'expo-router';
-import { BookOpen, MessageSquare } from 'lucide-react-native';
+import { MOCK_CONVERSATIONS } from '../../src/data/mock';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
-export default function ChatScreen() {
-    const { messages, sendMessage, mode, setMode } = useChat();
-    const listRef = useRef<any>(null);
-    const insets = useSafeAreaInsets();
-    const [keyboardVisible, setKeyboardVisible] = React.useState(false);
-    const { showToast } = useToast();
+export default function ChatListScreen() {
+    const router = useRouter();
 
-    const handleMenu = () => showToast("Session History\nComing Soon", "info"); // Placeholder for now
+    const renderItem = ({ item, index }: { item: typeof MOCK_CONVERSATIONS[0], index: number }) => (
+        <TouchableOpacity
+            activeOpacity={0.7}
+            className="flex-row items-center px-6 py-4 bg-white dark:bg-black w-full"
+            onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(`/chat/${item.id}`);
+            }}
+        >
+            {/* Avatar - Clean monochrome circle */}
+            <View className="relative mr-4">
+                <View className="w-[52px] h-[52px] rounded-2xl items-center justify-center bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800">
+                    <MessageSquare size={24} color="#64748b" strokeWidth={1.5} />
+                </View>
+                {/* Unread Dot - Moved onto icon */}
+                {item.unread > 0 && (
+                    <View className="w-3 h-3 rounded-full bg-indigo-500 absolute -top-1 -right-1 border-2 border-white dark:border-black shadow-sm" />
+                )}
+            </View>
 
-    React.useEffect(() => {
-        const showSubscription = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
-        const hideSubscription = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
-        return () => {
-            showSubscription.remove();
-            hideSubscription.remove();
-        };
-    }, []);
+            {/* Content */}
+            <View className="flex-1 justify-center py-1">
+                <View className="flex-row justify-between items-baseline mb-1 pr-1">
+                    <Typography variant="h3" className="text-[18px] font-bold text-gray-900 dark:text-gray-100 leading-tight">{item.title}</Typography>
+                    <Typography variant="caption" className="text-gray-400 text-[12px] font-medium">{item.time}</Typography>
+                </View>
+                <Typography variant="body" className="text-gray-500 leading-5 text-[14px]" numberOfLines={2}>
+                    {item.subtitle}
+                </Typography>
+            </View>
+        </TouchableOpacity>
+    );
 
-    // Auto scroll to bottom
-    const handleContentSizeChange = () => {
-        listRef.current?.scrollToEnd({ animated: true });
-    };
+    const ListHeader = () => (
+        <View className="pt-16 pb-4 px-6 bg-white dark:bg-black">
+            <View className="flex-row justify-between items-center mb-6">
+                <View>
+                    <Typography variant="h1" className="text-[32px] font-black text-gray-900 dark:text-white tracking-tight">Chats</Typography>
+                    <Typography variant="body" className="text-gray-400 font-bold uppercase text-[11px] tracking-widest mt-1">Neuralflow Intelligence</Typography>
+                </View>
+                <TouchableOpacity
+                    onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+                    className="w-12 h-12 bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl items-center justify-center shadow-sm"
+                >
+                    <Edit size={22} color="#64748b" strokeWidth={1.5} />
+                </TouchableOpacity>
+            </View>
 
-    const toggleMode = () => {
-        setMode(mode === 'chat' ? 'writer' : 'chat');
-    };
+            {/* Flat Modern Search Bar */}
+            <View className="h-12 bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl flex-row items-center px-4 mb-4">
+                <Search size={18} color="#94a3b8" strokeWidth={2} />
+                <Text className="text-gray-400 font-semibold ml-3 text-[16px]">Search conversations...</Text>
+            </View>
+        </View>
+    );
 
     return (
-        <PageLayout safeArea={false} className="bg-surface-secondary dark:bg-black">
+        <PageLayout safeArea={false} className="bg-white dark:bg-black">
             <Stack.Screen options={{ headerShown: false }} />
-            <View style={{ flex: 1 }}>
-
-                <Header
-                    title="NeuralFlow"
-                    showMenu
-                    onMenuPress={handleMenu}
-                    rightAction={
-                        <TouchableOpacity
-                            className="flex-row items-center bg-surface-secondary dark:bg-slate-800 px-3 py-1.5 rounded-full border border-border-default dark:border-slate-700 active:bg-surface-tertiary"
-                            onPress={toggleMode}
-                        >
-                            {mode === 'chat' ? (
-                                <>
-                                    <MessageSquare size={16} color="#6366f1" />
-                                    <Typography variant="label" className="ml-2 font-bold text-primary-500">CHAT</Typography>
-                                </>
-                            ) : (
-                                <>
-                                    <BookOpen size={16} color="#ec4899" />
-                                    <Typography variant="label" className="ml-2 font-bold text-pink-500">WRITER</Typography>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    }
-                />
-
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={{ flex: 1 }}
-                    keyboardVerticalOffset={0}
-                >
-                    <FlashList
-                        ref={listRef}
-                        data={messages}
-                        renderItem={({ item }) => <ChatBubble message={item} />}
-                        // @ts-ignore
-                        estimatedItemSize={100}
-                        contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
-                        onContentSizeChange={handleContentSizeChange}
-                        keyboardDismissMode="on-drag"
-                        style={{ flex: 1 }}
-                    />
-                    <View style={{ paddingBottom: 65 }}>
-                        <ChatInput onSend={sendMessage} />
-                    </View>
-                </KeyboardAvoidingView>
-
-            </View>
+            <FlashList
+                data={MOCK_CONVERSATIONS}
+                renderItem={renderItem}
+                keyExtractor={item => item.id}
+                ListHeaderComponent={ListHeader}
+                // @ts-ignore
+                estimatedItemSize={90}
+                contentContainerStyle={{ paddingBottom: 100 }}
+                ItemSeparatorComponent={() => <View className="h-[1px] bg-gray-50 dark:bg-zinc-900/50 mx-6" />}
+            />
         </PageLayout>
     );
 }

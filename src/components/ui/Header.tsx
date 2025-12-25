@@ -38,7 +38,7 @@ export function Header({ title, rightAction, leftAction, showMenu, onMenuPress, 
                         {leftAction ? leftAction : <Menu size={24} color="#64748b" />}
                     </TouchableOpacity>
 
-                    <Typography variant="largeTitle" className="text-slate-900 dark:text-white leading-none">
+                    <Typography variant="h2" className="text-slate-900 dark:text-white font-black tracking-tight" numberOfLines={1}>
                         {title}
                     </Typography>
                 </View>

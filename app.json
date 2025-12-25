@@ -2,6 +2,7 @@
   "expo": {
     "name": "_temp_init",
     "slug": "_temp_init",
+    "scheme": "neuralflow",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -22,7 +23,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.promenar.x_temp_init"
+      "package": "com.promenar.x_temp_init",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
