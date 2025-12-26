@@ -1,5 +1,6 @@
 import React, { useRef, useMemo } from 'react';
-import { View, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { View, Platform, TouchableOpacity } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { FlashList } from '@shopify/flash-list';
 import { PageLayout, Typography, Header } from '../../src/components/ui';
 import { ChatBubble, ChatInput, useChat } from '../../src/features/chat';
@@ -73,10 +74,10 @@ export default function ChatDetailScreen() {
                     }
                 />
 
+
                 <KeyboardAvoidingView
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                     style={{ flex: 1 }}
-                    keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
                 >
                     <FlashList
                         ref={listRef}
@@ -89,7 +90,7 @@ export default function ChatDetailScreen() {
                         keyboardDismissMode="on-drag"
                         style={{ flex: 1 }}
                     />
-                    <View style={{ paddingBottom: 10 }}>
+                    <View className="bg-surface-secondary dark:bg-black px-4 pb-4 pt-1">
                         <ChatInput onSend={sendMessage} disabled={loading} />
                     </View>
                 </KeyboardAvoidingView>
