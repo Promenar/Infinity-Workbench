@@ -14,4 +14,5 @@ export interface LlmClient {
         onChunk: (chunk: string) => void,
         onError: (err: Error) => void
     ): Promise<void>;
+    testConnection(): Promise<{ success: boolean; latency: number; error?: string }>;
 }

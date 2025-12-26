@@ -5,13 +5,21 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Save, Sparkles, BrainCircuit } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useAgentStore } from '../../../../src/store/agent-store';
+import { useApiStore } from '../../../../src/store/api-store';
+import { ModelPicker } from '../../../../src/features/settings/ModelPicker';
+import { useTheme } from '../../../../src/theme/ThemeProvider';
 import { clsx } from 'clsx';
+import { Cpu, ChevronRight } from 'lucide-react-native';
 
 export default function AgentEditScreen() {
     const { agentId } = useLocalSearchParams<{ agentId: string }>();
     const router = useRouter();
-    const { getAgent, updateAgent } = useAgentStore();
+    const { isDark } = useTheme();
+    const { getAgent, updateAgent, deleteAgent } = useAgentStore();
+    const { providers } = useApiStore();
     const agent = getAgent(agentId);
+
+    const [showModelPicker, setShowModelPicker] = useState(false);
 
     const [formData, setFormData] = useState({
         name: agent?.name || '',
@@ -96,31 +104,45 @@ export default function AgentEditScreen() {
                     />
                 </View>
 
-                {/* Model Config Group */}
                 <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center">
                     Model Configuration
                 </Typography>
                 <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
                     <Typography className="text-gray-900 dark:text-white font-bold mb-3">Engine</Typography>
-                    <View className="flex-row flex-wrap">
-                        {['gpt-4o', 'claude-3-opus', 'deepseek-v3', 'llama-3.1'].map((m) => (
-                            <TouchableOpacity
-                                key={m}
-                                onPress={() => setFormData({ ...formData, defaultModel: m })}
-                                className={clsx(
-                                    "px-4 py-2 rounded-full mr-2 mb-2 border",
-                                    formData.defaultModel === m
-                                        ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-500/20 dark:border-indigo-500"
-                                        : "bg-white border-gray-100 dark:bg-black dark:border-zinc-800"
-                                )}
-                            >
-                                <Typography className={clsx(
-                                    "text-[12px] font-bold",
-                                    formData.defaultModel === m ? "text-indigo-600 dark:text-indigo-400" : "text-gray-500"
-                                )}>{m.toUpperCase()}</Typography>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
+
+                    <TouchableOpacity
+                        onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setShowModelPicker(true);
+                        }}
+                        className="flex-row items-center bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800"
+                    >
+                        <View className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 items-center justify-center mr-3">
+                            <Cpu size={20} color="#6366f1" />
+                        </View>
+                        <View className="flex-1">
+                            <Typography className="text-gray-900 dark:text-white font-bold">
+                                {(() => {
+                                    // 尝试在 Provider 中查找型号名称
+                                    for (const p of providers) {
+                                        const m = p.models.find(model => model.uuid === formData.defaultModel || model.id === formData.defaultModel);
+                                        if (m) return m.name;
+                                    }
+                                    return formData.defaultModel || 'Select Model';
+                                })()}
+                            </Typography>
+                            <Typography className="text-gray-400 text-[11px]">
+                                {(() => {
+                                    for (const p of providers) {
+                                        const m = p.models.find(model => model.uuid === formData.defaultModel || model.id === formData.defaultModel);
+                                        if (m) return p.name;
+                                    }
+                                    return 'No Provider Found';
+                                })()}
+                            </Typography>
+                        </View>
+                        <ChevronRight size={18} color="#cbd5e1" />
+                    </TouchableOpacity>
 
                     <View className="mt-6">
                         <View className="flex-row justify-between items-center mb-2">
@@ -148,6 +170,15 @@ export default function AgentEditScreen() {
                     <Typography className="text-red-500 font-bold uppercase tracking-widest text-[12px]">Delete Assistant</Typography>
                 </TouchableOpacity>
             </ScrollView>
+
+            <ModelPicker
+                visible={showModelPicker}
+                onClose={() => setShowModelPicker(false)}
+                onSelect={(uuid) => setFormData({ ...formData, defaultModel: uuid })}
+                selectedUuid={formData.defaultModel}
+                title="Select Model"
+                filterType="chat"
+            />
         </PageLayout>
     );
 }

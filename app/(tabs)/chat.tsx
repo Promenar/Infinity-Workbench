@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, TouchableOpacity } from 'react-native';
+import { View, TouchableOpacity, Text } from 'react-native';
 import { PageLayout, Typography } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Search, Plus, ChevronRight } from 'lucide-react-native';
@@ -8,12 +8,14 @@ import * as Haptics from 'expo-haptics';
 import { FlashList } from '@shopify/flash-list';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useI18n } from '../../src/lib/i18n';
+import { useTheme } from '../../src/theme/ThemeProvider';
 import { useAgentStore } from '../../src/store/agent-store';
 import { Agent } from '../../src/types/chat';
 
 export default function AgentExplorerScreen() {
     const router = useRouter();
     const { t } = useI18n();
+    const { isDark } = useTheme();
     const { agents } = useAgentStore();
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -91,24 +93,11 @@ export default function AgentExplorerScreen() {
     };
 
     const ListHeader = () => (
-        <View className="pt-16 pb-6 px-6 bg-white dark:bg-black">
-            <View className="flex-row justify-between items-center mb-6 h-14">
-                <View>
-                    <Typography variant="h1" className="text-[32px] font-black text-gray-900 dark:text-white tracking-tight leading-none whitespace-nowrap">AI Assistant</Typography>
-                    <Typography variant="body" className="text-gray-400 font-bold uppercase text-[11px] tracking-widest mt-1 leading-none">Choose your partner</Typography>
-                </View>
-                <TouchableOpacity
-                    onPress={handleCreateAgent}
-                    className="w-12 h-12 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl items-center justify-center shadow-sm"
-                >
-                    <Plus size={24} color="#6366f1" strokeWidth={2.5} />
-                </TouchableOpacity>
-            </View>
-
+        <View className="px-6 pb-6 bg-white dark:bg-black">
             {/* Flat Modern Search Bar */}
             <View className="flex-row items-center bg-gray-50 dark:bg-zinc-900 px-4 h-12 rounded-2xl border border-gray-100 dark:border-zinc-800">
                 <Search size={18} color="#94a3b8" />
-                <Typography className="ml-3 text-gray-400 font-medium text-[14px]">Search assistants...</Typography>
+                <Typography className="ml-3 text-gray-400 font-medium text-[14px]">{t.chat.searchPlaceholder}</Typography>
             </View>
         </View>
     );
@@ -116,6 +105,36 @@ export default function AgentExplorerScreen() {
     return (
         <PageLayout safeArea={false} className="bg-white dark:bg-black">
             <Stack.Screen options={{ headerShown: false }} />
+
+            {/* Fixed Title Header */}
+            <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
+                    <View>
+                        <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 32 }}>
+                            {t.chat.title}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
+                            {t.chat.subtitle}
+                        </Text>
+                    </View>
+                    <TouchableOpacity
+                        onPress={handleCreateAgent}
+                        style={{
+                            width: 48,
+                            height: 48,
+                            backgroundColor: isDark ? '#18181b' : '#eef2ff',
+                            borderWidth: 1,
+                            borderColor: isDark ? '#27272a' : '#e0e7ff',
+                            borderRadius: 16,
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}
+                    >
+                        <Plus size={24} color="#6366f1" strokeWidth={2.5} />
+                    </TouchableOpacity>
+                </View>
+            </View>
+
             <FlashList
                 data={filteredAgents}
                 renderItem={renderItem}

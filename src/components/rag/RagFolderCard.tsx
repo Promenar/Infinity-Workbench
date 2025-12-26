@@ -29,7 +29,7 @@ export const RagFolderCard = ({
             onLongPress={onLongPress}
             delayLongPress={200}
             className={clsx(
-                "p-4 rounded-[28px] flex-1 h-36 justify-between border shadow-sm relative overflow-hidden",
+                "p-4 rounded-[28px] flex-1 h-36 justify-between border relative overflow-hidden",
                 isSelected
                     ? "bg-indigo-50/80 dark:bg-indigo-900/40 border-indigo-200 dark:border-indigo-800"
                     : "bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800"

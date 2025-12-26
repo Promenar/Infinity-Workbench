@@ -23,11 +23,19 @@ export interface Agent {
     created: number;
 }
 
+export interface TokenUsage {
+    input: number;
+    output: number;
+    total: number;
+}
+
 export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
     timestamp: number;
+    modelId?: string; // The model used to generate this message
+    tokens?: TokenUsage;
 }
 
 export interface Session {
@@ -38,4 +46,8 @@ export interface Session {
     time: string;
     unread: number;
     messages: Message[];
+    modelId?: string; // Override agent's default model for this session
+    stats?: {
+        totalTokens: number;
+    };
 }

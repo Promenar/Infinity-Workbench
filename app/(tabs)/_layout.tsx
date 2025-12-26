@@ -1,7 +1,5 @@
 import { Tabs } from "expo-router";
-import { View, Platform } from "react-native";
 import { MessageSquare, Library, Settings } from "lucide-react-native";
-import { BlurView } from "expo-blur";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { useI18n } from "../../src/lib/i18n";
 
@@ -11,25 +9,21 @@ export default function TabLayout() {
 
     return (
         <Tabs
-            key={language} // 强制在语言切换时重装导航器，这是最稳健的解决黑屏方案
             screenOptions={{
                 headerShown: false,
-                lazy: true,
-                animation: 'shift',
+                lazy: false, // 预加载所有页面，避免首次切换延迟
+                animation: 'shift', // 保留原有shift动画
                 tabBarStyle: {
                     backgroundColor: isDark ? '#000000' : '#FFFFFF',
                     borderTopColor: isDark ? '#1e1e1e' : '#f1f1f1',
-                    elevation: 8,
+                    elevation: 0,
+                    shadowOpacity: 0,
+                    borderTopWidth: 0,
                     position: 'absolute',
                     bottom: 0,
                     height: 60,
                     paddingBottom: 8,
                 },
-                tabBarBackground: () => (
-                    Platform.OS === 'ios' ? (
-                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={{ flex: 1 }} />
-                    ) : null
-                ),
                 tabBarActiveTintColor: '#6366f1',
                 tabBarInactiveTintColor: isDark ? '#64748b' : '#94a3b8',
                 tabBarHideOnKeyboard: true,

@@ -83,90 +83,50 @@ export default function RagScreen() {
     // 渲染函数：Header
     const renderHeader = () => (
         <View className="mb-4 overflow-hidden">
-            <View className="pt-16 px-6 pb-2 bg-white dark:bg-black">
-                <View className="flex-col">
-                    {/* Top Row: Title or Selection Count - Fixed Height h-14 */}
-                    <View className="flex-row justify-between items-center mb-6 h-14">
-                        {isSelectionMode ? (
-                            <Animated.View
-                                entering={FadeIn.duration(300)}
-                                exiting={FadeOut.duration(200)}
-                                className="flex-row items-center flex-1"
-                            >
-                                <TouchableOpacity
-                                    onPress={cancelSelection}
-                                    className="w-10 h-10 items-center justify-center rounded-2xl bg-gray-50 dark:bg-zinc-900 mr-4"
-                                >
-                                    <X size={20} color="#64748b" />
-                                </TouchableOpacity>
-                                <View>
-                                    <Typography variant="h2" className="text-gray-900 dark:text-white font-black leading-tight">{selectedIds.size} {t.library.selected}</Typography>
-                                    <Typography variant="caption" className="text-indigo-500 font-bold uppercase text-[10px] tracking-widest leading-none">{t.library.managementMode}</Typography>
-                                </View>
-                            </Animated.View>
-                        ) : (
-                            <Animated.View
-                                entering={FadeIn.duration(300)}
-                                exiting={FadeOut.duration(200)}
-                                className="flex-row justify-between items-center flex-1"
-                            >
-                                <View>
-                                    <Typography variant="h1" className="text-[32px] font-black text-gray-900 dark:text-white tracking-tight leading-none">{t.library.title}</Typography>
-                                    <Typography variant="body" className="text-gray-400 font-bold uppercase text-[11px] tracking-widest mt-1 leading-none">{t.library.description}</Typography>
-                                </View>
-                                <TouchableOpacity
-                                    onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-                                    className="w-12 h-12 bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl items-center justify-center shadow-sm"
-                                >
-                                    <Plus size={24} color="#6366f1" strokeWidth={2} />
-                                </TouchableOpacity>
-                            </Animated.View>
-                        )}
-                    </View>
+            <View className="px-6 pb-2 bg-white dark:bg-black">
 
-                    {/* Bottom Row: Search Bar or Actions - Fixed Height h-12 */}
-                    <View className="h-12">
-                        {isSelectionMode ? (
-                            <Animated.View
-                                entering={FadeIn.duration(300)}
-                                exiting={FadeOut.duration(200)}
-                                className="flex-row items-center justify-between h-full"
+                {/* Bottom Row: Search Bar or Actions - Fixed Height h-12 */}
+                <View className="h-12">
+                    {isSelectionMode ? (
+                        <Animated.View
+                            entering={FadeIn.duration(300)}
+                            exiting={FadeOut.duration(200)}
+                            className="flex-row items-center justify-between h-full"
+                        >
+                            <TouchableOpacity
+                                onPress={() => handleAction('Moved')}
+                                className="flex-1 h-full bg-gray-50 dark:bg-zinc-900 rounded-2xl flex-row items-center justify-center mr-2 border border-gray-100 dark:border-zinc-800"
                             >
-                                <TouchableOpacity
-                                    onPress={() => handleAction('Moved')}
-                                    className="flex-1 h-full bg-gray-50 dark:bg-zinc-900 rounded-2xl flex-row items-center justify-center mr-2 border border-gray-100 dark:border-zinc-800"
-                                >
-                                    <FolderInput size={18} color="#6366f1" strokeWidth={2} />
-                                    <Typography className="ml-2 text-indigo-500 font-bold text-[12px]">{t.library.move}</Typography>
-                                </TouchableOpacity>
+                                <FolderInput size={18} color="#6366f1" strokeWidth={2} />
+                                <Typography className="ml-2 text-indigo-500 font-bold text-[12px]">{t.library.move}</Typography>
+                            </TouchableOpacity>
 
-                                <TouchableOpacity
-                                    onPress={() => handleAction('Shared')}
-                                    className="flex-1 h-full bg-gray-50 dark:bg-zinc-900 rounded-2xl flex-row items-center justify-center mr-2 border border-gray-100 dark:border-zinc-800"
-                                >
-                                    <Share size={18} color="#6366f1" strokeWidth={2} />
-                                    <Typography className="ml-2 text-indigo-500 font-bold text-[12px]">{t.library.share}</Typography>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                    onPress={() => handleAction('Deleted')}
-                                    className="flex-1 h-full bg-red-50 dark:bg-red-500/10 rounded-2xl flex-row items-center justify-center border border-red-100 dark:border-red-900/30"
-                                >
-                                    <Trash2 size={18} color="#ef4444" strokeWidth={2} />
-                                    <Typography className="ml-2 text-red-500 font-bold text-[12px]">{t.library.delete}</Typography>
-                                </TouchableOpacity>
-                            </Animated.View>
-                        ) : (
-                            <Animated.View
-                                entering={FadeIn.duration(300)}
-                                exiting={FadeOut.duration(200)}
-                                className="h-full bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl flex-row items-center px-4"
+                            <TouchableOpacity
+                                onPress={() => handleAction('Shared')}
+                                className="flex-1 h-full bg-gray-50 dark:bg-zinc-900 rounded-2xl flex-row items-center justify-center mr-2 border border-gray-100 dark:border-zinc-800"
                             >
-                                <Search size={18} color="#94a3b8" strokeWidth={2} />
-                                <Typography style={{ color: '#94a3b8', fontWeight: 'bold', marginLeft: 12, fontSize: 16 }}>{t.library.searchPlaceholder}</Typography>
-                            </Animated.View>
-                        )}
-                    </View>
+                                <Share size={18} color="#6366f1" strokeWidth={2} />
+                                <Typography className="ml-2 text-indigo-500 font-bold text-[12px]">{t.library.share}</Typography>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                onPress={() => handleAction('Deleted')}
+                                className="flex-1 h-full bg-red-50 dark:bg-red-500/10 rounded-2xl flex-row items-center justify-center border border-red-100 dark:border-red-900/30"
+                            >
+                                <Trash2 size={18} color="#ef4444" strokeWidth={2} />
+                                <Typography className="ml-2 text-red-500 font-bold text-[12px]">{t.library.delete}</Typography>
+                            </TouchableOpacity>
+                        </Animated.View>
+                    ) : (
+                        <Animated.View
+                            entering={FadeIn.duration(300)}
+                            exiting={FadeOut.duration(200)}
+                            className="h-full bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl flex-row items-center px-4"
+                        >
+                            <Search size={18} color="#94a3b8" strokeWidth={2} />
+                            <Typography style={{ color: '#94a3b8', fontWeight: 'bold', marginLeft: 12, fontSize: 16 }}>{t.library.searchPlaceholder}</Typography>
+                        </Animated.View>
+                    )}
                 </View>
             </View>
 
@@ -202,8 +162,59 @@ export default function RagScreen() {
     );
 
     return (
-        <PageLayout className="bg-white dark:bg-black" safeArea={false}>
+        <PageLayout safeArea={false} className="bg-white dark:bg-black">
             <Stack.Screen options={{ headerShown: false }} />
+
+            {/* Fixed Title Header */}
+            <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
+                    {isSelectionMode ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            <TouchableOpacity
+                                onPress={cancelSelection}
+                                style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: isDark ? '#18181b' : '#f9fafb', marginRight: 16 }}
+                            >
+                                <X size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+                            </TouchableOpacity>
+                            <View>
+                                <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#fff' : '#111', lineHeight: 24 }}>
+                                    {selectedIds.size} {t.library.selected}
+                                </Text>
+                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2, lineHeight: 10 }}>
+                                    {t.library.managementMode}
+                                </Text>
+                            </View>
+                        </View>
+                    ) : (
+                        <>
+                            <View>
+                                <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 32 }}>
+                                    {t.library.title}
+                                </Text>
+                                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
+                                    {t.library.description}
+                                </Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+                                style={{
+                                    width: 48,
+                                    height: 48,
+                                    backgroundColor: isDark ? '#18181b' : '#f9fafb',
+                                    borderWidth: 1,
+                                    borderColor: isDark ? '#27272a' : '#f1f5f9',
+                                    borderRadius: 16,
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                <Plus size={24} color="#6366f1" strokeWidth={2} />
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </View>
+            </View>
+
             <FlashList<DocItem>
                 data={MOCK_DOCS}
                 renderItem={({ item }) => (

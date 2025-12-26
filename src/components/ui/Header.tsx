@@ -12,10 +12,11 @@ interface HeaderProps {
     leftAction?: React.ReactNode;
     showMenu?: boolean;
     onMenuPress?: () => void;
+    onTitlePress?: () => void;
     className?: string; // Additional classes
 }
 
-export function Header({ title, subtitle, rightAction, leftAction, showMenu, onMenuPress, className }: HeaderProps) {
+export function Header({ title, subtitle, rightAction, leftAction, showMenu, onMenuPress, onTitlePress, className }: HeaderProps) {
     const insets = useSafeAreaInsets();
 
     return (
@@ -39,16 +40,23 @@ export function Header({ title, subtitle, rightAction, leftAction, showMenu, onM
                         {leftAction ? leftAction : <Menu size={24} color="#64748b" />}
                     </TouchableOpacity>
 
-                    <View>
-                        <Typography variant="h2" className="text-slate-900 dark:text-white font-black tracking-tight leading-none" numberOfLines={1}>
-                            {title}
-                        </Typography>
-                        {subtitle && (
-                            <Typography className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-1 leading-none">
-                                {subtitle}
+                    <TouchableOpacity
+                        onPress={onTitlePress}
+                        disabled={!onTitlePress}
+                        activeOpacity={0.7}
+                        className="flex-1"
+                    >
+                        <View>
+                            <Typography variant="h2" className="text-slate-900 dark:text-white font-black tracking-tight leading-none" numberOfLines={1}>
+                                {title}
                             </Typography>
-                        )}
-                    </View>
+                            {subtitle && (
+                                <Typography className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-1 leading-none">
+                                    {subtitle}
+                                </Typography>
+                            )}
+                        </View>
+                    </TouchableOpacity>
                 </View>
 
                 {rightAction && (

@@ -3,55 +3,157 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { produce } from 'immer';
 
-export type ApiProvider = 'openai' | 'anthropic' | 'deepseek' | 'local';
+// 支持的服务商类型
+export type ApiProviderType =
+    | 'openai'
+    | 'anthropic'
+    | 'google' // VertexAI
+    | 'gemini' // Direct Gemini API
+    | 'deepseek'
+    | 'moonshot'
+    | 'zhipu'
+    | 'siliconflow'
+    | 'github'
+    | 'cloudflare'
+    | 'github-copilot'
+    | 'local';
 
+// 模型能力标识
+export interface ModelCapabilities {
+    vision?: boolean;
+    internet?: boolean;
+    reasoning?: boolean; // 思考模型（如 R1, o1）
+    tools?: boolean;
+}
+
+// 模型配置接口
 export interface ModelConfig {
+    uuid: string; // 内部稳定标识符，用于 React 渲染 key
+    id: string;   // API 调用参数 (如 "gpt-4o")
+    name: string; // 显示名称
+    type?: 'chat' | 'reasoning' | 'image' | 'embedding';
+    contextLength?: number;
+    capabilities: ModelCapabilities;
+    enabled: boolean;
+    isAutoFetched?: boolean;
+}
+
+// 服务商配置接口
+export interface ProviderConfig {
     id: string;
-    provider: ApiProvider;
-    modelName: string;
+    name: string;
+    type: ApiProviderType;
     apiKey: string;
     baseUrl?: string;
-    temperature: number;
-    systemPrompt: string;
+    enabled: boolean;
+    models: ModelConfig[]; // 模型列表
+    // VertexAI 特定字段
+    vertexProject?: string;
+    vertexLocation?: string;
+    vertexKeyJson?: string;
+}
+
+// 模型统计接口
+export interface TokenStats {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    lastUsed?: number;
 }
 
 interface ApiState {
-    groups: {
-        daily: ModelConfig;
-        writer: ModelConfig;
-    };
-    activeGroup: 'daily' | 'writer';
-    updateConfig: (group: 'daily' | 'writer', updates: Partial<ModelConfig>) => void;
-    setActiveGroup: (group: 'daily' | 'writer') => void;
-}
+    providers: ProviderConfig[];
+    enabledModels: Record<string, string[]>; // providerId -> modelIds[]
+    globalStats: Record<string, TokenStats>; // providerId or modelId -> stats
 
-const defaultConfig: ModelConfig = {
-    id: 'default',
-    provider: 'openai',
-    modelName: 'gpt-4o',
-    apiKey: '',
-    temperature: 0.7,
-    systemPrompt: 'You are a helpful AI assistant.',
-};
+    // 操作方法
+    addProvider: (provider: Omit<ProviderConfig, 'id'>) => void;
+    updateProvider: (id: string, updates: Partial<ProviderConfig>) => void;
+    deleteProvider: (id: string) => void;
+    toggleProvider: (id: string, enabled: boolean) => void;
+
+    toggleModel: (providerId: string, modelId: string, enabled: boolean) => void;
+    updateStats: (id: string, tokens: { input: number; output: number }) => void;
+    resetStats: (id?: string) => void;
+}
 
 export const useApiStore = create<ApiState>()(
     persist(
         (set) => ({
-            groups: {
-                daily: { ...defaultConfig, id: 'daily-default', systemPrompt: 'Be concise and helpful.' },
-                writer: { ...defaultConfig, id: 'writer-default', temperature: 0.9, systemPrompt: 'You are a creative novelist.' },
-            },
-            activeGroup: 'daily',
-            updateConfig: (group, updates) =>
-                set(
-                    produce((state: ApiState) => {
-                        state.groups[group] = { ...state.groups[group], ...updates };
-                    })
-                ),
-            setActiveGroup: (group) => set({ activeGroup: group }),
+            providers: [],
+            enabledModels: {},
+            globalStats: {},
+
+            addProvider: (provider) => set(
+                produce((state: ApiState) => {
+                    const id = `${provider.type}-${Date.now()}`;
+                    state.providers.push({ ...provider, id });
+                })
+            ),
+
+            updateProvider: (id, updates) => set(
+                produce((state: ApiState) => {
+                    const index = state.providers.findIndex(p => p.id === id);
+                    if (index !== -1) {
+                        state.providers[index] = { ...state.providers[index], ...updates };
+                    }
+                })
+            ),
+
+            deleteProvider: (id) => set(
+                produce((state: ApiState) => {
+                    state.providers = state.providers.filter(p => p.id !== id);
+                    delete state.enabledModels[id];
+                    delete state.globalStats[id];
+                })
+            ),
+
+            toggleProvider: (id, enabled) => set(
+                produce((state: ApiState) => {
+                    const provider = state.providers.find(p => p.id === id);
+                    if (provider) provider.enabled = enabled;
+                })
+            ),
+
+            toggleModel: (providerId, modelId, enabled) => set(
+                produce((state: ApiState) => {
+                    if (!state.enabledModels[providerId]) {
+                        state.enabledModels[providerId] = [];
+                    }
+                    if (enabled) {
+                        if (!state.enabledModels[providerId].includes(modelId)) {
+                            state.enabledModels[providerId].push(modelId);
+                        }
+                    } else {
+                        state.enabledModels[providerId] = state.enabledModels[providerId].filter(m => m !== modelId);
+                    }
+                })
+            ),
+
+            updateStats: (id, tokens) => set(
+                produce((state: ApiState) => {
+                    if (!state.globalStats[id]) {
+                        state.globalStats[id] = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+                    }
+                    state.globalStats[id].inputTokens += tokens.input;
+                    state.globalStats[id].outputTokens += tokens.output;
+                    state.globalStats[id].totalTokens += (tokens.input + tokens.output);
+                    state.globalStats[id].lastUsed = Date.now();
+                })
+            ),
+
+            resetStats: (id) => set(
+                produce((state: ApiState) => {
+                    if (id) {
+                        delete state.globalStats[id];
+                    } else {
+                        state.globalStats = {};
+                    }
+                })
+            ),
         }),
         {
-            name: 'api-storage',
+            name: 'api-storage-v2', // 升级版本以避免与旧配置冲突
             storage: createJSONStorage(() => AsyncStorage),
         }
     )
