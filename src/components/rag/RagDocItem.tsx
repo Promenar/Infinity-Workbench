@@ -13,6 +13,7 @@ export const RagDocItem = memo(({
     selectionProgress,
     onPress,
     onLongPress,
+    onDelete,
     showToast
 }: {
     item: any,
@@ -21,6 +22,7 @@ export const RagDocItem = memo(({
     selectionProgress: SharedValue<number>,
     onPress: () => void,
     onLongPress: () => void,
+    onDelete: () => void,
     showToast: (m: string, t: any) => void
 }) => {
     const { t } = useI18n();
@@ -52,7 +54,7 @@ export const RagDocItem = memo(({
                 >
                     <Animated.View
                         style={[contentStyle, { marginLeft: -42 }]}
-                        className="flex-1 flex-row items-center p-3.5"
+                        className="flex-1 flex-row items-center py-2.5 px-3"
                     >
                         <Animated.View style={[checkboxStyle, { width: 42 }]} className="flex-row items-center">
                             <View className={clsx(
@@ -70,32 +72,31 @@ export const RagDocItem = memo(({
                             <FileText size={20} color={isSelected ? "#6366f1" : "#94a3b8"} strokeWidth={1.5} />
                         </View>
                         <View className="flex-1">
-                            <Typography variant="body" className={clsx("font-bold text-[16px]", isSelected ? "text-indigo-900 dark:text-indigo-100" : "text-gray-900 dark:text-white")}>{item.title}</Typography>
+                            <Typography
+                                variant="body"
+                                numberOfLines={1}
+                                className={clsx("font-bold text-[15px] leading-6", isSelected ? "text-indigo-900 dark:text-indigo-100" : "text-gray-900 dark:text-gray-100")}
+                            >
+                                {item.title}
+                            </Typography>
                             <Typography variant="caption" className={clsx("font-medium mt-0.5 text-[11px]", isSelected ? "text-indigo-400" : "text-gray-400")}>{item.size} • {item.date}</Typography>
                         </View>
                     </Animated.View>
                 </TouchableOpacity>
 
                 {!isSelectionMode && (
-                    <View className="pr-1.5 absolute right-0 top-0 bottom-0 justify-center">
+                    <View className="pr-1 justify-center">
                         <ContextMenu items={[
-                            { label: t.library.rename, icon: <Edit2 size={18} />, onPress: () => showToast(t.library.rename, 'info') },
-                            { label: t.library.share, icon: <Share size={18} />, onPress: () => showToast(t.library.share, 'success') },
-                            { label: t.library.delete, icon: <Trash2 size={18} />, destructive: true, onPress: () => showToast(t.library.delete, 'error') },
+                            // { label: t.library.rename, icon: <Edit2 size={16} />, onPress: () => showToast(t.library.rename, 'info') }, // TODO
+                            { label: t.library.delete, icon: <Trash2 size={16} />, destructive: true, onPress: onDelete },
                         ]}>
-                            <View className="p-3">
-                                <MoreVertical size={18} color="#cbd5e1" />
+                            <View className="p-3 opacity-60">
+                                <MoreVertical size={16} color={isSelected ? "#6366f1" : "#94a3b8"} />
                             </View>
                         </ContextMenu>
                     </View>
                 )}
             </View>
         </View>
-    );
-}, (prev, next) => {
-    return (
-        prev.isSelected === next.isSelected &&
-        prev.isSelectionMode === next.isSelectionMode &&
-        prev.item.id === next.item.id
     );
 });

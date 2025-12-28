@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, ScrollView, TouchableOpacity, Text, TextInput, Modal, Alert } from 'react-native';
-import { Typography } from '../../components/ui/Typography';
+import { View, ScrollView, TouchableOpacity, Text, TextInput, Modal } from 'react-native';
+import { Typography, ConfirmDialog } from '../../components/ui';
 import { Plus, Trash2, Edit3, ChevronRight, FileJson, RefreshCw, Check, X } from 'lucide-react-native';
 import { useApiStore, ApiProviderType, ProviderConfig } from '../../store/api-store';
 import { useSettingsStore } from '../../store/settings-store';
@@ -17,7 +17,8 @@ export const ProviderSettings = () => {
     const { providers, addProvider, updateProvider, deleteProvider, globalStats, resetStats, enabledModels, toggleModel } = useApiStore();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingProvider, setEditingProvider] = useState<ProviderConfig | null>(null);
-    const [activeProviderModels, setActiveProviderModels] = useState<{ id: string, models: string[] } | null>(null);
+    // State for managing available models modal
+    const [activeProviderModels, setActiveProviderModels] = useState<{ id: string, models: import('../../store/api-store').ModelConfig[] } | null>(null);
 
     // 添加/编辑供应商表单状态
     const [formData, setFormData] = useState<Partial<ProviderConfig>>({
@@ -26,6 +27,21 @@ export const ProviderSettings = () => {
         apiKey: '',
         baseUrl: '',
         enabled: true
+    });
+
+    // 确认弹窗状态
+    const [confirmState, setConfirmState] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        isDestructive?: boolean;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+        isDestructive: false
     });
 
     const handlePickJson = async () => {
@@ -43,17 +59,29 @@ export const ProviderSettings = () => {
                         vertexKeyJson: content,
                         vertexLocation: config.location
                     });
-                    Alert.alert('成功', 'VertexAI 配置已载入');
                 }
             } catch (error) {
-                Alert.alert('错误', '读取文件失败');
+                setConfirmState({
+                    visible: true,
+                    title: '错误',
+                    message: '读取文件失败',
+                    onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
+                });
             }
         }, 10);
     };
 
     const handleSave = () => {
         setTimeout(() => {
-            if (!formData.name) return Alert.alert('错误', '请输入名称');
+            if (!formData.name) {
+                setConfirmState({
+                    visible: true,
+                    title: '提示',
+                    message: '请输入名称',
+                    onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
+                });
+                return;
+            }
             if (editingProvider) {
                 updateProvider(editingProvider.id, formData);
             } else {
@@ -67,9 +95,20 @@ export const ProviderSettings = () => {
 
     const fetchModels = async (provider: ProviderConfig) => {
         setTimeout(async () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            const models = await ModelService.fetchModels(provider.type, provider.apiKey, provider.baseUrl);
-            setActiveProviderModels({ id: provider.id, models });
+            try {
+                const models = await ModelService.fetchModels(provider.type, provider.apiKey, provider.baseUrl);
+
+                // IMPORTANT: Persist the fetched model metadata (with correct types/capabilities) to the store
+                updateProvider(provider.id, { models });
+
+                setActiveProviderModels({ id: provider.id, models });
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (error) {
+                // If fetch fails, fallback to existing models or preset
+                console.error('Model fetch failed', error);
+                setActiveProviderModels({ id: provider.id, models: provider.models || [] });
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
         }, 10);
     };
 
@@ -116,7 +155,18 @@ export const ProviderSettings = () => {
                                 }} className="p-2 mr-1">
                                     <Edit3 size={18} color="#94a3b8" />
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => deleteProvider(p.id)} className="p-2">
+                                <TouchableOpacity onPress={() => {
+                                    setConfirmState({
+                                        visible: true,
+                                        title: '删除供应商',
+                                        message: `确定要删除 "${p.name}" 吗？此操作将移除该供应商下的所有模型配置。`,
+                                        isDestructive: true,
+                                        onConfirm: () => {
+                                            deleteProvider(p.id);
+                                            setConfirmState(prev => ({ ...prev, visible: false }));
+                                        }
+                                    });
+                                }} className="p-2">
                                     <Trash2 size={18} color="#f43f5e" />
                                 </TouchableOpacity>
                             </View>
@@ -151,19 +201,24 @@ export const ProviderSettings = () => {
                         </View>
                         <ScrollView className="flex-1">
                             {activeProviderModels?.models.map(m => {
-                                const isEnabled = enabledModels[activeProviderModels.id]?.includes(m);
+                                const isEnabled = enabledModels[activeProviderModels.id]?.includes(m.id);
                                 return (
                                     <TouchableOpacity
-                                        key={m}
+                                        key={m.uuid}
                                         onPress={() => {
-                                            setTimeout(() => toggleModel(activeProviderModels.id, m, !isEnabled), 10);
+                                            setTimeout(() => toggleModel(activeProviderModels.id, m.id, !isEnabled), 10);
                                         }}
                                         className={clsx(
                                             "flex-row justify-between items-center p-4 mb-2 rounded-xl border",
                                             isEnabled ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800" : "bg-gray-50 border-gray-100 dark:bg-zinc-800 dark:border-zinc-700"
                                         )}
                                     >
-                                        <Typography className={clsx(isEnabled ? "text-indigo-600 font-bold" : "text-gray-600 dark:text-gray-300")}>{m}</Typography>
+                                        <View>
+                                            <Typography className={clsx(isEnabled ? "text-indigo-600 font-bold" : "text-gray-600 dark:text-gray-300")}>{m.name}</Typography>
+                                            {m.type === 'reasoning' && (
+                                                <Typography className="text-[10px] text-indigo-500 mt-0.5">Reasoning</Typography>
+                                            )}
+                                        </View>
                                         {isEnabled && <Check size={18} color="#4f46e5" />}
                                     </TouchableOpacity>
                                 );
@@ -248,6 +303,15 @@ export const ProviderSettings = () => {
                     </View>
                 </View>
             </Modal>
+
+            <ConfirmDialog
+                visible={confirmState.visible}
+                title={confirmState.title}
+                message={confirmState.message}
+                isDestructive={confirmState.isDestructive}
+                onConfirm={confirmState.onConfirm}
+                onCancel={() => setConfirmState(prev => ({ ...prev, visible: false }))}
+            />
         </View>
     );
 };

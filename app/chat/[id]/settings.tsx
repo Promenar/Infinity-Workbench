@@ -1,0 +1,444 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { PageLayout, Typography, GlassHeader, useToast, ConfirmDialog, Switch } from '../../../src/components/ui';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { ChevronLeft, Save, Sparkles, MessageSquare, Settings as SettingsIcon, Download, Trash2 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { useChatStore } from '../../../src/store/chat-store';
+import { useAgentStore } from '../../../src/store/agent-store';
+import { useTheme } from '../../../src/theme/ThemeProvider';
+import { useI18n } from '../../../src/lib/i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { exportAllSessionsToTxt } from '../../../src/features/chat/utils/export';
+import { useRagStore } from '../../../src/store/rag-store';
+import { ChevronRight, X, Folder } from 'lucide-react-native';
+import { DocumentPickerModal } from '../../../src/components/rag/DocumentPickerModal';
+
+export default function SessionSettingsScreen() {
+    const { id } = useLocalSearchParams<{ id: string }>();
+    const router = useRouter();
+    const { isDark } = useTheme();
+    const { t } = useI18n();
+    const insets = useSafeAreaInsets();
+    const { showToast } = useToast();
+
+    const { getSession, sessions, updateSessionTitle, updateSessionPrompt, generateSessionTitle, deleteSession } = useChatStore();
+    const { getAgent } = useAgentStore();
+
+    // 订阅sessions变化以确保session对象总是最新的
+    const session = useMemo(() => getSession(id), [id, getSession, sessions]);
+    const agent = useMemo(() => session ? getAgent(session.agentId) : undefined, [session, getAgent]);
+
+    const { documents, folders, loadDocuments, loadFolders } = useRagStore();
+    const [showDocPicker, setShowDocPicker] = useState(false);
+
+    useEffect(() => {
+        loadDocuments();
+        loadFolders();
+    }, []);
+
+    const [formData, setFormData] = useState({
+        title: session?.title || '',
+        customPrompt: session?.customPrompt || '',
+    });
+
+    const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+
+    // 确认弹窗状态
+    const [confirmState, setConfirmState] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        isDestructive?: boolean;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+        isDestructive: false
+    });
+
+    const handleSave = () => {
+        if (!session) return;
+
+        setTimeout(() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            updateSessionTitle(id, formData.title.trim());
+            updateSessionPrompt(id, formData.customPrompt.trim());
+            router.back();
+        }, 10);
+    };
+
+    const handleGenerateTitle = async () => {
+        if (isGeneratingTitle) return;
+        setIsGeneratingTitle(true);
+        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 10);
+
+        try {
+            const newTitle = await generateSessionTitle(id);
+            if (newTitle) {
+                setFormData(prev => ({ ...prev, title: newTitle }));
+            }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsGeneratingTitle(false);
+        }
+    };
+
+    const handleExportCurrent = async () => {
+        if (isExporting || !session) return;
+        setIsExporting(true);
+        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+
+        try {
+            const result = await exportAllSessionsToTxt([session]); // 仅传入当前会话
+            if (result.success) {
+                setConfirmState({
+                    visible: true,
+                    title: '导出成功',
+                    message: '当前会话历史已保存至指定目录。',
+                    onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
+                });
+            } else if (result.error !== 'Permission denied') {
+                setConfirmState({
+                    visible: true,
+                    title: '导出失败',
+                    message: result.error || '未知错误',
+                    onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
+                });
+            }
+        } catch (error) {
+            setConfirmState({
+                visible: true,
+                title: '导出失败',
+                message: (error as Error).message,
+                onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
+            });
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleDeleteSession = async () => {
+        setConfirmState({
+            visible: true,
+            title: '删除会话',
+            message: '确定要删除此会话吗？此操作不可撤销。',
+            isDestructive: true,
+            onConfirm: async () => {
+                await deleteSession(id);
+                showToast('会话已删除', 'success');
+                setConfirmState(prev => ({ ...prev, visible: false }));
+                router.replace('/(tabs)/chat');
+            }
+        });
+    };
+
+    if (!session || !agent) return null;
+
+    return (
+        <PageLayout safeArea={false} className="bg-white dark:bg-black">
+            <Stack.Screen options={{ headerShown: false }} />
+
+            <GlassHeader
+                title={t.conversation.settings}
+                subtitle={session.title}
+                leftAction={{
+                    icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
+                    onPress: () => router.back(),
+                    label: t.common.back,
+                }}
+                rightAction={{
+                    icon: <Save size={24} color={isDark ? '#fff' : '#000'} strokeWidth={2} />,
+                    onPress: handleSave,
+                    label: t.common.save
+                }}
+            />
+
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                className="flex-1"
+            >
+                <ScrollView
+                    className="flex-1 px-6"
+                    contentContainerStyle={{
+                        paddingTop: 74 + insets.top,
+                        paddingBottom: 40
+                    }}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* Parent Agent Reference */}
+                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3">
+                        {t.agent.basicInfo}
+                    </Typography>
+                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
+                        <View className="flex-row items-center justify-between">
+                            <View className="flex-row items-center flex-1">
+                                <View
+                                    className="w-10 h-10 rounded-full items-center justify-center mr-3"
+                                    style={{ backgroundColor: `${agent.color}20` }}
+                                >
+                                    <MessageSquare size={20} color={agent.color} />
+                                </View>
+                                <View className="flex-1">
+                                    <Typography className="text-gray-900 dark:text-white font-bold">
+                                        {agent.name}
+                                    </Typography>
+                                    <Typography variant="caption" className="text-gray-500">
+                                        {t.conversation.inheritFrom.replace('{agentName}', '')}
+                                    </Typography>
+                                </View>
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setTimeout(() => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        router.push(`/chat/agent/edit/${agent.id}`);
+                                    }, 10);
+                                }}
+                                className="p-2 rounded-full bg-white dark:bg-black border border-gray-100 dark:border-zinc-800"
+                            >
+                                <SettingsIcon size={18} color={isDark ? '#94a3b8' : '#64748b'} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    {/* Export Current Activity */}
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={handleExportCurrent}
+                        className="flex-row items-center justify-center py-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl mb-8 border border-indigo-100 dark:border-indigo-500/20"
+                    >
+                        {isExporting ? (
+                            <ActivityIndicator size="small" color="#6366f1" />
+                        ) : (
+                            <>
+                                <Download size={18} color="#6366f1" className="mr-2" />
+                                <Typography className="text-indigo-600 dark:text-indigo-400 font-bold">导出当前对话历史</Typography>
+                            </>
+                        )}
+                    </TouchableOpacity>
+
+                    {/* Session Title */}
+                    <View className="flex-row items-center justify-between mb-3">
+                        <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">
+                            {t.conversation.editTitle}
+                        </Typography>
+                        <TouchableOpacity
+                            onPress={handleGenerateTitle}
+                            disabled={isGeneratingTitle}
+                            className="flex-row items-center"
+                        >
+                            {isGeneratingTitle ? (
+                                <ActivityIndicator size="small" color="#6366f1" />
+                            ) : (
+                                <>
+                                    <Sparkles size={12} color="#6366f1" className="mr-1" />
+                                    <Typography className="text-indigo-600 text-[10px] font-bold">AI 生成</Typography>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+                        <TextInput
+                            className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 font-bold"
+                            value={formData.title}
+                            onChangeText={(text) => setFormData({ ...formData, title: text })}
+                            placeholder={t.conversation.editTitle}
+                            placeholderTextColor="#94a3b8"
+                        />
+                    </View>
+
+                    {/* RAG Settings */}
+                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center">
+                        <Sparkles size={10} color="#64748b" className="mr-1" /> {t.conversation.ragSettings || 'Knowledge & Memory'}
+                    </Typography>
+                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+                        {/* Toggle: Enable Memory */}
+                        <View className="flex-row items-center justify-between py-2 mb-2">
+                            <View className="flex-1 pr-4">
+                                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                                    {t.conversation.longTermMemory}
+                                </Typography>
+                                <Typography variant="caption" className="text-gray-500 mt-1">
+                                    {t.conversation.longTermMemoryDesc}
+                                </Typography>
+                            </View>
+                            <Switch
+                                value={session.ragOptions?.enableMemory !== false}
+                                onValueChange={() => {
+                                    const current = session.ragOptions?.enableMemory !== false;
+                                    useChatStore.getState().updateSessionOptions(id, {
+                                        ragOptions: { ...session.ragOptions, enableMemory: !current }
+                                    });
+                                }}
+                            />
+                        </View>
+
+                        {/* Divider */}
+                        <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-2" />
+
+                        {/* Toggle: Enable Knowledge Base */}
+                        <View className="flex-row items-center justify-between py-2">
+                            <View className="flex-1 pr-4">
+                                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                                    {t.conversation.knowledgeBase}
+                                </Typography>
+                                <Typography variant="caption" className="text-gray-500 mt-1">
+                                    {t.conversation.knowledgeBaseDesc}
+                                </Typography>
+                            </View>
+                            <Switch
+                                value={session.ragOptions?.enableDocs === true}
+                                onValueChange={() => {
+                                    const current = session.ragOptions?.enableDocs === true;
+                                    useChatStore.getState().updateSessionOptions(id, {
+                                        ragOptions: { ...session.ragOptions, enableDocs: !current }
+                                    });
+                                }}
+                            />
+                        </View>
+
+                        {/* Document Picker (Only when enabled) */}
+                        {session.ragOptions?.enableDocs && (
+                            <View className="mt-4 pt-4 border-t border-gray-100 dark:border-zinc-800">
+                                <TouchableOpacity
+                                    onPress={() => setShowDocPicker(true)}
+                                    className="flex-row items-center justify-between bg-white dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800"
+                                >
+                                    <Typography className="font-bold text-indigo-500">
+                                        {t.library.selectDocs} ({(session.ragOptions?.activeDocIds?.length || 0) + (session.ragOptions?.activeFolderIds?.length || 0)})
+                                    </Typography>
+                                    <ChevronRight size={20} color="#6366f1" />
+                                </TouchableOpacity>
+
+                                {/* Selected items preview */}
+                                {((session.ragOptions?.activeDocIds?.length || 0) > 0 || (session.ragOptions?.activeFolderIds?.length || 0) > 0) && (
+                                    <View className="flex-row flex-wrap gap-2 mt-3">
+                                        {session.ragOptions?.activeDocIds?.map(docId => {
+                                            const doc = documents.find(d => d.id === docId);
+                                            if (!doc) return null;
+                                            return (
+                                                <View key={docId} className="flex-row items-center bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-500/20">
+                                                    <Typography className="text-[10px] text-indigo-600 dark:text-indigo-400 mr-1" numberOfLines={1}>{doc.title}</Typography>
+                                                    <TouchableOpacity
+                                                        onPress={() => {
+                                                            const newIds = session.ragOptions?.activeDocIds?.filter(id => id !== docId);
+                                                            useChatStore.getState().updateSessionOptions(id, {
+                                                                ragOptions: { ...session.ragOptions, activeDocIds: newIds?.length ? newIds : undefined }
+                                                            });
+                                                        }}
+                                                    >
+                                                        <X size={12} color="#6366f1" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            );
+                                        })}
+                                        {session.ragOptions?.activeFolderIds?.map(folderId => {
+                                            const folder = folders.find(f => f.id === folderId);
+                                            if (!folder) return null;
+                                            return (
+                                                <View key={folderId} className="flex-row items-center bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-500/20">
+                                                    <Folder size={10} color="#f59e0b" className="mr-1" />
+                                                    <Typography className="text-[10px] text-amber-600 dark:text-amber-400 mr-1" numberOfLines={1}>{folder.name}</Typography>
+                                                    <TouchableOpacity
+                                                        onPress={() => {
+                                                            const newIds = session.ragOptions?.activeFolderIds?.filter(id => id !== folderId);
+                                                            useChatStore.getState().updateSessionOptions(id, {
+                                                                ragOptions: { ...session.ragOptions, activeFolderIds: newIds?.length ? newIds : undefined }
+                                                            });
+                                                        }}
+                                                    >
+                                                        <X size={12} color="#f59e0b" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            );
+                                        })}
+                                    </View>
+                                )}
+
+                                {/* Modal */}
+                                <DocumentPickerModal
+                                    visible={showDocPicker}
+                                    onClose={() => setShowDocPicker(false)}
+                                    folders={folders}
+                                    documents={documents}
+                                    selectedDocIds={session.ragOptions?.activeDocIds || []}
+                                    selectedFolderIds={session.ragOptions?.activeFolderIds || []}
+                                    onConfirm={(docIds, folderIds) => {
+                                        useChatStore.getState().updateSessionOptions(id, {
+                                            ragOptions: {
+                                                ...session.ragOptions,
+                                                activeDocIds: docIds.length > 0 ? docIds : undefined,
+                                                activeFolderIds: folderIds.length > 0 ? folderIds : undefined
+                                            }
+                                        });
+                                    }}
+                                />
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Custom Prompt */}
+                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center">
+                        <Sparkles size={10} color="#64748b" className="mr-1" /> {t.conversation.customPrompt}
+                    </Typography>
+                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+                        <View className="bg-indigo-50 dark:bg-indigo-500/10 p-3.5 rounded-xl mb-4">
+                            <Typography className="text-[12px] text-indigo-700 dark:text-indigo-300 flex-1 leading-tight">
+                                {t.conversation.customPromptPlaceholder}
+                            </Typography>
+                        </View>
+                        <TextInput
+                            className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 h-60"
+                            multiline
+                            textAlignVertical="top"
+                            value={formData.customPrompt}
+                            onChangeText={(text) => setFormData({ ...formData, customPrompt: text })}
+                            placeholder={t.conversation.customPromptPlaceholder}
+                            placeholderTextColor="#94a3b8"
+                        />
+                    </View>
+
+                    {/* Danger Zone */}
+                    <Typography variant="label" className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3">
+                        {t.common.dangerZone}
+                    </Typography>
+                    <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
+                        <TouchableOpacity
+                            onPress={handleDeleteSession}
+                            className="flex-row items-center justify-between"
+                        >
+                            <View className="flex-row items-center">
+                                <View className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 items-center justify-center mr-3">
+                                    <Trash2 size={20} color="#ef4444" />
+                                </View>
+                                <View>
+                                    <Typography className="text-red-600 dark:text-red-400 font-bold">
+                                        {t.conversation.deleteSession}
+                                    </Typography>
+                                    <Typography variant="caption" className="text-red-400/80">
+                                        {t.conversation.deleteSessionDesc}
+                                    </Typography>
+                                </View>
+                            </View>
+                            <ChevronRight size={20} color="#ef4444" />
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
+
+            <ConfirmDialog
+                visible={confirmState.visible}
+                title={confirmState.title}
+                message={confirmState.message}
+                isDestructive={confirmState.isDestructive}
+                onConfirm={confirmState.onConfirm}
+                onCancel={() => setConfirmState(prev => ({ ...prev, visible: false }))}
+            />
+        </PageLayout>
+    );
+}

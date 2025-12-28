@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'nativewind';
-import { Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -18,30 +17,32 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [mode, setModeState] = useState<ThemeMode>('system');
 
     useEffect(() => {
-        // Load persisted theme
-        AsyncStorage.getItem('theme_mode').then((saved: string | null) => {
-            if (saved && (saved === 'light' || saved === 'dark' || saved === 'system')) {
-                setMode(saved as ThemeMode);
+        AsyncStorage.getItem('theme_mode').then(stored => {
+            if (stored) {
+                const savedMode = stored as ThemeMode;
+                console.log('[ThemeProvider] Loaded saved mode:', savedMode);
+                setModeState(savedMode);
+                setColorScheme(savedMode);
+            } else {
+                // Default to system
+                console.log('[ThemeProvider] No saved theme, defaulting to system');
+                setColorScheme('system');
             }
         });
     }, []);
 
-    const setMode = (newMode: ThemeMode) => {
+    const setTheme = async (newMode: ThemeMode) => {
+        console.log('[ThemeProvider] Setting theme to:', newMode);
         setModeState(newMode);
-        AsyncStorage.setItem('theme_mode', newMode);
-
-        if (newMode === 'system') {
-            const systemTheme = Appearance.getColorScheme();
-            setColorScheme(systemTheme || 'light');
-        } else {
-            setColorScheme(newMode);
-        }
+        setColorScheme(newMode);
+        await AsyncStorage.setItem('theme_mode', newMode);
     };
 
     const isDark = colorScheme === 'dark';
+    console.log('[ThemeProvider] Current - mode:', mode, 'colorScheme:', colorScheme, 'isDark:', isDark);
 
     return (
-        <ThemeContext.Provider value={{ theme: mode, setTheme: setMode, isDark }}>
+        <ThemeContext.Provider value={{ theme: mode, setTheme, isDark }}>
             {children}
         </ThemeContext.Provider>
     );

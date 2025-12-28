@@ -35,7 +35,10 @@ export interface Message {
     content: string;
     timestamp: number;
     modelId?: string; // The model used to generate this message
+    reasoning?: string; // Chain of Thought reasoning content
+    citations?: { title: string; url: string; source?: string }[]; // Grounding/Web Search citations
     tokens?: TokenUsage;
+    images?: string[]; // Local object URL or file path (file://)
 }
 
 export interface Session {
@@ -47,7 +50,20 @@ export interface Session {
     unread: number;
     messages: Message[];
     modelId?: string; // Override agent's default model for this session
+    customPrompt?: string; // Additional prompt specific to this session (appended to agent's systemPrompt)
+    isPinned?: boolean;
     stats?: {
         totalTokens: number;
     };
+    options?: {
+        webSearch?: boolean;
+        reasoning?: boolean;
+    };
+    ragOptions?: {
+        enableMemory?: boolean;  // 启用长期记忆
+        enableDocs?: boolean;    // 启用知识库检索
+        activeDocIds?: string[]; // 指定文档ID（undefined=全部）
+        activeFolderIds?: string[]; // 指定文件夹ID
+    };
+    scrollOffset?: number; // 记录滚动位置
 }

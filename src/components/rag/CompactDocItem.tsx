@@ -1,0 +1,151 @@
+import React, { memo } from 'react';
+import { View, TouchableOpacity } from 'react-native';
+import { Typography, ContextMenu } from '../ui';
+import { FileText, MoreVertical, CheckCircle, Loader, Circle, AlertCircle } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeProvider';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+
+interface CompactDocItemProps {
+    id: string;
+    title: string;
+    vectorized: 0 | 1 | 2 | -1;  // 未处理|处理中|已完成|失败
+    vectorCount: number;
+    fileSize: number;
+    onPress: () => void;
+    onLongPress: () => void;
+    onDelete: () => void;
+    onVectorize?: () => void;
+    onMove?: () => void;
+    isSelected?: boolean;
+}
+
+export const CompactDocItem = memo<CompactDocItemProps>(({
+    id,
+    title,
+    vectorized,
+    vectorCount,
+    fileSize,
+    onPress,
+    onLongPress,
+    onDelete,
+    onVectorize,
+    onMove,
+    isSelected = false
+}) => {
+    const { isDark } = useTheme();
+
+    const formatSize = (bytes: number) => {
+        if (bytes < 1024) return `${bytes}B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+    };
+
+    const getStatusIcon = () => {
+        switch (vectorized) {
+            case 2: // 已完成
+                return <CheckCircle size={18} color="#10b981" />;
+            case 1: // 处理中
+                return <Loader size={18} color="#eab308" className="animate-spin" />;
+            case -1: // 失败
+                return <AlertCircle size={18} color="#ef4444" />;
+            default: // 未处理
+                return <Circle size={18} color="#94a3b8" />;
+        }
+    };
+
+    const getStatusText = () => {
+        switch (vectorized) {
+            case 2:
+                return `${vectorCount} chunks`;
+            case 1:
+                return '处理中...';
+            case -1:
+                return '失败';
+            default:
+                return '未处理';
+        }
+    };
+
+    const menuItems = [
+        vectorized === 0 || vectorized === -1 ? {
+            key: 'vectorize',
+            label: '向量化',
+            onPress: () => {
+                setTimeout(() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    onVectorize?.();
+                }, 10);
+            }
+        } : null,
+        {
+            key: 'move',
+            label: '移动到文件夹',
+            onPress: () => {
+                setTimeout(() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    onMove?.();
+                }, 10);
+            }
+        },
+        {
+            key: 'delete',
+            label: '删除',
+            onPress: () => {
+                setTimeout(() => {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                    onDelete();
+                }, 10);
+            },
+            destructive: true
+        }
+    ].filter(Boolean);
+
+    return (
+        <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            className="mx-6 mb-1.5"
+        >
+            <TouchableOpacity
+                onPress={onPress}
+                onLongPress={onLongPress}
+                activeOpacity={0.7}
+                className={`bg-gray-50 dark:bg-zinc-900/50 rounded-xl flex-row items-center px-3 py-2.5 
+                    border ${isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-zinc-800'}`}
+            >
+                {/* 文档图标 */}
+                <View className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 items-center justify-center mr-3">
+                    <FileText size={16} color="#6366f1" strokeWidth={2} />
+                </View>
+
+                {/* 文档信息 */}
+                <View className="flex-1 min-w-0">
+                    <Typography
+                        className="font-bold text-sm text-gray-900 dark:text-white"
+                        numberOfLines={1}
+                    >
+                        {title}
+                    </Typography>
+                    <Typography className="text-xs text-gray-400 mt-0.5">
+                        {formatSize(fileSize)} · {getStatusText()}
+                    </Typography>
+                </View>
+
+                {/* 状态指示器 */}
+                <View className="w-6 h-6 items-center justify-center mr-2">
+                    {getStatusIcon()}
+                </View>
+
+                {/* 操作菜单 */}
+                <ContextMenu items={menuItems as any}>
+                    <View className="w-6 h-6 items-center justify-center">
+                        <MoreVertical size={16} color="#94a3b8" />
+                    </View>
+                </ContextMenu>
+            </TouchableOpacity>
+        </Animated.View>
+    );
+});
+
+CompactDocItem.displayName = 'CompactDocItem';

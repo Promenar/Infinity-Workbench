@@ -3,7 +3,8 @@
  * 遵循项目准则：简体中文注释，严谨的技术实现。
  */
 
-import { ApiProviderType } from '../store/api-store';
+import { ApiProviderType, ModelConfig } from '../store/api-store';
+import { findModelSpec } from './llm/model-utils';
 
 /**
  * 解析 VertexAI (Google Cloud) 服务账号 JSON
@@ -38,7 +39,7 @@ export class ModelService {
      * @param apiKey API 密钥
      * @param baseUrl 自定义 Base URL
      */
-    static async fetchModels(type: ApiProviderType, apiKey: string, baseUrl?: string) {
+    static async fetchModels(type: ApiProviderType, apiKey: string, baseUrl?: string): Promise<ModelConfig[]> {
         // 对于 Google (VertexAI) 等特殊服务商，目前暂返回预设
         if (type === 'google' || type === 'github-copilot' || type === 'local') {
             return this.getPresetModels(type);
@@ -59,21 +60,55 @@ export class ModelService {
             });
 
             if (!response.ok) {
+                // 特殊处理 Cloudflare 等可能返回 404 或 403 的情况
                 throw new Error(`HTTP 错误: ${response.status}`);
             }
 
             const data = await response.json();
+            let rawModelIds: string[] = [];
 
             // 解析 OpenAI 兼容格式
             if (data.data && Array.isArray(data.data)) {
-                return data.data.map((m: any) => m.id);
+                rawModelIds = data.data.map((m: any) => m.id);
+            } else if (Array.isArray(data)) {
+                // 某些非标接口直接返回数组
+                rawModelIds = data.map((m: any) => typeof m === 'string' ? m : m.id);
             }
 
-            return this.getPresetModels(type);
+            if (rawModelIds.length === 0) {
+                return this.getPresetModels(type);
+            }
+
+            // 转换为 ModelConfig 并补充元数据
+            return rawModelIds.map(id => this.enrichModelData(id));
+
         } catch (error) {
             console.error(`${type} 模型获取失败:`, error);
-            return this.getPresetModels(type); // 降级返回预设
+            // 发生错误时降级返回预设，但也要丰富预设模型的元数据
+            return this.getPresetModels(type);
         }
+    }
+
+    /**
+     * 将模型 ID 转换为包含完整元数据的 ModelConfig 对象
+     */
+    private static enrichModelData(modelId: string): ModelConfig {
+        const spec = findModelSpec(modelId);
+
+        return {
+            uuid: modelId, // 暂时使用 ID 作为 uuid
+            id: modelId,
+            name: modelId, // 暂时使用 ID 作为名称，UI层可能会进一步格式化
+            type: spec?.type || 'chat',
+            contextLength: spec?.contextLength || 4096,
+            capabilities: {
+                vision: spec?.capabilities?.vision || false,
+                internet: spec?.capabilities?.internet || false,
+                reasoning: spec?.capabilities?.reasoning || false,
+            },
+            enabled: true,
+            isAutoFetched: true
+        };
     }
 
     private static getDefaultBaseUrl(type: ApiProviderType): string {
@@ -89,18 +124,20 @@ export class ModelService {
         return mapping[type] || '';
     }
 
-    private static getPresetModels(type: ApiProviderType) {
+    private static getPresetModels(type: ApiProviderType): ModelConfig[] {
         // 根据类型返回一些通用的预设模型列表
         const presets: Record<string, string[]> = {
             openai: ['gpt-4o', 'gpt-4o-mini', 'o1-preview', 'o1-mini'],
-            deepseek: ['deepseek-chat', 'deepseek-coder'],
-            google: ['gemini-1.5-pro', 'gemini-1.5-flash'],
+            deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+            google: ['gemini-2.0-flash-thinking-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'],
             moonshot: ['moonshot-v1-8k', 'moonshot-v1-32k'],
-            zhipu: ['glm-4', 'glm-4-flash'],
+            zhipu: ['glm-4', 'glm-4-flash', 'glm-4-plus', 'glm-4.7'],
             siliconflow: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'],
             github: ['gpt-4o', 'claude-3-5-sonnet'],
         };
-        return presets[type] || [];
+
+        const ids = presets[type] || [];
+        return ids.map(id => this.enrichModelData(id));
     }
 }
 

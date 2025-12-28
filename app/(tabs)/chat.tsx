@@ -3,7 +3,6 @@ import { View, TouchableOpacity, Text } from 'react-native';
 import { PageLayout, Typography } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Search, Plus, ChevronRight } from 'lucide-react-native';
-import * as LucideIcons from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { FlashList } from '@shopify/flash-list';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -11,6 +10,7 @@ import { useI18n } from '../../src/lib/i18n';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useAgentStore } from '../../src/store/agent-store';
 import { Agent } from '../../src/types/chat';
+import { AgentAvatar } from '../../src/components/chat/AgentAvatar';
 
 export default function AgentExplorerScreen() {
     const router = useRouter();
@@ -47,8 +47,6 @@ export default function AgentExplorerScreen() {
     };
 
     const renderItem = ({ item, index }: { item: Agent, index: number }) => {
-        const IconComponent = (LucideIcons as any)[item.avatar || 'MessageSquare'] || LucideIcons.MessageSquare;
-
         return (
             <Animated.View entering={FadeInDown.delay(index * 50).duration(400)}>
                 <TouchableOpacity
@@ -59,14 +57,15 @@ export default function AgentExplorerScreen() {
                         router.push(`/chat/agent/${item.id}`);
                     }}
                 >
-                    {/* Avatar with Theme Color */}
+                    {/* Avatar Container */}
                     <View className="relative mr-4">
-                        <View
-                            className="w-[52px] h-[52px] rounded-2xl items-center justify-center border"
-                            style={{ backgroundColor: `${item.color}10`, borderColor: `${item.color}20` }}
-                        >
-                            <IconComponent size={24} color={item.color} strokeWidth={2} />
-                        </View>
+                        <AgentAvatar
+                            id={item.id}
+                            name={item.name}
+                            avatar={item.avatar}
+                            color={item.color}
+                            size={52}
+                        />
                     </View>
 
                     {/* Content */}

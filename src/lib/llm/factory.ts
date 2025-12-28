@@ -31,7 +31,8 @@ export const createLlmClient = (config: ExtendedModelConfig): LlmClient => {
                 config.apiKey,
                 config.id, // 使用模型 API ID
                 config.temperature || 0.7,
-                config.baseUrl || 'https://api.openai.com/v1'
+                config.baseUrl || 'https://api.openai.com/v1',
+                { isEmbedding: config.type === 'embedding' }
             );
         case 'gemini':
             return new GeminiClient(

@@ -66,6 +66,13 @@ interface ApiState {
     enabledModels: Record<string, string[]>; // providerId -> modelIds[]
     globalStats: Record<string, TokenStats>; // providerId or modelId -> stats
 
+    // Google Custom Search Config
+    googleSearchConfig?: {
+        apiKey: string;
+        cx: string;
+    };
+    setGoogleSearchConfig: (config: { apiKey: string; cx: string }) => void;
+
     // 操作方法
     addProvider: (provider: Omit<ProviderConfig, 'id'>) => void;
     updateProvider: (id: string, updates: Partial<ProviderConfig>) => void;
@@ -83,6 +90,13 @@ export const useApiStore = create<ApiState>()(
             providers: [],
             enabledModels: {},
             globalStats: {},
+            googleSearchConfig: undefined,
+
+            setGoogleSearchConfig: (config) => set(
+                produce((state: ApiState) => {
+                    state.googleSearchConfig = config;
+                })
+            ),
 
             addProvider: (provider) => set(
                 produce((state: ApiState) => {

@@ -1,18 +1,26 @@
+export type ChatMessageContent =
+    | string
+    | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
+
 export interface ChatMessage {
     role: 'system' | 'user' | 'assistant';
-    content: string;
+    content: ChatMessageContent;
 }
 
 export interface StreamChunk {
     content: string;
+    reasoning?: string;
+    citations?: { title: string; url: string; source?: string }[];
     done: boolean;
 }
 
 export interface LlmClient {
     streamChat(
         messages: ChatMessage[],
-        onChunk: (chunk: string) => void,
-        onError: (err: Error) => void
+        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[] }) => void,
+        onError: (err: Error) => void,
+        options?: { webSearch?: boolean; reasoning?: boolean }
     ): Promise<void>;
     testConnection(): Promise<{ success: boolean; latency: number; error?: string }>;
+    abort?(): void;
 }

@@ -1,0 +1,64 @@
+import { MODEL_SPECS } from './model-specs';
+
+/**
+ * 根据模型 ID 查找完整的模型规格信息
+ * @param modelId 模型 ID 或名称
+ * @returns 模型规格对象，未找到返回 undefined
+ */
+export function findModelSpec(modelId: string) {
+    const normalizedId = modelId.toLowerCase();
+
+    for (const spec of MODEL_SPECS) {
+        if (typeof spec.pattern === 'string') {
+            if (normalizedId.includes(spec.pattern.toLowerCase())) {
+                return spec;
+            }
+        } else {
+            if (spec.pattern.test(modelId)) {
+                return spec;
+            }
+        }
+    }
+
+    return undefined;
+}
+
+/**
+ * 根据模型 ID 判断是否为强制推理模型（无法通过 API 参数关闭推理）
+ * @param modelId 模型 ID
+ * @returns 是否强制推理
+ */
+export function isForcedReasoningModel(modelId: string): boolean {
+    const spec = findModelSpec(modelId);
+    return spec?.forcedReasoning === true;
+}
+
+/**
+ * 根据模型 ID 获取模型类型
+ * @param modelId 模型 ID
+ * @returns 模型类型，未找到返回 'chat' 作为默认值
+ */
+export function getModelType(modelId: string): 'chat' | 'reasoning' | 'image' | 'embedding' {
+    const spec = findModelSpec(modelId);
+    return spec?.type || 'chat';
+}
+
+/**
+ * 根据模型 ID 获取模型能力标签
+ * @param modelId 模型 ID
+ * @returns 能力对象
+ */
+export function getModelCapabilities(modelId: string) {
+    const spec = findModelSpec(modelId);
+    return spec?.capabilities || {};
+}
+
+/**
+ * 根据模型 ID 获取图标标识符
+ * @param modelId 模型 ID
+ * @returns 图标标识符
+ */
+export function getModelIcon(modelId: string): string | undefined {
+    const spec = findModelSpec(modelId);
+    return spec?.icon;
+}

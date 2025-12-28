@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "_temp_init",
-    "slug": "_temp_init",
-    "scheme": "neuralflow",
+    "name": "Nexara",
+    "slug": "nexara",
+    "scheme": "nexara",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -31,7 +31,14 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you set assistant avatars.",
+          "cameraPermission": "The app accesses your camera to let you take assistant avatars."
+        }
+      ]
     ]
   }
 }

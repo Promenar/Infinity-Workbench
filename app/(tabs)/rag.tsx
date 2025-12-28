@@ -1,162 +1,276 @@
-import React, { useState, useCallback, useEffect, memo } from 'react';
-import { View, TouchableOpacity, Text, BackHandler } from 'react-native';
-import { PageLayout, Typography, ContextMenu, useToast } from '../../src/components/ui';
-import { FileText, Plus, Folder, MoreVertical, Search, Edit2, Trash2, Share, X, Check, FolderInput, ArrowLeft } from 'lucide-react-native';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { PageLayout, Typography, useToast, ConfirmDialog } from '../../src/components/ui';
+import { Search, X, FolderInput, Folder } from 'lucide-react-native';
 import { Stack, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
-import { MOCK_DOCS, DocItem } from '../../src/data/mock';
-import Animated, {
-    FadeIn, FadeOut, SlideInDown, SlideOutDown,
-    FadeInLeft, FadeOutLeft, LinearTransition,
-    ZoomIn, ZoomOut, useAnimatedStyle, useSharedValue, withSpring, withTiming, Easing
-} from 'react-native-reanimated';
-import { clsx } from 'clsx';
-import { useTheme } from '../../src/theme/ThemeProvider';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RagDocItem } from '../../src/components/rag/RagDocItem';
-import { RagFolderCard } from '../../src/components/rag/RagFolderCard';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useI18n } from '../../src/lib/i18n';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRagStore } from '../../src/store/rag-store';
+import { useTheme } from '../../src/theme/ThemeProvider';
+import { ControlBar } from '../../src/components/rag/ControlBar';
+import { FolderTree } from '../../src/components/rag/FolderTree';
+import { CompactDocItem } from '../../src/components/rag/CompactDocItem';
+import { ScrollView } from 'react-native-gesture-handler';
 
 export default function RagScreen() {
     const router = useRouter();
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [isSelectionMode, setIsSelectionMode] = useState(false);
     const { showToast } = useToast();
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const { t } = useI18n();
 
-    // 全局同步动画动力源：统一驱动所有列表项的平移动画
-    const selectionProgress = useSharedValue(0);
+    // RagStore
+    const {
+        documents,
+        folders,
+        loadDocuments,
+        loadFolders,
+        addDocument,
+        deleteDocument,
+        vectorizeDocument,
+        vectorizationQueue,
+        currentTask,
+        addFolder,
+        deleteFolder,
+        renameFolder,
+        moveDocument,
+        expandedFolders,
+        toggleFolder
+    } = useRagStore();
+
+    // 搜索状态
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+    // 文件夹Modal状态
+    const [showFolderModal, setShowFolderModal] = useState(false);
+    const [folderModalMode, setFolderModalMode] = useState<'create' | 'rename'>('create');
+    const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+    const [newFolderName, setNewFolderName] = useState('');
+
+    // 移动文档状态
+    const [showMoveModal, setShowMoveModal] = useState(false);
+    const [movingDocId, setMovingDocId] = useState<string | null>(null);
+
+    // 确认弹窗状态
+    const [confirmState, setConfirmState] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        isDestructive?: boolean;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+        isDestructive: false
+    });
 
     useEffect(() => {
-        selectionProgress.value = withTiming(isSelectionMode ? 1 : 0, {
-            duration: 300,
-            easing: Easing.bezier(0.25, 0.1, 0.25, 1)
-        });
-    }, [isSelectionMode]);
+        loadDocuments();
+        loadFolders();
+    }, []);
 
-    const toggleSelection = useCallback((id: string) => {
-        setSelectedIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) {
-                next.delete(id);
-                if (next.size === 0) setIsSelectionMode(false);
+    // 搜索过滤
+    const filteredDocuments = useMemo(() => {
+        if (!searchQuery.trim()) return documents;
+        const query = searchQuery.toLowerCase();
+        return documents.filter(doc =>
+            doc.title.toLowerCase().includes(query)
+        );
+    }, [documents, searchQuery]);
+
+    // 文件导入
+    const handleFileImport = useCallback(async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['text/plain', 'application/pdf', 'application/json', 'text/markdown'],
+                copyToCacheDirectory: true
+            });
+
+            if (result.canceled) return;
+
+            const file = result.assets[0];
+
+            if (file.size && file.size > 5 * 1024 * 1024) {
+                showToast('文件过大 (最大 5MB)', 'error');
+                return;
+            }
+
+            let content = '';
+            if (file.mimeType === 'application/pdf') {
+                showToast('PDF 解析暂未实现', 'error');
+                return;
             } else {
-                next.add(id);
+                content = await FileSystem.readAsStringAsync(file.uri);
             }
-            return next;
+
+            if (!content.trim()) {
+                showToast('文件为空', 'error');
+                return;
+            }
+
+            await addDocument(file.name, content, file.size || content.length, 'text');
+            showToast('文档已加入队列！', 'success');
+
+        } catch (e) {
+            console.error(e);
+            showToast('导入失败: ' + (e as Error).message, 'error');
+        }
+    }, [addDocument, showToast]);
+
+    // 删除文档
+    const handleDeleteDocument = useCallback((id: string, title: string) => {
+        setConfirmState({
+            visible: true,
+            title: '删除文档',
+            message: `确定删除 "${title}"? 此操作不可撤销。`,
+            isDestructive: true,
+            onConfirm: async () => {
+                await deleteDocument(id);
+                showToast('已删除', 'success');
+                setConfirmState(prev => ({ ...prev, visible: false }));
+            }
         });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }, [deleteDocument, showToast]);
+
+    // 文件夹操作
+    const handleNewFolder = useCallback(() => {
+        setFolderModalMode('create');
+        setEditingFolderId(null);
+        setNewFolderName('');
+        setShowFolderModal(true);
     }, []);
 
-    const startSelectionMode = useCallback((id: string) => {
-        setIsSelectionMode(true);
-        setSelectedIds(new Set([id]));
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const handleRenameFolder = useCallback((id: string, name: string) => {
+        setFolderModalMode('rename');
+        setEditingFolderId(id);
+        setNewFolderName(name);
+        setShowFolderModal(true);
     }, []);
 
-    const cancelSelection = useCallback(() => {
-        setIsSelectionMode(false);
-        setSelectedIds(new Set());
-    }, []);
+    const handleFolderSubmit = useCallback(async () => {
+        if (!newFolderName.trim()) {
+            showToast('请输入名称', 'error');
+            return;
+        }
 
-    useEffect(() => {
-        const backAction = () => {
-            if (isSelectionMode) {
-                cancelSelection();
-                return true;
+        try {
+            if (folderModalMode === 'create') {
+                await addFolder(newFolderName.trim());
+                showToast('文件夹已创建', 'success');
+            } else if (editingFolderId) {
+                await renameFolder(editingFolderId, newFolderName.trim());
+                showToast('已重命名', 'success');
             }
-            return false;
-        };
-        const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-        return () => backHandler.remove();
-    }, [isSelectionMode, cancelSelection]);
+            setShowFolderModal(false);
+            setNewFolderName('');
+            setEditingFolderId(null);
+        } catch (e) {
+            showToast('操作失败: ' + (e as Error).message, 'error');
+        }
+    }, [newFolderName, folderModalMode, editingFolderId, addFolder, renameFolder, showToast]);
 
-    const handleAction = (action: string) => {
-        showToast(`${action} ${selectedIds.size} items`, 'success');
-        cancelSelection();
-    };
+    const handleDeleteFolder = useCallback((id: string, name: string) => {
+        setConfirmState({
+            visible: true,
+            title: '删除文件夹',
+            message: `确定删除 "${name}"? 文档将移至根目录，子文件夹将被级联删除。`,
+            isDestructive: true,
+            onConfirm: async () => {
+                await deleteFolder(id);
+                showToast('已删除', 'success');
+                setConfirmState(prev => ({ ...prev, visible: false }));
+            }
+        });
+    }, [deleteFolder, showToast]);
 
-    // 渲染函数：Header
+    // 移动文档
+    const handleStartMove = useCallback((docId: string) => {
+        setMovingDocId(docId);
+        setShowMoveModal(true);
+    }, []);
+
+    const handleConfirmMove = useCallback(async (folderId: string | null) => {
+        if (!movingDocId) return;
+        try {
+            await moveDocument(movingDocId, folderId);
+            showToast('已移动', 'success');
+            setShowMoveModal(false);
+            setMovingDocId(null);
+        } catch (e) {
+            showToast('移动失败: ' + (e as Error).message, 'error');
+        }
+    }, [movingDocId, moveDocument, showToast]);
+
+    // 批量向量化
+    const handleBatchVectorize = useCallback(() => {
+        const unprocessed = documents.filter(d => d.vectorized === 0 || d.vectorized === -1);
+        if (unprocessed.length === 0) {
+            showToast('没有需要处理的文档', 'info');
+            return;
+        }
+
+        setConfirmState({
+            visible: true,
+            title: '批量向量化',
+            message: `确定要开始对 ${unprocessed.length} 个文档进行向量化处理吗？`,
+            onConfirm: () => {
+                unprocessed.forEach(doc => {
+                    vectorizeDocument(doc.id);
+                });
+                showToast(`已加入 ${unprocessed.length} 个任务`, 'success');
+                setConfirmState(prev => ({ ...prev, visible: false }));
+            }
+        });
+    }, [documents, vectorizeDocument, showToast]);
+
+    // 渲染标题栏
     const renderHeader = () => (
-        <View className="mb-4 overflow-hidden">
-            <View className="px-6 pb-2 bg-white dark:bg-black">
-
-                {/* Bottom Row: Search Bar or Actions - Fixed Height h-12 */}
-                <View className="h-12">
-                    {isSelectionMode ? (
-                        <Animated.View
-                            entering={FadeIn.duration(300)}
-                            exiting={FadeOut.duration(200)}
-                            className="flex-row items-center justify-between h-full"
-                        >
-                            <TouchableOpacity
-                                onPress={() => handleAction('Moved')}
-                                className="flex-1 h-full bg-gray-50 dark:bg-zinc-900 rounded-2xl flex-row items-center justify-center mr-2 border border-gray-100 dark:border-zinc-800"
-                            >
-                                <FolderInput size={18} color="#6366f1" strokeWidth={2} />
-                                <Typography className="ml-2 text-indigo-500 font-bold text-[12px]">{t.library.move}</Typography>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                onPress={() => handleAction('Shared')}
-                                className="flex-1 h-full bg-gray-50 dark:bg-zinc-900 rounded-2xl flex-row items-center justify-center mr-2 border border-gray-100 dark:border-zinc-800"
-                            >
-                                <Share size={18} color="#6366f1" strokeWidth={2} />
-                                <Typography className="ml-2 text-indigo-500 font-bold text-[12px]">{t.library.share}</Typography>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                onPress={() => handleAction('Deleted')}
-                                className="flex-1 h-full bg-red-50 dark:bg-red-500/10 rounded-2xl flex-row items-center justify-center border border-red-100 dark:border-red-900/30"
-                            >
-                                <Trash2 size={18} color="#ef4444" strokeWidth={2} />
-                                <Typography className="ml-2 text-red-500 font-bold text-[12px]">{t.library.delete}</Typography>
-                            </TouchableOpacity>
-                        </Animated.View>
-                    ) : (
-                        <Animated.View
-                            entering={FadeIn.duration(300)}
-                            exiting={FadeOut.duration(200)}
-                            className="h-full bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl flex-row items-center px-4"
-                        >
-                            <Search size={18} color="#94a3b8" strokeWidth={2} />
-                            <Typography style={{ color: '#94a3b8', fontWeight: 'bold', marginLeft: 12, fontSize: 16 }}>{t.library.searchPlaceholder}</Typography>
-                        </Animated.View>
+        <View className="mb-4">
+            {/* 搜索栏 */}
+            <View className="px-6 pb-3">
+                <View className={`h-12 ${isSearchFocused ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500' : 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'} 
+                               border rounded-2xl flex-row items-center px-4 transition-all`}>
+                    <Search size={18} color={isSearchFocused ? "#6366f1" : "#94a3b8"} strokeWidth={2} />
+                    <TextInput
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setIsSearchFocused(false)}
+                        placeholder={t.library.searchPlaceholder}
+                        placeholderTextColor="#94a3b8"
+                        className="flex-1 ml-3 text-gray-900 dark:text-white font-semibold text-base"
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <X size={18} color="#94a3b8" />
+                        </TouchableOpacity>
                     )}
                 </View>
             </View>
 
-            <View className="px-6 mt-1">
-                <Typography variant="sectionHeader" className="mb-3 text-gray-400 font-bold text-[11px] uppercase tracking-wider">{t.library.collections}</Typography>
-                <View className="flex-row">
-                    <RagFolderCard
-                        label={t.library.work}
-                        count={`12 ${t.library.itemsCount}`}
-                        iconColor="#6366f1"
-                        isSelected={selectedIds.has('folder_work')}
-                        isSelectionMode={isSelectionMode}
-                        onPress={() => isSelectionMode ? toggleSelection('folder_work') : router.push('/rag/folder_work')}
-                        onLongPress={() => !isSelectionMode && startSelectionMode('folder_work')}
-                    />
-                    <View style={{ width: 12 }} />
-                    <RagFolderCard
-                        label={t.library.private}
-                        count={`4 ${t.library.itemsCount}`}
-                        iconColor="#818cf8"
-                        isSelected={selectedIds.has('folder_private')}
-                        isSelectionMode={isSelectionMode}
-                        onPress={() => isSelectionMode ? toggleSelection('folder_private') : router.push('/rag/folder_private')}
-                        onLongPress={() => !isSelectionMode && startSelectionMode('folder_private')}
-                    />
-                </View>
-            </View>
+            {/* 控制栏 */}
+            <ControlBar
+                onNewFolder={handleNewFolder}
+                onBatchVectorize={handleBatchVectorize}
+                currentTask={currentTask ? {
+                    docTitle: currentTask.docTitle,
+                    progress: currentTask.progress
+                } : null}
+                queueLength={vectorizationQueue.length}
+            />
 
-            <View className="px-6 mt-8 mb-3">
-                <Typography variant="sectionHeader" className="text-gray-400 font-bold text-[11px] uppercase tracking-wider">{t.library.documentsTitle}</Typography>
+            {/* 文档数量 */}
+            <View className="px-6 mb-3">
+                <Typography variant="sectionHeader" className="text-gray-400 font-bold text-[11px] uppercase tracking-wider">
+                    {searchQuery ? `搜索结果 (${filteredDocuments.length})` : `文档 (${documents.length})`}
+                </Typography>
             </View>
         </View>
     );
@@ -165,76 +279,174 @@ export default function RagScreen() {
         <PageLayout safeArea={false} className="bg-white dark:bg-black">
             <Stack.Screen options={{ headerShown: false }} />
 
-            {/* Fixed Title Header */}
+            {/* 标题 */}
             <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
-                    {isSelectionMode ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                            <TouchableOpacity
-                                onPress={cancelSelection}
-                                style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: isDark ? '#18181b' : '#f9fafb', marginRight: 16 }}
-                            >
-                                <X size={20} color={isDark ? '#94a3b8' : '#64748b'} />
-                            </TouchableOpacity>
-                            <View>
-                                <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#fff' : '#111', lineHeight: 24 }}>
-                                    {selectedIds.size} {t.library.selected}
-                                </Text>
-                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2, lineHeight: 10 }}>
-                                    {t.library.managementMode}
-                                </Text>
-                            </View>
-                        </View>
-                    ) : (
-                        <>
-                            <View>
-                                <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 32 }}>
-                                    {t.library.title}
-                                </Text>
-                                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
-                                    {t.library.description}
-                                </Text>
-                            </View>
-                            <TouchableOpacity
-                                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-                                style={{
-                                    width: 48,
-                                    height: 48,
-                                    backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                                    borderWidth: 1,
-                                    borderColor: isDark ? '#27272a' : '#f1f5f9',
-                                    borderRadius: 16,
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}
-                            >
-                                <Plus size={24} color="#6366f1" strokeWidth={2} />
-                            </TouchableOpacity>
-                        </>
-                    )}
+                    <View>
+                        <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 38 }}>
+                            {t.library.title}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
+                            知识库管理
+                        </Text>
+                    </View>
+                    <TouchableOpacity
+                        onPress={handleFileImport}
+                        style={{
+                            width: 48,
+                            height: 48,
+                            backgroundColor: isDark ? '#18181b' : '#eef2ff',
+                            borderWidth: 1,
+                            borderColor: isDark ? '#27272a' : '#e0e7ff',
+                            borderRadius: 16,
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}
+                    >
+                        <FolderInput size={24} color="#6366f1" strokeWidth={2.5} />
+                    </TouchableOpacity>
                 </View>
             </View>
 
-            <FlashList<DocItem>
-                data={MOCK_DOCS}
-                renderItem={({ item }) => (
-                    <RagDocItem
-                        item={item}
-                        isSelected={selectedIds.has(item.id)}
-                        isSelectionMode={isSelectionMode}
-                        selectionProgress={selectionProgress} // 传递全局进度共享值
-                        onPress={() => isSelectionMode ? toggleSelection(item.id) : Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-                        onLongPress={() => !isSelectionMode && startSelectionMode(item.id)}
-                        showToast={showToast}
+            {/* 文档/文件夹列表 */}
+            <ScrollView
+                contentContainerStyle={{ paddingBottom: 100 }}
+                showsVerticalScrollIndicator={false}
+            >
+                {renderHeader()}
+
+                {searchQuery ? (
+                    filteredDocuments.map(doc => (
+                        <CompactDocItem
+                            key={doc.id}
+                            id={doc.id}
+                            title={doc.title}
+                            vectorized={doc.vectorized}
+                            vectorCount={doc.vectorCount}
+                            fileSize={doc.fileSize}
+                            onPress={() => { }}
+                            onLongPress={() => { }}
+                            onDelete={() => handleDeleteDocument(doc.id, doc.title)}
+                            onVectorize={() => vectorizeDocument(doc.id)}
+                            onMove={() => handleStartMove(doc.id)}
+                        />
+                    ))
+                ) : (
+                    <FolderTree
+                        key={`folders-${folders.length}`}
+                        folders={folders}
+                        documents={documents}
+                        expandedFolders={expandedFolders}
+                        onToggleFolder={toggleFolder}
+                        onSelectFolder={(id) => console.log('Selected folder:', id)}
+                        onDeleteDocument={handleDeleteDocument}
+                        onVectorizeDocument={vectorizeDocument}
+                        onDeleteFolder={handleDeleteFolder}
+                        onRenameFolder={handleRenameFolder}
+                        onMoveDocument={handleStartMove}
                     />
                 )}
-                keyExtractor={(item: any) => item.id}
-                ListHeaderComponent={renderHeader}
-                estimatedItemSize={78}
-                contentContainerStyle={{ paddingBottom: 100 }}
-                {...({} as any)}
-            />
+            </ScrollView>
 
+            {/* 新建文件夹Modal */}
+            <Modal transparent visible={showFolderModal} animationType="fade">
+                <View className="flex-1 bg-black/40 items-center justify-center px-6">
+                    <View className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full shadow-xl">
+                        <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                            {folderModalMode === 'create' ? '新建文件夹' : '重命名文件夹'}
+                        </Typography>
+
+                        <TextInput
+                            value={newFolderName}
+                            onChangeText={setNewFolderName}
+                            placeholder="输入名称"
+                            placeholderTextColor="#94a3b8"
+                            className="bg-gray-50 dark:bg-zinc-800 rounded-xl px-4 py-3 text-gray-900 dark:text-white font-semibold mb-6"
+                            autoFocus
+                        />
+
+                        <View className="flex-row gap-3">
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setShowFolderModal(false);
+                                    setNewFolderName('');
+                                    setEditingFolderId(null);
+                                }}
+                                className="flex-1 h-12 bg-gray-100 dark:bg-zinc-800 rounded-xl items-center justify-center"
+                            >
+                                <Typography className="font-bold text-gray-600 dark:text-gray-400">
+                                    取消
+                                </Typography>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                onPress={handleFolderSubmit}
+                                className="flex-1 h-12 bg-indigo-500 rounded-xl items-center justify-center"
+                            >
+                                <Typography className="font-bold text-white">
+                                    {folderModalMode === 'create' ? '创建' : '确定'}
+                                </Typography>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* 移动文档Modal */}
+            <Modal transparent visible={showMoveModal} animationType="slide">
+                <View className="flex-1 bg-black/40 justify-end">
+                    <View className="bg-white dark:bg-zinc-900 rounded-t-3xl p-6 h-[60%]">
+                        <View className="flex-row justify-between items-center mb-6">
+                            <Typography className="text-xl font-bold text-gray-900 dark:text-white">
+                                移动到文件夹
+                            </Typography>
+                            <TouchableOpacity onPress={() => setShowMoveModal(false)}>
+                                <X size={24} color="#94a3b8" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView className="flex-1">
+                            {/* 根目录项 */}
+                            <TouchableOpacity
+                                onPress={() => handleConfirmMove(null)}
+                                className="flex-row items-center py-4 border-b border-gray-50 dark:border-zinc-800/50"
+                            >
+                                <View className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/20 items-center justify-center mr-4">
+                                    <Folder size={20} color="#6366f1" />
+                                </View>
+                                <Typography className="flex-1 font-bold text-gray-900 dark:text-white">
+                                    根目录
+                                </Typography>
+                            </TouchableOpacity>
+
+                            {/* 文件夹列表 */}
+                            {folders.map(folder => (
+                                <TouchableOpacity
+                                    key={folder.id}
+                                    onPress={() => handleConfirmMove(folder.id)}
+                                    className="flex-row items-center py-4 border-b border-gray-50 dark:border-zinc-800/50"
+                                >
+                                    <View className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/20 items-center justify-center mr-4">
+                                        <Folder size={20} color="#f59e0b" />
+                                    </View>
+                                    <Typography className="flex-1 font-bold text-gray-900 dark:text-white">
+                                        {folder.name}
+                                    </Typography>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            <ConfirmDialog
+                visible={confirmState.visible}
+                title={confirmState.title}
+                message={confirmState.message}
+                isDestructive={confirmState.isDestructive}
+                onConfirm={confirmState.onConfirm}
+                onCancel={() => setConfirmState(prev => ({ ...prev, visible: false }))}
+            />
         </PageLayout>
     );
 }

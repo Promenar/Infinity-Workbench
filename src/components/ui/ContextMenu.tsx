@@ -5,7 +5,7 @@ import { Typography } from './Typography';
 import { clsx } from 'clsx';
 import * as Haptics from 'expo-haptics';
 
-interface ContextMenuItem {
+export interface ContextMenuItem {
     label: string;
     icon?: React.ReactNode;
     onPress: () => void;

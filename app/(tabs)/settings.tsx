@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Switch } from 'react-native';
 import { PageLayout } from '../../src/components/ui/PageLayout';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useI18n } from '../../src/lib/i18n';
 import { useTheme } from '../../src/theme/ThemeProvider';
+import { BackupSettings } from '../../src/features/settings/BackupSettings';
 import { useToast } from '../../src/components/ui/Toast';
 import { useSettingsStore } from '../../src/store/settings-store';
 import { useApiStore, ProviderConfig, ModelConfig } from '../../src/store/api-store';
 import { clsx } from 'clsx';
-import { Globe, Moon, Bell, Info, Plus, Server, Trash2, Edit2, Cpu, FileText, Mic, Layers, ChevronRight } from 'lucide-react-native';
+import { Globe, Moon, Bell, Info, Plus, Server, Trash2, Edit2, Cpu, FileText, Mic, Layers, ChevronRight, Sun, Monitor } from 'lucide-react-native';
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
 import { ModelSettingsModal } from '../../src/features/settings/ModelSettingsModal';
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
 
 export default function SettingsScreen() {
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<'app' | 'providers'>('app');
     const [modalVisible, setModalVisible] = useState(false);
     const [modelModalVisible, setModelModalVisible] = useState(false);
@@ -28,7 +30,7 @@ export default function SettingsScreen() {
     const [editingProvider, setEditingProvider] = useState<ProviderConfig | null>(null);
     const [activeProviderForModels, setActiveProviderForModels] = useState<ProviderConfig | null>(null);
     const { t } = useI18n();
-    const { theme, setTheme } = useTheme();
+    const { theme, setTheme, isDark } = useTheme();
     const { showToast } = useToast();
     const {
         language, setLanguage,
@@ -55,7 +57,7 @@ export default function SettingsScreen() {
             <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
                     <View>
-                        <Text style={{ fontSize: 32, fontWeight: '900', color: theme === 'dark' ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 32 }}>
+                        <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 38 }}>
                             {t.settings.title}
                         </Text>
                         <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
@@ -67,7 +69,7 @@ export default function SettingsScreen() {
 
             <ScrollView style={{ flex: 1, paddingHorizontal: 24 }} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
                 {/* 标签切换器 */}
-                <View style={{ flexDirection: 'row', backgroundColor: theme === 'dark' ? '#27272a' : '#f3f4f6', padding: 4, borderRadius: 16, marginBottom: 32 }}>
+                <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#27272a' : '#f3f4f6', padding: 4, borderRadius: 16, marginBottom: 32 }}>
                     <TouchableOpacity
                         onPress={() => {
                             setTimeout(() => {
@@ -80,11 +82,11 @@ export default function SettingsScreen() {
                             paddingVertical: 12,
                             borderRadius: 12,
                             alignItems: 'center',
-                            backgroundColor: activeTab === 'app' ? (theme === 'dark' ? '#3f3f46' : '#ffffff') : 'transparent'
+                            backgroundColor: activeTab === 'app' ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent'
                         }}
                     >
-                        <Text style={{ fontWeight: 'bold', color: activeTab === 'app' ? (theme === 'dark' ? '#fff' : '#111') : '#9ca3af' }}>
-                            应用设置
+                        <Text style={{ fontWeight: 'bold', color: activeTab === 'app' ? (isDark ? '#fff' : '#111') : '#9ca3af' }}>
+                            {t.settings.appSettings}
                         </Text>
                     </TouchableOpacity>
 
@@ -100,11 +102,11 @@ export default function SettingsScreen() {
                             paddingVertical: 12,
                             borderRadius: 12,
                             alignItems: 'center',
-                            backgroundColor: activeTab === 'providers' ? (theme === 'dark' ? '#3f3f46' : '#ffffff') : 'transparent'
+                            backgroundColor: activeTab === 'providers' ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent'
                         }}
                     >
-                        <Text style={{ fontWeight: 'bold', color: activeTab === 'providers' ? (theme === 'dark' ? '#fff' : '#111') : '#9ca3af' }}>
-                            服务商管理
+                        <Text style={{ fontWeight: 'bold', color: activeTab === 'providers' ? (isDark ? '#fff' : '#111') : '#9ca3af' }}>
+                            {t.settings.providerSettings}
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -114,21 +116,21 @@ export default function SettingsScreen() {
                         {/* 基础设置 */}
                         <View style={{ marginBottom: 24 }}>
                             <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16 }}>
-                                基础设置
+                                {t.settings.basicSettings}
                             </Text>
-                            <View style={{ backgroundColor: theme === 'dark' ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
+                            <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
                                 {/* 语言设置 */}
-                                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: theme === 'dark' ? '#27272a' : '#e5e7eb' }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#27272a' : '#e5e7eb' }}>
                                     <Globe size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                             {t.settings.language}
                                         </Text>
                                         <Text style={{ fontSize: 14, color: '#6b7280', marginTop: 4 }}>
                                             {language === 'zh' ? '简体中文' : 'English'}
                                         </Text>
                                     </View>
-                                    <View style={{ flexDirection: 'row', backgroundColor: theme === 'dark' ? '#27272a' : '#e5e7eb', borderRadius: 20, padding: 4 }}>
+                                    <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#27272a' : '#e5e7eb', borderRadius: 20, padding: 4 }}>
                                         <TouchableOpacity
                                             onPress={() => {
                                                 setTimeout(() => {
@@ -140,7 +142,7 @@ export default function SettingsScreen() {
                                                 paddingHorizontal: 12,
                                                 paddingVertical: 4,
                                                 borderRadius: 16,
-                                                backgroundColor: language === 'zh' ? (theme === 'dark' ? '#3f3f46' : '#ffffff') : 'transparent'
+                                                backgroundColor: language === 'zh' ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent'
                                             }}
                                         >
                                             <Text style={{ fontSize: 12, fontWeight: 'bold', color: language === 'zh' ? '#6366f1' : '#9ca3af' }}>中</Text>
@@ -156,7 +158,7 @@ export default function SettingsScreen() {
                                                 paddingHorizontal: 12,
                                                 paddingVertical: 4,
                                                 borderRadius: 16,
-                                                backgroundColor: language === 'en' ? (theme === 'dark' ? '#3f3f46' : '#ffffff') : 'transparent'
+                                                backgroundColor: language === 'en' ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent'
                                             }}
                                         >
                                             <Text style={{ fontSize: 12, fontWeight: 'bold', color: language === 'en' ? '#6366f1' : '#9ca3af' }}>EN</Text>
@@ -168,34 +170,78 @@ export default function SettingsScreen() {
                                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}>
                                     <Moon size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                             {t.settings.appearance}
                                         </Text>
-                                        <Text style={{ fontSize: 14, color: '#6b7280', marginTop: 4 }}>
-                                            {t.settings.themeDark}
+                                        <Text style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+                                            {theme === 'system' ? t.settings.themeSystem : (isDark ? t.settings.themeDark : t.settings.themeLight)}
                                         </Text>
                                     </View>
-                                    <Switch
-                                        value={theme === 'dark'}
-                                        onValueChange={(v) => {
-                                            setTimeout(() => {
-                                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                                setTheme(v ? 'dark' : 'light');
-                                            }, 10);
-                                        }}
-                                        trackColor={{ false: '#e2e8f0', true: '#818cf8' }}
-                                        thumbColor={'#ffffff'}
-                                    />
+                                    <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#27272a' : '#e5e7eb', borderRadius: 20, padding: 2 }}>
+                                        {[
+                                            { mode: 'light', icon: Sun },
+                                            { mode: 'system', icon: Monitor },
+                                            { mode: 'dark', icon: Moon }
+                                        ].map((item) => {
+                                            const m = item.mode as any;
+                                            const Icon = item.icon;
+                                            return (
+                                                <TouchableOpacity
+                                                    key={m}
+                                                    onPress={() => {
+                                                        setTimeout(() => {
+                                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                                            setTheme(m);
+                                                        }, 10);
+                                                    }}
+                                                    style={{
+                                                        paddingHorizontal: 12,
+                                                        paddingVertical: 8,
+                                                        borderRadius: 16,
+                                                        backgroundColor: theme === m ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}
+                                                >
+                                                    <Icon size={14} color={theme === m ? '#6366f1' : '#9ca3af'} />
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
                                 </View>
+
+                                {/* 搜索配置 */}
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setTimeout(() => {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            router.push('/settings/search');
+                                        }, 10);
+                                    }}
+                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: isDark ? '#27272a' : '#e5e7eb' }}
+                                >
+                                    <Globe size={20} color="#6b7280" />
+                                    <View style={{ flex: 1, marginLeft: 12 }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
+                                            {t.settings.webSearchConfig}
+                                        </Text>
+                                        <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
+                                            {t.settings.webSearchConfigDesc}
+                                        </Text>
+                                    </View>
+                                    <ChevronRight size={20} color="#9ca3af" />
+                                </TouchableOpacity>
                             </View>
                         </View>
+
+                        <BackupSettings />
 
                         {/* 模型预设 */}
                         <View style={{ marginBottom: 24 }}>
                             <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16 }}>
                                 {t.settings.modelPresets.title}
                             </Text>
-                            <View style={{ backgroundColor: theme === 'dark' ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
+                            <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
                                 {/* 摘要模型 */}
                                 <TouchableOpacity
                                     onPress={() => {
@@ -209,11 +255,11 @@ export default function SettingsScreen() {
                                             setPickerVisible(true);
                                         }, 10);
                                     }}
-                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: theme === 'dark' ? '#27272a' : '#e5e7eb' }}
+                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#27272a' : '#e5e7eb' }}
                                 >
                                     <FileText size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                             {t.settings.modelPresets.summary}
                                         </Text>
                                         <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
@@ -236,11 +282,11 @@ export default function SettingsScreen() {
                                             setPickerVisible(true);
                                         }, 10);
                                     }}
-                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: theme === 'dark' ? '#27272a' : '#e5e7eb' }}
+                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#27272a' : '#e5e7eb' }}
                                 >
                                     <Mic size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                             {t.settings.modelPresets.speech}
                                         </Text>
                                         <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
@@ -267,7 +313,7 @@ export default function SettingsScreen() {
                                 >
                                     <Layers size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                             {t.settings.modelPresets.embedding}
                                         </Text>
                                         <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
@@ -282,16 +328,16 @@ export default function SettingsScreen() {
                         {/* 应用信息 */}
                         <View style={{ marginBottom: 24 }}>
                             <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16 }}>
-                                应用
+                                {t.settings.appSection}
                             </Text>
-                            <View style={{ backgroundColor: theme === 'dark' ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
+                            <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
                                 <TouchableOpacity
                                     onPress={() => showToast('通知设置', 'info')}
-                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: theme === 'dark' ? '#27272a' : '#e5e7eb' }}
+                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#27272a' : '#e5e7eb' }}
                                 >
                                     <Bell size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                             {t.settings.notifications}
                                         </Text>
                                         <Text style={{ fontSize: 14, color: '#6b7280', marginTop: 4 }}>
@@ -301,12 +347,12 @@ export default function SettingsScreen() {
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    onPress={() => showToast('NeuralFlow v1.0.0', 'info')}
+                                    onPress={() => showToast('Nexara v1.0.0', 'info')}
                                     style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
                                 >
                                     <Info size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                             {t.settings.about}
                                         </Text>
                                         <Text style={{ fontSize: 14, color: '#6b7280', marginTop: 4 }}>
@@ -340,7 +386,7 @@ export default function SettingsScreen() {
                             }}
                         >
                             <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '600' }}>
-                                + 添加服务商
+                                + {t.settings.addProvider}
                             </Text>
                         </TouchableOpacity>
 
@@ -348,10 +394,10 @@ export default function SettingsScreen() {
                         {providers.length === 0 ? (
                             <View style={{ alignItems: 'center', paddingVertical: 60 }}>
                                 <Text style={{ fontSize: 16, color: '#9ca3af', marginBottom: 8 }}>
-                                    暂无服务商配置
+                                    {t.settings.noProviders}
                                 </Text>
                                 <Text style={{ fontSize: 14, color: '#d1d5db' }}>
-                                    点击上方按钮添加您的第一个服务商
+                                    {t.settings.noProvidersDesc}
                                 </Text>
                             </View>
                         ) : (
@@ -360,17 +406,17 @@ export default function SettingsScreen() {
                                     <View
                                         key={provider.id}
                                         style={{
-                                            backgroundColor: theme === 'dark' ? '#18181b' : '#f9fafb',
+                                            backgroundColor: isDark ? '#18181b' : '#f9fafb',
                                             borderRadius: 12,
                                             padding: 16,
                                             borderWidth: 1,
-                                            borderColor: theme === 'dark' ? '#27272a' : '#e5e7eb'
+                                            borderColor: isDark ? '#27272a' : '#e5e7eb'
                                         }}
                                     >
                                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                                             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                                                 <Server size={20} color="#6366f1" />
-                                                <Text style={{ fontSize: 16, fontWeight: '600', color: theme === 'dark' ? '#fff' : '#111', marginLeft: 8 }}>
+                                                <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111', marginLeft: 8 }}>
                                                     {provider.name}
                                                 </Text>
                                             </View>
@@ -392,7 +438,7 @@ export default function SettingsScreen() {
                                                         setTimeout(() => {
                                                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                                             deleteProvider(provider.id);
-                                                            showToast('已删除服务商', 'success');
+                                                            showToast(t.settings.providerDeleted, 'success');
                                                         }, 10);
                                                     }}
                                                     style={{ padding: 8 }}
@@ -416,7 +462,7 @@ export default function SettingsScreen() {
                                                 marginTop: 12,
                                                 paddingVertical: 8,
                                                 paddingHorizontal: 12,
-                                                backgroundColor: theme === 'dark' ? '#27272a' : '#f3f4f6',
+                                                backgroundColor: isDark ? '#27272a' : '#f3f4f6',
                                                 borderRadius: 8
                                             }}
                                         >
@@ -433,9 +479,11 @@ export default function SettingsScreen() {
                 )}
 
                 <View style={{ marginTop: 32, alignItems: 'center', opacity: 0.3 }}>
-                    <Text style={{ color: '#9ca3af', fontSize: 10, fontWeight: 'bold', letterSpacing: 4, textTransform: 'uppercase' }}>
-                        NeuralFlow AI • Project Narcis
-                    </Text>
+                    <View className="items-center pb-8 pt-4">
+                        <Text className={`text-xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
+                            Nexara AI • Project Narcis
+                        </Text>
+                    </View>
                 </View>
             </ScrollView>
 
