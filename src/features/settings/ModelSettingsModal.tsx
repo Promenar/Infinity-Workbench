@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, TouchableOpacity, Modal, TextInput, ActivityIndicator, Platform, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Switch } from '../../components/ui/Switch';
-import { X, Plus, Trash2, Cpu, Globe, Eye, Zap, RefreshCw, Search, CheckCircle2, AlertCircle, ChevronLeft } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { X, Plus, Trash2, Cpu, Globe, Eye, Zap, RefreshCw, Search, CheckCircle2, AlertCircle, ChevronLeft, Edit2 } from 'lucide-react-native';
+import * as Haptics from '../../lib/haptics';
 import { GlassHeader } from '../../components/ui/GlassHeader';
+import { Typography } from '../../components/ui/Typography';
 import { FlashList } from '@shopify/flash-list';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -12,6 +13,7 @@ import { ProviderConfig, ModelConfig } from '../../store/api-store';
 import { useToast } from '../../components/ui/Toast';
 import { createLlmClient } from '../../lib/llm/factory';
 import { findContextLength, extractContextLengthFromName } from '../../lib/llm/model-specs';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
 // 使用 any 绕过某些环境下 FlashList 的类型检测问题
 const TypedFlashList = FlashList as any;
@@ -67,37 +69,45 @@ const ModelItem = React.memo(({
                 marginBottom: 8,
                 marginHorizontal: 16,
                 borderWidth: 1,
-                borderColor: isDark ? '#27272a' : '#e5e7eb'
+                borderColor: isDark ? '#27272a' : '#e5e7eb',
+                minHeight: 185 // Ensure stable height for FlashList measurement
             }}
         >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <View style={{ flex: 1, marginRight: 10 }}>
-                    <TextInput
-                        value={localName}
-                        onChangeText={setLocalName}
-                        onBlur={() => localName !== model.name && handleSync({ name: localName })}
-                        style={{
-                            fontSize: 14,
-                            fontWeight: 'bold',
-                            color: isDark ? '#fff' : '#111',
-                            marginBottom: 4,
-                        }}
-                        placeholder="Model Name"
-                        placeholderTextColor="#9ca3af"
-                    />
-                    <TextInput
-                        value={localId}
-                        editable={!model.isAutoFetched}
-                        onChangeText={setLocalId}
-                        onBlur={() => localId !== model.id && handleSync({ id: localId })}
-                        style={{
-                            fontSize: 10,
-                            color: model.isAutoFetched ? '#6b7280' : (isDark ? '#d1d5db' : '#4b5563'),
-                            fontFamily: 'monospace',
-                        }}
-                        placeholder="api-model-id"
-                        placeholderTextColor="#9ca3af"
-                    />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                        <TextInput
+                            value={localName}
+                            onChangeText={setLocalName}
+                            onBlur={() => localName !== model.name && handleSync({ name: localName })}
+                            style={{
+                                fontSize: 14,
+                                fontWeight: 'bold',
+                                color: isDark ? '#fff' : '#111',
+                                flex: 1,
+                            }}
+                            placeholder="Model Name"
+                            placeholderTextColor="#9ca3af"
+                        />
+                        <Edit2 size={12} color="#9ca3af" style={{ opacity: 0.5 }} />
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TextInput
+                            value={localId}
+                            editable={!model.isAutoFetched}
+                            onChangeText={setLocalId}
+                            onBlur={() => localId !== model.id && handleSync({ id: localId })}
+                            style={{
+                                fontSize: 10,
+                                color: model.isAutoFetched ? '#6b7280' : (isDark ? '#d1d5db' : '#4b5563'),
+                                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                                flex: 1,
+                            }}
+                            placeholder="api-model-id"
+                            placeholderTextColor="#9ca3af"
+                        />
+                        {!model.isAutoFetched && <Edit2 size={10} color="#9ca3af" style={{ opacity: 0.5 }} />}
+                    </View>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TouchableOpacity
@@ -113,6 +123,7 @@ const ModelItem = React.memo(({
                     </TouchableOpacity>
 
                     <Switch
+                        key={model.uuid} // Critical Fix: Prevent animation reset on FlashList recycle
                         value={model.enabled}
                         onValueChange={(v) => onToggle(model.uuid, v)}
                     />
@@ -225,13 +236,43 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
     const [isFetching, setIsFetching] = useState(false);
     const [testResults, setTestResults] = useState<Record<string, { loading: boolean; success?: boolean; latency?: number; error?: string }>>({});
 
+    // Confirmation Dialog State
+    const [confirmState, setConfirmState] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        isDestructive?: boolean;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+        isDestructive: false
+    });
+
+    const [isReady, setIsReady] = useState(false);
+
     useEffect(() => {
         if (visible && provider) {
-            // 对没有 uuid 的旧数据进行迁移
-            const initialModels = (provider.models || []).map(m => m.uuid ? m : { ...m, uuid: m.id + '-' + Math.random().toString(36).substr(2, 9) });
-            setModels(initialModels);
-            setSearchQuery('');
-            setTestResults({});
+            // Defer list processing to allow modal animation to complete smoothly
+            const task = setTimeout(() => {
+                // 对没有 uuid 的旧数据进行迁移
+                const initialModels = (provider.models || []).map(m => m.uuid ? m : { ...m, uuid: m.id + '-' + Math.random().toString(36).substr(2, 9) });
+                setModels(initialModels);
+                setSearchQuery('');
+                setTestResults({});
+                setIsReady(true);
+                setModels(initialModels);
+                setSearchQuery('');
+                setTestResults({});
+                setIsReady(true);
+            }, 10); // 10ms delay (minimal) for animation to start, preventing "blank" feel
+
+            return () => clearTimeout(task);
+        } else {
+            setIsReady(false);
+            setModels([]);
         }
     }, [visible, provider]);
 
@@ -471,7 +512,7 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
             capabilities: {},
         };
         setModels(prev => {
-            const next = [...prev, newModel];
+            const next = [newModel, ...prev]; // Prepend new model
             onUpdateModels(next);
             return next;
         });
@@ -479,20 +520,40 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
     };
 
     const handleDisableAll = () => {
-        setModels(prev => {
-            const next = prev.map(m => ({ ...m, enabled: false }));
-            onUpdateModels(next);
-            return next;
+        setConfirmState({
+            visible: true,
+            title: t.settings.modelSettings.disableAll,
+            message: 'Are you sure you want to disable all models?',
+            isDestructive: false,
+            onConfirm: () => {
+                setModels(prev => {
+                    const next = prev.map(m => ({ ...m, enabled: false }));
+                    onUpdateModels(next);
+                    return next;
+                });
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                showToast(t.settings.modelSettings.disableAllSuccess || 'All models disabled', 'info');
+                setConfirmState(prev => ({ ...prev, visible: false }));
+            }
         });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        showToast(t.settings.modelSettings.disableAllSuccess || '已关闭所有模型', 'info');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     };
 
     const handleDeleteAll = () => {
-        setModels([]);
-        onUpdateModels([]);
+        setConfirmState({
+            visible: true,
+            title: t.settings.modelSettings.deleteAll,
+            message: 'Are you sure you want to delete ALL models? This action cannot be undone.',
+            isDestructive: true,
+            onConfirm: () => {
+                setModels([]);
+                onUpdateModels([]);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                showToast(t.settings.modelSettings.deleteAllSuccess || 'All models deleted', 'info');
+                setConfirmState(prev => ({ ...prev, visible: false }));
+            }
+        });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        showToast(t.settings.modelSettings.deleteAllSuccess || '已删除所有模型', 'info');
     };
 
     const filteredModels = useMemo(() => {
@@ -518,151 +579,173 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
         />
     ), [theme, isDark, t, handleToggleModel, handleDeleteModel, handleUpdateModel, handleTestModel, testResults]);
 
+    const renderHeader = useCallback(() => (
+        <View>
+            <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+                <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: isDark ? 'rgba(24, 24, 27, 0.8)' : '#f3f4f6', // Zinc-900 with transparency
+                    borderRadius: 14,
+                    paddingHorizontal: 12,
+                    height: 48,
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb'
+                }}>
+                    <Search size={18} color="#9ca3af" />
+                    <TextInput
+                        placeholder={t.settings.modelSettings.searchPlaceholder}
+                        placeholderTextColor="#9ca3af"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        style={{ flex: 1, marginLeft: 8, fontSize: 14, color: isDark ? '#fff' : '#111' }}
+                    />
+                    {searchQuery !== '' && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <X size={16} color="#9ca3af" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+
+            <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {/* 自动拉取 */}
+                    <TouchableOpacity
+                        onPress={handleAutoFetch}
+                        disabled={isFetching}
+                        style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
+                            paddingVertical: 10,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#e5e7eb',
+                            gap: 4
+                        }}
+                    >
+                        {isFetching ? <ActivityIndicator size="small" color="#6366f1" /> : <RefreshCw size={16} color="#6366f1" />}
+                        <Text style={{ fontWeight: 'bold', color: isDark ? '#fff' : '#111', fontSize: 12 }}>
+                            {t.settings.modelSettings.fetch || '拉取'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    {/* 手动添加 */}
+                    <TouchableOpacity
+                        onPress={handleManualAdd}
+                        style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
+                            paddingVertical: 10,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#e5e7eb',
+                            gap: 4
+                        }}
+                    >
+                        <Plus size={16} color="#10b981" />
+                        <Text style={{ fontWeight: 'bold', color: isDark ? '#fff' : '#111', fontSize: 12 }}>
+                            {t.settings.modelSettings.add || '添加'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={handleDisableAll}
+                        style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#fef2f2',
+                            paddingVertical: 10,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#fecaca',
+                            gap: 4
+                        }}
+                    >
+                        <X size={16} color="#ef4444" />
+                        <Text style={{ fontWeight: 'bold', color: '#ef4444', fontSize: 12 }}>
+                            {t.settings.modelSettings.close || '关闭'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={handleDeleteAll}
+                        style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#fef2f2',
+                            paddingVertical: 10,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#fecaca',
+                            gap: 4
+                        }}
+                    >
+                        <Trash2 size={16} color="#dc2626" />
+                        <Text style={{ fontWeight: 'bold', color: "#dc2626", fontSize: 12 }}>
+                            {t.settings.modelSettings.deleteAll || '删除'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+    ), [isDark, theme, searchQuery, isFetching, t, handleAutoFetch, handleManualAdd, handleDisableAll, handleDeleteAll]);
+
     return (
         <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={{ flex: 1, backgroundColor: theme === 'dark' ? '#000' : '#fff' }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1, backgroundColor: isDark ? '#09090b' : '#f9fafb' }} // Hardcode dark bg to avoid transparency issues
+                keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
             >
                 <GlassHeader
                     title={provider?.name || ''}
                     subtitle={t.settings.modelSettings.title}
                     leftAction={{
-                        icon: <ChevronLeft size={24} color={theme === 'dark' ? '#fff' : '#000'} />,
+                        icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
                         onPress: onClose
                     }}
-                    intensity={theme === 'dark' ? 40 : 60}
+                    intensity={isDark ? 0 : 60} // Disable blur in dark mode to avoid gray overlay
                 />
 
-                <View style={{ paddingHorizontal: 16, marginTop: insets.top + 64 + 16 }}>
-                    <View style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: theme === 'dark' ? '#18181b' : '#f3f4f6',
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        height: 48,
-                        borderWidth: 1,
-                        borderColor: theme === 'dark' ? '#27272a' : '#e5e7eb'
-                    }}>
-                        <Search size={18} color="#9ca3af" />
-                        <TextInput
-                            placeholder={t.settings.modelSettings.searchPlaceholder}
-                            placeholderTextColor="#9ca3af"
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            style={{ flex: 1, marginLeft: 8, fontSize: 14, color: theme === 'dark' ? '#fff' : '#111' }}
-                        />
-                        {searchQuery !== '' && (
-                            <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                <X size={16} color="#9ca3af" />
-                            </TouchableOpacity>
-                        )}
+                {isReady ? (
+                    <TypedFlashList
+                        data={filteredModels}
+                        renderItem={renderItem}
+                        estimatedItemSize={195}
+                        removeClippedSubviews={false}
+                        keyExtractor={(item: ModelConfig) => item.uuid}
+                        contentContainerStyle={{
+                            paddingBottom: 100,
+                            paddingTop: insets.top + 64 + 16 // Header height + spacing
+                        }}
+                        ListHeaderComponent={renderHeader}
+                        extraData={testResults}
+                        getItemType={() => 'model'}
+                    />
+                ) : (
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100 }}>
+                        <ActivityIndicator size="large" color="#6366f1" />
                     </View>
-                </View>
+                )}
 
-                <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                        {/* 自动拉取 */}
-                        <TouchableOpacity
-                            onPress={handleAutoFetch}
-                            disabled={isFetching}
-                            style={{
-                                flex: 1,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor: theme === 'dark' ? '#18181b' : '#f3f4f6',
-                                paddingVertical: 10,
-                                borderRadius: 10,
-                                borderWidth: 1,
-                                borderColor: theme === 'dark' ? '#27272a' : '#e5e7eb',
-                                gap: 4
-                            }}
-                        >
-                            {isFetching ? <ActivityIndicator size="small" color="#6366f1" /> : <RefreshCw size={16} color="#6366f1" />}
-                            <Text style={{ fontWeight: 'bold', color: theme === 'dark' ? '#fff' : '#111', fontSize: 12 }}>
-                                {t.settings.modelSettings.fetch || '拉取'}
-                            </Text>
-                        </TouchableOpacity>
-
-                        {/* 手动添加 */}
-                        <TouchableOpacity
-                            onPress={handleManualAdd}
-                            style={{
-                                flex: 1,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor: theme === 'dark' ? '#18181b' : '#f3f4f6',
-                                paddingVertical: 10,
-                                borderRadius: 10,
-                                borderWidth: 1,
-                                borderColor: theme === 'dark' ? '#27272a' : '#e5e7eb',
-                                gap: 4
-                            }}
-                        >
-                            <Plus size={16} color="#10b981" />
-                            <Text style={{ fontWeight: 'bold', color: theme === 'dark' ? '#fff' : '#111', fontSize: 12 }}>
-                                {t.settings.modelSettings.add || '添加'}
-                            </Text>
-                        </TouchableOpacity>
-
-                        {/* 全部关闭 */}
-                        <TouchableOpacity
-                            onPress={handleDisableAll}
-                            style={{
-                                flex: 1,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor: '#fef2f2',
-                                paddingVertical: 10,
-                                borderRadius: 10,
-                                borderWidth: 1,
-                                borderColor: '#fecaca',
-                                gap: 4
-                            }}
-                        >
-                            <X size={16} color="#ef4444" />
-                            <Text style={{ fontWeight: 'bold', color: '#ef4444', fontSize: 12 }}>
-                                {t.settings.modelSettings.close || '关闭'}
-                            </Text>
-                        </TouchableOpacity>
-
-                        {/* 全部删除 */}
-                        <TouchableOpacity
-                            onPress={handleDeleteAll}
-                            style={{
-                                flex: 1,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor: '#fef2f2',
-                                paddingVertical: 10,
-                                borderRadius: 10,
-                                borderWidth: 1,
-                                borderColor: '#fecaca',
-                                gap: 4
-                            }}
-                        >
-                            <Trash2 size={16} color="#dc2626" />
-                            <Text style={{ fontWeight: 'bold', color: '#dc2626', fontSize: 12 }}>
-                                {t.settings.modelSettings.deleteAll || '删除'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                <TypedFlashList
-                    data={filteredModels}
-                    renderItem={renderItem}
-                    estimatedItemSize={140} // 经过测量的大致平均高度
-                    drawDistance={1200} // 降低预渲染距离以换取更高的主线程空闲率
-                    keyExtractor={(item: ModelConfig) => item.uuid}
-                    contentContainerStyle={{ paddingBottom: 100, paddingTop: 10 }}
-                    extraData={testResults} // 确保状态更新能触发必要重绘，而无需重新计算整个 renderItem 闭包（配合 ModelItem.memo 效果更佳）
-                    params={{ keyboardShouldPersistTaps: 'handled' }}
+                <ConfirmDialog
+                    visible={confirmState.visible}
+                    title={confirmState.title}
+                    message={confirmState.message}
+                    isDestructive={confirmState.isDestructive}
+                    onConfirm={confirmState.onConfirm}
+                    onCancel={() => setConfirmState(prev => ({ ...prev, visible: false }))}
                 />
             </KeyboardAvoidingView>
         </Modal>
@@ -670,24 +753,24 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
 }
 
 function TypeButton({ label, active, onPress }: { label: string, active: boolean, onPress: () => void }) {
-    const { theme } = useTheme();
+    const { isDark } = useTheme();
     return (
         <TouchableOpacity
             onPress={onPress}
             style={{
                 paddingHorizontal: 8,
                 paddingVertical: 3,
-                borderRadius: 5,
-                backgroundColor: active ? '#6366f1' : (theme === 'dark' ? '#27272a' : '#f3f4f6'),
+                borderRadius: 7,
+                backgroundColor: active ? '#6366f1' : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6'),
             }}
         >
-            <Text style={{ fontSize: 9, fontWeight: 'bold', color: active ? '#fff' : '#6b7280' }}>{label}</Text>
+            <Typography style={{ fontSize: 9, fontWeight: 'bold', color: active ? '#fff' : (isDark ? '#9ca3af' : '#6b7280') }}>{label}</Typography>
         </TouchableOpacity>
     );
 }
 
 function CapabilityTag({ icon, label, active, onToggle }: { icon: React.ReactNode, label: string, active?: boolean, onToggle: () => void }) {
-    const { theme } = useTheme();
+    const { isDark } = useTheme();
     return (
         <TouchableOpacity
             onPress={onToggle}
@@ -697,18 +780,18 @@ function CapabilityTag({ icon, label, active, onToggle }: { icon: React.ReactNod
                 paddingHorizontal: 6,
                 paddingVertical: 3,
                 borderRadius: 6,
-                backgroundColor: active ? '#6366f115' : (theme === 'dark' ? '#27272a' : '#f3f4f6'),
+                backgroundColor: active ? (isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)') : (isDark ? 'rgba(24, 24, 27, 0.5)' : '#f3f4f6'),
                 borderWidth: 1,
-                borderColor: active ? '#6366f1' : 'transparent',
+                borderColor: active ? '#6366f1' : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'transparent'),
                 gap: 3
             }}
         >
             <View style={{ opacity: active ? 1 : 0.5 }}>
                 {React.isValidElement(icon) && React.cloneElement(icon as React.ReactElement<any>, {
-                    color: active ? '#6366f1' : '#6b7280'
+                    color: active ? '#6366f1' : (isDark ? '#9ca3af' : '#6b7280')
                 })}
             </View>
-            <Text style={{ fontSize: 9, fontWeight: 'bold', color: active ? '#6366f1' : '#6b7280' }}>{label}</Text>
+            <Typography style={{ fontSize: 9, fontWeight: 'bold', color: active ? '#6366f1' : (isDark ? '#9ca3af' : '#6b7280') }}>{label}</Typography>
         </TouchableOpacity>
     );
 }

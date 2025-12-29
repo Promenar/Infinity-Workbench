@@ -14,12 +14,24 @@ export interface StreamChunk {
     done: boolean;
 }
 
+export interface ChatMessageOptions {
+    webSearch?: boolean;
+    reasoning?: boolean;
+    inferenceParams?: {
+        temperature?: number;
+        topP?: number;
+        maxTokens?: number;
+        frequencyPenalty?: number;
+        presencePenalty?: number;
+    };
+}
+
 export interface LlmClient {
     streamChat(
         messages: ChatMessage[],
-        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[] }) => void,
+        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[]; usage?: { input: number; output: number; total: number } }) => void,
         onError: (err: Error) => void,
-        options?: { webSearch?: boolean; reasoning?: boolean }
+        options?: ChatMessageOptions
     ): Promise<void>;
     testConnection(): Promise<{ success: boolean; latency: number; error?: string }>;
     abort?(): void;

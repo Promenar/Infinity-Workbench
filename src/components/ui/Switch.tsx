@@ -8,7 +8,7 @@ import Animated, {
     withTiming
 } from 'react-native-reanimated';
 import { useTheme } from '../../theme/ThemeProvider';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 
 interface SwitchProps {
     value: boolean;

@@ -50,8 +50,8 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                 </Animated.View>
 
                 <Animated.View
-                    entering={SlideInDown.springify().damping(28).stiffness(160)}
-                    exiting={SlideOutDown.duration(200)}
+                    entering={SlideInDown.duration(350).easing(Easing.out(Easing.quad))}
+                    exiting={SlideOutDown.duration(250).easing(Easing.in(Easing.quad))}
                     style={[
                         styles.floatContainer,
                         {

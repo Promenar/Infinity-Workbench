@@ -1,5 +1,10 @@
-import { LlmClient, ChatMessage } from '../types';
+import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { KJUR } from 'jsrsasign';
+
+// Add global polyfill for TextEncoder if missing (RN environment)
+if (typeof TextEncoder === 'undefined') {
+    global.TextEncoder = require('text-encoding').TextEncoder;
+}
 
 export class VertexAiClient implements LlmClient {
     private apiKey: string;
@@ -12,23 +17,44 @@ export class VertexAiClient implements LlmClient {
     private activeXhr: XMLHttpRequest | null = null;
     private accessToken: string | null = null;
     private tokenExpiry: number = 0;
+    private serviceAccountJson: any;
 
-    constructor(config: {
-        apiKey: string;
-        model: string;
-        temperature: number;
-        baseUrl: string;
-        project?: string;
-        location?: string;
-        keyJson?: string;
-    }) {
-        this.apiKey = config.apiKey;
-        this.baseUrl = config.baseUrl;
-        this.model = config.model;
-        this.temperature = config.temperature;
-        this.project = config.project;
-        this.location = config.location;
-        this.keyJson = config.keyJson;
+    constructor(
+        // Allow passing either the full config object OR a service account JSON (legacy/alternative param style)
+        configOrJson: {
+            apiKey: string;
+            model: string;
+            temperature: number;
+            baseUrl: string;
+            project?: string;
+            location?: string;
+            keyJson?: string;
+        } | any,
+        model?: string,
+        temperature?: number,
+        location: string = 'us-central1'
+    ) {
+        // Handle dual constructor signature for backward compatibility
+        if (model !== undefined && temperature !== undefined) {
+            // Legacy signature: (serviceAccountJson, model, temperature, location)
+            this.serviceAccountJson = configOrJson;
+            this.model = model;
+            this.temperature = temperature;
+            this.location = location;
+            this.apiKey = ''; // Not used when using service account json directly
+            this.baseUrl = ''; // Derived from location
+            this.project = this.serviceAccountJson.project_id;
+        } else {
+            // Config object signature
+            const config = configOrJson;
+            this.apiKey = config.apiKey;
+            this.baseUrl = config.baseUrl;
+            this.model = config.model;
+            this.temperature = config.temperature;
+            this.project = config.project;
+            this.location = config.location;
+            this.keyJson = config.keyJson;
+        }
     }
 
     private async getAccessToken(): Promise<string> {
@@ -37,13 +63,23 @@ export class VertexAiClient implements LlmClient {
             return this.accessToken;
         }
 
-        if (!this.keyJson) {
-            // Fallback to API Key if no JSON provided (rare for Vertex but possible)
-            return this.apiKey;
+        // 1. If we have serviceAccountJson (from Constructor A), use it
+        if (this.serviceAccountJson) {
+            return this.mintToken(this.serviceAccountJson);
         }
 
-        try {
+        // 2. If we have keyJson (from Constructor B settings), parse and use it
+        if (this.keyJson) {
             const keyData = JSON.parse(this.keyJson);
+            return this.mintToken(keyData);
+        }
+
+        // 3. Fallback to API Key if no JSON provided (limited scope)
+        return this.apiKey;
+    }
+
+    private async mintToken(keyData: any): Promise<string> {
+        try {
             const now = Math.floor(Date.now() / 1000);
 
             const header = { alg: 'RS256', typ: 'JWT' };
@@ -70,6 +106,16 @@ export class VertexAiClient implements LlmClient {
                 throw new Error(`Token exchange failed: ${res.status} ${errText}`);
             }
 
+            // Rule 8.4: Capture HTML error pages
+            const contentType = res.headers.get('Content-Type') || '';
+            if (!contentType.includes('application/json')) {
+                const text = await res.text();
+                if (text.trim().startsWith('<')) {
+                    throw new Error(`Received HTML error page instead of JSON for auth token.`);
+                }
+                throw new Error(`Unexpected Content-Type for auth: ${contentType}`);
+            }
+
             const data = await res.json();
             this.accessToken = data.access_token;
             this.tokenExpiry = Date.now() + (data.expires_in * 1000);
@@ -84,11 +130,13 @@ export class VertexAiClient implements LlmClient {
         messages: ChatMessage[],
         onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[] }) => void,
         onError: (err: Error) => void,
-        options?: { webSearch?: boolean; reasoning?: boolean }
+        options?: ChatMessageOptions
     ): Promise<void> {
         return new Promise(async (resolve, reject) => {
             try {
-                if (!this.project) throw new Error('Project ID is required');
+                // Ensure we have a project ID
+                const projectId = this.project || this.serviceAccountJson?.project_id;
+                if (!projectId) throw new Error('Project ID is required');
 
                 // 1. Get Authentication
                 const token = await this.getAccessToken().catch(e => {
@@ -100,7 +148,7 @@ export class VertexAiClient implements LlmClient {
                 const host = region === 'global' ? 'aiplatform.googleapis.com' : `${region}-aiplatform.googleapis.com`;
 
                 // Use v1beta1 to support preview models and newer features
-                const endpoint = `https://${host}/v1beta1/projects/${this.project}/locations/${region}/publishers/google/models/${this.model}:streamGenerateContent`;
+                const endpoint = `https://${host}/v1beta1/projects/${projectId}/locations/${region}/publishers/google/models/${this.model}:streamGenerateContent`;
 
                 this.activeXhr = new XMLHttpRequest();
                 const xhr = this.activeXhr;
@@ -141,8 +189,10 @@ export class VertexAiClient implements LlmClient {
                         ...formatMessage(m)
                     })),
                     generationConfig: {
-                        temperature: this.temperature || 0.7,
-                        ...(options?.reasoning ? {
+                        temperature: options?.inferenceParams?.temperature ?? (this.temperature || 0.7),
+                        topP: options?.inferenceParams?.topP,
+                        maxOutputTokens: options?.inferenceParams?.maxTokens,
+                        ...(options?.reasoning && !this.model.includes('image') ? {
                             thinkingConfig: {
                                 includeThoughts: true
                             }
@@ -157,6 +207,12 @@ export class VertexAiClient implements LlmClient {
                 let lastPosition = 0;
                 let buffer = '';
 
+                // Queue to ensure strict order of chunks and async image writes
+                let processingQueue = Promise.resolve();
+                const enqueue = (task: () => void | Promise<void>) => {
+                    processingQueue = processingQueue.then(task).catch(e => console.error('Stream processing error:', e));
+                };
+
                 xhr.onreadystatechange = () => {
                     if (xhr.readyState === 3 || xhr.readyState === 4) {
                         const newText = xhr.responseText.substring(lastPosition);
@@ -167,45 +223,66 @@ export class VertexAiClient implements LlmClient {
                         let startIdx = 0;
                         let bracketCount = 0;
                         let insideString = false;
-                        let escape = false;
 
                         for (let i = 0; i < buffer.length; i++) {
                             const char = buffer[i];
-                            if (char === '"' && !escape) insideString = !insideString;
-                            if (!insideString) {
-                                if (char === '{') {
-                                    if (bracketCount === 0) startIdx = i;
-                                    bracketCount++;
-                                } else if (char === '}') {
-                                    bracketCount--;
-                                    if (bracketCount === 0) {
-                                        const objStr = buffer.substring(startIdx, i + 1);
+
+                            if (insideString) {
+                                // ⚡ FAST PATH: Jump to next quote
+                                const nextQuote = buffer.indexOf('"', i);
+                                if (nextQuote === -1) {
+                                    i = buffer.length;
+                                    break;
+                                }
+
+                                // Check for escape char
+                                let backslashCount = 0;
+                                let j = nextQuote - 1;
+                                while (j >= i && buffer[j] === '\\') {
+                                    backslashCount++;
+                                    j--;
+                                }
+
+                                i = nextQuote;
+                                if (backslashCount % 2 === 0) {
+                                    insideString = false;
+                                }
+                                continue;
+                            }
+
+                            if (char === '"') {
+                                insideString = true;
+                            } else if (char === '{') {
+                                if (bracketCount === 0) startIdx = i;
+                                bracketCount++;
+                            } else if (char === '}') {
+                                bracketCount--;
+                                if (bracketCount === 0) {
+                                    const objStr = buffer.substring(startIdx, i + 1);
+
+                                    // Process this JSON object
+                                    enqueue(async () => {
                                         try {
                                             const json = JSON.parse(objStr);
-                                            // Handle Array of candidates or single object
                                             const responseObj = Array.isArray(json) ? json[0] : json;
                                             const candidate = responseObj.candidates?.[0];
 
                                             if (candidate) {
                                                 let text = '';
                                                 let reasoning = '';
+                                                let images: { mime: string, uri: string }[] = [];
 
                                                 if (candidate.content?.parts) {
                                                     for (const part of candidate.content.parts) {
-                                                        // In Gemini 2.0 Thinking/Flash Thinking:
-                                                        // A part might have { text: "...", thought: true } or separate parts.
                                                         const isThoughtPart = part.thought === true || typeof part.thought === 'string';
 
+                                                        // 1. Thinking
                                                         if (isThoughtPart) {
-                                                            if (typeof part.thought === 'string') {
-                                                                reasoning += part.thought;
-                                                            }
-                                                            if (part.text) {
-                                                                reasoning += part.text;
-                                                            }
-                                                        } else if (part.text) {
-                                                            // If any part in this chunk has thought: true, 
-                                                            // the text parts in this chunk are likely reasoning.
+                                                            if (typeof part.thought === 'string') reasoning += part.thought;
+                                                            if (part.text) reasoning += part.text;
+                                                        }
+                                                        // 2. Text
+                                                        else if (part.text) {
                                                             const chunkHasThought = candidate.content.parts.some((p: any) => p.thought === true);
                                                             if (chunkHasThought) {
                                                                 reasoning += part.text;
@@ -213,13 +290,50 @@ export class VertexAiClient implements LlmClient {
                                                                 text += part.text;
                                                             }
                                                         }
+                                                        // 3. Images (inlineData)
+                                                        else if (part.inlineData) {
+                                                            // Extract Base64 image data
+                                                            const { mimeType, data } = part.inlineData;
 
-                                                        if (part.reasoning_content) reasoning += part.reasoning_content;
+                                                            // IMPORTANT: Save to filesystem to avoid performance issues
+                                                            // Large Base64 data URIs (several MB) cause severe lag
+                                                            try {
+                                                                // Lazy import to avoid circular dependency
+                                                                const { saveBase64ToFile, generateThumbnail } = require('../../image-utils');
+
+                                                                // Save original
+                                                                const originalUri = await saveBase64ToFile(data, 'originals', mimeType);
+
+                                                                // Generate thumbnail for faster display
+                                                                const thumbnailUri = await generateThumbnail(originalUri, {
+                                                                    maxWidth: 512,
+                                                                    compress: 0.75
+                                                                });
+
+                                                                // Use thumbnail for chat (much smaller)
+                                                                images.push({
+                                                                    mime: mimeType,
+                                                                    uri: thumbnailUri
+                                                                });
+
+                                                                console.log('[VertexAI] Saved to file:', thumbnailUri.substring(0, 80));
+                                                            } catch (error) {
+                                                                console.error('[VertexAI] File save failed:', error);
+                                                                // Fallback: data URI (will lag)
+                                                                const dataUri = `data:${mimeType};base64,${data}`;
+                                                                images.push({ mime: mimeType, uri: dataUri });
+                                                            }
+                                                        }
                                                     }
                                                 }
 
+                                                // Append images to text as local file links
+                                                for (const img of images) {
+                                                    // Use file:// URI directly in markdown
+                                                    text += `\n\n![Generated Image](${img.uri})\n\n`;
+                                                }
+
                                                 let citations: { title: string; url: string; source?: string }[] | undefined;
-                                                // groundingMetadata can be in candidate or at the top level
                                                 const groundingMetadata = candidate.groundingMetadata || responseObj.groundingMetadata;
 
                                                 if (groundingMetadata?.groundingChunks) {
@@ -240,26 +354,33 @@ export class VertexAiClient implements LlmClient {
                                                     });
                                                 }
                                             }
-                                        } catch (e) { }
-                                        startIdx = i + 1;
-                                    }
+                                        } catch (e) {
+                                            // JSON parse error or other logic error
+                                            console.error('Stream processing error', e);
+                                        }
+                                    });
+
+                                    startIdx = i + 1;
                                 }
                             }
-                            escape = char === '\\' && !escape;
                         }
                         if (startIdx > 0) buffer = buffer.substring(startIdx);
                     }
+
                     if (xhr.readyState === 4) {
-                        if (xhr.status === 0) {
-                            resolve(); // Aborted
-                        } else if (xhr.status >= 200 && xhr.status < 300) {
-                            resolve();
-                        } else {
-                            const err = new Error(`Vertex API Error (${xhr.status}): ${xhr.responseText.substring(0, 200)}`);
-                            onError(err);
-                            reject(err);
-                        }
-                        this.activeXhr = null;
+                        // Wait for all processing to finish before resolving
+                        enqueue(() => {
+                            if (xhr.status === 0) {
+                                resolve(); // Aborted
+                            } else if (xhr.status >= 200 && xhr.status < 300) {
+                                resolve();
+                            } else {
+                                const err = new Error(`Vertex API Error (${xhr.status}): ${xhr.responseText.substring(0, 200)}`);
+                                onError(err);
+                                reject(err);
+                            }
+                            this.activeXhr = null;
+                        });
                     }
                 };
 
@@ -289,7 +410,8 @@ export class VertexAiClient implements LlmClient {
     async testConnection(): Promise<{ success: boolean; latency: number; error?: string }> {
         const start = Date.now();
         try {
-            if (!this.project) throw new Error('Project ID is required (settings)');
+            const projectId = this.project || this.serviceAccountJson?.project_id;
+            if (!projectId) throw new Error('Project ID is required (settings)');
 
             const token = await this.getAccessToken();
 
@@ -297,7 +419,7 @@ export class VertexAiClient implements LlmClient {
             const host = region === 'global' ? 'aiplatform.googleapis.com' : `${region}-aiplatform.googleapis.com`;
 
             // Use v1beta1
-            const endpoint = `https://${host}/v1beta1/projects/${this.project}/locations/${region}/publishers/google/models/${this.model}:generateContent`;
+            const endpoint = `https://${host}/v1beta1/projects/${projectId}/locations/${region}/publishers/google/models/${this.model}:generateContent`;
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -314,7 +436,14 @@ export class VertexAiClient implements LlmClient {
             const latency = Date.now() - start;
 
             if (!response.ok) {
+                // Rule 8.4: Capture HTML error pages
+                const contentType = response.headers.get('Content-Type') || '';
                 const errorText = await response.text();
+
+                if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+                    return { success: false, latency, error: `HTTP ${response.status}: Received non-JSON response (possibly HTML error page).` };
+                }
+
                 return { success: false, latency, error: `HTTP ${response.status}: ${errorText.substring(0, 100)}` };
             }
 

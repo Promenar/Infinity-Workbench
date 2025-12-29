@@ -3,13 +3,12 @@ import { View, Modal, TouchableOpacity, StyleSheet, Dimensions } from 'react-nat
 import Animated, {
     FadeIn,
     FadeOut,
-    SlideInDown,
-    SlideOutDown,
-    Layout
+    FadeInUp,
 } from 'react-native-reanimated';
 import { Typography } from './Typography';
 import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
+import { LayoutAnimations } from '../../theme/animations';
 
 interface ConfirmDialogProps {
     visible: boolean;
@@ -54,8 +53,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <Modal transparent visible={visible} animationType="none">
             <View style={styles.container}>
                 <Animated.View
-                    entering={FadeIn.duration(200)}
-                    exiting={FadeOut.duration(200)}
+                    entering={LayoutAnimations.FadeIn}
+                    exiting={LayoutAnimations.FadeOut}
                     style={StyleSheet.absoluteFill}
                 >
                     <TouchableOpacity
@@ -66,8 +65,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 </Animated.View>
 
                 <Animated.View
-                    entering={SlideInDown.springify().damping(20).stiffness(150)}
-                    exiting={SlideOutDown.duration(200)}
+                    entering={LayoutAnimations.ModalEnter}
+                    exiting={LayoutAnimations.ModalExit}
                     style={styles.modalContent}
                 >
                     <View className="bg-white dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-2xl border border-gray-100 dark:border-zinc-800">

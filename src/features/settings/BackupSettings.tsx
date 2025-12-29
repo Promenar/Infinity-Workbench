@@ -1,22 +1,51 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, Switch, TouchableOpacity, ScrollView, Alert, TextInput, Modal, ActivityIndicator, FlatList, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, ActivityIndicator, FlatList, Platform } from 'react-native';
+import { Switch } from '../../components/ui';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
+import { useToast } from '../../components/ui/Toast';
 import { Cloud, Upload, Download, Save, RefreshCw, X, Folder, FileJson, CheckCircle } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { BackupManager, BackupData } from '../../lib/backup/BackupManager';
 import { WebDavClient, WebDavFile } from '../../lib/backup/WebDavClient';
 
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+
 export function BackupSettings() {
     const { isDark } = useTheme();
     const { t } = useI18n();
+    const { showToast } = useToast();
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<string>('');
+
+    // Confirm Dialog State
+    const [confirmDialog, setConfirmDialog] = useState({
+        visible: false,
+        title: '',
+        message: '',
+        confirmText: '',
+        isDestructive: false,
+        onConfirm: () => { }
+    });
+
+    const showConfirm = (title: string, message: string, onConfirm: () => void, isDestructive = false) => {
+        setConfirmDialog({
+            visible: true,
+            title,
+            message,
+            confirmText: t.common.confirm || 'Confirm',
+            isDestructive,
+            onConfirm: () => {
+                setConfirmDialog(prev => ({ ...prev, visible: false }));
+                onConfirm();
+            }
+        });
+    };
 
     // WebDAV Config
     const [webDavConfig, setWebDavConfig] = useState({
@@ -64,10 +93,10 @@ export function BackupSettings() {
             if (await Sharing.isAvailableAsync()) {
                 await Sharing.shareAsync(fileUri);
             } else {
-                Alert.alert(t.settings.backup.backupCreated, `Saved to ${fileUri}`);
+                showToast(t.settings.backup.backupCreated, 'success');
             }
         } catch (e: any) {
-            Alert.alert(t.settings.backup.exportFailed, e.message);
+            showToast(e.message, 'error');
         } finally {
             setLoading(false);
             setStatus('');
@@ -83,35 +112,29 @@ export function BackupSettings() {
 
             if (result.canceled) return;
 
-            Alert.alert(
+            showConfirm(
                 t.settings.backup.restoreTitle,
                 t.settings.backup.restoreWarning,
-                [
-                    { text: t.common.cancel, style: 'cancel' },
-                    {
-                        text: t.settings.backup.restoreAction,
-                        style: 'destructive',
-                        onPress: async () => {
-                            setLoading(true);
-                            setStatus(t.settings.backup.restoring);
-                            try {
-                                const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
-                                const backup: BackupData = JSON.parse(content);
-                                await BackupManager.importData(backup);
-                                Alert.alert(t.settings.backup.successTitle, t.settings.backup.restoreSuccess);
-                            } catch (e: any) {
-                                Alert.alert(t.settings.backup.importFailed, e.message);
-                            } finally {
-                                setLoading(false);
-                                setStatus('');
-                            }
-                        }
+                async () => {
+                    setLoading(true);
+                    setStatus(t.settings.backup.restoring);
+                    try {
+                        const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+                        const backup: BackupData = JSON.parse(content);
+                        await BackupManager.importData(backup);
+                        showToast(t.settings.backup.restoreSuccess, 'success');
+                    } catch (e: any) {
+                        showToast(e.message, 'error');
+                    } finally {
+                        setLoading(false);
+                        setStatus('');
                     }
-                ]
+                },
+                true
             );
 
         } catch (e: any) {
-            Alert.alert('Error', e.message);
+            showToast(e.message, 'error');
         }
     };
 
@@ -131,17 +154,16 @@ export function BackupSettings() {
         try {
             const client = getClient();
             await client.checkConnection();
-            Alert.alert(t.settings.backup.connectionSuccess, t.settings.backup.connectionSuccessDesc);
+            showToast(t.settings.backup.connectionSuccess, 'success');
         } catch (e: any) {
-            Alert.alert(t.settings.backup.connectionFailed, e.message);
+            showToast(e.message, 'error');
         } finally {
             setLoading(false);
         }
     };
-
     const handleWebDavUpload = async () => {
         if (!webDavConfig.enabled) {
-            Alert.alert(t.settings.backup.webDavDisabled, t.settings.backup.webDavDisabledDesc);
+            showToast(t.settings.backup.webDavDisabled, 'info');
             return;
         }
 
@@ -154,9 +176,9 @@ export function BackupSettings() {
             const filename = `nexara_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
 
             await client.uploadFile(filename, json);
-            Alert.alert(t.settings.backup.successTitle, t.settings.backup.uploadSuccess);
+            showToast(t.settings.backup.uploadSuccess, 'success');
         } catch (e: any) {
-            Alert.alert(t.settings.backup.uploadFailed, e.message);
+            showToast(e.message, 'error');
         } finally {
             setLoading(false);
             setStatus('');
@@ -165,7 +187,7 @@ export function BackupSettings() {
 
     const handleWebDavRestore = async () => {
         if (!webDavConfig.enabled) {
-            Alert.alert(t.settings.backup.webDavDisabled, t.settings.backup.webDavDisabledDesc);
+            showToast(t.settings.backup.webDavDisabled, 'info');
             return;
         }
 
@@ -182,7 +204,7 @@ export function BackupSettings() {
             setRemoteFiles(backups);
             setShowRemoteFilesModal(true);
         } catch (e: any) {
-            Alert.alert(t.common.error, e.message);
+            showToast(e.message, 'error');
         } finally {
             setLoading(false);
             setStatus('');
@@ -191,45 +213,48 @@ export function BackupSettings() {
 
     const confirmRemoteRestore = (file: WebDavFile) => {
         setShowRemoteFilesModal(false);
-        Alert.alert(
+        showConfirm(
             t.settings.backup.confirmCloudRestore,
             t.settings.backup.confirmCloudRestoreDesc.replace('{filename}', file.filename),
-            [
-                { text: t.common.cancel, style: 'cancel' },
-                {
-                    text: t.settings.backup.restoreAction,
-                    style: 'destructive',
-                    onPress: async () => {
-                        setLoading(true);
-                        setStatus(t.settings.backup.downloading.replace('{filename}', file.filename));
-                        try {
-                            const client = getClient();
-                            const content = await client.downloadFile(file.filename);
-                            setStatus(t.settings.backup.restoring);
-                            const backup: BackupData = JSON.parse(content);
-                            await BackupManager.importData(backup);
-                            Alert.alert(t.settings.backup.successTitle, t.settings.backup.restoreSuccess);
-                        } catch (e: any) {
-                            Alert.alert(t.settings.backup.importFailed, e.message);
-                        } finally {
-                            setLoading(false);
-                            setStatus('');
-                        }
-                    }
+            async () => {
+                setLoading(true);
+                setStatus(t.settings.backup.downloading.replace('{filename}', file.filename));
+                try {
+                    const client = getClient();
+                    const content = await client.downloadFile(file.filename);
+                    setStatus(t.settings.backup.restoring);
+                    const backup: BackupData = JSON.parse(content);
+                    await BackupManager.importData(backup);
+                    showToast(t.settings.backup.restoreSuccess, 'success');
+                } catch (e: any) {
+                    showToast(e.message, 'error');
+                } finally {
+                    setLoading(false);
+                    setStatus('');
                 }
-            ]
+            },
+            true
         );
     }
 
     return (
         <View className="mb-6">
-            <Text className={`text-sm font-bold mb-4 uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <Text className={`text-[10px] font-bold mb-3 uppercase tracking-widest ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                 {t.settings.backup.backupHeader}
             </Text>
 
-            <View className={`rounded-xl overflow-hidden border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'}`}>
+            <View className={`rounded-3xl overflow-hidden border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-gray-50 border-gray-200'}`}>
 
                 {/* Local Actions */}
+                <ConfirmDialog
+                    visible={confirmDialog.visible}
+                    title={confirmDialog.title}
+                    message={confirmDialog.message}
+                    confirmText={confirmDialog.confirmText}
+                    isDestructive={confirmDialog.isDestructive}
+                    onConfirm={confirmDialog.onConfirm}
+                    onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
+                />
                 <View className="p-4 border-b border-gray-100 dark:border-zinc-800">
                     <Text className={`font-medium mb-3 ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>{t.settings.backup.localStorage}</Text>
                     <View className="flex-row gap-3">
@@ -265,7 +290,6 @@ export function BackupSettings() {
                                 if (v && !webDavConfig.url) setShowWebDavModal(true);
                                 saveConfig({ ...webDavConfig, enabled: v });
                             }}
-                            trackColor={{ false: '#767577', true: '#6366f1' }}
                         />
                     </View>
 
@@ -276,7 +300,6 @@ export function BackupSettings() {
                                 <Switch
                                     value={(webDavConfig as any).autoBackup || false}
                                     onValueChange={(v) => saveConfig({ ...webDavConfig, autoBackup: v })}
-                                    trackColor={{ false: '#767577', true: '#6366f1' }}
                                 />
                             </View>
 
@@ -318,7 +341,7 @@ export function BackupSettings() {
                 )}
             </View>
 
-            {/* WebDAV Configuration Modal - Using Layout-Based Keyboard Avoidance Pattern */}
+            {/* WebDAV Configuration Modal */}
             <Modal visible={showWebDavModal} transparent animationType="slide">
                 <View className="flex-1 justify-end bg-black/50">
                     <KeyboardAvoidingView

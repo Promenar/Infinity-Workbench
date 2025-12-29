@@ -1,7 +1,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../db';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Buffer } from 'buffer';
 
 export interface BackupData {
@@ -19,6 +19,7 @@ export interface BackupData {
         folders: any[];
         documents: any[];
         vectors: any[]; // embeddings will be base64 strings
+        context_summaries: any[];
     };
 }
 
@@ -50,7 +51,7 @@ export class BackupManager {
 
                 const data = await this.exportData();
                 const json = JSON.stringify(data);
-                const filename = `neuralflow_auto_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+                const filename = `nexara_auto_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
 
                 await client.uploadFile(filename, json);
                 await AsyncStorage.setItem('last_auto_backup_time', now.toString());
@@ -68,7 +69,7 @@ export class BackupManager {
         console.log('[BackupManager] Starting export...');
 
         // 1. Export AsyncStorage
-        const keys = ['settings-storage-v2', 'chat-storage', 'api-storage', 'agent-storage', 'theme_mode'];
+        const keys = ['settings-storage-v2', 'chat-storage', 'api-storage-v2', 'agent-storage', 'spa-storage', 'theme_mode', 'backup_config', 'last_auto_backup_time'];
         const stores = await AsyncStorage.multiGet(keys);
         const asyncStorageData: Record<string, string> = {};
 
@@ -102,11 +103,13 @@ export class BackupManager {
             embedding: v.embedding ? Buffer.from(v.embedding).toString('base64') : null
         }));
 
+        const context_summaries = await this.safeQuery('SELECT * FROM context_summaries');
+
         return {
             meta: {
                 version: BACKUP_VERSION,
                 timestamp: Date.now(),
-                platform: 'neuralflow',
+                platform: 'nexara',
                 schemaVersion: 1
             },
             asyncStorage: asyncStorageData,
@@ -116,7 +119,8 @@ export class BackupManager {
                 attachments,
                 folders,
                 documents,
-                vectors
+                vectors,
+                context_summaries
             }
         };
     }
@@ -154,6 +158,7 @@ export class BackupManager {
             await db.execute('DELETE FROM attachments');
             await db.execute('DELETE FROM messages');
             await db.execute('DELETE FROM documents');
+            await db.execute('DELETE FROM context_summaries');
             await db.execute('DELETE FROM sessions'); // Check circular deps? sessions usually root
             await db.execute('DELETE FROM folders');
 
@@ -173,6 +178,9 @@ export class BackupManager {
 
             // Attachments
             await this.bulkInsert('attachments', backup.sqlite.attachments);
+
+            // Context Summaries
+            await this.bulkInsert('context_summaries', backup.sqlite.context_summaries);
 
             // Vectors
             // Convert Base64 back to Blob/Buffer

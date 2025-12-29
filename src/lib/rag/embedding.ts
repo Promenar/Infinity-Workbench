@@ -50,6 +50,17 @@ export class EmbeddingClient {
         });
 
         if (!res.ok) throw new Error(`OpenAI Embedding Error: ${res.status} ${await res.text()}`);
+
+        // Rule 8.4: Capture HTML error pages
+        const contentType = res.headers.get('Content-Type') || '';
+        if (!contentType.includes('application/json')) {
+            const text = await res.text();
+            if (text.trim().startsWith('<')) {
+                throw new Error(`Received HTML error page instead of JSON for embeddings.`);
+            }
+            throw new Error(`Unexpected Content-Type: ${contentType}`);
+        }
+
         const data = await res.json();
         return data.data.map((item: any) => item.embedding);
     }

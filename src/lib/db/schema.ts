@@ -89,6 +89,20 @@ export const createTables = async () => {
       );
     `);
 
+    // 7. Context Summaries (Advanced Context Management)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS context_summaries (
+        id TEXT PRIMARY KEY NOT NULL,
+        session_id TEXT NOT NULL,
+        start_message_id TEXT NOT NULL,
+        end_message_id TEXT NOT NULL,
+        summary_content TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        token_usage INTEGER, -- Cost tracking
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+    `);
+
     console.log('[DB] Tables created successfully');
   } catch (e) {
     console.error('[DB] Error creating tables:', e);

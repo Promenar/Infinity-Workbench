@@ -98,6 +98,14 @@ export class WebDavClient {
             const authHeader = response.headers.get('www-authenticate');
             if (authHeader) console.log('[WebDav] WWW-Authenticate:', authHeader);
 
+            const contentType = response.headers.get('Content-Type') || '';
+            const errorText = await response.text();
+
+            // Rule 8.4: Capture HTML error pages
+            if (errorText.trim().startsWith('<') || !contentType.includes('xml')) {
+                throw new Error(`WebDAV Error: ${response.status}. Received non-XML response (possibly HTML error page).`);
+            }
+
             throw new Error(`WebDAV Error: ${response.status} (${authHeader || response.statusText})`);
         }
 

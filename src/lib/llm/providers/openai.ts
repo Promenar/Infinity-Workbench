@@ -1,4 +1,4 @@
-import { LlmClient, ChatMessage } from '../types';
+import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 
 export class OpenAiClient implements LlmClient {
     private apiKey: string;
@@ -18,9 +18,9 @@ export class OpenAiClient implements LlmClient {
 
     async streamChat(
         messages: ChatMessage[],
-        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[] }) => void,
+        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[]; usage?: { input: number; output: number; total: number } }) => void,
         onError: (err: Error) => void,
-        options?: { webSearch?: boolean; reasoning?: boolean }
+        options?: ChatMessageOptions
     ): Promise<void> {
         return new Promise((resolve, reject) => {
             try {
@@ -51,9 +51,19 @@ export class OpenAiClient implements LlmClient {
                                 const delta = json.choices?.[0]?.delta;
                                 const content = delta?.content || '';
                                 const reasoning = delta?.reasoning_content;
+                                const usageRaw = json.usage;
 
-                                if (content || reasoning) {
-                                    onChunk({ content, reasoning });
+                                let usage: { input: number; output: number; total: number } | undefined;
+                                if (usageRaw) {
+                                    usage = {
+                                        input: usageRaw.prompt_tokens,
+                                        output: usageRaw.completion_tokens,
+                                        total: usageRaw.total_tokens
+                                    };
+                                }
+
+                                if (content || reasoning || usage) {
+                                    onChunk({ content, reasoning, usage });
                                 }
                             } catch (e) {
                                 // Partial JSON, ignore or wait
@@ -85,8 +95,13 @@ export class OpenAiClient implements LlmClient {
                 xhr.send(JSON.stringify({
                     model: this.model,
                     messages,
-                    temperature: this.temperature,
+                    temperature: options?.inferenceParams?.temperature ?? this.temperature,
+                    top_p: options?.inferenceParams?.topP,
+                    max_tokens: options?.inferenceParams?.maxTokens,
+                    frequency_penalty: options?.inferenceParams?.frequencyPenalty,
+                    presence_penalty: options?.inferenceParams?.presencePenalty,
                     stream: true,
+                    stream_options: { include_usage: true }
                 }));
 
             } catch (e) {
@@ -133,7 +148,14 @@ export class OpenAiClient implements LlmClient {
             const latency = Date.now() - start;
 
             if (!response.ok) {
+                // Rule 8.4: Capture HTML error pages
+                const contentType = response.headers.get('Content-Type') || '';
                 const errorText = await response.text();
+
+                if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+                    return { success: false, latency, error: `HTTP ${response.status}: Received non-JSON response (possibly HTML error page).` };
+                }
+
                 return { success: false, latency, error: `HTTP ${response.status}: ${errorText.substring(0, 100)}` };
             }
 

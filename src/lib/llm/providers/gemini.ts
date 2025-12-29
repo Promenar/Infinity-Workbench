@@ -1,4 +1,5 @@
-import { LlmClient, ChatMessage } from '../types';
+import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
+import { supportsThinkingConfig } from '../model-utils';
 
 export class GeminiClient implements LlmClient {
     private apiKey: string;
@@ -7,18 +8,18 @@ export class GeminiClient implements LlmClient {
     private temperature: number;
     private activeXhr: XMLHttpRequest | null = null;
 
-    constructor(apiKey: string, model: string, temperature: number, baseUrl: string = 'https://generativelanguage.googleapis.com') {
+    constructor(apiKey: string, model: string, temperature: number) {
         this.apiKey = apiKey;
-        this.baseUrl = baseUrl;
+        this.baseUrl = 'https://generativelanguage.googleapis.com'; // Default base URL
         this.model = model;
         this.temperature = temperature;
     }
 
     async streamChat(
         messages: ChatMessage[],
-        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[] }) => void,
+        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[]; usage?: { input: number; output: number; total: number } }) => void,
         onError: (err: Error) => void,
-        options?: { webSearch?: boolean; reasoning?: boolean }
+        options?: ChatMessageOptions
     ): Promise<void> {
         return new Promise((resolve, reject) => {
             try {
@@ -32,7 +33,7 @@ export class GeminiClient implements LlmClient {
 
                 const formatMessage = (m: ChatMessage) => {
                     if (typeof m.content === 'string') {
-                        return { matches: true, parts: [{ text: m.content }] };
+                        return { parts: [{ text: m.content }] };
                     }
                     if (Array.isArray(m.content)) {
                         const parts = m.content.map((c: any) => {
@@ -51,19 +52,24 @@ export class GeminiClient implements LlmClient {
                             }
                             return null;
                         }).filter(Boolean);
-                        return { matches: true, parts };
+                        return { parts };
                     }
-                    return { matches: false, parts: [] };
+                    return { parts: [] };
                 };
+
+                // Safety: Only enable thinking config if model supports it and user enabled reasoning
+                const shouldEnableThinking = options?.reasoning && supportsThinkingConfig(this.model);
 
                 let body: any = {
                     contents: messages.map(m => ({
                         role: m.role === 'assistant' ? 'model' : 'user',
-                        parts: formatMessage(m).parts
+                        ...formatMessage(m)
                     })),
                     generationConfig: {
-                        temperature: this.temperature || 0.7,
-                        ...(options?.reasoning ? {
+                        temperature: options?.inferenceParams?.temperature ?? (this.temperature || 0.7),
+                        topP: options?.inferenceParams?.topP,
+                        maxOutputTokens: options?.inferenceParams?.maxTokens,
+                        ...(shouldEnableThinking ? {
                             thinkingConfig: {
                                 includeThoughts: true
                             }
@@ -102,9 +108,24 @@ export class GeminiClient implements LlmClient {
                                         const objStr = buffer.substring(startIdx, i + 1);
                                         try {
                                             const json = JSON.parse(objStr);
-                                            const candidate = json.candidates?.[0];
+                                            // Handling array wrapper if present
+                                            const item = Array.isArray(json) ? json[0] : json;
+                                            const candidates = item?.candidates;
+                                            const candidate = candidates?.[0];
                                             let text = '';
                                             let reasoning = '';
+
+                                            // Parse Usage Metadata
+                                            let usage: { input: number; output: number; total: number } | undefined;
+                                            const usageMetadata = item?.usageMetadata;
+                                            if (usageMetadata) {
+                                                usage = {
+                                                    input: usageMetadata.promptTokenCount || 0,
+                                                    output: usageMetadata.candidatesTokenCount || 0,
+                                                    total: usageMetadata.totalTokenCount || 0
+                                                };
+                                            }
+
                                             if (candidate?.content?.parts) {
                                                 for (const part of candidate.content.parts) {
                                                     const isThoughtPart = part.thought === true || typeof part.thought === 'string';
@@ -130,7 +151,7 @@ export class GeminiClient implements LlmClient {
 
                                             // Handle citations from grounding metadata
                                             let citations: { title: string; url: string; source?: string }[] | undefined;
-                                            const groundingMetadata = candidate?.groundingMetadata;
+                                            const groundingMetadata = candidate?.groundingMetadata || item.groundingMetadata;
                                             if (groundingMetadata?.groundingChunks) {
                                                 citations = groundingMetadata.groundingChunks
                                                     .map((chunk: any) => chunk.web ? {
@@ -141,11 +162,12 @@ export class GeminiClient implements LlmClient {
                                                     .filter(Boolean);
                                             }
 
-                                            if (text || reasoning || citations) {
+                                            if (text || reasoning || (citations && citations.length > 0) || usage) {
                                                 onChunk({
                                                     content: text,
                                                     reasoning: reasoning || undefined,
-                                                    citations: (citations && citations.length > 0) ? citations : undefined
+                                                    citations: (citations && citations.length > 0) ? citations : undefined,
+                                                    usage
                                                 });
                                             }
                                         } catch (e) { }
@@ -224,6 +246,16 @@ export class GeminiClient implements LlmClient {
             const latency = Date.now() - start;
 
             if (!response.ok) {
+                // Rule 8.4: Capture HTML error pages
+                const contentType = response.headers.get('Content-Type') || '';
+                if (!contentType.includes('application/json')) {
+                    const text = await response.text();
+                    if (text.trim().startsWith('<')) {
+                        return { success: false, latency, error: `Received HTML error page instead of JSON.` };
+                    }
+                    return { success: false, latency, error: `HTTP ${response.status}: ${text.substring(0, 100)}` };
+                }
+
                 const errorData = await response.json().catch(() => ({}));
                 const msg = errorData.error?.message || `HTTP ${response.status}`;
                 return { success: false, latency, error: msg };

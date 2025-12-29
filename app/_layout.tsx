@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import "../global.css";
 import React, { useEffect, useState } from 'react';
 import { Stack } from "expo-router";
@@ -14,8 +15,12 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
+import { useColorScheme } from "nativewind";
+
 export default function RootLayout() {
     const [dbReady, setDbReady] = useState(false);
+    const { colorScheme } = useColorScheme();
 
     useEffect(() => {
         const setup = async () => {
@@ -48,11 +53,13 @@ export default function RootLayout() {
             <ThemeProvider>
                 <KeyboardProvider>
                     <ToastProvider>
-                        <StatusBar style="auto" />
-                        <Stack screenOptions={{ headerShown: false }}>
-                            <Stack.Screen name="(tabs)" />
-                            <Stack.Screen name="index" />
-                        </Stack>
+                        <NavThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                            <StatusBar style="auto" />
+                            <Stack screenOptions={{ headerShown: false }}>
+                                <Stack.Screen name="(tabs)" />
+                                <Stack.Screen name="index" />
+                            </Stack>
+                        </NavThemeProvider>
                     </ToastProvider>
                 </KeyboardProvider>
             </ThemeProvider>

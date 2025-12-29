@@ -1,7 +1,6 @@
 import { create } from 'zustand';
-import 'react-native-get-random-values';
 import { db } from '../lib/db';
-import { v4 as uuidv4 } from 'uuid';
+import { generateId } from '../lib/utils/id-generator';
 import { VectorizationQueue } from '../lib/rag/vectorization-queue';
 import { RagDocument, RagFolder, VectorizationTask } from '../types/rag';
 
@@ -33,6 +32,7 @@ interface RagState {
     addFolder: (name: string, parentId?: string) => Promise<void>;
     deleteFolder: (id: string) => Promise<void>;
     renameFolder: (id: string, name: string) => Promise<void>;
+    moveFolder: (folderId: string, parentId: string | null) => Promise<void>;
     moveDocument: (docId: string, folderId: string | null) => Promise<void>;
     toggleFolder: (id: string) => void;
 
@@ -104,7 +104,7 @@ export const useRagStore = create<RagState>((set, get) => {
         },
 
         addDocument: async (title, content, fileSize, type = 'text', folderId) => {
-            const docId = uuidv4();
+            const docId = generateId();
             const createdAt = Date.now();
 
             try {
@@ -165,48 +165,116 @@ export const useRagStore = create<RagState>((set, get) => {
 
         loadFolders: async () => {
             try {
-                console.log('[RagStore] Loading folders from database...');
+                // 1. Load all folders
                 const results = await db.execute('SELECT * FROM folders ORDER BY created_at ASC');
                 if (!results.rows) {
-                    console.log('[RagStore] No folder rows found');
                     set({ folders: [] });
                     return;
                 }
 
-                console.log(`[RagStore] Found ${results.rows.length} folders`);
-                const folders: RagFolder[] = [];
-                for (let i = 0; i < results.rows.length; i++) {
-                    const row = results.rows[i];
+                const rawFolders = results.rows as any[];
 
-                    // Count children
-                    const childCountResult = await db.execute(
-                        'SELECT COUNT(*) as count FROM documents WHERE folder_id = ?',
-                        [row.id]
-                    );
-                    const childCount = (childCountResult.rows?.[0]?.count as number) || 0;
-
-                    const parentIdValue = row.parent_id as string | null;
-                    console.log(`[RagStore] Folder "${row.name}" raw parent_id:`, parentIdValue, typeof parentIdValue);
-
-                    folders.push({
-                        id: row.id as string,
-                        name: row.name as string,
-                        parentId: parentIdValue === null ? undefined : parentIdValue,
-                        childCount,
-                        createdAt: row.created_at as number
-                    });
-                    console.log(`[RagStore] Loaded folder: ${row.name}, childCount: ${childCount}, parentId: ${parentIdValue === null ? 'undefined' : parentIdValue}`);
+                // 2. Load all document counts by folder
+                const docCountResults = await db.execute('SELECT folder_id, COUNT(*) as count FROM documents GROUP BY folder_id');
+                const docCounts: Record<string, number> = {};
+                if (docCountResults.rows) {
+                    for (let i = 0; i < docCountResults.rows.length; i++) {
+                        const row = docCountResults.rows[i];
+                        if (row.folder_id) {
+                            docCounts[row.folder_id as string] = row.count as number;
+                        }
+                    }
                 }
 
+                // 3. Build tree map to calculate recursive counts
+                const folderMap = new Map<string, { id: string; parentId?: string; directCount: number; totalCount: number; children: string[] }>();
+
+                // Initialize map
+                rawFolders.forEach(row => {
+                    const id = row.id as string;
+                    folderMap.set(id, {
+                        id,
+                        parentId: row.parent_id as string || undefined,
+                        directCount: docCounts[id] || 0,
+                        totalCount: 0,
+                        children: []
+                    });
+                });
+
+                // Build hierarchy
+                folderMap.forEach(folder => {
+                    if (folder.parentId && folderMap.has(folder.parentId)) {
+                        folderMap.get(folder.parentId)!.children.push(folder.id);
+                    }
+                });
+
+                // Recursive function to calculate total counts
+                const calculateTotal = (folderId: string): number => {
+                    const folder = folderMap.get(folderId);
+                    if (!folder) return 0;
+
+                    let sum = folder.directCount;
+                    folder.children.forEach(childId => {
+                        sum += calculateTotal(childId);
+                    });
+
+                    folder.totalCount = sum;
+                    return sum;
+                };
+
+                // Calculate for all roots (and inherently all nodes)
+                folderMap.forEach(folder => {
+                    // We can just trigger calculation for everyone, memoization would be optimal but simple recursion is fine for small trees.
+                    // Actually, to avoid re-calc, we should start from roots.
+                    // Simpler: iterate all, if totalCount is 0 (uncalculated? no, count can be 0), we need a flag.
+                    // But since we want to populate ALL, let's just do a post-order traversal logic efficiently?
+                    // Or just lazy:
+                });
+
+                // Top-down trigger? No, we need bottom-up.
+                // Reset totalCounts first (already 0).
+
+                // Let's implement a clean "compute all"
+                // Since it's a tree/forest, we can find roots and traverse.
+                const roots = Array.from(folderMap.values()).filter(f => !f.parentId);
+                const computed = new Set<string>();
+
+                const compute = (folder: { id: string; parentId?: string; directCount: number; totalCount: number; children: string[] }): number => {
+                    let sum = folder.directCount;
+                    for (const childId of folder.children) {
+                        const child = folderMap.get(childId);
+                        if (child) {
+                            sum += compute(child);
+                        }
+                    }
+                    folder.totalCount = sum;
+                    return sum;
+                };
+
+                roots.forEach(root => compute(root));
+
+                // 4. Transform to state objects
+                const folders: RagFolder[] = rawFolders.map(row => {
+                    const id = row.id as string;
+                    const node = folderMap.get(id);
+                    return {
+                        id,
+                        name: row.name as string,
+                        parentId: row.parent_id as string || undefined,
+                        childCount: node ? node.totalCount : 0,
+                        createdAt: row.created_at as number
+                    };
+                });
+
                 set({ folders });
-                console.log(`[RagStore] Folders loaded successfully: ${folders.length} total`);
+                console.log(`[RagStore] Folders loaded with recursive counts: ${folders.length}`);
             } catch (e) {
                 console.error('Failed to load folders:', e);
             }
         },
 
         addFolder: async (name, parentId) => {
-            const folderId = uuidv4();
+            const folderId = generateId();
             const createdAt = Date.now();
 
             try {
@@ -259,6 +327,23 @@ export const useRagStore = create<RagState>((set, get) => {
                 }));
             } catch (e) {
                 console.error('Failed to rename folder:', e);
+                throw e;
+            }
+        },
+
+        moveFolder: async (folderId, parentId) => {
+            try {
+                await db.execute(
+                    'UPDATE folders SET parent_id = ? WHERE id = ?',
+                    [parentId || null, folderId]
+                );
+                set(state => ({
+                    folders: state.folders.map(f =>
+                        f.id === folderId ? { ...f, parentId: parentId || undefined } : f
+                    )
+                }));
+            } catch (e) {
+                console.error('Failed to move folder:', e);
                 throw e;
             }
         },

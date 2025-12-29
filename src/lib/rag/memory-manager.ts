@@ -1,4 +1,4 @@
-import { Session, Message } from '../../types/chat';
+import { Session, Message, RagReference } from '../../types/chat';
 import { vectorStore, SearchResult } from './vector-store';
 import { EmbeddingClient } from './embedding';
 import { useApiStore } from '../../store/api-store';
@@ -11,9 +11,10 @@ export class MemoryManager {
         enableDocs?: boolean;
         activeDocIds?: string[];
         activeFolderIds?: string[];
-    } = {}): Promise<string> {
+        isGlobal?: boolean;
+    } = {}): Promise<{ context: string; references: RagReference[] }> {
 
-        const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [] } = options;
+        const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [], isGlobal = false } = options;
         const apiStore = useApiStore.getState();
 
         // 1. 获取查询向量 (Get Embedding)
@@ -40,7 +41,7 @@ export class MemoryManager {
 
         if (!provider) {
             console.warn('[MemoryManager] 未找到 Embedding 提供商，跳过 RAG。');
-            return '';
+            return { context: '', references: [] };
         }
 
         // Find the active embedding model
@@ -54,7 +55,7 @@ export class MemoryManager {
             queryEmbedding = await embeddingClient.embedQuery(query);
         } catch (e) {
             console.error('[MemoryManager] 查询向量化失败:', e);
-            return '';
+            return { context: '', references: [] };
         }
 
         const results: SearchResult[] = [];
@@ -63,9 +64,9 @@ export class MemoryManager {
         if (enableMemory) {
             try {
                 const memResults = await vectorStore.search(queryEmbedding, {
-                    limit: 3,
-                    filter: { sessionId, type: 'memory' },
-                    threshold: 0.75
+                    limit: 5,
+                    filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' },
+                    threshold: 0.7
                 });
                 results.push(...memResults);
             } catch (e) {
@@ -76,34 +77,74 @@ export class MemoryManager {
         // 3. 搜索文档 (知识库)
         if (enableDocs) {
             // 权限控制：如果启用了知识库但没有授权任何文档或文件夹，则不应检索任何内容
-            const hasAuthorizedItems = (activeDocIds && activeDocIds.length > 0) || (activeFolderIds && activeFolderIds.length > 0);
+            const hasAuthorizedItems = (activeDocIds && activeDocIds.length > 0) || (activeFolderIds && activeFolderIds.length > 0) || isGlobal;
 
             if (hasAuthorizedItems) {
                 try {
                     // 解析文件夹下的所有文档 ID
                     const authorizedDocIds = new Set(activeDocIds);
 
-                    if (activeFolderIds && activeFolderIds.length > 0) {
-                        const folderPlaceholders = activeFolderIds.map(() => '?').join(',');
-                        const folderDocs = await db.execute(
-                            `SELECT id FROM documents WHERE folder_id IN (${folderPlaceholders})`,
-                            activeFolderIds
-                        );
-                        if (folderDocs.rows) {
-                            for (let i = 0; i < folderDocs.rows.length; i++) {
-                                authorizedDocIds.add(folderDocs.rows[i].id as string);
+                    if (!isGlobal && activeFolderIds && activeFolderIds.length > 0) {
+                        try {
+                            // Fetch all folders to build hierarchy (efficient enough for < 1000 folders)
+                            const allFoldersResult = await db.execute('SELECT id, parent_id FROM folders');
+                            const allFolders = (allFoldersResult.rows as any[]) || [];
+
+                            // Build Adjacency List
+                            const folderChildrenMap = new Map<string, string[]>();
+                            allFolders.forEach(f => {
+                                const pid = f.parent_id;
+                                if (pid) {
+                                    if (!folderChildrenMap.has(pid)) folderChildrenMap.set(pid, []);
+                                    folderChildrenMap.get(pid)?.push(f.id);
+                                }
+                            });
+
+                            // Recursive Collector
+                            const expandedFolderIds = new Set<string>(activeFolderIds);
+                            const queue = [...activeFolderIds];
+
+                            while (queue.length > 0) {
+                                const currentId = queue.shift()!;
+                                const children = folderChildrenMap.get(currentId);
+                                if (children) {
+                                    children.forEach(childId => {
+                                        if (!expandedFolderIds.has(childId)) {
+                                            expandedFolderIds.add(childId);
+                                            queue.push(childId);
+                                        }
+                                    });
+                                }
                             }
+
+                            // Query documents in ALL expanded folders
+                            const folderPlaceholders = Array.from(expandedFolderIds).map(() => '?').join(',');
+                            if (folderPlaceholders.length > 0) {
+                                const folderDocs = await db.execute(
+                                    `SELECT id FROM documents WHERE folder_id IN (${folderPlaceholders})`,
+                                    Array.from(expandedFolderIds)
+                                );
+                                if (folderDocs.rows) {
+                                    for (let i = 0; i < folderDocs.rows.length; i++) {
+                                        authorizedDocIds.add(folderDocs.rows[i].id as string);
+                                    }
+                                }
+                            }
+                        } catch (err) {
+                            console.error('[MemoryManager] Folder recursion failed:', err);
                         }
                     }
 
                     const docResults = await vectorStore.search(queryEmbedding, {
                         limit: 8, // Increased slightly since we filter later
                         filter: { type: 'doc' },
-                        threshold: 0.5
+                        threshold: 0.45
                     });
 
-                    // 穿透式过滤：仅保留属于授权文档的检索结果
-                    const filteredDocs = docResults.filter(r => authorizedDocIds.has(r.docId || ''));
+                    // 如果是全局模式，或者命中授权文档，则保留
+                    const filteredDocs = isGlobal
+                        ? docResults
+                        : docResults.filter(r => authorizedDocIds.has(r.docId || ''));
 
                     results.push(...filteredDocs);
                 } catch (e) {
@@ -115,7 +156,7 @@ export class MemoryManager {
         }
 
         // 4.原本格式化上下文 (Format Context)
-        if (results.length === 0) return '';
+        if (results.length === 0) return { context: '', references: [] };
 
         // 按相似度排序组合结果
         results.sort((a, b) => b.similarity - a.similarity);
@@ -123,16 +164,43 @@ export class MemoryManager {
         // 去重 (以防万一)
         const uniqueResults = results.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
 
-        // 取前 5 个结果
-        const finalResults = uniqueResults.slice(0, 5);
+        // 优化合并策略：保证文档不被记忆完全淹没 (Diversity Buffer)
+        // 1. 提取 Top 记忆 (最多 3 条)
+        const topMemories = uniqueResults.filter(r => r.metadata?.type === 'memory').slice(0, 3);
+        // 2. 提取 Top 文档 (最多 5 条)
+        const topDocs = uniqueResults.filter(r => r.metadata?.type === 'doc').slice(0, 5);
+
+        // 3. 如果文档不足，允许更多记忆填补，反之亦然，但优先保证混合
+        // 这里简单地将两者合并再次排序，但由于我们已经做了预筛选，保证了至少有文档进入"决赛圈"（如果存在）
+        // 实际上，为了保证总数，我们可以放宽上面的 slice，或者直接使用智能混合
+
+        const combined = [...topMemories, ...topDocs];
+        // 如果总数还不到 8，可以从剩余结果中补充 (不分类型)
+        const existingIds = new Set(combined.map(r => r.id));
+        const remaining = uniqueResults.filter(r => !existingIds.has(r.id)).slice(0, 8 - combined.length);
+
+        const finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
 
         const contextBlock = finalResults.map(r => {
-            const typeLabel = r.metadata?.type === 'memory' ? '记忆 (Memory)' : '文档 (Document)';
+            const typeLabel = r.metadata?.type === 'memory' ? 'Memory' : 'Document';
             const date = new Date(r.createdAt).toLocaleDateString();
             return `[${typeLabel} - ${date}]: ${r.content}`;
         }).join('\n\n');
 
-        return `relevant_context_block (参考上下文):\n${contextBlock}`;
+        // 构建引用数据
+        const references: RagReference[] = finalResults.map(r => ({
+            id: r.id,
+            content: r.content,
+            source: r.metadata?.source || (r.metadata?.type === 'memory' ? 'Previous Conversation' : 'Unknown Document'),
+            type: r.metadata?.type === 'memory' ? 'memory' : 'doc',
+            docId: r.docId,
+            similarity: r.similarity
+        }));
+
+        return {
+            context: `relevant_context_block (参考上下文):\n${contextBlock}`,
+            references
+        };
     }
 
     /**
@@ -140,6 +208,13 @@ export class MemoryManager {
      */
     static async addTurnToMemory(sessionId: string, userContent: string, aiContent: string) {
         if (!userContent || !aiContent) return;
+
+        // 🛡️ Sanitize: Strip massive Base64 image data to prevent TextSplitter recursion overflow
+        // Replace ![...](data:image/...) with [Image Generated]
+        const sanitize = (text: string) => text.replace(/!\[(.*?)\]\(data:image\/.*?;base64,.*?\)/g, '[Image: $1]');
+
+        userContent = sanitize(userContent);
+        aiContent = sanitize(aiContent);
 
         const apiStore = useApiStore.getState();
 

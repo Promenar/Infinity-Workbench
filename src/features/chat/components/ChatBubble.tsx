@@ -1,21 +1,51 @@
-import React, { useState, useEffect, Component } from 'react';
+import React, { useState, useEffect, Component, useMemo } from 'react';
 import { View, TouchableOpacity, ViewStyle, Platform, Linking, Text, Modal, TextInput, ScrollView, StyleSheet, Image, Dimensions } from 'react-native';
 import { Typography } from '../../../components/ui';
 import { Message } from '../../../types/chat';
 import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../lib/haptics';
 import Markdown from 'react-native-markdown-display';
 import { clsx } from 'clsx';
-import { useTheme } from '../../../theme/ThemeProvider';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming, withSequence, withRepeat, SharedValue, runOnJS, FadeInUp, FadeOutUp } from 'react-native-reanimated';
-import { ChevronDown, BrainCircuit, Globe, ExternalLink, Sparkles, User, Bot, Volume2, Copy, Trash2, Share2, Type, X, Check } from 'lucide-react-native';
+// import { useTheme } from '../../../theme/ThemeProvider'; // Moved to parent component
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, withSequence, withRepeat, SharedValue, runOnJS, FadeIn, FadeOut, FadeInUp, FadeOutUp, LinearTransition } from 'react-native-reanimated';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SvgXml } from 'react-native-svg';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
-import { KeyboardAvoidingView as RNKeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { AgentAvatar } from '../../../components/chat/AgentAvatar';
+import { RagReferencesChip, RagReferencesList } from './RagReferences';
+
 import { findModelSpec } from '../../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
+import { MathRenderer, AnimatedSVGRenderer, InteractiveSVGRenderer } from '../../../components/chat/MathRenderer';
+import { extractImagesFromMarkdown } from '../utils/markdown-utils';
+
+import { parseMarkdownContent } from '../../../lib/markdown-parser';
+import { SafeUserImage } from './SafeUserImage';
+import {
+    Copy,
+    Share2,
+    Check,
+    RefreshCw,
+    Maximize2,
+    Minimize2,
+    Download,
+    Terminal,
+    Edit2,
+    Trash2,
+    Type,
+    ExternalLink,
+    X,
+    ChevronDown,
+    BrainCircuit,
+    Globe,
+    Sparkles,
+    User,
+    Bot,
+    Volume2,
+    AlertCircle
+} from 'lucide-react-native';
+import { ActivityIndicator } from 'react-native';
 
 interface ChatBubbleProps {
     message: Message;
@@ -25,7 +55,10 @@ interface ChatBubbleProps {
     agentName?: string;
     onDelete?: () => void;
     onLongPress?: (message: Message) => void;
+    onResend?: () => void;
+    onRegenerate?: () => void;
     modelId?: string;
+    isDark?: boolean;
 }
 
 // SVG 错误边界组件
@@ -60,6 +93,102 @@ class SVGErrorBoundary extends Component<{ children: React.ReactNode; isDark: bo
         return this.props.children;
     }
 }
+
+// 生成图片组件 - 独立组件避免在 Markdown rules 中使用 hooks
+const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean }> = React.memo(({ src, alt, isDark }) => {
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
+    const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+    const handleDownload = async () => {
+        try {
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(src);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } else {
+                alert('Sharing is not available on this platform');
+            }
+        } catch (e) {
+            console.error('Save failed', e);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+    };
+
+    return (
+        <View style={{ marginVertical: 12 }}>
+            <View style={{
+                width: '100%',
+                minHeight: 200,
+                backgroundColor: isDark ? '#27272a' : '#f4f4f5',
+                borderRadius: 12,
+                overflow: 'hidden',
+                position: 'relative',
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: isDark ? '#3f3f46' : '#e4e4e7'
+            }}>
+                {isLoading && (
+                    <View style={{ position: 'absolute', zIndex: 10 }}>
+                        <ActivityIndicator size="large" color={isDark ? '#a1a1aa' : '#6b7280'} />
+                    </View>
+                )}
+
+                {hasError ? (
+                    <View style={{ alignItems: 'center', padding: 20 }}>
+                        <AlertCircle size={32} color="#ef4444" />
+                        <Typography variant="caption" style={{ color: '#ef4444', marginTop: 8, textAlign: 'center' }}>
+                            图片加载失败
+                        </Typography>
+                        <Typography variant="caption" style={{ color: isDark ? '#71717a' : '#a1a1aa', marginTop: 4, fontSize: 11 }}>
+                            {src.startsWith('data:') ? '图片数据过大' : '无法访问图片路径'}
+                        </Typography>
+                    </View>
+                ) : (
+                    <Image
+                        source={{ uri: src }}
+                        style={{
+                            width: '100%',
+                            height: dimensions ? (dimensions.height / dimensions.width) * Dimensions.get('window').width * 0.9 : 300,
+                            maxHeight: 600
+                        }}
+                        resizeMode="contain"
+                        accessibilityLabel={alt}
+                        onLoad={(e) => {
+                            const { width, height } = e.nativeEvent.source;
+                            setDimensions({ width, height });
+                            setIsLoading(false);
+                        }}
+                        onError={(e) => {
+                            // Use warn to avoid RedBox on dev
+                            console.warn('Image load error:', e.nativeEvent.error);
+                            setHasError(true);
+                            setIsLoading(false);
+                        }}
+                    />
+                )}
+
+                {!hasError && !isLoading && (
+                    <TouchableOpacity
+                        onPress={handleDownload}
+                        style={{
+                            position: 'absolute',
+                            bottom: 12,
+                            right: 12,
+                            backgroundColor: 'rgba(0,0,0,0.7)',
+                            padding: 10,
+                            borderRadius: 20,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.3)'
+                        }}
+                    >
+                        <Download size={18} color="#fff" />
+                    </TouchableOpacity>
+                )}
+            </View>
+        </View>
+    );
+});
 
 const LoadingDots = ({ isDark, color }: { isDark: boolean; color?: string }) => {
     const opacity1 = useSharedValue(0.3);
@@ -259,7 +388,7 @@ const SelectTextModal: React.FC<{
                     padding: 24,
                     paddingBottom: Platform.OS === 'ios' ? 40 : 24,
                 }, contentStyle]}>
-                    <View className="flex-row items-center justify-between mb-4">
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                         <TouchableOpacity onPress={onClose} className="p-2">
                             <X size={24} color={isDark ? '#e4e4e7' : '#27272a'} />
                         </TouchableOpacity>
@@ -299,8 +428,10 @@ const ActionBar: React.FC<{
     onDelete?: () => void;
     onShare: () => void;
     onSelect: () => void;
+    onResend?: () => void;
+    onRegenerate?: () => void;
     isDark: boolean;
-}> = ({ content, onDelete, onShare, onSelect, isDark }) => {
+}> = ({ content, onDelete, onShare, onSelect, onResend, onRegenerate, isDark }) => {
     const handleCopy = async () => {
         await Clipboard.setStringAsync(content);
         setTimeout(() => {
@@ -312,7 +443,7 @@ const ActionBar: React.FC<{
     const btnStyle = "p-2 mx-1";
 
     return (
-        <View className="flex-row items-center mt-2">
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
             <TouchableOpacity onPress={handleCopy} className={btnStyle}>
                 <Copy size={16} color={iconColor} />
             </TouchableOpacity>
@@ -320,6 +451,18 @@ const ActionBar: React.FC<{
             <TouchableOpacity onPress={onSelect} className={btnStyle}>
                 <Type size={16} color={iconColor} />
             </TouchableOpacity>
+
+            {onResend && (
+                <TouchableOpacity onPress={onResend} className={btnStyle}>
+                    <RefreshCw size={16} color={iconColor} />
+                </TouchableOpacity>
+            )}
+
+            {onRegenerate && (
+                <TouchableOpacity onPress={onRegenerate} className={btnStyle}>
+                    <RefreshCw size={16} color={iconColor} />
+                </TouchableOpacity>
+            )}
 
             <TouchableOpacity onPress={onShare} className={btnStyle}>
                 <Share2 size={16} color={iconColor} />
@@ -362,17 +505,44 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     agentName,
     onDelete,
     onLongPress,
+    onResend,
+    onRegenerate,
     isGenerating,
-    modelId
+    modelId,
+    // @ts-ignore
+    isDark = false // Default fallback
 }) => {
     const isUser = message.role === 'user';
-    const { isDark } = useTheme();
+    // const { isDark } = useTheme(); // REMOVED to avoid context crash during unmount
 
     // Determine avatar source
     const modelSpec = modelId ? findModelSpec(modelId) : (message.modelId ? findModelSpec(message.modelId) : null);
+
+    // All hooks must be at top level - moved from isUser conditional block
     const [isModalVisible, setModalVisible] = useState(false);
+
+    // Determine if message is "fresh" (less than 3 seconds old) to prevent animation replay on scroll
+    const isRecent = React.useMemo(() => {
+        return (Date.now() - message.timestamp) < 3000;
+    }, [message.timestamp]);
     const [isSourcesExpanded, setSourcesExpanded] = useState(false);
+    const [viewImageUri, setViewImageUri] = useState<string | null>(null);
+    const [bubbleWidth, setBubbleWidth] = useState(0);
     const bubbleRef = React.useRef<View>(null);
+
+    // Moved from below to fix Hooks order error
+    const [isReasoningExpanded, setReasoningExpanded] = useState(!!isGenerating);
+    const [isRagExpanded, setRagExpanded] = useState(false);
+
+    // Auto-collapse reasoning when done
+    useEffect(() => {
+        if (!isGenerating && message.reasoning) {
+            const timer = setTimeout(() => setReasoningExpanded(false), 800);
+            return () => clearTimeout(timer);
+        } else if (isGenerating) {
+            setReasoningExpanded(true);
+        }
+    }, [isGenerating]);
 
     const handleShare = async () => {
         if (!bubbleRef.current) return;
@@ -392,6 +562,21 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     const isWaitingForContent = !isUser && isGenerating && !message.content;
 
     // 移除 handleLongPress 以释放原生文本选择手势
+
+    // 只处理 LaTeX 块级公式的预处理
+    // 将 $$...$$ 转换为 ```latex ... ``` 以便复用 fence 渲染逻辑
+    const processedContent = useMemo(() => {
+        let content = message.content || '';
+        if (!content) return '';
+
+        // 替换块级公式 $$...$$
+        // 1. 临时保护代码块中的 $$（如果已有）- 简化处理，假设用户不会在代码块里写 $$ 作为文本
+        // 2. 查找孤立的 $$
+        const blockMathRegex = /\$\$([\s\S]+?)\$\$/g;
+        return content.replace(blockMathRegex, (match, formula) => {
+            return `\n\`\`\`latex\n${formula.trim()}\n\`\`\`\n`;
+        });
+    }, [message.content]);
 
 
     // Determine if this bubble is currently "loading" (last message and no content yet?)
@@ -418,11 +603,20 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     // I can assume if it's the *last* message of the list, it *might* be loading. 
     // But I don't know index here.
 
-    // Custom Markdown Rules to fix separate key warning in React 19 + FitImage + SVG Support
-    const markdownRules = {
+    // Custom Markdown Rules to fix separate key warning in React 19 + FitImage + SVG Support + LaTeX Support
+    const markdownRules = useMemo(() => ({
         fence: (node: any, children: any, parent: any, styles: any) => {
             const content = node.content?.trim() || '';
             const language = node.sourceInfo?.toLowerCase() || '';
+
+            // 检测 LaTeX块级公式 (```latex 或 ```math)
+            if (language === 'latex' || language === 'math') {
+                return (
+                    <View key={node.key} collapsable={false} style={{ marginVertical: 12, width: '100%' }}>
+                        <MathRenderer content={content} isBlock={true} />
+                    </View>
+                );
+            }
 
             // 检测 SVG：优先检查语言标签或尝试内容匹配
             if (language === 'svg' || content.startsWith('<svg') || (content.includes('<svg') && content.includes('</svg>'))) {
@@ -435,7 +629,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
                 if (hasObviousSyntaxErrors) {
                     return (
-                        <View key={node.key} style={{ marginVertical: 12, padding: 16, backgroundColor: isDark ? '#27272a' : '#fff1f2', borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#3f3f46' : '#fecaca' }}>
+                        <View key={node.key} collapsable={false} style={{ marginVertical: 12, padding: 16, backgroundColor: isDark ? '#27272a' : '#fff1f2', borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#3f3f46' : '#fecaca' }}>
                             <Typography selectable={true} style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}>⚠️ SVG 格式错误</Typography>
                             <Typography selectable={true} variant="caption" style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}>
                                 AI 生成的代码由于属性粘连（如 `dM60`）无法渲染，已为您拦截崩溃。
@@ -444,6 +638,28 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     );
                 }
 
+                // 检测是否包含动画标签（CSS 动画、SMIL 动画）
+                // 恢复动画检测：交由 InteractiveSVGRenderer 处理（默认静态，点击播放）
+                const hasAnimation =
+                    content.includes('<animate') ||
+                    content.includes('<animateTransform') ||
+                    content.includes('<animateMotion') ||
+                    content.includes('@keyframes') ||
+                    content.includes('animation:') ||
+                    content.includes('<style>');
+
+                // 如果包含动画，使用 InteractiveSVGRenderer 提供播放开关
+                if (hasAnimation) {
+                    return (
+                        <View key={node.key + '-animated'} collapsable={false} style={{ marginVertical: 12, width: '100%' }}>
+                            <InteractiveSVGRenderer svgContent={content} height={250} />
+                        </View>
+                    );
+                }
+
+
+
+                // 静态 SVG 继续使用 SvgXml（性能更好）
                 return (
                     <SVGErrorBoundary key={node.key + content.length} isDark={isDark}>
                         <View style={{ marginVertical: 12, alignItems: 'center', width: '100%' }}>
@@ -500,15 +716,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         },
         image: (node: any, children: any, parent: any, styles: any) => {
             const { src, alt } = node.attributes;
-            return (
-                <View key={node.key} style={{ marginTop: 10, marginBottom: 10 }}>
-                    <View style={{ width: '100%', aspectRatio: 16 / 9, backgroundColor: isDark ? '#27272a' : '#f4f4f5', borderRadius: 8, overflow: 'hidden' }}>
-                        <Typography selectable={true} variant="caption" style={{ padding: 10 }}>[Image: {alt}]</Typography>
-                    </View>
-                </View>
-            );
+            return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} />;
         },
-    };
+    }), [isDark]);
 
 
 
@@ -520,45 +730,35 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
      * User Message: Minimalist Flat Style (No Bubble)
      */
     if (isUser) {
-        const [isModalVisible, setModalVisible] = useState(false);
-        const [viewImageUri, setViewImageUri] = useState<string | null>(null);
-        const [bubbleWidth, setBubbleWidth] = useState(0);
-        const bubbleRef = React.useRef<View>(null);
-
-        const handleShare = async () => {
-            if (!bubbleRef.current) return;
-            try {
-                const uri = await captureRef(bubbleRef.current, {
-                    format: 'png',
-                    quality: 0.9,
-                });
-                await Sharing.shareAsync(uri);
-            } catch (error) {
-                console.error('Snapshot failed', error);
-            }
-        };
-
         return (
-            <View className="flex-row justify-end mb-8 w-full">
-                <View style={{ maxWidth: '85%' }}>
+            <Animated.View
+                entering={isRecent ? FadeIn.duration(300) : undefined}
+                exiting={FadeOut.duration(300)}
+                layout={LinearTransition.duration(200)} // Removed springify, used standard duration
+                style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 32, width: '100%', paddingHorizontal: 20 }}
+            >
+                <View style={{ maxWidth: '80%' }}>
                     <View
                         ref={bubbleRef}
                         collapsable={false}
-                        className="py-1"
                         style={{
+                            paddingVertical: 4,
                             alignItems: 'flex-end',
                             width: '100%',
                         }}
                     >
                         <Markdown
+                            rules={markdownRules}
                             style={{
                                 body: {
                                     color: isDark ? '#fafafa' : '#18181b',
                                     fontSize: 16,
                                     lineHeight: 24,
-                                    textAlign: 'right',
+                                    fontWeight: '600',
+                                    letterSpacing: 0.2,
+                                    textAlign: 'left',
                                 },
-                                paragraph: { marginVertical: 0, paddingVertical: 0, textAlign: 'right' },
+                                paragraph: { marginVertical: 0, paddingVertical: 0, textAlign: 'left' },
                                 blockquote: {
                                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                                     borderLeftWidth: 4,
@@ -570,40 +770,37 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                                 },
                             }}
                             {...({ selectable: true } as any)}
-                            rules={markdownRules}
                         >
-                            {message.content || ''}
+                            {processedContent || ''}
                         </Markdown>
                         {message.images && message.images.length > 0 && (
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: message.content ? 8 : 0, gap: 4 }}>
                                 {message.images.map((img, index) => (
-                                    <TouchableOpacity
+                                    <SafeUserImage
                                         key={index}
-                                        onPress={() => setViewImageUri(img)}
-                                        activeOpacity={0.8}
-                                    >
-                                        <Image
-                                            source={{ uri: img }}
-                                            style={{
-                                                width: 100,
-                                                height: 100,
-                                                borderRadius: 8,
-                                                backgroundColor: isDark ? '#3f3f46' : '#e4e4e7'
-                                            }}
-                                            resizeMode="cover"
-                                        />
-                                    </TouchableOpacity>
+                                        uri={img.thumbnail}
+                                        onPress={() => setViewImageUri(img.thumbnail)}
+                                        isDark={isDark}
+                                    />
                                 ))}
                             </View>
                         )}
                     </View>
 
-                    <View className="mt-2 border-t border-gray-100 dark:border-zinc-800/50 pt-1" style={{ alignItems: 'flex-end', width: '100%' }}>
+                    <View style={{
+                        marginTop: 8,
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderTopColor: isDark ? 'rgba(39, 39, 42, 0.5)' : '#f3f4f6',
+                        paddingTop: 4,
+                        alignItems: 'flex-end',
+                        width: '100%'
+                    }}>
                         <ActionBar
                             content={message.content || ''}
                             onDelete={onDelete}
                             onShare={handleShare}
                             onSelect={() => setModalVisible(true)}
+                            onResend={onResend}
                             isDark={isDark}
                         />
                     </View>
@@ -623,47 +820,45 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                         />
                     )}
                 </View>
-            </View>
+            </Animated.View>
         );
     }
 
     /**
      * AI Message: Head-Row + Full-Width Body Layout
      */
-    const [isReasoningExpanded, setReasoningExpanded] = useState(!!isGenerating);
 
-    // Auto-collapse reasoning when done
-    useEffect(() => {
-        if (!isGenerating && message.reasoning) {
-            const timer = setTimeout(() => setReasoningExpanded(false), 800);
-            return () => clearTimeout(timer);
-        } else if (isGenerating) {
-            setReasoningExpanded(true);
-        }
-    }, [isGenerating]);
 
     return (
-        <View className="mb-10 w-full" ref={bubbleRef} collapsable={false}>
+        <Animated.View
+            entering={isRecent ? FadeIn.duration(300) : undefined}
+            exiting={FadeOut.duration(300)}
+            layout={LinearTransition.duration(200)} // Removed springify
+            style={{ marginBottom: 40, width: '100%', paddingHorizontal: 20 }}
+            ref={bubbleRef}
+            collapsable={false}
+        >
             {/* Header Row: Avatar & Status Chips */}
-            <View className="flex-row items-center mb-3">
-                <View className="bg-white dark:bg-zinc-900 rounded-full p-0.5 border border-gray-100 dark:border-zinc-800 shadow-sm">
-                    {modelSpec?.icon ? (
-                        <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#27272a' : '#f4f4f5' }}>
-                            <ModelIconRenderer
-                                icon={modelSpec.icon}
-                                size={18}
-                                color={isDark ? '#e4e4e7' : '#3f3f46'}
-                            />
-                        </View>
-                    ) : (
-                        <AgentAvatar
-                            id={agentId || 'ai'}
-                            name={agentName || 'AI'}
-                            avatar={agentAvatar || 'Sparkles'}
-                            color={agentColor}
-                            size={28}
-                        />
-                    )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <View style={{
+                    backgroundColor: isDark ? '#18181b' : '#ffffff',
+                    borderRadius: 9999,
+                    padding: 2,
+                    borderWidth: 1,
+                    borderColor: isDark ? '#27272a' : '#f3f4f6',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 2,
+                    elevation: 1
+                }}>
+                    <AgentAvatar
+                        id={agentId || 'ai'}
+                        name={agentName || 'AI'}
+                        avatar={agentAvatar || 'Sparkles'}
+                        color={agentColor}
+                        size={28}
+                    />
                 </View>
 
                 <View className="flex-row items-center ml-3" style={{ gap: 8 }}>
@@ -676,7 +871,26 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             onToggle={() => {
                                 const newState = !isReasoningExpanded;
                                 setReasoningExpanded(newState);
-                                if (newState) setSourcesExpanded(false);
+                                if (newState) {
+                                    setSourcesExpanded(false);
+                                    setRagExpanded(false);
+                                }
+                            }}
+                        />
+                    )}
+                    {message.ragReferences && (message.ragReferences.length > 0 || message.ragReferencesLoading) && (
+                        <RagReferencesChip
+                            references={message.ragReferences || []}
+                            loading={message.ragReferencesLoading}
+                            isDark={isDark}
+                            expanded={isRagExpanded}
+                            onToggle={() => {
+                                const newState = !isRagExpanded;
+                                setRagExpanded(newState);
+                                if (newState) {
+                                    setReasoningExpanded(false);
+                                    setSourcesExpanded(false);
+                                }
                             }}
                         />
                     )}
@@ -688,7 +902,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             onToggle={() => {
                                 const newState = !isSourcesExpanded;
                                 setSourcesExpanded(newState);
-                                if (newState) setReasoningExpanded(false);
+                                if (newState) {
+                                    setReasoningExpanded(false);
+                                    setRagExpanded(false);
+                                }
                             }}
                         />
                     )}
@@ -700,7 +917,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 <Animated.View
                     entering={FadeInUp.duration(300)}
                     exiting={FadeOutUp.duration(200)}
-                    className={`pl-4 border-l-2 ml-3.5 mb-4 my-1 ${isDark ? 'border-zinc-800' : 'border-gray-100'}`}
+                    className={`pl-4 border-l-2 ml-[38px] mb-4 my-1 ${isDark ? 'border-zinc-800' : 'border-gray-100'}`}
                 >
                     <Typography
                         variant="caption"
@@ -722,7 +939,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 <Animated.View
                     entering={FadeInUp.duration(300)}
                     exiting={FadeOutUp.duration(200)}
-                    className="mb-4 space-y-2"
+                    className="ml-[38px] mb-4 space-y-2"
                 >
                     {message.citations.map((citation, index) => (
                         <TouchableOpacity
@@ -730,7 +947,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             className={`flex-row items-start p-3 rounded-xl mb-2 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-gray-50 border border-gray-100'}`}
                             onPress={() => Linking.openURL(citation.url)}
                         >
-                            <View className="flex-1">
+                            <View style={{ flex: 1 }}>
                                 <Typography className="text-xs font-bold text-gray-900 dark:text-white mb-0.5" numberOfLines={1}>
                                     {citation.title}
                                 </Typography>
@@ -742,6 +959,16 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                         </TouchableOpacity>
                     ))}
                 </Animated.View>
+            )}
+
+            {/* RAG References List (New Vertical Style) */}
+            {isRagExpanded && message.ragReferences && (
+                <View style={{ marginLeft: 38 }}>
+                    <RagReferencesList
+                        references={message.ragReferences}
+                        isDark={isDark}
+                    />
+                </View>
             )}
 
             {/* Main Content (No indentation) */}
@@ -756,62 +983,94 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             <LoadingDots isDark={isDark} />
                         </View>
                     ) : (
-                        <Markdown
-                            style={{
-                                body: {
-                                    color: isDark ? '#E4E4E7' : '#27272A',
-                                    fontSize: 16,
-                                    lineHeight: 28,
-                                },
-                                code_inline: {
-                                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                                    borderRadius: 4,
-                                    paddingHorizontal: 4,
-                                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                    fontSize: 14,
-                                    fontWeight: '500',
-                                },
-                                fence: {
-                                    backgroundColor: isDark ? '#111' : '#f8fafc',
-                                    borderColor: isDark ? '#27272a' : '#e2e8f0',
-                                    borderWidth: 1,
-                                    borderRadius: 16,
-                                    marginVertical: 12,
-                                    padding: 0,
-                                },
-                                blockquote: {
-                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                                    borderLeftWidth: 4,
-                                    borderLeftColor: agentColor,
-                                    paddingHorizontal: 16,
-                                    paddingVertical: 12,
-                                    borderRadius: 12,
-                                    marginVertical: 12,
-                                },
-                                list_item: { marginVertical: 6 },
-                                bullet_list: { marginVertical: 10 },
-                                ordered_list: { marginVertical: 10 },
-                                heading1: { marginTop: 28, marginBottom: 14, fontWeight: '800', fontSize: 24, color: isDark ? '#fff' : '#000' },
-                                heading2: { marginTop: 24, marginBottom: 12, fontWeight: '700', fontSize: 20, color: isDark ? '#fff' : '#000' },
-                                heading3: { marginTop: 20, marginBottom: 10, fontWeight: '700', fontSize: 18, color: isDark ? '#fff' : '#000' },
-                                paragraph: { marginVertical: 10 },
-                            }}
-                            {...({ selectable: true } as any)}
-                            rules={markdownRules}
-                        >
-                            {message.content || ''}
-                        </Markdown>
+                        <>
+                            <Markdown
+                                style={{
+                                    body: {
+                                        color: isDark ? '#E4E4E7' : '#27272A',
+                                        fontSize: 16,
+                                        lineHeight: 28,
+                                    },
+                                    code_inline: {
+                                        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                        borderRadius: 4,
+                                        paddingHorizontal: 4,
+                                        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                                        fontSize: 14,
+                                        fontWeight: '500',
+                                    },
+                                    fence: {
+                                        backgroundColor: isDark ? '#111' : '#f8fafc',
+                                        borderColor: isDark ? '#27272a' : '#e2e8f0',
+                                        borderWidth: 1,
+                                        borderRadius: 16,
+                                        marginVertical: 12,
+                                        padding: 0,
+                                    },
+                                    blockquote: {
+                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                                        borderLeftWidth: 4,
+                                        borderLeftColor: agentColor,
+                                        paddingHorizontal: 16,
+                                        paddingVertical: 12,
+                                        borderRadius: 12,
+                                        marginVertical: 12,
+                                    },
+                                    list_item: { marginVertical: 6 },
+                                    bullet_list: { marginVertical: 10 },
+                                    ordered_list: { marginVertical: 10 },
+                                    heading1: { marginTop: 28, marginBottom: 14, fontWeight: '800', fontSize: 24, color: isDark ? '#fff' : '#000' },
+                                    heading2: { marginTop: 24, marginBottom: 12, fontWeight: '700', fontSize: 20, color: isDark ? '#fff' : '#000' },
+                                    heading3: { marginTop: 20, marginBottom: 10, fontWeight: '700', fontSize: 18, color: isDark ? '#fff' : '#000' },
+                                    paragraph: { marginVertical: 10 },
+                                }}
+                                {...({ selectable: true } as any)}
+                                rules={markdownRules}
+                            >
+                                {(() => {
+                                    // Extract AI-generated images
+                                    const { cleanContent, images } = extractImagesFromMarkdown(processedContent || '');
+                                    // Store extracted images for rendering below
+                                    (React as any)._aiImages = images;
+                                    return cleanContent;
+                                })()}
+                            </Markdown>
+                            {/* Render extracted AI-generated images */}
+                            {!isUser && (() => {
+                                const images = (React as any)._aiImages || [];
+                                if (images.length === 0) return null;
+
+                                return (
+                                    <View style={{ marginTop: 12, gap: 12 }}>
+                                        {images.map((img: { src: string; alt: string }, index: number) => (
+                                            <GeneratedImage
+                                                key={`ai-img-${index}`}
+                                                src={img.src}
+                                                alt={img.alt}
+                                                isDark={isDark}
+                                            />
+                                        ))}
+                                    </View>
+                                );
+                            })()}
+                        </>
                     )
                 )}
             </View>
 
             {/* Action Bar (Bottom Alignment) */}
-            <View className="mt-2 border-t border-gray-100 dark:border-zinc-800/50 pt-1">
+            <View style={{
+                marginTop: 8,
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: isDark ? 'rgba(39, 39, 42, 0.5)' : '#f3f4f6',
+                paddingTop: 4
+            }}>
                 <ActionBar
                     content={message.content || ''}
                     onDelete={onDelete}
                     onShare={handleShare}
                     onSelect={() => setModalVisible(true)}
+                    onRegenerate={onRegenerate}
                     isDark={isDark}
                 />
             </View>
@@ -822,28 +1081,29 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 onClose={() => setModalVisible(false)}
                 isDark={isDark}
             />
-        </View>
+        </Animated.View>
     );
 };
 
 // 使用 React.memo 优化性能：只在关键属性变化时重新渲染
-export const ChatBubble = React.memo<ChatBubbleProps & { isGenerating?: boolean }>(
-    ChatBubbleComponent,
-    (prev, next) => {
-        // 自定义比较函数：只有这些属性变化才重新渲染
-        if (prev.message.id !== next.message.id) return false;
-        if (prev.message.content !== next.message.content) return false;
-        if (prev.message.reasoning !== next.message.reasoning) return false;
-        if (prev.message.images !== next.message.images) return false; // Check images
-        if (prev.agentColor !== next.agentColor) return false;
-        if (prev.isGenerating !== next.isGenerating) return false;
+export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
+    // 自定义比较函数：只有这些属性变化才重新渲染
+    if (prev.message.id !== next.message.id) return false;
+    if (prev.message.content !== next.message.content) return false;
+    // @ts-ignore
+    if (prev.message.reasoning !== next.message.reasoning) return false;
+    // @ts-ignore
+    if (prev.message.images !== next.message.images) return false;
 
-        // 比较 citations（浅比较）
-        const prevCitations = prev.message.citations || [];
-        const nextCitations = next.message.citations || [];
-        if (prevCitations.length !== nextCitations.length) return false;
+    if (prev.agentColor !== next.agentColor) return false;
+    if (prev.isGenerating !== next.isGenerating) return false;
 
-        return true;
-    }
-);
+    // 比较 citations（浅比较）
+    // @ts-ignore
+    const prevCitations = prev.message.citations || [];
+    // @ts-ignore
+    const nextCitations = next.message.citations || [];
+    if (prevCitations.length !== nextCitations.length) return false;
 
+    return true;
+});

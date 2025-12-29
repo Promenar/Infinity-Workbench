@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApiStore } from '../../src/store/api-store';
 import { useI18n } from '../../src/lib/i18n';
 import { GlassHeader } from '../../src/components/ui/GlassHeader';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../src/lib/haptics';
 
 export default function SearchSettingsScreen() {
     const { isDark } = useTheme();

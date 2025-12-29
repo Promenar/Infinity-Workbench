@@ -101,7 +101,7 @@ export const useApiStore = create<ApiState>()(
             addProvider: (provider) => set(
                 produce((state: ApiState) => {
                     const id = `${provider.type}-${Date.now()}`;
-                    state.providers.push({ ...provider, id });
+                    state.providers.unshift({ ...provider, id });
                 })
             ),
 

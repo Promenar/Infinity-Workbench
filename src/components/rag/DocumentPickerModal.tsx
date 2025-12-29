@@ -107,19 +107,34 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
     };
 
     // Android返回键支持
+    const handleBack = () => {
+        if (currentFolderId) {
+            // 如果在子文件夹中，返回上一级
+            const currentFolder = folders.find(f => f.id === currentFolderId);
+            setCurrentFolderId(currentFolder?.parentId);
+            return true;
+        } else {
+            // 如果在根目录，关闭Modal
+            handleClose();
+            return true;
+        }
+    };
+
     useEffect(() => {
         if (!visible) return;
 
-        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-            handleClose();
-            return true;
-        });
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBack);
 
         return () => backHandler.remove();
-    }, [visible]);
+    }, [visible, currentFolderId, folders]);
 
     return (
-        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+        <Modal
+            visible={visible}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={handleBack}
+        >
             <PageLayout safeArea={false} className="bg-white dark:bg-black">
                 {/* GlassHeader */}
                 <GlassHeader

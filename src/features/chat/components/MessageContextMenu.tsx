@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, View, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Typography } from '../../../components/ui/Typography';
 import { Copy, Trash2, X } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../lib/haptics';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 interface MessageContextMenuProps {

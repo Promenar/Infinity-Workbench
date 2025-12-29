@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, Platform, Image, ScrollView } from 'react-native';
 import { ArrowUp, Plus, Cpu, Square, Calculator, Globe, BrainCircuit, X, Image as ImageIcon, Camera } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../lib/haptics';
+import { useI18n } from '../../../lib/i18n';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
@@ -21,6 +22,7 @@ import { formatTokenCount } from '../utils/token-counter';
 import { useChatStore } from '../../../store/chat-store';
 import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
 import { useApiStore } from '../../../store/api-store';
+import { ANIMATION_DURATION } from '../../../theme/animations';
 
 interface ChatInputProps {
     onSendMessage: (text: string, options?: { webSearch?: boolean; reasoning?: boolean; images?: string[] }) => void;
@@ -74,9 +76,32 @@ export function ChatInput({
     // Access store directly to persist toggles
     const session = useChatStore(state => state.getSession(sessionId));
     const updateSessionOptions = useChatStore(state => state.updateSessionOptions);
+    const updateSessionDraft = useChatStore(state => state.updateSessionDraft);
 
     const webSearchEnabled = session?.options?.webSearch ?? false;
     const reasoningEnabled = session?.options?.reasoning ?? false;
+
+    // Load draft on mount
+    useEffect(() => {
+        if (session?.draft) {
+            setText(session.draft);
+        }
+    }, [sessionId]); // Only run when sessionId changes (effectively on mount for this component instance)
+
+    // Save draft on text change (debounced)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (session && text !== session.draft) {
+                // Only update if changed to avoid loop
+                // Don't save empty string if it was already undefined/empty to avoid unnecessary writes
+                if (text || session.draft) {
+                    updateSessionDraft(sessionId, text || undefined);
+                }
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [text, sessionId]);
 
     // 检测是否为强制推理模型（无法关闭推理）
     const providers = useApiStore(state => state.providers);
@@ -84,10 +109,12 @@ export function ChatInput({
     const currentModelConfig = modelId ? providers.flatMap(p => p.models).find(m => m.uuid === modelId || m.id === modelId) : undefined;
     const isModelForcedReasoning = currentModelConfig ? isForcedReasoningModel(currentModelConfig.id) : false;
 
+
+
     useEffect(() => {
         if (loading) {
             rotation.value = withRepeat(
-                withTiming(360, { duration: 1500, easing: Easing.linear }),
+                withTiming(360, { duration: ANIMATION_DURATION.ROTATION_SLOW, easing: Easing.linear }),
                 -1
             );
         } else {
@@ -122,6 +149,7 @@ export function ChatInput({
                 images: selectedImages.length > 0 ? selectedImages : undefined
             });
             setText('');
+            updateSessionDraft(sessionId, undefined); // Clear draft immediately
             setSelectedImages([]);
         }, 0);
     };
@@ -369,9 +397,10 @@ export function ChatInput({
                         )}
                         <View style={styles.inputWrapper}>
                             <TextInput
-                                style={[styles.input, { color: isDark ? '#fff' : '#000' }]}
+                                style={[styles.input, { color: isDark ? '#fff' : '#000', backgroundColor: 'transparent' }]}
                                 placeholder={selectedImages.length > 0 ? "Add a caption..." : "Message..."}
                                 placeholderTextColor="#94a3b8"
+                                underlineColorAndroid="transparent"
                                 multiline
                                 value={text}
                                 onChangeText={setText}
@@ -473,8 +502,8 @@ export function ChatInput({
 
 const styles = StyleSheet.create({
     outerContainer: {
-        marginHorizontal: 16,
-        marginBottom: 16,
+        marginHorizontal: 20,
+        marginBottom: 12,
         // 外部容器取消 iOS 阴影以防冲突，主要由内层处理
         ...Platform.select({
             ios: {

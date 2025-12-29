@@ -4,7 +4,7 @@ import { PageLayout, Typography, GlassHeader } from '../../../src/components/ui'
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { MessageSquare, ChevronLeft, Plus, Settings2 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../src/lib/haptics';
 import { useAgentStore } from '../../../src/store/agent-store';
 import { useChatStore } from '../../../src/store/chat-store';
 import { Session } from '../../../src/types/chat';

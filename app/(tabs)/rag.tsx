@@ -39,7 +39,8 @@ export default function RagScreen() {
         renameFolder,
         moveDocument,
         expandedFolders,
-        toggleFolder
+        toggleFolder,
+        moveFolder
     } = useRagStore();
 
     // 搜索状态
@@ -52,9 +53,10 @@ export default function RagScreen() {
     const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
     const [newFolderName, setNewFolderName] = useState('');
 
-    // 移动文档状态
+    // 移动操作状态
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [movingDocId, setMovingDocId] = useState<string | null>(null);
+    const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
 
     // 确认弹窗状态
     const [confirmState, setConfirmState] = useState<{
@@ -190,23 +192,40 @@ export default function RagScreen() {
         });
     }, [deleteFolder, showToast]);
 
-    // 移动文档
-    const handleStartMove = useCallback((docId: string) => {
+    // 移动操作
+    const handleStartMoveDoc = useCallback((docId: string) => {
         setMovingDocId(docId);
+        setMovingFolderId(null);
         setShowMoveModal(true);
     }, []);
 
-    const handleConfirmMove = useCallback(async (folderId: string | null) => {
-        if (!movingDocId) return;
+    const handleStartMoveFolder = useCallback((folderId: string) => {
+        setMovingFolderId(folderId);
+        setMovingDocId(null);
+        setShowMoveModal(true);
+    }, []);
+
+    const handleConfirmMove = useCallback(async (targetFolderId: string | null) => {
         try {
-            await moveDocument(movingDocId, folderId);
-            showToast('已移动', 'success');
+            if (movingDocId) {
+                await moveDocument(movingDocId, targetFolderId);
+                showToast('文档已移动', 'success');
+            } else if (movingFolderId) {
+                // Prevent moving folder into itself or its children (simple check: validation logic needed ideally)
+                if (targetFolderId === movingFolderId) {
+                    showToast('不能移动到自己', 'error');
+                    return;
+                }
+                await moveFolder(movingFolderId, targetFolderId);
+                showToast('文件夹已移动', 'success');
+            }
             setShowMoveModal(false);
             setMovingDocId(null);
+            setMovingFolderId(null);
         } catch (e) {
             showToast('移动失败: ' + (e as Error).message, 'error');
         }
-    }, [movingDocId, moveDocument, showToast]);
+    }, [movingDocId, movingFolderId, moveDocument, moveFolder, showToast]);
 
     // 批量向量化
     const handleBatchVectorize = useCallback(() => {
@@ -328,7 +347,7 @@ export default function RagScreen() {
                             onLongPress={() => { }}
                             onDelete={() => handleDeleteDocument(doc.id, doc.title)}
                             onVectorize={() => vectorizeDocument(doc.id)}
-                            onMove={() => handleStartMove(doc.id)}
+                            onMove={() => handleStartMoveDoc(doc.id)}
                         />
                     ))
                 ) : (
@@ -343,7 +362,8 @@ export default function RagScreen() {
                         onVectorizeDocument={vectorizeDocument}
                         onDeleteFolder={handleDeleteFolder}
                         onRenameFolder={handleRenameFolder}
-                        onMoveDocument={handleStartMove}
+                        onMoveDocument={handleStartMoveDoc}
+                        onMoveFolder={handleStartMoveFolder}
                     />
                 )}
             </ScrollView>
@@ -398,7 +418,7 @@ export default function RagScreen() {
                     <View className="bg-white dark:bg-zinc-900 rounded-t-3xl p-6 h-[60%]">
                         <View className="flex-row justify-between items-center mb-6">
                             <Typography className="text-xl font-bold text-gray-900 dark:text-white">
-                                移动到文件夹
+                                {movingDocId ? '移动文档到...' : '移动文件夹到...'}
                             </Typography>
                             <TouchableOpacity onPress={() => setShowMoveModal(false)}>
                                 <X size={24} color="#94a3b8" />
@@ -419,8 +439,8 @@ export default function RagScreen() {
                                 </Typography>
                             </TouchableOpacity>
 
-                            {/* 文件夹列表 */}
-                            {folders.map(folder => (
+                            {/* 文件夹列表 (排除自己) */}
+                            {folders.filter(f => f.id !== movingFolderId).map(folder => (
                                 <TouchableOpacity
                                     key={folder.id}
                                     onPress={() => handleConfirmMove(folder.id)}

@@ -8,6 +8,10 @@ interface SettingsState {
     language: Language;
     setLanguage: (lang: Language) => void;
 
+    // Haptics
+    hapticsEnabled: boolean;
+    setHapticsEnabled: (enabled: boolean) => void;
+
     // 默认模型设置
     defaultSummaryModel?: string; // 总结模型
     defaultTempSessionModel?: string; // 临时会话模型
@@ -26,6 +30,9 @@ export const useSettingsStore = create<SettingsState>()(
             language: 'zh',
             setLanguage: (lang) => set({ language: lang }),
 
+            hapticsEnabled: false,
+            setHapticsEnabled: (enabled) => set({ hapticsEnabled: enabled }),
+
             defaultSummaryModel: undefined,
             defaultTempSessionModel: undefined,
             defaultEmbeddingModel: undefined,
@@ -41,6 +48,7 @@ export const useSettingsStore = create<SettingsState>()(
             storage: createJSONStorage(() => AsyncStorage),
             partialize: (state) => ({
                 language: state.language,
+                hapticsEnabled: state.hapticsEnabled,
                 defaultSummaryModel: state.defaultSummaryModel,
                 defaultTempSessionModel: state.defaultTempSessionModel,
                 defaultEmbeddingModel: state.defaultEmbeddingModel,

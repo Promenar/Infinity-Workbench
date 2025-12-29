@@ -3,7 +3,8 @@ import { Modal, TouchableWithoutFeedback, View, TouchableOpacity, Dimensions } f
 import Animated, { FadeIn, FadeOut, SlideInUp, SlideOutDown, useAnimatedStyle, withTiming, useSharedValue } from 'react-native-reanimated';
 import { Typography } from './Typography';
 import { clsx } from 'clsx';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
+import { LayoutAnimations } from '../../theme/animations';
 
 export interface ContextMenuItem {
     label: string;
@@ -77,15 +78,15 @@ export function ContextMenu({ children, items }: ContextMenuProps) {
                     <View className="flex-1">
                         {/* 背景遮罩淡入 */}
                         <Animated.View
-                            entering={FadeIn.duration(200)}
-                            exiting={FadeOut.duration(200)}
+                            entering={LayoutAnimations.FadeIn}
+                            exiting={LayoutAnimations.FadeOut}
                             className="absolute inset-0 bg-black/5 dark:bg-black/20"
                         />
 
                         {/* 菜单内容：抽屉式滑入 */}
                         <Animated.View
-                            entering={FadeIn.duration(250).springify().damping(20).stiffness(120)}
-                            exiting={FadeOut.duration(150)}
+                            entering={LayoutAnimations.ModalEnter}
+                            exiting={LayoutAnimations.ModalExit}
                             style={{
                                 position: 'absolute',
                                 top: menuPos.y,

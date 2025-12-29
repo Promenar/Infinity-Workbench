@@ -34,6 +34,17 @@ export function isForcedReasoningModel(modelId: string): boolean {
 }
 
 /**
+ * 根据模型 ID 判断是否支持可选的 Thinking Config (如 Gemini Flash Thinking)
+ * @param modelId 模型 ID
+ */
+export function supportsThinkingConfig(modelId: string): boolean {
+    const lowerId = modelId.toLowerCase();
+    // 目前仅 Gemini 2.0 Flash Thinking 支持 thinkingConfig 参数
+    // 如果后续有更多，需扩展此处或 ModelSpec
+    return lowerId.includes('flash-thinking') || lowerId.includes('thinking');
+}
+
+/**
  * 根据模型 ID 获取模型类型
  * @param modelId 模型 ID
  * @returns 模型类型，未找到返回 'chat' 作为默认值

@@ -3,7 +3,7 @@ import { View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Pl
 import { PageLayout, Typography, GlassHeader, useToast, ConfirmDialog, Switch } from '../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Save, Sparkles, MessageSquare, Settings as SettingsIcon, Download, Trash2 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../src/lib/haptics';
 import { useChatStore } from '../../../src/store/chat-store';
 import { useAgentStore } from '../../../src/store/agent-store';
 import { useTheme } from '../../../src/theme/ThemeProvider';
@@ -13,6 +13,10 @@ import { exportAllSessionsToTxt } from '../../../src/features/chat/utils/export'
 import { useRagStore } from '../../../src/store/rag-store';
 import { ChevronRight, X, Folder } from 'lucide-react-native';
 import { DocumentPickerModal } from '../../../src/components/rag/DocumentPickerModal';
+import { InferenceSettings } from '../../../src/components/chat/InferenceSettings';
+import { Sliders } from 'lucide-react-native';
+import { ContextManagementPanel } from '../../../src/features/chat/settings/ContextManagementPanel';
+import { preventDoubleTap } from '../../../src/lib/navigation-utils';
 
 export default function SessionSettingsScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,7 +26,7 @@ export default function SessionSettingsScreen() {
     const insets = useSafeAreaInsets();
     const { showToast } = useToast();
 
-    const { getSession, sessions, updateSessionTitle, updateSessionPrompt, generateSessionTitle, deleteSession } = useChatStore();
+    const { getSession, sessions, updateSessionTitle, updateSessionPrompt, updateSessionInferenceParams, generateSessionTitle, deleteSession } = useChatStore();
     const { getAgent } = useAgentStore();
 
     // 订阅sessions变化以确保session对象总是最新的
@@ -194,10 +198,10 @@ export default function SessionSettingsScreen() {
                             </View>
                             <TouchableOpacity
                                 onPress={() => {
-                                    setTimeout(() => {
+                                    preventDoubleTap(() => {
                                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                         router.push(`/chat/agent/edit/${agent.id}`);
-                                    }, 10);
+                                    });
                                 }}
                                 className="p-2 rounded-full bg-white dark:bg-black border border-gray-100 dark:border-zinc-800"
                             >
@@ -381,6 +385,21 @@ export default function SessionSettingsScreen() {
                             </View>
                         )}
                     </View>
+
+                    {/* Inference Parameters */}
+                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center">
+                        <Sliders size={10} color="#64748b" className="mr-1" /> {t.conversation.inferenceSettings || 'Inference Parameters'}
+                    </Typography>
+                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+                        <InferenceSettings
+                            params={session.inferenceParams || {}}
+                            onUpdate={(params) => updateSessionInferenceParams(id, params)}
+                            agentDefaultParams={agent.params}
+                        />
+                    </View>
+
+                    {/* Context Management */}
+                    <ContextManagementPanel sessionId={id} />
 
                     {/* Custom Prompt */}
                     <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center">

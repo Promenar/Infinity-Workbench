@@ -3,7 +3,7 @@ import { View, SafeAreaView } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp, SlideInDown, FadeInUp } from 'react-native-reanimated';
 import { Typography } from './Typography';
 import { Check, AlertCircle, Info } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 
 type ToastType = 'success' | 'error' | 'info';
 

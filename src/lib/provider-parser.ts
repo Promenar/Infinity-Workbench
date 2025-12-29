@@ -6,6 +6,9 @@
 import { ApiProviderType, ModelConfig } from '../store/api-store';
 import { findModelSpec } from './llm/model-utils';
 
+console.log('[provider-parser.ts] MODULE LOADED - If you see this, code IS reloaded!');
+console.log('[provider-parser.ts] Current timestamp:', new Date().toISOString());
+
 /**
  * 解析 VertexAI (Google Cloud) 服务账号 JSON
  * @param jsonString 原始 JSON 字符串
@@ -15,7 +18,7 @@ export const parseVertexAIConfig = (jsonString: string) => {
         const config = JSON.parse(jsonString);
         // 校验关键字段
         if (!config.project_id || !config.private_key || !config.client_email) {
-            throw new Error('无效的 Google Cloud 服务账号 JSON');
+            throw new Error('Invalid Google Cloud Service Account JSON');
         }
         return {
             projectId: config.project_id,
@@ -24,7 +27,7 @@ export const parseVertexAIConfig = (jsonString: string) => {
             location: 'us-central1', // 默认区域
         };
     } catch (error) {
-        console.error('VertexAI 解析失败:', error);
+        console.error('VertexAI parsing failed:', error);
         throw error;
     }
 };
@@ -40,8 +43,13 @@ export class ModelService {
      * @param baseUrl 自定义 Base URL
      */
     static async fetchModels(type: ApiProviderType, apiKey: string, baseUrl?: string): Promise<ModelConfig[]> {
+        console.log('[ModelService] ===== fetchModels called =====');
+        console.log('[ModelService] Type:', type);
+        console.log('[ModelService] BaseUrl:', baseUrl);
+
         // 对于 Google (VertexAI) 等特殊服务商，目前暂返回预设
         if (type === 'google' || type === 'github-copilot' || type === 'local') {
+            console.log('[ModelService] Using preset models for type:', type);
             return this.getPresetModels(type);
         }
 
@@ -49,7 +57,7 @@ export class ModelService {
         const endpoint = `${url}/models`;
 
         try {
-            console.log(`正在从 ${endpoint} 拉取 ${type} 的模型...`);
+            console.log(`[ModelService] Fetching from: ${endpoint}`);
 
             const response = await fetch(endpoint, {
                 method: 'GET',
@@ -61,7 +69,17 @@ export class ModelService {
 
             if (!response.ok) {
                 // 特殊处理 Cloudflare 等可能返回 404 或 403 的情况
-                throw new Error(`HTTP 错误: ${response.status}`);
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+
+            // Rule 8.4: Capture HTML error pages
+            const contentType = response.headers.get('Content-Type') || '';
+            if (!contentType.includes('application/json')) {
+                const text = await response.text();
+                if (text.trim().startsWith('<')) {
+                    throw new Error(`Received HTML error page instead of JSON for models list.`);
+                }
+                throw new Error(`Unexpected Content-Type: ${contentType}`);
             }
 
             const data = await response.json();
@@ -69,10 +87,33 @@ export class ModelService {
 
             // 解析 OpenAI 兼容格式
             if (data.data && Array.isArray(data.data)) {
-                rawModelIds = data.data.map((m: any) => m.id);
+                rawModelIds = data.data.map((m: any) => {
+                    const id = m.id;
+                    console.log('[ModelService] Raw model ID:', id);
+                    // GitHub Models 返回 azureml:// URL 格式，需要提取实际模型名
+                    // 例如：azureml://registries/azure-openai/models/gpt-4o/versions/2 → gpt-4o
+                    if (typeof id === 'string' && id.startsWith('azureml://')) {
+                        const match = id.match(/\/models\/([^\/]+)/);
+                        const extracted = match ? match[1] : id;
+                        console.log('[ModelService] Extracted model name:', extracted);
+                        return extracted;
+                    }
+                    return id;
+                });
             } else if (Array.isArray(data)) {
                 // 某些非标接口直接返回数组
-                rawModelIds = data.map((m: any) => typeof m === 'string' ? m : m.id);
+                rawModelIds = data.map((m: any) => {
+                    const id = typeof m === 'string' ? m : m.id;
+                    console.log('[ModelService] Raw model ID (array):', id);
+                    // 同样处理 azureml:// URL
+                    if (typeof id === 'string' && id.startsWith('azureml://')) {
+                        const match = id.match(/\/models\/([^\/]+)/);
+                        const extracted = match ? match[1] : id;
+                        console.log('[ModelService] Extracted model name (array):', extracted);
+                        return extracted;
+                    }
+                    return id;
+                });
             }
 
             if (rawModelIds.length === 0) {
@@ -83,7 +124,7 @@ export class ModelService {
             return rawModelIds.map(id => this.enrichModelData(id));
 
         } catch (error) {
-            console.error(`${type} 模型获取失败:`, error);
+            console.error(`Failed to fetch models for ${type}:`, error);
             // 发生错误时降级返回预设，但也要丰富预设模型的元数据
             return this.getPresetModels(type);
         }

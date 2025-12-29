@@ -2,7 +2,7 @@ import React from 'react';
 import { TouchableOpacity, ActivityIndicator, View, TouchableOpacityProps } from 'react-native';
 import { twMerge } from 'tailwind-merge';
 import { Typography } from './Typography';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 
 interface ButtonProps extends TouchableOpacityProps {
     variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger';

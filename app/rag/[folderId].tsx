@@ -4,7 +4,7 @@ import { PageLayout, Typography, useToast, GlassHeader } from '../../src/compone
 import { ChevronLeft, Plus, X, Search, FolderInput } from 'lucide-react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../src/lib/haptics';
 import { MOCK_DOCS, MOCK_FOLDERS, DocItem } from '../../src/data/mock';
 import Animated, {
     FadeIn, FadeOut, withTiming, Easing, SharedValue, useSharedValue

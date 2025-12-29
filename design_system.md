@@ -120,11 +120,15 @@ interface ButtonProps {
 
 **Items**:
 - **Row**: `flex-row items-center justify-between p-3 rounded-lg active:bg-gray-200 dark:active:bg-zinc-800`
+- **Swipe Actions**:
+    - **Right (Delete)**: `bg-red-500` with `Trash2` icon.
+    - **Left (Pin)**: `bg-amber-500` with `Pin` icon.
 - **Divider**: Implicit or `border-b` between items if not using card style.
 
 ### Modal (Floating / Suspended)
-**Animation (Framer Motion)**:
-- **Entrance**: Scale `0.95` -> `1`, Y `20px` -> `0px`, Opacity `0` -> `1` (Spring: stiff 300, damping 30)
+**Animation (Reanimated)**:
+- **Entrance**: `FadeInUp` with spring (damping 25, stiffness 200, mass 0.8) for a formal, stable entry.
+- **Exit**: `FadeOut` (duration 150ms).
 - **Container**: `fixed inset-0 z-50 bg-black/70 backdrop-blur-sm`
 - **Content**: `bg-white dark:bg-gray-900 w-full max-w-5xl rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-800`
 

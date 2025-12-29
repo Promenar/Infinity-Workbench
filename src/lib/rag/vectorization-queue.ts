@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { generateId } from '../utils/id-generator';
 import { db } from '../db';
 import { VectorizationTask } from '../../types/rag';
 import { RecursiveCharacterTextSplitter } from './text-splitter';
@@ -24,7 +24,7 @@ export class VectorizationQueue {
      */
     async enqueue(docId: string, docTitle: string, content: string) {
         const task: VectorizationTask = {
-            id: uuidv4(),
+            id: generateId(),
             docId,
             docTitle,
             status: 'pending',

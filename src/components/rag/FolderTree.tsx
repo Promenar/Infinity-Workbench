@@ -16,6 +16,7 @@ interface FolderTreeProps {
     onDeleteFolder?: (id: string, name: string) => void;
     onRenameFolder?: (id: string, name: string) => void;
     onMoveDocument?: (docId: string) => void;
+    onMoveFolder?: (folderId: string) => void;
     level?: number;
     parentId?: string;
 }
@@ -31,6 +32,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     onDeleteFolder,
     onRenameFolder,
     onMoveDocument,
+    onMoveFolder,
     level = 0,
     parentId = undefined
 }) => {
@@ -72,6 +74,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
                             onLongPress={() => { }}
                             onDelete={() => onDeleteFolder?.(folder.id, folder.name)}
                             onRename={() => onRenameFolder?.(folder.id, folder.name)}
+                            onMove={() => onMoveFolder?.(folder.id)}
                         />
 
                         {/* 递归渲染子内容 */}
@@ -92,6 +95,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
                                     onDeleteFolder={onDeleteFolder}
                                     onRenameFolder={onRenameFolder}
                                     onMoveDocument={onMoveDocument}
+                                    onMoveFolder={onMoveFolder}
                                     level={level + 1}
                                     parentId={folder.id}
                                 />

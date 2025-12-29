@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch } from 'react-native';
-import { PageLayout } from '../../src/components/ui/PageLayout';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { PageLayout, Switch } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+// import * as Haptics from '../../src/lib/haptics';
+// Removed in favor of wrapper
 import { useI18n } from '../../src/lib/i18n';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { BackupSettings } from '../../src/features/settings/BackupSettings';
@@ -10,10 +11,11 @@ import { useToast } from '../../src/components/ui/Toast';
 import { useSettingsStore } from '../../src/store/settings-store';
 import { useApiStore, ProviderConfig, ModelConfig } from '../../src/store/api-store';
 import { clsx } from 'clsx';
-import { Globe, Moon, Bell, Info, Plus, Server, Trash2, Edit2, Cpu, FileText, Mic, Layers, ChevronRight, Sun, Monitor } from 'lucide-react-native';
+import { Globe, Moon, Bell, Info, Plus, Server, Trash2, Edit2, Cpu, FileText, Mic, Layers, ChevronRight, Sun, Monitor, Zap } from 'lucide-react-native';
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
 import { ModelSettingsModal } from '../../src/features/settings/ModelSettingsModal';
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
+import * as Haptics from '../../src/lib/haptics'; // Import wrapper
 
 export default function SettingsScreen() {
     const router = useRouter();
@@ -35,7 +37,8 @@ export default function SettingsScreen() {
     const {
         language, setLanguage,
         defaultSummaryModel, defaultSpeechModel, defaultEmbeddingModel,
-        updateDefaultModel
+        updateDefaultModel,
+        hapticsEnabled, setHapticsEnabled // New settings
     } = useSettingsStore();
     const { providers, deleteProvider, addProvider, updateProvider } = useApiStore();
 
@@ -115,10 +118,10 @@ export default function SettingsScreen() {
                     <>
                         {/* 基础设置 */}
                         <View style={{ marginBottom: 24 }}>
-                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16, textTransform: 'uppercase', letterSpacing: 1.5 }}>
                                 {t.settings.basicSettings}
                             </Text>
-                            <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
+                            <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: isDark ? '#27272a' : '#e5e7eb' }}>
                                 {/* 语言设置 */}
                                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#27272a' : '#e5e7eb' }}>
                                     <Globe size={20} color="#6b7280" />
@@ -210,6 +213,25 @@ export default function SettingsScreen() {
                                     </View>
                                 </View>
 
+                                {/* Haptics Setting */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: isDark ? '#27272a' : '#e5e7eb' }}>
+                                    <Zap size={20} color="#6b7280" />
+                                    <View style={{ flex: 1, marginLeft: 12 }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
+                                            {t.settings.haptics || 'Haptic Feedback'}
+                                        </Text>
+                                        <Text style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+                                            {t.settings.hapticsDesc || 'Enable vibration feedback'}
+                                        </Text>
+                                    </View>
+                                    <Switch
+                                        value={hapticsEnabled}
+                                        onValueChange={(v) => {
+                                            setHapticsEnabled(v);
+                                        }}
+                                    />
+                                </View>
+
                                 {/* 搜索配置 */}
                                 <TouchableOpacity
                                     onPress={() => {
@@ -238,10 +260,10 @@ export default function SettingsScreen() {
 
                         {/* 模型预设 */}
                         <View style={{ marginBottom: 24 }}>
-                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16, textTransform: 'uppercase', letterSpacing: 1.5 }}>
                                 {t.settings.modelPresets.title}
                             </Text>
-                            <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 16, overflow: 'hidden' }}>
+                            <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: isDark ? '#27272a' : '#e5e7eb' }}>
                                 {/* 摘要模型 */}
                                 <TouchableOpacity
                                     onPress={() => {

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Session, SessionId, AgentId, Message, TokenUsage } from '../types/chat';
+import { Session, SessionId, AgentId, Message, TokenUsage, InferenceParams, GeneratedImageData, RagReference } from '../types/chat';
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
 import { createLlmClient } from '../lib/llm/factory';
@@ -11,6 +11,8 @@ import { performWebSearch } from '../features/chat/utils/web-search';
 import { LlmClient } from '../lib/llm/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { MemoryManager } from '../lib/rag/memory-manager';
+
+import { ContextManager } from '../features/chat/utils/ContextManager';
 
 interface ChatState {
     sessions: Session[];
@@ -29,11 +31,12 @@ interface ChatState {
     generateMessage: (sessionId: SessionId, content: string, options?: {
         webSearch?: boolean;
         reasoning?: boolean;
-        images?: string[];
+        images?: (string | GeneratedImageData)[];
         ragOptions?: {
             enableMemory?: boolean;
             enableDocs?: boolean;
             activeDocIds?: string[];
+            isGlobal?: boolean;
         }
     }) => Promise<void>;
     generateSessionTitle: (sessionId: SessionId) => Promise<string | undefined>;
@@ -51,12 +54,16 @@ interface ChatState {
             enableDocs?: boolean;
             activeDocIds?: string[]; // Allow updating activeDocIds
             activeFolderIds?: string[];
+            isGlobal?: boolean;
         };
     }) => void;
     updateSessionScrollOffset: (id: SessionId, offset: number) => void;
-    updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[]) => void;
+    updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean) => void;
+    updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
     deleteMessage: (sessionId: SessionId, messageId: string) => void;
     toggleSessionPin: (sessionId: SessionId) => void;
+
+    updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -119,19 +126,35 @@ export const useChatStore = create<ChatState>()(
             updateSessionScrollOffset: (id, offset) => set((state) => ({
                 sessions: state.sessions.map((s) => s.id === id ? { ...s, scrollOffset: offset } : s)
             })),
-            updateMessageContent: (sessionId, messageId, content, tokens, reasoning, citations) => set((state) => ({
+            updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean) => set((state) => ({
                 sessions: state.sessions.map((s) => {
                     if (s.id === sessionId) {
                         return {
                             ...s,
                             messages: s.messages.map((m) =>
-                                m.id === messageId ? { ...m, content, tokens: tokens || m.tokens, reasoning, citations } : m
+                                m.id === messageId ? {
+                                    ...m,
+                                    content,
+                                    tokens: tokens || m.tokens,
+                                    reasoning: reasoning !== undefined ? reasoning : m.reasoning,
+                                    citations: citations !== undefined ? citations : m.citations,
+                                    ragReferences: ragReferences !== undefined ? ragReferences : m.ragReferences,
+                                    ragReferencesLoading: ragReferencesLoading !== undefined ? ragReferencesLoading : m.ragReferencesLoading
+                                } : m
                             ),
                             lastMessage: content,
                         };
                     }
                     return s;
                 })
+            })),
+
+            updateSessionInferenceParams: (id, params) => set((state) => ({
+                sessions: state.sessions.map((s) => s.id === id ? { ...s, inferenceParams: { ...s.inferenceParams, ...params } } : s)
+            })),
+
+            updateSessionDraft: (id, draft) => set((state) => ({
+                sessions: state.sessions.map((s) => s.id === id ? { ...s, draft } : s)
             })),
 
             deleteMessage: (sessionId, messageId) => set((state) => ({
@@ -208,13 +231,22 @@ export const useChatStore = create<ChatState>()(
 
                 // 2. Add User Message
                 const promptTokens = estimateTokens(content);
+
+                // Normalize images
+                const normalizedImages: GeneratedImageData[] | undefined = options?.images?.map(img => {
+                    if (typeof img === 'string') {
+                        return { thumbnail: img, original: img, mime: 'image/jpeg' };
+                    }
+                    return img;
+                });
+
                 const userMsg: Message = {
                     id: `msg_${Date.now()}`,
                     role: 'user',
                     content,
                     timestamp: Date.now(),
                     tokens: { input: promptTokens, output: 0, total: promptTokens },
-                    images: options?.images
+                    images: normalizedImages
                 };
                 get().addMessage(sessionId, userMsg);
 
@@ -227,13 +259,15 @@ export const useChatStore = create<ChatState>()(
                     role: 'assistant',
                     content: '',
                     timestamp: Date.now(),
-                    modelId: modelId
+                    modelId: modelId,
+                    ragReferences: [] // Initialize RAG references
                 };
                 get().addMessage(sessionId, assistantMsg);
 
                 let accumulatedContent = '';
                 let accumulatedReasoning = '';
                 let accumulatedCitations: { title: string; url: string; source?: string }[] | undefined = undefined; // Initialize correctly
+                let ragReferences: RagReference[] = []; // Track RAG references safely
 
                 try {
                     const extendedConfig = {
@@ -241,7 +275,7 @@ export const useChatStore = create<ChatState>()(
                         provider: provider.type,
                         apiKey: provider.apiKey,
                         baseUrl: provider.baseUrl,
-                        temperature: agent.params.temperature,
+                        temperature: agent.params?.temperature ?? 0.7,
                         vertexProject: provider.vertexProject,
                         vertexLocation: provider.vertexLocation,
                         vertexKeyJson: provider.vertexKeyJson
@@ -284,12 +318,30 @@ export const useChatStore = create<ChatState>()(
 
                     // 3.5 RAG 检索 (Retrieval)
                     let ragContext = '';
-                    if (options?.ragOptions?.enableMemory !== false || options?.ragOptions?.enableDocs === true) {
+                    const isRagEnabled = options?.ragOptions?.enableMemory !== false || options?.ragOptions?.enableDocs === true;
+                    const apiMessage = { content, images: normalizedImages }; // Use the user's message for retrieval
+                    const ragOptions = options?.ragOptions;
+
+                    if (isRagEnabled) {
                         try {
-                            // get().updateMessageContent(sessionId, assistantMsgId, 'Retrieving relevant memory...', undefined, undefined, undefined);
-                            ragContext = await MemoryManager.retrieveContext(content, sessionId, options?.ragOptions);
+                            // Set loading state
+                            get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, [], true);
+
+                            // For Super Assistant, force global search
+                            const effectiveRagOptions = {
+                                ...ragOptions,
+                                isGlobal: sessionId === 'super_assistant' ? true : ragOptions?.isGlobal
+                            };
+
+                            const { context: retrievedContext, references } = await MemoryManager.retrieveContext(apiMessage.content, sessionId, effectiveRagOptions);
+                            ragContext = retrievedContext;
+                            ragReferences = references;
+
+                            // Update with results and turn off loading
+                            get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, ragReferences, false);
                         } catch (e) {
-                            console.error('RAG Retrieval failed', e);
+                            console.error('RAG Retrieval failed:', e);
+                            get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, [], false);
                         }
                     }
 
@@ -309,33 +361,39 @@ export const useChatStore = create<ChatState>()(
                     }
 
                     // Helper to format content for LLM (Text or Multimodal)
-                    const formatContent = async (msgContent: string, images?: string[]) => {
-                        if (!images || images.length === 0) return msgContent;
+                    const formatContent = async (msgContent: string, images?: GeneratedImageData[], isHistory?: boolean) => {
+                        // Priority 1: If model doesn't support vision, skip image processing entirely
+                        const hasVision = modelConfig?.capabilities.vision;
+                        if (!images || images.length === 0 || !hasVision) return msgContent;
 
+                        // Priority 2: In history, we might want to skip or limit high-res images to save bandwidth/lag
+                        // But for now, just skip if it's the current model is not vision-capable
                         const parts: any[] = [{ type: 'text', text: msgContent }];
-                        for (const imgPath of images) {
+                        for (const img of images) {
                             try {
+                                // Optimization: Only read original if it's reasonably small or if necessary
+                                const imgPath = img.original;
                                 const base64 = await FileSystem.readAsStringAsync(imgPath, { encoding: 'base64' });
                                 parts.push({
                                     type: 'image_url',
-                                    image_url: { url: `data:image/jpeg;base64,${base64}` }
+                                    image_url: { url: `data:${img.mime || 'image/jpeg'};base64,${base64}` }
                                 });
                             } catch (e) {
-                                console.error('Failed to read image:', imgPath, e);
+                                console.error('Failed to read image:', img.original, e);
                             }
                         }
                         return parts;
                     };
 
-                    const history = await Promise.all(session.messages.map(async (m: Message) => ({
+                    const history = await Promise.all(session.messages.slice(-10).map(async (m: Message) => ({
                         role: m.role,
-                        content: await formatContent(m.content, m.images)
+                        content: await formatContent(m.content, m.images, true)
                     })));
 
                     contextMsgs = [
                         ...contextMsgs,
                         ...history,
-                        { role: 'user', content: await formatContent(content, options?.images) }
+                        { role: 'user', content: await formatContent(content, normalizedImages) }
                     ] as any;
 
                     const context = trimContext(contextMsgs);
@@ -349,25 +407,36 @@ export const useChatStore = create<ChatState>()(
                     // 5. Stream Chat with optimized batching
                     let updateTimer: NodeJS.Timeout | null = null;
                     let lastTokenEstimateLength = 0;
+                    let accumulatedUsage: { input: number; output: number; total: number } | undefined;
 
                     const scheduleUpdate = () => {
                         if (updateTimer) return; // 防止重复调度
                         updateTimer = setTimeout(() => {
                             updateTimer = null;
-                            // Only recalculate tokens every ~500 chars to reduce overhead
-                            const shouldEstimateTokens = accumulatedContent.length - lastTokenEstimateLength > 500;
-                            const completionTokens = shouldEstimateTokens
-                                ? estimateTokens(accumulatedContent)
-                                : Math.floor(accumulatedContent.length / 4); // Rough estimate
 
-                            if (shouldEstimateTokens) {
-                                lastTokenEstimateLength = accumulatedContent.length;
+                            let inputTokens = totalContextTokens;
+                            let completionTokens = 0;
+
+                            if (accumulatedUsage) {
+                                // Prefer API usage if available
+                                inputTokens = accumulatedUsage.input;
+                                completionTokens = accumulatedUsage.output;
+                            } else {
+                                // Fallback to estimation
+                                const shouldEstimateTokens = accumulatedContent.length - lastTokenEstimateLength > 500;
+                                completionTokens = shouldEstimateTokens
+                                    ? estimateTokens(accumulatedContent)
+                                    : Math.floor(accumulatedContent.length / 4);
+
+                                if (shouldEstimateTokens) {
+                                    lastTokenEstimateLength = accumulatedContent.length;
+                                }
                             }
 
                             get().updateMessageContent(sessionId, assistantMsgId, accumulatedContent, {
-                                input: totalContextTokens,
+                                input: inputTokens,
                                 output: completionTokens,
-                                total: totalContextTokens + completionTokens
+                                total: inputTokens + completionTokens
                             }, accumulatedReasoning, accumulatedCitations);
                         }, 100); // 每 100ms 最多更新一次，减少渲染压力
                     };
@@ -382,6 +451,7 @@ export const useChatStore = create<ChatState>()(
                                 if (chunk.content) accumulatedContent += chunk.content;
                                 if (chunk.reasoning) accumulatedReasoning += chunk.reasoning;
                                 if (chunk.citations) accumulatedCitations = chunk.citations; // Native citations (replace/update)
+                                if (chunk.usage) accumulatedUsage = chunk.usage;
                             }
                             scheduleUpdate();
                         },
@@ -390,12 +460,19 @@ export const useChatStore = create<ChatState>()(
                     );
 
                     // Final Update
-                    const finalCompletionTokens = estimateTokens(accumulatedContent);
+                    let finalInputTokens = totalContextTokens;
+                    let finalCompletionTokens = estimateTokens(accumulatedContent);
+
+                    if (accumulatedUsage) {
+                        finalInputTokens = accumulatedUsage.input;
+                        finalCompletionTokens = accumulatedUsage.output;
+                    }
+
                     get().updateMessageContent(sessionId, assistantMsgId, accumulatedContent, {
-                        input: totalContextTokens,
+                        input: finalInputTokens,
                         output: finalCompletionTokens,
-                        total: totalContextTokens + finalCompletionTokens
-                    }, accumulatedReasoning, accumulatedCitations);
+                        total: finalInputTokens + finalCompletionTokens
+                    }, accumulatedReasoning, accumulatedCitations, ragReferences);
 
                     // Update Session Stats & Title
                     const sessionAllText = (get().getSession(sessionId)?.messages || []).map(m => m.content).join('\n');
@@ -410,8 +487,16 @@ export const useChatStore = create<ChatState>()(
                     // 6. RAG 归档 (异步执行 - Fire and Forget)
                     const finalUserContent = content;
                     const finalAiContent = accumulatedContent;
-                    setTimeout(() => {
-                        MemoryManager.addTurnToMemory(sessionId, finalUserContent, finalAiContent);
+                    setTimeout(async () => {
+                        // 归档到向量数据库
+                        await MemoryManager.addTurnToMemory(sessionId, finalUserContent, finalAiContent);
+
+                        // 自动摘要处理 (仅当长期记忆开启时)
+                        const currentSession = get().getSession(sessionId);
+                        if (currentSession && currentSession.ragOptions?.enableMemory !== false) {
+                            console.log('[ChatStore] Triggering auto-summary check...');
+                            await ContextManager.checkAndSummarize(sessionId, currentSession.messages);
+                        }
                     }, 2000); // 小延迟，避免立即影响 UI 交互 (Small delay)
 
                 } catch (error) {

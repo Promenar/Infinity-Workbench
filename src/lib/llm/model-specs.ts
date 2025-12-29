@@ -66,7 +66,9 @@ export const MODEL_SPECS: ModelSpec[] = [
 
     // ==================== 智谱 AI (GLM) ====================
     { pattern: /glm-?4\.7/i, contextLength: 128000, type: 'reasoning', capabilities: { reasoning: true }, icon: 'zhipu', note: 'GLM-4.7 (Reasoning)' },
+    { pattern: /glm-?4\.6.*v/i, contextLength: 128000, type: 'chat', capabilities: { vision: true }, icon: 'zhipu', note: 'GLM-4.6V (Vision)' },
     { pattern: /glm-?4\.5/i, contextLength: 128000, type: 'reasoning', capabilities: { reasoning: true }, icon: 'zhipu', note: 'GLM-4.5 (Reasoning)' },
+    { pattern: /glm.*v(?:ision)?$/i, contextLength: 128000, type: 'chat', capabilities: { vision: true }, icon: 'zhipu', note: 'GLM Vision Series' },
     { pattern: 'glm-4-plus', contextLength: 128000, type: 'chat', icon: 'zhipu', note: 'GLM-4 Plus' },
     { pattern: 'glm-4', contextLength: 128000, type: 'chat', icon: 'zhipu', note: 'GLM-4' },
     { pattern: 'glm-3', contextLength: 128000, icon: 'zhipu' },

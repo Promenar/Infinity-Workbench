@@ -18,6 +18,7 @@ interface FolderItemProps {
     onLongPress?: () => void;
     onDelete?: () => void;
     onRename?: () => void;
+    onMove?: () => void;
 }
 
 export const FolderItem: React.FC<FolderItemProps> = ({
@@ -30,7 +31,8 @@ export const FolderItem: React.FC<FolderItemProps> = ({
     onPress,
     onLongPress,
     onDelete,
-    onRename
+    onRename,
+    onMove
 }) => {
     const { isDark } = useTheme();
 
@@ -62,6 +64,10 @@ export const FolderItem: React.FC<FolderItemProps> = ({
         {
             label: '重命名',
             onPress: () => onRename?.()
+        },
+        {
+            label: '移动到文件夹',
+            onPress: () => onMove?.()
         },
         {
             label: '删除文件夹',

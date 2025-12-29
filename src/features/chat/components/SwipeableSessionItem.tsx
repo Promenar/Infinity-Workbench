@@ -4,8 +4,9 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { Session } from '../../../types/chat';
 import { Typography } from '../../../components/ui/Typography';
 import { Pin, Trash2 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../lib/haptics';
 import { AgentAvatar } from '../../../components/chat/AgentAvatar';
+import { useChatStore } from '../../../store/chat-store';
 
 interface SwipeableSessionItemProps {
     item: Session;
@@ -28,6 +29,23 @@ export const SwipeableSessionItem = ({
     agentColor,
     isDark
 }: SwipeableSessionItemProps) => {
+    // Get active requests to check for generating status
+    const isGenerating = useChatStore(state => !!state.activeRequests[item.id]);
+
+    // Determine subtitle text and style
+    let subtitleText = item.lastMessage;
+    let subtitleStyle = "text-gray-500 dark:text-gray-400";
+    let isDraft = false;
+
+    if (isGenerating) {
+        subtitleText = "Thinking...";
+        subtitleStyle = "text-indigo-500 dark:text-indigo-400 font-medium italic";
+    } else if (item.draft) {
+        subtitleText = item.draft;
+        isDraft = true;
+        subtitleStyle = "text-gray-500 dark:text-gray-400";
+    }
+
     const swipeableRef = React.useRef<Swipeable>(null);
 
     const renderRightActions = (progress: any, dragX: any) => {
@@ -122,8 +140,9 @@ export const SwipeableSessionItem = ({
                             {item.time}
                         </Typography>
                     </View>
-                    <Typography variant="body" className="text-gray-500 dark:text-gray-400 leading-5 text-[13px]" numberOfLines={2}>
-                        {item.lastMessage}
+                    <Typography variant="body" className={subtitleStyle} numberOfLines={2}>
+                        {isDraft && <Typography className="text-red-500 font-bold">[Draft] </Typography>}
+                        {subtitleText}
                     </Typography>
                 </View>
             </TouchableOpacity>

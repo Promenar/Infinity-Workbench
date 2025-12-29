@@ -6,8 +6,8 @@ import { X, Search, Check, Cpu, Server } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useI18n } from '../../lib/i18n';
 import { useApiStore, ModelConfig, ProviderConfig } from '../../store/api-store';
-import * as Haptics from 'expo-haptics';
-import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import * as Haptics from '../../lib/haptics';
+import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown, Easing } from 'react-native-reanimated';
 
 import { findModelSpec } from '../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../components/icons/ModelIconRenderer';
@@ -239,8 +239,8 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
                 </Animated.View>
 
                 <Animated.View
-                    entering={SlideInDown.springify().damping(28).stiffness(180)}
-                    exiting={SlideOutDown.duration(250)}
+                    entering={SlideInDown.duration(350).easing(Easing.out(Easing.quad))}
+                    exiting={SlideOutDown.duration(250).easing(Easing.in(Easing.quad))}
                     style={{
                         marginHorizontal: 12,
                         height: '75%',

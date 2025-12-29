@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { v4 as uuidv4 } from 'uuid';
+import { generateId } from '../utils/id-generator';
 
 export interface VectorRecord {
     id: string;
@@ -36,7 +36,7 @@ export class VectorStore {
         try {
             await db.execute('BEGIN TRANSACTION');
             for (const vec of vectors) {
-                const id = uuidv4();
+                const id = generateId();
                 const createdAt = Date.now();
                 const blob = this.toBlob(vec.embedding);
                 const metadataStr = vec.metadata ? JSON.stringify(vec.metadata) : null;
@@ -157,6 +157,37 @@ export class VectorStore {
 
     async clearSessionMemory(sessionId: string) {
         await db.execute('DELETE FROM vectors WHERE session_id = ?', [sessionId]);
+    }
+
+    /**
+     * Delete all vector memories that belong to sessions NOT in the active list.
+     * This cleans up "ghost" data from previously deleted sessions.
+     */
+    async pruneOrphanSessions(activeSessionIds: string[]) {
+        if (activeSessionIds.length === 0) {
+            // If no active sessions, delete ALL memory vectors
+            await db.execute("DELETE FROM vectors WHERE session_id IS NOT NULL AND json_extract(metadata, '$.type') = 'memory'");
+            return;
+        }
+
+        // SQLite limit is usually 999 variables, so we should be careful.
+        // If list is large, we do it in chunks or use a temporary table (overkill here).
+        // Let's assume < 500 sessions.
+
+        const placeholders = activeSessionIds.map(() => '?').join(',');
+
+        // Delete vectors that HAVE a session_id AND that session_id is NOT in the active list
+        await db.execute(
+            `DELETE FROM vectors WHERE session_id IS NOT NULL AND session_id NOT IN (${placeholders})`,
+            activeSessionIds
+        );
+
+        // Also clean up the sessions table (used for stats and foreign keys)
+        // Ensure we don't accidentally delete super_assistant if it's not in the list (though it should be)
+        await db.execute(
+            `DELETE FROM sessions WHERE id IS NOT NULL AND id != 'super_assistant' AND id NOT IN (${placeholders})`,
+            activeSessionIds
+        );
     }
 }
 

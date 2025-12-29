@@ -8,6 +8,7 @@ interface AgentState {
     addAgent: (agent: Agent) => void;
     updateAgent: (id: AgentId, updates: Partial<Agent>) => void;
     deleteAgent: (id: AgentId) => void;
+    togglePinAgent: (id: AgentId) => void;
     getAgent: (id: AgentId) => Agent | undefined;
 }
 
@@ -57,6 +58,17 @@ const PRESET_AGENTS: Agent[] = [
         systemPrompt: 'You are a creative writer. Use evocative language and vivid imagery to craft compelling stories and poems.',
         defaultModel: 'gpt-4o',
         params: { temperature: 0.9 },
+        created: Date.now(),
+    },
+    {
+        id: 'super_assistant',
+        name: 'Super Assistant',
+        description: 'Global personal assistant with access to all knowledge and history.',
+        avatar: 'Sparkles',
+        color: '#8b5cf6',
+        systemPrompt: 'You are the Super Assistant, a unique and powerful AI agent. You have access to all conversation history and all documents in the knowledge base. Provide comprehensive and context-aware assistance.',
+        defaultModel: 'gpt-4o',
+        params: { temperature: 0.7 },
         isPreset: true,
         created: Date.now(),
     }
@@ -73,7 +85,15 @@ export const useAgentStore = create<AgentState>()(
             deleteAgent: (id) => set((state) => ({
                 agents: state.agents.filter((a) => a.id !== id)
             })),
-            getAgent: (id) => get().agents.find((a) => a.id === id),
+            togglePinAgent: (id) => set((state) => ({
+                agents: state.agents.map((a) => a.id === id ? { ...a, isPinned: !a.isPinned } : a)
+            })),
+            getAgent: (id) => {
+                const stateAgent = get().agents.find((a) => a.id === id);
+                if (stateAgent) return stateAgent;
+                // Fallback to presets if not in state (e.g. after adding new preset)
+                return PRESET_AGENTS.find((a) => a.id === id);
+            },
         }),
         {
             name: 'agent-storage',

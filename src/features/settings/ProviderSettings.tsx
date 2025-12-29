@@ -7,7 +7,7 @@ import { useSettingsStore } from '../../store/settings-store';
 import { ModelService, parseVertexAIConfig } from '../../lib/provider-parser';
 import * as DocumentPicker from 'expo-document-picker';
 import { clsx } from 'clsx';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 
 /**
  * 供应商设置组件
@@ -96,7 +96,10 @@ export const ProviderSettings = () => {
     const fetchModels = async (provider: ProviderConfig) => {
         setTimeout(async () => {
             try {
+                console.log('[ProviderSettings] fetchModels clicked for provider:', provider.name, 'type:', provider.type);
                 const models = await ModelService.fetchModels(provider.type, provider.apiKey, provider.baseUrl);
+                console.log('[ProviderSettings] Fetched models count:', models.length);
+                console.log('[ProviderSettings] First 3 model IDs:', models.slice(0, 3).map(m => m.id));
 
                 // IMPORTANT: Persist the fetched model metadata (with correct types/capabilities) to the store
                 updateProvider(provider.id, { models });
@@ -105,7 +108,7 @@ export const ProviderSettings = () => {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (error) {
                 // If fetch fails, fallback to existing models or preset
-                console.error('Model fetch failed', error);
+                console.error('[ProviderSettings] Model fetch failed', error);
                 setActiveProviderModels({ id: provider.id, models: provider.models || [] });
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
@@ -245,7 +248,7 @@ export const ProviderSettings = () => {
 
                             <Typography className="mb-1 text-xs font-bold text-gray-400">类型</Typography>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-                                {(['openai', 'google', 'deepseek', 'anthropic', 'moonshot', 'zhipu', 'siliconflow'] as ApiProviderType[]).map(t => (
+                                {(['openai', 'google', 'deepseek', 'anthropic', 'moonshot', 'zhipu', 'siliconflow', 'github'] as ApiProviderType[]).map(t => (
                                     <TouchableOpacity
                                         key={t}
                                         onPress={() => setFormData({ ...formData, type: t })}

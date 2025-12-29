@@ -1,10 +1,10 @@
-import React, { useMemo, useRef } from 'react';
-import { View, TouchableOpacity, ViewStyle, Platform, TextInput, Modal } from 'react-native';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { View, TouchableOpacity, ViewStyle, Platform, TextInput, Modal, InteractionManager, ActivityIndicator } from 'react-native';
 import { PageLayout, Typography, GlassHeader } from '../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { ChevronLeft, Settings, ChevronDown } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../src/lib/haptics';
 import { useChatStore } from '../../src/store/chat-store';
 import { useAgentStore } from '../../src/store/agent-store';
 import { useApiStore } from '../../src/store/api-store';
@@ -90,6 +90,16 @@ export default function ChatDetailScreen() {
     const listOpacity = useSharedValue(0);
     const isReadyToDisplay = useSharedValue(false);
 
+    // Loading State
+    const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+    useEffect(() => {
+        const task = InteractionManager.runAfterInteractions(() => {
+            // Don't hide loading here - wait for list to be ready
+        });
+        return () => task.cancel();
+    }, []);
+
     // 动画控制按钮显示
     const scrollButtonStyle = useAnimatedStyle(() => {
         const isVisible = !isAtBottom.value && isReadyToDisplay.value;
@@ -112,55 +122,40 @@ export default function ChatDetailScreen() {
             const visibleHeight = event.layoutMeasurement.height;
             const totalHeight = event.contentSize.height;
 
-            // Use a smaller threshold for precision
+            // Check if we're at the visual bottom (latest messages)
             isAtBottom.value = totalHeight - (offset + visibleHeight) < 50;
         }
     });
 
-    // 移除 handleScrollEnd，改用动画样式逻辑
-
     const handleContentSizeChange = () => {
-        // 如果用户处于底部，且正在生成内容，则自动追踪滚动
-        if (isAtBottom.value && loading) {
+        // Only trigger auto-scroll if message count increased (new message added) 
+        // AND we are already at the bottom to maintain tracking.
+        // This prevents the "forced jump at end of generation" because content updates 
+        // to the *last* message won't trigger this anymore.
+        if (messages.length > lastMessageCount.current && isAtBottom.value) {
             listRef.current?.scrollToEnd({ animated: true });
         }
-
-        // 专门处理新消息到达时的自动定位 (如果是用户发送的消息，强制滚到底)
-        const hasNewMessage = messages.length > lastMessageCount.current;
-        if (hasNewMessage) {
-            const lastMessage = messages[messages.length - 1];
-            if (lastMessage.role === 'user' || isAtBottom.value) {
-                listRef.current?.scrollToEnd({ animated: true });
-            }
-        }
-
         lastMessageCount.current = messages.length;
     };
 
-    // 初始化时恢复上次滚动位置
+    // 初始化列表显示
     const [isListReady, setIsListReady] = React.useState(false);
 
     React.useEffect(() => {
-        if (isListReady && messages.length > 0) {
-            // 补救性滚动（以防 initialScrollOffset 没对上）
-            if (session?.scrollOffset && !isPositionRestored.current) {
-                isPositionRestored.current = true;
-                listRef.current?.scrollToOffset({
-                    offset: session.scrollOffset,
-                    animated: false
-                });
-            }
-
-            // 确保位置设置好后再显示列表和按钮
-            const timer = setTimeout(() => {
+        if (isListReady) {
+            // Scroll to bottom (latest messages) on initial load
+            setTimeout(() => {
+                listRef.current?.scrollToEnd({ animated: false });
                 listOpacity.value = withTiming(1, { duration: 250 });
                 isReadyToDisplay.value = true;
-            }, 80);
-            return () => clearTimeout(timer);
-        } else if (isListReady && messages.length === 0) {
-            listOpacity.value = withTiming(1, { duration: 250 });
+
+                // Hide loading spinner after list is fully visible
+                setTimeout(() => {
+                    setIsInitialLoad(false);
+                }, 300); // Wait for fade-in animation to complete
+            }, 50);
         }
-    }, [isListReady, id, (messages.length > 0)]);
+    }, [isListReady]);
 
     // 持久化滚动位置
     const saveScrollPosition = (offset: number) => {
@@ -230,7 +225,13 @@ export default function ChatDetailScreen() {
                 }}
                 rightAction={{
                     icon: <Settings size={20} color={isDark ? '#fff' : '#000'} />,
-                    onPress: () => router.push(`/chat/${id}/settings`),
+                    onPress: () => {
+                        // Route to dedicated settings page for Super Assistant
+                        const settingsRoute = id === 'super_assistant'
+                            ? '/chat/super_assistant/settings'
+                            : `/chat/${id}/settings`;
+                        router.push(settingsRoute);
+                    },
                     label: 'Settings',
                 }}
             />
@@ -239,6 +240,7 @@ export default function ChatDetailScreen() {
             <Animated.View style={[{ flex: 1 }, listContainerStyle]}>
                 <AnimatedFlashList
                     ref={listRef}
+                    inverted={true}
                     data={messages}
                     renderItem={({ item, index }: { item: any, index: number }) => (
                         <ChatBubble
@@ -252,17 +254,38 @@ export default function ChatDetailScreen() {
                                 useChatStore.getState().deleteMessage(id, item.id);
                                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                             }}
+                            onLongPress={(message) => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                // Handle long press
+                            }}
+                            onResend={item.role === 'user' ? () => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                sendMessage(item.content);
+                            } : undefined}
+                            onRegenerate={item.role === 'assistant' ? () => {
+                                // 找到上一条用户消息
+                                const currentIndex = messages.findIndex(m => m.id === item.id);
+                                if (currentIndex > 0) {
+                                    const prevMsg = messages[currentIndex - 1];
+                                    if (prevMsg.role === 'user') {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        // 删除当前 AI 消息 (可选，取决于产品逻辑，这里选择保留历史记录，追加新回答，或者覆盖)
+                                        // 这里选择直接触发新生成，复用上一条 prompt
+                                        sendMessage(prevMsg.content);
+                                    }
+                                }
+                            } : undefined}
+                            modelId={session?.modelId}
+                            isDark={isDark}
                         />
                     )}
                     estimatedItemSize={200}
-                    removeClippedSubviews={false}
-                    initialScrollOffset={session?.scrollOffset || 0} // 使用这个彻底修复跳变
-                    drawDistance={2500}
+                    removeClippedSubviews={false} // Disabled to prevent Navigation Context crash on Android
+                    drawDistance={500}
                     getItemType={(item: any) => item.role}
                     contentContainerStyle={{
-                        paddingTop: insets.top + 70,
-                        paddingBottom: insets.bottom + 100,
-                        paddingHorizontal: 16,
+                        paddingTop: insets.bottom + 100, // Inverted: top padding becomes bottom space
+                        paddingBottom: insets.top + 70, // Inverted: bottom padding becomes top space
                     }}
                     onLayout={() => setIsListReady(true)}
                     onContentSizeChange={handleContentSizeChange}
@@ -271,6 +294,24 @@ export default function ChatDetailScreen() {
                     onScrollEndDrag={handleScrollEnd}
                     scrollEventThrottle={16}
                 />
+
+                {/* Loading Overlay - Only covers message list area */}
+                {isInitialLoad && (
+                    <View style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: isDark ? '#000' : '#fff',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 999,
+                        opacity: 1
+                    }}>
+                        <ActivityIndicator size="large" color={agentColor} />
+                    </View>
+                )}
             </Animated.View>
 
             {/* Floating ChatInput with keyboard avoidance */}
@@ -306,7 +347,7 @@ export default function ChatDetailScreen() {
                 style={[{
                     position: 'absolute',
                     bottom: insets.bottom + 110,
-                    right: 20,
+                    right: 30,
                     zIndex: 9999, // 极高优先级
                 }, scrollButtonStyle]}
             >
@@ -317,20 +358,20 @@ export default function ChatDetailScreen() {
                         listRef.current?.scrollToEnd({ animated: true });
                     }}
                     style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: 26,
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
                         backgroundColor: agentColor,
                         alignItems: 'center',
                         justifyContent: 'center',
                         shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 6 },
-                        shadowOpacity: 0.35,
-                        shadowRadius: 8,
-                        elevation: 10,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 6,
+                        elevation: 6,
                     }}
                 >
-                    <ChevronDown size={32} color="#ffffff" strokeWidth={3} />
+                    <ChevronDown size={20} color="#ffffff" strokeWidth={3} />
                 </TouchableOpacity>
             </Animated.View>
 

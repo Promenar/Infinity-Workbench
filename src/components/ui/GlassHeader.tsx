@@ -4,7 +4,8 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Typography } from './Typography';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
+import { preventDoubleTap } from '../../lib/navigation-utils';
 
 export interface GlassHeaderAction {
     icon: React.ReactNode;
@@ -74,10 +75,12 @@ export function GlassHeader({
     const { isDark } = useTheme();
 
     const handleAction = (action: GlassHeaderAction) => {
-        setTimeout(() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            action.onPress();
-        }, 0);
+        preventDoubleTap(() => {
+            setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                action.onPress();
+            }, 0);
+        });
     };
 
     return (

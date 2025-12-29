@@ -3,7 +3,7 @@ import { View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Pl
 import { PageLayout, Typography, GlassHeader, ConfirmDialog } from '../../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Save, Sparkles, Cpu, ChevronRight, Trash2, Image as ImageIcon, Check } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../../src/lib/haptics';
 import { useAgentStore } from '../../../../src/store/agent-store';
 import { useApiStore } from '../../../../src/store/api-store';
 import { ModelPicker } from '../../../../src/features/settings/ModelPicker';
@@ -34,8 +34,9 @@ export default function AgentEditScreen() {
         name: agent?.name || '',
         description: agent?.description || '',
         systemPrompt: agent?.systemPrompt || '',
-        defaultModel: agent?.defaultModel || 'gpt-4o',
-        temperature: agent?.params.temperature || 0.7,
+        defaultModel: agent?.defaultModel || '',
+        params: agent?.params || {} as any,
+        temperature: agent?.params?.temperature || 0.7,
         avatar: agent?.avatar || 'MessageSquare',
     });
 
