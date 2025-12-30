@@ -534,9 +534,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     // All hooks must be at top level - moved from isUser conditional block
     const [isModalVisible, setModalVisible] = useState(false);
 
-    // Determine if message is "fresh" (less than 3 seconds old) to prevent animation replay on scroll
+    // Determine if message is "fresh" (less than 1s old) to prevent animation replay on scroll
     const isRecent = React.useMemo(() => {
-        return (Date.now() - message.timestamp) < 3000;
+        return (Date.now() - message.timestamp) < 1000;
     }, [message.timestamp]);
     const [isSourcesExpanded, setSourcesExpanded] = useState(false);
     const [viewImageUri, setViewImageUri] = useState<string | null>(null);
@@ -775,9 +775,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     if (isUser) {
         return (
             <Animated.View
+                key={message.id} // Added key to prevent Reanimated glitch during list recycling
                 entering={isRecent ? FadeIn.duration(300) : undefined}
                 exiting={FadeOut.duration(300)}
-                layout={LinearTransition.duration(200)} // Removed springify, used standard duration
+                layout={LinearTransition.duration(200)}
                 style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 32, width: '100%', paddingHorizontal: 20 }}
             >
                 <View style={{ maxWidth: '80%' }}>
@@ -875,9 +876,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
     return (
         <Animated.View
+            key={message.id} // Added key to prevent Reanimated glitch during list recycling
             entering={isRecent ? FadeIn.duration(300) : undefined}
             exiting={FadeOut.duration(300)}
-            layout={LinearTransition.duration(200)} // Removed springify
+            layout={LinearTransition.duration(200)}
             style={{ marginBottom: 40, width: '100%', paddingHorizontal: 20 }}
             ref={bubbleRef}
             collapsable={false}

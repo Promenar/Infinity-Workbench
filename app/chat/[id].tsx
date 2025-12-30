@@ -281,7 +281,7 @@ export default function ChatDetailScreen() {
                         />
                     )}
                     estimatedItemSize={200}
-                    removeClippedSubviews={false} // Disabled to prevent Navigation Context crash on Android
+                    removeClippedSubviews={Platform.OS === 'android'} // Now safe with unique keys in ChatBubble
                     drawDistance={500}
                     getItemType={(item: any) => item.role}
                     contentContainerStyle={{
