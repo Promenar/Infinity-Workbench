@@ -76,10 +76,12 @@ export class VectorStatsService {
         const summaryCount = byType.summary;
         const memoryCount = byType.memory;
 
-        // 假设每个摘要覆盖约30条消息，理论上这些消息的记忆向量应该被清理
-        const expectedMemoryVectors = Math.max(0, memoryCount - (summaryCount * 30));
+        // 假设每个摘要平均覆盖约 20 条消息，理论上对应的记忆向量可以被归为冗余
+        // 我们计算：(可能的冗余向量 / 总记忆向量)
+        // 注意：这只是个启发式算法，用于给用户提供清理建议
+        const estimatedRedundant = Math.min(memoryCount, summaryCount * 20);
         const redundancyRate = memoryCount > 0
-            ? ((memoryCount - expectedMemoryVectors) / memoryCount) * 100
+            ? estimatedRedundant / memoryCount
             : 0;
 
         // 5. 估算存储大小（假设每个向量平均2KB）

@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Typography } from '../../../components/ui';
+import { View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Typography, ConfirmDialog } from '../../../components/ui';
+import { useToast } from '../../../components/ui/Toast';
 import { VectorStatsService, VectorStats } from '../../../lib/rag/vector-stats';
 import { vectorStore } from '../../../lib/rag/vector-store';
-import { Trash2, AlertCircle, RefreshCw, Database, FileText, ChevronRight, PieChart, Activity } from 'lucide-react-native';
+import { Trash2, RefreshCw, Database } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeProvider';
-import { useI18n } from '../../../lib/i18n';
-import * as Haptics from '../../../lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // 装饰性的小标题组件
@@ -22,9 +21,11 @@ const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 3
 export const RagDebugPanel: React.FC = () => {
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
+    const { showToast } = useToast();
     const [stats, setStats] = useState<VectorStats | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isCleaning, setIsCleaning] = useState(false); // Renamed 'cleaning' to 'isCleaning' for consistency
+    const [isCleaning, setIsCleaning] = useState(false);
+    const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
 
     const loadStats = async () => {
         setLoading(true);
@@ -33,42 +34,28 @@ export const RagDebugPanel: React.FC = () => {
             setStats(data);
         } catch (error) {
             console.error('Failed to load vector stats:', error);
-            Alert.alert('错误', '加载统计信息失败');
+            showToast('加载统计信息失败', 'error');
         } finally {
             setLoading(false);
         }
     };
 
     const handleCleanup = async () => {
-        setTimeout(() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }, 10);
-        Alert.alert(
-            '确认清理',
-            '这将删除所有已被摘要覆盖的旧向量，是否继续？',
-            [
-                { text: '取消', style: 'cancel' },
-                {
-                    text: '确认',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setIsCleaning(true);
-                        try {
-                            const result = await vectorStore.cleanupRedundantMemoryVectors();
-                            Alert.alert(
-                                '清理完成',
-                                `检查了 ${result.checked} 个摘要，删除了 ${result.deleted} 个冗余向量`
-                            );
-                            loadStats();
-                        } catch (error) {
-                            Alert.alert('清理失败', (error as Error).message);
-                        } finally {
-                            setIsCleaning(false);
-                        }
-                    }
-                }
-            ]
-        );
+        setIsCleaning(true);
+        setShowCleanupConfirm(false);
+        try {
+            const result = await vectorStore.cleanupRedundantMemoryVectors();
+            showToast(`清理完成: 删除了 ${result.deleted} 个冗余向量`, 'success');
+            loadStats();
+        } catch (error) {
+            showToast(`清理失败: ${(error as Error).message}`, 'error');
+        } finally {
+            setIsCleaning(false);
+        }
+    };
+
+    const triggerCleanupPrompt = () => {
+        setShowCleanupConfirm(true);
     };
 
     useEffect(() => {
@@ -135,7 +122,7 @@ export const RagDebugPanel: React.FC = () => {
                             </View>
                             <View className="w-[1px] h-10 bg-gray-100 dark:bg-zinc-800" />
                             <View className="items-center">
-                                <Typography className="text-2xl font-bold text-gray-900 dark:text-white">{stats.byType.memory + stats.byType.summary || 0}</Typography>
+                                <Typography className="text-2xl font-bold text-gray-900 dark:text-white">{(stats.byType.memory || 0) + (stats.byType.summary || 0)}</Typography>
                                 <Typography className="text-xs text-gray-400 mt-1">记忆向量</Typography>
                             </View>
                         </View>
@@ -146,7 +133,7 @@ export const RagDebugPanel: React.FC = () => {
                     <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                         <View className="flex-row items-center justify-between mb-4">
                             <View>
-                                <Typography className="text-sm font-bold text-gray-900 dark:text-white items-center flex-row">
+                                <Typography className="text-sm font-bold text-gray-900 dark:text-white">
                                     冗余率
                                 </Typography>
                                 <Typography className="text-xs text-gray-500 mt-0.5">检测失效或重复的引用数据</Typography>
@@ -156,9 +143,9 @@ export const RagDebugPanel: React.FC = () => {
                             </Typography>
                         </View>
 
-                        {stats.redundancyRate > 0.1 && (
+                        {stats.redundancyRate > 0.01 && (
                             <TouchableOpacity
-                                onPress={handleCleanup}
+                                onPress={triggerCleanupPrompt}
                                 disabled={isCleaning}
                                 className="bg-red-50 dark:bg-red-900/10 p-4 rounded-2xl flex-row items-center justify-center border border-red-100 dark:border-red-900/20"
                             >
@@ -216,6 +203,17 @@ export const RagDebugPanel: React.FC = () => {
                     )}
                 </>
             )}
+
+            <ConfirmDialog
+                visible={showCleanupConfirm}
+                title="确认清理"
+                message="这将从向量库中永久删除所有已被摘要覆盖的失效旧向量。建议在冗余率较高时执行，是否继续？"
+                confirmText="立即清理"
+                cancelText="稍后再说"
+                onConfirm={handleCleanup}
+                onCancel={() => setShowCleanupConfirm(false)}
+                isDestructive
+            />
         </ScrollView>
     );
 };
