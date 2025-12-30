@@ -8,9 +8,9 @@ export class GeminiClient implements LlmClient {
     private temperature: number;
     private activeXhr: XMLHttpRequest | null = null;
 
-    constructor(apiKey: string, model: string, temperature: number) {
+    constructor(apiKey: string, model: string, temperature: number, baseUrl?: string) {
         this.apiKey = apiKey;
-        this.baseUrl = 'https://generativelanguage.googleapis.com'; // Default base URL
+        this.baseUrl = baseUrl || 'https://generativelanguage.googleapis.com';
         this.model = model;
         this.temperature = temperature;
     }

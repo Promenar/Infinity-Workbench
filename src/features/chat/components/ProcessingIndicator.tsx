@@ -205,7 +205,7 @@ export const ProcessingIndicatorDetails: React.FC<ProcessingIndicatorDetailsProp
                         <FileText size={12} color={subTextColor} />
                         <Text style={[styles.sectionTitle, { color: subTextColor }]}>最近切片 ({chunks.length})</Text>
                     </View>
-                    {chunks.map((chunk, i) => (
+                    {chunks.map((chunk: string, i: number) => (
                         <View key={i} style={styles.chunkItem}>
                             <Text style={[styles.chunkIndex, { color: '#94a3b8' }]}>#{i + 1}</Text>
                             <Text style={[styles.chunkContent, { color: textColor }]} numberOfLines={3}>{chunk}</Text>

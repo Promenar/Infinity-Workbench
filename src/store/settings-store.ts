@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { RagConfiguration } from '../types/chat';
 
 export type Language = 'en' | 'zh';
 
@@ -19,6 +20,10 @@ interface SettingsState {
     defaultSpeechModel?: string; // 语音模型
 
     updateDefaultModel: (key: 'defaultSummaryModel' | 'defaultTempSessionModel' | 'defaultEmbeddingModel' | 'defaultSpeechModel', modelId: string) => void;
+
+    // RAG Global Settings
+    globalRagConfig: RagConfiguration;
+    updateGlobalRagConfig: (updates: Partial<RagConfiguration>) => void;
 
     _hasHydrated: boolean;
     setHasHydrated: (state: boolean) => void;
@@ -40,6 +45,19 @@ export const useSettingsStore = create<SettingsState>()(
 
             updateDefaultModel: (key, modelId) => set({ [key]: modelId }),
 
+            globalRagConfig: {
+                contextWindow: 10,
+                chunkSize: 800,
+                chunkOverlap: 100,
+                summaryThreshold: 4000,
+                summaryPrompt: 'Summarize the following conversation segment concisely, capturing key facts, decisions, and context.',
+                enableMemory: true,
+                enableDocs: true
+            },
+            updateGlobalRagConfig: (updates) => set((state) => ({
+                globalRagConfig: { ...state.globalRagConfig, ...updates }
+            })),
+
             _hasHydrated: false,
             setHasHydrated: (state) => set({ _hasHydrated: state }),
         }),
@@ -53,6 +71,7 @@ export const useSettingsStore = create<SettingsState>()(
                 defaultTempSessionModel: state.defaultTempSessionModel,
                 defaultEmbeddingModel: state.defaultEmbeddingModel,
                 defaultSpeechModel: state.defaultSpeechModel,
+                globalRagConfig: state.globalRagConfig,
             }),
             onRehydrateStorage: () => (state) => {
                 state?.setHasHydrated(true);

@@ -46,6 +46,25 @@ interface RagState {
 
     // 内部状态更新
     _updateQueueState: (queue: VectorizationTask[], current: VectorizationTask | null) => void;
+
+    // RAG 运行中状态管理 (指示器逻辑 - 全局单任务)
+    processingState: {
+        sessionId?: string;
+        activeMessageId?: string;
+        status: 'idle' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error';
+        startTime?: number;
+        summary?: string;
+        chunks: string[];
+    };
+    processingHistory: {
+        [messageId: string]: {
+            type: 'archived' | 'summarized';
+            summary?: string;
+            timestamp: number;
+            chunkCount?: number;
+        }
+    };
+    updateProcessingState: (state: { sessionId?: string; status: 'idle' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error'; startTime?: number; summary?: string; chunks?: string[] }, messageId?: string) => void;
 }
 
 export const useRagStore = create<RagState>((set, get) => {
@@ -426,6 +445,53 @@ export const useRagStore = create<RagState>((set, get) => {
             if (queue.length < prevQueueLength || (current === null && prevQueueLength > 0)) {
                 setTimeout(() => get().loadDocuments(), 200);
             }
+        },
+
+        processingState: { status: 'idle', chunks: [] },
+        processingHistory: {},
+        updateProcessingState: (stateUpdate, messageId) => {
+            const { sessionId, status, startTime, summary, chunks } = stateUpdate;
+
+            set((state) => {
+                const newState = { ...state };
+
+                // 1. Update active state (overwrite current task)
+                newState.processingState = {
+                    ...state.processingState,
+                    status,
+                    sessionId: sessionId || state.processingState.sessionId,
+                    activeMessageId: messageId || state.processingState.activeMessageId,
+                    startTime: startTime || state.processingState.startTime,
+                    summary: summary || state.processingState.summary,
+                    chunks: chunks || state.processingState.chunks || []
+                };
+
+                // 2. If it's a permanent result, save to history
+                if (messageId && (status === 'archived' || status === 'summarized' || status === 'completed')) {
+                    const type = (status === 'archived' || status === 'summarized') ? status : (summary ? 'summarized' : 'archived');
+                    const chunkCount = chunks?.length || state.processingState.chunks?.length || 0;
+
+                    newState.processingHistory = {
+                        ...state.processingHistory,
+                        [messageId]: {
+                            type,
+                            summary: summary || state.processingState.summary,
+                            chunkCount: chunkCount || undefined,
+                            timestamp: Date.now()
+                        }
+                    };
+
+                    // After completion, reset status to idle but keep activeMessageId for a moment to allow UI transition
+                    // Actually, often we just set to idle.
+                    newState.processingState = {
+                        ...newState.processingState,
+                        status: 'idle',
+                        // Keep other fields if needed for closing animations, or clear them
+                    };
+                }
+
+                return newState;
+            });
         }
     };
 });

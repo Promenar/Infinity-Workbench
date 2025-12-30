@@ -5,7 +5,6 @@ import { Session, SessionId, AgentId, Message, TokenUsage, InferenceParams, Gene
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
 import { createLlmClient } from '../lib/llm/factory';
-import { trimContext } from '../features/chat/utils/context-manager';
 import { estimateTokens } from '../features/chat/utils/token-counter';
 import { performWebSearch } from '../features/chat/utils/web-search';
 import { LlmClient } from '../lib/llm/types';
@@ -396,11 +395,11 @@ export const useChatStore = create<ChatState>()(
                         { role: 'user', content: await formatContent(content, normalizedImages) }
                     ] as any;
 
-                    const context = trimContext(contextMsgs);
+                    const context = ContextManager.trimContext(contextMsgs);
                     // For token estimation, we only count text parts
-                    const contextText = context.map(m => {
+                    const contextText = context.map((m: any) => {
                         if (typeof m.content === 'string') return m.content;
-                        return m.content.map((p: any) => p.type === 'text' ? p.text : '').join('\n');
+                        return (m.content as any[]).map((p: any) => p.type === 'text' ? p.text : '').join('\n');
                     }).join('\n');
                     const totalContextTokens = estimateTokens(contextText);
 

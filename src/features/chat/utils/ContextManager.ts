@@ -210,4 +210,11 @@ export class ContextManager {
         }
         return [];
     }
+
+    static trimContext(messages: Message[]): Message[] {
+        // Simple implementation: keep last 10 messages
+        const CONTEXT_WINDOW = 10;
+        if (messages.length <= CONTEXT_WINDOW) return messages;
+        return messages.slice(-CONTEXT_WINDOW);
+    }
 }

@@ -95,3 +95,13 @@ export interface Session {
     scrollOffset?: number; // 记录滚动位置
     draft?: string; // 未发送的草稿内容
 }
+
+export interface RagConfiguration {
+    contextWindow: number;    // Number of recent turns to keep in active context
+    chunkSize: number;        // Chars per chunk
+    chunkOverlap: number;     // Chars overlap between chunks
+    summaryThreshold: number; // Chars threshold before triggering summary
+    summaryPrompt: string;    // Custom prompt for the summarizer
+    enableMemory: boolean;    // Default memory toggle
+    enableDocs: boolean;      // Default docs toggle
+}
