@@ -72,16 +72,25 @@ export class VectorStatsService {
             }
         }
 
-        // 4. 计算冗余率（估算）
-        const summaryCount = byType.summary;
+        // 4. 计算冗余率（精确匹配）
+        // 冗余定义：类型为 'memory' 且其消息 ID 落在该会话已有的任何摘要范围内的向量
+        const redundancyResult = await db.execute(`
+            SELECT COUNT(*) as count 
+            FROM vectors v
+            WHERE json_extract(v.metadata, '$.type') = 'memory'
+              AND EXISTS (
+                SELECT 1 FROM context_summaries s 
+                WHERE s.session_id = v.session_id 
+                  AND v.start_message_id >= s.start_message_id 
+                  AND v.end_message_id <= s.end_message_id
+              )
+        `);
+
+        const redundantCount = Number(redundancyResult.rows?.[0]?.count) || 0;
         const memoryCount = byType.memory;
 
-        // 假设每个摘要平均覆盖约 20 条消息，理论上对应的记忆向量可以被归为冗余
-        // 我们计算：(可能的冗余向量 / 总记忆向量)
-        // 注意：这只是个启发式算法，用于给用户提供清理建议
-        const estimatedRedundant = Math.min(memoryCount, summaryCount * 20);
         const redundancyRate = memoryCount > 0
-            ? estimatedRedundant / memoryCount
+            ? redundantCount / memoryCount
             : 0;
 
         // 5. 估算存储大小（假设每个向量平均2KB）
