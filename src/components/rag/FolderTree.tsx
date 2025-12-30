@@ -82,7 +82,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
                             <Animated.View
                                 entering={FadeIn.duration(200)}
                                 exiting={FadeOut.duration(150)}
-                                layout={Layout.springify()}
+                                layout={Layout.springify().damping(28).stiffness(120)}
                             >
                                 <FolderTree
                                     folders={folders}

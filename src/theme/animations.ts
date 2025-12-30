@@ -17,10 +17,13 @@ export const ANIMATION_CONFIG = {
     DEFAULT: { duration: ANIMATION_DURATION.NORMAL, easing: Easing.bezier(0.25, 0.1, 0.25, 1) } as WithTimingConfig,
     FAST: { duration: ANIMATION_DURATION.FAST, easing: Easing.bezier(0.25, 0.1, 0.25, 1) } as WithTimingConfig,
 
-    // Spring configs (iOS-like feel)
-    SPRING_DEFAULT: { damping: 20, stiffness: 100, mass: 1 } as WithSpringConfig,
-    SPRING_BOUNCY: { damping: 15, stiffness: 120, mass: 1 } as WithSpringConfig,
-    SPRING_SNAPPY: { damping: 25, stiffness: 200, mass: 0.8 } as WithSpringConfig, // Snappier, less bounce
+    // Spring configs (iOS-like feel, tuned for Release smoothness)
+    SPRING_DEFAULT: { damping: 26, stiffness: 120, mass: 1 } as WithSpringConfig,
+    SPRING_BOUNCY: { damping: 18, stiffness: 120, mass: 1 } as WithSpringConfig,
+    SPRING_SNAPPY: { damping: 30, stiffness: 200, mass: 0.8 } as WithSpringConfig, // Very snappy, zero bounce
+
+    // Silk config (Fluid, non-spring timing for heavy UI changes)
+    SILK: { duration: ANIMATION_DURATION.NORMAL, easing: Easing.bezier(0.4, 0, 0.2, 1) } as WithTimingConfig,
 };
 
 // Reanimated Layout Animation Presets

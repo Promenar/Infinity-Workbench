@@ -65,7 +65,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 </Animated.View>
 
                 <Animated.View
-                    entering={FadeInUp.duration(200).springify()}
+                    entering={FadeInUp.duration(250)}
                     exiting={FadeOut.duration(150)}
                     style={styles.modalContent}
                 >

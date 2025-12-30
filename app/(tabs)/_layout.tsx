@@ -12,7 +12,7 @@ export default function TabLayout() {
             screenOptions={{
                 headerShown: false,
                 lazy: false, // 预加载所有页面，避免首次切换延迟
-                animation: 'shift', // 保留原有shift动画
+                animation: 'fade', // 改为渐变切换，避免位移式抖动感
                 tabBarStyle: {
                     backgroundColor: isDark ? '#000000' : '#FFFFFF',
                     borderTopColor: isDark ? '#1e1e1e' : '#f1f1f1',

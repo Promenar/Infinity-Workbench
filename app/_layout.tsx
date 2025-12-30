@@ -55,7 +55,12 @@ export default function RootLayout() {
                     <ToastProvider>
                         <NavThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
                             <StatusBar style="auto" />
-                            <Stack screenOptions={{ headerShown: false }}>
+                            <Stack screenOptions={{
+                                headerShown: false,
+                                animation: 'slide_from_right', // 显式锁定 Android 侧滑感
+                                gestureEnabled: true,
+                                animationDuration: 300,
+                            }}>
                                 <Stack.Screen name="(tabs)" />
                                 <Stack.Screen name="index" />
                             </Stack>
