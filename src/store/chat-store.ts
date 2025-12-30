@@ -193,17 +193,33 @@ export const useChatStore = create<ChatState>()(
                 sessions: state.sessions.map((s) => s.id === id ? { ...s, draft } : s)
             })),
 
-            deleteMessage: (sessionId, messageId) => set((state) => ({
-                sessions: state.sessions.map((s) => {
-                    if (s.id === sessionId) {
-                        return {
-                            ...s,
-                            messages: s.messages.filter((m) => m.id !== messageId),
-                        };
+            deleteMessage: (sessionId, messageId) => {
+                const state = get();
+                // If the session being edited is currently generating
+                if (state.currentGeneratingSessionId === sessionId) {
+                    const session = state.sessions.find(s => s.id === sessionId);
+                    if (session) {
+                        // If we are deleting the last message (which is usually the AI message under generation)
+                        const lastMsg = session.messages[session.messages.length - 1];
+                        if (lastMsg && lastMsg.id === messageId) {
+                            console.log('[ChatStore] Deleting active generating message, aborting...');
+                            state.abortGeneration(sessionId);
+                        }
                     }
-                    return s;
-                })
-            })),
+                }
+
+                set((state) => ({
+                    sessions: state.sessions.map((s) => {
+                        if (s.id === sessionId) {
+                            return {
+                                ...s,
+                                messages: s.messages.filter((m) => m.id !== messageId),
+                            };
+                        }
+                        return s;
+                    })
+                }));
+            },
 
             setMessagesArchived: (sessionId, messageIds) => set((state) => ({
                 sessions: state.sessions.map((s) => {
