@@ -96,7 +96,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
         setLoading(true);
         setLastError(null);
         try {
-            await ContextManager.checkAndSummarize(sessionId, session.messages, {
+            await ContextManager.checkAndSummarize(sessionId, session.messages, undefined, {
                 maxMessages: 20,
                 summarizeThreshold: 0 // Force summarization of any pending messages
             });

@@ -28,11 +28,11 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({ config, onUp
         onUpdate({ ...effectiveConfig, [key]: value });
     };
 
-    const handlePresetSelect = (chunkSize: number, chunkOverlap: number) => {
+    const handlePresetSelect = (docChunkSize: number, chunkOverlap: number) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onUpdate({
             ...effectiveConfig,
-            chunkSize,
+            docChunkSize,
             chunkOverlap
         });
     };
@@ -45,10 +45,10 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({ config, onUp
     const inputBorder = isDark ? '#3f3f46' : '#e2e8f0';
 
     const getActivePreset = () => {
-        const { chunkSize, chunkOverlap } = effectiveConfig;
-        if (chunkSize === 800 && chunkOverlap === 100) return 'balanced';
-        if (chunkSize === 1500 && chunkOverlap === 300) return 'writing';
-        if (chunkSize === 1000 && chunkOverlap === 200) return 'code';
+        const { docChunkSize, chunkOverlap } = effectiveConfig;
+        if (docChunkSize === 800 && chunkOverlap === 100) return 'balanced';
+        if (docChunkSize === 1500 && chunkOverlap === 300) return 'writing';
+        if (docChunkSize === 1000 && chunkOverlap === 200) return 'code';
         return null;
     };
 
@@ -164,12 +164,12 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({ config, onUp
             <View style={styles.fieldContainer}>
                 <View style={styles.labelRow}>
                     <Text style={[styles.label, { color: labelColor }]}>{t.rag.chunkSize}</Text>
-                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.chunkSize} chars</Text>
+                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.docChunkSize} chars</Text>
                 </View>
                 <Text style={[styles.description, { color: descColor }]}>{t.rag.chunkSizeDesc}</Text>
                 <Slider
-                    value={effectiveConfig.chunkSize}
-                    onValueChange={(val: number) => updateField('chunkSize', Math.floor(val))}
+                    value={effectiveConfig.docChunkSize}
+                    onValueChange={(val: number) => updateField('docChunkSize', Math.floor(val))}
                     minimumValue={200}
                     maximumValue={2000}
                     step={50}

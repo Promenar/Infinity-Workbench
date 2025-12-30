@@ -642,9 +642,8 @@ export const useChatStore = create<ChatState>()(
                         // 计算未被摘要的消息数
                         const newMessagesCount = contentMessages.filter(m => !summarizedMessageIds.has(m.id)).length;
 
-                        // 活跃窗口大小（从会话设置读取，默认10）
                         // 活跃窗口大小（对应ContextManager的finalConfig.maxMessages）
-                        const activeWindowSize = 10;
+                        const activeWindowSize = agent.ragConfig?.contextWindow || 10;
                         const summaryThreshold = agent.ragConfig?.summaryThreshold || 20;
 
                         // ✅ 关键修复：只有当new消息数 > (活跃窗口 + 阈值) 时才触发
