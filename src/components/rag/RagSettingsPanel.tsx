@@ -15,7 +15,15 @@ interface RagSettingsPanelProps {
     isGlobal?: boolean;   // If true, hide "Reset to Global" (since it IS global)
 }
 
+/**
+ * @deprecated 这个组件已被弃用，请使用 `features/settings/components/` 下的 
+ * `GlobalRagConfigPanel` 或 `AgentRagConfigPanel`。
+ * 未来版本中此文件将被彻底移除。
+ */
 export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({ config, onUpdate, onReset, isGlobal = false }) => {
+    React.useEffect(() => {
+        console.warn('[RagSettingsPanel] 警告: 您正在使用已弃用的 RAG 设置组件。请迁移到通用 Panel。');
+    }, []);
     const { isDark } = useTheme();
     const { t } = useI18n();
     const { globalRagConfig } = useSettingsStore();
@@ -202,20 +210,103 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({ config, onUp
             <View style={styles.fieldContainer}>
                 <View style={styles.labelRow}>
                     <Text style={[styles.label, { color: labelColor }]}>{t.rag.summaryThreshold}</Text>
-                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.summaryThreshold} chars</Text>
+                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.summaryThreshold} 条消息</Text>
                 </View>
                 <Text style={[styles.description, { color: descColor }]}>{t.rag.summaryThresholdDesc}</Text>
                 <Slider
                     value={effectiveConfig.summaryThreshold}
                     onValueChange={(val: number) => updateField('summaryThreshold', Math.floor(val))}
-                    minimumValue={1000}
-                    maximumValue={8000}
-                    step={100}
+                    minimumValue={5}
+                    maximumValue={50}
+                    step={1}
                     minimumTrackTintColor="#ef4444"
                     maximumTrackTintColor={isDark ? '#334155' : '#cbd5e1'}
                     thumbTintColor="#ef4444"
                 />
             </View>
+
+            <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e2e8f0', marginVertical: 8, marginBottom: 20 }} />
+
+            {/* Retrieval Configuration */}
+            <Text style={[styles.sectionTitle, { color: textColor, marginBottom: 20 }]}>检索配置 (Retrieval)</Text>
+
+            {/* Memory Limit */}
+            <View style={styles.fieldContainer}>
+                <View style={styles.labelRow}>
+                    <Text style={[styles.label, { color: labelColor }]}>{t.rag.memoryLimit}</Text>
+                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.memoryLimit} 条</Text>
+                </View>
+                <Text style={[styles.description, { color: descColor }]}>{t.rag.memoryLimitDesc}</Text>
+                <Slider
+                    value={effectiveConfig.memoryLimit}
+                    onValueChange={(val: number) => updateField('memoryLimit', Math.floor(val))}
+                    minimumValue={1}
+                    maximumValue={20}
+                    step={1}
+                    minimumTrackTintColor="#8b5cf6"
+                    maximumTrackTintColor={isDark ? '#334155' : '#cbd5e1'}
+                    thumbTintColor="#8b5cf6"
+                />
+            </View>
+
+            {/* Memory Threshold */}
+            <View style={styles.fieldContainer}>
+                <View style={styles.labelRow}>
+                    <Text style={[styles.label, { color: labelColor }]}>{t.rag.memoryThreshold}</Text>
+                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.memoryThreshold.toFixed(2)}</Text>
+                </View>
+                <Text style={[styles.description, { color: descColor }]}>{t.rag.memoryThresholdDesc}</Text>
+                <Slider
+                    value={effectiveConfig.memoryThreshold}
+                    onValueChange={(val: number) => updateField('memoryThreshold', parseFloat(val.toFixed(2)))}
+                    minimumValue={0.01}
+                    maximumValue={0.99}
+                    step={0.01}
+                    minimumTrackTintColor="#8b5cf6"
+                    maximumTrackTintColor={isDark ? '#334155' : '#cbd5e1'}
+                    thumbTintColor="#8b5cf6"
+                />
+            </View>
+
+            {/* Doc Limit */}
+            <View style={styles.fieldContainer}>
+                <View style={styles.labelRow}>
+                    <Text style={[styles.label, { color: labelColor }]}>{t.rag.docLimit}</Text>
+                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.docLimit} 条</Text>
+                </View>
+                <Text style={[styles.description, { color: descColor }]}>{t.rag.docLimitDesc}</Text>
+                <Slider
+                    value={effectiveConfig.docLimit}
+                    onValueChange={(val: number) => updateField('docLimit', Math.floor(val))}
+                    minimumValue={1}
+                    maximumValue={20}
+                    step={1}
+                    minimumTrackTintColor="#06b6d4"
+                    maximumTrackTintColor={isDark ? '#334155' : '#cbd5e1'}
+                    thumbTintColor="#06b6d4"
+                />
+            </View>
+
+            {/* Doc Threshold */}
+            <View style={styles.fieldContainer}>
+                <View style={styles.labelRow}>
+                    <Text style={[styles.label, { color: labelColor }]}>{t.rag.docThreshold}</Text>
+                    <Text style={[styles.value, { color: subTextColor }]}>{effectiveConfig.docThreshold.toFixed(2)}</Text>
+                </View>
+                <Text style={[styles.description, { color: descColor }]}>{t.rag.docThresholdDesc}</Text>
+                <Slider
+                    value={effectiveConfig.docThreshold}
+                    onValueChange={(val: number) => updateField('docThreshold', parseFloat(val.toFixed(2)))}
+                    minimumValue={0.01}
+                    maximumValue={0.99}
+                    step={0.01}
+                    minimumTrackTintColor="#06b6d4"
+                    maximumTrackTintColor={isDark ? '#334155' : '#cbd5e1'}
+                    thumbTintColor="#06b6d4"
+                />
+            </View>
+
+            <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e2e8f0', marginVertical: 8, marginBottom: 20 }} />
 
             {/* Summary Prompt */}
             <View style={styles.fieldContainer}>

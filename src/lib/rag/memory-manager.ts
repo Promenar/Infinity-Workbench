@@ -1,4 +1,4 @@
-import { Session, Message, RagReference } from '../../types/chat';
+import { Session, Message, RagReference, RagConfiguration } from '../../types/chat';
 import { vectorStore, SearchResult } from './vector-store';
 import { EmbeddingClient } from './embedding';
 import { useApiStore } from '../../store/api-store';
@@ -13,10 +13,15 @@ export class MemoryManager {
         activeDocIds?: string[];
         activeFolderIds?: string[];
         isGlobal?: boolean;
+        ragConfig?: RagConfiguration; // ✅ 新增：允许传入特定 RAG 配置
     } = {}): Promise<{ context: string; references: RagReference[] }> {
 
-        const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [], isGlobal = false } = options;
+        const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [], isGlobal = false, ragConfig } = options;
         const apiStore = useApiStore.getState();
+        const settings = useSettingsStore.getState();
+
+        // 🔑 优先级：选项传入 > 全局配置
+        const effectiveRagConfig = ragConfig || settings.globalRagConfig;
 
         // 1. 获取查询向量 (Get Embedding)
         // ... (Embedding logic remains the same)
@@ -64,14 +69,10 @@ export class MemoryManager {
         // 2. 搜索记忆 (长期对话历史)
         if (enableMemory) {
             try {
-                // 从配置中获取检索参数
-                const settings = useSettingsStore.getState();
-                const ragConfig = settings.globalRagConfig;
-
                 const memResults = await vectorStore.search(queryEmbedding, {
-                    limit: ragConfig.memoryLimit,
+                    limit: effectiveRagConfig.memoryLimit,
                     filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' },
-                    threshold: ragConfig.memoryThreshold
+                    threshold: effectiveRagConfig.memoryThreshold
                 });
                 results.push(...memResults);
             } catch (e) {
@@ -140,14 +141,10 @@ export class MemoryManager {
                         }
                     }
 
-                    // 从配置中获取文档检索参数
-                    const settings = useSettingsStore.getState();
-                    const ragConfig = settings.globalRagConfig;
-
                     const docResults = await vectorStore.search(queryEmbedding, {
-                        limit: ragConfig.docLimit, // Increased slightly since we filter later
+                        limit: effectiveRagConfig.docLimit, // Increased slightly since we filter later
                         filter: { type: 'doc' },
-                        threshold: ragConfig.docThreshold
+                        threshold: effectiveRagConfig.docThreshold
                     });
 
                     // 如果是全局模式，或者命中授权文档，则保留

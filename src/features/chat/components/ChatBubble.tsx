@@ -549,8 +549,14 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     const [isProcessingExpanded, setProcessingExpanded] = useState(false); // ✅ 新增：ProcessingIndicator展开状态
     const [isArchived, setIsArchived] = useState(message.isArchived || false); // ✅ 归档状态
 
-    // ✅ 查询消息归档状态
+    // ✅ Query/Sync archive status
     useEffect(() => {
+        // If store already knows it's archived, trust it
+        if (message.isArchived) {
+            setIsArchived(true);
+            return;
+        }
+
         const checkArchiveStatus = async () => {
             if (message.role === 'system') return;
             try {
@@ -563,13 +569,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     (result.rows as any).length > 0 ||
                     ((result.rows as any).item && (result.rows as any).item(0))
                 );
-                setIsArchived(!!hasRecord);
+                if (hasRecord) setIsArchived(true);
             } catch (e) {
                 console.error('[ChatBubble] Failed to check archive status:', e);
             }
         };
         checkArchiveStatus();
-    }, [message.id, sessionId]);
+    }, [message.id, sessionId, message.isArchived]);
 
     // Auto-collapse reasoning when done
     useEffect(() => {

@@ -91,7 +91,7 @@ export class ContextManager {
             console.log(`[ContextManager] Summarizing ${chunk.length} messages for session ${sessionId}...`);
 
             // 2. Generate Summary
-            const summaryResult = await this.generateSummary(chunk);
+            const summaryResult = await this.generateSummary(chunk, ragConfig.summaryPrompt);
             if (!summaryResult) return;
 
             const { summary, tokenUsage } = summaryResult;
@@ -129,7 +129,7 @@ export class ContextManager {
         }
     }
 
-    private static async generateSummary(messages: Message[]): Promise<{ summary: string; tokenUsage: number } | null> {
+    private static async generateSummary(messages: Message[], customPrompt?: string): Promise<{ summary: string; tokenUsage: number } | null> {
         const apiStore = useApiStore.getState();
         // Use a lightweight model if possible, or the current active provider
         const provider = apiStore.providers.find(p => p.enabled);
@@ -138,7 +138,10 @@ export class ContextManager {
         }
 
         const transcript = messages.map(m => `${m.role}: ${m.content}`).join('\n');
-        const prompt = `Summarize the following conversation segment concisely, capturing key facts, decisions, and context. Do not lose important details.\n\n${transcript}`;
+
+        // 使用用户定义的 Prompt 或回退到默认
+        const basePrompt = customPrompt || 'Summarize the following conversation segment concisely, capturing key facts, decisions, and context. Do not lose important details.';
+        const prompt = `${basePrompt}\n\n${transcript}`;
 
         try {
             // Find a suitable model: Prefer 'chat' capable models
@@ -286,10 +289,9 @@ export class ContextManager {
         return [];
     }
 
-    static trimContext(messages: Message[]): Message[] {
-        // Simple implementation: keep last 10 messages
-        const CONTEXT_WINDOW = 10;
-        if (messages.length <= CONTEXT_WINDOW) return messages;
-        return messages.slice(-CONTEXT_WINDOW);
+    static trimContext(messages: Message[], maxMessages: number = 10): Message[] {
+        // 使用动态配置的窗口大小，回退到 10
+        if (messages.length <= maxMessages) return messages;
+        return messages.slice(-maxMessages);
     }
 }

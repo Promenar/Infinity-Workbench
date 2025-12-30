@@ -94,6 +94,7 @@ interface ChatState {
     toggleSessionPin: (sessionId: SessionId) => void;
 
     updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
+    setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -198,6 +199,19 @@ export const useChatStore = create<ChatState>()(
                         return {
                             ...s,
                             messages: s.messages.filter((m) => m.id !== messageId),
+                        };
+                    }
+                    return s;
+                })
+            })),
+
+            setMessagesArchived: (sessionId, messageIds) => set((state) => ({
+                sessions: state.sessions.map((s) => {
+                    if (s.id === sessionId) {
+                        const idSet = new Set(messageIds);
+                        return {
+                            ...s,
+                            messages: s.messages.map(m => idSet.has(m.id) ? { ...m, isArchived: true } : m)
                         };
                     }
                     return s;
@@ -390,7 +404,8 @@ export const useChatStore = create<ChatState>()(
                             // For Super Assistant, force global search
                             const effectiveRagOptions = {
                                 ...finalRagOptions,
-                                isGlobal: sessionId === 'super_assistant' ? true : finalRagOptions.isGlobal
+                                isGlobal: sessionId === 'super_assistant' ? true : finalRagOptions.isGlobal,
+                                ragConfig: agent.ragConfig // ✅ 关键：传入特定助手的 RAG 配置
                             };
 
                             const { context: retrievedContext, references } = await MemoryManager.retrieveContext(
@@ -461,7 +476,10 @@ export const useChatStore = create<ChatState>()(
                         return parts;
                     };
 
-                    const history = await Promise.all(session.messages.slice(-10).map(async (m: Message) => ({
+                    // 🔑 动态上下文窗口大小
+                    const activeWindowSize = agent.ragConfig?.contextWindow || 10;
+
+                    const history = await Promise.all(session.messages.slice(-activeWindowSize).map(async (m: Message) => ({
                         role: m.role,
                         content: await formatContent(m.content, m.images, true)
                     })));
@@ -472,7 +490,7 @@ export const useChatStore = create<ChatState>()(
                         { role: 'user', content: await formatContent(content, normalizedImages) }
                     ] as any;
 
-                    const context = ContextManager.trimContext(contextMsgs);
+                    const context = ContextManager.trimContext(contextMsgs, activeWindowSize);
                     // For token estimation, we only count text parts
                     const contextText = context.map((m: any) => {
                         if (typeof m.content === 'string') return m.content;
@@ -589,6 +607,9 @@ export const useChatStore = create<ChatState>()(
                                 status: 'archived',
                                 chunks: []
                             }, assistantMsgId);
+
+                            // ✅ 关键修复3：更新Store中的消息状态，通知UI显示绿勾
+                            get().setMessagesArchived(sessionId, [userMsg.id, assistantMsgId]);
 
                             console.log('[RAG] 对话已归档到向量库');
                         } catch (e) {
