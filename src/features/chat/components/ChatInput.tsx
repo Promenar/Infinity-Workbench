@@ -23,6 +23,7 @@ import { useChatStore } from '../../../store/chat-store';
 import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
 import { useApiStore } from '../../../store/api-store';
 import { ANIMATION_DURATION } from '../../../theme/animations';
+import { SummaryIndicator } from './SummaryIndicator';  // ✅ 导入摘要指示器
 
 interface ChatInputProps {
     onSendMessage: (text: string, options?: { webSearch?: boolean; reasoning?: boolean; images?: string[] }) => void;
@@ -316,6 +317,9 @@ export function ChatInput({
                             </Typography>
                         </TouchableOpacity>
                     )}
+
+                    {/* ✅ 全局摘要指示器 */}
+                    <SummaryIndicator sessionId={sessionId} isDark={isDark} />
 
                     <View style={{ flex: 1 }} />
 

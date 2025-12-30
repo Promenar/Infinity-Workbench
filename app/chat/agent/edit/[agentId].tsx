@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { PageLayout, Typography, GlassHeader, ConfirmDialog } from '../../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Save, Sparkles, Cpu, ChevronRight, Trash2, Image as ImageIcon, Check } from 'lucide-react-native';
+import { ChevronLeft, Save, Sparkles, Cpu, ChevronRight, Trash2, Image as ImageIcon, Check, Database } from 'lucide-react-native';
 import * as Haptics from '../../../../src/lib/haptics';
 import { useAgentStore } from '../../../../src/store/agent-store';
 import { useApiStore } from '../../../../src/store/api-store';
@@ -14,6 +14,7 @@ import { clsx } from 'clsx';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { AgentAvatar } from '../../../../src/components/chat/AgentAvatar';
+import { AgentRagConfigPanel } from '../../../../src/features/settings/components/AgentRagConfigPanel';
 
 const PRESET_ICONS = ['MessageSquare', 'Zap', 'Brain', 'Bot', 'Cpu', 'Sparkles', 'Code2', 'User', 'Globe', 'Terminal'];
 
@@ -299,6 +300,12 @@ export default function AgentEditScreen() {
                             </View>
                         </View>
                     </View>
+
+                    {/* RAG 配置 */}
+                    <AgentRagConfigPanel
+                        agent={agent}
+                        onUpdate={(updates) => updateAgent(agentId, updates)}
+                    />
 
                     {/* Danger Zone */}
                     <Typography variant="label" className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3">

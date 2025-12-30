@@ -1,10 +1,11 @@
-import { Message } from '../../../types/chat';
+import { Message, Agent } from '../../../types/chat';
 import { createLlmClient } from '../../../lib/llm/factory';
 import { estimateTokens } from './token-counter';
 import { db } from '../../../lib/db';
 import { vectorStore } from '../../../lib/rag/vector-store';
 import { useApiStore } from '../../../store/api-store';
 import { EmbeddingClient } from '../../../lib/rag/embedding';
+import { useSettingsStore } from '../../../store/settings-store';
 
 export interface ContextConfig {
     maxMessages: number; // Max messages in active window (e.g., 20)
@@ -22,7 +23,20 @@ export interface ContextSummary {
 }
 
 export class ContextManager {
-    static async checkAndSummarize(sessionId: string, messages: Message[], config: ContextConfig = { maxMessages: 20, summarizeThreshold: 30 }): Promise<void> {
+    static async checkAndSummarize(
+        sessionId: string,
+        messages: Message[],
+        agent?: Agent,
+        config?: ContextConfig
+    ): Promise<void> {
+        // 从设置存储获取配置，优先使用助手级配置
+        const settings = useSettingsStore.getState();
+        const ragConfig = agent?.ragConfig || settings.globalRagConfig;
+
+        const finalConfig = config || {
+            maxMessages: ragConfig.contextWindow,
+            summarizeThreshold: ragConfig.summaryThreshold
+        };
         // 1. Identify unsummarized messages
         try {
             // Fetch existing summaries to determine the "summarized frontier"
@@ -52,15 +66,21 @@ export class ContextManager {
             // Calculate how many unsummarized messages we have pending
             // We want to keep the last 'maxMessages' (e.g., 20) as active context
             // So we summarize everything before `total - maxMessages`
-            const activeWindowSize = config.maxMessages;
+            const activeWindowSize = finalConfig.maxMessages;
             const pendingCount = contentMessages.length - startIndex;
 
             // e.g. 50 messages total, start=0. pending=50. max=20.
             // We can summarize 50 - 20 = 30 messages.
             const messagesToSummarizeCount = pendingCount - activeWindowSize;
 
-            if (messagesToSummarizeCount < 10) {
+            // 修复：使用summarizeThreshold，而不是硬编码10
+            const minBatchSize = Math.min(finalConfig.summarizeThreshold || 10, 10);
+
+            console.log(`[ContextManager] 摘要检查: pending=${messagesToSummarizeCount}, minBatch=${minBatchSize}, contentMessages=${contentMessages.length}, activeWindow=${activeWindowSize}`);
+
+            if (messagesToSummarizeCount < minBatchSize) {
                 // Not enough messages to bother summarizing yet (batch it)
+                console.log(`[ContextManager] 跳过摘要：未达到批次大小`);
                 return;
             }
 
@@ -70,11 +90,13 @@ export class ContextManager {
 
             console.log(`[ContextManager] Summarizing ${chunk.length} messages for session ${sessionId}...`);
 
-            // 2. Generate Summary using LLM
-            const summary = await this.generateSummary(chunk);
-            if (!summary) return;
+            // 2. Generate Summary
+            const summaryResult = await this.generateSummary(chunk);
+            if (!summaryResult) return;
 
-            // 3. Store in DB
+            const { summary, tokenUsage } = summaryResult;
+
+            // 3. Store Summary in DB
             const id = `summary_${Date.now()}`;
             await db.execute(
                 `INSERT INTO context_summaries (id, session_id, start_message_id, end_message_id, summary_content, created_at, token_usage) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -85,21 +107,29 @@ export class ContextManager {
                     chunk[chunk.length - 1].id,
                     summary,
                     Date.now(),
-                    0 // TODO: track actual usage
+                    tokenUsage  // ✅ 保存实际token使用量
                 ]
             );
 
             // 4. Vectorize Summary for RAG
             await this.vectorizeSummary(sessionId, summary);
 
-            console.log('[ContextManager] Summary generated and stored successfully.');
+            // 5. 清理已摘要的实时归档向量（降低冗余）
+            const cleanedCount = await this.cleanupSummarizedMemoryVectors(
+                sessionId,
+                chunk[0].id,
+                chunk[chunk.length - 1].id,
+                id
+            );
+
+            console.log(`[ContextManager] Summary generated and stored. Cleaned ${cleanedCount} redundant memory vectors.`);
 
         } catch (e) {
             console.error('[ContextManager] Failed to summarize:', e);
         }
     }
 
-    private static async generateSummary(messages: Message[]): Promise<string | null> {
+    private static async generateSummary(messages: Message[]): Promise<{ summary: string; tokenUsage: number } | null> {
         const apiStore = useApiStore.getState();
         // Use a lightweight model if possible, or the current active provider
         const provider = apiStore.providers.find(p => p.enabled);
@@ -139,7 +169,16 @@ export class ContextManager {
                 ).then(() => resolve()).catch(reject);
             });
 
-            return fullResponse;
+            // ✅ 计算token使用量
+            const { estimateTokens } = await import('./token-counter');
+            const inputTokens = estimateTokens(prompt);
+            const outputTokens = estimateTokens(fullResponse);
+            const totalTokens = inputTokens + outputTokens;
+
+            return {
+                summary: fullResponse,
+                tokenUsage: totalTokens
+            };
         } catch (e) {
             console.error('[ContextManager] LLM call failed:', e);
             throw e; // Re-throw to let UI handle it
@@ -177,6 +216,42 @@ export class ContextManager {
             }]);
         } catch (e) {
             console.error('[ContextManager] Vectorization failed:', e);
+        }
+    }
+
+    /**
+     * 清理已被摘要覆盖的实时归档向量
+     * 通过消息 ID 精确删除，降低向量冗余率
+     */
+    private static async cleanupSummarizedMemoryVectors(
+        sessionId: string,
+        startMessageId: string,
+        endMessageId: string,
+        summaryId: string
+    ): Promise<number> {
+        try {
+            // 删除指定消息范围内的 type='memory' 向量
+            // 使用新增的 start_message_id 和 end_message_id 字段进行精确匹配
+            const result = await db.execute(`
+                DELETE FROM vectors 
+                WHERE session_id = ? 
+                  AND json_extract(metadata, '$.type') = 'memory'
+                  AND start_message_id >= ? 
+                  AND end_message_id <= ?
+            `, [sessionId, startMessageId, endMessageId]);
+
+            const deletedCount = result.rowsAffected || 0;
+
+            if (deletedCount > 0) {
+                console.log(`[ContextManager] Cleaned up ${deletedCount} memory vectors for summary ${summaryId}`);
+            }
+
+            return deletedCount;
+
+        } catch (error) {
+            console.error('[ContextManager] Failed to cleanup memory vectors:', error);
+            // 非致命错误，不抛出异常
+            return 0;
         }
     }
 

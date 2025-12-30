@@ -46,13 +46,30 @@ export const useSettingsStore = create<SettingsState>()(
             updateDefaultModel: (key, modelId) => set({ [key]: modelId }),
 
             globalRagConfig: {
-                contextWindow: 10,
-                chunkSize: 800,
+                // 切块配置
+                docChunkSize: 800,
+                memoryChunkSize: 1000,
                 chunkOverlap: 100,
-                summaryThreshold: 4000,
+
+                // 上下文管理
+                contextWindow: 20,
+                summaryThreshold: 10,
                 summaryPrompt: 'Summarize the following conversation segment concisely, capturing key facts, decisions, and context.',
+                autoCleanup: true,
+
+                // 检索配置
+                memoryLimit: 5,
+                memoryThreshold: 0.7,
+                docLimit: 8,
+                docThreshold: 0.45,
+
+                // 功能开关
                 enableMemory: true,
-                enableDocs: true
+                enableDocs: true,
+
+                // 调试选项
+                debugMode: false,
+                showStats: false
             },
             updateGlobalRagConfig: (updates) => set((state) => ({
                 globalRagConfig: { ...state.globalRagConfig, ...updates }

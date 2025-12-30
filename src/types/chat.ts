@@ -23,6 +23,9 @@ export interface Agent {
     // Advanced Parameters
     params?: InferenceParams; // Default params for this agent
 
+    // RAG Configuration (助手级配置，未设置则使用全局)
+    ragConfig?: RagConfiguration;
+
     isPreset?: boolean;
     isPinned?: boolean;
     created: number;
@@ -64,6 +67,7 @@ export interface Message {
     ragReferencesLoading?: boolean; // New flag for RAG search state
     tokens?: TokenUsage;
     images?: GeneratedImageData[]; // 图片数据（新格式，支持缩略图）
+    isArchived?: boolean; // ✅ RAG归档状态（从数据库查询）
 }
 
 export interface Session {
@@ -96,12 +100,31 @@ export interface Session {
     draft?: string; // 未发送的草稿内容
 }
 
+// RAG配置（会话级或全局）
 export interface RagConfiguration {
-    contextWindow: number;    // Number of recent turns to keep in active context
-    chunkSize: number;        // Chars per chunk
-    chunkOverlap: number;     // Chars overlap between chunks
-    summaryThreshold: number; // Chars threshold before triggering summary
-    summaryPrompt: string;    // Custom prompt for the summarizer
-    enableMemory: boolean;    // Default memory toggle
-    enableDocs: boolean;      // Default docs toggle
+    // 切块配置
+    docChunkSize: number;        // 知识库文档切块大小
+    memoryChunkSize: number;     // 对话记忆切块大小
+    chunkOverlap: number;        // 重叠字符数
+
+    // 上下文管理
+    contextWindow: number;       // 保留的活跃消息数
+    summaryThreshold: number;    // 触发摘要的最小批次
+    summaryPrompt: string;       // 摘要Prompt模板
+    autoCleanup: boolean;        // 摘要后自动清理旧向量
+
+    // 检索配置
+    memoryLimit: number;         // 检索记忆向量数量
+    memoryThreshold: number;     // 记忆相似度阈值
+    docLimit: number;            // 检索文档向量数量
+    docThreshold: number;        // 文档相似度阈值
+
+    // 功能开关
+    enableMemory: boolean;       // 启用长期记忆
+    enableDocs: boolean;         // 启用知识库检索
+
+    // 调试选项（可选）
+    debugMode?: boolean;         // 开发者模式
+    showStats?: boolean;         // 显示向量库统计
 }
+

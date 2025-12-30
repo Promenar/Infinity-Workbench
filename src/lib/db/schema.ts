@@ -83,6 +83,8 @@ export const createTables = async () => {
         content TEXT NOT NULL, -- Chunk text
         embedding BLOB NOT NULL, -- Float32Array binary
         metadata TEXT, -- JSON: source, type('doc'|'memory'), chunk_index
+        start_message_id TEXT, -- 向量覆盖的起始消息ID（用于精确清理）
+        end_message_id TEXT, -- 向量覆盖的结束消息ID（用于精确清理）
         created_at INTEGER NOT NULL,
         FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE

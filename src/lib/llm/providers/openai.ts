@@ -1,4 +1,5 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
+import { ErrorNormalizer } from '../error-normalizer';
 
 export class OpenAiClient implements LlmClient {
     private apiKey: string;
@@ -79,7 +80,21 @@ export class OpenAiClient implements LlmClient {
                         if (xhr.status >= 200 && xhr.status < 300) {
                             resolve();
                         } else {
-                            const err = new Error(`API Error: ${xhr.status} ${xhr.statusText}\n${xhr.responseText}`);
+                            // 使用错误标准化器处理API错误
+                            const rawError = {
+                                status: xhr.status,
+                                statusText: xhr.statusText,
+                                message: `API Error: ${xhr.status} ${xhr.statusText}\n${xhr.responseText}`,
+                                response: xhr.responseText
+                            };
+
+                            const normalized = ErrorNormalizer.normalize(rawError, 'openai');
+                            const err = new Error(normalized.message);
+                            (err as any).category = normalized.category;
+                            (err as any).retryable = normalized.retryable;
+                            (err as any).retryAfter = normalized.retryAfter;
+                            (err as any).technicalMessage = normalized.technicalMessage;
+
                             onError(err);
                             reject(err);
                         }
@@ -87,7 +102,12 @@ export class OpenAiClient implements LlmClient {
                 };
 
                 xhr.onerror = () => {
-                    const err = new Error('Network request failed');
+                    const rawError = new Error('Network request failed');
+                    const normalized = ErrorNormalizer.normalize(rawError, 'openai');
+                    const err = new Error(normalized.message);
+                    (err as any).category = normalized.category;
+                    (err as any).retryable = normalized.retryable;
+
                     onError(err);
                     reject(err);
                 };

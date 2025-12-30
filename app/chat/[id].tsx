@@ -249,6 +249,7 @@ export default function ChatDetailScreen() {
                             agentAvatar={agent.avatar}
                             agentColor={agentColor}
                             agentName={agent.name}
+                            sessionId={id}
                             isGenerating={loading && index === messages.length - 1}
                             onDelete={() => {
                                 useChatStore.getState().deleteMessage(id, item.id);

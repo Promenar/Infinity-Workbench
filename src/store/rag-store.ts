@@ -51,7 +51,7 @@ interface RagState {
     processingState: {
         sessionId?: string;
         activeMessageId?: string;
-        status: 'idle' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error';
+        status: 'idle' | 'chunking' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error';
         startTime?: number;
         summary?: string;
         chunks: string[];
@@ -64,7 +64,7 @@ interface RagState {
             chunkCount?: number;
         }
     };
-    updateProcessingState: (state: { sessionId?: string; status: 'idle' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error'; startTime?: number; summary?: string; chunks?: string[] }, messageId?: string) => void;
+    updateProcessingState: (state: { sessionId?: string; status: 'idle' | 'chunking' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error'; startTime?: number; summary?: string; chunks?: string[] }, messageId?: string) => void;
 }
 
 export const useRagStore = create<RagState>((set, get) => {

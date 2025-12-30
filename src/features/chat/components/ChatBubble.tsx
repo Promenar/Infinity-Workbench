@@ -1,7 +1,9 @@
 import React, { useState, useEffect, Component, useMemo } from 'react';
 import { View, TouchableOpacity, ViewStyle, Platform, Linking, Text, Modal, TextInput, ScrollView, StyleSheet, Image, Dimensions } from 'react-native';
 import { Typography } from '../../../components/ui';
+import { useChatStore } from '../../../store/chat-store';
 import { Message } from '../../../types/chat';
+import { db } from '../../../lib/db';  // ✅ 导入db
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from '../../../lib/haptics';
 import Markdown from 'react-native-markdown-display';
@@ -14,6 +16,7 @@ import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
 import { AgentAvatar } from '../../../components/chat/AgentAvatar';
 import { RagReferencesChip, RagReferencesList } from './RagReferences';
+import { ProcessingIndicatorChip, ProcessingIndicatorDetails } from './ProcessingIndicator';
 
 import { findModelSpec } from '../../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
@@ -58,6 +61,7 @@ interface ChatBubbleProps {
     onResend?: () => void;
     onRegenerate?: () => void;
     modelId?: string;
+    sessionId: string; // ✅ 新增：会话ID用于ProcessingIndicator
     isDark?: boolean;
 }
 
@@ -431,7 +435,8 @@ const ActionBar: React.FC<{
     onResend?: () => void;
     onRegenerate?: () => void;
     isDark: boolean;
-}> = ({ content, onDelete, onShare, onSelect, onResend, onRegenerate, isDark }) => {
+    isArchived?: boolean;  // ✅ 新增：归档状态
+}> = ({ content, onDelete, onShare, onSelect, onResend, onRegenerate, isDark, isArchived }) => {
     const handleCopy = async () => {
         await Clipboard.setStringAsync(content);
         setTimeout(() => {
@@ -473,6 +478,13 @@ const ActionBar: React.FC<{
                     <Trash2 size={16} color="#ef4444" />
                 </TouchableOpacity>
             )}
+
+            {/* ✅ 归档状态绿勾 */}
+            {isArchived && (
+                <View className={btnStyle}>
+                    <Check size={16} color="#10b981" />
+                </View>
+            )}
         </View>
     );
 };
@@ -509,6 +521,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     onRegenerate,
     isGenerating,
     modelId,
+    sessionId, // ✅ 新增：会话ID
     // @ts-ignore
     isDark = false // Default fallback
 }) => {
@@ -533,6 +546,30 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     // Moved from below to fix Hooks order error
     const [isReasoningExpanded, setReasoningExpanded] = useState(!!isGenerating);
     const [isRagExpanded, setRagExpanded] = useState(false);
+    const [isProcessingExpanded, setProcessingExpanded] = useState(false); // ✅ 新增：ProcessingIndicator展开状态
+    const [isArchived, setIsArchived] = useState(message.isArchived || false); // ✅ 归档状态
+
+    // ✅ 查询消息归档状态
+    useEffect(() => {
+        const checkArchiveStatus = async () => {
+            if (message.role === 'system') return;
+            try {
+                const result = await db.execute(
+                    'SELECT 1 FROM vectors WHERE (start_message_id = ? OR end_message_id = ?) AND session_id = ? LIMIT 1',
+                    [message.id, message.id, sessionId]
+                );
+                const hasRecord = result.rows && (
+                    (result.rows as any)._array?.length > 0 ||
+                    (result.rows as any).length > 0 ||
+                    ((result.rows as any).item && (result.rows as any).item(0))
+                );
+                setIsArchived(!!hasRecord);
+            } catch (e) {
+                console.error('[ChatBubble] Failed to check archive status:', e);
+            }
+        };
+        checkArchiveStatus();
+    }, [message.id, sessionId]);
 
     // Auto-collapse reasoning when done
     useEffect(() => {
@@ -802,6 +839,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             onSelect={() => setModalVisible(true)}
                             onResend={onResend}
                             isDark={isDark}
+                            isArchived={isArchived}  // ✅ 传递归档状态
                         />
                     </View>
 
@@ -971,6 +1009,17 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 </View>
             )}
 
+            {/* ✅ ProcessingIndicator Details - 切片/摘要详情展开 */}
+            {isProcessingExpanded && (
+                <View style={{ marginLeft: 38, marginTop: 8 }}>
+                    <ProcessingIndicatorDetails
+                        isDark={isDark}
+                        status={'idle'}
+                        messageId={message.id}
+                    />
+                </View>
+            )}
+
             {/* Main Content (No indentation) */}
             <View style={{ minHeight: 20 }}>
                 {isWaitingForContent ? (
@@ -1072,6 +1121,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     onSelect={() => setModalVisible(true)}
                     onRegenerate={onRegenerate}
                     isDark={isDark}
+                    isArchived={isArchived}  // ✅ 传递归档状态
                 />
             </View>
 

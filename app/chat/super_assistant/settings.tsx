@@ -10,6 +10,7 @@ import { useI18n } from '../../../src/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { exportAllSessionsToTxt } from '../../../src/features/chat/utils/export';
 import { useSPAStore } from '../../../src/store/spa-store';
+import { useAgentStore } from '../../../src/store/agent-store';
 import { PRESET_FAB_ICONS, PRESET_COLORS, FABIconType, ANIMATION_MODES } from '../../../src/types/super-assistant';
 import * as ImagePicker from 'expo-image-picker';
 import * as LucideIcons from 'lucide-react-native';
@@ -18,6 +19,7 @@ import { vectorStore } from '../../../src/lib/rag/vector-store';
 import { InferenceSettings } from '../../../src/components/chat/InferenceSettings';
 import { Sliders } from 'lucide-react-native';
 import { ContextManagementPanel } from '../../../src/features/chat/settings/ContextManagementPanel';
+import { AgentRagConfigPanel } from '../../../src/features/settings/components/AgentRagConfigPanel';
 import { preventDoubleTap } from '../../../src/lib/navigation-utils';
 
 const SPA_SESSION_ID = 'super_assistant';
@@ -498,6 +500,14 @@ export default function SuperAssistantSettingsScreen() {
 
                         {/* Glow Color removed as per user request (unified with Icon Color) */}
                     </View>
+
+                    {/* RAG 配置 */}
+                    <AgentRagConfigPanel
+                        agent={useAgentStore.getState().agents.find((a: any) => a.id === 'super_assistant') || { id: 'super_assistant', name: 'Super Assistant' } as any}
+                        onUpdate={(updates) => {
+                            useAgentStore.getState().updateAgent('super_assistant', updates);
+                        }}
+                    />
 
                     {/* Context Management */}
                     <ContextManagementPanel sessionId={SPA_SESSION_ID} />

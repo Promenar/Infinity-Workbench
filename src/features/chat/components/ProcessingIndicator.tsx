@@ -86,17 +86,29 @@ export const ProcessingIndicatorChip: React.FC<ProcessingIndicatorChipProps> = (
 
     if (showCompleted) {
         return (
-            <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={onToggle} // Allow expansion to see summary
-                style={{ padding: 8, marginHorizontal: 4 }}
-            >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {/* ✅ 总是显示归档状态（绿勾） */}
+                {messageHistory?.type === 'archived' || isSummarized ? (
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={onToggle}
+                        style={{ padding: 8 }}
+                    >
+                        <Check size={iconSize} color="#10b981" strokeWidth={2.5} />
+                    </TouchableOpacity>
+                ) : null}
+
+                {/* ✅ 如果有摘要，额外显示摘要状态（蓝色大脑） */}
                 {isSummarized ? (
-                    <Brain size={iconSize} color={iconColor} strokeWidth={2.5} />
-                ) : (
-                    <Check size={iconSize} color={iconColor} strokeWidth={2.5} />
-                )}
-            </TouchableOpacity>
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={onToggle}
+                        style={{ padding: 8 }}
+                    >
+                        <Brain size={iconSize} color="#3b82f6" strokeWidth={2.5} />
+                    </TouchableOpacity>
+                ) : null}
+            </View>
         );
     }
 

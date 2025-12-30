@@ -53,8 +53,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <Modal transparent visible={visible} animationType="none">
             <View style={styles.container}>
                 <Animated.View
-                    entering={LayoutAnimations.FadeIn}
-                    exiting={LayoutAnimations.FadeOut}
+                    entering={FadeIn.duration(150)}
+                    exiting={FadeOut.duration(100)}
                     style={StyleSheet.absoluteFill}
                 >
                     <TouchableOpacity
@@ -65,8 +65,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 </Animated.View>
 
                 <Animated.View
-                    entering={LayoutAnimations.ModalEnter}
-                    exiting={LayoutAnimations.ModalExit}
+                    entering={FadeInUp.duration(200).springify()}
+                    exiting={FadeOut.duration(150)}
                     style={styles.modalContent}
                 >
                     <View className="bg-white dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-2xl border border-gray-100 dark:border-zinc-800">

@@ -8,6 +8,8 @@ export interface VectorRecord {
     content: string;
     embedding: number[]; // stored as blob, handled as array here
     metadata?: Record<string, any>;
+    startMessageId?: string;  // 向量覆盖的起始消息ID
+    endMessageId?: string;    // 向量覆盖的结束消息ID
     createdAt: number;
 }
 
@@ -42,8 +44,8 @@ export class VectorStore {
                 const metadataStr = vec.metadata ? JSON.stringify(vec.metadata) : null;
 
                 await db.execute(
-                    'INSERT INTO vectors (id, doc_id, session_id, content, embedding, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [id, vec.docId || null, vec.sessionId || null, vec.content, blob, metadataStr, createdAt]
+                    'INSERT INTO vectors (id, doc_id, session_id, content, embedding, metadata, start_message_id, end_message_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [id, vec.docId || null, vec.sessionId || null, vec.content, blob, metadataStr, vec.startMessageId || null, vec.endMessageId || null, createdAt]
                 );
             }
             await db.execute('COMMIT');
@@ -188,6 +190,60 @@ export class VectorStore {
             `DELETE FROM sessions WHERE id IS NOT NULL AND id != 'super_assistant' AND id NOT IN (${placeholders})`,
             activeSessionIds
         );
+    }
+
+    /**
+     * 一键清理冗余的记忆向量
+     * 删除已有摘要覆盖的实时归档向量（通过 message_id 精确匹配）
+     */
+    async cleanupRedundantMemoryVectors(): Promise<{
+        checked: number;
+        deleted: number;
+    }> {
+        try {
+            // 1. 获取所有摘要记录
+            const summaries = await db.execute(`
+                SELECT id, session_id, start_message_id, end_message_id 
+                FROM context_summaries 
+                ORDER BY created_at ASC
+            `);
+
+            if (!summaries.rows || summaries.rows.length === 0) {
+                return { checked: 0, deleted: 0 };
+            }
+
+            let totalDeleted = 0;
+
+            // 2. 遍历每个摘要，删除其覆盖范围内的记忆向量
+            for (let i = 0; i < summaries.rows.length; i++) {
+                const summary = summaries.rows[i];
+
+                const result = await db.execute(`
+                    DELETE FROM vectors 
+                    WHERE session_id = ? 
+                      AND json_extract(metadata, '$.type') = 'memory'
+                      AND start_message_id >= ? 
+                      AND end_message_id <= ?
+                `, [
+                    summary.session_id,
+                    summary.start_message_id,
+                    summary.end_message_id
+                ]);
+
+                totalDeleted += result.rowsAffected || 0;
+            }
+
+            console.log(`[VectorStore] Cleanup complete: checked ${summaries.rows.length} summaries, deleted ${totalDeleted} redundant vectors`);
+
+            return {
+                checked: summaries.rows.length,
+                deleted: totalDeleted
+            };
+
+        } catch (error) {
+            console.error('[VectorStore] Cleanup failed:', error);
+            throw error;
+        }
     }
 }
 

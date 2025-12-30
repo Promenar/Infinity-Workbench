@@ -64,9 +64,10 @@ export class ErrorNormalizer {
         // 3. 限流错误
         if (this.isRateLimitError(error, errorStatus, errorMsg)) {
             const retryAfter = this.extractRetryAfter(error) || 60;
+            const waitTime = this.formatWaitTime(retryAfter);
             return {
                 category: ErrorCategory.RATE_LIMIT,
-                message: `请求过于频繁，请等待 ${retryAfter} 秒后重试`,
+                message: `请求过于频繁，请等待 ${waitTime} 后重试`,
                 technicalMessage: errorMsg,
                 retryable: true,
                 retryAfter
@@ -203,12 +204,45 @@ export class ErrorNormalizer {
             }
         }
 
-        // 从错误消息中提取
-        const match = error.message?.match(/retry after (\d+) seconds/i);
-        if (match) {
-            return parseInt(match[1]);
+        // 从错误消息中提取 "retry after XX seconds" 模式
+        const retryAfterMatch = error.message?.match(/retry after (\d+) seconds/i);
+        if (retryAfterMatch) {
+            return parseInt(retryAfterMatch[1]);
+        }
+
+        // 从错误消息中提取 "wait XX seconds" 模式（如 "Please wait 43877 seconds before retrying"）
+        const waitMatch = error.message?.match(/wait (\d+) seconds/i);
+        if (waitMatch) {
+            return parseInt(waitMatch[1]);
+        }
+
+        // 从响应体中提取（针对429错误的JSON响应）
+        if (error.response || error.statusText) {
+            const responseText = error.response || error.statusText || '';
+            const waitInResponseMatch = responseText.match(/wait (\d+) seconds/i);
+            if (waitInResponseMatch) {
+                return parseInt(waitInResponseMatch[1]);
+            }
         }
 
         return undefined;
+    }
+
+    /**
+     * 格式化等待时间为友好显示
+     */
+    private static formatWaitTime(seconds: number): string {
+        if (seconds < 60) {
+            return `${seconds} 秒`;
+        } else if (seconds < 3600) {
+            const minutes = Math.ceil(seconds / 60);
+            return `${minutes} 分钟`;
+        } else if (seconds < 86400) {
+            const hours = Math.ceil(seconds / 3600);
+            return `${hours} 小时`;
+        } else {
+            const days = Math.ceil(seconds / 86400);
+            return `${days} 天`;
+        }
     }
 }

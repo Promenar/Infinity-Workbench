@@ -4,6 +4,7 @@ import { EmbeddingClient } from './embedding';
 import { useApiStore } from '../../store/api-store';
 import { RecursiveCharacterTextSplitter } from './text-splitter';
 import { db } from '../db';
+import { useSettingsStore } from '../../store/settings-store';
 
 export class MemoryManager {
     static async retrieveContext(query: string, sessionId: string, options: {
@@ -63,10 +64,14 @@ export class MemoryManager {
         // 2. 搜索记忆 (长期对话历史)
         if (enableMemory) {
             try {
+                // 从配置中获取检索参数
+                const settings = useSettingsStore.getState();
+                const ragConfig = settings.globalRagConfig;
+
                 const memResults = await vectorStore.search(queryEmbedding, {
-                    limit: 5,
+                    limit: ragConfig.memoryLimit,
                     filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' },
-                    threshold: 0.7
+                    threshold: ragConfig.memoryThreshold
                 });
                 results.push(...memResults);
             } catch (e) {
@@ -135,10 +140,14 @@ export class MemoryManager {
                         }
                     }
 
+                    // 从配置中获取文档检索参数
+                    const settings = useSettingsStore.getState();
+                    const ragConfig = settings.globalRagConfig;
+
                     const docResults = await vectorStore.search(queryEmbedding, {
-                        limit: 8, // Increased slightly since we filter later
+                        limit: ragConfig.docLimit, // Increased slightly since we filter later
                         filter: { type: 'doc' },
-                        threshold: 0.45
+                        threshold: ragConfig.docThreshold
                     });
 
                     // 如果是全局模式，或者命中授权文档，则保留
@@ -206,7 +215,13 @@ export class MemoryManager {
     /**
      * 将一个“对话轮次” (用户消息 + AI 回复) 归档到向量记忆中
      */
-    static async addTurnToMemory(sessionId: string, userContent: string, aiContent: string) {
+    static async addTurnToMemory(
+        sessionId: string,
+        userContent: string,
+        aiContent: string,
+        userMessageId: string,
+        assistantMessageId: string
+    ) {
         if (!userContent || !aiContent) return;
 
         // 🛡️ Sanitize: Strip massive Base64 image data to prevent TextSplitter recursion overflow
@@ -249,7 +264,14 @@ export class MemoryManager {
             // 检查长度。如果太长，进行切分。
             // 对于单个轮次通常没问题，但 DeepSeek R1 的输出可能很长。
             // 以后备用 Splitter
-            const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000, chunkOverlap: 100 });
+            // 从配置获取切块参数
+            const settings = useSettingsStore.getState();
+            const ragConfig = settings.globalRagConfig;
+
+            const splitter = new RecursiveCharacterTextSplitter({
+                chunkSize: ragConfig.memoryChunkSize,
+                chunkOverlap: ragConfig.chunkOverlap
+            });
             const chunks = splitter.splitText(turnText);
 
             const embeddingClient = new EmbeddingClient(provider, modelId);
@@ -259,7 +281,9 @@ export class MemoryManager {
                 sessionId,
                 content: chunk,
                 embedding: embeddings[i],
-                metadata: { type: 'memory', chunkIndex: i }
+                metadata: { type: 'memory', chunkIndex: i },
+                startMessageId: userMessageId,
+                endMessageId: assistantMessageId
             }));
 
             await vectorStore.addVectors(vectors);

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session, SessionId, AgentId, Message, TokenUsage, InferenceParams, GeneratedImageData, RagReference } from '../types/chat';
+import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
 import { createLlmClient } from '../lib/llm/factory';
@@ -12,6 +13,35 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { MemoryManager } from '../lib/rag/memory-manager';
 
 import { ContextManager } from '../features/chat/utils/ContextManager';
+
+// ✅ 辅助函数：从数据库查询消息归档状态
+const enrichMessagesWithArchiveStatus = async (sessionId: string, messages: Message[]): Promise<Message[]> => {
+    try {
+        // 查询该会话所有已归档的消息ID
+        const result = await db.execute(
+            'SELECT DISTINCT start_message_id, end_message_id FROM vectors WHERE session_id = ?',
+            [sessionId]
+        );
+
+        const archivedMessageIds = new Set<string>();
+        if (result.rows) {
+            const rows = (result.rows as any)._array || (result.rows as any) || [];
+            for (const row of rows) {
+                if (row.start_message_id) archivedMessageIds.add(row.start_message_id);
+                if (row.end_message_id) archivedMessageIds.add(row.end_message_id);
+            }
+        }
+
+        // 标记消息是否已归档
+        return messages.map(msg => ({
+            ...msg,
+            isArchived: archivedMessageIds.has(msg.id)
+        }));
+    } catch (e) {
+        console.error('[ChatStore] Failed to enrich messages with archive status:', e);
+        return messages;
+    }
+};
 
 interface ChatState {
     sessions: Session[];
@@ -35,6 +65,7 @@ interface ChatState {
             enableMemory?: boolean;
             enableDocs?: boolean;
             activeDocIds?: string[];
+            activeFolderIds?: string[]; // ✅ 添加缺失的字段
             isGlobal?: boolean;
         }
     }) => Promise<void>;
@@ -100,7 +131,12 @@ export const useChatStore = create<ChatState>()(
                     return a.isPinned ? -1 : 1;
                 });
             },
-            getSession: (id) => get().sessions.find((s) => s.id === id),
+            getSession: (id) => {
+                const session = get().sessions.find((s) => s.id === id);
+                // Note: 无法在同步getter中调用异步enrichMessagesWithArchiveStatus
+                // 归档状态将在组件层面按需查询
+                return session;
+            },
 
             toggleSessionPin: (id) => set((state) => ({
                 sessions: state.sessions.map((s) => s.id === id ? { ...s, isPinned: !s.isPinned } : s)
@@ -317,24 +353,63 @@ export const useChatStore = create<ChatState>()(
 
                     // 3.5 RAG 检索 (Retrieval)
                     let ragContext = '';
-                    const isRagEnabled = options?.ragOptions?.enableMemory !== false || options?.ragOptions?.enableDocs === true;
-                    const apiMessage = { content, images: normalizedImages }; // Use the user's message for retrieval
-                    const ragOptions = options?.ragOptions;
+
+                    // 🔑 关键修复：优先从session持久化配置读取，再考虑临时覆盖
+                    const sessionRagOptions = session.ragOptions || {};
+                    const tempRagOptions = options?.ragOptions || {};
+
+                    // 合并配置：临时参数可覆盖session配置（保持灵活性）
+                    const finalRagOptions = {
+                        enableMemory: tempRagOptions.enableMemory ?? sessionRagOptions.enableMemory ?? true,
+                        enableDocs: tempRagOptions.enableDocs ?? sessionRagOptions.enableDocs ?? false,
+                        activeDocIds: tempRagOptions.activeDocIds ?? sessionRagOptions.activeDocIds ?? [],
+                        activeFolderIds: tempRagOptions.activeFolderIds ?? sessionRagOptions.activeFolderIds ?? [],
+                        isGlobal: tempRagOptions.isGlobal ?? sessionRagOptions.isGlobal ?? false
+                    };
+
+                    const isRagEnabled = finalRagOptions.enableMemory || finalRagOptions.enableDocs;
+                    const apiMessage = { content, images: normalizedImages };
 
                     if (isRagEnabled) {
                         try {
+                            // 🐛 调试日志：记录授权信息
+                            console.log('[RAG DEBUG] 开始检索:', {
+                                sessionId,
+                                enableMemory: finalRagOptions.enableMemory,
+                                enableDocs: finalRagOptions.enableDocs,
+                                activeDocIds: finalRagOptions.activeDocIds,
+                                activeFolderIds: finalRagOptions.activeFolderIds,
+                                isGlobal: finalRagOptions.isGlobal,
+                                docCount: finalRagOptions.activeDocIds?.length || 0,
+                                folderCount: finalRagOptions.activeFolderIds?.length || 0
+                            });
+
                             // Set loading state
                             get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, [], true);
 
                             // For Super Assistant, force global search
                             const effectiveRagOptions = {
-                                ...ragOptions,
-                                isGlobal: sessionId === 'super_assistant' ? true : ragOptions?.isGlobal
+                                ...finalRagOptions,
+                                isGlobal: sessionId === 'super_assistant' ? true : finalRagOptions.isGlobal
                             };
 
-                            const { context: retrievedContext, references } = await MemoryManager.retrieveContext(apiMessage.content, sessionId, effectiveRagOptions);
+                            const { context: retrievedContext, references } = await MemoryManager.retrieveContext(
+                                apiMessage.content,
+                                sessionId,
+                                effectiveRagOptions
+                            );
+
                             ragContext = retrievedContext;
                             ragReferences = references;
+
+                            // 🐛 调试日志：记录检索结果
+                            console.log('[RAG DEBUG] 检索完成:', {
+                                contextLength: ragContext.length,
+                                referencesCount: ragReferences.length,
+                                memoryRefs: ragReferences.filter(r => r.type === 'memory').length,
+                                docRefs: ragReferences.filter(r => r.type === 'doc').length,
+                                docIds: ragReferences.filter(r => r.type === 'doc').map(r => r.docId)
+                            });
 
                             // Update with results and turn off loading
                             get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, ragReferences, false);
@@ -342,6 +417,8 @@ export const useChatStore = create<ChatState>()(
                             console.error('RAG Retrieval failed:', e);
                             get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, [], false);
                         }
+                    } else {
+                        console.log('[RAG DEBUG] RAG已禁用，跳过检索');
                     }
 
                     // 4. 准备上下文 (Prepare Context)
@@ -473,6 +550,171 @@ export const useChatStore = create<ChatState>()(
                         total: finalInputTokens + finalCompletionTokens
                     }, accumulatedReasoning, accumulatedCitations, ragReferences);
 
+                    // 🔑 关键修复1: 归档本轮对话到向量记忆
+                    // ✅ 仅当enableMemory开启时才归档
+                    if (finalRagOptions.enableMemory !== false) {
+                        try {
+                            const archiveStartTime = Date.now();
+
+                            // 🎯 启动归档状态
+                            const { updateProcessingState } = await import('../store/rag-store').then(m => m.useRagStore.getState());
+                            updateProcessingState({
+                                sessionId,
+                                status: 'chunking',
+                                startTime: archiveStartTime,
+                                chunks: []
+                            }, assistantMsgId);
+
+                            // ✅ 关键修复：让React先渲染loading状态
+                            await new Promise(resolve => setTimeout(resolve, 0));
+
+                            await MemoryManager.addTurnToMemory(
+                                sessionId,
+                                content,  // userMsg.content
+                                accumulatedContent,  // assistantMsg.content
+                                userMsg.id,
+                                assistantMsgId
+                            );
+
+                            // ✅ 确保loading状态至少显示800ms
+                            const elapsed = Date.now() - archiveStartTime;
+                            if (elapsed < 800) {
+                                await new Promise(resolve => setTimeout(resolve, 800 - elapsed));
+                            }
+
+                            // 🎯 归档完成（添加切片数量信息）
+                            const estimatedChunks = Math.ceil((content.length + accumulatedContent.length) / 500);
+                            updateProcessingState({
+                                sessionId,
+                                status: 'archived',
+                                chunks: []
+                            }, assistantMsgId);
+
+                            console.log('[RAG] 对话已归档到向量库');
+                        } catch (e) {
+                            console.error('[RAG] 记忆归档失败:', e);
+                            // 错误状态
+                            const { updateProcessingState } = await import('../store/rag-store').then(m => m.useRagStore.getState());
+                            updateProcessingState({
+                                sessionId,
+                                status: 'error'
+                            }, assistantMsgId);
+                        }
+                    }
+
+                    // 🔑 关键修复2: 检查并触发自动摘要
+                    try {
+                        const currentMessages = get().getSession(sessionId)?.messages || [];
+
+                        // ✅ 修复：只计算非system消息
+                        const contentMessages = currentMessages.filter(m => m.role !== 'system');
+                        const contentMessageCount = contentMessages.length;
+
+                        // ✅ 关键修复：查询所有摘要覆盖的消息ID范围
+                        const summariesResult = await db.execute(
+                            'SELECT start_message_id, end_message_id FROM context_summaries WHERE session_id = ?',
+                            [sessionId]
+                        );
+
+                        // 构建已被摘要覆盖的消息ID集合
+                        const summarizedMessageIds = new Set<string>();
+                        if (summariesResult.rows) {
+                            const rows = (summariesResult.rows as any)._array ||
+                                (summariesResult.rows as any) ||
+                                [];
+
+                            for (const row of rows) {
+                                if (row.start_message_id && row.end_message_id) {
+                                    // 找到起始和结束消息的索引
+                                    const startIdx = contentMessages.findIndex(m => m.id === row.start_message_id);
+                                    const endIdx = contentMessages.findIndex(m => m.id === row.end_message_id);
+
+                                    // 将这个范围内的所有消息ID加入集合
+                                    if (startIdx !== -1 && endIdx !== -1) {
+                                        for (let i = startIdx; i <= endIdx; i++) {
+                                            summarizedMessageIds.add(contentMessages[i].id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 计算未被摘要的消息数
+                        const newMessagesCount = contentMessages.filter(m => !summarizedMessageIds.has(m.id)).length;
+
+                        // 活跃窗口大小（从会话设置读取，默认10）
+                        // 活跃窗口大小（对应ContextManager的finalConfig.maxMessages）
+                        const activeWindowSize = 10;
+                        const summaryThreshold = agent.ragConfig?.summaryThreshold || 20;
+
+                        // ✅ 关键修复：只有当new消息数 > (活跃窗口 + 阈值) 时才触发
+                        // 因为ContextManager会保留最后activeWindowSize条消息，只摘要超出部分
+                        const needsSummary = newMessagesCount > (activeWindowSize + summaryThreshold);
+
+                        console.log(`[ChatStore] 摘要检查: total=${contentMessageCount}, summarized=${summarizedMessageIds.size}, new=${newMessagesCount}, activeWindow=${activeWindowSize}, threshold=${summaryThreshold}, needsSummary=${needsSummary}`);
+                        if (needsSummary) {
+                            const summaryStartTime = Date.now();
+
+                            // 🎯 启动摘要状态
+                            const { updateProcessingState } = await import('../store/rag-store').then(m => m.useRagStore.getState());
+                            updateProcessingState({
+                                sessionId,
+                                status: 'summarizing',
+                                startTime: summaryStartTime
+                            }, assistantMsgId);
+
+                            // ✅ 关键修复：让React先渲染loading状态
+                            await new Promise(resolve => setTimeout(resolve, 0));
+                            // 查询摘要前的数量
+                            const beforeCount = await db.execute(
+                                'SELECT COUNT(*) as count FROM context_summaries WHERE session_id = ?',
+                                [sessionId]
+                            );
+                            const beforeSummaryCount = (beforeCount.rows as any)?._array?.[0]?.count ||
+                                (beforeCount.rows as any)?.[0]?.count ||
+                                ((beforeCount.rows as any).item ? (beforeCount.rows as any).item(0)?.count : 0) || 0;
+
+                            await ContextManager.checkAndSummarize(sessionId, currentMessages, agent);
+
+                            // ✅ 关键修复：确保loading状态至少显示800ms
+                            const elapsed = Date.now() - summaryStartTime;
+                            if (elapsed < 800) {
+                                await new Promise(resolve => setTimeout(resolve, 800 - elapsed));
+                            }
+
+                            // 查询摘要后的数量
+                            const afterCount = await db.execute(
+                                'SELECT COUNT(*) as count FROM context_summaries WHERE session_id = ?',
+                                [sessionId]
+                            );
+                            const afterSummaryCount = (afterCount.rows as any)?._array?.[0]?.count ||
+                                (afterCount.rows as any)?.[0]?.count ||
+                                ((afterCount.rows as any).item ? (afterCount.rows as any).item(0)?.count : 0) || 0;
+
+                            console.log(`[ChatStore] 摘要前后对比: before=${beforeSummaryCount}, after=${afterSummaryCount}`);
+
+                            // 🎯 只有在真正生成了新摘要时才标记为summarized
+                            if (afterSummaryCount > beforeSummaryCount) {
+                                updateProcessingState({
+                                    sessionId,
+                                    status: 'summarized',
+                                    summary: ''
+                                }, assistantMsgId);
+                                console.log('[ChatStore] ✅ 摘要已生成');
+                            } else {
+                                updateProcessingState({
+                                    sessionId,
+                                    status: 'idle'
+                                }, assistantMsgId);
+                                console.log('[ChatStore] ℹ️ 未达到摘要条件，跳过');
+                            }
+                        }
+
+                        console.log('[RAG] 摘要检查完成');
+                    } catch (e) {
+                        console.error('[RAG] 摘要生成失败:', e);
+                    }
+
                     // Update Session Stats & Title
                     const sessionAllText = (get().getSession(sessionId)?.messages || []).map(m => m.content).join('\n');
                     get().updateSession(sessionId, {
@@ -482,21 +724,6 @@ export const useChatStore = create<ChatState>()(
                     if (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation') {
                         get().updateSessionTitle(sessionId, content.substring(0, 30) + (content.length > 30 ? '...' : ''));
                     }
-
-                    // 6. RAG 归档 (异步执行 - Fire and Forget)
-                    const finalUserContent = content;
-                    const finalAiContent = accumulatedContent;
-                    setTimeout(async () => {
-                        // 归档到向量数据库
-                        await MemoryManager.addTurnToMemory(sessionId, finalUserContent, finalAiContent);
-
-                        // 自动摘要处理 (仅当长期记忆开启时)
-                        const currentSession = get().getSession(sessionId);
-                        if (currentSession && currentSession.ragOptions?.enableMemory !== false) {
-                            console.log('[ChatStore] Triggering auto-summary check...');
-                            await ContextManager.checkAndSummarize(sessionId, currentSession.messages);
-                        }
-                    }, 2000); // 小延迟，避免立即影响 UI 交互 (Small delay)
 
                 } catch (error) {
                     if ((error as any).name === 'AbortError' || (error as Error).message.includes('abort')) {

@@ -5,6 +5,7 @@ import { RecursiveCharacterTextSplitter } from './text-splitter';
 import { EmbeddingClient } from './embedding';
 import { vectorStore } from './vector-store';
 import { useApiStore } from '../../store/api-store';
+import { useSettingsStore } from '../../store/settings-store';
 
 /**
  * 后台向量化任务队列管理器
@@ -78,9 +79,13 @@ export class VectorizationQueue {
             task.progress = 10;
             this.notifyStateChange();
 
+            // 从配置获取文档切块参数
+            const settings = useSettingsStore.getState();
+            const ragConfig = settings.globalRagConfig;
+
             const splitter = new RecursiveCharacterTextSplitter({
-                chunkSize: 800,
-                chunkOverlap: 100
+                chunkSize: ragConfig.docChunkSize,
+                chunkOverlap: ragConfig.chunkOverlap
             });
             const chunks = splitter.splitText(content);
 
