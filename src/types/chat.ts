@@ -126,5 +126,28 @@ export interface RagConfiguration {
     // 调试选项（可选）
     debugMode?: boolean;         // 开发者模式
     showStats?: boolean;         // 显示向量库统计
+
+    // ===== 高级检索功能（Phase 3新增） =====
+
+    // Rerank配置（3个）
+    enableRerank?: boolean;      // 启用Rerank二次精排
+    rerankTopK?: number;         // Rerank前召回数量（建议20-50）
+    rerankFinalK?: number;       // Rerank后返回数量（建议5-10）
+
+    // 查询重写配置（4个）
+    enableQueryRewrite?: boolean;        // 启用查询重写
+    queryRewriteStrategy?: 'hyde' | 'multi-query' | 'expansion'; // 重写策略
+    queryRewriteCount?: number;          // 生成查询变体数量（2-5个）
+    queryRewriteModel?: string;          // 查询重写使用的模型UUID（默认使用summary model）
+
+    // 混合检索配置（3个）
+    enableHybridSearch?: boolean;        // 启用混合检索（向量+BM25）
+    hybridAlpha?: number;                // 向量检索权重（0-1, 0.5为均衡）
+    hybridBM25Boost?: number;            // BM25权重增益（默认1.0）
+
+    // 可观测性配置（3个）
+    showRetrievalProgress?: boolean;     // 显示检索进度
+    showRetrievalDetails?: boolean;      // 显示检索详情面板
+    trackRetrievalMetrics?: boolean;     // 记录检索指标
 }
 

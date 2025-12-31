@@ -70,7 +70,30 @@ export const useSettingsStore = create<SettingsState>()(
 
                 // 调试选项
                 debugMode: false,
-                showStats: false
+                showStats: false,
+
+                // ===== 高级检索功能（Phase 3） =====
+
+                // Rerank配置
+                enableRerank: false,         // 默认关闭，用户自行开启
+                rerankTopK: 30,              // 初召回30条
+                rerankFinalK: 8,             // 精排后返回8条
+
+                // 查询重写配置
+                enableQueryRewrite: false,   // 默认关闭
+                queryRewriteStrategy: 'multi-query' as const,
+                queryRewriteCount: 3,
+                queryRewriteModel: undefined, // 未指定时使用defaultSummaryModel
+
+                // 混合检索配置
+                enableHybridSearch: false,   // 默认关闭
+                hybridAlpha: 0.6,            // 向量检索权重60%
+                hybridBM25Boost: 1.0,
+
+                // 可观测性配置
+                showRetrievalProgress: true,  // 默认显示进度
+                showRetrievalDetails: false,  // 默认不显示详情面板
+                trackRetrievalMetrics: false, // 默认不记录指标
             },
             updateGlobalRagConfig: (updates) => set((state) => ({
                 globalRagConfig: { ...state.globalRagConfig, ...updates }
