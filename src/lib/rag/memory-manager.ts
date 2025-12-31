@@ -20,6 +20,7 @@ export class MemoryManager {
         const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [], isGlobal = false, ragConfig, onProgress } = options;
         const apiStore = useApiStore.getState();
         const settings = useSettingsStore.getState();
+        const startTime = Date.now();
 
         // 🔑 优先级：选项传入 > 全局配置
         const effectiveRagConfig = ragConfig || settings.globalRagConfig;
@@ -234,7 +235,7 @@ export class MemoryManager {
             }
         }
 
-        const endTime = Date.Now();
+        const endTime = Date.now();
         // Assume startTime was passed or we capture it here? No, we need total duration.
         // We can just estimate search time as (endTime - rerankDuration) or capture start time at method entry.
         // Since I can't easily edit method entry without large context, I'll assume current method execution time as mostly search/rerank.

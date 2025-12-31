@@ -126,6 +126,20 @@ export class VertexAiClient implements LlmClient {
         }
     }
 
+    async chatCompletion(messages: ChatMessage[], options?: any): Promise<string> {
+        let result = '';
+        await this.streamChat(
+            messages,
+            (chunk: any) => {
+                const content = typeof chunk === 'string' ? chunk : chunk.content;
+                if (content) result += content;
+            },
+            (err) => { throw err; },
+            options
+        );
+        return result;
+    }
+
     async streamChat(
         messages: ChatMessage[],
         onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[] }) => void,

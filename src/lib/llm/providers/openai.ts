@@ -19,9 +19,36 @@ export class OpenAiClient implements LlmClient {
 
     async streamChat(
         messages: ChatMessage[],
-        onChunk: (chunk: { content: string; reasoning?: string; citations?: { title: string; url: string; source?: string }[]; usage?: { input: number; output: number; total: number } }) => void,
+        onToken: (token: string | any) => void,
         onError: (err: Error) => void,
-        options?: ChatMessageOptions
+        options?: any
+    ): Promise<void> {
+        try {
+            await this.fetchChatCompletion(messages, onToken, onError, options);
+        } catch (error: any) {
+            onError(error);
+        }
+    }
+
+    async chatCompletion(messages: ChatMessage[], options?: any): Promise<string> {
+        let result = '';
+        await this.fetchChatCompletion(
+            messages,
+            (token) => {
+                if (typeof token === 'string') result += token;
+                else if (token.content) result += token.content;
+            },
+            (err) => { throw err; },
+            { ...options, stream: false }
+        );
+        return result;
+    }
+
+    private async fetchChatCompletion(
+        messages: ChatMessage[],
+        onToken: (token: string | any) => void,
+        onError: (err: Error) => void,
+        options?: ChatMessageOptions & { stream?: boolean }
     ): Promise<void> {
         return new Promise((resolve, reject) => {
             try {
@@ -64,7 +91,7 @@ export class OpenAiClient implements LlmClient {
                                 }
 
                                 if (content || reasoning || usage) {
-                                    onChunk({ content, reasoning, usage });
+                                    onToken({ content, reasoning, usage });
                                 }
                             } catch (e) {
                                 // Partial JSON, ignore or wait
