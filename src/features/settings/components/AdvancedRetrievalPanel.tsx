@@ -174,8 +174,6 @@ export const AdvancedRetrievalPanel: React.FC = () => {
                                 thumbTintColor="#f59e0b"
                             />
                         </View>
-                    </>
-                )}
             </View >
 
     {/* 混合检索配置 */ }
@@ -254,7 +252,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             </View>
         </View>
 
-{/* 可观测性配置 */ }
+    {/* 可观测性配置 */ }
             <SectionHeader title="可观测性" />
             <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                 {/* 显示检索进度 */}
