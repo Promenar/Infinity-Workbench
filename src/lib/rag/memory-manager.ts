@@ -14,9 +14,10 @@ export class MemoryManager {
         activeFolderIds?: string[];
         isGlobal?: boolean;
         ragConfig?: RagConfiguration; // ✅ 新增：允许传入特定 RAG 配置
-    } = {}): Promise<{ context: string; references: RagReference[] }> {
+        onProgress?: (stage: string, percentage: number) => void; // ✅ 新增：进度回调
+    } = {}): Promise<{ context: string; references: RagReference[]; metadata?: any }> {
 
-        const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [], isGlobal = false, ragConfig } = options;
+        const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [], isGlobal = false, ragConfig, onProgress } = options;
         const apiStore = useApiStore.getState();
         const settings = useSettingsStore.getState();
 
@@ -24,6 +25,7 @@ export class MemoryManager {
         const effectiveRagConfig = ragConfig || settings.globalRagConfig;
 
         // 1. 获取查询向量 (Get Embedding)
+        onProgress?.('embedding', 10);
         // ... (Embedding logic remains the same)
         let provider = apiStore.providers.find(p => p.enabled && p.type === 'openai' && p.models.some(m => m.enabled && m.type === 'embedding'));
 
@@ -64,6 +66,7 @@ export class MemoryManager {
             return { context: '', references: [] };
         }
 
+        onProgress?.('searching', 40);
         const results: SearchResult[] = [];
 
         // 2. 搜索记忆 (长期对话历史)
@@ -189,6 +192,7 @@ export class MemoryManager {
 
         // ===== 阶段 3: Rerank 精排 =====
         if (effectiveRagConfig.enableRerank) {
+            onProgress?.('reranking', 70);
             const rerankModelId = settings.defaultRerankModel;
             let rerankProvider = undefined;
 

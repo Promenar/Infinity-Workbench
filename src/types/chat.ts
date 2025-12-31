@@ -54,20 +54,41 @@ export interface RagReference {
     docId?: string;       // 文档 ID（用于跳转）
     similarity?: number;  // 相似度分数
 }
+// 检索进度
+export interface RagProgress {
+    stage: 'rewriting' | 'embedding' | 'searching' | 'reranking' | 'done';
+    percentage: number; // 0-100
+    message?: string;
+}
+
+// 检索元数据
+export interface RagMetadata {
+    queryVariants?: string[];
+    searchTimeMs: number;
+    rerankTimeMs?: number;
+    recallCount: number;
+    finalCount: number;
+    sourceDistribution?: {
+        memory: number;
+        documents: number;
+    };
+}
 
 export interface Message {
-    id: string;
+    id: string; // uuid
     role: 'user' | 'assistant' | 'system';
-    content: string;
-    timestamp: number;
-    modelId?: string; // The model used to generate this message
+    content: string; // markdown content
+    createdAt: number;
+    status?: 'sending' | 'sent' | 'error' | 'streaming';
+    references?: RagReference[]; // RAG 引用来源
+    ragProgress?: RagProgress;   // ✅ 新增：检索进度
+    ragMetadata?: RagMetadata;   // ✅ 新增：检索元数据
     reasoning?: string; // Chain of Thought reasoning content
     citations?: { title: string; url: string; source?: string }[]; // Grounding/Web Search citations
     ragReferences?: RagReference[]; // RAG knowledge base references
     ragReferencesLoading?: boolean; // New flag for RAG search state
     tokens?: TokenUsage;
     images?: GeneratedImageData[]; // 图片数据（新格式，支持缩略图）
-    isArchived?: boolean; // ✅ RAG归档状态（从数据库查询）
 }
 
 export interface Session {

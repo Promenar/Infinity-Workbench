@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Session, SessionId, AgentId, Message, TokenUsage, InferenceParams, GeneratedImageData, RagReference } from '../types/chat';
+import { Session, SessionId, AgentId, Message, TokenUsage, InferenceParams, GeneratedImageData, RagReference, RagProgress } from '../types/chat';
 import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
@@ -89,6 +89,7 @@ interface ChatState {
     }) => void;
     updateSessionScrollOffset: (id: SessionId, offset: number) => void;
     updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean) => void;
+    updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
     updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
     deleteMessage: (sessionId: SessionId, messageId: string) => void;
     toggleSessionPin: (sessionId: SessionId) => void;
@@ -193,6 +194,26 @@ export const useChatStore = create<ChatState>()(
                 sessions: state.sessions.map((s) => s.id === id ? { ...s, draft } : s)
             })),
 
+            updateMessageProgress: (sessionId, messageId, progress) =>
+                set((state) => {
+                    const session = state.sessions.find((s) => s.id === sessionId);
+                    if (!session) return {};
+
+                    const msgIndex = session.messages.findIndex((m) => m.id === messageId);
+                    if (msgIndex === -1) return {};
+
+                    const updatedMessages = [...session.messages];
+                    updatedMessages[msgIndex] = { ...updatedMessages[msgIndex], ragProgress: progress };
+
+                    const updatedSession = { ...session, messages: updatedMessages, updatedAt: Date.now() }; // 3. Retain updatedAt
+
+                    // 2. Removed ChatStorage usage (rely on persist middleware)
+
+                    return {
+                        sessions: state.sessions.map((s) => (s.id === sessionId ? updatedSession : s)),
+                    };
+                }),
+
             deleteMessage: (sessionId, messageId) => {
                 const state = get();
                 // If the session being edited is currently generating
@@ -288,7 +309,7 @@ export const useChatStore = create<ChatState>()(
                             id: `err_${Date.now()}`,
                             role: 'assistant',
                             content: `[System Error] ${errorMsg}`,
-                            timestamp: Date.now(),
+                            createdAt: Date.now(),
                         });
                         return;
                     }
@@ -309,7 +330,7 @@ export const useChatStore = create<ChatState>()(
                     id: `msg_${Date.now()}`,
                     role: 'user',
                     content,
-                    timestamp: Date.now(),
+                    createdAt: Date.now(),
                     tokens: { input: promptTokens, output: 0, total: promptTokens },
                     images: normalizedImages
                 };
@@ -323,7 +344,7 @@ export const useChatStore = create<ChatState>()(
                     id: assistantMsgId,
                     role: 'assistant',
                     content: '',
-                    timestamp: Date.now(),
+                    createdAt: Date.now(),
                     modelId: modelId,
                     ragReferences: [] // Initialize RAG references
                 };
@@ -421,7 +442,13 @@ export const useChatStore = create<ChatState>()(
                             const effectiveRagOptions = {
                                 ...finalRagOptions,
                                 isGlobal: sessionId === 'super_assistant' ? true : finalRagOptions.isGlobal,
-                                ragConfig: agent.ragConfig // ✅ 关键：传入特定助手的 RAG 配置
+                                ragConfig: agent.ragConfig, // ✅ 关键：传入特定助手的 RAG 配置
+                                onProgress: (stage: string, percentage: number) => {
+                                    get().updateMessageProgress(sessionId, assistantMsgId, {
+                                        stage: stage as any,
+                                        percentage
+                                    });
+                                }
                             };
 
                             const { context: retrievedContext, references } = await MemoryManager.retrieveContext(
