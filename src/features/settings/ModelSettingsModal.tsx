@@ -385,12 +385,21 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
                 const modelName = (m.name || '').toLowerCase();
                 const fullText = `${modelId} ${modelName}`;
 
-                // 模型类型自动识别（优先级：embedding > image > reasoning > rerank > chat）
+                // 模型类型自动识别（优先级：rerank > embedding > image > reasoning > chat）
                 let type: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank' = 'chat';
 
-
-                // Embedding 模型识别（向量/嵌入）
+                // Rerank 模型识别（重排序）- 最高优先级,避免被 embedding 误识别
                 if (
+                    fullText.includes('rerank') ||
+                    fullText.includes('bge-reranker') ||
+                    fullText.includes('jina-reranker') ||
+                    fullText.includes('cohere-rerank') ||
+                    fullText.includes('bce-reranker')
+                ) {
+                    type = 'rerank';
+                }
+                // Embedding 模型识别（向量/嵌入）
+                else if (
                     fullText.includes('embedding') ||
                     fullText.includes('embed') ||
                     fullText.includes('vector') ||
@@ -437,16 +446,6 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
                     fullText.includes('cot')
                 ) {
                     type = 'reasoning';
-                }
-                // Rerank 模型识别（重排序）
-                else if (
-                    fullText.includes('rerank') ||
-                    fullText.includes('bge-reranker') ||
-                    fullText.includes('jina-reranker') ||
-                    fullText.includes('cohere-rerank') ||
-                    fullText.includes('bce-reranker')
-                ) {
-                    type = 'rerank';
                 }
 
                 const hasVision = fullText.includes('vision') || fullText.includes('-vl') || (modelId.endsWith('-v') && !modelId.includes('deepseek')) || fullText.includes('multimodal');
