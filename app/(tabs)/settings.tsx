@@ -11,7 +11,30 @@ import { useToast } from '../../src/components/ui/Toast';
 import { useSettingsStore } from '../../src/store/settings-store';
 import { useApiStore, ProviderConfig, ModelConfig } from '../../src/store/api-store';
 import { clsx } from 'clsx';
-import { Globe, Moon, Bell, Info, Plus, Server, Trash2, Edit2, Cpu, FileText, Mic, Layers, ChevronRight, Sun, Monitor, Zap, Database, ArrowUpDown, Sparkles } from 'lucide-react-native';
+import {
+    ChevronRight,
+    Globe,
+    MessageSquare,
+    Zap,
+    Cpu,
+    Database,
+    Sparkles,
+    Trash2,
+    HardDrive,
+    Info,
+    Sliders,
+    Moon,
+    Bell,
+    Plus,
+    Server,
+    Edit2,
+    FileText,
+    Mic,
+    Layers,
+    Sun,
+    Monitor,
+    ArrowUpDown
+} from 'lucide-react-native';
 
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
 import { ModelSettingsModal } from '../../src/features/settings/ModelSettingsModal';
@@ -410,7 +433,7 @@ export default function SettingsScreen() {
                                 }}
                                 style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#27272a' : '#e5e7eb', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, marginTop: 8 }}
                             >
-                                <Sparkles size={20} color="#a855f7" />
+                                <Sliders size={20} color="#6b7280" />
                                 <View style={{ flex: 1, marginLeft: 12 }}>
                                     <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
                                         高级检索配置
