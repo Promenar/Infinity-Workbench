@@ -171,19 +171,19 @@ export class MemoryManager {
         const uniqueResults = results.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
 
         // 优化合并策略：保证文档不被记忆完全淹没 (Diversity Buffer)
-        // 1. 提取 Top 记忆 (最多 3 条)
-        const topMemories = uniqueResults.filter(r => r.metadata?.type === 'memory').slice(0, 3);
-        // 2. 提取 Top 文档 (最多 5 条)
-        const topDocs = uniqueResults.filter(r => r.metadata?.type === 'doc').slice(0, 5);
-
-        // 3. 如果文档不足，允许更多记忆填补，反之亦然，但优先保证混合
-        // 这里简单地将两者合并再次排序，但由于我们已经做了预筛选，保证了至少有文档进入"决赛圈"（如果存在）
-        // 实际上，为了保证总数，我们可以放宽上面的 slice，或者直接使用智能混合
+        // 1. 提取 Top 记忆 (按照配置限制)
+        const topMemories = uniqueResults.filter(r => r.metadata?.type === 'memory').slice(0, effectiveRagConfig.memoryLimit || 3);
+        // 2. 提取 Top 文档 (按照配置限制)
+        const topDocs = uniqueResults.filter(r => r.metadata?.type === 'doc').slice(0, effectiveRagConfig.docLimit || 5);
 
         const combined = [...topMemories, ...topDocs];
-        // 如果总数还不到 8，可以从剩余结果中补充 (不分类型)
+
+        // 4. 计算总检索上限 (Priority: memoryLimit + docLimit)
+        const totalLimit = (effectiveRagConfig.memoryLimit || 5) + (effectiveRagConfig.docLimit || 8);
+
+        // 如果总数未达上限，可以从剩余结果中补充 (不分类型，补充至上限)
         const existingIds = new Set(combined.map(r => r.id));
-        const remaining = uniqueResults.filter(r => !existingIds.has(r.id)).slice(0, 8 - combined.length);
+        const remaining = uniqueResults.filter(r => !existingIds.has(r.id)).slice(0, Math.max(0, totalLimit - combined.length));
 
         const finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
 
@@ -258,12 +258,14 @@ export class MemoryManager {
             // 格式: "User: ... \n Assistant: ..."
             const turnText = `User: ${userContent}\nAssistant: ${aiContent}`;
 
-            // 检查长度。如果太长，进行切分。
-            // 对于单个轮次通常没问题，但 DeepSeek R1 的输出可能很长。
-            // 以后备用 Splitter
-            // 从配置获取切块参数
-            const settings = useSettingsStore.getState();
-            const ragConfig = settings.globalRagConfig;
+            // 🔑 动态获取 RAG 配置：优先从该 Session 关联的 Agent 获取
+            const chatStore = (await import('../../store/chat-store')).useChatStore.getState();
+            const agentStore = (await import('../../store/agent-store')).useAgentStore.getState();
+            const settings = (await import('../../store/settings-store')).useSettingsStore.getState();
+
+            const session = chatStore.getSession(sessionId);
+            const agent = session ? agentStore.getAgent(session.agentId) : undefined;
+            const ragConfig = agent?.ragConfig || settings.globalRagConfig;
 
             const splitter = new RecursiveCharacterTextSplitter({
                 chunkSize: ragConfig.memoryChunkSize,

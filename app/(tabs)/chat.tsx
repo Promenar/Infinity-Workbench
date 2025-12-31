@@ -12,6 +12,7 @@ import { useAgentStore } from '../../src/store/agent-store';
 import { useChatStore } from '../../src/store/chat-store';
 import { Agent } from '../../src/types/chat';
 import { AgentAvatar } from '../../src/components/chat/AgentAvatar';
+import { useSettingsStore } from '../../src/store/settings-store';
 import { preventDoubleTap } from '../../src/lib/navigation-utils';
 import { SuperAssistantFAB } from '../../src/components/chat/SuperAssistantFAB';
 import { SwipeableAgentItem } from '../../src/components/chat/SwipeableAgentItem';
@@ -61,6 +62,7 @@ export default function AgentExplorerScreen() {
     const handleCreateAgent = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         const newId = `agent_${Date.now()}`;
+        const globalRagConfig = useSettingsStore.getState().globalRagConfig;
         const newAgent = {
             id: newId,
             name: 'New Assistant',
@@ -70,6 +72,7 @@ export default function AgentExplorerScreen() {
             systemPrompt: 'You are a helpful assistant.',
             defaultModel: 'gpt-4o',
             params: { temperature: 0.7 },
+            ragConfig: { ...globalRagConfig }, // ✅ 显式复制全局 RAG 配置
             created: Date.now(),
         };
         // @ts-ignore
