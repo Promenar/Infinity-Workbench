@@ -11,7 +11,8 @@ import { useToast } from '../../src/components/ui/Toast';
 import { useSettingsStore } from '../../src/store/settings-store';
 import { useApiStore, ProviderConfig, ModelConfig } from '../../src/store/api-store';
 import { clsx } from 'clsx';
-import { Globe, Moon, Bell, Info, Plus, Server, Trash2, Edit2, Cpu, FileText, Mic, Layers, ChevronRight, Sun, Monitor, Zap, Database } from 'lucide-react-native';
+import { Globe, Moon, Bell, Info, Plus, Server, Trash2, Edit2, Cpu, FileText, Mic, Layers, ChevronRight, Sun, Monitor, Zap, Database, ArrowUpDown } from 'lucide-react-native';
+
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
 import { ModelSettingsModal } from '../../src/features/settings/ModelSettingsModal';
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
@@ -26,8 +27,8 @@ export default function SettingsScreen() {
     const [pickerVisible, setPickerVisible] = useState(false);
     const [pickerConfig, setPickerConfig] = useState<{
         title: string;
-        key: 'defaultSummaryModel' | 'defaultSpeechModel' | 'defaultEmbeddingModel';
-        filterType?: 'chat' | 'reasoning' | 'image' | 'embedding';
+        key: 'defaultSummaryModel' | 'defaultSpeechModel' | 'defaultEmbeddingModel' | 'defaultRerankModel';
+        filterType?: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank';
     }>({ title: '', key: 'defaultSummaryModel' });
 
     const [editingProvider, setEditingProvider] = useState<ProviderConfig | null>(null);
@@ -37,7 +38,7 @@ export default function SettingsScreen() {
     const { showToast } = useToast();
     const {
         language, setLanguage,
-        defaultSummaryModel, defaultSpeechModel, defaultEmbeddingModel,
+        defaultSummaryModel, defaultSpeechModel, defaultEmbeddingModel, defaultRerankModel,
         updateDefaultModel,
         hapticsEnabled, setHapticsEnabled // New settings
     } = useSettingsStore();
@@ -330,7 +331,7 @@ export default function SettingsScreen() {
                                             setPickerVisible(true);
                                         }, 10);
                                     }}
-                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
+                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#27272a' : '#e5e7eb' }}
                                 >
                                     <Layers size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
@@ -339,6 +340,33 @@ export default function SettingsScreen() {
                                         </Text>
                                         <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
                                             {getModelName(defaultEmbeddingModel)}
+                                        </Text>
+                                    </View>
+                                    <ChevronRight size={20} color="#9ca3af" />
+                                </TouchableOpacity>
+
+                                {/* 重排序模型 */}
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setTimeout(() => {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            setPickerConfig({
+                                                title: '重排序模型',
+                                                key: 'defaultRerankModel',
+                                                filterType: 'rerank'
+                                            });
+                                            setPickerVisible(true);
+                                        }, 10);
+                                    }}
+                                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
+                                >
+                                    <ArrowUpDown size={20} color="#6b7280" />
+                                    <View style={{ flex: 1, marginLeft: 12 }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
+                                            重排序模型
+                                        </Text>
+                                        <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
+                                            {getModelName(defaultRerankModel)}
                                         </Text>
                                     </View>
                                     <ChevronRight size={20} color="#9ca3af" />
@@ -571,7 +599,8 @@ export default function SettingsScreen() {
                 selectedUuid={
                     pickerConfig.key === 'defaultSummaryModel' ? defaultSummaryModel :
                         pickerConfig.key === 'defaultSpeechModel' ? defaultSpeechModel :
-                            defaultEmbeddingModel
+                            pickerConfig.key === 'defaultRerankModel' ? defaultRerankModel :
+                                defaultEmbeddingModel
                 }
                 onSelect={(uuid) => {
                     updateDefaultModel(pickerConfig.key, uuid);

@@ -21,7 +21,8 @@ interface ModelPickerProps {
     onSelect: (uuid: string) => void;
     selectedUuid?: string;
     title: string;
-    filterType?: 'chat' | 'reasoning' | 'image' | 'embedding';
+    filterType?: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank';
+
 }
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

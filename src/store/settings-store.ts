@@ -18,8 +18,9 @@ interface SettingsState {
     defaultTempSessionModel?: string; // 临时会话模型
     defaultEmbeddingModel?: string; // 向量模型
     defaultSpeechModel?: string; // 语音模型
+    defaultRerankModel?: string; // 重排序模型
 
-    updateDefaultModel: (key: 'defaultSummaryModel' | 'defaultTempSessionModel' | 'defaultEmbeddingModel' | 'defaultSpeechModel', modelId: string) => void;
+    updateDefaultModel: (key: 'defaultSummaryModel' | 'defaultTempSessionModel' | 'defaultEmbeddingModel' | 'defaultSpeechModel' | 'defaultRerankModel', modelId: string) => void;
 
     // RAG Global Settings
     globalRagConfig: RagConfiguration;
