@@ -39,7 +39,8 @@
           "photosPermission": "The app accesses your photos to let you set assistant avatars.",
           "cameraPermission": "The app accesses your camera to let you take assistant avatars."
         }
-      ]
+      ],
+      "./plugins/withCustomApkName"
     ]
   }
 }
