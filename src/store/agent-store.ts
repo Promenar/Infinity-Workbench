@@ -79,9 +79,16 @@ export const useAgentStore = create<AgentState>()(
         (set, get) => ({
             agents: PRESET_AGENTS,
             addAgent: (agent) => set((state) => ({ agents: [...state.agents, agent] })),
-            updateAgent: (id, updates) => set((state) => ({
-                agents: state.agents.map((a) => a.id === id ? { ...a, ...updates } : a)
-            })),
+            updateAgent: (id, updates) => {
+                console.log('[AgentStore] updateAgent called:', { id, updates, currentAgent: get().agents.find(a => a.id === id) });
+                set((state) => ({
+                    agents: state.agents.map((a) => a.id === id ? { ...a, ...updates } : a)
+                }));
+                // Log after update
+                setTimeout(() => {
+                    console.log('[AgentStore] After update:', get().agents.find(a => a.id === id));
+                }, 100);
+            },
             deleteAgent: (id) => set((state) => ({
                 agents: state.agents.filter((a) => a.id !== id)
             })),
