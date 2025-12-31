@@ -316,7 +316,7 @@ export default function AgentEditScreen() {
                             className="flex-row items-center justify-between p-5"
                         >
                             <View className="flex-1">
-                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">向量库与RAG设置</Typography>
+                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级RAG配置</Typography>
                                 <Typography className="text-gray-500 dark:text-gray-400 text-sm">配置切块、摘要、检索参数</Typography>
                             </View>
                             <ChevronRight size={20} color="#9ca3af" />
@@ -334,7 +334,7 @@ export default function AgentEditScreen() {
                             className="flex-row items-center justify-between p-5"
                         >
                             <View className="flex-1">
-                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级检索</Typography>
+                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级检索配置</Typography>
                                 <Typography className="text-gray-500 dark:text-gray-400 text-sm">Rerank、查询重写、混合检索</Typography>
                             </View>
                             <ChevronRight size={20} color="#9ca3af" />
