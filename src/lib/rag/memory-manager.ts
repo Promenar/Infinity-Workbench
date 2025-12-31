@@ -185,7 +185,50 @@ export class MemoryManager {
         const existingIds = new Set(combined.map(r => r.id));
         const remaining = uniqueResults.filter(r => !existingIds.has(r.id)).slice(0, Math.max(0, totalLimit - combined.length));
 
-        const finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
+        let finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
+
+        // ===== 阶段 3: Rerank 精排 =====
+        if (effectiveRagConfig.enableRerank) {
+            const rerankModelId = settings.defaultRerankModel;
+            let rerankProvider = undefined;
+
+            if (rerankModelId) {
+                rerankProvider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.uuid === rerankModelId || m.id === rerankModelId));
+            }
+
+            // Fallback: try to find any enabled rerank model
+            if (!rerankProvider) {
+                rerankProvider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.enabled && m.type === 'rerank'));
+            }
+
+            if (rerankProvider) {
+                // Try to resolve exact model ID if the uuid was used
+                let finalRerankModelId = rerankModelId;
+                const modelConfig = rerankProvider.models.find(m => m.uuid === rerankModelId || m.id === rerankModelId)
+                    || rerankProvider.models.find(m => m.enabled && m.type === 'rerank');
+
+                if (modelConfig) {
+                    finalRerankModelId = modelConfig.id;
+
+                    // Instantiate RerankClient
+                    const { RerankClient } = await import('./reranker');
+                    const reranker = new RerankClient(rerankProvider, finalRerankModelId);
+
+                    try {
+                        // Rerank top K candidates (use current finalResults which are top matches)
+                        // Config rerankTopK might control how many we send TO rerank, but here we already have a filtered list.
+                        // Ideally we should have retrieved MORE items initially if rerank is enabled.
+                        // For now, we rerank what we found.
+
+                        const reranked = await reranker.rerank(query, finalResults, effectiveRagConfig.rerankFinalK || 5);
+                        finalResults = reranked;
+
+                    } catch (err) {
+                        console.error('[MemoryManager] Rerank failed, falling back to vector order:', err);
+                    }
+                }
+            }
+        }
 
         const contextBlock = finalResults.map(r => {
             const typeLabel = r.metadata?.type === 'memory' ? 'Memory' : 'Document';
