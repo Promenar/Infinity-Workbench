@@ -23,12 +23,14 @@ export default function AgentExplorerScreen() {
     const { t } = useI18n();
     const { isDark } = useTheme();
     const { agents } = useAgentStore();
+    // Filter out super_assistant - it's only accessible via floating button
+    const displayAgents = agents.filter(a => a.id !== 'super_assistant');
     const [searchQuery, setSearchQuery] = useState('');
 
     const filteredAgents = useMemo(() => {
-        let result = agents;
+        let result = displayAgents;
         if (searchQuery) {
-            result = agents.filter(a =>
+            result = displayAgents.filter(a =>
                 a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 a.description.toLowerCase().includes(searchQuery.toLowerCase())
             );
@@ -40,7 +42,7 @@ export default function AgentExplorerScreen() {
             if (!a.isPinned && b.isPinned) return 1;
             return b.created - a.created;
         });
-    }, [agents, searchQuery]);
+    }, [displayAgents, searchQuery]);
 
     const [agentToConfirmDelete, setAgentToConfirmDelete] = useState<Agent | null>(null);
 

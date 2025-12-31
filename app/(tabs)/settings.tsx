@@ -391,7 +391,7 @@ export default function SettingsScreen() {
                                 <Database size={20} color="#6b7280" />
                                 <View style={{ flex: 1, marginLeft: 12 }}>
                                     <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
-                                        {t.settings.ragSettings}
+                                        高级RAG配置
                                     </Text>
                                     <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
                                         {t.settings.ragSettingsDesc}
@@ -413,7 +413,7 @@ export default function SettingsScreen() {
                                 <Sparkles size={20} color="#a855f7" />
                                 <View style={{ flex: 1, marginLeft: 12 }}>
                                     <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
-                                        高级检索
+                                        高级检索配置
                                     </Text>
                                     <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
                                         Rerank、查询重写、混合检索

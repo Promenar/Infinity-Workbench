@@ -5,7 +5,6 @@ import { useSettingsStore } from '../../../store/settings-store';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useI18n } from '../../../lib/i18n';
 import Slider from '@react-native-community/slider';
-import { ArrowUpDown, Sparkles, GitMerge, BarChart3 } from 'lucide-react-native';
 
 // 装饰性的小标题组件
 const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => (
@@ -30,12 +29,9 @@ export const AdvancedRetrievalPanel: React.FC = () => {
                 {/* 启用Rerank */}
                 <View className="flex-row items-center justify-between mb-6">
                     <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <ArrowUpDown size={16} color="#a855f7" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                启用Rerank
-                            </Typography>
-                        </View>
+                        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            启用Rerank
+                        </Typography>
                         <Typography className="text-xs text-gray-500 dark:text-gray-400">
                             使用专门的重排序模型对检索结果进行二次精排
                         </Typography>
@@ -46,79 +42,74 @@ export const AdvancedRetrievalPanel: React.FC = () => {
                     />
                 </View>
 
-                {globalRagConfig.enableRerank && (
-                    <>
-                        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
+                <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-6" />
 
-                        {/* 初召回数量 */}
-                        <View className="mb-4">
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                初召回数量
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                Rerank前召回的文档数量（建议20-50）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
-                                <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                                    {globalRagConfig.rerankTopK ?? 30} 条
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
-                            </View>
-                            <Slider
-                                value={globalRagConfig.rerankTopK ?? 30}
-                                onValueChange={(val) => updateGlobalRagConfig({ rerankTopK: Math.round(val) })}
-                                minimumValue={10}
-                                maximumValue={100}
-                                step={5}
-                                minimumTrackTintColor="#a855f7"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#a855f7"
-                            />
-                        </View>
+                {/* 初召回数量 */}
+                <View className="mb-4">
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        初召回数量
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        Rerank前召回的文档数量（建议20-50）
+                    </Typography>
+                    <View className="flex-row justify-between mb-2">
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
+                        <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                            {globalRagConfig.rerankTopK ?? 30} 条
+                        </Typography>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
+                    </View>
+                    <Slider
+                        value={globalRagConfig.rerankTopK ?? 30}
+                        onValueChange={(val) => updateGlobalRagConfig({ rerankTopK: Math.round(val) })}
+                        minimumValue={10}
+                        maximumValue={100}
+                        step={5}
+                        minimumTrackTintColor="#a855f7"
+                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                        thumbTintColor="#a855f7"
+                    />
+                </View>
 
-                        {/* 精排后返回数量 */}
-                        <View>
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                精排后返回
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                Rerank后实际使用的文档数量（建议5-10）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-                                <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                                    {globalRagConfig.rerankFinalK ?? 8} 条
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
-                            </View>
-                            <Slider
-                                value={globalRagConfig.rerankFinalK ?? 8}
-                                onValueChange={(val) => updateGlobalRagConfig({ rerankFinalK: Math.round(val) })}
-                                minimumValue={3}
-                                maximumValue={20}
-                                step={1}
-                                minimumTrackTintColor="#a855f7"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#a855f7"
-                            />
-                        </View>
-                    </>
+                {/* 精排后返回数量 */}
+                <View>
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        精排后返回
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        Rerank后实际使用的文档数量（建议5-10）
+                    </Typography>
+                    <View className="flex-row justify-between mb-2">
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
+                        <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                            {globalRagConfig.rerankFinalK ?? 8} 条
+                        </Typography>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
+                    </View>
+                    <Slider
+                        value={globalRagConfig.rerankFinalK ?? 8}
+                        onValueChange={(val) => updateGlobalRagConfig({ rerankFinalK: Math.round(val) })}
+                        minimumValue={3}
+                        maximumValue={20}
+                        step={1}
+                        minimumTrackTintColor="#a855f7"
+                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                        thumbTintColor="#a855f7"
+                    />
+                </View>
+            </>
                 )}
-            </View>
+        </View>
 
-            {/* 查询重写配置 */}
+            {/* 查询重写配置 */ }
             <SectionHeader title="查询重写" />
             <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                 {/* 启用查询重写 */}
                 <View className="flex-row items-center justify-between mb-6">
                     <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <Sparkles size={16} color="#f59e0b" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                启用查询重写
-                            </Typography>
-                        </View>
+                        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            启用查询重写
+                        </Typography>
                         <Typography className="text-xs text-gray-500 dark:text-gray-400">
                             生成多个查询变体以提升召回率
                         </Typography>
@@ -129,11 +120,9 @@ export const AdvancedRetrievalPanel: React.FC = () => {
                     />
                 </View>
 
-                {globalRagConfig.enableQueryRewrite && (
-                    <>
-                        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
+                <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-6" />
 
-                        {/* 重写策略 */}
+                {/* 重写策略 */}
                         <View className="mb-4">
                             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
                                 重写策略
@@ -187,103 +176,93 @@ export const AdvancedRetrievalPanel: React.FC = () => {
                         </View>
                     </>
                 )}
-            </View>
+            </View >
 
-            {/* 混合检索配置 */}
-            <SectionHeader title="混合检索" />
-            <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
-                {/* 启用混合检索 */}
-                <View className="flex-row items-center justify-between mb-6">
-                    <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <GitMerge size={16} color="#06b6d4" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                启用混合检索
-                            </Typography>
-                        </View>
-                        <Typography className="text-xs text-gray-500 dark:text-gray-400">
-                            结合向量检索和关键词检索（BM25）
-                        </Typography>
-                    </View>
-                    <Switch
-                        value={globalRagConfig.enableHybridSearch ?? false}
-                        onValueChange={(val) => updateGlobalRagConfig({ enableHybridSearch: val })}
-                    />
+    {/* 混合检索配置 */ }
+    < SectionHeader title = "混合检索" />
+        <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+            {/* 启用混合检索 */}
+            <View className="flex-row items-center justify-between mb-6">
+                <View className="flex-1 mr-4">
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        启用混合检索
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400">
+                        结合向量检索和关键词检索（BM25）
+                    </Typography>
                 </View>
-
-                {globalRagConfig.enableHybridSearch && (
-                    <>
-                        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
-
-                        {/* 向量权重 */}
-                        <View className="mb-4">
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                向量检索权重
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                向量检索在混合检索中的权重（0.5为均衡）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
-                                <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
-                                    {((globalRagConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">100%</Typography>
-                            </View>
-                            <Slider
-                                value={globalRagConfig.hybridAlpha ?? 0.6}
-                                onValueChange={(val) => updateGlobalRagConfig({ hybridAlpha: val })}
-                                minimumValue={0}
-                                maximumValue={1}
-                                step={0.1}
-                                minimumTrackTintColor="#06b6d4"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#06b6d4"
-                            />
-                        </View>
-
-                        {/* BM25权重增益 */}
-                        <View>
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                BM25权重增益
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                BM25分数的放大倍数（默认1.0）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
-                                <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
-                                    {(globalRagConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">2.0x</Typography>
-                            </View>
-                            <Slider
-                                value={globalRagConfig.hybridBM25Boost ?? 1.0}
-                                onValueChange={(val) => updateGlobalRagConfig({ hybridBM25Boost: val })}
-                                minimumValue={0.5}
-                                maximumValue={2.0}
-                                step={0.1}
-                                minimumTrackTintColor="#06b6d4"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#06b6d4"
-                            />
-                        </View>
-                    </>
-                )}
+                <Switch
+                    value={globalRagConfig.enableHybridSearch ?? false}
+                    onValueChange={(val) => updateGlobalRagConfig({ enableHybridSearch: val })}
+                />
             </View>
 
-            {/* 可观测性配置 */}
+            <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-6" />
+
+            {/* 向量权重 */}
+            <View className="mb-4">
+                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                    向量检索权重
+                </Typography>
+                <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    向量检索在混合检索中的权重（0.5为均衡）
+                </Typography>
+                <View className="flex-row justify-between mb-2">
+                    <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
+                    <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
+                        {((globalRagConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
+                    </Typography>
+                    <Typography className="text-sm text-gray-600 dark:text-gray-400">100%</Typography>
+                </View>
+                <Slider
+                    value={globalRagConfig.hybridAlpha ?? 0.6}
+                    onValueChange={(val) => updateGlobalRagConfig({ hybridAlpha: val })}
+                    minimumValue={0}
+                    maximumValue={1}
+                    step={0.1}
+                    minimumTrackTintColor="#06b6d4"
+                    maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                    thumbTintColor="#06b6d4"
+                />
+            </View>
+
+            {/* BM25权重增益 */}
+            <View>
+                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                    BM25权重增益
+                </Typography>
+                <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    BM25分数的放大倍数（默认1.0）
+                </Typography>
+                <View className="flex-row justify-between mb-2">
+                    <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
+                    <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
+                        {(globalRagConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
+                    </Typography>
+                    <Typography className="text-sm text-gray-600 dark:text-gray-400">2.0x</Typography>
+                </View>
+                <Slider
+                    value={globalRagConfig.hybridBM25Boost ?? 1.0}
+                    onValueChange={(val) => updateGlobalRagConfig({ hybridBM25Boost: val })}
+                    minimumValue={0.5}
+                    maximumValue={2.0}
+                    step={0.1}
+                    minimumTrackTintColor="#06b6d4"
+                    maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                    thumbTintColor="#06b6d4"
+                />
+            </View>
+        </View>
+
+{/* 可观测性配置 */ }
             <SectionHeader title="可观测性" />
             <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                 {/* 显示检索进度 */}
                 <View className="flex-row items-center justify-between mb-4">
                     <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <BarChart3 size={16} color="#10b981" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                显示检索进度
-                            </Typography>
-                        </View>
+                        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            显示检索进度
+                        </Typography>
                         <Typography className="text-xs text-gray-500 dark:text-gray-400">
                             显示实时检索进度条
                         </Typography>
@@ -330,6 +309,6 @@ export const AdvancedRetrievalPanel: React.FC = () => {
                     />
                 </View>
             </View>
-        </View>
+        </View >
     );
 };
