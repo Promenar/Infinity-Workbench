@@ -189,7 +189,9 @@ export class OpenAiClient implements LlmClient {
     async testRerankConnection(): Promise<{ success: boolean; latency: number; error?: string }> {
         const start = Date.now();
         try {
-            const endpoint = `${this.baseUrl}/v1/rerank`;
+            // 处理baseUrl可能已包含/v1的情况
+            const baseUrlClean = this.baseUrl.endsWith('/v1') ? this.baseUrl : `${this.baseUrl}/v1`;
+            const endpoint = `${baseUrlClean}/rerank`;
 
             const body = {
                 model: this.model,
