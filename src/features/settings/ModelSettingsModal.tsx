@@ -491,8 +491,8 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
                             updatedModels[existingIndex] = {
                                 ...existing,
                                 contextLength: nm.contextLength || existing.contextLength,
-                                // 保留用户手动设置的类型，除非 API 明确返回了非默认类型
-                                type: existing.type || nm.type,
+                                // 对于自动拉取的模型，总是使用新识别的类型（允许rerank等类型更新）
+                                type: nm.type,
                                 capabilities: {
                                     ...existing.capabilities,
                                     // 只添加新的能力，不覆盖已有的
