@@ -7,6 +7,7 @@ import { vectorStore } from '../../../lib/rag/vector-store';
 import { Trash2, RefreshCw, Database } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useI18n } from '../../../lib/i18n';
 
 // 装饰性的小标题组件
 const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => (
@@ -19,6 +20,7 @@ const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 3
 );
 
 export const RagDebugPanel: React.FC = () => {
+    const { t } = useI18n();
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const { showToast } = useToast();
@@ -34,7 +36,7 @@ export const RagDebugPanel: React.FC = () => {
             setStats(data);
         } catch (error) {
             console.error('Failed to load vector stats:', error);
-            showToast('加载统计信息失败', 'error');
+            showToast(t.settings.vectorStats.loadError, 'error');
         } finally {
             setLoading(false);
         }
@@ -45,10 +47,10 @@ export const RagDebugPanel: React.FC = () => {
         setShowCleanupConfirm(false);
         try {
             const result = await vectorStore.cleanupRedundantMemoryVectors();
-            showToast(`清理完成: 删除了 ${result.deleted} 个冗余向量`, 'success');
+            showToast(t.settings.vectorStats.cleanupSuccess.replace('{count}', result.deleted.toString()), 'success');
             loadStats();
         } catch (error) {
-            showToast(`清理失败: ${(error as Error).message}`, 'error');
+            showToast(`${t.settings.vectorStats.cleanupError}: ${(error as Error).message}`, 'error');
         } finally {
             setIsCleaning(false);
         }
@@ -84,7 +86,7 @@ export const RagDebugPanel: React.FC = () => {
                 <View className="flex-row items-center">
                     <Database size={24} color={isDark ? '#a78bfa' : '#8b5cf6'} />
                     <Typography className="text-2xl font-bold ml-3 text-gray-900 dark:text-white">
-                        向量库统计
+                        {t.settings.vectorStats.title}
                     </Typography>
                 </View>
                 <TouchableOpacity
@@ -99,44 +101,44 @@ export const RagDebugPanel: React.FC = () => {
             {stats && (
                 <>
                     {/* 总览卡片 */}
-                    <SectionHeader title="总览" mt={0} />
+                    <SectionHeader title={t.settings.vectorStats.overview} mt={0} />
                     <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                         <Typography className="text-sm font-bold text-purple-600 dark:text-purple-300 mb-2">
-                            总向量数
+                            {t.settings.vectorStats.totalVectors}
                         </Typography>
                         <Typography className="text-4xl font-bold text-purple-900 dark:text-purple-100">
                             {stats.total.toLocaleString()}
                         </Typography>
                         <Typography className="text-xs text-purple-600 dark:text-purple-400 mt-2">
-                            占用约 {stats.storageSize.toFixed(1)} MB
+                            {t.settings.vectorStats.storageOccupied.replace('{size}', stats.storageSize.toFixed(1))}
                         </Typography>
                     </View>
 
                     {/* 类型分布 */}
-                    <SectionHeader title="维度分析" mt={0} />
+                    <SectionHeader title={t.settings.vectorStats.dimensionAnalysis} mt={0} />
                     <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                         <View className="flex-row items-center justify-around py-2">
                             <View className="items-center">
                                 <Typography className="text-2xl font-bold text-gray-900 dark:text-white">{stats.byType.doc || 0}</Typography>
-                                <Typography className="text-xs text-gray-400 mt-1">文档向量</Typography>
+                                <Typography className="text-xs text-gray-400 mt-1">{t.settings.vectorStats.docVectors}</Typography>
                             </View>
                             <View className="w-[1px] h-10 bg-gray-100 dark:bg-zinc-800" />
                             <View className="items-center">
                                 <Typography className="text-2xl font-bold text-gray-900 dark:text-white">{(stats.byType.memory || 0) + (stats.byType.summary || 0)}</Typography>
-                                <Typography className="text-xs text-gray-400 mt-1">记忆向量</Typography>
+                                <Typography className="text-xs text-gray-400 mt-1">{t.settings.vectorStats.memoryVectors}</Typography>
                             </View>
                         </View>
                     </View>
 
                     {/* 存储健康度 */}
-                    <SectionHeader title="存储健康度" />
+                    <SectionHeader title={t.settings.vectorStats.storageHealth} />
                     <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                         <View className="flex-row items-center justify-between mb-4">
                             <View>
                                 <Typography className="text-sm font-bold text-gray-900 dark:text-white">
-                                    冗余率
+                                    {t.settings.vectorStats.redundancyRate}
                                 </Typography>
-                                <Typography className="text-xs text-gray-500 mt-0.5">检测失效或重复的引用数据</Typography>
+                                <Typography className="text-xs text-gray-500 mt-0.5">{t.settings.vectorStats.redundancyDesc}</Typography>
                             </View>
                             <Typography className={`text-lg font-bold ${stats.redundancyRate > 0.2 ? 'text-red-500' : 'text-green-500'}`}>
                                 {(stats.redundancyRate * 100).toFixed(1)}%
@@ -155,7 +157,7 @@ export const RagDebugPanel: React.FC = () => {
                                     <>
                                         <Trash2 size={16} color="#ef4444" className="mr-2" />
                                         <Typography className="text-red-600 dark:text-red-400 font-bold">
-                                            立即清理冗余数据
+                                            {t.settings.vectorStats.cleanupNow}
                                         </Typography>
                                     </>
                                 )}
@@ -166,7 +168,7 @@ export const RagDebugPanel: React.FC = () => {
                     {/* 按会话统计 */}
                     {stats.bySession.length > 0 && (
                         <>
-                            <SectionHeader title="Top 会话分布" />
+                            <SectionHeader title={t.settings.vectorStats.topSessions} />
                             <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                                 {stats.bySession.map((item, idx) => (
                                     <View
@@ -206,10 +208,10 @@ export const RagDebugPanel: React.FC = () => {
 
             <ConfirmDialog
                 visible={showCleanupConfirm}
-                title="确认清理"
-                message="这将从向量库中永久删除所有已被摘要覆盖的失效旧向量。建议在冗余率较高时执行，是否继续？"
-                confirmText="立即清理"
-                cancelText="稍后再说"
+                title={t.settings.vectorStats.cleanupConfirmTitle}
+                message={t.settings.vectorStats.cleanupConfirmDesc}
+                confirmText={t.settings.vectorStats.cleanupConfirmBtn}
+                cancelText={t.settings.vectorStats.cleanupCancelBtn}
                 onConfirm={handleCleanup}
                 onCancel={() => setShowCleanupConfirm(false)}
                 isDestructive

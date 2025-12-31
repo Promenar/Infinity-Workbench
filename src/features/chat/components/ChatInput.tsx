@@ -55,6 +55,7 @@ export function ChatInput({
     tokenUsage,
     onTokenPress
 }: ChatInputProps) {
+    const { t } = useI18n();
     const { isDark } = useTheme();
     const rotation = useSharedValue(0);
     const [text, setText] = useState('');
@@ -164,8 +165,8 @@ export function ChatInput({
                 if (status !== 'granted') {
                     setConfirmState({
                         visible: true,
-                        title: '权限请求',
-                        message: '需要相机权限才能拍摄照片。',
+                        title: t.chat.cameraPermission,
+                        message: t.chat.cameraPermissionMessage,
                         onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
                     });
                     return;
@@ -180,8 +181,8 @@ export function ChatInput({
                 if (status !== 'granted') {
                     setConfirmState({
                         visible: true,
-                        title: '权限请求',
-                        message: '需要访问相册权限才能选择照片。',
+                        title: t.chat.galleryPermission,
+                        message: t.chat.galleryPermissionMessage,
                         onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
                     });
                     return;
@@ -218,8 +219,8 @@ export function ChatInput({
             console.error('Image picker error:', e);
             setConfirmState({
                 visible: true,
-                title: '选择失败',
-                message: '无法读取所选图片，请重试。',
+                title: t.chat.imageSelectionError,
+                message: t.chat.imageSelectionErrorMessage,
                 onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
             });
         }
@@ -477,7 +478,7 @@ export function ChatInput({
                     >
                         <Camera size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
                         <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-                            拍照
+                            {t.chat.takePhoto}
                         </Typography>
                     </TouchableOpacity>
                     <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e5e7eb' }} />
@@ -487,7 +488,7 @@ export function ChatInput({
                     >
                         <ImageIcon size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
                         <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-                            从相册选择
+                            {t.chat.selectFromGallery}
                         </Typography>
                     </TouchableOpacity>
                 </View>

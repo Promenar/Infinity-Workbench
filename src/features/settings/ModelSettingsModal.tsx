@@ -86,7 +86,7 @@ const ModelItem = React.memo(({
                                 color: isDark ? '#fff' : '#111',
                                 flex: 1,
                             }}
-                            placeholder="Model Name"
+                            placeholder={t.settings.modelSettings.namePlaceholder}
                             placeholderTextColor="#9ca3af"
                         />
                         <Edit2 size={12} color="#9ca3af" style={{ opacity: 0.5 }} />
@@ -103,7 +103,7 @@ const ModelItem = React.memo(({
                                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                                 flex: 1,
                             }}
-                            placeholder="api-model-id"
+                            placeholder={t.settings.modelSettings.modelIdPlaceholder}
                             placeholderTextColor="#9ca3af"
                         />
                         {!model.isAutoFetched && <Edit2 size={10} color="#9ca3af" style={{ opacity: 0.5 }} />}
@@ -369,7 +369,7 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
             const apiModels = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : (data.models || []));
 
             if (apiModels.length === 0) {
-                showToast('未获取到任何模型', 'info');
+                showToast(t.settings.modelSettings.noModelsFound, 'info');
                 return;
             }
 
@@ -450,7 +450,7 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
                 return {
                     uuid: (m.id || 'm') + '-' + Math.random().toString(36).substr(2, 9),
                     id: m.id || m.name || 'unknown',
-                    name: m.name || m.id || 'Unnamed Model',
+                    name: m.name || m.id || t.settings.modelSettings.unnamedModel,
                     enabled: false,
                     isAutoFetched: true,
                     type,
@@ -506,7 +506,7 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
         const newModel: ModelConfig = {
             uuid: id + '-' + Math.random().toString(36).substr(2, 9),
             id: id,
-            name: 'New Model',
+            name: t.settings.modelSettings.newModel,
             enabled: true,
             isAutoFetched: false,
             capabilities: {},
@@ -523,7 +523,7 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
         setConfirmState({
             visible: true,
             title: t.settings.modelSettings.disableAll,
-            message: 'Are you sure you want to disable all models?',
+            message: t.settings.modelSettings.disableAllConfirm,
             isDestructive: false,
             onConfirm: () => {
                 setModels(prev => {
@@ -532,7 +532,7 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
                     return next;
                 });
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                showToast(t.settings.modelSettings.disableAllSuccess || 'All models disabled', 'info');
+                showToast(t.settings.modelSettings.disableAllSuccess, 'info');
                 setConfirmState(prev => ({ ...prev, visible: false }));
             }
         });
@@ -543,13 +543,13 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
         setConfirmState({
             visible: true,
             title: t.settings.modelSettings.deleteAll,
-            message: 'Are you sure you want to delete ALL models? This action cannot be undone.',
+            message: t.settings.modelSettings.deleteAllConfirm,
             isDestructive: true,
             onConfirm: () => {
                 setModels([]);
                 onUpdateModels([]);
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                showToast(t.settings.modelSettings.deleteAllSuccess || 'All models deleted', 'info');
+                showToast(t.settings.modelSettings.deleteAllSuccess, 'info');
                 setConfirmState(prev => ({ ...prev, visible: false }));
             }
         });

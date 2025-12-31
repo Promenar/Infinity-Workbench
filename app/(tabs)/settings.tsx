@@ -260,7 +260,7 @@ export default function SettingsScreen() {
                         {/* RAG 配置 */}
                         <View style={{ marginBottom: 24 }}>
                             <Text style={{ fontSize: 10, fontWeight: '700', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16, textTransform: 'uppercase', letterSpacing: 1.5 }}>
-                                RAG 配置
+                                {t.settings.ragSection}
                             </Text>
                             <TouchableOpacity
                                 onPress={() => {
@@ -274,10 +274,10 @@ export default function SettingsScreen() {
                                 <Database size={20} color="#6b7280" />
                                 <View style={{ flex: 1, marginLeft: 12 }}>
                                     <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
-                                        向量库与RAG设置
+                                        {t.settings.ragSettings}
                                     </Text>
                                     <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
-                                        配置切块、摘要、检索参数
+                                        {t.settings.ragSettingsDesc}
                                     </Text>
                                 </View>
                                 <ChevronRight size={20} color="#9ca3af" />

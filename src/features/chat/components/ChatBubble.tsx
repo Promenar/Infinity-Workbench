@@ -25,6 +25,7 @@ import { extractImagesFromMarkdown } from '../utils/markdown-utils';
 
 import { parseMarkdownContent } from '../../../lib/markdown-parser';
 import { SafeUserImage } from './SafeUserImage';
+import { useI18n } from '../../../lib/i18n';
 import {
     Copy,
     Share2,
@@ -66,7 +67,7 @@ interface ChatBubbleProps {
 }
 
 // SVG 错误边界组件
-class SVGErrorBoundary extends Component<{ children: React.ReactNode; isDark: boolean }, { hasError: boolean; error?: Error }> {
+class SVGErrorBoundary extends Component<{ children: React.ReactNode; isDark: boolean; t: any }, { hasError: boolean; error?: Error }> {
     constructor(props: any) {
         super(props);
         this.state = { hasError: false };
@@ -85,10 +86,10 @@ class SVGErrorBoundary extends Component<{ children: React.ReactNode; isDark: bo
             return (
                 <View style={{ marginVertical: 12, padding: 16, backgroundColor: this.props.isDark ? '#27272a' : '#fef2f2', borderRadius: 8, borderWidth: 1, borderColor: this.props.isDark ? '#3f3f46' : '#fecaca' }}>
                     <Typography style={{ color: '#ef4444', fontSize: 14, fontWeight: '600', marginBottom: 4 }}>
-                        ⚠️ SVG 渲染失败
+                        {this.props.t.agent.svgErrorTitle}
                     </Typography>
                     <Typography style={{ color: this.props.isDark ? '#a1a1aa' : '#6b7280', fontSize: 12 }}>
-                        SVG 代码格式有误，无法渲染
+                        {this.props.t.agent.svgErrorDesc}
                     </Typography>
                 </View>
             );
@@ -99,7 +100,7 @@ class SVGErrorBoundary extends Component<{ children: React.ReactNode; isDark: bo
 }
 
 // 生成图片组件 - 独立组件避免在 Markdown rules 中使用 hooks
-const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean }> = React.memo(({ src, alt, isDark }) => {
+const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: any }> = React.memo(({ src, alt, isDark, t }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [hasError, setHasError] = useState(false);
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -142,10 +143,10 @@ const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean }> =
                     <View style={{ alignItems: 'center', padding: 20 }}>
                         <AlertCircle size={32} color="#ef4444" />
                         <Typography variant="caption" style={{ color: '#ef4444', marginTop: 8, textAlign: 'center' }}>
-                            图片加载失败
+                            {t.agent.imageLoadError}
                         </Typography>
                         <Typography variant="caption" style={{ color: isDark ? '#71717a' : '#a1a1aa', marginTop: 4, fontSize: 11 }}>
-                            {src.startsWith('data:') ? '图片数据过大' : '无法访问图片路径'}
+                            {src.startsWith('data:') ? t.agent.imageTooLarge : t.agent.imagePathError}
                         </Typography>
                     </View>
                 ) : (
@@ -238,7 +239,8 @@ const SearchSourcesBlock: React.FC<{
     isDark: boolean;
     expanded: boolean;
     onToggle: () => void;
-}> = ({ citations, isDark, expanded, onToggle }) => {
+    t: any;
+}> = ({ citations, isDark, expanded, onToggle, t }) => {
     return (
         <TouchableOpacity
             activeOpacity={0.7}
@@ -263,7 +265,7 @@ const SearchSourcesBlock: React.FC<{
                 fontWeight: '600',
                 color: isDark ? (expanded ? '#818cf8' : '#a1a1aa') : (expanded ? '#4f46e5' : '#4b5563')
             }}>
-                {citations.length} 个来源
+                {t.agent.citations.replace('{count}', citations.length.toString())}
             </Typography>
             <Animated.View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
                 <ChevronDown size={11} color={isDark ? '#71717a' : '#94a3b8'} />
@@ -278,7 +280,8 @@ const ReasoningBlock: React.FC<{
     loading?: boolean;
     expanded: boolean;
     onToggle: () => void;
-}> = ({ content, isDark, loading, expanded, onToggle }) => {
+    t: any;
+}> = ({ content, isDark, loading, expanded, onToggle, t }) => {
     return (
         <View>
             <TouchableOpacity
@@ -304,7 +307,7 @@ const ReasoningBlock: React.FC<{
                     fontWeight: '600',
                     color: loading ? '#8b5cf6' : (isDark ? (expanded ? '#a78bfa' : '#a1a1aa') : (expanded ? '#7c3aed' : '#4b5563'))
                 }}>
-                    {loading ? '思考中' : (expanded ? '已深度思考' : '查看思考过程')}
+                    {loading ? t.agent.reasoning : (expanded ? t.agent.reasoned : t.agent.viewReasoning)}
                 </Typography>
                 <Animated.View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
                     <ChevronDown size={11} color={isDark ? '#71717a' : '#94a3b8'} />
@@ -319,7 +322,8 @@ const SelectTextModal: React.FC<{
     content: string;
     onClose: () => void;
     isDark: boolean;
-}> = ({ isVisible, content, onClose, isDark }) => {
+    t: any;
+}> = ({ isVisible, content, onClose, isDark, t }) => {
     const bgOpacity = useSharedValue(0);
     const contentTranslateY = useSharedValue(600);
     const [modalVisible, setModalVisible] = useState(isVisible);
@@ -396,14 +400,14 @@ const SelectTextModal: React.FC<{
                         <TouchableOpacity onPress={onClose} className="p-2">
                             <X size={24} color={isDark ? '#e4e4e7' : '#27272a'} />
                         </TouchableOpacity>
-                        <Typography className="text-base font-bold">查看与选择文本</Typography>
+                        <Typography className="text-base font-bold">{t.agent.viewAndSelectText}</Typography>
                         <TouchableOpacity onPress={handleCopy} className="p-2 bg-indigo-500 rounded-full">
                             <Copy size={20} color="#fff" />
                         </TouchableOpacity>
                     </View>
 
                     <Typography variant="caption" className="mb-4 text-gray-500">
-                        您可以长按下方文本进行局部选择复制，或点击右上角按钮复制全文。
+                        {t.agent.textSelectionHint}
                     </Typography>
 
                     <ScrollView
@@ -525,6 +529,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     // @ts-ignore
     isDark = false // Default fallback
 }) => {
+    const { t } = useI18n();
     const isUser = message.role === 'user';
     // const { isDark } = useTheme(); // REMOVED to avoid context crash during unmount
 
@@ -673,9 +678,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 if (hasObviousSyntaxErrors) {
                     return (
                         <View key={node.key} collapsable={false} style={{ marginVertical: 12, padding: 16, backgroundColor: isDark ? '#27272a' : '#fff1f2', borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#3f3f46' : '#fecaca' }}>
-                            <Typography selectable={true} style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}>⚠️ SVG 格式错误</Typography>
+                            <Typography selectable={true} style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}>{t.agent.svgErrorTitle}</Typography>
                             <Typography selectable={true} variant="caption" style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}>
-                                AI 生成的代码由于属性粘连（如 `dM60`）无法渲染，已为您拦截崩溃。
+                                {t.agent.svgBlockedDesc}
                             </Typography>
                         </View>
                     );
@@ -704,7 +709,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
                 // 静态 SVG 继续使用 SvgXml（性能更好）
                 return (
-                    <SVGErrorBoundary key={node.key + content.length} isDark={isDark}>
+                    // @ts-ignore
+                    <SVGErrorBoundary key={node.key + content.length} isDark={isDark} t={t}>
                         <View style={{ marginVertical: 12, alignItems: 'center', width: '100%' }}>
                             <View style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', padding: 12, borderRadius: 12, width: '100%', overflow: 'hidden' }}>
                                 <SvgXml
@@ -759,7 +765,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         },
         image: (node: any, children: any, parent: any, styles: any) => {
             const { src, alt } = node.attributes;
-            return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} />;
+            return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} />;
         },
     }), [isDark]);
 
@@ -855,6 +861,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                         content={message.content || ''}
                         onClose={() => setModalVisible(false)}
                         isDark={isDark}
+                        t={t}
                     />
 
                     {viewImageUri && (
@@ -914,6 +921,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             isDark={isDark}
                             loading={isGenerating && !message.content}
                             expanded={isReasoningExpanded}
+                            t={t}
                             onToggle={() => {
                                 const newState = !isReasoningExpanded;
                                 setReasoningExpanded(newState);
@@ -945,6 +953,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             citations={message.citations}
                             isDark={isDark}
                             expanded={isSourcesExpanded}
+                            t={t}
                             onToggle={() => {
                                 const newState = !isSourcesExpanded;
                                 setSourcesExpanded(newState);
@@ -1105,6 +1114,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                                                 src={img.src}
                                                 alt={img.alt}
                                                 isDark={isDark}
+                                                t={t}
                                             />
                                         ))}
                                     </View>
@@ -1138,6 +1148,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 content={message.content || ''}
                 onClose={() => setModalVisible(false)}
                 isDark={isDark}
+                t={t}
             />
         </Animated.View>
     );
