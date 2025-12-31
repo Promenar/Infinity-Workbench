@@ -82,11 +82,15 @@ export const GlobalRagConfigPanel: React.FC = () => {
     return (
         <View>
             {/* 快速预设 */}
-            <SectionHeader title="快速预设" mt={0} />
+            <SectionHeader title={t.rag.quickPresets} mt={0} />
             <View className="flex-row mb-8 gap-3">
                 {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((key) => {
                     const preset = PRESETS[key];
                     const Icon = preset.icon;
+                    // Map preset keys to i18n keys
+                    const presetName = key === 'balanced' ? t.rag.presetBalanced :
+                        key === 'writing' ? t.rag.presetWriting :
+                            t.rag.presetCode;
                     return (
                         <TouchableOpacity
                             key={key}
@@ -96,7 +100,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         >
                             <Icon size={22} color={preset.color} />
                             <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
-                                {preset.name}
+                                {presetName}
                             </Typography>
                         </TouchableOpacity>
                     );
@@ -104,24 +108,24 @@ export const GlobalRagConfigPanel: React.FC = () => {
             </View>
 
             {/* 文档切块设置 */}
-            <SectionHeader title="文档切块设置" />
+            <SectionHeader title={t.rag.docChunkSettings} />
             <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                 <View className="mb-4">
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        切块大小 (Chunk Size)
+                        {t.rag.chunkSize}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        将长文档切分为更小段落的字符数
+                        {t.rag.chunkSizeDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">400</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {globalRagConfig.docChunkSize} 字符
+                            {t.rag.chars.replace('{count}', (globalRagConfig.docChunkSize ?? 800).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">2000</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.docChunkSize}
+                        value={globalRagConfig.docChunkSize ?? 800}
                         onValueChange={(val) => updateGlobalRagConfig({ docChunkSize: Math.round(val) })}
                         minimumValue={400}
                         maximumValue={2000}
@@ -136,20 +140,20 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
                 <View className="mt-2">
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        切块重叠 (Overlap)
+                        {t.rag.chunkOverlap}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        相邻切块之间重合的字符数，用于保持语义完整
+                        {t.rag.chunkOverlapDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {globalRagConfig.chunkOverlap} 字符
+                            {t.rag.chars.replace('{count}', (globalRagConfig.chunkOverlap ?? 100).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">500</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.chunkOverlap}
+                        value={globalRagConfig.chunkOverlap ?? 100}
                         onValueChange={(val) => updateGlobalRagConfig({ chunkOverlap: Math.round(val) })}
                         minimumValue={0}
                         maximumValue={500}
@@ -162,24 +166,24 @@ export const GlobalRagConfigPanel: React.FC = () => {
             </View>
 
             {/* 对话记忆设置 */}
-            <SectionHeader title="对话记忆设置" />
+            <SectionHeader title={t.rag.memorySettings} />
             <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                 <View>
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        对话切块大小
+                        {t.rag.memoryChunkSize}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        存入长期记忆时的对话片段长度
+                        {t.rag.memoryChunkSizeDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">500</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {globalRagConfig.memoryChunkSize} 字符
+                            {t.rag.chars.replace('{count}', (globalRagConfig.memoryChunkSize ?? 1000).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">2000</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.memoryChunkSize}
+                        value={globalRagConfig.memoryChunkSize ?? 1000}
                         onValueChange={(val) => updateGlobalRagConfig({ memoryChunkSize: Math.round(val) })}
                         minimumValue={500}
                         maximumValue={2000}
@@ -192,24 +196,24 @@ export const GlobalRagConfigPanel: React.FC = () => {
             </View>
 
             {/* 自动摘要设置 */}
-            <SectionHeader title="自动摘要设置" />
+            <SectionHeader title={t.rag.summarySettings} />
             <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                 <View className="mb-4">
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        活跃窗口
+                        {t.rag.activeWindow}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        保留在上下文中的最近消息数
+                        {t.rag.activeWindowDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {globalRagConfig.contextWindow} 条消息
+                            {t.rag.messageCount.replace('{count}', (globalRagConfig.contextWindow ?? 20).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">50</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.contextWindow}
+                        value={globalRagConfig.contextWindow ?? 20}
                         onValueChange={(val) => updateGlobalRagConfig({ contextWindow: Math.round(val) })}
                         minimumValue={10}
                         maximumValue={50}
@@ -224,20 +228,20 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
                 <View className="mt-2">
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        触发阈值
+                        {t.rag.triggerThreshold}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        累积消息数达到此值时自动生成摘要
+                        {t.rag.triggerThresholdDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {globalRagConfig.summaryThreshold} 条消息
+                            {t.rag.messageCount.replace('{count}', (globalRagConfig.summaryThreshold ?? 10).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">30</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.summaryThreshold}
+                        value={globalRagConfig.summaryThreshold ?? 10}
                         onValueChange={(val) => updateGlobalRagConfig({ summaryThreshold: Math.round(val) })}
                         minimumValue={5}
                         maximumValue={30}
@@ -252,10 +256,10 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
                 <View>
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        摘要模板
+                        {t.rag.summaryTemplate}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        自定义生成摘要时的语气和重点，支持变量
+                        {t.rag.summaryTemplateDesc}
                     </Typography>
                     <TextInput
                         value={globalRagConfig.summaryPrompt}
@@ -265,33 +269,34 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         className="text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800"
                         style={{ textAlignVertical: 'top', minHeight: 100 }}
                         placeholderTextColor="#94a3b8"
+                        placeholder={t.rag.promptPlaceholder}
                     />
                 </View>
             </View>
 
             {/* 检索配置 */}
             <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-8 mb-3">
-                检索配置
+                {t.rag.retrievalSettings}
             </Typography>
             <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-                <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">记忆检索</Typography>
+                <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">{t.rag.memoryRetrieval}</Typography>
 
                 <View className="mb-4">
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        检索数量
+                        {t.rag.memoryLimit}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        每次检索返回的最大记忆片段数
+                        {t.rag.memoryLimitDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {globalRagConfig.memoryLimit} 条
+                            {t.rag.items.replace('{count}', (globalRagConfig.memoryLimit ?? 5).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.memoryLimit}
+                        value={globalRagConfig.memoryLimit ?? 5}
                         onValueChange={(val) => updateGlobalRagConfig({ memoryLimit: Math.round(val) })}
                         minimumValue={3}
                         maximumValue={10}
@@ -304,20 +309,20 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
                 <View className="mb-4">
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        相似度阈值
+                        {t.rag.similarityThreshold}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        低于此分数的记忆将被过滤，避免引入无关信息
+                        {t.rag.memoryThresholdDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">50%</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {Math.round(globalRagConfig.memoryThreshold * 100)}%
+                            {Math.round((globalRagConfig.memoryThreshold ?? 0.7) * 100)}%
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">95%</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.memoryThreshold}
+                        value={globalRagConfig.memoryThreshold ?? 0.7}
                         onValueChange={(val) => updateGlobalRagConfig({ memoryThreshold: val })}
                         minimumValue={0.5}
                         maximumValue={0.95}
@@ -330,24 +335,24 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
                 <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
 
-                <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">文档检索</Typography>
+                <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">{t.rag.docRetrieval}</Typography>
 
                 <View className="mb-4">
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        检索数量
+                        {t.rag.docLimit}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        每次检索返回的最大文档片段数
+                        {t.rag.docLimitDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {globalRagConfig.docLimit} 条
+                            {t.rag.items.replace('{count}', (globalRagConfig.docLimit ?? 8).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">15</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.docLimit}
+                        value={globalRagConfig.docLimit ?? 8}
                         onValueChange={(val) => updateGlobalRagConfig({ docLimit: Math.round(val) })}
                         minimumValue={5}
                         maximumValue={15}
@@ -360,20 +365,20 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
                 <View>
                     <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                        相似度阈值
+                        {t.rag.similarityThreshold}
                     </Typography>
                     <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                        文档检索的最低相似度要求，较低值返回更多结果
+                        {t.rag.docThresholdDesc}
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">30%</Typography>
                         <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                            {Math.round(globalRagConfig.docThreshold * 100)}%
+                            {Math.round((globalRagConfig.docThreshold ?? 0.45) * 100)}%
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">80%</Typography>
                     </View>
                     <Slider
-                        value={globalRagConfig.docThreshold}
+                        value={globalRagConfig.docThreshold ?? 0.45}
                         onValueChange={(val) => updateGlobalRagConfig({ docThreshold: val })}
                         minimumValue={0.3}
                         maximumValue={0.8}
@@ -387,7 +392,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
             {/* 开发者选项 */}
             <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-8 mb-3">
-                开发者选项
+                {t.rag.developerOptions}
             </Typography>
             <TouchableOpacity
                 activeOpacity={0.7}
@@ -396,7 +401,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
             >
                 <Database size={18} color="#6366f1" className="mr-2" />
                 <Typography className="text-indigo-600 dark:text-indigo-400 font-bold">
-                    查看向量库统计
+                    {t.rag.viewVectorStats}
                 </Typography>
             </TouchableOpacity>
         </View>
