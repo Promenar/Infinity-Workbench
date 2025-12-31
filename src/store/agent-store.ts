@@ -80,10 +80,33 @@ export const useAgentStore = create<AgentState>()(
             agents: PRESET_AGENTS,
             addAgent: (agent) => set((state) => ({ agents: [...state.agents, agent] })),
             updateAgent: (id, updates) => {
-                console.log('[AgentStore] updateAgent called:', { id, updates, currentAgent: get().agents.find(a => a.id === id) });
-                set((state) => ({
-                    agents: state.agents.map((a) => a.id === id ? { ...a, ...updates } : a)
-                }));
+                const currentAgent = get().agents.find(a => a.id === id);
+                console.log('[AgentStore] updateAgent called:', { id, updates, currentAgent });
+
+                set((state) => {
+                    // Check if agent exists in current state
+                    const exists = state.agents.some(a => a.id === id);
+
+                    if (exists) {
+                        // Update existing agent
+                        return {
+                            agents: state.agents.map((a) => a.id === id ? { ...a, ...updates } : a)
+                        };
+                    } else {
+                        // Agent not in state, find in PRESET_AGENTS and add with updates
+                        const presetAgent = PRESET_AGENTS.find(a => a.id === id);
+                        if (presetAgent) {
+                            console.log('[AgentStore] Agent not in state, adding from preset:', id);
+                            return {
+                                agents: [...state.agents, { ...presetAgent, ...updates }]
+                            };
+                        } else {
+                            console.warn('[AgentStore] Agent not found in state or presets:', id);
+                            return state;
+                        }
+                    }
+                });
+
                 // Log after update
                 setTimeout(() => {
                     console.log('[AgentStore] After update:', get().agents.find(a => a.id === id));
