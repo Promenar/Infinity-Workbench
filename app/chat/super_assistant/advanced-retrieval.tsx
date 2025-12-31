@@ -30,19 +30,11 @@ export default function SuperAssistantAdvancedRetrievalScreen() {
     const insets = useSafeAreaInsets();
     const { updateAgent } = useAgentStore();
 
-    // Use reactive selector to track ragConfig changes
-    const agent = useAgentStore(state =>
-        state.agents.find(a => a.id === SPA_AGENT_ID) || {
-            id: SPA_AGENT_ID,
-            name: 'Super Assistant',
-            avatar: 'Sparkles',
-            color: '#8b5cf6',
-            systemPrompt: '',
-            defaultModel: 'gpt-4o',
-            params: { temperature: 0.7 },
-            created: Date.now()
-        } as Agent
-    );
+    // Use selector with stable fallback reference
+    const agent = useAgentStore(state => {
+        const found = state.agents.find(a => a.id === SPA_AGENT_ID);
+        return found || FALLBACK_AGENT;
+    });
 
     return (
         <PageLayout safeArea={false} className="bg-white dark:bg-black">
