@@ -6,7 +6,7 @@ import { useI18n } from '../../../lib/i18n';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Agent, RagConfiguration } from '../../../types/chat';
 import Slider from '@react-native-community/slider';
-import { RefreshCw, ArrowUpDown, Sparkles, GitMerge, BarChart3 } from 'lucide-react-native';
+import { RefreshCw } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 
 interface Props {
@@ -85,12 +85,9 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                 {/* 启用Rerank */}
                 <View className="flex-row items-center justify-between mb-6">
                     <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <ArrowUpDown size={16} color="#a855f7" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                启用Rerank
-                            </Typography>
-                        </View>
+                        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            启用Rerank
+                        </Typography>
                         <Typography className="text-xs text-gray-500 dark:text-gray-400">
                             使用专门的重排序模型对检索结果进行二次精排
                         </Typography>
@@ -168,12 +165,9 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                 {/* 启用查询重写 */}
                 <View className="flex-row items-center justify-between mb-6">
                     <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <Sparkles size={16} color="#f59e0b" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                启用查询重写
-                            </Typography>
-                        </View>
+                        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            启用查询重写
+                        </Typography>
                         <Typography className="text-xs text-gray-500 dark:text-gray-400">
                             生成多个查询变体以提升召回率
                         </Typography>
@@ -250,12 +244,9 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                 {/* 启用混合检索 */}
                 <View className="flex-row items-center justify-between mb-6">
                     <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <GitMerge size={16} color="#06b6d4" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                启用混合检索
-                            </Typography>
-                        </View>
+                        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            启用混合检索
+                        </Typography>
                         <Typography className="text-xs text-gray-500 dark:text-gray-400">
                             结合向量检索和关键词检索（BM25）
                         </Typography>
@@ -333,12 +324,9 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                 {/* 显示检索进度 */}
                 <View className="flex-row items-center justify-between mb-4">
                     <View className="flex-1 mr-4">
-                        <View className="flex-row items-center mb-1">
-                            <BarChart3 size={16} color="#10b981" className="mr-2" />
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                显示检索进度
-                            </Typography>
-                        </View>
+                        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            显示检索进度
+                        </Typography>
                         <Typography className="text-xs text-gray-500 dark:text-gray-400">
                             显示实时检索进度条
                         </Typography>
