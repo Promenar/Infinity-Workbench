@@ -5,17 +5,44 @@ import { Stack, useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { useTheme } from '../../../src/theme/ThemeProvider';
 import { useAgentStore } from '../../../src/store/agent-store';
+import { Agent } from '../../../src/types/chat';
 import { AgentAdvancedRetrievalPanel } from '../../../src/features/settings/components/AgentAdvancedRetrievalPanel';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SPA_AGENT_ID = 'super_assistant';
 
+// Fallback agent definition (cached outside component to avoid infinite loop)
+const FALLBACK_AGENT: Agent = {
+    id: SPA_AGENT_ID,
+    name: 'Super Assistant',
+    description: 'Global personal assistant with access to all knowledge and history.',
+    avatar: 'Sparkles',
+    color: '#8b5cf6',
+    systemPrompt: '',
+    defaultModel: 'gpt-4o',
+    params: { temperature: 0.7 },
+    created: Date.now(),
+};
+
 export default function SuperAssistantAdvancedRetrievalScreen() {
     const router = useRouter();
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
-    const { getAgent, updateAgent } = useAgentStore();
-    const agent = getAgent(SPA_AGENT_ID) || { id: SPA_AGENT_ID, name: 'Super Assistant' } as any;
+    const { updateAgent } = useAgentStore();
+
+    // Use reactive selector to track ragConfig changes
+    const agent = useAgentStore(state =>
+        state.agents.find(a => a.id === SPA_AGENT_ID) || {
+            id: SPA_AGENT_ID,
+            name: 'Super Assistant',
+            avatar: 'Sparkles',
+            color: '#8b5cf6',
+            systemPrompt: '',
+            defaultModel: 'gpt-4o',
+            params: { temperature: 0.7 },
+            created: Date.now()
+        } as Agent
+    );
 
     return (
         <PageLayout safeArea={false} className="bg-white dark:bg-black">

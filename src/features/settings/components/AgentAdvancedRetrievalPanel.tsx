@@ -352,7 +352,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                 <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
 
                 {/* 显示检索详情 */}
-                <View className="flex-row items-center justify-between mb-4">
+                <View className="flex-row items-center justify-between">
                     <View className="flex-1 mr-4">
                         <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
                             显示检索详情
