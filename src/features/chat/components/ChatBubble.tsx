@@ -1176,5 +1176,16 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
     const nextCitations = next.message.citations || [];
     if (prevCitations.length !== nextCitations.length) return false;
 
+    // Check RAG References and Metadata
+    // @ts-ignore
+    if (prev.message.ragReferencesLoading !== next.message.ragReferencesLoading) return false;
+    // @ts-ignore
+    if (prev.message.ragMetadata !== next.message.ragMetadata) return false;
+    // @ts-ignore
+    const prevRagRefs = prev.message.ragReferences || [];
+    // @ts-ignore
+    const nextRagRefs = next.message.ragReferences || [];
+    if (prevRagRefs.length !== nextRagRefs.length) return false;
+
     return true;
 });

@@ -32,8 +32,9 @@ export class RerankClient {
 
             // 2. Send request to /v1/rerank
             // Ensure no double slash if baseUrl ends with /
-            const baseUrl = this.provider.baseUrl?.replace(/\/+$/, '') || '';
-            const endpoint = `${baseUrl}/v1/rerank`;
+            let baseUrl = this.provider.baseUrl?.replace(/\/+$/, '') || '';
+            const suffix = baseUrl.endsWith('/v1') ? '/rerank' : '/v1/rerank';
+            const endpoint = `${baseUrl}${suffix}`;
 
             console.log(`[RerankClient] Reranking ${documents.length} docs with model ${this.modelId} at ${endpoint}`);
 

@@ -173,7 +173,7 @@ export class ModelService {
             google: ['gemini-2.0-flash-thinking-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'],
             moonshot: ['moonshot-v1-8k', 'moonshot-v1-32k'],
             zhipu: ['glm-4', 'glm-4-flash', 'glm-4-plus', 'glm-4.7'],
-            siliconflow: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'],
+            siliconflow: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'BAAI/bge-reranker-v2-m3'],
             github: ['gpt-4o', 'claude-3-5-sonnet'],
         };
 

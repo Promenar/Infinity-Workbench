@@ -49,7 +49,7 @@ export function supportsThinkingConfig(modelId: string): boolean {
  * @param modelId 模型 ID
  * @returns 模型类型，未找到返回 'chat' 作为默认值
  */
-export function getModelType(modelId: string): 'chat' | 'reasoning' | 'image' | 'embedding' {
+export function getModelType(modelId: string): 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank' {
     const spec = findModelSpec(modelId);
     return spec?.type || 'chat';
 }

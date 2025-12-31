@@ -11,7 +11,7 @@ interface ModelSpec {
     /** 上下文长度（tokens） */
     contextLength: number;
     /** 模型类型 */
-    type?: 'chat' | 'reasoning' | 'image' | 'embedding';
+    type?: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank';
     /** 模型能力标签 */
     capabilities?: {
         vision?: boolean;
@@ -133,6 +133,12 @@ export const MODEL_SPECS: ModelSpec[] = [
     { pattern: /mistral-medium/i, contextLength: 32000, note: 'Mistral Medium' },
     { pattern: /mistral-small/i, contextLength: 32000, note: 'Mistral Small' },
     { pattern: /mixtral-8x7b/i, contextLength: 32000, note: 'Mixtral 8x7B' },
+
+    // ==================== Rerank Models (重排序) ====================
+    { pattern: /bge-reranker/i, contextLength: 4096, type: 'rerank', icon: 'rerank', note: 'BGE Reranker' },
+    { pattern: /jina-reranker/i, contextLength: 8192, type: 'rerank', icon: 'rerank', note: 'Jina Reranker' },
+    { pattern: /cohere-rerank/i, contextLength: 4096, type: 'rerank', icon: 'rerank', note: 'Cohere Rerank' },
+    { pattern: /rerank/i, contextLength: 4096, type: 'rerank', icon: 'rerank', note: 'Generic Rerank Model' },
 ];
 
 /**

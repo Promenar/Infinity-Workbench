@@ -70,7 +70,7 @@ export class QueryRewriter {
             }
 
         } catch (error) {
-            console.error('[QueryRewriter] Rewrite failed:', error);
+            console.warn('[QueryRewriter] Rewrite failed:', error);
         }
 
         return Array.from(queries).slice(0, count + 1); // 限制总数

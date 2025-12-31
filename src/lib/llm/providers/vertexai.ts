@@ -121,7 +121,7 @@ export class VertexAiClient implements LlmClient {
             this.tokenExpiry = Date.now() + (data.expires_in * 1000);
             return this.accessToken!;
         } catch (e) {
-            console.error('Vertex AI Auth Error:', e);
+            console.warn('Vertex AI Auth Error:', e);
             throw new Error(`Authentication failed: ${(e as Error).message}`);
         }
     }
@@ -134,7 +134,11 @@ export class VertexAiClient implements LlmClient {
                 const content = typeof chunk === 'string' ? chunk : chunk.content;
                 if (content) result += content;
             },
-            (err) => { throw err; },
+            (err) => {
+                // Don't throw here! It runs in XHR callback and causes crash.
+                // allow streamChat promise rejection to handle it.
+                console.warn('[VertexAiClient] Stream error:', err.message);
+            },
             options
         );
         return result;
@@ -224,7 +228,7 @@ export class VertexAiClient implements LlmClient {
                 // Queue to ensure strict order of chunks and async image writes
                 let processingQueue = Promise.resolve();
                 const enqueue = (task: () => void | Promise<void>) => {
-                    processingQueue = processingQueue.then(task).catch(e => console.error('Stream processing error:', e));
+                    processingQueue = processingQueue.then(task).catch(e => console.warn('Stream processing error:', e));
                 };
 
                 xhr.onreadystatechange = () => {

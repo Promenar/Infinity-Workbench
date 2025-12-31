@@ -25,47 +25,8 @@ export class MemoryManager {
         // 🔑 优先级：选项传入 > 全局配置
         const effectiveRagConfig = ragConfig || settings.globalRagConfig;
 
-        // ===== 阶段 1: Query Rewrite (查询重写) =====
-        let queryVariants = [query];
-        if (effectiveRagConfig.enableQueryRewrite) {
-            onProgress?.('rewriting', 5);
-            try {
-                // Determine model for rewriting (default to summary model or specific rewrite model)
-                const modelId = effectiveRagConfig.queryRewriteModel || settings.defaultSummaryModel;
-                const provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.id === modelId));
-
-                if (provider && modelId) {
-                    const { createLlmClient } = await import('../llm/factory');
-                    // Construct ExtendedModelConfig if needed or just pass config
-                    // Factory expects ExtendedModelConfig.
-                    const modelConfig = provider.models.find(m => m.id === modelId)!;
-
-                    const llmClient = createLlmClient({
-                        ...modelConfig,
-                        provider: provider.type,
-                        apiKey: provider.apiKey,
-                        baseUrl: provider.baseUrl,
-                        vertexProject: provider.vertexProject,
-                        vertexLocation: provider.vertexLocation,
-                        vertexKeyJson: provider.vertexKeyJson
-                    });
-
-                    const { QueryRewriter } = await import('./query-rewriter');
-                    const rewriter = new QueryRewriter(llmClient, effectiveRagConfig.queryRewriteStrategy as any);
-
-                    const variants = await rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
-                    if (variants.length > 0) {
-                        queryVariants = variants;
-                        // Limit total variants to avoid explosion
-                        if (queryVariants.length > 5) queryVariants = queryVariants.slice(0, 5);
-                    }
-                }
-            } catch (e) {
-                console.error('[MemoryManager] Query rewrite failed:', e);
-            }
-        }
-
-        // 准备文档搜索范围 (Pre-calculate doc auth scope)
+        // 0. 预先计算文档搜索范围 (Pre-calculate doc auth scope)
+        // 这一步提前做，是为了判断是否有必要进行后续的重写和搜索
         let authorizedDocIds: Set<string> | null = null;
         if (enableDocs && !isGlobal) {
             const hasAuthorizedItems = (activeDocIds && activeDocIds.length > 0) || (activeFolderIds && activeFolderIds.length > 0);
@@ -115,6 +76,56 @@ export class MemoryManager {
             }
         }
 
+        // Quick Exit: If Memory disabled AND Docs enabled but no docs selected (and not global), nothing to search.
+        const canSearchDocs = enableDocs && (isGlobal || (authorizedDocIds && authorizedDocIds.size > 0));
+        if (!enableMemory && !canSearchDocs) {
+            return { context: '', references: [], metadata: { searchTimeMs: 0, rerankTimeMs: 0, recallCount: 0, finalCount: 0, sourceDistribution: { memory: 0, documents: 0 } } };
+        }
+
+        // ===== 阶段 1: Query Rewrite (查询重写) =====
+        let queryVariants = [query];
+        // Optimization: Rewrite if enabled AND (Global OR Doc Auth OR Memory Enabled)
+        // If searching local docs only and no docs selected, skip. But if Memory enabled, proceed.
+        const shouldRewrite = effectiveRagConfig.enableQueryRewrite && (isGlobal || enableMemory || (authorizedDocIds && authorizedDocIds.size > 0));
+
+        if (shouldRewrite) {
+            onProgress?.('rewriting', 5);
+            try {
+                // Determine model for rewriting (default to summary model or specific rewrite model)
+                const modelId = effectiveRagConfig.queryRewriteModel || settings.defaultSummaryModel;
+                const provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.uuid === modelId || m.id === modelId));
+
+                if (provider && modelId) {
+                    const { createLlmClient } = await import('../llm/factory');
+                    // Construct ExtendedModelConfig if needed or just pass config
+                    // Factory expects ExtendedModelConfig.
+                    const modelConfig = provider.models.find(m => m.uuid === modelId || m.id === modelId)!;
+
+                    const llmClient = createLlmClient({
+                        ...modelConfig,
+                        provider: provider.type,
+                        apiKey: provider.apiKey,
+                        baseUrl: provider.baseUrl,
+                        vertexProject: provider.vertexProject,
+                        vertexLocation: provider.vertexLocation,
+                        vertexKeyJson: provider.vertexKeyJson
+                    });
+
+                    const { QueryRewriter } = await import('./query-rewriter');
+                    const rewriter = new QueryRewriter(llmClient, effectiveRagConfig.queryRewriteStrategy as any);
+
+                    const variants = await rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
+                    if (variants.length > 0) {
+                        queryVariants = variants;
+                        // Limit total variants to avoid explosion
+                        if (queryVariants.length > 5) queryVariants = queryVariants.slice(0, 5);
+                    }
+                }
+            } catch (e) {
+                console.warn('[MemoryManager] Query rewrite failed:', e);
+            }
+        }
+
         // Loop checks
         const searchPromises = queryVariants.map(async (currentQuery) => {
             // 2. 获取查询向量 (Get Embedding)
@@ -135,7 +146,7 @@ export class MemoryManager {
                 const client = new EmbeddingClient(provider, modelId);
                 queryEmbedding = await client.embedQuery(currentQuery);
             } catch (e) {
-                console.error('[MemoryManager] Embedding failed:', e);
+                console.warn('[MemoryManager] Embedding failed:', e);
                 return [];
             }
 
@@ -246,12 +257,21 @@ export class MemoryManager {
 
                     // 3. Flatten back to array
                     const fusedResults: SearchResult[] = [];
+                    // RRF normalization factor: Max possible score is approx 1/61 + 1/61 = 0.0327
+                    // We interpret this as ~98% confidence for UI purposes
+                    const rrfMax = (1 / (rrfK + 1)) * 2;
+
                     for (const [id, score] of scoreMap.entries()) {
                         const node = nodeMap.get(id);
                         if (node) {
+                            // Normalize to 0-1 range for UI display
+                            let normalized = score / rrfMax;
+                            if (normalized > 0.99) normalized = 0.99;
+                            if (normalized < 0.01) normalized = 0.01;
+
                             fusedResults.push({
                                 ...node,
-                                similarity: score // Update score to RRF score
+                                similarity: normalized
                             });
                         }
                     }

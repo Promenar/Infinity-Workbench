@@ -37,32 +37,42 @@ export class EmbeddingClient {
     }
 
     private async embedOpenAI(texts: string[]): Promise<number[][]> {
-        const res = await fetch(`${this.provider.baseUrl}/embeddings`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.provider.apiKey}`
-            },
-            body: JSON.stringify({
-                model: this.model,
-                input: texts
-            })
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
-        if (!res.ok) throw new Error(`OpenAI Embedding Error: ${res.status} ${await res.text()}`);
+        try {
+            const res = await fetch(`${this.provider.baseUrl}/embeddings`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.provider.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: this.model,
+                    input: texts
+                }),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
 
-        // Rule 8.4: Capture HTML error pages
-        const contentType = res.headers.get('Content-Type') || '';
-        if (!contentType.includes('application/json')) {
-            const text = await res.text();
-            if (text.trim().startsWith('<')) {
-                throw new Error(`Received HTML error page instead of JSON for embeddings.`);
+            if (!res.ok) throw new Error(`OpenAI Embedding Error: ${res.status} ${await res.text()}`);
+
+            // Rule 8.4: Capture HTML error pages
+            const contentType = res.headers.get('Content-Type') || '';
+            if (!contentType.includes('application/json')) {
+                const text = await res.text();
+                if (text.trim().startsWith('<')) {
+                    throw new Error(`Received HTML error page instead of JSON for embeddings.`);
+                }
+                throw new Error(`Unexpected Content-Type: ${contentType}`);
             }
-            throw new Error(`Unexpected Content-Type: ${contentType}`);
-        }
 
-        const data = await res.json();
-        return data.data.map((item: any) => item.embedding);
+            const data = await res.json();
+            return data.data.map((item: any) => item.embedding);
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
     }
 
     private async embedGoogle(texts: string[]): Promise<number[][]> {

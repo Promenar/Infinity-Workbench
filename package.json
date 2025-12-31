@@ -72,5 +72,8 @@
     "prettier": "^3.7.4",
     "typescript": "~5.9.2"
   },
+  "op-sqlite": {
+    "fts5": true
+  },
   "private": true
 }

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Session, SessionId, AgentId, Message, TokenUsage, InferenceParams, GeneratedImageData, RagReference, RagProgress } from '../types/chat';
+import { Session, SessionId, AgentId, Message, TokenUsage, InferenceParams, GeneratedImageData, RagReference, RagProgress, RagMetadata } from '../types/chat';
 import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
@@ -88,7 +88,7 @@ interface ChatState {
         };
     }) => void;
     updateSessionScrollOffset: (id: SessionId, offset: number) => void;
-    updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean) => void;
+    updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean, ragMetadata?: RagMetadata) => void;
     updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
     updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
     deleteMessage: (sessionId: SessionId, messageId: string) => void;
@@ -163,7 +163,7 @@ export const useChatStore = create<ChatState>()(
             updateSessionScrollOffset: (id, offset) => set((state) => ({
                 sessions: state.sessions.map((s) => s.id === id ? { ...s, scrollOffset: offset } : s)
             })),
-            updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean) => set((state) => ({
+            updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean, ragMetadata?: any) => set((state) => ({
                 sessions: state.sessions.map((s) => {
                     if (s.id === sessionId) {
                         return {
@@ -176,7 +176,8 @@ export const useChatStore = create<ChatState>()(
                                     reasoning: reasoning !== undefined ? reasoning : m.reasoning,
                                     citations: citations !== undefined ? citations : m.citations,
                                     ragReferences: ragReferences !== undefined ? ragReferences : m.ragReferences,
-                                    ragReferencesLoading: ragReferencesLoading !== undefined ? ragReferencesLoading : m.ragReferencesLoading
+                                    ragReferencesLoading: ragReferencesLoading !== undefined ? ragReferencesLoading : m.ragReferencesLoading,
+                                    ragMetadata: ragMetadata !== undefined ? ragMetadata : m.ragMetadata  // ✅ Update metadata
                                 } : m
                             ),
                             lastMessage: content,
@@ -451,7 +452,7 @@ export const useChatStore = create<ChatState>()(
                                 }
                             };
 
-                            const { context: retrievedContext, references } = await MemoryManager.retrieveContext(
+                            const { context: retrievedContext, references, metadata } = await MemoryManager.retrieveContext(
                                 apiMessage.content,
                                 sessionId,
                                 effectiveRagOptions
@@ -469,8 +470,8 @@ export const useChatStore = create<ChatState>()(
                                 docIds: ragReferences.filter(r => r.type === 'doc').map(r => r.docId)
                             });
 
-                            // Update with results and turn off loading
-                            get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, ragReferences, false);
+                            // Update with results and turn off loading, including metadata
+                            get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, ragReferences, false, metadata);
                         } catch (e) {
                             console.error('RAG Retrieval failed:', e);
                             get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, [], false);
@@ -592,7 +593,7 @@ export const useChatStore = create<ChatState>()(
                             }
                             scheduleUpdate();
                         },
-                        (error) => { throw error; },
+                        (error) => { console.warn('[ChatStore] Stream error:', error); },
                         options // Pass options including webSearch
                     );
 
@@ -792,9 +793,10 @@ export const useChatStore = create<ChatState>()(
                     if ((error as any).name === 'AbortError' || (error as Error).message.includes('abort')) {
                         console.log('Stream aborted');
                     } else {
-                        console.error('Chat error:', error);
-                        const errorMsg = (error as Error).message;
-                        get().updateMessageContent(sessionId, assistantMsgId, accumulatedContent + `\n\n[Error: ${errorMsg}]`);
+                        console.warn('Chat error:', error);
+                        // Friendly localized error message
+                        const errorMsg = "抱歉，遇到网络问题或认证失败。请检查您的网络连接、API Key是否正确，或稍后重试。";
+                        get().updateMessageContent(sessionId, assistantMsgId, accumulatedContent + `\n\n⚠️ ${errorMsg}\n\n(Error: ${(error as Error).message})`);
                     }
                 } finally {
                     set((state) => {

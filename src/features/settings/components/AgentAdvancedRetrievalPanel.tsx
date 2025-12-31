@@ -98,65 +98,61 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                     />
                 </View>
 
-                {currentConfig.enableRerank && (
-                    <>
-                        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
+                <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
 
-                        {/* 初召回数量 */}
-                        <View className="mb-4">
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                初召回数量
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                Rerank前召回的文档数量（建议20-50）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
-                                <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                                    {currentConfig.rerankTopK ?? 30} 条
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
-                            </View>
-                            <Slider
-                                value={currentConfig.rerankTopK ?? 30}
-                                onValueChange={(val) => handleChange({ rerankTopK: Math.round(val) })}
-                                minimumValue={10}
-                                maximumValue={100}
-                                step={5}
-                                minimumTrackTintColor="#a855f7"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#a855f7"
-                            />
-                        </View>
+                {/* 初召回数量 */}
+                <View className="mb-4">
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        初召回数量
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        Rerank前召回的文档数量（建议20-50）
+                    </Typography>
+                    <View className="flex-row justify-between mb-2">
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
+                        <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                            {currentConfig.rerankTopK ?? 30} 条
+                        </Typography>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
+                    </View>
+                    <Slider
+                        value={currentConfig.rerankTopK ?? 30}
+                        onValueChange={(val) => handleChange({ rerankTopK: Math.round(val) })}
+                        minimumValue={10}
+                        maximumValue={100}
+                        step={5}
+                        minimumTrackTintColor="#a855f7"
+                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                        thumbTintColor="#a855f7"
+                    />
+                </View>
 
-                        {/* 精排后返回数量 */}
-                        <View>
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                精排后返回
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                Rerank后实际使用的文档数量（建议5-10）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-                                <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                                    {currentConfig.rerankFinalK ?? 8} 条
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
-                            </View>
-                            <Slider
-                                value={currentConfig.rerankFinalK ?? 8}
-                                onValueChange={(val) => handleChange({ rerankFinalK: Math.round(val) })}
-                                minimumValue={3}
-                                maximumValue={20}
-                                step={1}
-                                minimumTrackTintColor="#a855f7"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#a855f7"
-                            />
-                        </View>
-                    </>
-                )}
+                {/* 精排后返回数量 */}
+                <View>
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        精排后返回
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        Rerank后实际使用的文档数量（建议5-10）
+                    </Typography>
+                    <View className="flex-row justify-between mb-2">
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
+                        <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                            {currentConfig.rerankFinalK ?? 8} 条
+                        </Typography>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
+                    </View>
+                    <Slider
+                        value={currentConfig.rerankFinalK ?? 8}
+                        onValueChange={(val) => handleChange({ rerankFinalK: Math.round(val) })}
+                        minimumValue={3}
+                        maximumValue={20}
+                        step={1}
+                        minimumTrackTintColor="#a855f7"
+                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                        thumbTintColor="#a855f7"
+                    />
+                </View>
             </View>
 
             {/* 查询重写配置 */}
@@ -178,64 +174,60 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                     />
                 </View>
 
-                {currentConfig.enableQueryRewrite && (
-                    <>
-                        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
+                <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
 
-                        {/* 重写策略 */}
-                        <View className="mb-4">
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
-                                重写策略
-                            </Typography>
-                            <View className="flex-row gap-2">
-                                {(['hyde', 'multi-query', 'expansion'] as const).map((strategy) => (
-                                    <TouchableOpacity
-                                        key={strategy}
-                                        onPress={() => handleChange({ queryRewriteStrategy: strategy })}
-                                        className={`flex-1 py-3 px-3 rounded-xl border ${(currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy
-                                            ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-500'
-                                            : 'bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700'
-                                            }`}
-                                    >
-                                        <Typography className={`text-xs font-bold text-center ${(currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy
-                                            ? 'text-amber-600 dark:text-amber-400'
-                                            : 'text-gray-600 dark:text-gray-400'
-                                            }`}>
-                                            {strategy === 'hyde' ? 'HyDE' : strategy === 'multi-query' ? '多查询' : '扩展'}
-                                        </Typography>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-
-                        {/* 变体数量 */}
-                        <View>
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                变体数量
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                生成的查询变体数量（2-5个）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">2</Typography>
-                                <Typography className="text-sm font-bold text-amber-600 dark:text-amber-400">
-                                    {currentConfig.queryRewriteCount ?? 3} 个
+                {/* 重写策略 */}
+                <View className="mb-4">
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
+                        重写策略
+                    </Typography>
+                    <View className="flex-row gap-2">
+                        {(['hyde', 'multi-query', 'expansion'] as const).map((strategy) => (
+                            <TouchableOpacity
+                                key={strategy}
+                                onPress={() => handleChange({ queryRewriteStrategy: strategy })}
+                                className={`flex-1 py-3 px-3 rounded-xl border ${(currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy
+                                    ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-500'
+                                    : 'bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700'
+                                    }`}
+                            >
+                                <Typography className={`text-xs font-bold text-center ${(currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-gray-600 dark:text-gray-400'
+                                    }`}>
+                                    {strategy === 'hyde' ? 'HyDE' : strategy === 'multi-query' ? '多查询' : '扩展'}
                                 </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
-                            </View>
-                            <Slider
-                                value={currentConfig.queryRewriteCount ?? 3}
-                                onValueChange={(val) => handleChange({ queryRewriteCount: Math.round(val) })}
-                                minimumValue={2}
-                                maximumValue={5}
-                                step={1}
-                                minimumTrackTintColor="#f59e0b"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#f59e0b"
-                            />
-                        </View>
-                    </>
-                )}
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+
+                {/* 变体数量 */}
+                <View>
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        变体数量
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        生成的查询变体数量（2-5个）
+                    </Typography>
+                    <View className="flex-row justify-between mb-2">
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">2</Typography>
+                        <Typography className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                            {currentConfig.queryRewriteCount ?? 3} 个
+                        </Typography>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
+                    </View>
+                    <Slider
+                        value={currentConfig.queryRewriteCount ?? 3}
+                        onValueChange={(val) => handleChange({ queryRewriteCount: Math.round(val) })}
+                        minimumValue={2}
+                        maximumValue={5}
+                        step={1}
+                        minimumTrackTintColor="#f59e0b"
+                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                        thumbTintColor="#f59e0b"
+                    />
+                </View>
             </View>
 
             {/* 混合检索配置 */}
@@ -257,65 +249,61 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                     />
                 </View>
 
-                {currentConfig.enableHybridSearch && (
-                    <>
-                        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
+                <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-4" />
 
-                        {/* 向量权重 */}
-                        <View className="mb-4">
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                向量检索权重
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                向量检索在混合检索中的权重（0.5为均衡）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
-                                <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
-                                    {((currentConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">100%</Typography>
-                            </View>
-                            <Slider
-                                value={currentConfig.hybridAlpha ?? 0.6}
-                                onValueChange={(val) => handleChange({ hybridAlpha: val })}
-                                minimumValue={0}
-                                maximumValue={1}
-                                step={0.1}
-                                minimumTrackTintColor="#06b6d4"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#06b6d4"
-                            />
-                        </View>
+                {/* 向量权重 */}
+                <View className="mb-4">
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        向量检索权重
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        向量检索在混合检索中的权重（0.5为均衡）
+                    </Typography>
+                    <View className="flex-row justify-between mb-2">
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
+                        <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
+                            {((currentConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
+                        </Typography>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">100%</Typography>
+                    </View>
+                    <Slider
+                        value={currentConfig.hybridAlpha ?? 0.6}
+                        onValueChange={(val) => handleChange({ hybridAlpha: val })}
+                        minimumValue={0}
+                        maximumValue={1}
+                        step={0.1}
+                        minimumTrackTintColor="#06b6d4"
+                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                        thumbTintColor="#06b6d4"
+                    />
+                </View>
 
-                        {/* BM25权重增益 */}
-                        <View>
-                            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                BM25权重增益
-                            </Typography>
-                            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                BM25分数的放大倍数（默认1.0）
-                            </Typography>
-                            <View className="flex-row justify-between mb-2">
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
-                                <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
-                                    {(currentConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
-                                </Typography>
-                                <Typography className="text-sm text-gray-600 dark:text-gray-400">2.0x</Typography>
-                            </View>
-                            <Slider
-                                value={currentConfig.hybridBM25Boost ?? 1.0}
-                                onValueChange={(val) => handleChange({ hybridBM25Boost: val })}
-                                minimumValue={0.5}
-                                maximumValue={2.0}
-                                step={0.1}
-                                minimumTrackTintColor="#06b6d4"
-                                maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                                thumbTintColor="#06b6d4"
-                            />
-                        </View>
-                    </>
-                )}
+                {/* BM25权重增益 */}
+                <View>
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+                        BM25权重增益
+                    </Typography>
+                    <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        BM25分数的放大倍数（默认1.0）
+                    </Typography>
+                    <View className="flex-row justify-between mb-2">
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
+                        <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
+                            {(currentConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
+                        </Typography>
+                        <Typography className="text-sm text-gray-600 dark:text-gray-400">2.0x</Typography>
+                    </View>
+                    <Slider
+                        value={currentConfig.hybridBM25Boost ?? 1.0}
+                        onValueChange={(val) => handleChange({ hybridBM25Boost: val })}
+                        minimumValue={0.5}
+                        maximumValue={2.0}
+                        step={0.1}
+                        minimumTrackTintColor="#06b6d4"
+                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
+                        thumbTintColor="#06b6d4"
+                    />
+                </View>
             </View>
 
             {/* 可观测性配置 */}

@@ -105,6 +105,35 @@ export const createTables = async () => {
       );
     `);
 
+    // 8. FTS5 全文索引虚拟表（用于混合检索）
+    // op-sqlite 支持 FTS5 扩展（需在 package.json 中配置 "fts5": true）
+    try {
+      // 创建 FTS5 虚拟表
+      await db.execute(
+        'CREATE VIRTUAL TABLE IF NOT EXISTS vectors_fts USING fts5(content, content="vectors", content_rowid="rowid")'
+      );
+
+      // 触发器：插入时同步
+      await db.execute(
+        'CREATE TRIGGER IF NOT EXISTS vectors_fts_insert AFTER INSERT ON vectors BEGIN INSERT INTO vectors_fts(rowid, content) VALUES(new.rowid, new.content); END'
+      );
+
+      // 触发器：更新时同步
+      await db.execute(
+        'CREATE TRIGGER IF NOT EXISTS vectors_fts_update AFTER UPDATE ON vectors BEGIN UPDATE vectors_fts SET content = new.content WHERE rowid = old.rowid; END'
+      );
+
+      // 触发器：删除时同步
+      await db.execute(
+        'CREATE TRIGGER IF NOT EXISTS vectors_fts_delete AFTER DELETE ON vectors BEGIN DELETE FROM vectors_fts WHERE rowid = old.rowid; END'
+      );
+
+      console.log('[DB] FTS5 full-text search enabled');
+    } catch (ftsError: any) {
+      // FTS5 未启用或不可用时，会自动回退到 LIKE 查询（keyword-search.ts 中已实现）
+      console.warn('[DB] FTS5 not available, keyword search will fall back to LIKE:', ftsError.message);
+    }
+
     console.log('[DB] Tables created successfully');
   } catch (e) {
     console.error('[DB] Error creating tables:', e);

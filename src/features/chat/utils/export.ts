@@ -53,7 +53,8 @@ export const exportAllSessionsToTxt = async (sessions: Session[]) => {
         fullContent += `========================================\n\n`;
 
         session.messages.forEach((msg: Message) => {
-            fullContent += `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.role.toUpperCase()}:\n`;
+            const timeStr = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : 'Unknown';
+            fullContent += `[${timeStr}] ${msg.role.toUpperCase()}:\n`;
             fullContent += `${msg.content}\n\n`;
         });
 
