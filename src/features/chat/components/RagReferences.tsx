@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { Typography } from '../../../components/ui';
-import { RagReference } from '../../../types/chat';
+import { RagReference, RagProgress, RagMetadata } from '../../../types/chat';
 import { ChevronDown, FileText, Library } from 'lucide-react-native';
 import Animated, {
     useAnimatedStyle,
@@ -12,8 +12,7 @@ import Animated, {
     FadeInUp,
     FadeOutUp
 } from 'react-native-reanimated';
-
-import { RagProgress } from '../../../types/chat';
+import { RagDetailPanel } from './RagDetailPanel';
 
 interface RagReferencesChipProps {
     references: RagReference[];
@@ -21,11 +20,12 @@ interface RagReferencesChipProps {
     expanded: boolean;
     onToggle: () => void;
     loading?: boolean;
-    progress?: RagProgress; // ✅ 新增：进度对象
+    progress?: RagProgress;
+    metadata?: RagMetadata;
 }
 
 /**
- * RAG 状态胶囊按钮 - 支持进度条显示
+ * RAG 状态胶囊按钮 - 支持进度条显示和详情面板
  */
 export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
     references,
@@ -33,14 +33,13 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
     expanded,
     onToggle,
     loading,
-    progress
+    progress,
+    metadata
 }) => {
     const opacity = useSharedValue(1);
+    const [showDetails, setShowDetails] = useState(false);
 
     useEffect(() => {
-        // 只有在 loading 且没有具体进度时才呼吸，或者一直呼吸？
-        // 如果有进度条，可能不需要呼吸，而是进度条动画。
-        // 保留呼吸效果作为背景活跃指示
         if (loading) {
             opacity.value = withRepeat(
                 withSequence(
@@ -61,7 +60,6 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
 
     if (!loading && (!references || references.length === 0)) return null;
 
-    // 映射阶段到中文描述
     const getStageLabel = (stage?: string) => {
         switch (stage) {
             case 'rewriting': return '优化查询...';
@@ -78,6 +76,8 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
             <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={loading ? undefined : onToggle}
+                onLongPress={() => { if (metadata) setShowDetails(true); }}
+                delayLongPress={500}
                 disabled={loading}
                 style={{
                     flexDirection: 'row',
@@ -93,7 +93,7 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
                             ? (isDark ? 'rgba(52, 211, 153, 0.4)' : '#059669')
                             : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0,0,0,0.05)')),
                     gap: 6,
-                    minWidth: 120 // 保证进度条有空间
+                    minWidth: 120
                 }}
             >
                 <Library size={12} color={loading ? '#34d399' : (isDark ? (expanded ? '#34d399' : '#a1a1aa') : (expanded ? '#059669' : '#64748b'))} />
@@ -107,7 +107,6 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
                         {loading && progress ? getStageLabel(progress.stage) : (loading ? '检索知识库...' : `${references.length} 个知识点`)}
                     </Typography>
 
-                    {/* 进度条 (仅在 loading 且有进度时显示) */}
                     {loading && progress && (
                         <View style={{
                             height: 2,
@@ -132,6 +131,13 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
                     </Animated.View>
                 )}
             </TouchableOpacity>
+
+            <RagDetailPanel
+                visible={showDetails}
+                onClose={() => setShowDetails(false)}
+                metadata={metadata}
+                isDark={isDark}
+            />
         </Animated.View>
     );
 };
@@ -166,7 +172,7 @@ export const RagReferencesList: React.FC<RagReferencesListProps> = ({
                         backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#f9fafb',
                         borderLeftWidth: 3,
                         borderLeftColor: isDark ? '#10b981' : '#059669',
-                        borderWidth: Platform.OS === 'android' ? 1 : 0, // Android 辅助轮廓
+                        borderWidth: Platform.OS === 'android' ? 1 : 0,
                         borderColor: isDark ? '#27272a' : '#f3f4f6',
                     }}
                 >

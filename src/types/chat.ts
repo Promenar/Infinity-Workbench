@@ -90,6 +90,7 @@ export interface Message {
     ragReferencesLoading?: boolean; // New flag for RAG search state
     tokens?: TokenUsage;
     images?: GeneratedImageData[]; // 图片数据（新格式，支持缩略图）
+    isArchived?: boolean; // ✅ 新增：归档状态
 }
 
 export interface Session {

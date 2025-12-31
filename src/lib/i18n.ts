@@ -289,6 +289,35 @@ export const translations = {
             docLimitDesc: '从知识库文档中检索的相关片段数量。',
             docThreshold: '文档匹配阈值',
             docThresholdDesc: '相似度分数低于此值的片段将被忽略。',
+
+            // Advanced Settings
+            advancedSettings: '高级检索设置',
+
+            // Rerank
+            enableRerank: '启用 Rerank (重排)',
+            enableRerankDesc: '使用高精度模型对召回结果进行二次排序，显著提升相关性。',
+            rerankTopK: 'Rerank 召回数量',
+            rerankTopKDesc: '送入重排模型的初筛片段数量。',
+            rerankFinalK: 'Rerank 最终数量',
+            rerankFinalKDesc: '重排后保留的最佳片段数量。',
+
+            // Query Rewrite
+            enableQueryRewrite: '启用查询重写',
+            enableQueryRewriteDesc: '自动优化用户提问，提升检索召回率。',
+            rewriteStrategy: '重写策略',
+            strategyHyde: 'HyDE (假设文档)',
+            strategyMultiQuery: '多角度查询',
+            strategyExpansion: '关键词扩展',
+            rewriteCount: '生成变体数量',
+            rewriteCountDesc: '生成的查询变体个数。',
+
+            // Hybrid Search
+            enableHybrid: '启用混合检索',
+            enableHybridDesc: '同时使用向量检索和关键词检索 (BM25)，提升生僻词匹配效果。',
+            hybridAlpha: '向量权重 (Alpha)',
+            hybridAlphaDesc: '控制向量检索与关键词检索的权重比例。',
+            alphaVector: '偏向语义',
+            alphaKeyword: '偏向关键词',
         },
         common: {
             cancel: '取消',
@@ -715,6 +744,35 @@ export const translations = {
             docLimitDesc: 'Number of relevant chunks to retrieve from knowledge base.',
             docThreshold: 'Doc Match Threshold',
             docThresholdDesc: 'Chunks with similarity score below this will be ignored.',
+
+            // Advanced Settings
+            advancedSettings: 'Advanced Retrieval',
+
+            // Rerank
+            enableRerank: 'Enable Rerank',
+            enableRerankDesc: 'Re-rank retrieved results using a high-precision model for better relevance.',
+            rerankTopK: 'Rerank Recall Count',
+            rerankTopKDesc: 'Number of items sent to the rerank model.',
+            rerankFinalK: 'Rerank Final Count',
+            rerankFinalKDesc: 'Number of top items kept after reranking.',
+
+            // Query Rewrite
+            enableQueryRewrite: 'Enable Query Rewrite',
+            enableQueryRewriteDesc: 'Automatically optimize user queries to improve retrieval.',
+            rewriteStrategy: 'Rewrite Strategy',
+            strategyHyde: 'HyDE',
+            strategyMultiQuery: 'Multi-Query',
+            strategyExpansion: 'Expansion',
+            rewriteCount: 'Variant Count',
+            rewriteCountDesc: 'Number of query variants generated.',
+
+            // Hybrid Search
+            enableHybrid: 'Enable Hybrid Search',
+            enableHybridDesc: 'Combine vector search with keyword search (BM25).',
+            hybridAlpha: 'Vector Weight (Alpha)',
+            hybridAlphaDesc: 'Balance between vector and keyword search weights.',
+            alphaVector: 'More Semantic',
+            alphaKeyword: 'More Keyword',
         },
         common: {
             cancel: 'Cancel',

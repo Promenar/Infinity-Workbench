@@ -541,8 +541,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
     // Determine if message is "fresh" (less than 1s old) to prevent animation replay on scroll
     const isRecent = React.useMemo(() => {
-        return (Date.now() - message.timestamp) < 1000;
-    }, [message.timestamp]);
+        return (Date.now() - message.createdAt) < 1000;
+    }, [message.createdAt]);
     const [isSourcesExpanded, setSourcesExpanded] = useState(false);
     const [viewImageUri, setViewImageUri] = useState<string | null>(null);
     const [bubbleWidth, setBubbleWidth] = useState(0);
@@ -936,6 +936,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                         <RagReferencesChip
                             references={message.ragReferences || []}
                             loading={message.ragReferencesLoading}
+                            progress={message.ragProgress}
+                            metadata={message.ragMetadata}
                             isDark={isDark}
                             expanded={isRagExpanded}
                             onToggle={() => {
