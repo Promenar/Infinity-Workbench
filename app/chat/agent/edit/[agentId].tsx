@@ -126,7 +126,6 @@ export default function AgentEditScreen() {
 
             <GlassHeader
                 title={t.agent.editTitle}
-                subtitle={agent.name}
                 leftAction={{
                     icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
                     onPress: () => router.back(),

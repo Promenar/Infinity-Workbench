@@ -206,7 +206,6 @@ export default function SuperAssistantSettingsScreen() {
 
             <GlassHeader
                 title={t.superAssistant.title}
-                subtitle={session.title}
                 leftAction={{
                     icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
                     onPress: () => router.back(),
