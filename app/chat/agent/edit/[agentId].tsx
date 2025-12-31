@@ -301,11 +301,45 @@ export default function AgentEditScreen() {
                         </View>
                     </View>
 
-                    {/* RAG 配置 */}
-                    <AgentRagConfigPanel
-                        agent={agent}
-                        onUpdate={(updates) => updateAgent(agentId, updates)}
-                    />
+                    {/* RAG 配置入口 */}
+                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3">
+                        <Database size={10} color="#64748b" className="mr-1" /> RAG 配置
+                    </Typography>
+                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
+                        <TouchableOpacity
+                            onPress={() => {
+                                setTimeout(() => {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    router.push(`/chat/agent/edit/rag-config/${agentId}` as any);
+                                }, 10);
+                            }}
+                            className="flex-row items-center justify-between p-5"
+                        >
+                            <View className="flex-1">
+                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">向量库与RAG设置</Typography>
+                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">配置切块、摘要、检索参数</Typography>
+                            </View>
+                            <ChevronRight size={20} color="#9ca3af" />
+                        </TouchableOpacity>
+
+                        <View className="border-t border-gray-100 dark:border-zinc-800" />
+
+                        <TouchableOpacity
+                            onPress={() => {
+                                setTimeout(() => {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    router.push(`/chat/agent/edit/advanced-retrieval/${agentId}` as any);
+                                }, 10);
+                            }}
+                            className="flex-row items-center justify-between p-5"
+                        >
+                            <View className="flex-1">
+                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级检索</Typography>
+                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">Rerank、查询重写、混合检索</Typography>
+                            </View>
+                            <ChevronRight size={20} color="#9ca3af" />
+                        </TouchableOpacity>
+                    </View>
 
                     {/* Danger Zone */}
                     <Typography variant="label" className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3">
