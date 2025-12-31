@@ -193,8 +193,8 @@ export class OpenAiClient implements LlmClient {
 
             const body = {
                 model: this.model,
-                query: "测试查询",
-                documents: ["文档1", "文档2"],
+                query: "Apple",
+                documents: ["apple", "banana"],
                 top_n: 2
             };
 
