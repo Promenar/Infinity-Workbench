@@ -25,167 +25,259 @@ export class MemoryManager {
         // 🔑 优先级：选项传入 > 全局配置
         const effectiveRagConfig = ragConfig || settings.globalRagConfig;
 
-        // 1. 获取查询向量 (Get Embedding)
-        onProgress?.('embedding', 10);
-        // ... (Embedding logic remains the same)
-        let provider = apiStore.providers.find(p => p.enabled && p.type === 'openai' && p.models.some(m => m.enabled && m.type === 'embedding'));
-
-        if (!provider) {
-            provider = apiStore.providers.find(p => p.enabled && (
-                p.type === 'siliconflow' ||
-                p.type === 'deepseek' ||
-                p.type === 'moonshot' ||
-                p.type === 'zhipu'
-            ) && p.models.some(m => m.enabled && m.type === 'embedding'));
-        }
-
-        if (!provider) {
-            provider = apiStore.providers.find(p => p.enabled && (p.type === 'gemini' || p.type === 'google') && p.models.some(m => m.enabled && m.type === 'embedding'));
-        }
-
-        if (!provider) {
-            // Fallback for legacy
-            provider = apiStore.providers.find(p => p.enabled && (p.type === 'openai' || p.type === 'gemini' || p.type === 'google'));
-        }
-
-        if (!provider) {
-            console.warn('[MemoryManager] 未找到 Embedding 提供商，跳过 RAG。');
-            return { context: '', references: [] };
-        }
-
-        // Find the active embedding model
-        const embeddingModelConfig = provider.models.find(m => m.enabled && m.type === 'embedding');
-        const modelId = embeddingModelConfig?.id || (provider.type === 'openai' ? 'text-embedding-3-small' : undefined);
-
-        const embeddingClient = new EmbeddingClient(provider, modelId);
-        let queryEmbedding: number[];
-
-        try {
-            queryEmbedding = await embeddingClient.embedQuery(query);
-        } catch (e) {
-            console.error('[MemoryManager] 查询向量化失败:', e);
-            return { context: '', references: [] };
-        }
-
-        onProgress?.('searching', 40);
-        const results: SearchResult[] = [];
-
-        // 2. 搜索记忆 (长期对话历史)
-        if (enableMemory) {
+        // ===== 阶段 1: Query Rewrite (查询重写) =====
+        let queryVariants = [query];
+        if (effectiveRagConfig.enableQueryRewrite) {
+            onProgress?.('rewriting', 5);
             try {
-                const memResults = await vectorStore.search(queryEmbedding, {
-                    limit: effectiveRagConfig.memoryLimit,
-                    filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' },
-                    threshold: effectiveRagConfig.memoryThreshold
-                });
-                results.push(...memResults);
+                // Determine model for rewriting (default to summary model or specific rewrite model)
+                const modelId = effectiveRagConfig.queryRewriteModel || settings.defaultSummaryModel;
+                const provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.id === modelId));
+
+                if (provider && modelId) {
+                    const { createLlmClient } = await import('../llm/factory');
+                    // Construct ExtendedModelConfig if needed or just pass config
+                    // Factory expects ExtendedModelConfig.
+                    const modelConfig = provider.models.find(m => m.id === modelId)!;
+
+                    const llmClient = createLlmClient({
+                        ...modelConfig,
+                        provider: provider.type,
+                        apiKey: provider.apiKey,
+                        baseUrl: provider.baseUrl,
+                        vertexProject: provider.vertexProject,
+                        vertexLocation: provider.vertexLocation,
+                        vertexKeyJson: provider.vertexKeyJson
+                    });
+
+                    const { QueryRewriter } = await import('./query-rewriter');
+                    const rewriter = new QueryRewriter(llmClient, effectiveRagConfig.queryRewriteStrategy as any);
+
+                    const variants = await rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
+                    if (variants.length > 0) {
+                        queryVariants = variants;
+                        // Limit total variants to avoid explosion
+                        if (queryVariants.length > 5) queryVariants = queryVariants.slice(0, 5);
+                    }
+                }
             } catch (e) {
-                console.error('[MemoryManager] 记忆搜索失败:', e);
+                console.error('[MemoryManager] Query rewrite failed:', e);
             }
         }
 
-        // 3. 搜索文档 (知识库)
-        if (enableDocs) {
-            // 权限控制：如果启用了知识库但没有授权任何文档或文件夹，则不应检索任何内容
-            const hasAuthorizedItems = (activeDocIds && activeDocIds.length > 0) || (activeFolderIds && activeFolderIds.length > 0) || isGlobal;
-
+        // 准备文档搜索范围 (Pre-calculate doc auth scope)
+        let authorizedDocIds: Set<string> | null = null;
+        if (enableDocs && !isGlobal) {
+            const hasAuthorizedItems = (activeDocIds && activeDocIds.length > 0) || (activeFolderIds && activeFolderIds.length > 0);
             if (hasAuthorizedItems) {
-                try {
-                    // 解析文件夹下的所有文档 ID
-                    const authorizedDocIds = new Set(activeDocIds);
+                authorizedDocIds = new Set(activeDocIds);
+                if (activeFolderIds && activeFolderIds.length > 0) {
+                    try {
+                        const allFoldersResult = await db.execute('SELECT id, parent_id FROM folders');
+                        const allFolders = (allFoldersResult.rows as any)._array || (allFoldersResult.rows as any) || [];
 
-                    if (!isGlobal && activeFolderIds && activeFolderIds.length > 0) {
-                        try {
-                            // Fetch all folders to build hierarchy (efficient enough for < 1000 folders)
-                            const allFoldersResult = await db.execute('SELECT id, parent_id FROM folders');
-                            const allFolders = (allFoldersResult.rows as any[]) || [];
+                        const folderMap = new Map<string, string[]>();
+                        allFolders.forEach((f: any) => {
+                            const pid = f.parent_id || 'root';
+                            if (!folderMap.has(pid)) folderMap.set(pid, []);
+                            folderMap.get(pid)?.push(f.id);
+                        });
 
-                            // Build Adjacency List
-                            const folderChildrenMap = new Map<string, string[]>();
-                            allFolders.forEach(f => {
-                                const pid = f.parent_id;
-                                if (pid) {
-                                    if (!folderChildrenMap.has(pid)) folderChildrenMap.set(pid, []);
-                                    folderChildrenMap.get(pid)?.push(f.id);
-                                }
-                            });
-
-                            // Recursive Collector
-                            const expandedFolderIds = new Set<string>(activeFolderIds);
-                            const queue = [...activeFolderIds];
-
-                            while (queue.length > 0) {
-                                const currentId = queue.shift()!;
-                                const children = folderChildrenMap.get(currentId);
-                                if (children) {
-                                    children.forEach(childId => {
-                                        if (!expandedFolderIds.has(childId)) {
-                                            expandedFolderIds.add(childId);
-                                            queue.push(childId);
-                                        }
-                                    });
-                                }
-                            }
-
-                            // Query documents in ALL expanded folders
-                            const folderPlaceholders = Array.from(expandedFolderIds).map(() => '?').join(',');
-                            if (folderPlaceholders.length > 0) {
-                                const folderDocs = await db.execute(
-                                    `SELECT id FROM documents WHERE folder_id IN (${folderPlaceholders})`,
-                                    Array.from(expandedFolderIds)
-                                );
-                                if (folderDocs.rows) {
-                                    for (let i = 0; i < folderDocs.rows.length; i++) {
-                                        authorizedDocIds.add(folderDocs.rows[i].id as string);
+                        const stack = [...activeFolderIds];
+                        const expandedFolderIds = new Set(activeFolderIds);
+                        while (stack.length > 0) {
+                            const fid = stack.pop()!;
+                            const children = folderMap.get(fid);
+                            if (children) {
+                                children.forEach(cid => {
+                                    if (!expandedFolderIds.has(cid)) {
+                                        expandedFolderIds.add(cid);
+                                        stack.push(cid);
                                     }
-                                }
+                                });
                             }
-                        } catch (err) {
-                            console.error('[MemoryManager] Folder recursion failed:', err);
+                        }
+
+                        // Get docs in these folders
+                        if (expandedFolderIds.size > 0) {
+                            const placeholders = Array.from(expandedFolderIds).map(() => '?').join(',');
+                            const folderDocsResult = await db.execute(
+                                `SELECT id FROM documents WHERE folder_id IN (${placeholders})`,
+                                Array.from(expandedFolderIds)
+                            );
+                            const paramRows = (folderDocsResult.rows as any)._array || (folderDocsResult.rows as any) || [];
+                            paramRows.forEach((row: any) => authorizedDocIds?.add(row.id));
+                        }
+                    } catch (e) {
+                        console.error('[MemoryManager] Folder expansion failed:', e);
+                    }
+                }
+            }
+        }
+
+        // Loop checks
+        const searchPromises = queryVariants.map(async (currentQuery) => {
+            // 2. 获取查询向量 (Get Embedding)
+            onProgress?.('embedding', 10);
+
+            let provider = apiStore.providers.find(p => p.enabled && p.type === 'openai' && p.models.some(m => m.enabled && m.type === 'embedding'));
+            if (!provider) provider = apiStore.providers.find(p => p.enabled && (p.type === 'siliconflow' || p.type === 'deepseek' || p.type === 'moonshot' || p.type === 'zhipu') && p.models.some(m => m.enabled && m.type === 'embedding'));
+            if (!provider) provider = apiStore.providers.find(p => p.enabled && (p.type === 'gemini' || p.type === 'google') && p.models.some(m => m.enabled && m.type === 'embedding'));
+            if (!provider) provider = apiStore.providers.find(p => p.enabled && (p.type === 'openai' || p.type === 'gemini' || p.type === 'google')); // legacy fallback
+
+            if (!provider) return [];
+
+            const embeddingModelConfig = provider.models.find(m => m.enabled && m.type === 'embedding');
+            const modelId = embeddingModelConfig?.id || (provider.type === 'openai' ? 'text-embedding-3-small' : undefined);
+
+            let queryEmbedding: number[] | null = null;
+            try {
+                const client = new EmbeddingClient(provider, modelId);
+                queryEmbedding = await client.embedQuery(currentQuery);
+            } catch (e) {
+                console.error('[MemoryManager] Embedding failed:', e);
+                return [];
+            }
+
+            const results: SearchResult[] = [];
+
+            // 3.1 记忆搜索
+            if (enableMemory) {
+                try {
+                    const memResults = await vectorStore.search(queryEmbedding, {
+                        limit: (effectiveRagConfig.memoryLimit || 5) * 2, // Fetch more for later filtering/dedup
+                        threshold: effectiveRagConfig.memoryThreshold,
+                        filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' }
+                    });
+                    results.push(...memResults);
+                } catch (e) { console.error(e); }
+            }
+
+            // 3.2 文档搜索
+            if (enableDocs) {
+                const hasAuth = isGlobal || (authorizedDocIds && authorizedDocIds.size > 0);
+                if (hasAuth) {
+                    try {
+                        const docResults = await vectorStore.search(queryEmbedding, {
+                            limit: (effectiveRagConfig.docLimit || 5) * 2,
+                            threshold: effectiveRagConfig.docThreshold,
+                            filter: { type: 'doc' }
+                        });
+
+                        // Apply docId filtering if not global
+                        const filteredDocs = isGlobal
+                            ? docResults
+                            : docResults.filter(r => authorizedDocIds!.has(r.docId || ''));
+
+                        results.push(...filteredDocs);
+                    } catch (e) { console.error(e); }
+                }
+            }
+
+            return results;
+        });
+
+        const resultsArrays = await Promise.all(searchPromises);
+        let allResults = resultsArrays.flat();
+
+        onProgress?.('searching', 40);
+
+        // ===== 阶段 2: Hybrid Search (关键词混合检索) =====
+        // RRF Fusion (Reciprocal Rank Fusion)
+        if (effectiveRagConfig.enableHybridSearch) {
+            try {
+                const { KeywordSearch } = await import('./keyword-search');
+                const keywordSearch = new KeywordSearch();
+
+                // Document scope filtering for keyword search
+                const keywordOptions: any = { sessionId: isGlobal ? undefined : sessionId };
+                if (enableDocs && !isGlobal && authorizedDocIds && authorizedDocIds.size > 0) {
+                    keywordOptions.docIds = Array.from(authorizedDocIds);
+                } else if (enableDocs && !isGlobal && (!authorizedDocIds || authorizedDocIds.size === 0)) {
+                    // If docs enabled but no auth ids found (and not global), keyword search on docs should be restricted
+                    // This means if activeDocIds/activeFolderIds were provided but resulted in no authorizedDocIds,
+                    // then keyword search should also not return document results.
+                    // If enableDocs is true but no specific docs/folders are selected, it implies all docs are fair game,
+                    // but the `authorizedDocIds` logic above would not have been triggered.
+                    // For now, if `enableDocs` is true and `isGlobal` is false, and `authorizedDocIds` is null/empty,
+                    // it means no specific docs were selected, so we don't filter by docIds.
+                    // The vector search already handles this by not adding docResults if !hasAuth.
+                    // For keyword search, if `enableDocs` is true and `isGlobal` is false, and `authorizedDocIds` is null/empty,
+                    // it means no specific docs were selected, so we don't filter by docIds.
+                    // If `enableDocs` is false, then keyword search should not return doc results.
+                    // The `keywordSearch.search` method needs to handle this.
+                    // For now, if `enableDocs` is true and `isGlobal` is false, and `authorizedDocIds` is null/empty,
+                    // we don't add `docIds` to `keywordOptions`, letting `keywordSearch` search all docs.
+                    // This might be a slight divergence from vector search if `hasAuthorizedItems` was false.
+                    // Let's refine: if `enableDocs` is true, and `isGlobal` is false, and `hasAuthorizedItems` was false,
+                    // then `authorizedDocIds` would be null. In this case, vector search would skip doc search.
+                    // Keyword search should also skip doc search.
+                    if (!((activeDocIds && activeDocIds.length > 0) || (activeFolderIds && activeFolderIds.length > 0))) {
+                        keywordOptions.excludeDocs = true; // Signal to keyword search to exclude docs
+                    }
+                } else if (!enableDocs) {
+                    keywordOptions.excludeDocs = true;
+                }
+
+                const keywordResults = await keywordSearch.search(query, 20, keywordOptions); // Fetch more for fusion
+
+                if (keywordResults.length > 0 || allResults.length > 0) {
+                    const rrfK = 60;
+                    const scoreMap = new Map<string, number>();
+                    const nodeMap = new Map<string, SearchResult>();
+
+                    // Helper to accumulate RRF score
+                    const addScores = (items: SearchResult[]) => {
+                        items.forEach((item, rank) => {
+                            const current = scoreMap.get(item.id) || 0;
+                            scoreMap.set(item.id, current + (1 / (rrfK + rank + 1)));
+                            if (!nodeMap.has(item.id)) nodeMap.set(item.id, item);
+                        });
+                    };
+
+                    // 1. Vector Results
+                    // Dedupe vector results first (within themselves)
+                    const uniqueVector = allResults.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+                    uniqueVector.sort((a, b) => b.similarity - a.similarity);
+                    addScores(uniqueVector);
+
+                    // 2. Keyword Results
+                    addScores(keywordResults);
+
+                    // 3. Flatten back to array
+                    const fusedResults: SearchResult[] = [];
+                    for (const [id, score] of scoreMap.entries()) {
+                        const node = nodeMap.get(id);
+                        if (node) {
+                            fusedResults.push({
+                                ...node,
+                                similarity: score // Update score to RRF score
+                            });
                         }
                     }
 
-                    const docResults = await vectorStore.search(queryEmbedding, {
-                        limit: effectiveRagConfig.docLimit, // Increased slightly since we filter later
-                        filter: { type: 'doc' },
-                        threshold: effectiveRagConfig.docThreshold
-                    });
-
-                    // 如果是全局模式，或者命中授权文档，则保留
-                    const filteredDocs = isGlobal
-                        ? docResults
-                        : docResults.filter(r => authorizedDocIds.has(r.docId || ''));
-
-                    results.push(...filteredDocs);
-                } catch (e) {
-                    console.error('[MemoryManager] 文档搜索失败:', e);
+                    // Sort by RRF score
+                    fusedResults.sort((a, b) => b.similarity - a.similarity);
+                    allResults = fusedResults;
                 }
-            } else {
-                console.log('[MemoryManager] 知识库已开启但未选择授权范围，跳过检索。');
+            } catch (e) {
+                console.error('[MemoryManager] Hybrid search failed:', e);
             }
         }
 
         // 4.原本格式化上下文 (Format Context)
-        if (results.length === 0) return { context: '', references: [] };
+        if (allResults.length === 0) return { context: '', references: [], metadata: { searchTimeMs: 0, rerankTimeMs: 0, recallCount: 0, finalCount: 0, sourceDistribution: { memory: 0, documents: 0 } } };
 
-        // 按相似度排序组合结果
-        results.sort((a, b) => b.similarity - a.similarity);
+        // Aggregation & Dedup
+        allResults.sort((a, b) => b.similarity - a.similarity);
+        const uniqueResults = allResults.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
 
-        // 去重 (以防万一)
-        const uniqueResults = results.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
-
-        // 优化合并策略：保证文档不被记忆完全淹没 (Diversity Buffer)
-        // 1. 提取 Top 记忆 (按照配置限制)
+        // 优化合并策略
         const topMemories = uniqueResults.filter(r => r.metadata?.type === 'memory').slice(0, effectiveRagConfig.memoryLimit || 3);
-        // 2. 提取 Top 文档 (按照配置限制)
         const topDocs = uniqueResults.filter(r => r.metadata?.type === 'doc').slice(0, effectiveRagConfig.docLimit || 5);
-
         const combined = [...topMemories, ...topDocs];
 
-        // 4. 计算总检索上限 (Priority: memoryLimit + docLimit)
         const totalLimit = (effectiveRagConfig.memoryLimit || 5) + (effectiveRagConfig.docLimit || 8);
-
-        // 如果总数未达上限，可以从剩余结果中补充 (不分类型，补充至上限)
         const existingIds = new Set(combined.map(r => r.id));
         const remaining = uniqueResults.filter(r => !existingIds.has(r.id)).slice(0, Math.max(0, totalLimit - combined.length));
 
@@ -204,22 +296,17 @@ export class MemoryManager {
             if (rerankModelId) {
                 rerankProvider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.uuid === rerankModelId || m.id === rerankModelId));
             }
-
-            // Fallback: try to find any enabled rerank model
             if (!rerankProvider) {
                 rerankProvider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.enabled && m.type === 'rerank'));
             }
 
             if (rerankProvider) {
-                // Try to resolve exact model ID if the uuid was used
                 let finalRerankModelId = rerankModelId;
                 const modelConfig = rerankProvider.models.find(m => m.uuid === rerankModelId || m.id === rerankModelId)
                     || rerankProvider.models.find(m => m.enabled && m.type === 'rerank');
 
                 if (modelConfig) {
                     finalRerankModelId = modelConfig.id;
-
-                    // Instantiate RerankClient
                     const { RerankClient } = await import('./reranker');
                     const reranker = new RerankClient(rerankProvider, finalRerankModelId);
 
@@ -227,7 +314,6 @@ export class MemoryManager {
                         const reranked = await reranker.rerank(query, finalResults, effectiveRagConfig.rerankFinalK || 5);
                         finalResults = reranked;
                         rerankEndTime = Date.now();
-
                     } catch (err) {
                         console.error('[MemoryManager] Rerank failed, falling back to vector order:', err);
                     }
@@ -236,22 +322,16 @@ export class MemoryManager {
         }
 
         const endTime = Date.now();
-        // Assume startTime was passed or we capture it here? No, we need total duration.
-        // We can just estimate search time as (endTime - rerankDuration) or capture start time at method entry.
-        // Since I can't easily edit method entry without large context, I'll assume current method execution time as mostly search/rerank.
-        // Better: let's just use what we have. 
-        // Search time ~ (endTime - (rerankEndTime - rerankStartTime)) if rerank happened.
-
         const rerankDuration = (rerankEndTime && rerankStartTime) ? (rerankEndTime - rerankStartTime) : 0;
         const totalDuration = endTime - startTime;
         const searchTimeMs = totalDuration - rerankDuration;
 
-        // Construct metadata
         const metadata = {
             searchTimeMs: searchTimeMs,
             rerankTimeMs: rerankDuration,
             recallCount: uniqueResults.length,
             finalCount: finalResults.length,
+            queryVariants: queryVariants,
             sourceDistribution: {
                 memory: finalResults.filter(r => r.metadata?.type === 'memory').length,
                 documents: finalResults.filter(r => r.metadata?.type === 'doc').length
@@ -264,7 +344,6 @@ export class MemoryManager {
             return `[${typeLabel} - ${date}]: ${r.content}`;
         }).join('\n\n');
 
-        // 构建引用数据
         const references: RagReference[] = finalResults.map(r => ({
             id: r.id,
             content: r.content,
