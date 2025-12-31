@@ -31,7 +31,7 @@ export interface ModelConfig {
     uuid: string; // 内部稳定标识符，用于 React 渲染 key
     id: string;   // API 调用参数 (如 "gpt-4o")
     name: string; // 显示名称
-    type?: 'chat' | 'reasoning' | 'image' | 'embedding';
+    type?: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank';
     contextLength?: number;
     capabilities: ModelCapabilities;
     enabled: boolean;

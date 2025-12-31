@@ -34,5 +34,6 @@ export interface LlmClient {
         options?: ChatMessageOptions
     ): Promise<void>;
     testConnection(): Promise<{ success: boolean; latency: number; error?: string }>;
+    testRerankConnection?(): Promise<{ success: boolean; latency: number; error?: string }>;
     abort?(): void;
 }

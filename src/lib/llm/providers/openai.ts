@@ -185,4 +185,45 @@ export class OpenAiClient implements LlmClient {
             return { success: false, latency, error: (e as Error).message };
         }
     }
+
+    async testRerankConnection(): Promise<{ success: boolean; latency: number; error?: string }> {
+        const start = Date.now();
+        try {
+            const endpoint = `${this.baseUrl}/v1/rerank`;
+
+            const body = {
+                model: this.model,
+                query: "测试查询",
+                documents: ["文档1", "文档2"],
+                top_n: 2
+            };
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`,
+                },
+                body: JSON.stringify(body),
+            });
+
+            const latency = Date.now() - start;
+
+            if (!response.ok) {
+                const contentType = response.headers.get('Content-Type') || '';
+                const errorText = await response.text();
+
+                if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+                    return { success: false, latency, error: `HTTP ${response.status}: Received non-JSON response (possibly HTML error page).` };
+                }
+
+                return { success: false, latency, error: `HTTP ${response.status}: ${errorText.substring(0, 100)}` };
+            }
+
+            return { success: true, latency };
+        } catch (e) {
+            const latency = Date.now() - start;
+            return { success: false, latency, error: (e as Error).message };
+        }
+    }
 }

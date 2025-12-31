@@ -163,7 +163,7 @@ const ModelItem = React.memo(({
             )}
 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
-                {(['chat', 'reasoning', 'image', 'embedding'] as const).map((type) => (
+                {(['chat', 'reasoning', 'image', 'embedding', 'rerank'] as const).map((type) => (
                     <TypeButton
                         key={type}
                         label={t.settings.modelSettings[`type${type.charAt(0).toUpperCase() + type.slice(1)}` as keyof typeof t.settings.modelSettings] as string}
@@ -298,7 +298,14 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
             };
 
             const client = createLlmClient(fullConfig as any);
-            const result = await client.testConnection();
+
+            // 根据模型类型选择正确的测试方法
+            let result;
+            if (model.type === 'rerank' && client.testRerankConnection) {
+                result = await client.testRerankConnection();
+            } else {
+                result = await client.testConnection();
+            }
 
             setTestResults(prev => ({
                 ...prev,
@@ -378,8 +385,9 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
                 const modelName = (m.name || '').toLowerCase();
                 const fullText = `${modelId} ${modelName}`;
 
-                // 模型类型自动识别（优先级：embedding > image > reasoning > chat）
-                let type: 'chat' | 'reasoning' | 'image' | 'embedding' = 'chat';
+                // 模型类型自动识别（优先级：embedding > image > reasoning > rerank > chat）
+                let type: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank' = 'chat';
+
 
                 // Embedding 模型识别（向量/嵌入）
                 if (
@@ -429,6 +437,16 @@ export function ModelSettingsModal({ visible, provider, onClose, onUpdateModels 
                     fullText.includes('cot')
                 ) {
                     type = 'reasoning';
+                }
+                // Rerank 模型识别（重排序）
+                else if (
+                    fullText.includes('rerank') ||
+                    fullText.includes('bge-reranker') ||
+                    fullText.includes('jina-reranker') ||
+                    fullText.includes('cohere-rerank') ||
+                    fullText.includes('bce-reranker')
+                ) {
+                    type = 'rerank';
                 }
 
                 const hasVision = fullText.includes('vision') || fullText.includes('-vl') || (modelId.endsWith('-v') && !modelId.includes('deepseek')) || fullText.includes('multimodal');
