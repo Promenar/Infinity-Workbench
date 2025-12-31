@@ -105,8 +105,18 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
             tags.push({ text: 'Web', color: '#0ea5e9', bg: '#e0f2fe' }); // Sky Blue
         }
 
-        // Default 'Chat' tag only if no other specific capability tags exist
-        if (tags.length === 0) {
+        // Rerank Model Tag
+        if (item.type === 'rerank') {
+            tags.push({ text: 'Rerank', color: '#ea580c', bg: '#ffedd5' }); // Orange
+        }
+
+        // Embedding Model Tag
+        if (item.type === 'embedding') {
+            tags.push({ text: 'Embedding', color: '#0891b2', bg: '#cffafe' }); // Cyan
+        }
+
+        // Default 'Chat' tag only if no other specific capability tags exist and it's not a text processing model
+        if (tags.length === 0 && item.type !== 'rerank' && item.type !== 'embedding') {
             tags.push({ text: 'Chat', color: '#059669', bg: '#ecfdf5' }); // Emerald
         }
 

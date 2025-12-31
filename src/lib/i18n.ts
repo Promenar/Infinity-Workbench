@@ -95,6 +95,8 @@ export const translations = {
                 embeddingDesc: '用于文档向量化与知识库检索',
                 none: '未设置 (使用默认)',
                 select: '选择模型',
+                rerank: '重排序精排模型',
+                rerankDesc: '用于检索结果的二次排序优化',
             },
             cacheManagement: '缓存管理',
             providerModal: {
@@ -519,6 +521,8 @@ export const translations = {
                 embeddingDesc: 'Used for document vectorization and retrieval',
                 none: 'Not Set (Use Default)',
                 select: 'Select Model',
+                rerank: 'Rerank Optimization Model',
+                rerankDesc: 'Used for second-stage retrieval refinement',
             },
             cacheManagement: 'Cache Management',
             providerModal: {

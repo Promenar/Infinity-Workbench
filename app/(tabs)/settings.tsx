@@ -374,7 +374,7 @@ export default function SettingsScreen() {
                                         setTimeout(() => {
                                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                             setPickerConfig({
-                                                title: '重排序模型',
+                                                title: t.settings.modelPresets.rerank,
                                                 key: 'defaultRerankModel',
                                                 filterType: 'rerank'
                                             });
@@ -386,7 +386,7 @@ export default function SettingsScreen() {
                                     <ArrowUpDown size={20} color="#6b7280" />
                                     <View style={{ flex: 1, marginLeft: 12 }}>
                                         <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
-                                            重排序模型
+                                            {t.settings.modelPresets.rerank}
                                         </Text>
                                         <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
                                             {getModelName(defaultRerankModel)}
