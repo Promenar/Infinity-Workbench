@@ -257,36 +257,6 @@ export default function SettingsScreen() {
                             </View>
                         </View>
 
-                        {/* RAG 配置 */}
-                        <View style={{ marginBottom: 24 }}>
-                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16, textTransform: 'uppercase', letterSpacing: 1.5 }}>
-                                {t.settings.ragSection}
-                            </Text>
-                            <TouchableOpacity
-                                onPress={() => {
-                                    setTimeout(() => {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        router.push('/settings/rag-config' as any);
-                                    }, 10);
-                                }}
-                                style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#27272a' : '#e5e7eb', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
-                            >
-                                <Database size={20} color="#6b7280" />
-                                <View style={{ flex: 1, marginLeft: 12 }}>
-                                    <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
-                                        {t.settings.ragSettings}
-                                    </Text>
-                                    <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
-                                        {t.settings.ragSettingsDesc}
-                                    </Text>
-                                </View>
-                                <ChevronRight size={20} color="#9ca3af" />
-                            </TouchableOpacity>
-                        </View>
-
-
-                        <BackupSettings />
-
                         {/* 模型预设 */}
                         <View style={{ marginBottom: 24 }}>
                             <Text style={{ fontSize: 10, fontWeight: '700', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16, textTransform: 'uppercase', letterSpacing: 1.5 }}>
@@ -375,6 +345,35 @@ export default function SettingsScreen() {
                                 </TouchableOpacity>
                             </View>
                         </View>
+
+                        {/* RAG 配置 */}
+                        <View style={{ marginBottom: 24 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#9ca3af', marginBottom: 12, paddingHorizontal: 16, textTransform: 'uppercase', letterSpacing: 1.5 }}>
+                                {t.settings.ragSection}
+                            </Text>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setTimeout(() => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        router.push('/settings/rag-config' as any);
+                                    }, 10);
+                                }}
+                                style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb', borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#27272a' : '#e5e7eb', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
+                            >
+                                <Database size={20} color="#6b7280" />
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                    <Text style={{ fontSize: 16, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
+                                        {t.settings.ragSettings}
+                                    </Text>
+                                    <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
+                                        {t.settings.ragSettingsDesc}
+                                    </Text>
+                                </View>
+                                <ChevronRight size={20} color="#9ca3af" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <BackupSettings />
 
                         {/* 应用信息 */}
                         <View style={{ marginBottom: 24 }}>
