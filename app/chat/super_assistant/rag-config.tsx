@@ -1,11 +1,11 @@
 import React from 'react';
 import { ScrollView } from 'react-native';
-import { PageLayout, GlassHeader } from '../../../../src/components/ui';
+import { PageLayout, GlassHeader } from '../../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
-import { useTheme } from '../../../../src/theme/ThemeProvider';
-import { useAgentStore } from '../../../../src/store/agent-store';
-import { AgentRagConfigPanel } from '../../../../src/features/settings/components/AgentRagConfigPanel';
+import { useTheme } from '../../../src/theme/ThemeProvider';
+import { useAgentStore } from '../../../src/store/agent-store';
+import { AgentRagConfigPanel } from '../../../src/features/settings/components/AgentRagConfigPanel';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SPA_AGENT_ID = 'super_assistant';
