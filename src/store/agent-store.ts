@@ -80,9 +80,6 @@ export const useAgentStore = create<AgentState>()(
             agents: PRESET_AGENTS,
             addAgent: (agent) => set((state) => ({ agents: [...state.agents, agent] })),
             updateAgent: (id, updates) => {
-                const currentAgent = get().agents.find(a => a.id === id);
-                console.log('[AgentStore] updateAgent called:', { id, updates, currentAgent });
-
                 set((state) => {
                     // Check if agent exists in current state
                     const exists = state.agents.some(a => a.id === id);
@@ -96,21 +93,15 @@ export const useAgentStore = create<AgentState>()(
                         // Agent not in state, find in PRESET_AGENTS and add with updates
                         const presetAgent = PRESET_AGENTS.find(a => a.id === id);
                         if (presetAgent) {
-                            console.log('[AgentStore] Agent not in state, adding from preset:', id);
                             return {
                                 agents: [...state.agents, { ...presetAgent, ...updates }]
                             };
                         } else {
-                            console.warn('[AgentStore] Agent not found in state or presets:', id);
+                            console.warn('[AgentStore] Agent not found:', id);
                             return state;
                         }
                     }
                 });
-
-                // Log after update
-                setTimeout(() => {
-                    console.log('[AgentStore] After update:', get().agents.find(a => a.id === id));
-                }, 100);
             },
             deleteAgent: (id) => set((state) => ({
                 agents: state.agents.filter((a) => a.id !== id)
