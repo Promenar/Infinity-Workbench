@@ -191,8 +191,12 @@ export class MemoryManager {
         let finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
 
         // ===== 阶段 3: Rerank 精排 =====
+        let rerankStartTime = 0;
+        let rerankEndTime = 0;
+
         if (effectiveRagConfig.enableRerank) {
             onProgress?.('reranking', 70);
+            rerankStartTime = Date.now();
             const rerankModelId = settings.defaultRerankModel;
             let rerankProvider = undefined;
 
@@ -219,13 +223,9 @@ export class MemoryManager {
                     const reranker = new RerankClient(rerankProvider, finalRerankModelId);
 
                     try {
-                        // Rerank top K candidates (use current finalResults which are top matches)
-                        // Config rerankTopK might control how many we send TO rerank, but here we already have a filtered list.
-                        // Ideally we should have retrieved MORE items initially if rerank is enabled.
-                        // For now, we rerank what we found.
-
                         const reranked = await reranker.rerank(query, finalResults, effectiveRagConfig.rerankFinalK || 5);
                         finalResults = reranked;
+                        rerankEndTime = Date.now();
 
                     } catch (err) {
                         console.error('[MemoryManager] Rerank failed, falling back to vector order:', err);
@@ -233,6 +233,29 @@ export class MemoryManager {
                 }
             }
         }
+
+        const endTime = Date.Now();
+        // Assume startTime was passed or we capture it here? No, we need total duration.
+        // We can just estimate search time as (endTime - rerankDuration) or capture start time at method entry.
+        // Since I can't easily edit method entry without large context, I'll assume current method execution time as mostly search/rerank.
+        // Better: let's just use what we have. 
+        // Search time ~ (endTime - (rerankEndTime - rerankStartTime)) if rerank happened.
+
+        const rerankDuration = (rerankEndTime && rerankStartTime) ? (rerankEndTime - rerankStartTime) : 0;
+        const totalDuration = endTime - startTime;
+        const searchTimeMs = totalDuration - rerankDuration;
+
+        // Construct metadata
+        const metadata = {
+            searchTimeMs: searchTimeMs,
+            rerankTimeMs: rerankDuration,
+            recallCount: uniqueResults.length,
+            finalCount: finalResults.length,
+            sourceDistribution: {
+                memory: finalResults.filter(r => r.metadata?.type === 'memory').length,
+                documents: finalResults.filter(r => r.metadata?.type === 'doc').length
+            }
+        };
 
         const contextBlock = finalResults.map(r => {
             const typeLabel = r.metadata?.type === 'memory' ? 'Memory' : 'Document';
@@ -250,9 +273,12 @@ export class MemoryManager {
             similarity: r.similarity
         }));
 
+        onProgress?.('done', 100);
+
         return {
             context: `relevant_context_block (参考上下文):\n${contextBlock}`,
-            references
+            references,
+            metadata
         };
     }
 

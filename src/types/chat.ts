@@ -79,6 +79,7 @@ export interface Message {
     role: 'user' | 'assistant' | 'system';
     content: string; // markdown content
     createdAt: number;
+    modelId?: string; // ✅ 恢复：模型ID
     status?: 'sending' | 'sent' | 'error' | 'streaming';
     references?: RagReference[]; // RAG 引用来源
     ragProgress?: RagProgress;   // ✅ 新增：检索进度
