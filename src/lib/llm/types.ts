@@ -40,7 +40,7 @@ export interface LlmClient {
      * @param options 选项
      * @returns 完整回复内容
      */
-    chatCompletion(messages: ChatMessage[], options?: any): Promise<string>;
+    chatCompletion(messages: ChatMessage[], options?: any): Promise<{ content: string; usage?: { input: number; output: number; total: number } }>;
     testConnection(): Promise<{ success: boolean; latency: number; error?: string }>;
     testRerankConnection?(): Promise<{ success: boolean; latency: number; error?: string }>;
     abort?(): void;

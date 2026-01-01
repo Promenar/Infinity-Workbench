@@ -356,10 +356,7 @@ export default function ChatDetailScreen() {
             <TokenStatsModal
                 visible={showTokenStats}
                 onClose={() => setShowTokenStats(false)}
-                stats={{
-                    sessionTotal: session.stats?.totalTokens || 0,
-                    lastMessage: messages.length > 0 ? messages[messages.length - 1].tokens : undefined
-                }}
+                session={session}
             />
 
             {/* Model Picker */}

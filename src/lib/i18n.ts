@@ -63,6 +63,7 @@ export const translations = {
                 getCx: '获取 Search Engine ID ->',
                 save: '保存配置',
             },
+            tokenUsage: '流量消耗统计',
 
             // Backup
             appSection: '应用',

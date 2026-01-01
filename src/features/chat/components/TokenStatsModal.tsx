@@ -1,37 +1,88 @@
-import React from 'react';
-import { View, Modal, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Modal, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown, Easing } from 'react-native-reanimated';
-import { X, Calculator, Zap, Database } from 'lucide-react-native';
+import { X, Zap, Database, RotateCcw, MessageSquare, Cpu } from 'lucide-react-native';
 import { Typography } from '../../../components/ui/Typography';
 import { useTheme } from '../../../theme/ThemeProvider';
-import { TokenUsage } from '../../../types/chat';
+import { Session, BillingUsage } from '../../../types/chat';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useChatStore } from '../../../store/chat-store';
+import * as Haptics from '../../../lib/haptics';
 
 interface TokenStatsModalProps {
     visible: boolean;
     onClose: () => void;
-    stats: {
-        sessionTotal: number;
-        lastMessage?: TokenUsage;
-    };
+    session: Session;
 }
 
 export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
     visible,
     onClose,
-    stats
+    session
 }) => {
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
+    const updateSession = useChatStore(state => state.updateSession);
 
-    // Total percentage for visualization (example: output usually has higher cost/weight)
-    const inTokens = stats.lastMessage?.input || 0;
-    const outTokens = stats.lastMessage?.output || 0;
-    const totalCurrent = inTokens + outTokens;
-    const outPercentage = totalCurrent > 0 ? (outTokens / totalCurrent) * 100 : 0;
+    // Extract Billing Stats or Fallback
+    const stats: BillingUsage = useMemo(() => {
+        if (session.stats?.billing) {
+            return session.stats.billing;
+        }
+        // Fallback for legacy sessions
+        const total = session.stats?.totalTokens || 0;
+        return {
+            chatInput: { count: 0, isEstimated: true },
+            chatOutput: { count: 0, isEstimated: true },
+            ragSystem: { count: 0, isEstimated: true },
+            total,
+            costUSD: 0
+        };
+    }, [session.stats]);
+
+    // Calculate Percentages
+    const total = stats.total || 1; // Avoid div by zero
+    const inputPct = (stats.chatInput.count / total) * 100;
+    const outputPct = (stats.chatOutput.count / total) * 100;
+    const ragPct = (stats.ragSystem.count / total) * 100;
+
+    const handleReset = () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Clear session stats by creating a new empty billing object
+        const emptyBilling: BillingUsage = {
+            chatInput: { count: 0, isEstimated: false },
+            chatOutput: { count: 0, isEstimated: false },
+            ragSystem: { count: 0, isEstimated: false },
+            total: 0,
+            costUSD: 0
+        };
+        updateSession(session.id, { stats: { totalTokens: 0, billing: emptyBilling } });
+    };
 
     if (!visible) return null;
+
+    const MetricRow = ({ label, count, pct, color, icon: Icon, isEstimated }: any) => (
+        <View style={styles.metricRow}>
+            <View style={[styles.iconBox, { backgroundColor: isDark ? `${color}20` : `${color}10` }]}>
+                <Icon size={16} color={color} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Typography className="text-sm font-bold" style={{ color: isDark ? '#EEE' : '#333' }}>{label}</Typography>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {isEstimated && <Typography className="text-xs font-medium mr-1 text-amber-500">≈</Typography>}
+                        <Typography className="text-sm font-black" style={{ color: isDark ? '#FFF' : '#000' }}>
+                            {count.toLocaleString()}
+                        </Typography>
+                    </View>
+                </View>
+                <View style={[styles.barBg, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+                    <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: color }]} />
+                </View>
+            </View>
+        </View>
+    );
 
     return (
         <Modal
@@ -44,7 +95,7 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                 <Animated.View
                     entering={FadeIn.duration(300)}
                     exiting={FadeOut.duration(200)}
-                    style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
+                    style={[styles.backdrop]}
                 >
                     <TouchableOpacity style={styles.fill} onPress={onClose} activeOpacity={1} />
                 </Animated.View>
@@ -55,60 +106,78 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                     style={[
                         styles.floatContainer,
                         {
-                            backgroundColor: isDark ? 'rgba(24, 24, 27, 0.92)' : 'rgba(255, 255, 255, 0.92)',
+                            backgroundColor: isDark ? 'rgba(24, 24, 27, 0.96)' : 'rgba(255, 255, 255, 0.98)',
                             borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
                         }
                     ]}
                 >
                     <BlurView
-                        intensity={isDark ? 30 : 50}
+                        intensity={isDark ? 50 : 80}
                         tint={isDark ? 'dark' : 'light'}
                         style={styles.blurContent}
                     >
+                        {/* Header */}
                         <View style={styles.header}>
                             <View>
-                                <Typography className="text-2xl font-black" style={{ letterSpacing: -1.5 }}>Token Usage</Typography>
-                                <Typography className="text-[10px] text-gray-500 font-bold uppercase tracking-[2px] mt-0.5">Real-time Estimation</Typography>
+                                <Typography className="text-2xl font-black text-black dark:text-white" style={{ letterSpacing: -0.5 }}>Session Stats</Typography>
+                                <Typography className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-[1px] mt-0.5">Real-time Usage Tracking</Typography>
                             </View>
-                            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                                <X size={16} color={isDark ? '#fff' : '#000'} />
+                            <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+                                <X size={18} color={isDark ? '#fff' : '#000'} />
                             </TouchableOpacity>
                         </View>
 
-                        <View style={styles.visualSection}>
-                            <View style={styles.circleContainer}>
-                                <View style={[styles.outerCircle, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
-                                    <View style={[styles.innerCircle, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }]}>
-                                        <Typography className="text-3xl font-black" style={{ color: isDark ? '#fff' : '#000' }}>{stats.sessionTotal.toLocaleString()}</Typography>
-                                        <Typography className="text-[10px] text-gray-400 font-bold mt-1">SESSION TOTAL</Typography>
-                                    </View>
-                                    <View style={[styles.dot, { backgroundColor: '#8b5cf6', top: '15%', right: '15%' }]} />
-                                    <View style={[styles.dot, { backgroundColor: '#f59e0b', bottom: '20%', left: '10%', width: 6, height: 6 }]} />
-                                </View>
+                        {/* Total Big Number */}
+                        <View style={styles.totalSection}>
+                            <View style={[styles.ring, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+                                <Typography className="text-4xl font-black text-black dark:text-white" style={{ letterSpacing: -1 }}>
+                                    {stats.total.toLocaleString()}
+                                </Typography>
+                                <Typography className="text-[10px] text-gray-400 font-bold mt-1 uppercase">Total Tokens</Typography>
                             </View>
                         </View>
 
-                        <View style={styles.grid}>
-                            <View style={[styles.card, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)' }]}>
-                                <Typography className="text-[10px] font-black text-violet-500 uppercase mb-1">Inbound</Typography>
-                                <Typography className="text-xl font-black" style={{ color: isDark ? '#fff' : '#111' }}>{inTokens.toLocaleString()}</Typography>
-                                <View style={styles.barContainer}>
-                                    <View style={[styles.bar, { width: '100%', backgroundColor: '#8b5cf6' }]} />
-                                </View>
-                            </View>
-
-                            <View style={[styles.card, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.04)' }]}>
-                                <Typography className="text-[10px] font-black text-amber-500 uppercase mb-1">Outbound</Typography>
-                                <Typography className="text-xl font-black" style={{ color: isDark ? '#fff' : '#111' }}>{outTokens.toLocaleString()}</Typography>
-                                <View style={styles.barContainer}>
-                                    <View style={[styles.bar, { width: `${outPercentage}%`, backgroundColor: '#f59e0b' }]} />
-                                </View>
-                            </View>
+                        {/* Breakdown */}
+                        <View style={styles.breakdown}>
+                            <MetricRow
+                                label="Prompt (Input)"
+                                count={stats.chatInput.count}
+                                pct={inputPct}
+                                color="#8b5cf6"
+                                icon={MessageSquare}
+                                isEstimated={stats.chatInput.isEstimated}
+                            />
+                            <MetricRow
+                                label="Completion (Output)"
+                                count={stats.chatOutput.count}
+                                pct={outputPct}
+                                color="#f59e0b"
+                                icon={Zap}
+                                isEstimated={stats.chatOutput.isEstimated}
+                            />
+                            <MetricRow
+                                label="RAG System"
+                                count={stats.ragSystem.count}
+                                pct={ragPct}
+                                color="#10b981"
+                                icon={Database}
+                                isEstimated={stats.ragSystem.isEstimated}
+                            />
                         </View>
 
-                        <View style={styles.footerContainer}>
-                            <Typography className="text-[10px] text-gray-500 text-center leading-4">
-                                1k tokens ≈ 750 words.{'\n'}Estimation based on model specific pricing.
+                        {/* Actions */}
+                        <View style={styles.footer}>
+                            <TouchableOpacity
+                                onPress={handleReset}
+                                activeOpacity={0.7}
+                                style={[styles.resetBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)' }]}
+                            >
+                                <RotateCcw size={14} color="#ef4444" />
+                                <Typography className="text-xs font-bold text-red-500 ml-2">Reset Session Stats</Typography>
+                            </TouchableOpacity>
+
+                            <Typography className="text-[10px] text-gray-400 text-center mt-3">
+                                ≈ Indicates estimated value due to missing API data.
                             </Typography>
                         </View>
                     </BlurView>
@@ -125,21 +194,20 @@ const styles = StyleSheet.create({
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.6)',
     },
-    fill: {
-        flex: 1,
-    },
+    fill: { flex: 1 },
     floatContainer: {
-        marginHorizontal: 12,
-        borderRadius: 32,
+        marginHorizontal: 16,
+        marginBottom: 10,
+        borderRadius: 28,
         overflow: 'hidden',
         borderWidth: 1,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.2,
-        shadowRadius: 20,
-        elevation: 10,
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.3,
+        shadowRadius: 24,
+        elevation: 12,
     },
     blurContent: {
         padding: 24,
@@ -147,78 +215,65 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 20,
+        alignItems: 'flex-start',
+        marginBottom: 28,
     },
     closeBtn: {
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: 'rgba(255,255,255,0.1)',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    visualSection: {
+    totalSection: {
         alignItems: 'center',
-        marginBottom: 24,
+        marginBottom: 32,
     },
-    circleContainer: {
-        width: 140,
-        height: 140,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    outerCircle: {
-        width: 130,
-        height: 130,
-        borderRadius: 65,
-        borderWidth: 3,
+    ring: {
+        width: 160,
+        height: 160,
+        borderRadius: 80,
+        borderWidth: 4,
         alignItems: 'center',
         justifyContent: 'center',
         borderStyle: 'dashed',
     },
-    innerCircle: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
+    breakdown: {
+        gap: 20,
+        marginBottom: 32,
+    },
+    metricRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    iconBox: {
+        width: 36,
+        height: 36,
+        borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 2,
     },
-    dot: {
-        position: 'absolute',
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    grid: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 16,
-    },
-    card: {
-        flex: 1,
-        padding: 16,
-        borderRadius: 20,
-    },
-    barContainer: {
-        height: 3,
-        backgroundColor: 'rgba(0,0,0,0.05)',
-        borderRadius: 2,
-        marginTop: 10,
+    barBg: {
+        height: 6,
+        borderRadius: 3,
+        width: '100%',
         overflow: 'hidden',
     },
-    bar: {
+    barFill: {
         height: '100%',
-        borderRadius: 2,
+        borderRadius: 3,
     },
-    footerContainer: {
-        padding: 12,
-        borderRadius: 12,
-        marginTop: 8,
+    footer: {
+        alignItems: 'center',
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(128,128,128,0.1)',
+        paddingTop: 20,
+    },
+    resetBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
     }
 });

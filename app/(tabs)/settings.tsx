@@ -36,7 +36,8 @@ import {
     Layers,
     Sun,
     Monitor,
-    ArrowUpDown
+    ArrowUpDown,
+    BarChart2
 } from 'lucide-react-native';
 
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
@@ -320,8 +321,16 @@ export default function SettingsScreen() {
                                 title="高级检索配置"
                                 subtitle="Rerank、查询重写、混合检索"
                                 showChevron
-                                isLast
                                 onPress={() => router.push('/settings/advanced-retrieval' as any)}
+                            />
+
+                            <SettingsItem
+                                icon={BarChart2}
+                                title={t.settings.tokenUsage || "流量消耗统计"}
+                                subtitle="查看 Chat、RAG 和 System 的 Token 消耗总量"
+                                showChevron
+                                isLast
+                                onPress={() => router.push('/settings/token-usage' as any)}
                             />
                         </SettingsSection>
 

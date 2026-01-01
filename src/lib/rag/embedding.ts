@@ -9,7 +9,7 @@ export class EmbeddingClient {
         this.model = model || 'text-embedding-3-small'; // Default fallback
     }
 
-    async embedDocuments(texts: string[]): Promise<number[][]> {
+    async embedDocuments(texts: string[]): Promise<{ embeddings: number[][]; usage?: { total_tokens: number } }> {
         // Handle based on provider type
         // OpenAI-compatible providers
         if (
@@ -31,12 +31,12 @@ export class EmbeddingClient {
         throw new Error(`Embedding not supported for provider: ${this.provider.type}`);
     }
 
-    async embedQuery(text: string): Promise<number[]> {
-        const embeddings = await this.embedDocuments([text]);
-        return embeddings[0];
+    async embedQuery(text: string): Promise<{ embedding: number[]; usage?: { total_tokens: number } }> {
+        const result = await this.embedDocuments([text]);
+        return { embedding: result.embeddings[0], usage: result.usage };
     }
 
-    private async embedOpenAI(texts: string[]): Promise<number[][]> {
+    private async embedOpenAI(texts: string[]): Promise<{ embeddings: number[][]; usage?: { total_tokens: number } }> {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
@@ -68,14 +68,17 @@ export class EmbeddingClient {
             }
 
             const data = await res.json();
-            return data.data.map((item: any) => item.embedding);
+            return {
+                embeddings: data.data.map((item: any) => item.embedding),
+                usage: data.usage // { prompt_tokens, total_tokens }
+            };
         } catch (error) {
             clearTimeout(timeoutId);
             throw error;
         }
     }
 
-    private async embedGoogle(texts: string[]): Promise<number[][]> {
+    private async embedGoogle(texts: string[]): Promise<{ embeddings: number[][]; usage?: { total_tokens: number } }> {
         // Google usually expects 1 input per request or batch endpoint logic which varies
         // For simplicity/compatibility, loop (or adapt if batch endpoint known)
         // Vertex/Gemini `embedContent` or `batchEmbedContents`

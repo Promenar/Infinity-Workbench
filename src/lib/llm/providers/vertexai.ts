@@ -126,13 +126,16 @@ export class VertexAiClient implements LlmClient {
         }
     }
 
-    async chatCompletion(messages: ChatMessage[], options?: any): Promise<string> {
+    async chatCompletion(messages: ChatMessage[], options?: any): Promise<{ content: string; usage?: { input: number; output: number; total: number } }> {
         let result = '';
+        let finalUsage: { input: number; output: number; total: number } | undefined;
+
         await this.streamChat(
             messages,
             (chunk: any) => {
                 const content = typeof chunk === 'string' ? chunk : chunk.content;
                 if (content) result += content;
+                if (chunk.usage) finalUsage = chunk.usage;
             },
             (err) => {
                 // Don't throw here! It runs in XHR callback and causes crash.
@@ -141,7 +144,7 @@ export class VertexAiClient implements LlmClient {
             },
             options
         );
-        return result;
+        return { content: result, usage: finalUsage };
     }
 
     async streamChat(

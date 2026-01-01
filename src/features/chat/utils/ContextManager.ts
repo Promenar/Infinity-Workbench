@@ -94,7 +94,7 @@ export class ContextManager {
             const summaryResult = await this.generateSummary(chunk, ragConfig.summaryPrompt);
             if (!summaryResult) return;
 
-            const { summary, tokenUsage } = summaryResult;
+            const { summary, tokenUsage, usageDetails } = summaryResult;
 
             // 3. Store Summary in DB
             const id = `summary_${Date.now()}`;
@@ -110,6 +110,22 @@ export class ContextManager {
                     tokenUsage  // ✅ 保存实际token使用量
                 ]
             );
+
+            // 4. Track Global Stats
+            try {
+                const { useTokenStatsStore } = await import('../../../store/token-stats-store');
+                // Use default model ID if not found (summary logic uses provider model)
+                const modelId = ragConfig.summaryModel || 'default-summary-model';
+                useTokenStatsStore.getState().trackUsage({
+                    modelId,
+                    usage: {
+                        ragSystem: {
+                            count: tokenUsage,
+                            isEstimated: usageDetails ? usageDetails.isEstimated : true
+                        }
+                    }
+                });
+            } catch (e) { console.warn('[ContextManager] Failed to track stats:', e); }
 
             // 4. Vectorize Summary for RAG
             await this.vectorizeSummary(sessionId, summary);
@@ -129,7 +145,7 @@ export class ContextManager {
         }
     }
 
-    private static async generateSummary(messages: Message[], customPrompt?: string): Promise<{ summary: string; tokenUsage: number } | null> {
+    private static async generateSummary(messages: Message[], customPrompt?: string): Promise<{ summary: string; tokenUsage: number; usageDetails?: { input: number; output: number; total: number; isEstimated: boolean } } | null> {
         const apiStore = useApiStore.getState();
         // Use a lightweight model if possible, or the current active provider
         const provider = apiStore.providers.find(p => p.enabled);
@@ -160,6 +176,8 @@ export class ContextManager {
             };
 
             const client = createLlmClient(config as any);
+            // Capture API usage if available
+            let apiUsage: { input: number; output: number; total: number } | undefined;
             let fullResponse = '';
 
             await new Promise<void>((resolve, reject) => {
@@ -167,20 +185,31 @@ export class ContextManager {
                     [{ role: 'user', content: prompt }],
                     (chunk) => {
                         if (chunk.content) fullResponse += chunk.content;
+                        if (chunk.usage) apiUsage = chunk.usage;
                     },
                     (err) => reject(err)
                 ).then(() => resolve()).catch(reject);
             });
 
-            // ✅ 计算token使用量
-            const { estimateTokens } = await import('./token-counter');
-            const inputTokens = estimateTokens(prompt);
-            const outputTokens = estimateTokens(fullResponse);
-            const totalTokens = inputTokens + outputTokens;
+            // ✅ 计算/获取 token 使用量
+            let tokenUsage = 0;
+            let usageDetails: { input: number; output: number; total: number; isEstimated: boolean } | undefined;
+
+            if (apiUsage) {
+                tokenUsage = apiUsage.total;
+                usageDetails = { ...apiUsage, isEstimated: false };
+            } else {
+                const { estimateTokens } = await import('./token-counter');
+                const inputTokens = estimateTokens(prompt);
+                const outputTokens = estimateTokens(fullResponse);
+                tokenUsage = inputTokens + outputTokens;
+                usageDetails = { input: inputTokens, output: outputTokens, total: tokenUsage, isEstimated: true };
+            }
 
             return {
                 summary: fullResponse,
-                tokenUsage: totalTokens
+                tokenUsage: tokenUsage,
+                usageDetails // Return detailed usage for stats store
             };
         } catch (e) {
             console.error('[ContextManager] LLM call failed:', e);

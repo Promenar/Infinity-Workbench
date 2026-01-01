@@ -17,11 +17,12 @@ export class QueryRewriter {
      * 执行查询重写
      * @param query 原始查询
      * @param count 生成变体数量
-     * @returns 重写后的查询列表（包含原始查询）
+     * @returns 重写后的查询列表与Token消耗
      */
-    async rewrite(query: string, count: number = 3): Promise<string[]> {
+    async rewrite(query: string, count: number = 3): Promise<{ variants: string[]; usage?: { input: number; output: number; total: number } }> {
         // 始终包含原始查询
         const queries = new Set<string>([query]);
+        let totalUsage: { input: number; output: number; total: number } | undefined;
 
         try {
             let prompt = '';
@@ -40,7 +41,7 @@ export class QueryRewriter {
                     prompt = `请提取并扩展以下查询中的关键概念和关键词，包括同义词和相关术语，以便进行更广泛的搜索。只需用逗号分隔列出关键词，不要包含其他文字。\n\n查询: ${query}`;
                     break;
                 default:
-                    return [query];
+                    return { variants: [query] };
             }
 
             // 调用 LLM 生成 (使用统一的非流式接口)
@@ -49,11 +50,14 @@ export class QueryRewriter {
                 { temperature: 0.7 }
             );
 
+            const content = result.content;
+            totalUsage = result.usage;
+
             // 解析结果
-            if (result) {
+            if (content) {
                 if (this.strategy === 'multi-query') {
                     // 按行分割
-                    result.split('\n').forEach(line => {
+                    content.split('\n').forEach(line => {
                         const clean = line.replace(/^\d+[\.\、\)]\s*/, '').trim();
                         if (clean) queries.add(clean);
                     });
@@ -61,11 +65,11 @@ export class QueryRewriter {
                     // 逗号分割并作为独立查询？或者合并为一个长查询？
                     // 通常 Expansion 是为了增加关键词，这里我们将其视为单个增强查询，或者多个关键词查询
                     // 简单起见，我们将扩展后的关键词串作为一个新的查询变体
-                    queries.add(`${query} ${result}`);
+                    queries.add(`${query} ${content}`);
                 } else if (this.strategy === 'hyde') {
                     // HyDE 生成的是文档片段，用于 embedding
                     // 我们可以直接将其作为查询（依靠 embedding 相似度）
-                    queries.add(result.trim());
+                    queries.add(content.trim());
                 }
             }
 
@@ -73,6 +77,9 @@ export class QueryRewriter {
             console.warn('[QueryRewriter] Rewrite failed:', error);
         }
 
-        return Array.from(queries).slice(0, count + 1); // 限制总数
+        return {
+            variants: Array.from(queries).slice(0, count + 1),
+            usage: totalUsage
+        };
     }
 }

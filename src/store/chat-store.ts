@@ -355,6 +355,7 @@ export const useChatStore = create<ChatState>()(
                 let accumulatedReasoning = '';
                 let accumulatedCitations: { title: string; url: string; source?: string }[] | undefined = undefined; // Initialize correctly
                 let ragReferences: RagReference[] = []; // Track RAG references safely
+                let ragUsage: { ragSystem: number; isEstimated: boolean } | undefined; // Track RAG usage
 
                 try {
                     const extendedConfig = {
@@ -452,11 +453,16 @@ export const useChatStore = create<ChatState>()(
                                 }
                             };
 
-                            const { context: retrievedContext, references, metadata } = await MemoryManager.retrieveContext(
+                            const { context: retrievedContext, references, metadata, billingUsage } = await MemoryManager.retrieveContext(
                                 apiMessage.content,
                                 sessionId,
                                 effectiveRagOptions
                             );
+
+                            // Store for stats tracking
+                            if (billingUsage) {
+                                ragUsage = billingUsage;
+                            }
 
                             ragContext = retrievedContext;
                             ragReferences = references;
@@ -781,9 +787,40 @@ export const useChatStore = create<ChatState>()(
 
                     // Update Session Stats & Title
                     const sessionAllText = (get().getSession(sessionId)?.messages || []).map(m => m.content).join('\n');
+
+                    // Prepare Billing Usage
+                    const billingUsage = {
+                        chatInput: {
+                            count: accumulatedUsage ? accumulatedUsage.input : totalContextTokens,
+                            isEstimated: !accumulatedUsage
+                        },
+                        chatOutput: {
+                            count: accumulatedUsage ? accumulatedUsage.output : estimateTokens(accumulatedContent),
+                            isEstimated: !accumulatedUsage
+                        },
+                        ragSystem: ragUsage ? { count: ragUsage.ragSystem, isEstimated: ragUsage.isEstimated } : { count: 0, isEstimated: false },
+                        total: (accumulatedUsage ? accumulatedUsage.total : (totalContextTokens + estimateTokens(accumulatedContent))) + (ragUsage?.ragSystem || 0)
+                    };
+
                     get().updateSession(sessionId, {
-                        stats: { totalTokens: estimateTokens(sessionAllText) }
+                        stats: {
+                            totalTokens: billingUsage.total,
+                            billing: billingUsage
+                        }
                     });
+
+                    // Track Global Stats
+                    try {
+                        const { useTokenStatsStore } = await import('./token-stats-store');
+                        useTokenStatsStore.getState().trackUsage({
+                            modelId: modelId,
+                            usage: {
+                                chatInput: billingUsage.chatInput,
+                                chatOutput: billingUsage.chatOutput,
+                                ragSystem: billingUsage.ragSystem
+                            }
+                        });
+                    } catch (e) { console.warn('[ChatStore] Failed to track global stats:', e); }
 
                     if (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation') {
                         get().updateSessionTitle(sessionId, content.substring(0, 30) + (content.length > 30 ? '...' : ''));

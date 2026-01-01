@@ -5,6 +5,7 @@ import { useApiStore } from '../../store/api-store';
 import { RecursiveCharacterTextSplitter } from './text-splitter';
 import { db } from '../db';
 import { useSettingsStore } from '../../store/settings-store';
+import { estimateTokens } from '../../features/chat/utils/token-counter';
 
 export class MemoryManager {
     static async retrieveContext(query: string, sessionId: string, options: {
@@ -15,7 +16,7 @@ export class MemoryManager {
         isGlobal?: boolean;
         ragConfig?: RagConfiguration; // ✅ 新增：允许传入特定 RAG 配置
         onProgress?: (stage: string, percentage: number) => void; // ✅ 新增：进度回调
-    } = {}): Promise<{ context: string; references: RagReference[]; metadata?: any }> {
+    } = {}): Promise<{ context: string; references: RagReference[]; metadata?: any; billingUsage?: { ragSystem: number; isEstimated: boolean } }> {
 
         const { enableMemory = true, enableDocs = true, activeDocIds = [], activeFolderIds = [], isGlobal = false, ragConfig, onProgress } = options;
         const apiStore = useApiStore.getState();
@@ -79,11 +80,12 @@ export class MemoryManager {
         // Quick Exit: If Memory disabled AND Docs enabled but no docs selected (and not global), nothing to search.
         const canSearchDocs = enableDocs && (isGlobal || (authorizedDocIds && authorizedDocIds.size > 0));
         if (!enableMemory && !canSearchDocs) {
-            return { context: '', references: [], metadata: { searchTimeMs: 0, rerankTimeMs: 0, recallCount: 0, finalCount: 0, sourceDistribution: { memory: 0, documents: 0 } } };
+            return { context: '', references: [], metadata: { searchTimeMs: 0, rerankTimeMs: 0, recallCount: 0, finalCount: 0, sourceDistribution: { memory: 0, documents: 0 } }, billingUsage: { ragSystem: 0, isEstimated: false } };
         }
 
         // ===== 阶段 1: Query Rewrite (查询重写) =====
         let queryVariants = [query];
+        let rewriteTokenUsage = 0; // Capture rewrite usage
         // Optimization: Rewrite if enabled AND (Global OR Doc Auth OR Memory Enabled)
         // If searching local docs only and no docs selected, skip. But if Memory enabled, proceed.
         const shouldRewrite = effectiveRagConfig.enableQueryRewrite && (isGlobal || enableMemory || (authorizedDocIds && authorizedDocIds.size > 0));
@@ -114,7 +116,13 @@ export class MemoryManager {
                     const { QueryRewriter } = await import('./query-rewriter');
                     const rewriter = new QueryRewriter(llmClient, effectiveRagConfig.queryRewriteStrategy as any);
 
-                    const variants = await rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
+                    const { variants, usage } = await rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
+
+                    // Accumulate usage for billing
+                    if (usage) {
+                        rewriteTokenUsage += usage.total;
+                    }
+
                     if (variants.length > 0) {
                         queryVariants = variants;
                         // Limit total variants to avoid explosion
@@ -131,10 +139,8 @@ export class MemoryManager {
             // 2. 获取查询向量 (Get Embedding)
             onProgress?.('embedding', 10);
 
-            let provider = apiStore.providers.find(p => p.enabled && p.type === 'openai' && p.models.some(m => m.enabled && m.type === 'embedding'));
-            if (!provider) provider = apiStore.providers.find(p => p.enabled && (p.type === 'siliconflow' || p.type === 'deepseek' || p.type === 'moonshot' || p.type === 'zhipu') && p.models.some(m => m.enabled && m.type === 'embedding'));
-            if (!provider) provider = apiStore.providers.find(p => p.enabled && (p.type === 'gemini' || p.type === 'google') && p.models.some(m => m.enabled && m.type === 'embedding'));
-            if (!provider) provider = apiStore.providers.find(p => p.enabled && (p.type === 'openai' || p.type === 'gemini' || p.type === 'google')); // legacy fallback
+            // Generic search for any provider with an enabled embedding model
+            let provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.enabled && m.type === 'embedding'));
 
             if (!provider) return [];
 
@@ -144,7 +150,15 @@ export class MemoryManager {
             let queryEmbedding: number[] | null = null;
             try {
                 const client = new EmbeddingClient(provider, modelId);
-                queryEmbedding = await client.embedQuery(currentQuery);
+                const result = await client.embedQuery(currentQuery);
+                queryEmbedding = result.embedding;
+
+                // Capture usage
+                if (result.usage) {
+                    rewriteTokenUsage += result.usage.total_tokens; // Accumulate to total RAG usage
+                } else {
+                    rewriteTokenUsage += estimateTokens(currentQuery);
+                }
             } catch (e) {
                 console.warn('[MemoryManager] Embedding failed:', e);
                 return [];
@@ -286,7 +300,7 @@ export class MemoryManager {
         }
 
         // 4.原本格式化上下文 (Format Context)
-        if (allResults.length === 0) return { context: '', references: [], metadata: { searchTimeMs: 0, rerankTimeMs: 0, recallCount: 0, finalCount: 0, sourceDistribution: { memory: 0, documents: 0 } } };
+        if (allResults.length === 0) return { context: '', references: [], metadata: { searchTimeMs: 0, rerankTimeMs: 0, recallCount: 0, finalCount: 0, sourceDistribution: { memory: 0, documents: 0 } }, billingUsage: { ragSystem: rewriteTokenUsage, isEstimated: false } };
 
         // Aggregation & Dedup
         allResults.sort((a, b) => b.similarity - a.similarity);
@@ -378,7 +392,11 @@ export class MemoryManager {
         return {
             context: `relevant_context_block (参考上下文):\n${contextBlock}`,
             references,
-            metadata
+            metadata,
+            billingUsage: {
+                ragSystem: rewriteTokenUsage,
+                isEstimated: rewriteTokenUsage > 0 && false // If captured from API, it's real. If 0, it doesn't matter. We can refine this.
+            }
         };
     }
 
@@ -403,15 +421,8 @@ export class MemoryManager {
 
         const apiStore = useApiStore.getState();
 
-        let provider = apiStore.providers.find(p => p.enabled && p.type === 'openai' && p.models.some(m => m.enabled && m.type === 'embedding'));
-        if (!provider) {
-            provider = apiStore.providers.find(p => p.enabled && (
-                p.type === 'siliconflow' || p.type === 'deepseek' || p.type === 'moonshot' || p.type === 'zhipu'
-            ) && p.models.some(m => m.enabled && m.type === 'embedding'));
-        }
-        if (!provider) {
-            provider = apiStore.providers.find(p => p.enabled && (p.type === 'gemini' || p.type === 'google'));
-        }
+        // Generic search for any provider with an enabled embedding model
+        let provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.enabled && m.type === 'embedding'));
 
         if (!provider) return;
 
@@ -447,7 +458,29 @@ export class MemoryManager {
             const chunks = splitter.splitText(turnText);
 
             const embeddingClient = new EmbeddingClient(provider, modelId);
-            const embeddings = await embeddingClient.embedDocuments(chunks);
+            const { embeddings, usage } = await embeddingClient.embedDocuments(chunks);
+
+            // Track usage for archiving
+            let archiveTokens = 0;
+            let isEstimated = false;
+
+            if (usage) {
+                archiveTokens = usage.total_tokens;
+            } else {
+                archiveTokens = estimateTokens(chunks.join('\n'));
+                isEstimated = true;
+            }
+
+            // Report to global stats store
+            try {
+                const { useTokenStatsStore } = await import('../../store/token-stats-store');
+                useTokenStatsStore.getState().trackUsage({
+                    modelId: modelId || 'embedding-model',
+                    usage: {
+                        ragSystem: { count: archiveTokens, isEstimated }
+                    }
+                });
+            } catch (e) { console.warn('[MemoryManager] Stats tracking failed', e); }
 
             const vectors = chunks.map((chunk, i) => ({
                 sessionId,

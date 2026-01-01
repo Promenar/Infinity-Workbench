@@ -31,6 +31,21 @@ export interface Agent {
     created: number;
 }
 
+// 基础 Token 计量单位
+export interface TokenMetric {
+    count: number;
+    isEstimated: boolean; // 🚨 核心字段：标记是否为降级估算值
+}
+
+// 计费详情结构
+export interface BillingUsage {
+    chatInput: TokenMetric;    // 用户提问 + 历史上下文
+    chatOutput: TokenMetric;   // 模型生成回复
+    ragSystem: TokenMetric;    // RAG 开销：重写 + 摘要 + Embedding
+    total: number;             // 总计费 Token
+    costUSD?: number;          // 估算成本 (用于显示)
+}
+
 export interface TokenUsage {
     input: number;
     output: number;
@@ -105,7 +120,8 @@ export interface Session {
     customPrompt?: string; // Additional prompt specific to this session (appended to agent's systemPrompt)
     isPinned?: boolean;
     stats?: {
-        totalTokens: number;
+        totalTokens: number;     // 兼容现有字段 (保留用于向后兼容)
+        billing?: BillingUsage;  // ✅ 新增：真实计费数据详情
     };
     inferenceParams?: InferenceParams;
     options?: {
@@ -134,6 +150,7 @@ export interface RagConfiguration {
     contextWindow: number;       // 保留的活跃消息数
     summaryThreshold: number;    // 触发摘要的最小批次
     summaryPrompt: string;       // 摘要Prompt模板
+    summaryModel?: string;       // 摘要专用模型
     autoCleanup: boolean;        // 摘要后自动清理旧向量
 
     // 检索配置

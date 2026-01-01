@@ -30,18 +30,23 @@ export class OpenAiClient implements LlmClient {
         }
     }
 
-    async chatCompletion(messages: ChatMessage[], options?: any): Promise<string> {
+    async chatCompletion(messages: ChatMessage[], options?: any): Promise<{ content: string; usage?: { input: number; output: number; total: number } }> {
         let result = '';
+        let finalUsage: { input: number; output: number; total: number } | undefined;
+
         await this.fetchChatCompletion(
             messages,
             (token) => {
                 if (typeof token === 'string') result += token;
-                else if (token.content) result += token.content;
+                else {
+                    if (token.content) result += token.content;
+                    if (token.usage) finalUsage = token.usage;
+                }
             },
             (err) => { throw err; },
             { ...options, stream: false }
         );
-        return result;
+        return { content: result, usage: finalUsage };
     }
 
     private async fetchChatCompletion(

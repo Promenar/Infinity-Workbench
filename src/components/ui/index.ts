@@ -4,7 +4,6 @@ export * from './Card';
 export * from './PageLayout';
 export * from './Toast';
 export * from './ContextMenu';
-export * from './Header';
 export * from './GlassHeader';
 export * from './ConfirmDialog';
 export * from './Switch';
