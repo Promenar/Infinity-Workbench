@@ -102,15 +102,15 @@ export default function SessionSettingsScreen() {
             if (result.success) {
                 setConfirmState({
                     visible: true,
-                    title: '导出成功',
-                    message: '当前会话历史已保存至指定目录。',
+                    title: t.conversation.exportSuccessTitle,
+                    message: t.conversation.exportSuccessMessage,
                     onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
                 });
             } else if (result.error !== 'Permission denied') {
                 setConfirmState({
                     visible: true,
-                    title: '导出失败',
-                    message: result.error || '未知错误',
+                    title: t.conversation.exportFailedTitle,
+                    message: result.error || 'Unknown Error',
                     onConfirm: () => setConfirmState(prev => ({ ...prev, visible: false }))
                 });
             }
@@ -129,12 +129,12 @@ export default function SessionSettingsScreen() {
     const handleDeleteSession = async () => {
         setConfirmState({
             visible: true,
-            title: '删除会话',
-            message: '确定要删除此会话吗？此操作不可撤销。',
+            title: t.conversation.deleteSession,
+            message: t.conversation.deleteConfirm,
             isDestructive: true,
             onConfirm: async () => {
                 await deleteSession(id);
-                showToast('会话已删除', 'success');
+                showToast(t.conversation.sessionDeleted, 'success');
                 setConfirmState(prev => ({ ...prev, visible: false }));
                 router.replace('/(tabs)/chat');
             }
@@ -221,7 +221,7 @@ export default function SessionSettingsScreen() {
                         ) : (
                             <>
                                 <Download size={18} color="#6366f1" className="mr-2" />
-                                <Typography className="text-indigo-600 dark:text-indigo-400 font-bold">导出当前对话历史</Typography>
+                                <Typography className="text-indigo-600 dark:text-indigo-400 font-bold">{t.conversation.exportCurrent}</Typography>
                             </>
                         )}
                     </TouchableOpacity>
@@ -241,7 +241,7 @@ export default function SessionSettingsScreen() {
                             ) : (
                                 <>
                                     <Sparkles size={12} color="#6366f1" className="mr-1" />
-                                    <Typography className="text-indigo-600 text-[10px] font-bold">AI 生成</Typography>
+                                    <Typography className="text-indigo-600 text-[10px] font-bold">{t.conversation.aiGenerated}</Typography>
                                 </>
                             )}
                         </TouchableOpacity>

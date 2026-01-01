@@ -43,6 +43,7 @@ export const useSettingsStore = create<SettingsState>()(
             defaultTempSessionModel: undefined,
             defaultEmbeddingModel: undefined,
             defaultSpeechModel: undefined,
+            defaultRerankModel: undefined,
 
             updateDefaultModel: (key, modelId) => set({ [key]: modelId }),
 
@@ -112,6 +113,7 @@ export const useSettingsStore = create<SettingsState>()(
                 defaultTempSessionModel: state.defaultTempSessionModel,
                 defaultEmbeddingModel: state.defaultEmbeddingModel,
                 defaultSpeechModel: state.defaultSpeechModel,
+                defaultRerankModel: state.defaultRerankModel,
                 globalRagConfig: state.globalRagConfig,
             }),
             onRehydrateStorage: () => (state) => {

@@ -44,6 +44,7 @@ import { ModelSettingsModal } from '../../src/features/settings/ModelSettingsMod
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
 import { GlobalRagConfigPanel } from '../../src/features/settings/components/GlobalRagConfigPanel';
 import * as Haptics from '../../src/lib/haptics'; // Import wrapper
+import Constants from 'expo-constants';
 
 export default function SettingsScreen() {
     const router = useRouter();
@@ -338,9 +339,9 @@ export default function SettingsScreen() {
                             <SettingsItem
                                 icon={Info}
                                 title={t.settings.about}
-                                subtitle="v1.0.0"
+                                subtitle={`v${Constants.expoConfig?.version ?? '1.1'} (${Constants.expoConfig?.android?.versionCode ?? 2})`}
                                 isLast
-                                onPress={() => showToast('Nexara v1.0.0', 'info')}
+                                onPress={() => showToast(`Nexara v${Constants.expoConfig?.version ?? '1.1'}`, 'info')}
                             />
                         </SettingsSection>
                     </>

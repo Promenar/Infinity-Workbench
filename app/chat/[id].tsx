@@ -25,6 +25,7 @@ import { ModelPicker } from '../../src/features/settings/ModelPicker';
 
 import { TokenStatsModal } from '../../src/features/chat/components/TokenStatsModal';
 import { Message } from '../../src/types/chat';
+import { useI18n } from '../../src/lib/i18n';
 
 // Create animated version of FlashList
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
@@ -36,6 +37,7 @@ export default function ChatDetailScreen() {
     const { isDark } = useTheme();
     const { getAgent } = useAgentStore();
     const { providers } = useApiStore();
+    const { t } = useI18n();
 
     // Find current model config (moved to top level)
     const session = useChatStore(state => state.getSession(id));
@@ -122,16 +124,14 @@ export default function ChatDetailScreen() {
             const visibleHeight = event.layoutMeasurement.height;
             const totalHeight = event.contentSize.height;
 
-            // Check if we're at the visual bottom (latest messages)
+            // Standard List: Bottom is when offset + visible >= total
             isAtBottom.value = totalHeight - (offset + visibleHeight) < 50;
         }
     });
 
     const handleContentSizeChange = () => {
-        // Only trigger auto-scroll if message count increased (new message added) 
-        // AND we are already at the bottom to maintain tracking.
-        // This prevents the "forced jump at end of generation" because content updates 
-        // to the *last* message won't trigger this anymore.
+        // Auto-scroll to bottom directly if we tracked we are at bottom
+        // Or if it's a new message
         if (messages.length > lastMessageCount.current && isAtBottom.value) {
             listRef.current?.scrollToEnd({ animated: true });
         }
@@ -143,16 +143,16 @@ export default function ChatDetailScreen() {
 
     React.useEffect(() => {
         if (isListReady) {
-            // Scroll to bottom (latest messages) on initial load
+            // Standard List: Scroll to bottom (latest messages) on initial load
             setTimeout(() => {
                 listRef.current?.scrollToEnd({ animated: false });
                 listOpacity.value = withTiming(1, { duration: 250 });
                 isReadyToDisplay.value = true;
 
-                // Hide loading spinner after list is fully visible
+                // Hide loading spinner
                 setTimeout(() => {
                     setIsInitialLoad(false);
-                }, 300); // Wait for fade-in animation to complete
+                }, 300);
             }, 50);
         }
     }, [isListReady]);
@@ -193,6 +193,8 @@ export default function ChatDetailScreen() {
         // Functionality moved to native selection/actions if needed
     };
 
+    // const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+
     if (!session || !agent) {
         return (
             <PageLayout>
@@ -211,36 +213,10 @@ export default function ChatDetailScreen() {
                 }}
             />
 
-
-
-
-            {/* Glass Header */}
-            <GlassHeader
-                title={session.title}
-                subtitle={headerSubtitle}
-                leftAction={{
-                    icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
-                    onPress: () => router.back(),
-                    label: 'Back',
-                }}
-                rightAction={{
-                    icon: <Settings size={20} color={isDark ? '#fff' : '#000'} />,
-                    onPress: () => {
-                        // Route to dedicated settings page for Super Assistant
-                        const settingsRoute = id === 'super_assistant'
-                            ? '/chat/super_assistant/settings'
-                            : `/chat/${id}/settings`;
-                        router.push(settingsRoute);
-                    },
-                    label: 'Settings',
-                }}
-            />
-
-            {/* Message List */}
             <Animated.View style={[{ flex: 1 }, listContainerStyle]}>
                 <AnimatedFlashList
                     ref={listRef}
-                    inverted={true}
+                    inverted={false}
                     data={messages}
                     renderItem={({ item, index }: { item: any, index: number }) => (
                         <ChatBubble
@@ -285,8 +261,8 @@ export default function ChatDetailScreen() {
                     drawDistance={500}
                     getItemType={(item: any) => item.role}
                     contentContainerStyle={{
-                        paddingTop: insets.bottom + 100, // Inverted: top padding becomes bottom space
-                        paddingBottom: insets.top + 70, // Inverted: bottom padding becomes top space
+                        paddingTop: insets.top + 70, // Standard: Top padding
+                        paddingBottom: insets.bottom + 100, // Standard: Bottom padding
                     }}
                     onLayout={() => setIsListReady(true)}
                     onContentSizeChange={handleContentSizeChange}
@@ -389,7 +365,7 @@ export default function ChatDetailScreen() {
             {/* Model Picker */}
             <ModelPicker
                 visible={showModelPicker}
-                title="切换会话模型"
+                title={t.conversation.switchModel}
                 selectedUuid={session.modelId || agent.defaultModel}
                 filterType="chat"
                 onSelect={(uuid) => {
@@ -420,12 +396,12 @@ export default function ChatDetailScreen() {
                         className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-gray-100 dark:border-zinc-800"
                     >
                         <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-                            编辑会话标题
+                            {t.conversation.editTitle}
                         </Typography>
                         <TextInput
                             value={editingTitle}
                             onChangeText={setEditingTitle}
-                            placeholder="输入会话标题"
+                            placeholder={t.superAssistant.enterTitle}
                             placeholderTextColor="#9ca3af"
                             autoFocus
                             className="bg-gray-50 dark:bg-black p-4 rounded-xl border border-gray-200 dark:border-zinc-800 text-gray-900 dark:text-white mb-4"
@@ -436,7 +412,7 @@ export default function ChatDetailScreen() {
                                 className="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-zinc-800 items-center"
                             >
                                 <Typography className="font-semibold text-gray-700 dark:text-gray-300">
-                                    取消
+                                    {t.common.cancel}
                                 </Typography>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -444,13 +420,35 @@ export default function ChatDetailScreen() {
                                 className="flex-1 py-3 rounded-xl bg-indigo-600 dark:bg-indigo-500 items-center"
                             >
                                 <Typography className="font-semibold text-white">
-                                    保存
+                                    {t.common.save}
                                 </Typography>
                             </TouchableOpacity>
                         </View>
                     </TouchableOpacity>
                 </TouchableOpacity>
             </Modal>
-        </PageLayout>
+
+            {/* Glass Header - Moved to end for stacking context */}
+            <GlassHeader
+                title={session.title}
+                subtitle={headerSubtitle}
+                leftAction={{
+                    icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
+                    onPress: () => router.back(),
+                    label: t.common.back,
+                }}
+                rightAction={{
+                    icon: <Settings size={20} color={isDark ? '#fff' : '#000'} />,
+                    onPress: () => {
+                        // Route to dedicated settings page for Super Assistant
+                        const settingsRoute = id === 'super_assistant'
+                            ? '/chat/super_assistant/settings'
+                            : `/chat/${id}/settings`;
+                        router.push(settingsRoute);
+                    },
+                    label: t.common.settings,
+                }}
+            />
+        </PageLayout >
     );
 }

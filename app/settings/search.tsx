@@ -64,10 +64,10 @@ export default function SearchSettingsScreen() {
                         <Info size={20} color="#3b82f6" style={{ marginTop: 2, marginRight: 12 }} />
                         <View className="flex-1">
                             <Typography className="text-sm text-blue-800 dark:text-blue-100 font-medium mb-1">
-                                Google Custom Search
+                                {t.settings.google.title}
                             </Typography>
                             <Typography className="text-xs text-blue-600 dark:text-blue-300 leading-5">
-                                配置您的 Google Search API Key 和 Search Engine ID (CX)，以启用非 Google 原生模型的联网搜索能力（如 DeepSeek, OpenAI 等）。
+                                {t.settings.google.description}
                             </Typography>
                         </View>
                     </View>
@@ -79,7 +79,7 @@ export default function SearchSettingsScreen() {
                         <View className="flex-row items-center mb-2 space-x-2" style={{ gap: 6 }}>
                             <Key size={16} color={isDark ? '#a1a1aa' : '#52525b'} />
                             <Typography className="font-medium text-gray-700 dark:text-gray-300">
-                                Google API Key
+                                {t.settings.google.apiKey}
                             </Typography>
                         </View>
                         <TextInput
@@ -92,7 +92,7 @@ export default function SearchSettingsScreen() {
                         />
                         <TouchableOpacity onPress={() => Linking.openURL('https://developers.google.com/custom-search/v1/introduction')}>
                             <Typography className="text-xs text-blue-500 mt-2">
-                                获取 API Key -&gt;
+                                {t.settings.google.getApiKey}
                             </Typography>
                         </TouchableOpacity>
                     </View>
@@ -101,7 +101,7 @@ export default function SearchSettingsScreen() {
                         <View className="flex-row items-center mb-2 space-x-2" style={{ gap: 6 }}>
                             <Search size={16} color={isDark ? '#a1a1aa' : '#52525b'} />
                             <Typography className="font-medium text-gray-700 dark:text-gray-300">
-                                Search Engine ID (CX)
+                                {t.settings.google.cx}
                             </Typography>
                         </View>
                         <TextInput
@@ -114,7 +114,7 @@ export default function SearchSettingsScreen() {
                         />
                         <TouchableOpacity onPress={() => Linking.openURL('https://programmablesearchengine.google.com/controlpanel/create')}>
                             <Typography className="text-xs text-blue-500 mt-2">
-                                获取 Search Engine ID -&gt;
+                                {t.settings.google.getCx}
                             </Typography>
                         </TouchableOpacity>
                     </View>
@@ -130,7 +130,7 @@ export default function SearchSettingsScreen() {
                         }`}
                 >
                     <Typography className={`font-bold text-lg ${hasChanges ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`}>
-                        保存配置
+                        {t.settings.google.save}
                     </Typography>
                 </TouchableOpacity>
 

@@ -5,24 +5,26 @@ import { Stack, useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useI18n } from '../../src/lib/i18n';
 import { GlobalRagConfigPanel } from '../../src/features/settings/components/GlobalRagConfigPanel';
 
 export default function RagConfigScreen() {
     const router = useRouter();
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
+    const { t } = useI18n();
 
     return (
         <PageLayout safeArea={false} className="bg-white dark:bg-black">
             <Stack.Screen options={{ headerShown: false }} />
 
             <GlassHeader
-                title="RAG配置"
-                subtitle="向量库与检索增强设置"
+                title={t.settings.ragSection}
+                subtitle={t.settings.ragSettingsDesc}
                 leftAction={{
                     icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
                     onPress: () => router.back(),
-                    label: '返回',
+                    label: t.common.back,
                 }}
             />
 

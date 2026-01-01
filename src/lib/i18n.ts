@@ -54,6 +54,15 @@ export const translations = {
             webSearchConfigDesc: '配置搜索引擎和网页抓取设置',
             haptics: '触感反馈',
             hapticsDesc: '在交互时启用震动反馈',
+            google: {
+                title: 'Google Custom Search',
+                description: '配置您的 Google Search API Key 和 Search Engine ID (CX)，以启用非 Google 原生模型的联网搜索能力（如 DeepSeek, OpenAI 等）。',
+                apiKey: 'Google API Key',
+                cx: 'Search Engine ID (CX)',
+                getApiKey: '获取 API Key ->',
+                getCx: '获取 Search Engine ID ->',
+                save: '保存配置',
+            },
 
             // Backup
             appSection: '应用',
@@ -163,6 +172,7 @@ export const translations = {
             },
             vectorStats: {
                 title: '向量库统计',
+                subtitle: '存储占用与性能分析',
                 overview: '总览',
                 totalVectors: '总向量数',
                 storageOccupied: '占用约 {size} MB',
@@ -291,7 +301,9 @@ export const translations = {
             docThresholdDesc: '相似度分数低于此值的片段将被忽略。',
 
             // Advanced Settings
-            advancedSettings: '高级检索设置',
+            advancedSettings: '高级检索配置',
+            advancedSettingsDesc: 'Rerank、查询重写、混合检索',
+
 
             // Rerank
             enableRerank: '启用 Rerank (重排)',
@@ -387,6 +399,13 @@ export const translations = {
             knowledgeBaseDesc: '允许模型搜索并引用已保存的笔记和文档',
             deleteSession: '删除会话',
             deleteSessionDesc: '永久删除此会话及其历史纪录',
+            exportCurrent: '导出当前对话历史',
+            aiGenerated: 'AI 生成',
+            exportSuccessTitle: '导出成功',
+            exportSuccessMessage: '当前会话历史已保存至指定目录。',
+            exportFailedTitle: '导出失败',
+            deleteConfirm: '确定要删除此会话吗？此操作不可撤销。',
+            sessionDeleted: '会话已删除',
         },
         inference: {
             precise: '精确',
@@ -510,6 +529,15 @@ export const translations = {
             webSearchConfigDesc: 'Configure search engine and scraping settings',
             haptics: 'Haptic Feedback',
             hapticsDesc: 'Enable vibration feedback on interactions',
+            google: {
+                title: 'Google Custom Search',
+                description: 'Configure your Google Search API Key and Search Engine ID (CX) to enable web search for non-Google native models (e.g. DeepSeek, OpenAI).',
+                apiKey: 'Google API Key',
+                cx: 'Search Engine ID (CX)',
+                getApiKey: 'Get API Key ->',
+                getCx: 'Get Search Engine ID ->',
+                save: 'Save Config',
+            },
             // Backup
             appSection: 'App',
             noProviders: 'No providers configured',
@@ -618,6 +646,7 @@ export const translations = {
             },
             vectorStats: {
                 title: 'Vector Library Stats',
+                subtitle: 'Storage & Performance Analysis',
                 overview: 'Overview',
                 totalVectors: 'Total Vectors',
                 storageOccupied: 'Occupying approx {size} MB',
@@ -747,6 +776,7 @@ export const translations = {
 
             // Advanced Settings
             advancedSettings: 'Advanced Retrieval',
+            advancedSettingsDesc: 'Rerank, Query Rewrite, Hybrid Search',
 
             // Rerank
             enableRerank: 'Enable Rerank',
@@ -842,6 +872,13 @@ export const translations = {
             knowledgeBaseDesc: 'Allow model to search and cite saved documents',
             deleteSession: 'Delete Session',
             deleteSessionDesc: 'Permanently delete this session and its history',
+            exportCurrent: 'Export Current History',
+            aiGenerated: 'AI Generated',
+            exportSuccessTitle: 'Export Success',
+            exportSuccessMessage: 'Session history saved to directory.',
+            exportFailedTitle: 'Export Failed',
+            deleteConfirm: 'Are you sure you want to delete this session? This cannot be undone.',
+            sessionDeleted: 'Session deleted',
         },
         inference: {
             precise: 'Precise',

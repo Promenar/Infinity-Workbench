@@ -58,7 +58,7 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
         opacity: opacity.value
     }));
 
-    if (!loading && (!references || references.length === 0)) return null;
+    // if (!loading && (!references || references.length === 0)) return null;
 
     const getStageLabel = (stage?: string) => {
         switch (stage) {

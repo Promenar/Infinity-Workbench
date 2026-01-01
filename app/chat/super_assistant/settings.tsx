@@ -502,7 +502,7 @@ export default function SuperAssistantSettingsScreen() {
 
                     {/* RAG 配置入口 */}
                     <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3">
-                        <Database size={10} color="#64748b" className="mr-1" /> RAG 配置
+                        <Database size={10} color="#64748b" className="mr-1" /> {t.settings.ragSection}
                     </Typography>
                     <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
                         <TouchableOpacity
@@ -515,8 +515,8 @@ export default function SuperAssistantSettingsScreen() {
                             className="flex-row items-center justify-between p-5"
                         >
                             <View className="flex-1">
-                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级RAG配置</Typography>
-                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">配置切块、摘要、检索参数</Typography>
+                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">{t.settings.ragSettings}</Typography>
+                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">{t.settings.ragSettingsDesc}</Typography>
                             </View>
                             <ChevronRight size={20} color="#9ca3af" />
                         </TouchableOpacity>
@@ -533,8 +533,8 @@ export default function SuperAssistantSettingsScreen() {
                             className="flex-row items-center justify-between p-5"
                         >
                             <View className="flex-1">
-                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级检索配置</Typography>
-                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">Rerank、查询重写、混合检索</Typography>
+                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">{t.rag.advancedSettings}</Typography>
+                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">{t.rag.advancedSettingsDesc}</Typography>
                             </View>
                             <ChevronRight size={20} color="#9ca3af" />
                         </TouchableOpacity>

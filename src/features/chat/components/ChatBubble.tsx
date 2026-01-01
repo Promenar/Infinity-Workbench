@@ -932,7 +932,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                             }}
                         />
                     )}
-                    {message.ragReferences && (message.ragReferences.length > 0 || message.ragReferencesLoading) && (
+                    {(message.ragReferencesLoading || message.ragReferences) && (
                         <RagReferencesChip
                             references={message.ragReferences || []}
                             loading={message.ragReferencesLoading}
