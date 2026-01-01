@@ -7,6 +7,8 @@ import { Pin, Trash2, ChevronRight } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
 import { AgentAvatar } from './AgentAvatar';
 import { useChatStore } from '../../store/chat-store';
+import { Colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeProvider';
 
 interface SwipeableAgentItemProps {
     item: Agent;
@@ -21,9 +23,10 @@ export const SwipeableAgentItem = ({
     onPress,
     onPin,
     onDelete,
-    isDark
 }: SwipeableAgentItemProps) => {
     const swipeableRef = React.useRef<Swipeable>(null);
+    const { isDark } = useTheme();
+    const themeColors = isDark ? Colors.dark : Colors.light;
 
     const isGenerating = useChatStore(state => {
         return state.sessions.some(s => s.agentId === item.id && !!state.activeRequests[s.id]);
@@ -84,7 +87,14 @@ export const SwipeableAgentItem = ({
         >
             <TouchableOpacity
                 activeOpacity={0.7}
-                className="flex-row items-center px-6 py-4 bg-white dark:bg-black w-full"
+                style={{
+                    backgroundColor: isDark ? '#000' : '#fff', // Keep pure black/white for list items for contrast
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 24,
+                    paddingVertical: 16,
+                    width: '100%'
+                }}
                 onPress={() => {
                     swipeableRef.current?.close();
                     onPress();
@@ -104,7 +114,7 @@ export const SwipeableAgentItem = ({
                             position: 'absolute',
                             bottom: -2,
                             right: -2,
-                            backgroundColor: '#f59e0b',
+                            backgroundColor: Colors.warning,
                             padding: 3,
                             borderRadius: 8,
                             borderWidth: 2,
@@ -118,21 +128,40 @@ export const SwipeableAgentItem = ({
                 {/* Content */}
                 <View className="flex-1 justify-center py-1">
                     <View className="flex-row justify-between items-baseline mb-1 pr-1">
-                        <Typography variant="h3" className="text-[18px] font-bold text-gray-900 dark:text-gray-100 leading-tight">
+                        <Typography variant="h3" style={{ fontSize: 18, fontWeight: 'bold', lineHeight: 22, color: themeColors.textPrimary }}>
                             {item.name}
                         </Typography>
                         {item.isPreset && (
-                            <View className="bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/30">
-                                <Typography className="text-indigo-600 dark:text-indigo-400 font-bold text-[8px] uppercase tracking-tighter">PRESET</Typography>
+                            <View style={{
+                                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EFF6FF',
+                                paddingHorizontal: 6,
+                                paddingVertical: 2,
+                                borderRadius: 6,
+                                borderWidth: 1,
+                                borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : '#E0E7FF'
+                            }}>
+                                <Typography style={{
+                                    color: Colors.primary,
+                                    fontWeight: 'bold',
+                                    fontSize: 8,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: -0.5
+                                }}>PRESET</Typography>
                             </View>
                         )}
                     </View>
-                    <Typography variant="body" className={`leading-5 text-[13px] ${isGenerating ? 'text-indigo-500 dark:text-indigo-400 font-medium italic' : 'text-gray-500'}`} numberOfLines={1}>
+                    <Typography variant="body" style={{
+                        fontSize: 13,
+                        lineHeight: 20,
+                        color: isGenerating ? Colors.primary : themeColors.textSecondary,
+                        fontWeight: isGenerating ? '500' : '400',
+                        fontStyle: isGenerating ? 'italic' : 'normal'
+                    }} numberOfLines={1}>
                         {isGenerating ? "Thinking..." : item.description}
                     </Typography>
                 </View>
 
-                <ChevronRight size={18} color="#cbd5e1" className="ml-2" />
+                <ChevronRight size={18} color={themeColors.textTertiary} style={{ marginLeft: 8 }} />
             </TouchableOpacity>
         </Swipeable>
     );
@@ -166,26 +195,26 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     deleteButton: {
-        backgroundColor: '#ef4444',
+        backgroundColor: Colors.error,
         width: 48,
         height: 48,
         borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: "#ef4444",
+        shadowColor: Colors.error,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 4.65,
         elevation: 8,
     },
     pinButton: {
-        backgroundColor: '#f59e0b',
+        backgroundColor: Colors.warning,
         width: 48,
         height: 48,
         borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: "#f59e0b",
+        shadowColor: Colors.warning,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 4.65,

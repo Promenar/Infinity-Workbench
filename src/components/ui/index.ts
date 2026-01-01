@@ -8,3 +8,4 @@ export * from './Header';
 export * from './GlassHeader';
 export * from './ConfirmDialog';
 export * from './Switch';
+export * from './LargeTitleHeader';

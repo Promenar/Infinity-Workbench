@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, ActivityIndicator, FlatList, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, ActivityIndicator, FlatList, Platform, StyleSheet } from 'react-native';
 import { Switch } from '../../components/ui';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useI18n } from '../../lib/i18n';
@@ -15,6 +15,9 @@ import { BackupManager, BackupData } from '../../lib/backup/BackupManager';
 import { WebDavClient, WebDavFile } from '../../lib/backup/WebDavClient';
 
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { SettingsSection } from './components/SettingsSection';
+import { SettingsItem } from './components/SettingsItem';
+import { Colors } from '../../theme/colors';
 
 export function BackupSettings() {
     const { isDark } = useTheme();
@@ -238,13 +241,8 @@ export function BackupSettings() {
     }
 
     return (
-        <View className="mb-6">
-            <Text className={`text-[10px] font-bold mb-3 uppercase tracking-widest ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                {t.settings.backup.backupHeader}
-            </Text>
-
-            <View className={`rounded-3xl overflow-hidden border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-gray-50 border-gray-200'}`}>
-
+        <>
+            <SettingsSection title={t.settings.backup.backupHeader}>
                 {/* Local Actions */}
                 <ConfirmDialog
                     visible={confirmDialog.visible}
@@ -255,34 +253,50 @@ export function BackupSettings() {
                     onConfirm={confirmDialog.onConfirm}
                     onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
                 />
-                <View className="p-4 border-b border-gray-100 dark:border-zinc-800">
-                    <Text className={`font-medium mb-3 ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>{t.settings.backup.localStorage}</Text>
-                    <View className="flex-row gap-3">
+                <View style={{ borderBottomWidth: 1, borderBottomColor: isDark ? Colors.dark.borderDefault : '#eee', padding: 16 }}>
+                    <Text style={{ fontWeight: '600', marginBottom: 12, color: isDark ? Colors.dark.textPrimary : '#111' }}>{t.settings.backup.localStorage}</Text>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
                         <TouchableOpacity
                             onPress={handleLocalExport}
                             disabled={loading}
-                            className={`flex-1 flex-row items-center justify-center p-3 rounded-lg ${isDark ? 'bg-zinc-800' : 'bg-gray-100'}`}
+                            style={{
+                                flex: 1,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 12,
+                                borderRadius: 12,
+                                backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
+                            }}
                         >
                             <Upload size={18} color={isDark ? '#fff' : '#000'} />
-                            <Text className={`ml-2 font-medium ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.export}</Text>
+                            <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.export}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={handleLocalImport}
                             disabled={loading}
-                            className={`flex-1 flex-row items-center justify-center p-3 rounded-lg ${isDark ? 'bg-zinc-800' : 'bg-gray-100'}`}
+                            style={{
+                                flex: 1,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 12,
+                                borderRadius: 12,
+                                backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
+                            }}
                         >
                             <Download size={18} color={isDark ? '#fff' : '#000'} />
-                            <Text className={`ml-2 font-medium ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.import}</Text>
+                            <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.import}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
 
                 {/* WebDAV Settings */}
-                <View className="p-4">
-                    <View className="flex-row items-center justify-between mb-3">
-                        <View className="flex-row items-center">
-                            <Cloud size={20} color="#6366f1" />
-                            <Text className={`ml-2 font-medium ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>{t.settings.backup.webDavCloud}</Text>
+                <View style={{ padding: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Cloud size={20} color={Colors.primary} />
+                            <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? Colors.dark.textPrimary : '#111' }}>{t.settings.backup.webDavCloud}</Text>
                         </View>
                         <Switch
                             value={webDavConfig.enabled}
@@ -295,51 +309,74 @@ export function BackupSettings() {
 
                     {webDavConfig.enabled && (
                         <View>
-                            <View className="flex-row items-center justify-between mb-3 border-b border-gray-100 dark:border-zinc-800 pb-3">
-                                <Text className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{t.settings.backup.autoBackup}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? Colors.dark.borderDefault : '#eee', paddingBottom: 12 }}>
+                                <Text style={{ fontSize: 14, color: isDark ? Colors.dark.textSecondary : '#4b5563' }}>{t.settings.backup.autoBackup}</Text>
                                 <Switch
                                     value={(webDavConfig as any).autoBackup || false}
                                     onValueChange={(v) => saveConfig({ ...webDavConfig, autoBackup: v })}
                                 />
                             </View>
 
-                            <View className="flex-row gap-3 mb-3">
+                            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
                                 <TouchableOpacity
                                     onPress={handleWebDavUpload}
                                     disabled={loading}
-                                    className={`flex-1 flex-row items-center justify-center p-3 rounded-lg ${isDark ? 'bg-zinc-800' : 'bg-gray-100'}`}
+                                    style={{
+                                        flex: 1,
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: 12,
+                                        borderRadius: 12,
+                                        backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
+                                    }}
                                 >
                                     <Upload size={18} color={isDark ? '#fff' : '#000'} />
-                                    <Text className={`ml-2 font-medium ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.backupToCloud}</Text>
+                                    <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.backupToCloud}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     onPress={handleWebDavRestore}
                                     disabled={loading}
-                                    className={`flex-1 flex-row items-center justify-center p-3 rounded-lg ${isDark ? 'bg-zinc-800' : 'bg-gray-100'}`}
+                                    style={{
+                                        flex: 1,
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: 12,
+                                        borderRadius: 12,
+                                        backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
+                                    }}
                                 >
                                     <Download size={18} color={isDark ? '#fff' : '#000'} />
-                                    <Text className={`ml-2 font-medium ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.restoreFromCloud}</Text>
+                                    <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.restoreFromCloud}</Text>
                                 </TouchableOpacity>
                             </View>
                             <TouchableOpacity
                                 onPress={() => setShowWebDavModal(true)}
-                                className={`p-3 rounded-lg border ${isDark ? 'border-zinc-700 bg-zinc-800' : 'border-gray-200 bg-gray-50'} items-center`}
+                                style={{
+                                    padding: 12,
+                                    borderRadius: 12,
+                                    borderWidth: 1,
+                                    borderColor: isDark ? Colors.dark.borderDefault : '#e5e7eb',
+                                    backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f9fafb',
+                                    alignItems: 'center'
+                                }}
                             >
-                                <Text className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{t.settings.backup.configureServer}</Text>
+                                <Text style={{ fontWeight: '600', color: isDark ? Colors.dark.textSecondary : '#4b5563' }}>{t.settings.backup.configureServer}</Text>
                             </TouchableOpacity>
                         </View>
                     )}
                 </View>
 
                 {loading && (
-                    <View className="absolute inset-0 bg-black/50 items-center justify-center z-50">
-                        <View className={`p-4 rounded-xl items-center ${isDark ? 'bg-zinc-800' : 'bg-white'}`}>
-                            <ActivityIndicator size="large" color="#6366f1" />
-                            <Text className={`mt-2 font-medium ${isDark ? 'text-white' : 'text-black'}`}>{status}</Text>
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', zIndex: 50, borderRadius: 24 }]}>
+                        <View style={{ padding: 24, borderRadius: 24, alignItems: 'center', backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#fff' }}>
+                            <ActivityIndicator size="large" color={Colors.primary} />
+                            <Text style={{ marginTop: 12, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{status}</Text>
                         </View>
                     </View>
                 )}
-            </View>
+            </SettingsSection>
 
             {/* WebDAV Configuration Modal */}
             <Modal visible={showWebDavModal} transparent animationType="slide">
@@ -349,7 +386,7 @@ export function BackupSettings() {
                         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
                         style={{ width: '100%' }}
                     >
-                        <View className={`rounded-t-3xl p-6 ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
+                        <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#fff' }}>
                             <View className="flex-row justify-between items-center mb-6">
                                 <Text className={`text-xl font-bold ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.settingsTitle}</Text>
                                 <TouchableOpacity onPress={() => setShowWebDavModal(false)}>
@@ -361,7 +398,8 @@ export function BackupSettings() {
                             <TextInput
                                 value={webDavConfig.url}
                                 onChangeText={t => setWebDavConfig(prev => ({ ...prev, url: t.trim() }))}
-                                className={`p-3 rounded-lg mb-4 border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
                                 placeholder="https://..."
                                 placeholderTextColor={isDark ? '#666' : '#999'}
                                 autoCapitalize="none"
@@ -371,7 +409,8 @@ export function BackupSettings() {
                             <TextInput
                                 value={webDavConfig.username}
                                 onChangeText={t => setWebDavConfig(prev => ({ ...prev, username: t.trim() }))}
-                                className={`p-3 rounded-lg mb-4 border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
                                 autoCapitalize="none"
                             />
 
@@ -379,7 +418,8 @@ export function BackupSettings() {
                             <TextInput
                                 value={webDavConfig.password}
                                 onChangeText={t => setWebDavConfig(prev => ({ ...prev, password: t.trim() }))}
-                                className={`p-3 rounded-lg mb-6 border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                                className={`p-3 rounded-lg mb-6 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
                                 secureTextEntry
                             />
                             <Text className={`text-xs mb-6 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -390,6 +430,7 @@ export function BackupSettings() {
                                 <TouchableOpacity
                                     onPress={handleWebDavTest}
                                     className={`flex-1 p-4 rounded-xl items-center border ${isDark ? 'border-zinc-700' : 'border-gray-300'}`}
+                                    style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
                                 >
                                     <Text className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.testConnection}</Text>
                                 </TouchableOpacity>
@@ -446,6 +487,6 @@ export function BackupSettings() {
                     </View>
                 </View>
             </Modal>
-        </View>
+        </>
     );
 }

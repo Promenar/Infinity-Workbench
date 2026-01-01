@@ -3,6 +3,7 @@ import { TouchableOpacity, ActivityIndicator, View, TouchableOpacityProps } from
 import { twMerge } from 'tailwind-merge';
 import { Typography } from './Typography';
 import * as Haptics from '../../lib/haptics';
+import { Colors } from '../../theme/colors';
 
 interface ButtonProps extends TouchableOpacityProps {
     variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger';
@@ -79,7 +80,7 @@ export function Button({
             {...props}
         >
             {loading ? (
-                <ActivityIndicator size="small" color={variant === 'primary' ? 'white' : '#6366f1'} />
+                <ActivityIndicator size="small" color={variant === 'primary' ? 'white' : Colors.primary} />
             ) : (
                 <>
                     {icon && <View className="mr-2">{icon}</View>}

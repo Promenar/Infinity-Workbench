@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, TextInput } from 'react-native';
+import { View, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
 import { Typography, Switch } from '../../../components/ui';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -8,23 +8,27 @@ import Slider from '@react-native-community/slider';
 import { Database, Zap, BookOpen, Code } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from '../../../lib/haptics';
+import { Colors } from '../../../theme/colors';
 
 // 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => (
-    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-        <View className="w-1.5 h-4 bg-indigo-500 rounded-full mr-3" />
-        <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
-            {title}
-        </Typography>
-    </View>
-);
+// 装饰性的小标题组件
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
+    const { isDark } = useTheme();
+    return (
+        <View style={{ marginTop: mt, flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingHorizontal: 4 }}>
+            <View style={{ width: 6, height: 16, borderRadius: 999, marginRight: 12, backgroundColor: Colors.primary }} />
+            <Typography style={{ fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5, color: isDark ? Colors.dark.textPrimary : Colors.light.textPrimary }}>
+                {title}
+            </Typography>
+        </View>
+    );
+};
 
 // 预设配置
 const PRESETS = {
     balanced: {
         name: '平衡',
         icon: Zap,
-        color: '#6366f1',
         config: {
             docChunkSize: 800,
             chunkOverlap: 100,
@@ -36,7 +40,6 @@ const PRESETS = {
     writing: {
         name: '写作',
         icon: BookOpen,
-        color: '#8b5cf6',
         config: {
             docChunkSize: 1200,
             chunkOverlap: 200,
@@ -48,7 +51,6 @@ const PRESETS = {
     coding: {
         name: '代码',
         icon: Code,
-        color: '#06b6d4',
         config: {
             docChunkSize: 600,
             chunkOverlap: 50,
@@ -61,6 +63,7 @@ const PRESETS = {
 
 export const GlobalRagConfigPanel: React.FC = () => {
     const { isDark } = useTheme();
+    const themeColors = isDark ? Colors.dark : Colors.light;
     const { t } = useI18n();
     const router = useRouter();
     const { globalRagConfig, updateGlobalRagConfig } = useSettingsStore();
@@ -83,7 +86,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
         <View>
             {/* 快速预设 */}
             <SectionHeader title={t.rag.quickPresets} mt={0} />
-            <View className="flex-row mb-8 gap-3">
+            <View style={{ flexDirection: 'row', marginBottom: 32, gap: 12 }}>
                 {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((key) => {
                     const preset = PRESETS[key];
                     const Icon = preset.icon;
@@ -96,10 +99,25 @@ export const GlobalRagConfigPanel: React.FC = () => {
                             key={key}
                             onPress={() => applyPreset(key)}
                             activeOpacity={0.7}
-                            className="flex-1 bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800 items-center shadow-sm"
+                            style={{
+                                flex: 1,
+                                backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#fff',
+                                borderRadius: 16,
+                                padding: 16,
+                                borderWidth: 1,
+                                borderColor: themeColors.borderDefault,
+                                alignItems: 'center',
+                                // Shadow for iOS
+                                shadowColor: '#000',
+                                shadowOffset: { width: 0, height: 1 },
+                                shadowOpacity: 0.05,
+                                shadowRadius: 2,
+                                // Elevation for Android
+                                elevation: 2,
+                            }}
                         >
-                            <Icon size={22} color={preset.color} />
-                            <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
+                            <Icon size={22} color={Colors.primary} />
+                            <Typography style={{ fontSize: 12, fontWeight: 'bold', marginTop: 8, color: themeColors.textPrimary }}>
                                 {presetName}
                             </Typography>
                         </TouchableOpacity>
@@ -119,7 +137,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">400</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {t.rag.chars.replace('{count}', (globalRagConfig.docChunkSize ?? 800).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">2000</Typography>
@@ -130,9 +148,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={400}
                         maximumValue={2000}
                         step={100}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
 
@@ -147,7 +165,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {t.rag.chars.replace('{count}', (globalRagConfig.chunkOverlap ?? 100).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">500</Typography>
@@ -158,9 +176,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={0}
                         maximumValue={500}
                         step={10}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
             </View>
@@ -177,7 +195,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">500</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {t.rag.chars.replace('{count}', (globalRagConfig.memoryChunkSize ?? 1000).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">2000</Typography>
@@ -188,9 +206,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={500}
                         maximumValue={2000}
                         step={100}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
             </View>
@@ -207,7 +225,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {t.rag.messageCount.replace('{count}', (globalRagConfig.contextWindow ?? 20).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">50</Typography>
@@ -218,9 +236,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={10}
                         maximumValue={50}
                         step={5}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
 
@@ -290,7 +308,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {t.rag.items.replace('{count}', (globalRagConfig.memoryLimit ?? 5).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
@@ -301,9 +319,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={3}
                         maximumValue={10}
                         step={1}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#e5e7eb'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
 
@@ -316,7 +334,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">50%</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {Math.round((globalRagConfig.memoryThreshold ?? 0.7) * 100)}%
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">95%</Typography>
@@ -327,9 +345,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={0.5}
                         maximumValue={0.95}
                         step={0.05}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#e5e7eb'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
 
@@ -346,7 +364,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {t.rag.items.replace('{count}', (globalRagConfig.docLimit ?? 8).toString())}
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">15</Typography>
@@ -357,9 +375,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={5}
                         maximumValue={15}
                         step={1}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#e5e7eb'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
 
@@ -372,7 +390,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     </Typography>
                     <View className="flex-row justify-between mb-2">
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">30%</Typography>
-                        <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
                             {Math.round((globalRagConfig.docThreshold ?? 0.45) * 100)}%
                         </Typography>
                         <Typography className="text-sm text-gray-600 dark:text-gray-400">80%</Typography>
@@ -383,9 +401,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
                         minimumValue={0.3}
                         maximumValue={0.8}
                         step={0.05}
-                        minimumTrackTintColor="#6366f1"
-                        maximumTrackTintColor={isDark ? '#27272a' : '#e5e7eb'}
-                        thumbTintColor="#6366f1"
+                        minimumTrackTintColor={Colors.primary}
+                        maximumTrackTintColor={themeColors.surfaceSecondary}
+                        thumbTintColor={Colors.primary}
                     />
                 </View>
             </View>
@@ -397,10 +415,20 @@ export const GlobalRagConfigPanel: React.FC = () => {
             <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={handleNavigateToDebug}
-                className="flex-row items-center justify-center py-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl mb-8 border border-indigo-100 dark:border-indigo-500/20"
+                style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingVertical: 16,
+                    backgroundColor: isDark ? 'rgba(79, 70, 229, 0.1)' : '#EFF6FF',
+                    borderRadius: 16,
+                    marginBottom: 32,
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(79, 70, 229, 0.2)' : '#DBEAFE'
+                }}
             >
-                <Database size={18} color="#6366f1" className="mr-2" />
-                <Typography className="text-indigo-600 dark:text-indigo-400 font-bold">
+                <Database size={18} color={Colors.primary} style={{ marginRight: 8 }} />
+                <Typography style={{ fontWeight: 'bold', color: Colors.primary }}>
                     {t.rag.viewVectorStats}
                 </Typography>
             </TouchableOpacity>

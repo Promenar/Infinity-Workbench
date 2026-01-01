@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { View, TouchableOpacity, Text, TextInput } from 'react-native';
-import { PageLayout, Typography } from '../../src/components/ui';
+import { PageLayout, Typography, LargeTitleHeader } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Search, Plus, ChevronRight } from 'lucide-react-native';
 import * as Haptics from '../../src/lib/haptics';
@@ -17,6 +17,7 @@ import { preventDoubleTap } from '../../src/lib/navigation-utils';
 import { SuperAssistantFAB } from '../../src/components/chat/SuperAssistantFAB';
 import { SwipeableAgentItem } from '../../src/components/chat/SwipeableAgentItem';
 import { ConfirmDialog } from '../../src/components/ui/ConfirmDialog';
+import { Colors } from '../../src/theme/colors';
 
 export default function AgentExplorerScreen() {
     const router = useRouter();
@@ -124,16 +125,10 @@ export default function AgentExplorerScreen() {
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* Fixed Title Header */}
-            <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
-                    <View>
-                        <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 32 }}>
-                            {t.chat.title}
-                        </Text>
-                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
-                            {t.chat.subtitle}
-                        </Text>
-                    </View>
+            <LargeTitleHeader
+                title={t.chat.title}
+                subtitle={t.chat.subtitle}
+                rightElement={
                     <TouchableOpacity
                         onPress={handleCreateAgent}
                         style={{
@@ -147,10 +142,10 @@ export default function AgentExplorerScreen() {
                             justifyContent: 'center'
                         }}
                     >
-                        <Plus size={24} color="#6366f1" strokeWidth={2.5} />
+                        <Plus size={24} color={Colors.primary} strokeWidth={2.5} />
                     </TouchableOpacity>
-                </View>
-            </View>
+                }
+            />
 
             <FlashList
                 data={filteredAgents}
@@ -160,7 +155,13 @@ export default function AgentExplorerScreen() {
                 // @ts-ignore
                 estimatedItemSize={90}
                 contentContainerStyle={{ paddingBottom: 160 }}
-                ItemSeparatorComponent={() => <View className="h-[1px] bg-gray-50 dark:bg-zinc-900/50 mx-6" />}
+                ItemSeparatorComponent={() => (
+                    <View style={{
+                        height: 1,
+                        backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#f9fafb', // Using lighter gray for light mode to match design
+                        marginHorizontal: 24
+                    }} />
+                )}
             />
 
             <SuperAssistantFAB

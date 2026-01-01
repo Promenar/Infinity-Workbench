@@ -4,6 +4,8 @@ import { Typography } from './Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clsx } from 'clsx';
 import { Menu } from 'lucide-react-native';
+import { Colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeProvider';
 
 interface HeaderProps {
     title: string;
@@ -18,6 +20,7 @@ interface HeaderProps {
 
 export function Header({ title, subtitle, rightAction, leftAction, showMenu, onMenuPress, onTitlePress, className }: HeaderProps) {
     const insets = useSafeAreaInsets();
+    const { isDark } = useTheme();
 
     return (
         <View
@@ -37,7 +40,7 @@ export function Header({ title, subtitle, rightAction, leftAction, showMenu, onM
                             (!showMenu && !leftAction) && "opacity-0" // Hide but keep layout space
                         )}
                     >
-                        {leftAction ? leftAction : <Menu size={24} color="#64748b" />}
+                        {leftAction ? leftAction : <Menu size={24} color={isDark ? Colors.dark.textSecondary : Colors.light.textSecondary} />}
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -65,6 +68,6 @@ export function Header({ title, subtitle, rightAction, leftAction, showMenu, onM
                     </View>
                 )}
             </View>
-        </View>
+        </View >
     );
 }

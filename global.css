@@ -3,23 +3,36 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --surface-primary: #ffffff;
-    --surface-secondary: #f8fafc; /* Slate 50 */
-    --surface-tertiary: #f1f5f9; /* Slate 100 */
-    --text-primary: #0f172a; /* Slate 900 */
-    --text-secondary: #64748b; /* Slate 500 */
-    --text-tertiary: #94a3b8; /* Slate 400 */
-    --border-default: #e2e8f0; /* Slate 200 */
-  }
+    :root {
+        --surface-primary: #ffffff;
+        --surface-secondary: #f4f4f5;
+        /* Zinc 50 */
+        --surface-tertiary: #e4e4e7;
+        /* Zinc 200 */
+        --text-primary: #09090b;
+        /* Zinc 950 */
+        --text-secondary: #71717a;
+        /* Zinc 500 */
+        --text-tertiary: #a1a1aa;
+        /* Zinc 400 */
+        --border-default: #e4e4e7;
+        /* Zinc 200 */
+    }
 
-  .dark {
-    --surface-primary: #020617; /* Slate 950 */
-    --surface-secondary: #0f172a; /* Slate 900 */
-    --surface-tertiary: #1e293b; /* Slate 800 */
-    --text-primary: #f1f5f9; /* Slate 100 */
-    --text-secondary: #94a3b8; /* Slate 400 */
-    --text-tertiary: #64748b; /* Slate 500 */
-    --border-default: #1e293b; /* Slate 800 */
-  }
+    .dark {
+        --surface-primary: #09090b;
+        /* Zinc 950 */
+        --surface-secondary: #18181b;
+        /* Zinc 900 */
+        --surface-tertiary: #27272a;
+        /* Zinc 800 */
+        --text-primary: #f4f4f5;
+        /* Zinc 100 */
+        --text-secondary: #a1a1aa;
+        /* Zinc 400 */
+        --text-tertiary: #71717a;
+        /* Zinc 500 */
+        --border-default: #27272a;
+        /* Zinc 800 */
+    }
 }
