@@ -75,8 +75,8 @@ export const ProcessingIndicatorChip: React.FC<ProcessingIndicatorChipProps> = (
             return '已完成背景归档'; // Default for 'archived' type
         }
         switch (status) {
-            case 'chunking': return '正在归档上下文...';
-            case 'summarizing': return '正在压缩长期记忆...';
+            case 'chunking': return '切片归档中...';
+            case 'summarizing': return '生成摘要...';
             case 'completed': return '已完成背景归档';
             default: return '记忆处理中...';
         }

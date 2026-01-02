@@ -63,9 +63,9 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
     const getStageLabel = (stage?: string) => {
         switch (stage) {
             case 'rewriting': return '优化查询...';
-            case 'embedding': return '向量化...';
-            case 'searching': return '检索记忆...';
-            case 'reranking': return 'Rerank精排...';
+            case 'embedding': return '语义索引...';
+            case 'searching': return '全库搜索...';
+            case 'reranking': return '相关性精排...';
             case 'done': return '检索完成';
             default: return '检索知识库...';
         }

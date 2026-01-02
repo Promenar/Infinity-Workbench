@@ -342,12 +342,26 @@ export default function ChatDetailScreen() {
                             } : undefined}
                             modelId={session?.modelId}
                             isDark={isDark}
+                            onLayout={(event) => {
+                                // 缓存消息高度，消除滚动抖动
+                                const { height } = event.nativeEvent.layout;
+                                if (height > 0) {
+                                    useChatStore.getState().updateMessageLayout(id, item.id, height);
+                                }
+                            }}
                         />
                     )}
-                    estimatedItemSize={200}
-                    removeClippedSubviews={Platform.OS === 'android'}
-                    drawDistance={2000}
+                    estimatedItemSize={400}
+                    overrideItemLayout={(layout, item) => {
+                        // 如果有缓存的高度，直接使用，实现精准布局
+                        if (item.layoutHeight) {
+                            layout.size = item.layoutHeight;
+                        }
+                    }}
+                    onEndReachedThreshold={0.5}
+                    drawDistance={2000} // Keep high buffer for smooth scrolling
                     overflowSize={500}
+                    removeClippedSubviews={Platform.OS === 'android'} // Android optimization
                     getItemType={(item: any) => item.role}
                     contentContainerStyle={{
                         paddingTop: insets.top + 70,

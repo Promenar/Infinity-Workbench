@@ -64,6 +64,7 @@ interface ChatBubbleProps {
     modelId?: string;
     sessionId: string; // ✅ 新增：会话ID用于ProcessingIndicator
     isDark?: boolean;
+    onLayout?: (event: any) => void;
 }
 
 // SVG 错误边界组件
@@ -890,6 +891,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             style={{ marginBottom: 40, width: '100%', paddingHorizontal: 20 }}
             ref={bubbleRef}
             collapsable={false}
+            onLayout={onLayout} // ✅ 传递 onLayout
         >
             {/* Header Row: Avatar & Status Chips */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
@@ -914,58 +916,65 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     />
                 </View>
 
-                <View className="flex-row items-center ml-3" style={{ gap: 8 }}>
-                    {message.reasoning && (
-                        <ReasoningBlock
-                            content={message.reasoning}
-                            isDark={isDark}
-                            loading={isGenerating && !message.content}
-                            expanded={isReasoningExpanded}
-                            t={t}
-                            onToggle={() => {
-                                const newState = !isReasoningExpanded;
-                                setReasoningExpanded(newState);
-                                if (newState) {
-                                    setSourcesExpanded(false);
-                                    setRagExpanded(false);
-                                }
-                            }}
-                        />
-                    )}
-                    {(message.ragReferencesLoading || message.ragReferences) && (
-                        <RagReferencesChip
-                            references={message.ragReferences || []}
-                            loading={message.ragReferencesLoading}
-                            progress={message.ragProgress}
-                            metadata={message.ragMetadata}
-                            isDark={isDark}
-                            expanded={isRagExpanded}
-                            onToggle={() => {
-                                const newState = !isRagExpanded;
-                                setRagExpanded(newState);
-                                if (newState) {
-                                    setReasoningExpanded(false);
-                                    setSourcesExpanded(false);
-                                }
-                            }}
-                        />
-                    )}
-                    {message.citations && message.citations.length > 0 && (
-                        <SearchSourcesBlock
-                            citations={message.citations}
-                            isDark={isDark}
-                            expanded={isSourcesExpanded}
-                            t={t}
-                            onToggle={() => {
-                                const newState = !isSourcesExpanded;
-                                setSourcesExpanded(newState);
-                                if (newState) {
-                                    setReasoningExpanded(false);
-                                    setRagExpanded(false);
-                                }
-                            }}
-                        />
-                    )}
+                <View className="flex-1 ml-3">
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 16 }}
+                        style={{ flexGrow: 0 }}
+                    >
+                        {message.reasoning && (
+                            <ReasoningBlock
+                                content={message.reasoning}
+                                isDark={isDark}
+                                loading={isGenerating && !message.content}
+                                expanded={isReasoningExpanded}
+                                t={t}
+                                onToggle={() => {
+                                    const newState = !isReasoningExpanded;
+                                    setReasoningExpanded(newState);
+                                    if (newState) {
+                                        setSourcesExpanded(false);
+                                        setRagExpanded(false);
+                                    }
+                                }}
+                            />
+                        )}
+                        {(message.ragReferencesLoading || message.ragReferences) && (
+                            <RagReferencesChip
+                                references={message.ragReferences || []}
+                                loading={message.ragReferencesLoading}
+                                progress={message.ragProgress}
+                                metadata={message.ragMetadata}
+                                isDark={isDark}
+                                expanded={isRagExpanded}
+                                onToggle={() => {
+                                    const newState = !isRagExpanded;
+                                    setRagExpanded(newState);
+                                    if (newState) {
+                                        setReasoningExpanded(false);
+                                        setSourcesExpanded(false);
+                                    }
+                                }}
+                            />
+                        )}
+                        {message.citations && message.citations.length > 0 && (
+                            <SearchSourcesBlock
+                                citations={message.citations}
+                                isDark={isDark}
+                                expanded={isSourcesExpanded}
+                                t={t}
+                                onToggle={() => {
+                                    const newState = !isSourcesExpanded;
+                                    setSourcesExpanded(newState);
+                                    if (newState) {
+                                        setReasoningExpanded(false);
+                                        setRagExpanded(false);
+                                    }
+                                }}
+                            />
+                        )}
+                    </ScrollView>
                 </View>
             </View>
 
@@ -974,7 +983,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 <Animated.View
                     entering={FadeInUp.duration(300)}
                     exiting={FadeOutUp.duration(200)}
-                    className={`pl-4 border-l-2 ml-[38px] mb-4 my-1 ${isDark ? 'border-zinc-800' : 'border-gray-100'}`}
+                    className={`pl-4 border-l-2 ml-[58px] mb-4 my-1 ${isDark ? 'border-zinc-800' : 'border-gray-100'}`}  // Adjusted margin-left
                 >
                     <Typography
                         variant="caption"

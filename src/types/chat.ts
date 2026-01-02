@@ -106,6 +106,7 @@ export interface Message {
     tokens?: TokenUsage;
     images?: GeneratedImageData[]; // 图片数据（新格式，支持缩略图）
     isArchived?: boolean; // ✅ 新增：归档状态
+    layoutHeight?: number; // ✅ 新增：缓存布局高度，优化滚动性能
 }
 
 export interface Session {

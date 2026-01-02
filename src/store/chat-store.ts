@@ -96,6 +96,7 @@ interface ChatState {
 
     updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
     setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
+    updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => void; // ✅ 新增
 }
 
 export const useChatStore = create<ChatState>()(
