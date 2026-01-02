@@ -163,29 +163,93 @@ export const useChatStore = create<ChatState>()(
             updateSessionScrollOffset: (id, offset) => set((state) => ({
                 sessions: state.sessions.map((s) => s.id === id ? { ...s, scrollOffset: offset } : s)
             })),
-            updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean, ragMetadata?: any) => set((state) => ({
-                sessions: state.sessions.map((s) => {
-                    if (s.id === sessionId) {
-                        return {
-                            ...s,
-                            messages: s.messages.map((m) =>
-                                m.id === messageId ? {
-                                    ...m,
-                                    content,
-                                    tokens: tokens || m.tokens,
-                                    reasoning: reasoning !== undefined ? reasoning : m.reasoning,
-                                    citations: citations !== undefined ? citations : m.citations,
-                                    ragReferences: ragReferences !== undefined ? ragReferences : m.ragReferences,
-                                    ragReferencesLoading: ragReferencesLoading !== undefined ? ragReferencesLoading : m.ragReferencesLoading,
-                                    ragMetadata: ragMetadata !== undefined ? ragMetadata : m.ragMetadata  // ✅ Update metadata
-                                } : m
-                            ),
-                            lastMessage: content,
-                        };
+            updateMessageContent: (sessionId: SessionId, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: { title: string; url: string; source?: string }[], ragReferences?: RagReference[], ragReferencesLoading?: boolean, ragMetadata?: any) => set((state) => {
+                const session = state.sessions.find(s => s.id === sessionId);
+                if (!session) return {};
+
+                // 计算新增的 token（用于累加）
+                const message = session.messages.find(m => m.id === messageId);
+                if (!message) return {};
+
+                const oldTokens = message.tokens || { input: 0, output: 0, total: 0 };
+                const newTokens = tokens || oldTokens;
+
+                // 🔑 防止重复累加：只有当 tokens 真正变化时才累加
+                const tokensChanged = newTokens.total !== oldTokens.total;
+
+                // 计算 delta（增量）
+                const deltaInput = newTokens.input - oldTokens.input;
+                const deltaOutput = newTokens.output - oldTokens.output;
+                const deltaTotal = newTokens.total - oldTokens.total;
+
+                // 更新 session.stats.billing（累加模式）
+                const currentBilling = session.stats?.billing || {
+                    chatInput: { count: 0, isEstimated: false },
+                    chatOutput: { count: 0, isEstimated: false },
+                    ragSystem: { count: 0, isEstimated: false },
+                    total: 0,
+                    costUSD: 0
+                };
+
+                // 🔑 关键修复：只在 token 变化且有增量时累加
+                const updatedBilling = { ...currentBilling };
+
+                if (tokensChanged && deltaTotal > 0) {
+                    if (message.role === 'assistant') {
+                        // Assistant 消息：output 增量 + 可能包含的 RAG token
+                        updatedBilling.chatOutput.count += deltaOutput;
+
+                        // RAG token 在 input 中
+                        const ragSystemDelta = deltaTotal - deltaOutput;
+
+                        // 检测是否有 RAG 参与（通过 ragMetadata 或 ragReferences）
+                        // 注意：这里使用传入的新值，而非message的旧值
+                        const hasRag = (ragMetadata !== undefined ? ragMetadata : message.ragMetadata) ||
+                            (ragReferences !== undefined ? ragReferences : message.ragReferences);
+
+                        if (hasRag && ragSystemDelta > 0) {
+                            // 有 RAG 参与
+                            updatedBilling.ragSystem.count += ragSystemDelta;
+                        } else {
+                            updatedBilling.chatInput.count += deltaInput;
+                        }
+                    } else {
+                        // User 消息：只有 input
+                        updatedBilling.chatInput.count += deltaInput;
                     }
-                    return s;
-                })
-            })),
+
+                    updatedBilling.total += deltaTotal;
+                }
+
+                return {
+                    sessions: state.sessions.map((s) => {
+                        if (s.id === sessionId) {
+                            return {
+                                ...s,
+                                messages: s.messages.map((m) =>
+                                    m.id === messageId ? {
+                                        ...m,
+                                        content,
+                                        tokens: newTokens,
+                                        reasoning: reasoning !== undefined ? reasoning : m.reasoning,
+                                        citations: citations !== undefined ? citations : m.citations,
+                                        ragReferences: ragReferences !== undefined ? ragReferences : m.ragReferences,
+                                        ragReferencesLoading: ragReferencesLoading !== undefined ? ragReferencesLoading : m.ragReferencesLoading,
+                                        ragMetadata: ragMetadata !== undefined ? ragMetadata : m.ragMetadata
+                                    } : m
+                                ),
+                                lastMessage: content,
+                                stats: {
+                                    ...s.stats,
+                                    totalTokens: updatedBilling.total,
+                                    billing: updatedBilling
+                                }
+                            };
+                        }
+                        return s;
+                    })
+                };
+            }),
 
             updateSessionInferenceParams: (id, params) => set((state) => ({
                 sessions: state.sessions.map((s) => s.id === id ? { ...s, inferenceParams: { ...s.inferenceParams, ...params } } : s)
@@ -243,18 +307,26 @@ export const useChatStore = create<ChatState>()(
                 }));
             },
 
-            setMessagesArchived: (sessionId, messageIds) => set((state) => ({
-                sessions: state.sessions.map((s) => {
-                    if (s.id === sessionId) {
-                        const idSet = new Set(messageIds);
-                        return {
-                            ...s,
-                            messages: s.messages.map(m => idSet.has(m.id) ? { ...m, isArchived: true } : m)
-                        };
-                    }
-                    return s;
-                })
-            })),
+            setMessagesArchived: (sessionId, messageIds) => set((state) => {
+                const session = state.sessions.find(s => s.id === sessionId);
+                if (!session) return {};
+
+                const idSet = new Set(messageIds);
+
+                return {
+                    sessions: state.sessions.map((s) => {
+                        if (s.id === sessionId) {
+                            return {
+                                ...s,
+                                messages: s.messages.map(m => idSet.has(m.id) ? { ...m, isArchived: true } : m),
+                                // 🔑 关键修复：保留 stats.billing，防止被覆盖
+                                stats: s.stats  // 保持原有统计数据不变
+                            };
+                        }
+                        return s;
+                    })
+                };
+            }),
 
             abortGeneration: (sessionId) => {
                 const client = get().activeRequests[sessionId];
@@ -581,7 +653,7 @@ export const useChatStore = create<ChatState>()(
                                 input: inputTokens,
                                 output: completionTokens,
                                 total: inputTokens + completionTokens
-                            }, accumulatedReasoning, accumulatedCitations);
+                            }, accumulatedReasoning, accumulatedCitations, ragReferences);  // ✅ 传入 ragReferences 确保 RAG 检测
                         }, 100); // 每 100ms 最多更新一次，减少渲染压力
                     };
 
@@ -612,10 +684,13 @@ export const useChatStore = create<ChatState>()(
                         finalCompletionTokens = accumulatedUsage.output;
                     }
 
+                    // 🔑 关键修复: 累加 RAG 检索成本（Query Rewrite + Embedding）
+                    const ragSystemTokens = ragUsage?.ragSystem || 0;
+
                     get().updateMessageContent(sessionId, assistantMsgId, accumulatedContent, {
-                        input: finalInputTokens,
+                        input: finalInputTokens + ragSystemTokens,  // ✅ 将 RAG 成本计入输入
                         output: finalCompletionTokens,
-                        total: finalInputTokens + finalCompletionTokens
+                        total: finalInputTokens + finalCompletionTokens + ragSystemTokens
                     }, accumulatedReasoning, accumulatedCitations, ragReferences);
 
                     // 🔑 关键修复1: 归档本轮对话到向量记忆

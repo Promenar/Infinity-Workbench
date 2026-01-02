@@ -439,8 +439,27 @@ export class VertexAiClient implements LlmClient {
             const region = this.location || 'us-central1';
             const host = region === 'global' ? 'aiplatform.googleapis.com' : `${region}-aiplatform.googleapis.com`;
 
-            // Use v1beta1
-            const endpoint = `https://${host}/v1beta1/projects/${projectId}/locations/${region}/publishers/google/models/${this.model}:generateContent`;
+            // 检测是否为 Embedding 模型
+            const isEmbeddingModel = this.model.toLowerCase().includes('embedding') || 
+                                     this.model.toLowerCase().includes('embed');
+
+            let endpoint: string;
+            let body: any;
+
+            if (isEmbeddingModel) {
+                // Embedding 模型使用 :predict 端点
+                endpoint = `https://${host}/v1/projects/${projectId}/locations/${region}/publishers/google/models/${this.model}:predict`;
+                body = {
+                    instances: [{ content: "test" }]
+                };
+            } else {
+                // 聊天模型使用 :generateContent 端点
+                endpoint = `https://${host}/v1beta1/projects/${projectId}/locations/${region}/publishers/google/models/${this.model}:generateContent`;
+                body = {
+                    contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+                    generationConfig: { maxOutputTokens: 1 }
+                };
+            }
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -448,10 +467,7 @@ export class VertexAiClient implements LlmClient {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({
-                    contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
-                    generationConfig: { maxOutputTokens: 1 }
-                }),
+                body: JSON.stringify(body),
             });
 
             const latency = Date.now() - start;

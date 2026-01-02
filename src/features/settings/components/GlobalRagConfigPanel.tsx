@@ -1,14 +1,17 @@
-import React from 'react';
-import { View, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, TouchableOpacity, TextInput, StyleSheet, Alert } from 'react-native';
 import { Typography, Switch } from '../../../components/ui';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useI18n } from '../../../lib/i18n';
 import Slider from '@react-native-community/slider';
-import { Database, Zap, BookOpen, Code } from 'lucide-react-native';
+import { Database, Zap, BookOpen, Code, Trash2 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from '../../../lib/haptics';
 import { Colors } from '../../../theme/colors';
+import { VectorStore } from '../../../lib/rag/vector-store';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+
 
 // 装饰性的小标题组件
 // 装饰性的小标题组件
@@ -67,6 +70,8 @@ export const GlobalRagConfigPanel: React.FC = () => {
     const { t } = useI18n();
     const router = useRouter();
     const { globalRagConfig, updateGlobalRagConfig } = useSettingsStore();
+    const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
 
     const handleNavigateToDebug = () => {
         setTimeout(() => {
@@ -80,6 +85,36 @@ export const GlobalRagConfigPanel: React.FC = () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             updateGlobalRagConfig(PRESETS[presetKey].config);
         }, 10);
+    };
+
+    const handleClearAllVectors = async () => {
+        try {
+            setIsClearing(true);
+            const vectorStore = new VectorStore();
+            await vectorStore.clearAllVectors();
+
+            setTimeout(() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                Alert.alert(
+                    '✅ 清空成功',
+                    '所有向量数据已被清除',
+                    [{ text: '确定' }]
+                );
+            }, 10);
+        } catch (error) {
+            console.error('Failed to clear vectors:', error);
+            setTimeout(() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                Alert.alert(
+                    '❌ 清空失败',
+                    '清除向量数据时出错，请重试',
+                    [{ text: '确定' }]
+                );
+            }, 10);
+        } finally {
+            setIsClearing(false);
+            setShowClearConfirm(false);
+        }
     };
 
     return (
@@ -432,6 +467,46 @@ export const GlobalRagConfigPanel: React.FC = () => {
                     {t.rag.viewVectorStats}
                 </Typography>
             </TouchableOpacity>
+
+            {/* 危险操作：清空向量库 */}
+            <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                    setTimeout(() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        setShowClearConfirm(true);
+                    }, 10);
+                }}
+                disabled={isClearing}
+                style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingVertical: 16,
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2',
+                    borderRadius: 16,
+                    marginBottom: 32,
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FECACA',
+                    opacity: isClearing ? 0.5 : 1
+                }}
+            >
+                <Trash2 size={18} color="#EF4444" style={{ marginRight: 8 }} />
+                <Typography style={{ fontWeight: 'bold', color: '#EF4444' }}>
+                    {isClearing ? '清空中...' : '⚠️ 清空所有向量数据'}
+                </Typography>
+            </TouchableOpacity>
+
+            {/* 确认对话框 */}
+            <ConfirmDialog
+                visible={showClearConfirm}
+                title="⚠️ 危险操作"
+                message="确定要清空所有向量数据吗？此操作不可恢复！"
+                confirmText="确认清空"
+                cancelText="取消"
+                onConfirm={handleClearAllVectors}
+                onCancel={() => setShowClearConfirm(false)}
+            />
         </View>
     );
 };

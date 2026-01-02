@@ -1,11 +1,12 @@
 import { generateId } from '../utils/id-generator';
-import { db } from '../db';
 import { VectorizationTask } from '../../types/rag';
-import { RecursiveCharacterTextSplitter } from './text-splitter';
-import { EmbeddingClient } from './embedding';
-import { vectorStore } from './vector-store';
 import { useApiStore } from '../../store/api-store';
+import { useRagStore } from '../../store/rag-store';
 import { useSettingsStore } from '../../store/settings-store';
+import { TrigramTextSplitter } from './text-splitter';
+import { EmbeddingClient } from './embedding';
+import { db } from '../db';  // ✅ 正确路径
+import { vectorStore } from './vector-store';
 
 /**
  * 后台向量化任务队列管理器
@@ -83,34 +84,54 @@ export class VectorizationQueue {
             const settings = useSettingsStore.getState();
             const ragConfig = settings.globalRagConfig;
 
-            const splitter = new RecursiveCharacterTextSplitter({
+            // ✅ 使用 Trigram 分词器（中文友好）
+            const splitter = new TrigramTextSplitter({
                 chunkSize: ragConfig.docChunkSize,
                 chunkOverlap: ragConfig.chunkOverlap
             });
             const chunks = splitter.splitText(content);
 
-            // 获取embedding provider
+            //获取embedding provider
             task.progress = 20;
             this.notifyStateChange();
 
             const apiStore = useApiStore.getState();
-            let provider = apiStore.providers.find(p => p.enabled && p.type === 'openai' && p.models.some(m => m.enabled && m.type === 'embedding'));
+            const preferredModelId = settings.defaultEmbeddingModel;
 
-            if (!provider) {
-                provider = apiStore.providers.find(p => p.enabled && (
-                    p.type === 'siliconflow' ||
-                    p.type === 'deepseek' ||
-                    p.type === 'moonshot' ||
-                    p.type === 'zhipu'
-                ) && p.models.some(m => m.enabled && m.type === 'embedding'));
+            let provider: any;
+            let modelId: string | undefined;
+
+            // 优先级1: 用户显式选择的 Embedding 模型
+            if (preferredModelId) {
+                provider = apiStore.providers.find(p =>
+                    p.enabled && p.models.some((m: any) =>
+                        (m.uuid === preferredModelId || m.id === preferredModelId) && m.enabled
+                    )
+                );
+
+                if (provider) {
+                    const model = provider.models.find((m: any) =>
+                        m.uuid === preferredModelId || m.id === preferredModelId
+                    );
+                    modelId = model?.id;
+                }
             }
 
-            if (!provider) {
+            // 优先级2: Fallback 到第一个可用的 Embedding 模型（无 Provider 偏好）
+            if (!provider || !modelId) {
+                provider = apiStore.providers.find(p =>
+                    p.enabled && p.models.some((m: any) => m.enabled && m.type === 'embedding')
+                );
+
+                if (provider) {
+                    const embeddingModel = provider.models.find((m: any) => m.enabled && m.type === 'embedding');
+                    modelId = embeddingModel?.id;
+                }
+            }
+
+            if (!provider || !modelId) {
                 throw new Error('No embedding provider available');
             }
-
-            const embeddingModelConfig = provider.models.find(m => m.enabled && m.type === 'embedding');
-            const modelId = embeddingModelConfig?.id;
 
             // 向量化（批量处理以显示进度）
             const embeddingClient = new EmbeddingClient(provider, modelId);
@@ -119,8 +140,8 @@ export class VectorizationQueue {
 
             for (let i = 0; i < chunks.length; i += batchSize) {
                 const batch = chunks.slice(i, i + batchSize);
-                const batchEmbeddings = await embeddingClient.embedDocuments(batch);
-                allEmbeddings.push(...batchEmbeddings);
+                const result = await embeddingClient.embedDocuments(batch);
+                allEmbeddings.push(...result.embeddings);  // ✅ 访问 embeddings 属性
 
                 task.progress = 20 + Math.floor((i / chunks.length) * 60);
                 this.notifyStateChange();
@@ -152,7 +173,7 @@ export class VectorizationQueue {
         } catch (error) {
             console.error('[VectorizationQueue] Failed:', error);
             task.status = 'failed';
-            task.error = (error as Error).message;
+            task.error = this.getFriendlyErrorMessage(error as Error);
 
             // 标记文档为失败
             await db.execute(
@@ -177,6 +198,58 @@ export class VectorizationQueue {
             const currentTask = this.queue.length > 0 ? this.queue[0] : null;
             this.onStateChange([...this.queue], currentTask);
         }
+    }
+
+    /**
+     * 将技术错误转换为用户友好的中文提示
+     */
+    private getFriendlyErrorMessage(error: Error): string {
+        const msg = error.message.toLowerCase();
+
+        // API 密钥问题
+        if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('401')) {
+            return '❌ API 密钥无效或已过期，请检查服务商配置';
+        }
+
+        // 配额/余额问题
+        if (msg.includes('quota') || msg.includes('rate limit') || msg.includes('insufficient') || msg.includes('429')) {
+            return '⚠️ API 配额已用尽或请求过于频繁，请稍后重试';
+        }
+
+        // 网络问题
+        if (msg.includes('network') || msg.includes('timeout') || msg.includes('enotfound') || msg.includes('fetch')) {
+            return '🌐 网络连接失败，请检查网络或代理设置';
+        }
+
+        // Embedding 模型问题
+        if (msg.includes('no embedding') || msg.includes('embedding not')) {
+            return '🔧 未配置 Embedding 模型，请在设置中添加并启用';
+        }
+
+        // 文件格式问题
+        if (msg.includes('parse') || msg.includes('invalid format')) {
+            return '📄 文件格式不支持或已损坏，请尝试其他文件';
+        }
+
+        // 权限问题
+        if (msg.includes('permission') || msg.includes('forbidden') || msg.includes('403')) {
+            return '🔒 权限不足，请检查 API 权限配置';
+        }
+
+        // Google 特定错误
+        if (msg.includes('google') && msg.includes('not yet')) {
+            return '⏳ Google Embedding 初始化中，请稍后重试';
+        }
+
+        // 默认：保留原始错误但添加友好前缀
+        return `⚙️ 向量化失败: ${error.message.substring(0, 100)}`;
+    }
+
+    /**
+     * 获取当前队列长度
+     */
+    getQueueLength(): number {
+        return this.queue.length;
     }
 
     /**

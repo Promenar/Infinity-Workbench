@@ -171,7 +171,11 @@ export const useRagStore = create<RagState>((set, get) => {
 
         deleteDocument: async (id) => {
             try {
+                // 删除文档记录
                 await db.execute('DELETE FROM documents WHERE id = ?', [id]);
+                // 删除对应的向量数据
+                await db.execute('DELETE FROM vectors WHERE doc_id = ?', [id]);
+
                 set(state => ({
                     documents: state.documents.filter(d => d.id !== id)
                 }));

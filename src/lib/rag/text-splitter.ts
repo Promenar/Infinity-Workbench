@@ -49,3 +49,6 @@ export class RecursiveCharacterTextSplitter {
         return text.split(separator).filter(Boolean);
     }
 }
+
+// 导出 Trigram 分词器（中文友好）
+export { TrigramTextSplitter } from './trigram-splitter';

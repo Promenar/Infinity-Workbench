@@ -92,6 +92,10 @@ export default function ChatDetailScreen() {
     const listOpacity = useSharedValue(0);
     const isReadyToDisplay = useSharedValue(false);
 
+    // 🔑 用户打断检测
+    const userScrolledAway = useSharedValue(false);
+    const lastReasoningState = useRef<boolean>(false);
+
     // Loading State
     const [isInitialLoad, setIsInitialLoad] = useState(true);
 
@@ -125,15 +129,41 @@ export default function ChatDetailScreen() {
             const totalHeight = event.contentSize.height;
 
             // Standard List: Bottom is when offset + visible >= total
+            const wasAtBottom = isAtBottom.value;
             isAtBottom.value = totalHeight - (offset + visibleHeight) < 50;
+
+            // 🔑 检测用户主动滚离底部（打断自动追踪）
+            if (wasAtBottom && !isAtBottom.value) {
+                userScrolledAway.value = true;
+            }
+        },
+        onBeginDrag: () => {
+            'worklet';
+            // 用户开始拖动时，如果不在底部，标记为打断
+            if (!isAtBottom.value) {
+                userScrolledAway.value = true;
+            }
         }
     });
 
     const handleContentSizeChange = () => {
-        // Auto-scroll to bottom directly if we tracked we are at bottom
-        // Or if it's a new message
-        if (messages.length > lastMessageCount.current && isAtBottom.value) {
-            listRef.current?.scrollToEnd({ animated: true });
+        // 检测是否有新消息
+        if (messages.length > lastMessageCount.current) {
+            const lastMessage = messages[messages.length - 1];
+            const isNewUserMessage = lastMessage?.role === 'user';
+
+            if (isNewUserMessage) {
+                // 🔑 规则3: 用户发送新消息，强制滚动到底部
+                userScrolledAway.value = false;  // 重置打断状态
+                isAtBottom.value = true;
+                listRef.current?.scrollToEnd({ animated: true });
+            } else if (!userScrolledAway.value) {
+                // 🔑 规则4: AI生成中，如果用户未打断，才自动追踪
+                if (isAtBottom.value || loading) {
+                    listRef.current?.scrollToEnd({ animated: true });
+                }
+            }
+            // 如果 userScrolledAway=true，则不自动滚动，由用户控制
         }
         lastMessageCount.current = messages.length;
     };
@@ -156,6 +186,31 @@ export default function ChatDetailScreen() {
             }, 50);
         }
     }, [isListReady]);
+
+    // 🔑 规则5: Reasoning追踪 + 生成结束重置打断状态
+    React.useEffect(() => {
+        if (loading && messages.length > 0) {
+            const lastMessage = messages[messages.length - 1];
+            const hasReasoning = !!lastMessage?.reasoning;
+
+            // Reasoning刚结束，切换到正文
+            if (lastReasoningState.current && !hasReasoning) {
+                if (!userScrolledAway.value && isAtBottom.value) {
+                    // 折叠reasoning并滚动到正文
+                    listRef.current?.scrollToEnd({ animated: true });
+                }
+            }
+
+            lastReasoningState.current = hasReasoning;
+        } else if (!loading) {
+            // 🔑 规则4: 生成结束，重置打断状态（为下一轮做准备）
+            // 注意：不强制滚动到底部，尊重用户位置
+            if (isAtBottom.value) {
+                userScrolledAway.value = false;
+            }
+            lastReasoningState.current = false;
+        }
+    }, [loading, messages]);
 
     // 持久化滚动位置
     const saveScrollPosition = (offset: number) => {

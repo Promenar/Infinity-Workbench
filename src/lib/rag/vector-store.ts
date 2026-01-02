@@ -162,6 +162,15 @@ export class VectorStore {
     }
 
     /**
+     * Clear ALL vectors in the database
+     * Use with EXTREME CAUTION - this deletes ALL vector data
+     */
+    async clearAllVectors() {
+        await db.execute('DELETE FROM vectors');
+    }
+
+
+    /**
      * Delete all vector memories that belong to sessions NOT in the active list.
      * This cleans up "ghost" data from previously deleted sessions.
      */

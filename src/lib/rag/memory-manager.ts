@@ -2,7 +2,7 @@ import { Session, Message, RagReference, RagConfiguration } from '../../types/ch
 import { vectorStore, SearchResult } from './vector-store';
 import { EmbeddingClient } from './embedding';
 import { useApiStore } from '../../store/api-store';
-import { RecursiveCharacterTextSplitter } from './text-splitter';
+import { RecursiveCharacterTextSplitter, TrigramTextSplitter } from './text-splitter';
 import { db } from '../db';
 import { useSettingsStore } from '../../store/settings-store';
 import { estimateTokens } from '../../features/chat/utils/token-counter';
@@ -93,7 +93,9 @@ export class MemoryManager {
         if (shouldRewrite) {
             onProgress?.('rewriting', 5);
             try {
-                // Determine model for rewriting (default to summary model or specific rewrite model)
+                // 🔑 模型选择优先级：
+                // 1. RAG配置的 queryRewriteModel（如需单独指定）
+                // 2. 全局的 defaultSummaryModel（Query Rewrite和Summary共用快速模型）
                 const modelId = effectiveRagConfig.queryRewriteModel || settings.defaultSummaryModel;
                 const provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.uuid === modelId || m.id === modelId));
 
@@ -116,17 +118,30 @@ export class MemoryManager {
                     const { QueryRewriter } = await import('./query-rewriter');
                     const rewriter = new QueryRewriter(llmClient, effectiveRagConfig.queryRewriteStrategy as any);
 
-                    const { variants, usage } = await rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
+                    // 🔑 添加超时控制：15秒内必须完成，否则降级为原始查询
+                    const timeoutPromise = new Promise<{ variants: string[]; usage?: any }>((_, reject) => {
+                        setTimeout(() => reject(new Error('Query rewrite timeout')), 15000);
+                    });
 
-                    // Accumulate usage for billing
-                    if (usage) {
-                        rewriteTokenUsage += usage.total;
-                    }
+                    const rewritePromise = rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
 
-                    if (variants.length > 0) {
-                        queryVariants = variants;
-                        // Limit total variants to avoid explosion
-                        if (queryVariants.length > 5) queryVariants = queryVariants.slice(0, 5);
+                    try {
+                        const { variants, usage } = await Promise.race([rewritePromise, timeoutPromise]);
+
+                        // Accumulate usage for billing
+                        if (usage) {
+                            rewriteTokenUsage += usage.total;
+                        }
+
+                        if (variants.length > 0) {
+                            queryVariants = variants;
+                            // Limit total variants to avoid explosion
+                            if (queryVariants.length > 5) queryVariants = queryVariants.slice(0, 5);
+                        }
+                    } catch (timeoutError) {
+                        console.warn('[MemoryManager] Query rewrite timeout or error, using original query:', timeoutError);
+                        // Fallback: use original query
+                        queryVariants = [query];
                     }
                 }
             } catch (e) {
@@ -139,13 +154,42 @@ export class MemoryManager {
             // 2. 获取查询向量 (Get Embedding)
             onProgress?.('embedding', 10);
 
-            // Generic search for any provider with an enabled embedding model
-            let provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.enabled && m.type === 'embedding'));
+            // 🔑 关键修复: 读取用户配置的 defaultEmbeddingModel
+            const settings = useSettingsStore.getState();
+            const preferredModelId = settings.defaultEmbeddingModel;
 
-            if (!provider) return [];
+            let provider: any;
+            let modelId: string | undefined;
 
-            const embeddingModelConfig = provider.models.find(m => m.enabled && m.type === 'embedding');
-            const modelId = embeddingModelConfig?.id || (provider.type === 'openai' ? 'text-embedding-3-small' : undefined);
+            // 优先级1: 用户显式选择的 Embedding 模型
+            if (preferredModelId) {
+                provider = apiStore.providers.find(p =>
+                    p.enabled && p.models.some((m: any) =>
+                        (m.uuid === preferredModelId || m.id === preferredModelId) && m.enabled
+                    )
+                );
+
+                if (provider) {
+                    const model = provider.models.find((m: any) =>
+                        m.uuid === preferredModelId || m.id === preferredModelId
+                    );
+                    modelId = model?.id;
+                }
+            }
+
+            // 优先级2: Fallback 到第一个可用的 Embedding 模型
+            if (!provider || !modelId) {
+                provider = apiStore.providers.find(p =>
+                    p.enabled && p.models.some((m: any) => m.enabled && m.type === 'embedding')
+                );
+
+                if (provider) {
+                    const embeddingModel = provider.models.find((m: any) => m.enabled && m.type === 'embedding');
+                    modelId = embeddingModel?.id;
+                }
+            }
+
+            if (!provider || !modelId) return [];
 
             let queryEmbedding: number[] | null = null;
             try {
@@ -420,15 +464,41 @@ export class MemoryManager {
         aiContent = sanitize(aiContent);
 
         const apiStore = useApiStore.getState();
+        const settings = useSettingsStore.getState();
+        const preferredModelId = settings.defaultEmbeddingModel;
 
-        // Generic search for any provider with an enabled embedding model
-        let provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.enabled && m.type === 'embedding'));
+        let provider: any;
+        let modelId: string | undefined;
 
-        if (!provider) return;
+        // 优先级1: 用户显式选择的 Embedding 模型
+        if (preferredModelId) {
+            provider = apiStore.providers.find(p =>
+                p.enabled && p.models.some((m: any) =>
+                    (m.uuid === preferredModelId || m.id === preferredModelId) && m.enabled
+                )
+            );
 
-        // Find the active embedding model
-        const embeddingModelConfig = provider.models.find(m => m.enabled && m.type === 'embedding');
-        const modelId = embeddingModelConfig?.id || (provider.type === 'openai' ? 'text-embedding-3-small' : undefined);
+            if (provider) {
+                const model = provider.models.find((m: any) =>
+                    m.uuid === preferredModelId || m.id === preferredModelId
+                );
+                modelId = model?.id;
+            }
+        }
+
+        // 优先级2: Fallback 到第一个可用的 Embedding 模型
+        if (!provider || !modelId) {
+            provider = apiStore.providers.find(p =>
+                p.enabled && p.models.some((m: any) => m.enabled && m.type === 'embedding')
+            );
+
+            if (provider) {
+                const embeddingModel = provider.models.find((m: any) => m.enabled && m.type === 'embedding');
+                modelId = embeddingModel?.id;
+            }
+        }
+
+        if (!provider || !modelId) return;
 
         try {
             // Ensure session exists in SQLite for FK constraint
@@ -451,8 +521,9 @@ export class MemoryManager {
             const agent = session ? agentStore.getAgent(session.agentId) : undefined;
             const ragConfig = agent?.ragConfig || settings.globalRagConfig;
 
-            const splitter = new RecursiveCharacterTextSplitter({
-                chunkSize: ragConfig.memoryChunkSize,
+            // ✅ 使用 Trigram 分词器（中文友好）
+            const splitter = new TrigramTextSplitter({
+                chunkSize: ragConfig.memoryChunkSize, // Use memoryChunkSize for turn archiving
                 chunkOverlap: ragConfig.chunkOverlap
             });
             const chunks = splitter.splitText(turnText);
