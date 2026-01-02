@@ -908,70 +908,97 @@ export const useChatStore = create<ChatState>()(
                 }
             },
 
-            generateSessionTitle: async (sessionId) => {
-                const session = get().getSession(sessionId);
-                if (!session || session.messages.length === 0) return undefined;
+            const session = get().sessions.find(s => s.id === sessionId);
+            if(!session) return;
+            const messages = session.messages.map(m => m.id === messageId ? { ...m, isArchived: true } : m);
+            get().updateSession(sessionId, { messages });
+        },
 
-                const agentStore = useAgentStore.getState();
-                const apiStore = useApiStore.getState();
-                const agent = agentStore.getAgent(session.agentId);
-                const modelId = session.modelId || agent?.defaultModel;
+            updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => {
+                const session = get().sessions.find(s => s.id === sessionId);
+                if (!session) return;
 
-                if (!modelId) return undefined;
+                const message = session.messages.find(m => m.id === messageId);
+                // 只有当高度未设置，或高度差异超过 2px 时才更新，避免微小抖动导致的频繁写入
+                if (message && (!message.layoutHeight || Math.abs(message.layoutHeight - height) > 2)) {
+                    // 使用 split 更新以避免全量刷新
+                    const messages = session.messages.map(m =>
+                        m.id === messageId ? { ...m, layoutHeight: height } : m
+                    );
 
-                let provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.uuid === modelId));
-                let modelConfig = provider?.models.find(m => m.uuid === modelId);
-
-                if (!provider) {
-                    provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.id === modelId));
-                    modelConfig = provider?.models.find(m => m.id === modelId);
+                    // 直接复用 Zustand 的 set
+                    set(state => ({
+                        sessions: state.sessions.map(s =>
+                            s.id === sessionId ? { ...s, messages } : s
+                        )
+                    }));
                 }
+            },
 
-                if (!provider || !modelConfig) return undefined;
+        generateSessionTitle: async (sessionId) => {
+            const session = get().getSession(sessionId);
+            if (!session || session.messages.length === 0) return undefined;
 
-                try {
-                    const extendedConfig = {
-                        ...modelConfig,
-                        provider: provider.type,
-                        apiKey: provider.apiKey,
-                        baseUrl: provider.baseUrl,
-                        vertexProject: provider.vertexProject,
-                        vertexLocation: provider.vertexLocation,
-                        vertexKeyJson: provider.vertexKeyJson
-                    };
+            const agentStore = useAgentStore.getState();
+            const apiStore = useApiStore.getState();
+            const agent = agentStore.getAgent(session.agentId);
+            const modelId = session.modelId || agent?.defaultModel;
 
-                    const client = createLlmClient(extendedConfig as any);
+            if (!modelId) return undefined;
 
-                    // 提取最近的 4 条消息作为上下文
-                    const recentMessages = session.messages.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
-                    const prompt = `Based on the conversation content, summarize a very concise title (less than 6 Chinese characters). DO NOT include quotation marks or phrases like "Title: ". Output the title directly.\n\nConversation content:\n${recentMessages}`;
+            let provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.uuid === modelId));
+            let modelConfig = provider?.models.find(m => m.uuid === modelId);
 
-                    let generatedTitle = '';
-                    await new Promise<void>((resolve, reject) => {
-                        client.streamChat(
-                            [{ role: 'user', content: prompt }],
-                            (chunk) => {
-                                if (chunk.content) generatedTitle += chunk.content;
-                            },
-                            (err) => { reject(err); }
-                        ).then(resolve).catch(reject);
-                    });
-
-                    const title = generatedTitle.trim().replace(/^["']|["']$/g, '');
-
-                    if (title) {
-                        get().updateSessionTitle(sessionId, title);
-                        return title;
-                    }
-                } catch (error) {
-                    console.error('Failed to generate title:', error);
-                }
-                return undefined;
+            if (!provider) {
+                provider = apiStore.providers.find(p => p.enabled && p.models.some(m => m.id === modelId));
+                modelConfig = provider?.models.find(m => m.id === modelId);
             }
+
+            if (!provider || !modelConfig) return undefined;
+
+            try {
+                const extendedConfig = {
+                    ...modelConfig,
+                    provider: provider.type,
+                    apiKey: provider.apiKey,
+                    baseUrl: provider.baseUrl,
+                    vertexProject: provider.vertexProject,
+                    vertexLocation: provider.vertexLocation,
+                    vertexKeyJson: provider.vertexKeyJson
+                };
+
+                const client = createLlmClient(extendedConfig as any);
+
+                // 提取最近的 4 条消息作为上下文
+                const recentMessages = session.messages.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
+                const prompt = `Based on the conversation content, summarize a very concise title (less than 6 Chinese characters). DO NOT include quotation marks or phrases like "Title: ". Output the title directly.\n\nConversation content:\n${recentMessages}`;
+
+                let generatedTitle = '';
+                await new Promise<void>((resolve, reject) => {
+                    client.streamChat(
+                        [{ role: 'user', content: prompt }],
+                        (chunk) => {
+                            if (chunk.content) generatedTitle += chunk.content;
+                        },
+                        (err) => { reject(err); }
+                    ).then(resolve).catch(reject);
+                });
+
+                const title = generatedTitle.trim().replace(/^["']|["']$/g, '');
+
+                if (title) {
+                    get().updateSessionTitle(sessionId, title);
+                    return title;
+                }
+            } catch (error) {
+                console.error('Failed to generate title:', error);
+            }
+            return undefined;
+        }
         }),
-        {
-            name: 'chat-storage',
-            storage: createJSONStorage(() => AsyncStorage),
+{
+    name: 'chat-storage',
+        storage: createJSONStorage(() => AsyncStorage),
             partialize: (state) => ({ sessions: state.sessions }), // Don't persist activeRequests
         }
     )
