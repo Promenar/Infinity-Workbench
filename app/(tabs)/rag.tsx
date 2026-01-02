@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { PageLayout, Typography, useToast, ConfirmDialog } from '../../src/components/ui';
 import { Search, X, FolderInput, Folder } from 'lucide-react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
@@ -12,16 +12,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRagStore } from '../../src/store/rag-store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { ControlBar } from '../../src/components/rag/ControlBar';
-import { FolderTree } from '../../src/components/rag/FolderTree';
+import { Breadcrumbs } from '../../src/components/rag/Breadcrumbs';
+import { FolderItem } from '../../src/components/rag/FolderItem';
 import { CompactDocItem } from '../../src/components/rag/CompactDocItem';
 import { ScrollView } from 'react-native-gesture-handler';
+import { DragDropContentView } from 'expo-drag-drop-content-view';
+import { PdfExtractor, PdfExtractorRef } from '../../src/components/rag/PdfExtractor';
+import { RagStatusIndicator } from '../../src/components/rag/RagStatusIndicator';
 
 export default function RagScreen() {
     const router = useRouter();
+    const navigation = useNavigation();
     const { showToast } = useToast();
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const { t } = useI18n();
+    const pdfExtractorRef = React.useRef<PdfExtractorRef>(null);
 
     // RagStore
     const {
@@ -40,12 +46,44 @@ export default function RagScreen() {
         moveDocument,
         expandedFolders,
         toggleFolder,
-        moveFolder
+        moveFolder,
+        setSelectedFolder,
+        selectedFolder
     } = useRagStore();
+
+    // 当前路径逻辑
+    const currentFolderId = selectedFolder;
+
+    // 导航处理
+    const handleNavigate = useCallback((folderId: string | null) => {
+        setSearchQuery(''); // Clear search on nav
+        setSelectedFolder(folderId);
+    }, [setSelectedFolder]);
 
     // 搜索状态
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+    // 搜索过滤
+    const filteredDocuments = useMemo(() => {
+        if (!searchQuery.trim()) return documents;
+        const query = searchQuery.toLowerCase();
+        return documents.filter(doc =>
+            doc.title.toLowerCase().includes(query)
+        );
+    }, [documents, searchQuery]);
+
+    // 获取当前视图内容
+    const currentViewContent = useMemo(() => {
+        if (searchQuery) return { folders: [], docs: filteredDocuments };
+
+        return {
+            folders: folders.filter(f => f.parentId === (currentFolderId || undefined) || (currentFolderId === null && !f.parentId)),
+            docs: documents.filter(d => d.folderId === (currentFolderId || undefined) || (currentFolderId === null && !d.folderId))
+        };
+    }, [folders, documents, currentFolderId, searchQuery, filteredDocuments]);
+
+
 
     // 文件夹Modal状态
     const [showFolderModal, setShowFolderModal] = useState(false);
@@ -73,58 +111,156 @@ export default function RagScreen() {
         isDestructive: false
     });
 
+    // 多选模式状态
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+
+    // 切换文档选择
+    const handleToggleDocSelection = useCallback((docId: string) => {
+
+        setSelectedDocIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(docId)) {
+                newSet.delete(docId);
+            } else {
+                newSet.add(docId);
+            }
+            return newSet;
+        });
+    }, []);
+
+    // 退出多选模式
+    const exitSelectionMode = useCallback(() => {
+        setIsSelectionMode(false);
+        setSelectedDocIds(new Set());
+    }, []);
+
+    // 批量删除
+    const handleBatchDelete = useCallback(() => {
+        const count = selectedDocIds.size;
+        if (count === 0) return;
+
+        setConfirmState({
+            visible: true,
+            title: '批量删除',
+            message: `确定要删除选中的 ${count} 个文档吗? 此操作不可撤销。`,
+            isDestructive: true,
+            onConfirm: async () => {
+                try {
+                    const { deleteBatch } = useRagStore.getState();
+                    await deleteBatch(Array.from(selectedDocIds));
+                    showToast(`已删除 ${count} 个文档`, 'success');
+                    exitSelectionMode();
+                    setConfirmState(prev => ({ ...prev, visible: false }));
+                } catch (e) {
+                    showToast('批量删除失败', 'error');
+                }
+            }
+        });
+    }, [selectedDocIds, showToast, exitSelectionMode]);
+
+    // 批量重新向量化
+    const handleBatchVectorize = useCallback(async () => {
+        const count = selectedDocIds.size;
+        if (count === 0) return;
+
+        try {
+            const { vectorizeBatch } = useRagStore.getState();
+            await vectorizeBatch(Array.from(selectedDocIds));
+            showToast(`已将 ${count} 个文档加入向量化队列`, 'success');
+            exitSelectionMode();
+        } catch (e) {
+            showToast('批量操作失败', 'error');
+        }
+    }, [selectedDocIds, showToast, exitSelectionMode]);
+
     useEffect(() => {
         loadDocuments();
         loadFolders();
     }, []);
 
-    // 搜索过滤
-    const filteredDocuments = useMemo(() => {
-        if (!searchQuery.trim()) return documents;
-        const query = searchQuery.toLowerCase();
-        return documents.filter(doc =>
-            doc.title.toLowerCase().includes(query)
-        );
-    }, [documents, searchQuery]);
+    // 动态控制 TabBar 显示/隐藏
+    useEffect(() => {
+        navigation.setOptions({
+            tabBarStyle: {
+                display: isSelectionMode ? 'none' : 'flex',
+                // 复用 _layout.tsx 中的样式定义
+                backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                borderTopColor: isDark ? '#1e1e1e' : '#f1f1f1',
+                elevation: 0,
+                shadowOpacity: 0,
+                borderTopWidth: 0,
+                position: 'absolute',
+                bottom: 0,
+                height: 65,
+                paddingBottom: 12,
+                paddingTop: 4,
+            }
+        });
+    }, [isSelectionMode, navigation, isDark]);
 
-    // 文件导入
+
+
+    // 文件导入 (Document Picker)
     const handleFileImport = useCallback(async () => {
         try {
             const result = await DocumentPicker.getDocumentAsync({
-                type: ['text/plain', 'application/pdf', 'application/json', 'text/markdown'],
-                copyToCacheDirectory: true
+                type: ['text/plain', 'text/markdown', 'application/json', 'application/pdf'],
+                copyToCacheDirectory: true,
+                multiple: true // 启用多选
             });
 
-            if (result.canceled) return;
+            if (result.canceled || !result.assets) return;
 
-            const file = result.assets[0];
+            showToast(`准备导入 ${result.assets.length} 个文件...`, 'info');
 
-            if (file.size && file.size > 5 * 1024 * 1024) {
-                showToast('文件过大 (最大 5MB)', 'error');
-                return;
-            }
+            const { processBatchWithProgress } = await import('../../src/lib/queue-utils');
+            const { readFileContent, readFileAsBase64 } = await import('../../src/lib/file-utils');
 
-            let content = '';
-            if (file.mimeType === 'application/pdf') {
-                showToast('PDF 解析暂未实现', 'error');
-                return;
+            const processor = async (file: any) => {
+                let content = '';
+                let fileName = file.name;
+                let mimeType = file.mimeType;
+
+                // PDF 处理
+                if (mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
+                    if (!pdfExtractorRef.current) throw new Error('PDF Engine not ready');
+
+                    // 读取为 Base64
+                    const base64 = await readFileAsBase64(file.uri);
+                    // 调用 WebView 提取
+                    content = await pdfExtractorRef.current.extractText(base64);
+                    // 标记源为 PDF (可选：可以在 addDocument 中增加 metadata，这里暂时存为 text type 但标题保留 pdf)
+                } else {
+                    // 普通文本
+                    content = await readFileContent(file.uri);
+                }
+
+                if (!content.trim()) {
+                    throw new Error(`Empty content: ${fileName}`);
+                }
+
+                await addDocument(fileName, content, content.length, 'text', currentFolderId ?? undefined);
+            };
+
+            const resultStats = await processBatchWithProgress(
+                result.assets,
+                processor,
+                undefined,
+                1 // Batch size 1 to ensure sequential PDF processing
+            );
+
+            if (resultStats.failed > 0) {
+                showToast(`导入完成: ${resultStats.success} 成功, ${resultStats.failed} 失败`, 'warning');
             } else {
-                content = await FileSystem.readAsStringAsync(file.uri);
+                showToast(`成功导入 ${resultStats.success} 个文件`, 'success');
             }
-
-            if (!content.trim()) {
-                showToast('文件为空', 'error');
-                return;
-            }
-
-            await addDocument(file.name, content, file.size || content.length, 'text');
-            showToast('文档已加入队列！', 'success');
 
         } catch (e) {
             console.error(e);
             showToast('导入失败: ' + (e as Error).message, 'error');
         }
-    }, [addDocument, showToast]);
+    }, [addDocument, showToast, currentFolderId]);
 
     // 删除文档
     const handleDeleteDocument = useCallback((id: string, title: string) => {
@@ -227,27 +363,7 @@ export default function RagScreen() {
         }
     }, [movingDocId, movingFolderId, moveDocument, moveFolder, showToast]);
 
-    // 批量向量化
-    const handleBatchVectorize = useCallback(() => {
-        const unprocessed = documents.filter(d => d.vectorized === 0 || d.vectorized === -1);
-        if (unprocessed.length === 0) {
-            showToast('没有需要处理的文档', 'info');
-            return;
-        }
 
-        setConfirmState({
-            visible: true,
-            title: '批量向量化',
-            message: `确定要开始对 ${unprocessed.length} 个文档进行向量化处理吗？`,
-            onConfirm: () => {
-                unprocessed.forEach(doc => {
-                    vectorizeDocument(doc.id);
-                });
-                showToast(`已加入 ${unprocessed.length} 个任务`, 'success');
-                setConfirmState(prev => ({ ...prev, visible: false }));
-            }
-        });
-    }, [documents, vectorizeDocument, showToast]);
 
     // 渲染标题栏
     const renderHeader = () => (
@@ -294,79 +410,231 @@ export default function RagScreen() {
         </View>
     );
 
+
+    // 拖拽处理
+    const handleDrop = useCallback(async (event: any) => {
+        const assets = event.assets;
+        if (!assets || assets.length === 0) return;
+
+        showToast(`开始导入 ${assets.length} 个文件...`, 'info');
+
+        try {
+            // 动态导入工具函数
+            const { processBatchWithProgress } = await import('../../src/lib/queue-utils');
+            const { readFileContent, readFileAsBase64 } = await import('../../src/lib/file-utils');
+
+            const processor = async (asset: any) => {
+                // 跳过图片
+                if (asset.type === 'image' || asset.mimeType?.startsWith('image/')) {
+                    throw new Error(`Skipping image: ${asset.fileName}`);
+                }
+
+                let content = '';
+                const fileName = asset.fileName || asset.uri.split('/').pop() || 'unknown';
+
+                // PDF 检查
+                if (asset.mimeType === 'application/pdf' || fileName?.toLowerCase().endsWith('.pdf')) {
+                    if (!pdfExtractorRef.current) throw new Error('PDF Engine not ready');
+
+                    const base64 = await readFileAsBase64(asset.uri);
+                    content = await pdfExtractorRef.current.extractText(base64);
+                } else {
+                    // 普通文本
+                    content = await readFileContent(asset.uri);
+                }
+
+                if (!content.trim()) {
+                    throw new Error(`Empty content: ${fileName}`);
+                }
+
+                await addDocument(fileName, content, content.length, 'text', currentFolderId ?? undefined);
+            };
+
+            const result = await processBatchWithProgress(
+                assets,
+                processor,
+                (completed, total) => {
+                    // 进度回调 (可选)
+                },
+                1, // Batch size 1 确保 PDF 顺序处理
+                50 // Delay ms
+            );
+
+            if (result.failed > 0) {
+                if (result.success === 0) {
+                    showToast(`导入失败 (${result.failed} 个文件出错)`, 'error');
+                } else {
+                    showToast(`导入完成: ${result.success} 成功, ${result.failed} 失败`, 'warning');
+                }
+            } else {
+                showToast(`成功导入 ${result.success} 个文件`, 'success');
+            }
+
+        } catch (e) {
+            console.error('Drag drop batch import failed:', e);
+            showToast('批量导入发生错误: ' + (e as Error).message, 'error');
+        }
+    }, [addDocument, showToast, currentFolderId]);
+
     return (
         <PageLayout safeArea={false} className="bg-white dark:bg-black">
-            <Stack.Screen options={{ headerShown: false }} />
+            {/* 隐藏的 PDF 提取器 */}
+            <PdfExtractor ref={pdfExtractorRef} />
 
-            {/* 标题 */}
-            <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
-                    <View>
-                        <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 38 }}>
-                            {t.library.title}
-                        </Text>
-                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
-                            知识库管理
+            {/* RAG 状态指示器 */}
+            <RagStatusIndicator />
+
+            <DragDropContentView
+                style={{ flex: 1 }}
+                onDrop={handleDrop}
+            >
+                <View style={{ flex: 1 }}>
+                    {/* 标题 */}
+                    <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
+                            <View>
+                                <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 38 }}>
+                                    {t.library.title}
+                                </Text>
+                                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, lineHeight: 11 }}>
+                                    知识库管理
+                                </Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={handleFileImport}
+                                style={{
+                                    width: 48,
+                                    height: 48,
+                                    backgroundColor: isDark ? '#18181b' : '#eef2ff',
+                                    borderWidth: 1,
+                                    borderColor: isDark ? '#27272a' : '#e0e7ff',
+                                    borderRadius: 16,
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                <FolderInput size={24} color="#6366f1" strokeWidth={2.5} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    {renderHeader()}
+
+                    {/* 面包屑导航 (非搜索模式显示) */}
+                    {!searchQuery && (
+                        <Breadcrumbs
+                            currentFolderId={currentFolderId}
+                            allFolders={folders}
+                            onNavigate={handleNavigate}
+                        />
+                    )}
+
+                    {/* 内容列表 */}
+                    <ScrollView
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{ paddingBottom: 100 }}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        {/* 文件夹 (搜索模式隐藏) */}
+                        {!searchQuery && currentViewContent.folders.map(folder => (
+                            <View key={folder.id} className="px-6 mb-2">
+                                <FolderItem
+                                    id={folder.id}
+                                    name={folder.name}
+                                    childCount={folder.childCount}
+                                    isExpanded={false}
+                                    level={0}
+                                    onToggle={() => handleNavigate(folder.id)}
+                                    onPress={() => handleNavigate(folder.id)}
+                                    onLongPress={() => { }}
+                                    onDelete={() => handleDeleteFolder(folder.id, folder.name)}
+                                    onRename={() => handleRenameFolder(folder.id, folder.name)}
+                                    onMove={() => handleStartMoveFolder(folder.id)}
+                                />
+                            </View>
+                        ))}
+
+                        {/* 文档 */}
+                        {currentViewContent.docs.map(doc => (
+                            <CompactDocItem
+                                key={doc.id}
+                                id={doc.id}
+                                title={doc.title}
+                                vectorized={doc.vectorized}
+                                vectorCount={doc.vectorCount}
+                                fileSize={doc.fileSize}
+                                onPress={() => {
+                                    if (isSelectionMode) {
+                                        handleToggleDocSelection(doc.id);
+                                    }
+                                }}
+                                onLongPress={() => {
+                                    if (!isSelectionMode) {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        setIsSelectionMode(true);
+                                        handleToggleDocSelection(doc.id);
+                                    }
+                                }}
+                                onDelete={() => handleDeleteDocument(doc.id, doc.title)}
+                                onVectorize={() => vectorizeDocument(doc.id)}
+                                onMove={() => handleStartMoveDoc(doc.id)}
+                                isSelectionMode={isSelectionMode}
+                                isSelected={selectedDocIds.has(doc.id)}
+                            />
+                        ))}
+
+                        {/* 空状态提示 */}
+                        {!searchQuery && currentViewContent.folders.length === 0 && currentViewContent.docs.length === 0 && (
+                            <View className="items-center justify-center py-20 opacity-50">
+                                <Typography className="text-gray-400 font-medium">此文件夹为空</Typography>
+                            </View>
+                        )}
+                    </ScrollView>
+                </View>
+            </DragDropContentView>
+
+            {/* 批量操作工具栏 */}
+            {isSelectionMode && (
+                <View
+                    style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: insets.bottom + 16, paddingTop: 16 }}
+                    className="bg-white dark:bg-zinc-900 border-t border-gray-100 dark:border-zinc-800 shadow-xl px-6 flex-row justify-between items-center"
+                >
+                    <View className="flex-row items-center gap-4">
+                        <TouchableOpacity onPress={exitSelectionMode} className="bg-gray-100 dark:bg-zinc-800 p-3 rounded-full">
+                            <X size={20} color="#94a3b8" />
+                        </TouchableOpacity>
+                        <Text className="text-lg font-bold text-gray-900 dark:text-white">
+                            已选 {selectedDocIds.size} 项
                         </Text>
                     </View>
-                    <TouchableOpacity
-                        onPress={handleFileImport}
-                        style={{
-                            width: 48,
-                            height: 48,
-                            backgroundColor: isDark ? '#18181b' : '#eef2ff',
-                            borderWidth: 1,
-                            borderColor: isDark ? '#27272a' : '#e0e7ff',
-                            borderRadius: 16,
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        <FolderInput size={24} color="#6366f1" strokeWidth={2.5} />
-                    </TouchableOpacity>
+
+                    <View className="flex-row gap-3">
+                        {/* Re-Vectorize */}
+                        <TouchableOpacity
+                            onPress={handleBatchVectorize}
+                            disabled={selectedDocIds.size === 0}
+                            className={`flex-row items-center px-4 py-3 rounded-xl gap-2 ${selectedDocIds.size > 0 ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'bg-gray-50 dark:bg-zinc-800 opacity-50'}`}
+                        >
+                            <ActivityIndicator size="small" color="#6366f1" style={{ display: 'none' }} />
+                            {/* Just reusing an icon or text. Let's use text for clarity */}
+                            <Text className={`font-bold ${selectedDocIds.size > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
+                                重向量化
+                            </Text>
+                        </TouchableOpacity>
+
+                        {/* Delete */}
+                        <TouchableOpacity
+                            onPress={handleBatchDelete}
+                            disabled={selectedDocIds.size === 0}
+                            className={`flex-row items-center px-4 py-3 rounded-xl gap-2 ${selectedDocIds.size > 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-gray-50 dark:bg-zinc-800 opacity-50'}`}
+                        >
+                            <Text className={`font-bold ${selectedDocIds.size > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
+                                删除
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </View>
-
-            {/* 文档/文件夹列表 */}
-            <ScrollView
-                contentContainerStyle={{ paddingBottom: 100 }}
-                showsVerticalScrollIndicator={false}
-            >
-                {renderHeader()}
-
-                {searchQuery ? (
-                    filteredDocuments.map(doc => (
-                        <CompactDocItem
-                            key={doc.id}
-                            id={doc.id}
-                            title={doc.title}
-                            vectorized={doc.vectorized}
-                            vectorCount={doc.vectorCount}
-                            fileSize={doc.fileSize}
-                            onPress={() => { }}
-                            onLongPress={() => { }}
-                            onDelete={() => handleDeleteDocument(doc.id, doc.title)}
-                            onVectorize={() => vectorizeDocument(doc.id)}
-                            onMove={() => handleStartMoveDoc(doc.id)}
-                        />
-                    ))
-                ) : (
-                    <FolderTree
-                        key={`folders-${folders.length}`}
-                        folders={folders}
-                        documents={documents}
-                        expandedFolders={expandedFolders}
-                        onToggleFolder={toggleFolder}
-                        onSelectFolder={(id) => console.log('Selected folder:', id)}
-                        onDeleteDocument={handleDeleteDocument}
-                        onVectorizeDocument={vectorizeDocument}
-                        onDeleteFolder={handleDeleteFolder}
-                        onRenameFolder={handleRenameFolder}
-                        onMoveDocument={handleStartMoveDoc}
-                        onMoveFolder={handleStartMoveFolder}
-                    />
-                )}
-            </ScrollView>
+            )}
 
             {/* 新建文件夹Modal */}
             <Modal transparent visible={showFolderModal} animationType="fade">

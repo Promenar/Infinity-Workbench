@@ -60,7 +60,7 @@ export class VectorizationQueue {
 
         this.isProcessing = true;
         const task = this.queue[0];
-        task.status = 'processing';
+        task.status = 'chunking'; // Start with chunking or reader
         this.notifyStateChange();
 
         try {
@@ -77,6 +77,8 @@ export class VectorizationQueue {
             const content = docResult.rows[0].content as string;
 
             // 文本分割
+            // 文本分割
+            task.status = 'chunking';
             task.progress = 10;
             this.notifyStateChange();
 
@@ -92,6 +94,7 @@ export class VectorizationQueue {
             const chunks = splitter.splitText(content);
 
             //获取embedding provider
+            task.status = 'vectorizing';
             task.progress = 20;
             this.notifyStateChange();
 
@@ -148,6 +151,7 @@ export class VectorizationQueue {
             }
 
             // 存储向量
+            task.status = 'saving';
             task.progress = 85;
             this.notifyStateChange();
 

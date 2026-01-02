@@ -65,6 +65,9 @@ interface RagState {
         }
     };
     updateProcessingState: (state: { sessionId?: string; status: 'idle' | 'chunking' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error'; startTime?: number; summary?: string; chunks?: string[] }, messageId?: string) => void;
+
+    // 统计信息
+    getVectorStats: () => { totalDocs: number; totalVectors: number; totalSize: number };
 }
 
 export const useRagStore = create<RagState>((set, get) => {
@@ -414,7 +417,9 @@ export const useRagStore = create<RagState>((set, get) => {
 
         deleteBatch: async (docIds) => {
             try {
+                // Prepare transaction queries would be better, but loop is safer for now with current db adapter
                 for (const id of docIds) {
+                    await db.execute('DELETE FROM vectors WHERE doc_id = ?', [id]);
                     await db.execute('DELETE FROM documents WHERE id = ?', [id]);
                 }
 
@@ -496,6 +501,14 @@ export const useRagStore = create<RagState>((set, get) => {
 
                 return newState;
             });
+        },
+
+        getVectorStats: () => {
+            const docs = get().documents;
+            const totalDocs = docs.length;
+            const totalVectors = docs.reduce((acc, doc) => acc + (doc.vectorCount || 0), 0);
+            const totalSize = docs.reduce((acc, doc) => acc + (doc.fileSize || 0), 0);
+            return { totalDocs, totalVectors, totalSize };
         }
     };
 });

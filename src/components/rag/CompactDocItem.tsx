@@ -18,6 +18,7 @@ interface CompactDocItemProps {
     onVectorize?: () => void;
     onMove?: () => void;
     isSelected?: boolean;
+    isSelectionMode?: boolean;
 }
 
 export const CompactDocItem = memo<CompactDocItemProps>(({
@@ -31,7 +32,8 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
     onDelete,
     onVectorize,
     onMove,
-    isSelected = false
+    isSelected = false,
+    isSelectionMode = false
 }) => {
     const { isDark } = useTheme();
 
@@ -42,6 +44,14 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
     };
 
     const getStatusIcon = () => {
+        if (isSelectionMode) {
+            return isSelected ? (
+                <CheckCircle size={20} color="#6366f1" fill={isDark ? "#312e81" : "#e0e7ff"} />
+            ) : (
+                <Circle size={20} color="#94a3b8" />
+            );
+        }
+
         switch (vectorized) {
             case 2: // 已完成
                 return <CheckCircle size={18} color="#10b981" />;
@@ -132,17 +142,19 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
                     </Typography>
                 </View>
 
-                {/* 状态指示器 */}
+                {/* 状态指示器 / Checkbox */}
                 <View className="w-6 h-6 items-center justify-center mr-2">
                     {getStatusIcon()}
                 </View>
 
-                {/* 操作菜单 */}
-                <ContextMenu items={menuItems as any}>
-                    <View className="w-6 h-6 items-center justify-center">
-                        <MoreVertical size={16} color="#94a3b8" />
-                    </View>
-                </ContextMenu>
+                {/* 操作菜单 - 仅在非选择模式下显示 */}
+                {!isSelectionMode && (
+                    <ContextMenu items={menuItems as any}>
+                        <View className="w-6 h-6 items-center justify-center">
+                            <MoreVertical size={16} color="#94a3b8" />
+                        </View>
+                    </ContextMenu>
+                )}
             </TouchableOpacity>
         </Animated.View>
     );

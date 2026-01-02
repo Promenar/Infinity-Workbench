@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, TouchableOpacity, TextInput, StyleSheet, Alert } from 'react-native';
 import { Typography, Switch } from '../../../components/ui';
 import { useSettingsStore } from '../../../store/settings-store';
+import { useRagStore } from '../../../store/rag-store';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useI18n } from '../../../lib/i18n';
 import Slider from '@react-native-community/slider';
@@ -70,6 +71,8 @@ export const GlobalRagConfigPanel: React.FC = () => {
     const { t } = useI18n();
     const router = useRouter();
     const { globalRagConfig, updateGlobalRagConfig } = useSettingsStore();
+    const { getVectorStats } = useRagStore();
+    const vectorStats = getVectorStats();
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [isClearing, setIsClearing] = useState(false);
 
@@ -443,30 +446,65 @@ export const GlobalRagConfigPanel: React.FC = () => {
                 </View>
             </View>
 
-            {/* 开发者选项 */}
+            {/* 统计信息看板 */}
             <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-8 mb-3">
-                {t.rag.developerOptions}
+                {t.rag.viewVectorStats}
             </Typography>
-            <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={handleNavigateToDebug}
-                style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingVertical: 16,
-                    backgroundColor: isDark ? 'rgba(79, 70, 229, 0.1)' : '#EFF6FF',
-                    borderRadius: 16,
-                    marginBottom: 32,
-                    borderWidth: 1,
-                    borderColor: isDark ? 'rgba(79, 70, 229, 0.2)' : '#DBEAFE'
-                }}
-            >
-                <Database size={18} color={Colors.primary} style={{ marginRight: 8 }} />
-                <Typography style={{ fontWeight: 'bold', color: Colors.primary }}>
-                    {t.rag.viewVectorStats}
-                </Typography>
-            </TouchableOpacity>
+            <View className="bg-white dark:bg-zinc-900 rounded-[24px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+                <View className="flex-row justify-between items-center mb-6">
+                    <View className="flex-row items-center gap-3">
+                        <View className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/20 items-center justify-center">
+                            <Database size={20} color="#6366f1" />
+                        </View>
+                        <View>
+                            <Typography className="text-sm font-bold text-gray-900 dark:text-white">
+                                向量库状态
+                            </Typography>
+                            <Typography className="text-[10px] text-gray-500 font-medium">
+                                Local Vector Store
+                            </Typography>
+                        </View>
+                    </View>
+                    <TouchableOpacity onPress={handleNavigateToDebug}>
+                        <Typography className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                            详细调试 &gt;
+                        </Typography>
+                    </TouchableOpacity>
+                </View>
+
+                {/* 3列数据网格 */}
+                <View className="flex-row gap-4">
+                    {/* 文档数 */}
+                    <View className="flex-1 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl p-4 items-center">
+                        <Typography className="text-2xl font-black text-gray-900 dark:text-white mb-1">
+                            {vectorStats.totalDocs}
+                        </Typography>
+                        <Typography className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            文档总数
+                        </Typography>
+                    </View>
+
+                    {/* 向量数 */}
+                    <View className="flex-1 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl p-4 items-center">
+                        <Typography className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mb-1">
+                            {vectorStats.totalVectors}
+                        </Typography>
+                        <Typography className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            向量片段
+                        </Typography>
+                    </View>
+
+                    {/* 存储占用 */}
+                    <View className="flex-1 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl p-4 items-center">
+                        <Typography className="text-2xl font-black text-gray-900 dark:text-white mb-1">
+                            {(vectorStats.totalSize / 1024 / 1024).toFixed(1)}
+                        </Typography>
+                        <Typography className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            MB 占用
+                        </Typography>
+                    </View>
+                </View>
+            </View>
 
             {/* 危险操作：清空向量库 */}
             <TouchableOpacity

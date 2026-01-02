@@ -26,7 +26,7 @@ export interface VectorizationTask {
     id: string;
     docId: string;
     docTitle: string;
-    status: 'pending' | 'processing' | 'completed' | 'failed';
+    status: 'pending' | 'reader' | 'chunking' | 'vectorizing' | 'saving' | 'completed' | 'failed';
     progress: number;  // 0-100
     error?: string;
     createdAt: number;

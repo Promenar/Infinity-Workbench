@@ -40,7 +40,8 @@
           "cameraPermission": "The app accesses your camera to let you take assistant avatars."
         }
       ],
-      "./plugins/withCustomApkName"
+      "./plugins/withCustomApkName",
+      "./plugins/withAndroidDebugConfig"
     ]
   }
 }

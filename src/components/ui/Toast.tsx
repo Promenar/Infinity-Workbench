@@ -2,10 +2,10 @@ import React, { createContext, useContext, useState, useRef, useCallback } from 
 import { View, SafeAreaView } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp, SlideInDown, FadeInUp } from 'react-native-reanimated';
 import { Typography } from './Typography';
-import { Check, AlertCircle, Info } from 'lucide-react-native';
+import { Check, AlertCircle, Info, AlertTriangle } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 interface ToastContextType {
     showToast: (message: string, type?: ToastType) => void;
@@ -29,6 +29,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else if (type === 'error') {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        } else if (type === 'warning') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         } else {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
@@ -53,12 +55,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                             ${toast.type === 'success' ? 'bg-indigo-600' : ''}
                             ${toast.type === 'error' ? 'bg-red-600' : ''}
                             ${toast.type === 'info' ? 'bg-zinc-900' : ''}
+                            ${toast.type === 'warning' ? 'bg-amber-500' : ''}
                         `}
                     >
                         <View className="mr-3 bg-white/20 p-1 rounded-full">
                             {toast.type === 'success' && <Check size={14} color="white" strokeWidth={4} />}
                             {toast.type === 'error' && <AlertCircle size={14} color="white" strokeWidth={4} />}
                             {toast.type === 'info' && <Info size={14} color="white" strokeWidth={4} />}
+                            {toast.type === 'warning' && <AlertTriangle size={14} color="white" strokeWidth={4} />}
                         </View>
 
                         <Typography className="text-white font-black text-[15px] tracking-tight">
