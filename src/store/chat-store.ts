@@ -458,18 +458,6 @@ export const useChatStore = create<ChatState>()(
 
                     if (options?.webSearch && !isNativeSearch) {
                         try {
-                            let apiKey = apiStore.googleSearchConfig?.apiKey;
-                            let cx = apiStore.googleSearchConfig?.cx;
-
-                            get().updateMessageContent(sessionId, assistantMsgId, 'Searching the web...', undefined, undefined, undefined);
-
-                            const searchResult = await performWebSearch(content, apiKey, cx);
-                            searchContext = searchResult.context;
-                            initialCitations = searchResult.sources.map((s: any) => ({ title: s.title, url: s.url, source: s.source }));
-
-
-                            // Pre-fill citations so UI shows them immediately
-                            accumulatedCitations = initialCitations;
                             get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, initialCitations);
                         } catch (err) {
                             console.error('Client-side search failed', err);

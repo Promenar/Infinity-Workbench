@@ -129,20 +129,28 @@ export default function ChatDetailScreen() {
             const totalHeight = event.contentSize.height;
 
             // Standard List: Bottom is when offset + visible >= total
-            const wasAtBottom = isAtBottom.value;
-            isAtBottom.value = totalHeight - (offset + visibleHeight) < 50;
+            const isBottom = totalHeight - (offset + visibleHeight) < 50;
+            isAtBottom.value = isBottom;
 
-            // 🔑 检测用户主动滚离底部（打断自动追踪）
-            if (wasAtBottom && !isAtBottom.value) {
-                userScrolledAway.value = true;
+            // 🔑 自动恢复追踪：如果用户手动滚回到底部，恢复自动追踪
+            if (isBottom) {
+                userScrolledAway.value = false;
             }
+
+            // ❌ 移除 onScroll 中的打断检测
+            // 之前的逻辑会导致：当内容快速增长时（流式输出），contentSize变大但scroll还没到底，
+            // 导致 isAtBottom 暂时为 false，从而误判为用户打断，停止了自动滚动。
+            // 现在完全依靠 onBeginDrag 来判断用户主动打断。
         },
         onBeginDrag: () => {
             'worklet';
-            // 用户开始拖动时，如果不在底部，标记为打断
-            if (!isAtBottom.value) {
-                userScrolledAway.value = true;
-            }
+            // 用户开始拖动时，标记为打断
+            userScrolledAway.value = true;
+        },
+        onMomentumBegin: () => {
+            'worklet';
+            // 惯性滑动开始时，也标记为打断
+            userScrolledAway.value = true;
         }
     });
 
@@ -153,17 +161,20 @@ export default function ChatDetailScreen() {
             const isNewUserMessage = lastMessage?.role === 'user';
 
             if (isNewUserMessage) {
-                // 🔑 规则3: 用户发送新消息，强制滚动到底部
-                userScrolledAway.value = false;  // 重置打断状态
+                // 用户发送新消息，强制滚动到底部
+                userScrolledAway.value = false;
                 isAtBottom.value = true;
                 listRef.current?.scrollToEnd({ animated: true });
             } else if (!userScrolledAway.value) {
-                // 🔑 规则4: AI生成中，如果用户未打断，才自动追踪
+                // 🔑 AI生成的第一帧：如果用户之前就在底部（未打断），则开始追踪
                 if (isAtBottom.value || loading) {
                     listRef.current?.scrollToEnd({ animated: true });
                 }
             }
-            // 如果 userScrolledAway=true，则不自动滚动，由用户控制
+        } else if (loading && !userScrolledAway.value) {
+            // 🔑 内容持续更新：只要没打断，就强制追踪
+            // 不再检查 isAtBottom.value，因为流式输出时它可能因为渲染延迟而暂时为 false
+            listRef.current?.scrollToEnd({ animated: true });
         }
         lastMessageCount.current = messages.length;
     };
@@ -189,20 +200,30 @@ export default function ChatDetailScreen() {
 
     // 🔑 规则5: Reasoning追踪 + 生成结束重置打断状态
     React.useEffect(() => {
-        if (loading && messages.length > 0) {
-            const lastMessage = messages[messages.length - 1];
-            const hasReasoning = !!lastMessage?.reasoning;
+        if (loading) {
+            // 🤖 AI开始生成/正在生成
 
-            // Reasoning刚结束，切换到正文
-            if (lastReasoningState.current && !hasReasoning) {
-                if (!userScrolledAway.value && isAtBottom.value) {
-                    // 折叠reasoning并滚动到正文
-                    listRef.current?.scrollToEnd({ animated: true });
-                }
+            // 🆕 如果是刚开始生成（或者恢复生成），且当前在底部，强制重置打断状态
+            // 这解决了"开始流式输出后没有自动追踪"的问题
+            if (isAtBottom.value) {
+                userScrolledAway.value = false;
             }
 
-            lastReasoningState.current = hasReasoning;
-        } else if (!loading) {
+            if (messages.length > 0) {
+                const lastMessage = messages[messages.length - 1];
+                const hasReasoning = !!lastMessage?.reasoning;
+
+                // Reasoning刚结束，切换到正文
+                if (lastReasoningState.current && !hasReasoning) {
+                    if (!userScrolledAway.value) {
+                        // 折叠reasoning并滚动到正文
+                        listRef.current?.scrollToEnd({ animated: true });
+                    }
+                }
+                lastReasoningState.current = hasReasoning;
+            }
+        } else {
+            // 🏁 生成结束
             // 🔑 规则4: 生成结束，重置打断状态（为下一轮做准备）
             // 注意：不强制滚动到底部，尊重用户位置
             if (isAtBottom.value) {
@@ -210,7 +231,19 @@ export default function ChatDetailScreen() {
             }
             lastReasoningState.current = false;
         }
-    }, [loading, messages]);
+    }, [loading, messages, isListReady]);
+
+    // 🔑 流式输出追踪：监听消息内容变化
+    React.useEffect(() => {
+        if (loading && messages.length > 0 && !userScrolledAway.value) {
+            // 正在生成中，且用户未打断，持续追踪内容变化
+            // 不再检查 isAtBottom.value，原因同上
+            const timer = setTimeout(() => {
+                listRef.current?.scrollToEnd({ animated: true });
+            }, 50);
+            return () => clearTimeout(timer);
+        }
+    }, [loading, messages, userScrolledAway]);
 
     // 持久化滚动位置
     const saveScrollPosition = (offset: number) => {
@@ -312,18 +345,21 @@ export default function ChatDetailScreen() {
                         />
                     )}
                     estimatedItemSize={200}
-                    removeClippedSubviews={Platform.OS === 'android'} // Now safe with unique keys in ChatBubble
-                    drawDistance={500}
+                    removeClippedSubviews={Platform.OS === 'android'}
+                    drawDistance={2000}
+                    overflowSize={500}
                     getItemType={(item: any) => item.role}
                     contentContainerStyle={{
-                        paddingTop: insets.top + 70, // Standard: Top padding
-                        paddingBottom: insets.bottom + 100, // Standard: Bottom padding
+                        paddingTop: insets.top + 70,
+                        paddingBottom: insets.bottom + 100,
                     }}
                     onLayout={() => setIsListReady(true)}
                     onContentSizeChange={handleContentSizeChange}
                     onScroll={onScroll}
                     onMomentumScrollEnd={handleScrollEnd}
                     onScrollEndDrag={handleScrollEnd}
+                    overScrollMode="never"
+                    decelerationRate="normal"
                     scrollEventThrottle={16}
                 />
 
@@ -358,7 +394,15 @@ export default function ChatDetailScreen() {
                 }}
             >
                 <ChatInput
-                    onSendMessage={sendMessage}
+                    onSendMessage={(content, options) => {
+                        // 🔑 规则3: 发送消息后立即滚动到底部
+                        sendMessage(content, options);
+                        userScrolledAway.value = false;
+                        isAtBottom.value = true;
+                        setTimeout(() => {
+                            listRef.current?.scrollToEnd({ animated: true });
+                        }, 100);
+                    }}
                     onStop={stop}
                     sessionId={id}
                     loading={loading}
