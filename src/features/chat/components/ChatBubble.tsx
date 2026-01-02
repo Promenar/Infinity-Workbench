@@ -527,6 +527,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     isGenerating,
     modelId,
     sessionId, // ✅ 新增：会话ID
+    onLayout, // ✅ 新增：传递布局回调
     // @ts-ignore
     isDark = false // Default fallback
 }) => {
