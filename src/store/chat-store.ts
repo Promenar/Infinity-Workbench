@@ -501,10 +501,13 @@ export const useChatStore = create<ChatState>()(
                             // Set loading state
                             get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, [], true);
 
-                            // For Super Assistant, force global search
+                            // For Super Assistant, force global search AND enable docs/memory
+                            const isSuperAssistant = sessionId === 'super_assistant';
                             const effectiveRagOptions = {
                                 ...finalRagOptions,
-                                isGlobal: sessionId === 'super_assistant' ? true : finalRagOptions.isGlobal,
+                                isGlobal: isSuperAssistant ? true : finalRagOptions.isGlobal,
+                                enableDocs: isSuperAssistant ? true : finalRagOptions.enableDocs,     // 🔑 强制开启文档
+                                enableMemory: isSuperAssistant ? true : finalRagOptions.enableMemory, // 🔑 强制开启记忆
                                 ragConfig: agent.ragConfig, // ✅ 关键：传入特定助手的 RAG 配置
                                 onProgress: (stage: string, percentage: number) => {
                                     get().updateMessageProgress(sessionId, assistantMsgId, {

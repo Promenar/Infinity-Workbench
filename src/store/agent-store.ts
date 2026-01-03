@@ -70,6 +70,15 @@ const PRESET_AGENTS: Agent[] = [
         defaultModel: 'gpt-4o',
         params: { temperature: 0.7 },
         isPreset: true,
+        // 🔑 预设更强的 RAG 配置
+        ragConfig: {
+            enableRerank: true,
+            enableQueryRewrite: true,
+            enableHybridSearch: true,
+            contextWindow: 15, // 更长的上下文窗口
+            docLimit: 10,      // 更多的文档召回
+            memoryLimit: 10    // 更多的记忆召回
+        },
         created: Date.now(),
     }
 ];
