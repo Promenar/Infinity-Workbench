@@ -12,7 +12,8 @@ import Animated, {
     Easing,
     interpolate,
     Extrapolate,
-    useDerivedValue
+    useDerivedValue,
+    cancelAnimation
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -28,8 +29,65 @@ interface SuperAssistantFABProps {
 }
 
 // =============================================================================
-// Animation Components
+// VFX Components
 // =============================================================================
+
+/**
+ * 💡 Hyper Glow Component
+ * Simulates a high-energy neon glow using multiple semi-transparent layers.
+ * Works perfectly on Android where native shadows fail/don't support color.
+ */
+const HyperGlow = ({ color, isGenerating }: { color: string, isGenerating: boolean }) => {
+    // 3 Layers of glow
+    const scale1 = useSharedValue(1);
+    const scale2 = useSharedValue(1);
+    const scale3 = useSharedValue(1);
+    const opacity = useSharedValue(0.5);
+
+    useEffect(() => {
+        const duration = isGenerating ? 1000 : 3000;
+
+        // Base pulse
+        opacity.value = withRepeat(
+            withTiming(isGenerating ? 0.8 : 0.4, { duration, easing: Easing.inOut(Easing.ease) }),
+            -1,
+            true
+        );
+
+        // Ripples
+        scale1.value = withRepeat(withTiming(1.4, { duration: duration * 1.5, easing: Easing.out(Easing.ease) }), -1, false);
+        scale2.value = withDelay(200, withRepeat(withTiming(1.6, { duration: duration * 1.5, easing: Easing.out(Easing.ease) }), -1, false));
+        scale3.value = withDelay(400, withRepeat(withTiming(1.8, { duration: duration * 1.5, easing: Easing.out(Easing.ease) }), -1, false));
+
+    }, [isGenerating]);
+
+    const style1 = useAnimatedStyle(() => ({
+        transform: [{ scale: scale1.value }],
+        opacity: interpolate(scale1.value, [1, 1.4], [0.6, 0])
+    }));
+
+    const style2 = useAnimatedStyle(() => ({
+        transform: [{ scale: scale2.value }],
+        opacity: interpolate(scale2.value, [1, 1.6], [0.4, 0])
+    }));
+
+    const style3 = useAnimatedStyle(() => ({
+        transform: [{ scale: scale3.value }],
+        opacity: interpolate(scale3.value, [1, 1.8], [0.2, 0])
+    }));
+
+    return (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {/* Core Glow */}
+            <Animated.View style={[styles.glowLayer, { backgroundColor: color, opacity: 0.3, transform: [{ scale: 1.2 }] }]} />
+
+            {/* Ripples */}
+            <Animated.View style={[styles.glowLayer, { backgroundColor: color }, style1]} />
+            <Animated.View style={[styles.glowLayer, { backgroundColor: color }, style2]} />
+            <Animated.View style={[styles.glowLayer, { backgroundColor: color }, style3]} />
+        </View>
+    );
+};
 
 const QuantumRings = ({ isGenerating, color }: { isGenerating: boolean, color: string }) => {
     const rotateX = useSharedValue(0);
@@ -37,38 +95,32 @@ const QuantumRings = ({ isGenerating, color }: { isGenerating: boolean, color: s
     const scale = useSharedValue(1);
 
     useEffect(() => {
-        const duration = isGenerating ? 2000 : 8000;
+        const duration = isGenerating ? 1500 : 8000;
 
         rotateX.value = withRepeat(withTiming(360, { duration, easing: Easing.linear }), -1);
         rotateY.value = withRepeat(withTiming(360, { duration: duration * 1.5, easing: Easing.linear }), -1);
 
-        scale.value = withTiming(isGenerating ? 1.2 : 1, { duration: 500 });
+        scale.value = withTiming(isGenerating ? 1.3 : 1, { duration: 500 });
     }, [isGenerating]);
 
     const styleX = useAnimatedStyle(() => ({
-        transform: [{ rotateZ: `${rotateX.value}deg` }, { scaleX: 1 }, { scaleY: 0.3 }], // Simulate 3D ring
+        transform: [{ rotateZ: `${rotateX.value}deg` }, { scaleX: 1 }, { scaleY: 0.3 }],
         borderColor: color,
-        opacity: isGenerating ? 1 : 0.8, // Increased opacity
-        shadowColor: color,
-        shadowOpacity: 0.8,
-        shadowRadius: 10,
-        elevation: 10 // Android Shadow
+        opacity: isGenerating ? 1 : 0.6,
+        borderWidth: isGenerating ? 3 : 1.5
     }));
 
     const styleY = useAnimatedStyle(() => ({
-        transform: [{ rotateZ: `${-rotateY.value}deg` }, { scaleX: 0.3 }, { scaleY: 1 }], // Simulate 3D ring
+        transform: [{ rotateZ: `${-rotateY.value}deg` }, { scaleX: 0.3 }, { scaleY: 1 }],
         borderColor: color,
-        opacity: isGenerating ? 1 : 0.8, // Increased opacity
-        shadowColor: color,
-        shadowOpacity: 0.8,
-        shadowRadius: 10,
-        elevation: 10 // Android Shadow
+        opacity: isGenerating ? 1 : 0.6,
+        borderWidth: isGenerating ? 3 : 1.5
     }));
 
     return (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Animated.View style={[styles.quantumRing, styleX, { shadowColor: color }]} />
-            <Animated.View style={[styles.quantumRing, styleY, { shadowColor: color }]} />
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
+            <Animated.View style={[styles.quantumRing, styleX]} />
+            <Animated.View style={[styles.quantumRing, styleY]} />
         </View>
     );
 };
@@ -84,7 +136,6 @@ const GlitchEffect = ({ isGenerating, color }: { isGenerating: boolean, color: s
             return;
         }
 
-        // Glitch sequence
         const glitch = () => {
             shiftX.value = withSequence(
                 withTiming(-5, { duration: 50 }),
@@ -97,14 +148,14 @@ const GlitchEffect = ({ isGenerating, color }: { isGenerating: boolean, color: s
                 withTiming(0, { duration: 50 })
             );
             opacity.value = withSequence(
-                withTiming(0.9, { duration: 50 }), // High visibility
+                withTiming(0.8, { duration: 50 }),
                 withTiming(0.4, { duration: 50 }),
                 withTiming(0, { duration: 100 })
             );
         };
 
-        const interval = setInterval(glitch, 2000); // Glitch every 2s
-        glitch(); // Initial glitch
+        const interval = setInterval(glitch, 2000);
+        glitch();
 
         return () => clearInterval(interval);
     }, [isGenerating]);
@@ -113,9 +164,6 @@ const GlitchEffect = ({ isGenerating, color }: { isGenerating: boolean, color: s
         transform: [{ translateX: shiftX.value }, { translateY: shiftY.value }],
         backgroundColor: color,
         opacity: opacity.value,
-        shadowColor: color,
-        shadowOpacity: 1,
-        shadowRadius: 15,
     }));
 
     return (
@@ -134,17 +182,14 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
     const isGenerating = useChatStore(state => !!state.activeRequests['super_assistant']);
     const { animationMode = 'pulse' } = preferences.fab;
 
-    // Use default values if animationMode is undefined (safety fallback)
     const mode = animationMode || 'pulse';
 
     // Shared Values
     const pulse = useSharedValue(1);
     const rotation = useSharedValue(0);
-    const glowScale = useSharedValue(1);
-    const glowOpacity = useSharedValue(0.6);
 
     useEffect(() => {
-        // --- 1. Pulse Animation (Liquid / Pulse Modes) ---
+        // --- Pulse Animation ---
         if (mode === 'pulse' || mode === 'liquid') {
             const baseScale = mode === 'liquid' ? (isGenerating ? 1.25 : 1.05) : (isGenerating ? 1.15 : 1.05);
             const duration = isGenerating ? (mode === 'liquid' ? 600 : 800) : 1500;
@@ -161,7 +206,7 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
             pulse.value = withTiming(1);
         }
 
-        // --- 2. Rotation Animation (Nebula / Default) ---
+        // --- Rotation ---
         if (preferences.fab.enableRotation || mode === 'nebula') {
             const duration = isGenerating ? 2000 : 15000;
             rotation.value = withRepeat(
@@ -172,43 +217,17 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
             rotation.value = 0;
         }
 
-        // --- 3. Glow Animation ---
-        if (preferences.fab.enableGlow) {
-            const duration = isGenerating ? 500 : 2000;
-            const targetScale = isGenerating ? 1.8 : 1.5;
+    }, [mode, isGenerating, preferences.fab.enableRotation]);
 
-            glowScale.value = withRepeat(
-                withTiming(targetScale, { duration, easing: Easing.out(Easing.ease) }),
-                -1,
-                false
-            );
-            glowOpacity.value = withRepeat(
-                withTiming(0, { duration, easing: Easing.out(Easing.ease) }),
-                -1,
-                false
-            );
-        } else {
-            glowScale.value = 1;
-            glowOpacity.value = 0;
-        }
-
-    }, [mode, isGenerating, preferences.fab.enableRotation, preferences.fab.enableGlow]);
-
-    // Styles
     const containerStyle = useAnimatedStyle(() => ({
         transform: [
             { scale: pulse.value },
-            { scaleX: mode === 'liquid' && isGenerating ? interpolate(pulse.value, [1, 1.25], [1, 0.9]) : 1 } // Morph/Squash effect
+            { scaleX: mode === 'liquid' && isGenerating ? interpolate(pulse.value, [1, 1.25], [1, 0.9]) : 1 }
         ],
     }));
 
     const iconStyle = useAnimatedStyle(() => ({
         transform: [{ rotate: `${rotation.value}deg` }],
-    }));
-
-    const glowStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: glowScale.value }],
-        opacity: glowOpacity.value * preferences.fab.glowIntensity,
     }));
 
     const handlePress = () => {
@@ -224,41 +243,35 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
         const { iconType, customIconUri, iconColor } = preferences.fab;
         if (iconType === 'custom' && customIconUri) return null;
         const IconComponent = (LucideIcons as any)[iconType] || LucideIcons.Sparkles;
-        return <IconComponent size={28} color={iconColor} strokeWidth={2.5} />;
+        return <IconComponent size={28} color={iconColor} strokeWidth={2.5} />; // White icon for better contrast on glow? No, user prefers custom color.
     };
 
     const isCustomIcon = preferences.fab.iconType === 'custom' && preferences.fab.customIconUri;
     const backgroundColor = preferences.fab.backgroundColor;
-    const glowColor = preferences.fab.enableGlow ? preferences.fab.glowColor : 'transparent';
+    const iconColor = preferences.fab.iconColor;
+    const glowColor = preferences.fab.enableGlow ? (preferences.fab.glowColor || iconColor) : 'transparent'; // Fallback to icon color if glow color not set
 
     return (
         <View
             pointerEvents="box-none"
             style={[styles.wrapper, { bottom: 85 + insets.bottom }]}
         >
-            {/* Background Glow */}
+            {/* 🌟 Hyper Glow Background (Replaces simple Shadow) */}
             {preferences.fab.enableGlow && (
-                <Animated.View
-                    style={[
-                        styles.glowRing,
-                        { backgroundColor: glowColor, shadowColor: glowColor },
-                        glowStyle
-                    ]}
-                />
+                <HyperGlow color={glowColor} isGenerating={isGenerating} />
             )}
 
             {/* Special Effects Layers */}
-            {mode === 'quantum' && <QuantumRings isGenerating={isGenerating} color={preferences.fab.iconColor} />}
-            {mode === 'glitch' && <GlitchEffect isGenerating={isGenerating} color={preferences.fab.iconColor} />}
+            {mode === 'quantum' && <QuantumRings isGenerating={isGenerating} color={iconColor} />}
+            {mode === 'glitch' && <GlitchEffect isGenerating={isGenerating} color={iconColor} />}
 
-            {/* Main Button */}
+            {/* Main Button Container */}
             <Animated.View style={[
                 styles.container,
                 containerStyle,
                 {
-                    shadowColor: backgroundColor, // Colored shadow
-                    shadowOpacity: 0.5,
-                    backgroundColor: isCustomIcon ? 'transparent' : backgroundColor + '1A' // Tint behind blur (10%)
+                    // No more shadow props here to avoid conflict with HyperGlow
+                    backgroundColor: isCustomIcon ? 'transparent' : backgroundColor + '1A'
                 }
             ]}>
                 <TouchableOpacity
@@ -267,15 +280,15 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
                     style={styles.touchable}
                 >
                     <BlurView
-                        intensity={isDark ? 40 : 60}
+                        intensity={isDark ? 30 : 50} // Reduced intensity for clearer glow
                         tint={isDark ? 'dark' : 'light'}
                         style={styles.blur}
                     >
                         <View style={[
                             styles.inner,
                             {
-                                backgroundColor: isCustomIcon ? 'transparent' : backgroundColor + '33', // Increased to 20%
-                                borderColor: backgroundColor + '80', // Increased border to 50%
+                                backgroundColor: isCustomIcon ? 'transparent' : backgroundColor + '4D', // 30% -> 4D (30%)
+                                borderColor: backgroundColor + '80',
                             }
                         ]}>
                             <Animated.View style={[styles.rotatingContainer, iconStyle]}>
@@ -311,29 +324,18 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 32,
-        shadowOffset: { width: 0, height: 4 },
-        shadowRadius: 8,
-        elevation: 6,
     },
-    glowRing: {
+    glowLayer: {
         position: 'absolute',
         width: 64,
         height: 64,
         borderRadius: 32,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 20, // 强光晕
-        elevation: 0, // Android 不支持 glow shadow 动画，故仅依赖 scale+bg
     },
     quantumRing: {
         position: 'absolute',
-        left: -18, // Center 100 - 64 / 2 ?? No these are absolute. width 100.
-        top: -18,
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        borderWidth: 2,
-        borderColor: 'cyan',
+        width: 90,
+        height: 90,
+        borderRadius: 45,
     },
     touchable: {
         width: '100%',
