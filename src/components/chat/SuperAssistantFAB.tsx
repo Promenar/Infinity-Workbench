@@ -206,7 +206,7 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
             {preferences.fab.enableGlow && (
                 <SilkyGlow
                     color={glowColor}
-                    size={100} // Larger than button (64px) + margin
+                    size={120} // Increased from 100 to 120 to accommodate padding
                     style={{ position: 'absolute' }}
                 />
             )}

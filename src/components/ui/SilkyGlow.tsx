@@ -53,8 +53,13 @@ export const SilkyGlow: React.FC<SilkyGlowProps> = ({ color, size, style }) => {
         };
     });
 
-    const r = size / 2;
-    const c = r; // center is half size
+    // 🔑 Fix: Canvas clipping
+    // The blur extends outward. If the circle fills the canvas (r = size/2), the blur gets clipped.
+    // We need to padding the radius calculation.
+    const blurRadius = 20;
+    const padding = blurRadius * 1.5; // Enough space for the glow to fade out
+    const r = (size - padding * 2) / 2;
+    const c = size / 2; // Center remains absolute center
 
     return (
         <Animated.View
