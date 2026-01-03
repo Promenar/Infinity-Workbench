@@ -68,6 +68,81 @@ export const migrateDatabase = async () => {
       await db.execute('ALTER TABLE vectors ADD COLUMN end_message_id TEXT');
     }
 
+    // Migration 5 (Phase 8): Tags and KG tables
+    const tagsInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tags'");
+    if (!tagsInfo.rows || tagsInfo.rows.length === 0) {
+      console.log('[DB Migration] Creating tags table...');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS tags (
+          id TEXT PRIMARY KEY NOT NULL,
+          name TEXT NOT NULL,
+          color TEXT DEFAULT '#6366f1',
+          created_at INTEGER NOT NULL
+        );
+      `);
+    }
+
+    const docTagsInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='document_tags'");
+    if (!docTagsInfo.rows || docTagsInfo.rows.length === 0) {
+      console.log('[DB Migration] Creating document_tags table...');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS document_tags (
+          doc_id TEXT NOT NULL,
+          tag_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (doc_id, tag_id),
+          FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        );
+      `);
+    }
+
+    // Migration 6 (Phase 8): Knowledge Graph tables
+    const kgNodesInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kg_nodes'");
+    if (!kgNodesInfo.rows || kgNodesInfo.rows.length === 0) {
+      console.log('[DB Migration] Creating kg_nodes table...');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS kg_nodes (
+          id TEXT PRIMARY KEY NOT NULL,
+          name TEXT NOT NULL,
+          type TEXT DEFAULT 'concept',
+          metadata TEXT,
+          created_at INTEGER NOT NULL,
+          UNIQUE(name)
+        );
+      `);
+    }
+
+    const kgEdgesInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kg_edges'");
+    if (!kgEdgesInfo.rows || kgEdgesInfo.rows.length === 0) {
+      console.log('[DB Migration] Creating kg_edges table...');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS kg_edges (
+          id TEXT PRIMARY KEY NOT NULL,
+          source_id TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          relation TEXT NOT NULL,
+          weight REAL DEFAULT 1.0,
+          doc_id TEXT,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES kg_nodes(id) ON DELETE CASCADE,
+          FOREIGN KEY (target_id) REFERENCES kg_nodes(id) ON DELETE CASCADE,
+          FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
+        );
+      `);
+    }
+
+    // Migration 7 (Phase 8): Cost Optimization - Incremental Hash
+    if (!columns.includes('kg_processed_hash')) {
+      console.log('[DB Migration] Adding kg_processed_hash column to documents...');
+      await db.execute('ALTER TABLE documents ADD COLUMN kg_processed_hash TEXT');
+    }
+
+    if (!columns.includes('thumbnail_path')) {
+      console.log('[DB Migration] Adding thumbnail_path column to documents...');
+      await db.execute('ALTER TABLE documents ADD COLUMN thumbnail_path TEXT');
+    }
+
     console.log('[DB Migration] Migration completed successfully!');
   } catch (error) {
     console.error('[DB Migration] Migration failed:', error);

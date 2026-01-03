@@ -52,7 +52,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
                     // Standard WebSQL style
                     const len = (result.rows as any).length;
                     for (let i = 0; i < len; i++) {
-                        const item = (result.rows as any).item(i);
+                        const item = (result.rows as any)[i];
                         loadedSummaries.push(mapRowToSummary(item));
                     }
                 }

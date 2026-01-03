@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
-import { View, TouchableOpacity } from 'react-native';
+import { View, TouchableOpacity, Image } from 'react-native';
 import { Typography, ContextMenu } from '../ui';
+import { TagCapsule } from './TagCapsule';
 import { FileText, MoreVertical, CheckCircle, Loader, Circle, AlertCircle } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from 'expo-haptics';
@@ -19,6 +20,10 @@ interface CompactDocItemProps {
     onMove?: () => void;
     isSelected?: boolean;
     isSelectionMode?: boolean;
+    tags?: Array<{ id: string; name: string; color: string }>;
+    thumbnailPath?: string;
+    onAssignTag?: () => void;
+    onViewGraph?: () => void;
 }
 
 export const CompactDocItem = memo<CompactDocItemProps>(({
@@ -33,7 +38,12 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
     onVectorize,
     onMove,
     isSelected = false,
-    isSelectionMode = false
+    isSelectionMode = false,
+
+    tags,
+    thumbnailPath,
+    onAssignTag,
+    onViewGraph
 }) => {
     const { isDark } = useTheme();
 
@@ -88,6 +98,16 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
                 }, 10);
             }
         } : null,
+        vectorized === 2 ? {
+            key: 'view-graph',
+            label: '查看知识图谱',
+            onPress: () => {
+                setTimeout(() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    onViewGraph?.();
+                }, 10);
+            }
+        } : null,
         {
             key: 'move',
             label: '移动到文件夹',
@@ -95,6 +115,16 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
                 setTimeout(() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                     onMove?.();
+                }, 10);
+            }
+        },
+        {
+            key: 'tag',
+            label: '添加标签',
+            onPress: () => {
+                setTimeout(() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onAssignTag?.();
                 }, 10);
             }
         },
@@ -124,9 +154,17 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
                 className={`bg-gray-50 dark:bg-zinc-900/50 rounded-xl flex-row items-center px-3 py-2.5 
                     border ${isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-zinc-800'}`}
             >
-                {/* 文档图标 */}
-                <View className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 items-center justify-center mr-3">
-                    <FileText size={16} color="#6366f1" strokeWidth={2} />
+                {/* 文档图标 (Document Icon/Thumbnail) */}
+                <View className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 items-center justify-center mr-3 overflow-hidden">
+                    {thumbnailPath ? (
+                        <Image
+                            source={{ uri: thumbnailPath }}
+                            className="w-full h-full"
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <FileText size={16} color="#6366f1" strokeWidth={2} />
+                    )}
                 </View>
 
                 {/* 文档信息 */}
@@ -140,6 +178,15 @@ export const CompactDocItem = memo<CompactDocItemProps>(({
                     <Typography className="text-xs text-gray-400 mt-0.5">
                         {formatSize(fileSize)} · {getStatusText()}
                     </Typography>
+
+                    {/* Tags */}
+                    {tags && tags.length > 0 && (
+                        <View className="flex-row items-center mt-1.5 flex-wrap">
+                            {tags.map(tag => (
+                                <TagCapsule key={tag.id} name={tag.name} color={tag.color} />
+                            ))}
+                        </View>
+                    )}
                 </View>
 
                 {/* 状态指示器 / Checkbox */}

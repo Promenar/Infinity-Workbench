@@ -48,7 +48,7 @@ export class ContextManager {
             let lastSummarizedMsgId = null;
             if (result.rows) {
                 // Safe access for op-sqlite
-                const row = (result.rows as any).item ? (result.rows as any).item(0) : (result.rows as any)._array?.[0];
+                const row = (result.rows as any)._array ? (result.rows as any)._array[0] : (result.rows as any)[0];
                 if (row) lastSummarizedMsgId = row.end_message_id;
             }
 
@@ -309,7 +309,7 @@ export class ContextManager {
 
             if (result.rows) {
                 // Safe access
-                const row = (result.rows as any).item ? (result.rows as any).item(0) : (result.rows as any)._array?.[0];
+                const row = (result.rows as any)._array ? (result.rows as any)._array[0] : (result.rows as any)[0];
                 if (row) return [row.summary_content];
             }
         } catch (e) {

@@ -3,6 +3,7 @@ import { db } from '../lib/db';
 import { generateId } from '../lib/utils/id-generator';
 import { VectorizationQueue } from '../lib/rag/vectorization-queue';
 import { RagDocument, RagFolder, VectorizationTask } from '../types/rag';
+import { graphStore } from '../lib/rag/graph-store';
 
 // 创建全局队列实例
 let queueInstance: VectorizationQueue | null = null;
@@ -23,7 +24,7 @@ interface RagState {
 
     // 文档操作
     loadDocuments: () => Promise<void>;
-    addDocument: (title: string, content: string, fileSize: number, type?: 'text' | 'note', folderId?: string) => Promise<void>;
+    addDocument: (title: string, content: string, fileSize: number, type?: 'text' | 'note' | 'image', folderId?: string, thumbnailPath?: string) => Promise<void>;
     deleteDocument: (id: string) => Promise<void>;
     vectorizeDocument: (docId: string) => Promise<void>;
 
@@ -43,6 +44,14 @@ interface RagState {
     // 筛选
     setSelectedFolder: (folderId: string | null) => void;
     getDocumentsByFolder: (folderId: string | null) => RagDocument[];
+
+    // Tag Operations
+    availableTags: Array<{ id: string; name: string; color: string }>;
+    loadAvailableTags: () => Promise<void>;
+    createTag: (name: string, color?: string) => Promise<void>;
+    deleteTag: (tagId: string) => Promise<void>;
+    addTagToDocument: (docId: string, tagId: string) => Promise<void>;
+    removeTagFromDocument: (docId: string, tagId: string) => Promise<void>;
 
     // 内部状态更新
     _updateQueueState: (queue: VectorizationTask[], current: VectorizationTask | null) => void;
@@ -93,7 +102,17 @@ export const useRagStore = create<RagState>((set, get) => {
         loadDocuments: async () => {
             set({ isLoading: true });
             try {
-                const results = await db.execute('SELECT * FROM documents ORDER BY created_at DESC');
+                // Use JOIN to get tags efficiently. Exclude full 'content' to prevent OOM in Debug mode.
+                const results = await db.execute(`
+                    SELECT d.id, d.title, d.source, d.type, d.folder_id, d.vectorized, d.vector_count, d.file_size, d.created_at, d.updated_at, d.thumbnail_path,
+                           GROUP_CONCAT(t.id || ':' || t.name || ':' || t.color, '|') as tag_list 
+                    FROM documents d 
+                    LEFT JOIN document_tags dt ON d.id = dt.doc_id 
+                    LEFT JOIN tags t ON dt.tag_id = t.id 
+                    GROUP BY d.id 
+                    ORDER BY d.created_at DESC
+                `);
+
                 if (!results.rows) {
                     set({ documents: [], isLoading: false });
                     return;
@@ -101,12 +120,22 @@ export const useRagStore = create<RagState>((set, get) => {
 
                 const docs: RagDocument[] = [];
                 for (let i = 0; i < results.rows.length; i++) {
-                    const row = results.rows[i];
+                    const row = results.rows[i] as any;
                     const folderIdValue = row.folder_id as string | null;
+
+                    // Parse Tags
+                    let tags: Array<{ id: string; name: string; color: string }> = [];
+                    if (row.tag_list) {
+                        tags = (row.tag_list as string).split('|').map(tagStr => {
+                            const [id, name, color] = tagStr.split(':');
+                            return { id, name, color };
+                        });
+                    }
+
                     docs.push({
                         id: row.id as string,
                         title: row.title as string,
-                        content: row.content as string,
+                        content: '', // Content excluded from list view for performance
                         source: (row.source as string) || 'import',
                         type: (row.type as string) || 'text',
                         folderId: folderIdValue === null ? undefined : folderIdValue,
@@ -114,7 +143,9 @@ export const useRagStore = create<RagState>((set, get) => {
                         vectorCount: (row.vector_count as number) || 0,
                         fileSize: (row.file_size as number) || 0,
                         createdAt: row.created_at as number,
-                        updatedAt: row.updated_at as number | undefined
+                        updatedAt: row.updated_at as number | undefined,
+                        thumbnailPath: row.thumbnail_path as string | undefined,
+                        tags
                     });
                 }
 
@@ -125,28 +156,30 @@ export const useRagStore = create<RagState>((set, get) => {
             }
         },
 
-        addDocument: async (title, content, fileSize, type = 'text', folderId) => {
+        addDocument: async (title, content, fileSize, type = 'text', folderId, thumbnailPath) => {
             const docId = generateId();
             const createdAt = Date.now();
 
             try {
                 // 1. 保存文档到数据库（vectorized = 0, 未处理）
                 await db.execute(
-                    'INSERT INTO documents (id, title, content, source, type, folder_id, vectorized, file_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    [docId, title, content, 'import', type, folderId || null, 0, fileSize, createdAt, createdAt]
+                    'INSERT INTO documents (id, title, content, source, type, folder_id, vectorized, file_size, created_at, updated_at, thumbnail_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [docId, title, content, 'import', type, folderId || null, 0, fileSize, createdAt, createdAt, thumbnailPath || null]
                 );
 
                 const newDoc: RagDocument = {
                     id: docId,
                     title,
-                    content,
+                    content: '', // Exclude content from state
                     source: 'import',
                     type,
                     folderId,
                     vectorized: 0,
                     vectorCount: 0,
                     fileSize,
-                    createdAt
+
+                    createdAt,
+                    thumbnailPath
                 };
 
                 set(state => ({ documents: [newDoc, ...state.documents] }));
@@ -411,7 +444,7 @@ export const useRagStore = create<RagState>((set, get) => {
             const docs = get().documents.filter(d => docIds.includes(d.id));
 
             for (const doc of docs) {
-                await queue.enqueue(doc.id, doc.title, doc.content);
+                await queue.enqueue(doc.id, doc.title, ''); // Content fetched from DB by queue
             }
         },
 
@@ -444,6 +477,62 @@ export const useRagStore = create<RagState>((set, get) => {
                 return docs.filter(d => !d.folderId);
             }
             return docs.filter(d => d.folderId === folderId);
+        },
+
+        availableTags: [],
+
+        loadAvailableTags: async () => {
+            try {
+                const tags = await graphStore.getAllTags();
+                set({ availableTags: tags });
+            } catch (e) {
+                console.error('Failed to load tags:', e);
+            }
+        },
+
+        createTag: async (name, color) => {
+            try {
+                await graphStore.createTag(name, color);
+                await get().loadAvailableTags();
+            } catch (e) {
+                console.error('Failed to create tag:', e);
+                throw e;
+            }
+        },
+
+        deleteTag: async (tagId) => {
+            try {
+                await graphStore.deleteTag(tagId);
+                await get().loadAvailableTags();
+                // We should also refresh documents to remove the tag from UI instantly, or filter it locally
+                // Ideally refresh docs:
+                get().loadDocuments();
+            } catch (e) {
+                console.error('Failed to delete tag:', e);
+                throw e;
+            }
+        },
+
+        addTagToDocument: async (docId, tagId) => {
+            try {
+                await graphStore.attachTagToDoc(docId, tagId);
+                // Refresh docs to show new tag
+                await get().loadDocuments();
+            } catch (e) {
+                console.error('Failed to add tag to doc:', e);
+                throw e;
+            }
+        },
+
+        removeTagFromDocument: async (docId, tagId) => {
+            try {
+                await graphStore.removeTagFromDoc(docId, tagId);
+                // Refresh docs
+                await get().loadDocuments();
+            } catch (e) {
+                console.error('Failed to remove tag from doc:', e);
+                throw e;
+            }
         },
 
         _updateQueueState: (queue, current) => {

@@ -20,6 +20,8 @@ export interface RagDocument {
     fileSize: number;
     createdAt: number;
     updatedAt?: number;
+    tags?: Array<{ id: string; name: string; color: string }>;
+    thumbnailPath?: string;
 }
 
 export interface VectorizationTask {

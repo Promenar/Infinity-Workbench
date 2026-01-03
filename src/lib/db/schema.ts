@@ -134,6 +134,54 @@ export const createTables = async () => {
       console.warn('[DB] FTS5 not available, keyword search will fall back to LIKE:', ftsError.message);
     }
 
+    // 9. Tags System (Smart Tags)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tags (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        color TEXT DEFAULT '#6366f1',
+        created_at INTEGER NOT NULL
+      );
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS document_tags (
+        doc_id TEXT NOT NULL,
+        tag_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (doc_id, tag_id),
+        FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+      );
+    `);
+
+    // 10. Knowledge Graph System
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS kg_nodes (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT DEFAULT 'concept', -- 'concept'|'person'|'org'|'location'...
+        metadata TEXT, -- JSON
+        created_at INTEGER NOT NULL,
+        UNIQUE(name)
+      );
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS kg_edges (
+        id TEXT PRIMARY KEY NOT NULL,
+        source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        weight REAL DEFAULT 1.0,
+        doc_id TEXT, -- Source document for attribution
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (source_id) REFERENCES kg_nodes(id) ON DELETE CASCADE,
+        FOREIGN KEY (target_id) REFERENCES kg_nodes(id) ON DELETE CASCADE,
+        FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
+      );
+    `);
+
     console.log('[DB] Tables created successfully');
   } catch (e) {
     console.error('[DB] Error creating tables:', e);

@@ -190,5 +190,20 @@ export interface RagConfiguration {
     showRetrievalProgress?: boolean;     // 显示检索进度
     showRetrievalDetails?: boolean;      // 显示检索详情面板
     trackRetrievalMetrics?: boolean;     // 记录检索指标
+
+    // ===== Phase 8: 知识图谱 & 降本增效 =====
+
+    // 知识图谱配置
+    enableKnowledgeGraph?: boolean;      // 启用知识图谱
+    kgExtractionModel?: string;          // 抽取实体使用的模型ID (默认gpt-3.5)
+    kgExtractionPrompt?: string;         // 自定义抽取提示词
+    kgMaxDepth?: number;                 // 遍历深度 (默认2)
+    kgEntityTypes?: string[];            // 关注的实体类型 (Person, Org, etc.)
+
+    // 降本策略
+    costStrategy?: 'summary-first' | 'on-demand' | 'full'; // 抽取策略
+    enableIncrementalHash?: boolean;     // 启用增量Hash校验 (默认true)
+    enableLocalPreprocess?: boolean;     // 启用本地规则预处理 (默认true)
 }
+
 

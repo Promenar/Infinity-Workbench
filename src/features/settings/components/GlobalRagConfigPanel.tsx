@@ -446,7 +446,37 @@ export const GlobalRagConfigPanel: React.FC = () => {
                 </View>
             </View>
 
+            {/* 知识图谱与高级配置 (Phase 8) */}
+            <SectionHeader title="高级知识配置" />
+            <TouchableOpacity
+                onPress={() => {
+                    setTimeout(() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        router.push('/settings/rag-advanced' as any);
+                    }, 10);
+                }}
+                className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800 mb-8 flex-row items-center justify-between"
+            >
+                <View className="flex-row items-center gap-3">
+                    <View className="w-10 h-10 rounded-full bg-purple-50 dark:bg-purple-900/20 items-center justify-center">
+                        <Zap size={20} color="#a855f7" />
+                    </View>
+                    <View>
+                        <Typography className="text-sm font-bold text-gray-900 dark:text-white">
+                            知识图谱 & 降本策略
+                        </Typography>
+                        <Typography className="text-xs text-gray-500">
+                            配置实体抽取、提示词与增量更新策略
+                        </Typography>
+                    </View>
+                </View>
+                <Typography className="text-xs font-bold text-purple-600 dark:text-purple-400">
+                    配置 &gt;
+                </Typography>
+            </TouchableOpacity>
+
             {/* 统计信息看板 */}
+
             <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-8 mb-3">
                 {t.rag.viewVectorStats}
             </Typography>

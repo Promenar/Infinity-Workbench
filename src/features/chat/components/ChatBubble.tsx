@@ -574,7 +574,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 const hasRecord = result.rows && (
                     (result.rows as any)._array?.length > 0 ||
                     (result.rows as any).length > 0 ||
-                    ((result.rows as any).item && (result.rows as any).item(0))
+                    ((result.rows as any)[0])
                 );
                 if (hasRecord) setIsArchived(true);
             } catch (e) {

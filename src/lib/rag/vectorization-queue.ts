@@ -174,6 +174,30 @@ export class VectorizationQueue {
             task.progress = 100;
             console.log(`[VectorizationQueue] Completed: ${task.docTitle} (${vectors.length} vectors)`);
 
+            // Phase 8: Knowledge Graph Learning
+            if (ragConfig.enableKnowledgeGraph) {
+                console.log('[VectorizationQueue] Starting Knowledge Graph Learning...');
+                // We use 'fire-and-forget' logic for KG to not block the main flow, 
+                // but ideally this should be a separate queue or stage.
+                // For now, we just log it.
+                // Real implementation imports GraphExtractor and runs it.
+                const { graphExtractor } = require('./graph-extractor');
+
+                // Strategy check
+                if (ragConfig.costStrategy === 'full') {
+                    // Full Scan: Extract from every chunk
+                    for (const chunk of chunks) {
+                        graphExtractor.extractAndSave(chunk, task.docId).catch((e: any) => console.error(e));
+                    }
+                } else if (ragConfig.costStrategy === 'summary-first') {
+                    // Summary First: Extract from the first few chunks or a summary
+                    // For simplicity, lets take the first 2 chunks
+                    const summaryContext = chunks.slice(0, 2).join('\n');
+                    graphExtractor.extractAndSave(summaryContext, task.docId).catch((e: any) => console.error(e));
+                }
+                // 'on-demand' does nothing here
+            }
+
         } catch (error) {
             console.error('[VectorizationQueue] Failed:', error);
             task.status = 'failed';

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RagConfiguration } from '../types/chat';
+import { DEFAULT_KG_PROMPT } from '../lib/rag/defaults';
 
 export type Language = 'en' | 'zh';
 
@@ -95,7 +96,19 @@ export const useSettingsStore = create<SettingsState>()(
                 showRetrievalProgress: true,  // 默认显示进度
                 showRetrievalDetails: false,  // 默认不显示详情面板
                 trackRetrievalMetrics: false, // 默认不记录指标
+
+                // Phase 8 Defaults
+                enableKnowledgeGraph: false,
+                kgExtractionModel: undefined,
+                kgExtractionPrompt: DEFAULT_KG_PROMPT,
+                kgMaxDepth: 2,
+                kgEntityTypes: ['Person', 'Organization', 'Concept', 'Location'],
+
+                costStrategy: 'summary-first',
+                enableIncrementalHash: true,
+                enableLocalPreprocess: true,
             },
+
             updateGlobalRagConfig: (updates) => set((state) => ({
                 globalRagConfig: { ...state.globalRagConfig, ...updates }
             })),

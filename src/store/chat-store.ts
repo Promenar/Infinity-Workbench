@@ -806,7 +806,7 @@ export const useChatStore = create<ChatState>()(
                             );
                             const beforeSummaryCount = (beforeCount.rows as any)?._array?.[0]?.count ||
                                 (beforeCount.rows as any)?.[0]?.count ||
-                                ((beforeCount.rows as any).item ? (beforeCount.rows as any).item(0)?.count : 0) || 0;
+                                ((beforeCount.rows as any)._array ? (beforeCount.rows as any)._array[0]?.count : (beforeCount.rows as any)[0]?.count) || 0;
 
                             await ContextManager.checkAndSummarize(sessionId, currentMessages, agent);
 
@@ -823,7 +823,7 @@ export const useChatStore = create<ChatState>()(
                             );
                             const afterSummaryCount = (afterCount.rows as any)?._array?.[0]?.count ||
                                 (afterCount.rows as any)?.[0]?.count ||
-                                ((afterCount.rows as any).item ? (afterCount.rows as any).item(0)?.count : 0) || 0;
+                                ((afterCount.rows as any)._array ? (afterCount.rows as any)._array[0]?.count : (afterCount.rows as any)[0]?.count) || 0;
 
                             console.log(`[ChatStore] 摘要前后对比: before=${beforeSummaryCount}, after=${afterSummaryCount}`);
 

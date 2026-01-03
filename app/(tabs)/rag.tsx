@@ -29,6 +29,29 @@ export default function RagScreen() {
     const { t } = useI18n();
     const pdfExtractorRef = React.useRef<PdfExtractorRef>(null);
 
+    // Dynamic imports for modals and components
+    const [PdfExtractorComponent, setPdfExtractorComponent] = useState<any>(null);
+    const [TagCapsuleComponent, setTagCapsuleComponent] = useState<any>(null);
+    const [TagManagerSheetComponent, setTagManagerSheetComponent] = useState<any>(null);
+    const [TagAssignmentSheetComponent, setTagAssignmentSheetComponent] = useState<any>(null);
+    const [ImagePreviewModalComponent, setImagePreviewModalComponent] = useState<any>(null);
+
+    useEffect(() => {
+        const loadComponents = async () => {
+            const { PdfExtractor } = await import('../../src/components/rag/PdfExtractor');
+            const { TagCapsule } = await import('../../src/components/rag/TagCapsule');
+            const { TagManagerSheet } = await import('../../src/components/rag/TagManagerSheet');
+            const { TagAssignmentSheet } = await import('../../src/components/rag/TagAssignmentSheet');
+            const { ImagePreviewModal } = await import('../../src/components/rag/ImagePreviewModal');
+            setPdfExtractorComponent(() => PdfExtractor);
+            setTagCapsuleComponent(() => TagCapsule);
+            setTagManagerSheetComponent(() => TagManagerSheet);
+            setTagAssignmentSheetComponent(() => TagAssignmentSheet);
+            setImagePreviewModalComponent(() => ImagePreviewModal);
+        };
+        loadComponents();
+    }, []);
+
     // RagStore
     const {
         documents,
@@ -95,6 +118,11 @@ export default function RagScreen() {
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [movingDocId, setMovingDocId] = useState<string | null>(null);
     const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
+
+    // Tag & Image Preview State
+    const [showTagManager, setShowTagManager] = useState(false);
+    const [assignmentDocId, setAssignmentDocId] = useState<string | null>(null);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
 
     // 确认弹窗状态
     const [confirmState, setConfirmState] = useState<{
@@ -205,7 +233,7 @@ export default function RagScreen() {
     const handleFileImport = useCallback(async () => {
         try {
             const result = await DocumentPicker.getDocumentAsync({
-                type: ['text/plain', 'text/markdown', 'application/json', 'application/pdf'],
+                type: ['text/plain', 'text/markdown', 'application/json', 'application/pdf', 'image/*'],
                 copyToCacheDirectory: true,
                 multiple: true // 启用多选
             });
@@ -216,23 +244,46 @@ export default function RagScreen() {
 
             const { processBatchWithProgress } = await import('../../src/lib/queue-utils');
             const { readFileContent, readFileAsBase64 } = await import('../../src/lib/file-utils');
+            const { imageDescriptionService } = await import('../../src/lib/rag/image-service');
+
+            // Ensure images directory exists
+            const imagesDir = FileSystem.documentDirectory + 'rag_images/';
+            await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true }).catch(() => { });
 
             const processor = async (file: any) => {
                 let content = '';
                 let fileName = file.name;
                 let mimeType = file.mimeType;
+                let thumbnailPath: string | undefined;
+                let type: 'text' | 'image' = 'text';
 
-                // PDF 处理
-                if (mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
-                    if (!pdfExtractorRef.current) throw new Error('PDF Engine not ready');
-
-                    // 读取为 Base64
+                // Image Processing
+                if (mimeType?.startsWith('image/') || fileName.match(/\.(jpg|jpeg|png|webp|heic)$/i)) {
+                    type = 'image';
                     const base64 = await readFileAsBase64(file.uri);
-                    // 调用 WebView 提取
+
+                    // Save image locally
+                    const ext = fileName.split('.').pop();
+                    const localPath = imagesDir + `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+                    await FileSystem.copyAsync({ from: file.uri, to: localPath });
+                    thumbnailPath = localPath;
+
+                    // Generate description
+                    try {
+                        content = await imageDescriptionService.describeImage(base64);
+                        content = `[Image Description for ${fileName}]\n\n${content}`;
+                    } catch (e) {
+                        console.warn('Image description failed, saving as placeholder', e);
+                        content = `[Image: ${fileName}] - Description failed: ${(e as Error).message}`;
+                    }
+
+                } else if (mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
+                    // PDF Processing
+                    if (!pdfExtractorRef.current) throw new Error('PDF Engine not ready');
+                    const base64 = await readFileAsBase64(file.uri);
                     content = await pdfExtractorRef.current.extractText(base64);
-                    // 标记源为 PDF (可选：可以在 addDocument 中增加 metadata，这里暂时存为 text type 但标题保留 pdf)
                 } else {
-                    // 普通文本
+                    // Plain Text
                     content = await readFileContent(file.uri);
                 }
 
@@ -240,14 +291,14 @@ export default function RagScreen() {
                     throw new Error(`Empty content: ${fileName}`);
                 }
 
-                await addDocument(fileName, content, content.length, 'text', currentFolderId ?? undefined);
+                await addDocument(fileName, content, content.length, type, currentFolderId ?? undefined, thumbnailPath);
             };
 
             const resultStats = await processBatchWithProgress(
                 result.assets,
                 processor,
                 undefined,
-                1 // Batch size 1 to ensure sequential PDF processing
+                1 // Batch size 1
             );
 
             if (resultStats.failed > 0) {
@@ -367,9 +418,9 @@ export default function RagScreen() {
 
     // 渲染标题栏
     const renderHeader = () => (
-        <View className="mb-4">
+        <View className="mb-2">
             {/* 搜索栏 */}
-            <View className="px-6 pb-3">
+            <View className="px-6 pb-2">
                 <View className={`h-12 ${isSearchFocused ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500' : 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'} 
                                border rounded-2xl flex-row items-center px-4 transition-all`}>
                     <Search size={18} color={isSearchFocused ? "#6366f1" : "#94a3b8"} strokeWidth={2} />
@@ -402,7 +453,7 @@ export default function RagScreen() {
             />
 
             {/* 文档数量 */}
-            <View className="px-6 mb-3">
+            <View className="px-6 mb-1">
                 <Typography variant="sectionHeader" className="text-gray-400 font-bold text-[11px] uppercase tracking-wider">
                     {searchQuery ? `搜索结果 (${filteredDocuments.length})` : `文档 (${documents.length})`}
                 </Typography>
@@ -490,8 +541,8 @@ export default function RagScreen() {
             >
                 <View style={{ flex: 1 }}>
                     {/* 标题 */}
-                    <View style={{ paddingTop: 64, paddingBottom: 8, paddingHorizontal: 24 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56, marginBottom: 24 }}>
+                    <View style={{ paddingTop: 64, paddingBottom: 4, paddingHorizontal: 24 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 48, marginBottom: 12 }}>
                             <View>
                                 <Text style={{ fontSize: 32, fontWeight: '900', color: isDark ? '#fff' : '#111', letterSpacing: -1.5, lineHeight: 38 }}>
                                     {t.library.title}
@@ -563,11 +614,7 @@ export default function RagScreen() {
                                 vectorized={doc.vectorized}
                                 vectorCount={doc.vectorCount}
                                 fileSize={doc.fileSize}
-                                onPress={() => {
-                                    if (isSelectionMode) {
-                                        handleToggleDocSelection(doc.id);
-                                    }
-                                }}
+
                                 onLongPress={() => {
                                     if (!isSelectionMode) {
                                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -580,8 +627,50 @@ export default function RagScreen() {
                                 onMove={() => handleStartMoveDoc(doc.id)}
                                 isSelectionMode={isSelectionMode}
                                 isSelected={selectedDocIds.has(doc.id)}
+                                tags={doc.tags}
+                                thumbnailPath={doc.thumbnailPath}
+                                onAssignTag={() => setAssignmentDocId(doc.id)}
+                                onViewGraph={() => router.push({ pathname: '/knowledge-graph', params: { docId: doc.id } })}
+                                onPress={() => {
+                                    if (isSelectionMode) {
+                                        handleToggleDocSelection(doc.id);
+                                    } else if (doc.thumbnailPath) {
+                                        setPreviewImage(doc.thumbnailPath);
+                                    } else {
+                                        // TODO: Open text detail
+                                        showToast('Open Doc: ' + doc.title, 'info');
+                                    }
+                                }}
                             />
                         ))}
+
+                        {/* Modals */}
+                        {assignmentDocId && TagAssignmentSheetComponent && (
+                            <TagAssignmentSheetComponent
+                                visible={!!assignmentDocId}
+                                docId={assignmentDocId}
+                                onClose={() => setAssignmentDocId(null)}
+                                onManageTags={() => {
+                                    setAssignmentDocId(null);
+                                    setShowTagManager(true);
+                                }}
+                            />
+                        )}
+
+                        {TagManagerSheetComponent && (
+                            <TagManagerSheetComponent
+                                visible={showTagManager}
+                                onClose={() => setShowTagManager(false)}
+                            />
+                        )}
+
+                        {ImagePreviewModalComponent && (
+                            <ImagePreviewModalComponent
+                                visible={!!previewImage}
+                                imageUri={previewImage}
+                                onClose={() => setPreviewImage(null)}
+                            />
+                        )}
 
                         {/* 空状态提示 */}
                         {!searchQuery && currentViewContent.folders.length === 0 && currentViewContent.docs.length === 0 && (
