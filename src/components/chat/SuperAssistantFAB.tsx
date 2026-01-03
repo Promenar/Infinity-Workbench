@@ -23,6 +23,7 @@ import { useSPAStore } from '../../store/spa-store';
 import { useChatStore } from '../../store/chat-store';
 import * as LucideIcons from 'lucide-react-native';
 import { preventDoubleTap } from '../../lib/navigation-utils';
+import { SilkyGlow } from '../ui/SilkyGlow';
 
 interface SuperAssistantFABProps {
     onPress: () => void;
@@ -32,62 +33,7 @@ interface SuperAssistantFABProps {
 // VFX Components
 // =============================================================================
 
-/**
- * 💡 Hyper Glow Component
- * Simulates a high-energy neon glow using multiple semi-transparent layers.
- * Works perfectly on Android where native shadows fail/don't support color.
- */
-const HyperGlow = ({ color, isGenerating }: { color: string, isGenerating: boolean }) => {
-    // 3 Layers of glow
-    const scale1 = useSharedValue(1);
-    const scale2 = useSharedValue(1);
-    const scale3 = useSharedValue(1);
-    const opacity = useSharedValue(0.5);
 
-    useEffect(() => {
-        const duration = isGenerating ? 1000 : 3000;
-
-        // Base pulse
-        opacity.value = withRepeat(
-            withTiming(isGenerating ? 0.8 : 0.4, { duration, easing: Easing.inOut(Easing.ease) }),
-            -1,
-            true
-        );
-
-        // Ripples
-        scale1.value = withRepeat(withTiming(1.4, { duration: duration * 1.5, easing: Easing.out(Easing.ease) }), -1, false);
-        scale2.value = withDelay(200, withRepeat(withTiming(1.6, { duration: duration * 1.5, easing: Easing.out(Easing.ease) }), -1, false));
-        scale3.value = withDelay(400, withRepeat(withTiming(1.8, { duration: duration * 1.5, easing: Easing.out(Easing.ease) }), -1, false));
-
-    }, [isGenerating]);
-
-    const style1 = useAnimatedStyle(() => ({
-        transform: [{ scale: scale1.value }],
-        opacity: interpolate(scale1.value, [1, 1.4], [0.6, 0])
-    }));
-
-    const style2 = useAnimatedStyle(() => ({
-        transform: [{ scale: scale2.value }],
-        opacity: interpolate(scale2.value, [1, 1.6], [0.4, 0])
-    }));
-
-    const style3 = useAnimatedStyle(() => ({
-        transform: [{ scale: scale3.value }],
-        opacity: interpolate(scale3.value, [1, 1.8], [0.2, 0])
-    }));
-
-    return (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            {/* Core Glow */}
-            <Animated.View style={[styles.glowLayer, { backgroundColor: color, opacity: 0.3, transform: [{ scale: 1.2 }] }]} />
-
-            {/* Ripples */}
-            <Animated.View style={[styles.glowLayer, { backgroundColor: color }, style1]} />
-            <Animated.View style={[styles.glowLayer, { backgroundColor: color }, style2]} />
-            <Animated.View style={[styles.glowLayer, { backgroundColor: color }, style3]} />
-        </View>
-    );
-};
 
 const QuantumRings = ({ isGenerating, color }: { isGenerating: boolean, color: string }) => {
     const rotateX = useSharedValue(0);
@@ -256,9 +202,13 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
             pointerEvents="box-none"
             style={[styles.wrapper, { bottom: 85 + insets.bottom }]}
         >
-            {/* 🌟 Hyper Glow Background (Replaces simple Shadow) */}
+            {/* 🌟 Silky Glow Background (Windows 7 Fusion Style) */}
             {preferences.fab.enableGlow && (
-                <HyperGlow color={glowColor} isGenerating={isGenerating} />
+                <SilkyGlow
+                    color={glowColor}
+                    size={100} // Larger than button (64px) + margin
+                    style={{ position: 'absolute' }}
+                />
             )}
 
             {/* Special Effects Layers */}
