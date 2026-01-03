@@ -177,25 +177,45 @@ export class VectorizationQueue {
             // Phase 8: Knowledge Graph Learning
             if (ragConfig.enableKnowledgeGraph) {
                 console.log('[VectorizationQueue] Starting Knowledge Graph Learning...');
-                // We use 'fire-and-forget' logic for KG to not block the main flow, 
-                // but ideally this should be a separate queue or stage.
-                // For now, we just log it.
-                // Real implementation imports GraphExtractor and runs it.
                 const { graphExtractor } = require('./graph-extractor');
 
-                // Strategy check
+                // 策略检查
                 if (ragConfig.costStrategy === 'full') {
-                    // Full Scan: Extract from every chunk
+                    // 全量扫描：顺序执行并让出主线程，防止 UI 卡死
                     for (const chunk of chunks) {
-                        graphExtractor.extractAndSave(chunk, task.docId).catch((e: any) => console.error(e));
+                        try {
+                            await graphExtractor.extractAndSave(chunk, task.docId);
+                            // 💡 关键修复：每处理一个分块，强制让出主线程 20ms，让 UI 有机会渲染
+                            await new Promise(resolve => setTimeout(resolve, 20));
+                        } catch (e) {
+                            console.error('[VectorizationQueue] KG Extraction Error (Chunk):', e);
+                        }
                     }
                 } else if (ragConfig.costStrategy === 'summary-first') {
-                    // Summary First: Extract from the first few chunks or a summary
-                    // For simplicity, lets take the first 2 chunks
-                    const summaryContext = chunks.slice(0, 2).join('\n');
-                    graphExtractor.extractAndSave(summaryContext, task.docId).catch((e: any) => console.error(e));
+                    // 摘要优先：不再只取前2块，而是采用"首-中-尾"采样策略
+                    let sampleChunks: string[] = [];
+
+                    if (chunks.length <= 3) {
+                        sampleChunks = chunks;
+                    } else {
+                        // 取首部、中部、尾部，确保覆盖全貌
+                        const first = chunks[0];
+                        const midIndex = Math.floor(chunks.length / 2);
+                        const mid = chunks[midIndex];
+                        const last = chunks[chunks.length - 1];
+                        sampleChunks = [first, mid, last];
+                    }
+
+                    const summaryContext = sampleChunks.join('\n\n[...]\n\n');
+                    console.log(`[VectorizationQueue] Summary Mode: Extracting from ${sampleChunks.length} sampled chunks`);
+
+                    try {
+                        await graphExtractor.extractAndSave(summaryContext, task.docId);
+                    } catch (e) {
+                        console.error('[VectorizationQueue] KG Extraction Error (Summary):', e);
+                    }
                 }
-                // 'on-demand' does nothing here
+                // 'on-demand' 模式在此处不执行动作
             }
 
         } catch (error) {

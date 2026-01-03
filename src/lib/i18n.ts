@@ -193,6 +193,16 @@ export const translations = {
                 cleanupSuccess: '清理完成: 删除了 {count} 个冗余向量',
                 cleanupError: '清理失败',
             },
+            tokenStats: {
+                title: '会话统计',
+                subtitle: '实时用量追踪',
+                totalToken: '总 Token',
+                prompt: '提示词 (Input)',
+                completion: '补全 (Output)',
+                ragSystem: 'RAG 系统',
+                reset: '重置会话统计',
+                estimated: '≈ 表示因 API 数据缺失而估算的值',
+            },
             backup: {
                 title: '数据与备份',
                 localStorage: '本地存储',
@@ -666,6 +676,16 @@ export const translations = {
                 loadError: 'Failed to load stats',
                 cleanupSuccess: 'Cleanup complete: deleted {count} redundant vectors',
                 cleanupError: 'Cleanup failed',
+            },
+            tokenStats: {
+                title: 'Session Stats',
+                subtitle: 'Real-time Usage Tracking',
+                totalToken: 'Total Token',
+                prompt: 'Prompt (Input)',
+                completion: 'Completion (Output)',
+                ragSystem: 'RAG System',
+                reset: 'Reset Session Stats',
+                estimated: '≈ Indicates estimated value due to missing API data.',
             },
             backup: {
                 title: 'Data & Backup',

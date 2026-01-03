@@ -77,17 +77,9 @@ export const FolderItem: React.FC<FolderItemProps> = ({
     ];
 
     return (
-        <View style={{ paddingLeft: level * 16 }} className="mx-6 mb-1">
+        <View className="mx-6 mb-1">
             <View className="flex-row items-center">
-                {/* 展开/折叠按钮 */}
-                <TouchableOpacity
-                    onPress={handleToggle}
-                    className="w-8 h-8 items-center justify-center mr-1"
-                >
-                    <Animated.View style={chevronStyle}>
-                        <ChevronRight size={16} color="#94a3b8" strokeWidth={2.5} />
-                    </Animated.View>
-                </TouchableOpacity>
+
 
                 {/* 文件夹主体 */}
                 <TouchableOpacity

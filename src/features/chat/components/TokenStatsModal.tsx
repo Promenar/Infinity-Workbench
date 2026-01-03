@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { translations } from '../../../lib/i18n';
 import { View, Modal, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown, Easing } from 'react-native-reanimated';
@@ -119,8 +120,8 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                         {/* Header */}
                         <View style={styles.header}>
                             <View>
-                                <Typography className="text-2xl font-black text-black dark:text-white" style={{ letterSpacing: -0.5 }}>Session Stats</Typography>
-                                <Typography className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-[1px] mt-0.5">Real-time Usage Tracking</Typography>
+                                <Typography className="text-2xl font-black text-black dark:text-white" style={{ letterSpacing: -0.5 }}>{translations[isDark ? 'en' : 'zh'].settings.tokenStats.title}</Typography>
+                                <Typography className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-[1px] mt-0.5">{translations[isDark ? 'en' : 'zh'].settings.tokenStats.subtitle}</Typography>
                             </View>
                             <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
                                 <X size={18} color={isDark ? '#fff' : '#000'} />
@@ -133,14 +134,14 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                                 <Typography className="text-4xl font-black text-black dark:text-white" style={{ letterSpacing: -1 }}>
                                     {stats.total.toLocaleString()}
                                 </Typography>
-                                <Typography className="text-[10px] text-gray-400 font-bold mt-1 uppercase">Total Tokens</Typography>
+                                <Typography className="text-[10px] text-gray-400 font-bold mt-1 uppercase">{translations[isDark ? 'en' : 'zh'].settings.tokenStats.totalToken}</Typography>
                             </View>
                         </View>
 
                         {/* Breakdown */}
                         <View style={styles.breakdown}>
                             <MetricRow
-                                label="Prompt (Input)"
+                                label={translations[isDark ? 'en' : 'zh'].settings.tokenStats.prompt}
                                 count={stats.chatInput.count}
                                 pct={inputPct}
                                 color="#8b5cf6"
@@ -148,7 +149,7 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                                 isEstimated={stats.chatInput.isEstimated}
                             />
                             <MetricRow
-                                label="Completion (Output)"
+                                label={translations[isDark ? 'en' : 'zh'].settings.tokenStats.completion}
                                 count={stats.chatOutput.count}
                                 pct={outputPct}
                                 color="#f59e0b"
@@ -156,7 +157,7 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                                 isEstimated={stats.chatOutput.isEstimated}
                             />
                             <MetricRow
-                                label="RAG System"
+                                label={translations[isDark ? 'en' : 'zh'].settings.tokenStats.ragSystem}
                                 count={stats.ragSystem.count}
                                 pct={ragPct}
                                 color="#10b981"
@@ -173,11 +174,11 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({
                                 style={[styles.resetBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)' }]}
                             >
                                 <RotateCcw size={14} color="#ef4444" />
-                                <Typography className="text-xs font-bold text-red-500 ml-2">Reset Session Stats</Typography>
+                                <Typography className="text-xs font-bold text-red-500 ml-2">{translations[isDark ? 'en' : 'zh'].settings.tokenStats.reset}</Typography>
                             </TouchableOpacity>
 
                             <Typography className="text-[10px] text-gray-400 text-center mt-3">
-                                ≈ Indicates estimated value due to missing API data.
+                                {translations[isDark ? 'en' : 'zh'].settings.tokenStats.estimated}
                             </Typography>
                         </View>
                     </BlurView>
