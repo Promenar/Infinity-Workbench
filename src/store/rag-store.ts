@@ -211,6 +211,14 @@ export const useRagStore = create<RagState>((set, get) => {
                 await db.execute('DELETE FROM documents WHERE id = ?', [id]);
                 // 删除对应的向量数据
                 await db.execute('DELETE FROM vectors WHERE doc_id = ?', [id]);
+                // 删除知识图谱边
+                await db.execute('DELETE FROM kg_edges WHERE doc_id = ?', [id]);
+                // 清理孤立节点 (没有边连接的节点)
+                await db.execute(`
+                    DELETE FROM kg_nodes 
+                    WHERE id NOT IN (SELECT source_id FROM kg_edges) 
+                    AND id NOT IN (SELECT target_id FROM kg_edges)
+                `);
 
                 set(state => ({
                     documents: state.documents.filter(d => d.id !== id)
@@ -453,8 +461,16 @@ export const useRagStore = create<RagState>((set, get) => {
                 // Prepare transaction queries would be better, but loop is safer for now with current db adapter
                 for (const id of docIds) {
                     await db.execute('DELETE FROM vectors WHERE doc_id = ?', [id]);
+                    await db.execute('DELETE FROM kg_edges WHERE doc_id = ?', [id]);
                     await db.execute('DELETE FROM documents WHERE id = ?', [id]);
                 }
+
+                // Cleanup orphaned nodes once for the batch
+                await db.execute(`
+                    DELETE FROM kg_nodes 
+                    WHERE id NOT IN (SELECT source_id FROM kg_edges) 
+                    AND id NOT IN (SELECT target_id FROM kg_edges)
+                `);
 
                 set(state => ({
                     documents: state.documents.filter(d => !docIds.includes(d.id))

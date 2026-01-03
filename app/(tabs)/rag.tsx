@@ -444,7 +444,7 @@ export default function RagScreen() {
             {/* 控制栏 */}
             <ControlBar
                 onNewFolder={handleNewFolder}
-                onBatchVectorize={handleBatchVectorize}
+                onViewGraph={() => router.push('/knowledge-graph')}
                 currentTask={currentTask ? {
                     docTitle: currentTask.docTitle,
                     progress: currentTask.progress

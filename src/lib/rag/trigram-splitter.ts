@@ -37,9 +37,9 @@ export class TrigramTextSplitter {
     }
 
     /**
-     * 分割文本为多个块
+     * 分割文本为多个块 (异步非阻塞)
      */
-    splitText(text: string): string[] {
+    async splitText(text: string): Promise<string[]> {
         if (!text || text.trim().length === 0) {
             return [];
         }
@@ -51,7 +51,14 @@ export class TrigramTextSplitter {
         const chunks: string[] = [];
         let currentChunk = '';
 
-        for (const sentence of sentences) {
+        for (let i = 0; i < sentences.length; i++) {
+            const sentence = sentences[i];
+
+            // 每处理 50 个句子让出一次主线程，避免 UI 卡死
+            if (i % 50 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
             // 如果单个句子超过 chunkSize，需要进一步拆分
             if (sentence.length > this.chunkSize) {
                 // 先保存当前积累的块

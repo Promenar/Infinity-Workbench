@@ -1,13 +1,13 @@
 import React from 'react';
 import { View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Typography } from '../ui';
-import { FolderPlus, Zap } from 'lucide-react-native';
+import { FolderPlus, Network } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from 'expo-haptics';
 
 interface ControlBarProps {
     onNewFolder: () => void;
-    onBatchVectorize: () => void;
+    onViewGraph: () => void;
     currentTask?: {
         docTitle: string;
         progress: number;
@@ -17,7 +17,7 @@ interface ControlBarProps {
 
 export const ControlBar: React.FC<ControlBarProps> = ({
     onNewFolder,
-    onBatchVectorize,
+    onViewGraph,
     currentTask,
     queueLength
 }) => {
@@ -47,12 +47,12 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        onPress={() => handlePress(onBatchVectorize)}
-                        className="h-10 px-4 bg-emerald-50 dark:bg-emerald-900/30 
+                        onPress={() => handlePress(onViewGraph)}
+                        className="h-10 px-4 bg-violet-50 dark:bg-violet-900/30 
                        rounded-xl flex-row items-center gap-2 active:opacity-70">
-                        <Zap size={16} color="#10b981" strokeWidth={2.5} />
-                        <Typography className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">
-                            向量化
+                        <Network size={16} color="#8b5cf6" strokeWidth={2.5} />
+                        <Typography className="text-violet-600 dark:text-violet-400 font-bold text-sm">
+                            知识图谱
                         </Typography>
                     </TouchableOpacity>
                 </View>

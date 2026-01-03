@@ -91,7 +91,7 @@ export class VectorizationQueue {
                 chunkSize: ragConfig.docChunkSize,
                 chunkOverlap: ragConfig.chunkOverlap
             });
-            const chunks = splitter.splitText(content);
+            const chunks = await splitter.splitText(content);
 
             //获取embedding provider
             task.status = 'vectorizing';
