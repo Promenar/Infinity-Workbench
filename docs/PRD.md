@@ -1,8 +1,8 @@
 # NeuralFlow - 产品需求文档 (PRD)
 
-> **更新日期**: 2025-12-30  
-> **版本**: 3.8  
-> **状态**: Phase 11 完成，**RAG 系统重构 + 指示器持久化调优 + 正式版编译 (v3.8)****  
+> **更新日期**: 2026-01-03
+> **版本**: 1.1.2
+> **状态**: Phase 12 完成，**正式版发布 (v1.1.2) - 性能/图谱/UI 修复**
 
 ---
 
@@ -147,7 +147,54 @@
 - [x] **会话记忆管理**（对话历史自动向量化与归档）
 - [x] **孤儿数据清理**（删除会话时自动清除关联向量）
 
-### 3.4 设置与管理
+### 3.4 知识图谱引擎 (Knowledge Graph) ⭐ (Phase 8)
+**当前状态**: ✅ 全功能上线 (v1.1)
+
+**核心能力**:
+- [x] **自动化实体抽取**: 基于 LLM (DeepSeek/Gemini/OpenAI) 从文档中提取实体与关系 (<Subject, Predicate, Object>)。
+- [x] **成本优化策略**:
+  - [x] **Summary-First**: 优先对文档摘要进行图谱构建，极大降低 Token 消耗。
+  - [x] **增量更新**: 基于 Hash 校验 (SHA-256)，仅处理变更文档。
+- [x] **本地图谱存储**: 基于 SQLite (`kg_nodes`, `kg_edges`) 的高效关系存储。
+- [x] **交互式可视化**:
+  - [x] **D3-Force 驱动**: 物理仿真布局，支持拖拽、缩放。
+  - [x] **节点交互**: 点击节点查看详情、关联文档及二度关系。
+  - [x] **子图探索**: 从文档详情页直接查看该文档生成的局部图谱。
+
+### 3.5 Token 计费与统计体系 (Phase 11)
+**当前状态**: ✅ 全功能上线
+
+**核心目标**: 解决 API 计费不明问题，提供透明的成本追踪。
+
+**功能清单**:
+- [x] **混合计费引擎 (Hybrid Billing)**:
+  - 优先使用 API 返回的真实 Usage。
+  - 缺失时优雅降级为本地估算 (Token Counter)。
+- [x] **全链路追踪**:
+  - **Chat**: 捕获 LLM 问答消耗。
+  - **RAG System**: 捕获 Query Rewrite 和 Embedding 操作的隐形消耗。
+- [x] **可视化仪表盘**:
+  - **会话级**: 下拉查看单会话消耗，支持估算标记 (≈)。
+  - **全局级**: Settings -> Token Usage 面板，按模型维度统计 Total/Input/Output。
+- [x] **数据管理**: 支持重置统计周期。
+
+### 3.6 多模态 RAG (Multimodal) (Phase 8)
+**当前状态**: ✅ 全功能上线
+
+**核心能力**:
+- [x] **图片理解**: 集成 VLM (Vision Language Models) 生成图片描述。
+- [x] **语义检索**: 图片描述向量化，支持通过文本搜索图片内容。
+- [x] **混合上下文**: 对话时同时检索相关文本片段和图片引用。
+- [x] **预览体验**: 聊天气泡内嵌缩略图，支持全屏预览与原始文件关联。
+
+### 3.7 智能标签系统 (Smart Tags) (Phase 8)
+**当前状态**: ✅ 全功能上线
+
+- [x] **多维分类**: 支持为文档添加自定义标签 (Color-coded Capsules)。
+- [x] **关联管理**: 在 GraphStore 中维护 Document-Tag 多对多关系。
+- [x] **筛选过滤**: RAG 文库支持按标签组合筛选。
+
+### 3.8 设置与管理
 **当前状态**: ✅ 全面完成 + 视觉一致性优化
 
 **功能清单**:
@@ -731,47 +778,70 @@ app/
 - `api-store.ts` - AI 服务商与模型配置
 - `agent-store.ts` - 智能体预设与关联模型
 - `spa-store.ts` - 超级助手偏好设置（FAB 配置、RAG 统计）
-- `rag-store.ts` - 知识库文件夹与文档管理
+- `rag-store.ts` - 知识库文件夹、文档管理、向量化队列
+- `token-stats-store.ts` - 全局 Token 消耗账本 (Phase 11)
+- `graph-store.ts` - 知识图谱标签与关系管理 (Phase 8)
 
 ### 4.3 数据持久化
 **当前方案**: 
 - **Zustand AsyncStorage** - 全局设置、FAB 配置
-- **SQLite (op-sqlite)** - 对话历史、知识库元数据、向量存储
-- **FileSystem** - 导出的 TXT 文件、文档内容
+- **SQLite (op-sqlite)** - 对话历史、知识库元数据、向量存储、图谱节点/边
+- **FileSystem** - 导出的 TXT 文件、文档内容、图片缓存
 - **SecureStore** - API Keys（暂未启用）
 
-**数据库表结构**:
-- `sessions` - 会话元数据
-- `documents` - 文档元数据
-- `folders` - 文件夹结构
-- `vectors` - 向量存储（384 维浮点数组）
+**数据库表结构 (SQLite)**:
+- `sessions`: 会话元数据
+- `documents`: 文档元数据 (含 Hash)
+- `folders`: 文件夹层级
+- `vectors`: 向量存储 (384 维浮点数组, BLOB)
+- `kg_nodes`: 图谱实体 (Label, Type)
+- `kg_edges`: 实体关系 (Source, Target, Relation)
+- `tags`: 智能标签定义
+- `document_tags`: 文档-标签关联表
 
 ### 4.4 RAG 引擎架构
-**向量化流程**:
-1. 文档导入 → 2. 文本分块（500 字符，50 字符重叠）→ 3. Transformers.js 向量化 → 4. SQLite 持久化
+**混合处理管道 (Hybrid Pipeline)**:
 
-**检索流程**:
-1. 用户输入 → 2. 查询向量化 → 3. 余弦相似度排序 → 4. Top-K 检索 → 5. 注入 System Prompt
+1.  **摄入层 (Ingestion)**:
+    - 文本: 递归分块 (Recursive Splitter) -> Chunking (500 chars).
+    - 图片: VLM 描述生成 -> 文本化.
+    - 队列: `VectorizationQueue` (串行处理 + `yieldToMain` 防卡顿).
 
-**记忆管理**:
-- 每轮对话（User + AI）异步向量化
-- 存储到 `vectors` 表，关联 `session_id`
-- 删除会话时自动清理关联向量
+2.  **向量层 (Vector)**:
+    - 模型: Transformers.js (all-MiniLM-L6-v2) 本地推理.
+    - 存储: SQLite (`vectors` table).
+
+3.  **图谱层 (Graph)**:
+    - 抽取: `GraphExtractor` 调用 LLM 提取三元组.
+    - 优化: Summary-First 策略 (仅对摘要抽取以节省 Token).
+    - 存储: SQLite (`kg_nodes`, `kg_edges`).
+
+4.  **检索层 (Retrieval)**:
+    - 混合检索: 向量相似度 (Top-K) + 关键字匹配 (Trigram 规划中).
+    - 排序: 余弦相似度 DESC.
+    - 注入: 动态构建 System Prompt (Context Window 裁剪).
 
 ### 4.5 原生桥接防御（⚠️ 关键）
-**黄金法则**: 所有原生桥接调用（Haptics、SecureStore 等）必须延迟 10ms 执行
+**黄金法则**: 所有原生桥接调用（Haptics、SecureStore、Router 等）必须延迟 10ms 执行
 
-**原因**: 
-- 语言切换等状态变更会触发导航器重挂载
-- 同步调用原生模块会导致线程竞争和死锁
-
-**标准实现**:
+**实现机制**:
 ```tsx
 setTimeout(() => {
+    // 强制让出 JS 线程，等待 Native 状态同步
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setState(value); // 状态变更
+    router.push('/target');
 }, 10);
 ```
+
+### 4.6 性能优化架构 (Phase 12)
+- **渲染层**:
+  - **Inverted FlashList**: 聊天记录倒序渲染，O(1) 插入成本。
+  - **InteractionManager**: 转场动画完成后再执行重渲染。
+- **计算层**:
+  - **YieldToMain**: RAG 循环中每处理 N 个分块强制 `setTimeout(0)`，防止主线程冻结。
+  - **Memoization**: `ChatBubble` 和 `Markdown` 组件深度缓存。
+- **网络层**:
+  - **MIME Sniffing**: 强制校验 `application/json`，防止 HTML 注入 Crash。
 
 ---
 
@@ -1136,6 +1206,22 @@ setTimeout(() => {
 ---
 
 **文档维护者**: AI Assistant  
-**最后更新**: 2025-12-28  
-**下次审查**: Phase 6 完成后
+**最后更新**: 2026-01-03  
+**下次审查**: Phase 13 规划前
+
+---
+
+## 13. 未来规划 (Future Roadmap)
+
+### 5.1 高级内容创作 (v1.2+)
+- **写作模式**: 支持长篇创作，自动摘要旧内容（每 10 轮对话）并向量化归档，写作时检索前文情节。
+- **LaTeX 公式**: 集成 `react-native-mathjax` 或 `katex`，支持学术公式渲染。
+
+### 5.2 知识库增强 (v1.2+)
+- **PDF 支持**: 使用 `react-native-pdf` 或 WebView 提取文本，扩展输入源。
+- **Voice Input**: 集成语音识别（Whisper API 或原生），支持按住说话。
+
+### 5.3 工程化
+- **性能监控**: 集成 Sentry 或原生性能监控。
+- **自动化测试**: 增加 E2E 测试覆盖率。
 
