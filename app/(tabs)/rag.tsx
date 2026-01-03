@@ -573,11 +573,13 @@ export default function RagScreen() {
 
                     {/* 面包屑导航 (非搜索模式显示) */}
                     {!searchQuery && (
-                        <Breadcrumbs
-                            currentFolderId={currentFolderId}
-                            allFolders={folders}
-                            onNavigate={handleNavigate}
-                        />
+                        <View className="mb-3">
+                            <Breadcrumbs
+                                currentFolderId={currentFolderId}
+                                allFolders={folders}
+                                onNavigate={handleNavigate}
+                            />
+                        </View>
                     )}
 
                     {/* 内容列表 */}

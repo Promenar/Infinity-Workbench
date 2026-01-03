@@ -88,6 +88,31 @@ export default function RagAdvancedSettings() {
                                 onValueChange={(v) => updateGlobalRagConfig({ enableKnowledgeGraph: v })}
                             />
                         </View>
+
+                        {/* Model Selection Row - Only visible if enabled */}
+                        {globalRagConfig.enableKnowledgeGraph && (
+                            <View>
+                                <View className="h-[1px] bg-gray-100 dark:bg-zinc-800 mx-4" />
+                                <TouchableOpacity
+                                    onPress={() => setModelModalVisible(true)}
+                                    className="p-4 flex-row justify-between items-center active:bg-gray-50 dark:active:bg-zinc-800/50 transition-colors"
+                                >
+                                    <View style={{ flex: 1 }}>
+                                        <View className="flex-row items-center mb-1">
+                                            <Bot size={16} color="#10b981" style={{ marginRight: 6 }} />
+                                            <Typography className="font-bold text-gray-900 dark:text-gray-100">抽取模型 (Extraction Model)</Typography>
+                                        </View>
+                                        <Typography className="text-xs text-gray-500">
+                                            {selectedModelName ? `当前: ${selectedModelName}` : '默认 (跟随系统 Summary 模型)'}
+                                        </Typography>
+                                    </View>
+                                    <View className="flex-row items-center">
+                                        <Typography className="text-xs text-indigo-500 font-bold mr-1">更换</Typography>
+                                        <ChevronLeft size={16} color="#6366f1" style={{ transform: [{ rotate: '180deg' }] }} />
+                                    </View>
+                                </TouchableOpacity>
+                            </View>
+                        )}
                     </View>
 
                     {/* 1. 策略选择 (降本核心) */}
