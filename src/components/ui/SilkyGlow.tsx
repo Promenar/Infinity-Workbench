@@ -56,7 +56,7 @@ export const SilkyGlow: React.FC<SilkyGlowProps> = ({ color, size, style }) => {
     // We need to padding the radius calculation.
     const blurRadius = 20;
     const padding = blurRadius * 1.5; // Enough space for the glow to fade out
-    const r = (size - padding * 2) / 2;
+    const r = Math.max(0, (size - padding * 2) / 2);
     const c = size / 2; // Center remains absolute center
 
     return (
