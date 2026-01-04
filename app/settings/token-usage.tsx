@@ -9,11 +9,22 @@ import { ChevronLeft, Trash2, BarChart2, MessageSquare, Zap, Database } from 'lu
 import * as Haptics from '../../src/lib/haptics';
 import { BillingUsage, TokenMetric } from '../../src/types/chat';
 
+import { useApiStore } from '../../src/store/api-store';
+
 export default function TokenUsageScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { globalTotal, byModel, resetGlobalStats, resetModelStats } = useTokenStatsStore();
+  const { providers } = useApiStore();
+
+  const getModelName = (id: string) => {
+    for (const provider of providers) {
+      const model = provider.models.find((m) => m.id === id || m.uuid === id);
+      if (model) return model.name;
+    }
+    return id;
+  };
 
   const handleResetAll = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -85,9 +96,17 @@ export default function TokenUsageScreen() {
           marginBottom: 12,
         }}
       >
-        <Typography className="font-bold text-base text-black dark:text-white">
-          {modelId}
-        </Typography>
+        {/* Friendly Model Name */}
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Typography className="font-bold text-base text-black dark:text-white" numberOfLines={1}>
+            {getModelName(modelId)}
+          </Typography>
+          {getModelName(modelId) !== modelId && (
+            <Typography className="text-[10px] text-gray-400" numberOfLines={1}>
+              {modelId}
+            </Typography>
+          )}
+        </View>
         <Typography className="font-black text-gray-500 dark:text-gray-400">
           {usage.total.toLocaleString()}
         </Typography>
@@ -136,7 +155,11 @@ export default function TokenUsageScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 100 }}
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingBottom: 100,
+          paddingTop: insets.top + 80, // ✅ Fix header overlap
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* Global Summary */}

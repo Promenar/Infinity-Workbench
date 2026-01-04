@@ -90,9 +90,18 @@ export class GraphExtractor {
   /**
    * Extract entities and relationships from a text chunk
    */
-  async extractAndSave(text: string, docId?: string): Promise<ExtractionResult> {
+  async extractAndSave(
+    text: string,
+    docId?: string,
+    scope?: { sessionId?: string; agentId?: string },
+  ): Promise<ExtractionResult> {
     try {
-      console.log('[GraphExtractor] Starting extraction for doc:', docId, 'Length:', text.length);
+      console.log(
+        '[GraphExtractor] Starting extraction:',
+        docId ? `Doc:${docId}` : `Session:${scope?.sessionId}`,
+        'Length:',
+        text.length,
+      );
 
       // 1. Prepare Client
       const client = this.getClient();
@@ -143,7 +152,7 @@ export class GraphExtractor {
 
       for (const node of result.nodes) {
         try {
-          const id = await graphStore.upsertNode(node.name, node.type, node.metadata);
+          const id = await graphStore.upsertNode(node.name, node.type, node.metadata, scope);
           nameToIdMap.set(node.name, id);
         } catch (e) {
           console.error(`[GraphExtractor] Failed to save node ${node.name}`, e);
@@ -163,6 +172,7 @@ export class GraphExtractor {
               edge.relation,
               docId,
               edge.weight || 1.0,
+              scope,
             );
           } catch (e) {
             console.error(`[GraphExtractor] Failed to save edge ${edge.source}->${edge.target}`, e);

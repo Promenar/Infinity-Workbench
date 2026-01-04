@@ -24,6 +24,7 @@ interface FolderItemProps {
   onDelete?: () => void;
   onRename?: () => void;
   onMove?: () => void;
+  onExtractGraph?: (strategy: 'full' | 'summary-first') => void;
 }
 
 export const FolderItem: React.FC<FolderItemProps> = ({
@@ -38,6 +39,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   onDelete,
   onRename,
   onMove,
+  onExtractGraph,
 }) => {
   const { isDark } = useTheme();
 
@@ -66,6 +68,14 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   }));
 
   const menuItems: ContextMenuItem[] = [
+    {
+      label: '生成全量图谱 (批量)',
+      onPress: () => onExtractGraph?.('full'),
+    },
+    {
+      label: '生成摘要图谱 (批量)',
+      onPress: () => onExtractGraph?.('summary-first'),
+    },
     {
       label: '重命名',
       onPress: () => onRename?.(),

@@ -4,26 +4,39 @@ import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
 import { graphStore, KGNode, KGEdge } from '../../lib/rag/graph-store';
 import { Typography } from '../ui';
+import { KGNodeEditModal } from './KGNodeEditModal';
 
 interface KnowledgeGraphViewProps {
   onNodeSelect?: (nodeId: string) => void;
-  docId?: string;
+  docIds?: string[]; // Changed from single docId to array
+  sessionId?: string;
+  agentId?: string;
 }
 
-export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ onNodeSelect, docId }) => {
+export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
+  onNodeSelect,
+  docIds,
+  sessionId,
+  agentId,
+}) => {
   const { isDark } = useTheme();
   const webViewRef = useRef<WebView>(null);
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Interaction State
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeData, setSelectedNodeData] = useState<{ id: string; label: string; group?: string } | null>(null);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+
   useEffect(() => {
     loadData();
-  }, [docId]);
+  }, [JSON.stringify(docIds), sessionId, agentId]); // Deep compare docIds or use JSON string
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const data = await graphStore.getGraphData(docId);
+      const data = await graphStore.getGraphData(docIds, sessionId, agentId);
 
       // Transform for Vis.js
       // Nodes: { id, label, group, title }
@@ -46,10 +59,28 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ onNodeSe
 
       setGraphData({ nodes, edges });
     } catch (e) {
-      console.error('Failed to load graph data', e);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleNodeClick = (nodeId: string) => {
+    const node = graphData?.nodes.find(n => n.id === nodeId);
+    if (node) {
+      setSelectedNodeData({ id: node.id, label: node.fullLabel || node.label, group: node.group });
+      setSelectedNodeId(nodeId);
+      setIsEditModalVisible(true);
+    }
+
+    if (onNodeSelect) {
+      onNodeSelect(nodeId);
+    }
+  };
+
+  const handleReload = () => {
+    loadData();
+    setIsEditModalVisible(false);
+    setSelectedNodeId(null);
   };
 
   if (loading) {
@@ -183,13 +214,20 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ onNodeSe
             try {
               const data = JSON.parse(event.nativeEvent.data);
               if (data.type === 'nodeSelect') {
-                onNodeSelect(data.nodeId);
+                handleNodeClick(data.nodeId);
               }
             } catch (e) {
               // ignore
             }
           }
         }}
+      />
+
+      <KGNodeEditModal
+        visible={isEditModalVisible}
+        node={selectedNodeData}
+        onClose={() => setIsEditModalVisible(false)}
+        onSave={handleReload}
       />
     </View>
   );

@@ -22,6 +22,7 @@ import { performWebSearch } from '../features/chat/utils/web-search';
 import { LlmClient } from '../lib/llm/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { MemoryManager } from '../lib/rag/memory-manager';
+import { graphExtractor } from '../lib/rag/graph-extractor'; // ✅ Import KG Extractor
 
 import { ContextManager } from '../features/chat/utils/ContextManager';
 
@@ -60,6 +61,7 @@ const enrichMessagesWithArchiveStatus = async (
 interface ChatState {
   sessions: Session[];
   activeRequests: Record<string, LlmClient>; // sessionId -> activeClient
+  activeKGExtractions: Record<string, boolean>; // sessionId -> isExtractingKG
   currentGeneratingSessionId: string | null;
 
   addSession: (session: Session) => void;
@@ -128,6 +130,7 @@ interface ChatState {
   updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
   setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
   updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => void; // ✅ 新增
+  setKGExtractionStatus: (sessionId: SessionId, isExtracting: boolean) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -135,9 +138,14 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       sessions: [],
       activeRequests: {},
+      activeKGExtractions: {},
       currentGeneratingSessionId: null,
 
       addSession: (session) => set((state) => ({ sessions: [session, ...state.sessions] })),
+      setKGExtractionStatus: (sessionId, isExtracting) =>
+        set((state) => ({
+          activeKGExtractions: { ...state.activeKGExtractions, [sessionId]: isExtracting },
+        })),
       updateSession: (id, updates) =>
         set((state) => ({
           sessions: state.sessions.map((s) => (s.id === id ? { ...s, ...updates } : s)),
@@ -146,7 +154,8 @@ export const useChatStore = create<ChatState>()(
         set((state) => ({
           sessions: state.sessions.filter((s) => s.id !== id),
         })),
-      addMessage: (sessionId, message) =>
+      addMessage: (sessionId, message) => {
+        // 1. Update State
         set((state) => ({
           sessions: state.sessions.map((s) => {
             if (s.id === sessionId) {
@@ -160,7 +169,53 @@ export const useChatStore = create<ChatState>()(
             }
             return s;
           }),
-        })),
+        }));
+
+        // 2. Trigger KG Extraction (Async/Background)
+        // Extract both USER and ASSISTANT messages to build full context graph.
+        // Optimization: Skip short messages to save tokens (e.g., "Hello", "Thanks", "Continue").
+        const isWorthExtracting =
+          (message.role === 'assistant' && (message.content?.length ?? 0) > 30) ||
+          (message.role === 'user' && (message.content?.length ?? 0) > 15);
+
+        if (isWorthExtracting && message.content?.trim()) {
+          setTimeout(async () => {
+            try {
+              const session = get().getSession(sessionId);
+              if (!session) return;
+
+              // Indicate start of extraction
+              get().setKGExtractionStatus(sessionId, true);
+
+              // 1. Get Global Setting
+              const { useSettingsStore } = require('../store/settings-store'); // Lazy import to avoid cycle if any
+              const globalConfig = useSettingsStore.getState().globalRagConfig;
+
+              // 2. Get Session Setting
+              const sessionKgOption = session.ragOptions?.enableKnowledgeGraph;
+
+              // 3. Determine Effective Status (Session Override > Global)
+              const isKgEnabled = sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph;
+
+              if (!isKgEnabled) {
+                console.log('[ChatStore] KG Extraction disabled for this session/globally.');
+                get().setKGExtractionStatus(sessionId, false);
+                return;
+              }
+
+              await graphExtractor.extractAndSave(message.content, undefined, {
+                sessionId,
+                agentId: session.agentId,
+              });
+            } catch (e) {
+              console.warn('[ChatStore] Background KG extraction failed:', e);
+            } finally {
+              // Indicate end of extraction
+              get().setKGExtractionStatus(sessionId, false);
+            }
+          }, 100);
+        }
+      },
       getSessionsByAgent: (agentId) => {
         const sessions = get().sessions.filter((s) => s.agentId === agentId);
         return sessions.sort((a, b) => {
@@ -197,10 +252,10 @@ export const useChatStore = create<ChatState>()(
           sessions: state.sessions.map((s) =>
             s.id === id
               ? {
-                  ...s,
-                  options: { ...s.options, ...options },
-                  ragOptions: { ...s.ragOptions, ...options?.ragOptions }, // Merge if passed
-                }
+                ...s,
+                options: { ...s.options, ...options },
+                ragOptions: { ...s.ragOptions, ...options?.ragOptions }, // Merge if passed
+              }
               : s,
           ),
         })),
@@ -286,19 +341,19 @@ export const useChatStore = create<ChatState>()(
                   messages: s.messages.map((m) =>
                     m.id === messageId
                       ? {
-                          ...m,
-                          content,
-                          tokens: newTokens,
-                          reasoning: reasoning !== undefined ? reasoning : m.reasoning,
-                          citations: citations !== undefined ? citations : m.citations,
-                          ragReferences:
-                            ragReferences !== undefined ? ragReferences : m.ragReferences,
-                          ragReferencesLoading:
-                            ragReferencesLoading !== undefined
-                              ? ragReferencesLoading
-                              : m.ragReferencesLoading,
-                          ragMetadata: ragMetadata !== undefined ? ragMetadata : m.ragMetadata,
-                        }
+                        ...m,
+                        content,
+                        tokens: newTokens,
+                        reasoning: reasoning !== undefined ? reasoning : m.reasoning,
+                        citations: citations !== undefined ? citations : m.citations,
+                        ragReferences:
+                          ragReferences !== undefined ? ragReferences : m.ragReferences,
+                        ragReferencesLoading:
+                          ragReferencesLoading !== undefined
+                            ? ragReferencesLoading
+                            : m.ragReferencesLoading,
+                        ragMetadata: ragMetadata !== undefined ? ragMetadata : m.ragMetadata,
+                      }
                       : m,
                   ),
                   lastMessage: content,
@@ -899,6 +954,26 @@ export const useChatStore = create<ChatState>()(
                 assistantMsgId,
               );
             }
+          }
+
+          // 🔑 关键修复: 触发 AI 回复的知识图谱实体提取 (KG Extraction)
+          if (finalRagOptions.enableDocs !== false && accumulatedContent.trim()) {
+            setTimeout(async () => {
+              try {
+                // Indicate start of extraction
+                get().setKGExtractionStatus(sessionId, true);
+
+                await graphExtractor.extractAndSave(accumulatedContent, undefined, {
+                  sessionId,
+                  agentId: session.agentId,
+                });
+              } catch (e) {
+                console.warn('[ChatStore] AI Response KG extraction failed:', e);
+              } finally {
+                // Indicate end of extraction
+                get().setKGExtractionStatus(sessionId, false);
+              }
+            }, 500); // 延迟一点执行，避免与UI渲染抢占
           }
 
           // 🔑 关键修复2: 检查并触发自动摘要

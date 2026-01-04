@@ -34,10 +34,33 @@ export class GraphStore {
   /**
    * Upsert a node (create if not exists by name)
    */
-  async upsertNode(name: string, type: string = 'concept', metadata: any = {}): Promise<string> {
+  async upsertNode(
+    name: string,
+    type: string = 'concept',
+    metadata: any = {},
+    scope?: { sessionId?: string; agentId?: string },
+  ): Promise<string> {
     try {
-      // Check if exists
-      const existing = await db.execute('SELECT id FROM kg_nodes WHERE name = ?', [name]);
+      // Check if exists (scope aware)
+      let query = 'SELECT id FROM kg_nodes WHERE name = ?';
+      const params: any[] = [name];
+
+      // Strategy: 
+      // If scope is provided, we prefer specific node. 
+      // BUT for now, to keep it simple and connected, we perform a global check first.
+      // If we want isolation, we should check AND session_id = ?
+      // Let's adopt a "Shared Global + Private Session" stragegy.
+      // If found in Global (session_id IS NULL), reuse it.
+      // If found in current Session, reuse it.
+      // If not found, create in current Session (if scoped) or Global.
+
+      const existing = await db.execute(query, params);
+
+      // Filter in memory for specific logic if needed, or refine query. 
+      // Simple logic: deduplicate by name regardless of scope? 
+      // NO, "Apple" (Fruit) vs "Apple" (Tech) in different contexts might differ.
+      // But for RAG, linking them is often desired.
+      // Current decision: Reuse ANY existing node with same name to promote connectivity.
       if (existing.rows && existing.rows.length > 0) {
         return (existing.rows as any)[0].id;
       }
@@ -46,12 +69,63 @@ export class GraphStore {
       const id = generateId();
       const createdAt = Date.now();
       await db.execute(
-        'INSERT INTO kg_nodes (id, name, type, metadata, created_at) VALUES (?, ?, ?, ?, ?)',
-        [id, name, type, JSON.stringify(metadata), createdAt],
+        'INSERT INTO kg_nodes (id, name, type, metadata, created_at, session_id, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [
+          id,
+          name,
+          type,
+          JSON.stringify(metadata),
+          createdAt,
+          scope?.sessionId || null,
+          scope?.agentId || null,
+        ],
       );
       return id;
     } catch (e) {
-      console.error('[GraphStore] Failed to upsert node:', e);
+      console.error('Failed to upsert KG node:', e);
+      throw e;
+    }
+  }
+
+  /**
+   * Update node properties
+   */
+  async updateNode(id: string, updates: { name?: string; type?: string }): Promise<void> {
+    try {
+      if (!updates.name && !updates.type) return;
+
+      let query = 'UPDATE kg_nodes SET ';
+      const params: any[] = [];
+      const parts: string[] = [];
+
+      if (updates.name) {
+        parts.push('name = ?');
+        params.push(updates.name);
+      }
+      if (updates.type) {
+        parts.push('type = ?');
+        params.push(updates.type);
+      }
+
+      query += parts.join(', ') + ' WHERE id = ?';
+      params.push(id);
+
+      await db.execute(query, params);
+    } catch (e) {
+      console.error('Failed to update KG node:', e);
+      throw e;
+    }
+  }
+
+  /**
+   * Delete node and associated edges (Cascade handled by DB mostly, but explicit check good)
+   */
+  async deleteNode(id: string): Promise<void> {
+    try {
+      // Edges cascade on delete due to schema FOREIGN KEY
+      await db.execute('DELETE FROM kg_nodes WHERE id = ?', [id]);
+    } catch (e) {
+      console.error('Failed to delete KG node:', e);
       throw e;
     }
   }
@@ -65,13 +139,24 @@ export class GraphStore {
     relation: string,
     docId?: string,
     weight: number = 1.0,
+    scope?: { sessionId?: string; agentId?: string },
   ): Promise<string> {
     try {
       const id = generateId();
       const createdAt = Date.now();
       await db.execute(
-        'INSERT INTO kg_edges (id, source_id, target_id, relation, weight, doc_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [id, sourceId, targetId, relation, weight, docId || null, createdAt],
+        'INSERT INTO kg_edges (id, source_id, target_id, relation, weight, doc_id, created_at, session_id, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          id,
+          sourceId,
+          targetId,
+          relation,
+          weight,
+          docId || null,
+          createdAt,
+          scope?.sessionId || null,
+          scope?.agentId || null,
+        ],
       );
       return id;
     } catch (e) {
@@ -131,13 +216,41 @@ export class GraphStore {
   /**
    * Get full graph for visualization (limit by count or depth could be added later)
    */
-  async getGraphData(docId?: string): Promise<{ nodes: KGNode[]; edges: KGEdge[] }> {
+  async getGraphData(
+    docIds?: string[], // Changed from single docId to array
+    sessionId?: string,
+    agentId?: string,
+  ): Promise<{ nodes: KGNode[]; edges: KGEdge[] }> {
     let edgesQuery = 'SELECT * FROM kg_edges';
+    let conditions: string[] = [];
     let queryParams: any[] = [];
 
-    if (docId) {
-      edgesQuery += ' WHERE doc_id = ?';
-      queryParams = [docId];
+    // Filter by Active Docs (if provided)
+    if (docIds && docIds.length > 0) {
+      const placeholders = docIds.map(() => '?').join(',');
+      conditions.push(`doc_id IN (${placeholders})`);
+      queryParams.push(...docIds);
+    }
+
+    // Filter by Session (if provided) - Explicit session edges (OR)
+    if (sessionId) {
+      conditions.push('(session_id = ?)');
+      queryParams.push(sessionId);
+    }
+
+    // Filter by Agent (if provided) - Agent specific edges (OR)
+    if (agentId) {
+      conditions.push('(agent_id = ?)');
+      queryParams.push(agentId);
+    }
+
+    // 🛡️ Strict Isolation: Explicit allow-all if no filters (Global View)
+    // if (conditions.length === 0) {
+    //   return { nodes: [], edges: [] };
+    // }
+
+    if (conditions.length > 0) {
+      edgesQuery += ` WHERE ${conditions.join(' OR ')}`;
     }
 
     const resEdges = await db.execute(edgesQuery, queryParams);
@@ -163,7 +276,8 @@ export class GraphStore {
 
     // If filtering by docId, only get relevant nodes
     let nodes: KGNode[] = [];
-    if (docId) {
+    // Only fetch relevant nodes if we are filtering by doc or session
+    if ((docIds && docIds.length > 0) || sessionId || agentId) {
       if (nodeIds.size > 0) {
         // Fetch nodes by IDs
         const placeholders = Array.from(nodeIds)
@@ -194,12 +308,6 @@ export class GraphStore {
     return { nodes, edges };
   }
 
-  /**
-   * Delete a node and cascade edge deletion (implicitly handled by DB FK ON DELETE CASCADE if configured, but good to be explicit or verify)
-   */
-  async deleteNode(nodeId: string): Promise<void> {
-    await db.execute('DELETE FROM kg_nodes WHERE id = ?', [nodeId]);
-  }
 
   // ==========================================
   // Tag Operations

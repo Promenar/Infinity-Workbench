@@ -22,6 +22,7 @@ export interface RagDocument {
   updatedAt?: number;
   tags?: Array<{ id: string; name: string; color: string }>;
   thumbnailPath?: string;
+  isGlobal?: boolean;
 }
 
 export interface VectorizationTask {
@@ -32,4 +33,5 @@ export interface VectorizationTask {
   progress: number; // 0-100
   error?: string;
   createdAt: number;
+  kgStrategy?: 'full' | 'summary-first' | 'on-demand';
 }

@@ -151,6 +151,24 @@ export const migrateDatabase = async () => {
       await db.execute('ALTER TABLE documents ADD COLUMN thumbnail_path TEXT');
     }
 
+    // Migration 8 (Phase 9 - KG 2.0): Add Scope to KG tables
+    const kgNodesCols = (await db.execute('PRAGMA table_info(kg_nodes)')).rows?.map((row: any) => row.name as string) || [];
+    if (!kgNodesCols.includes('session_id')) {
+      console.log('[DB Migration] Adding session_id/agent_id to kg_nodes...');
+      await db.execute('ALTER TABLE kg_nodes ADD COLUMN session_id TEXT');
+      await db.execute('ALTER TABLE kg_nodes ADD COLUMN agent_id TEXT');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_kg_nodes_session ON kg_nodes(session_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_kg_nodes_agent ON kg_nodes(agent_id)');
+    }
+
+    const kgEdgesCols = (await db.execute('PRAGMA table_info(kg_edges)')).rows?.map((row: any) => row.name as string) || [];
+    if (!kgEdgesCols.includes('session_id')) {
+      console.log('[DB Migration] Adding session_id/agent_id to kg_edges...');
+      await db.execute('ALTER TABLE kg_edges ADD COLUMN session_id TEXT');
+      await db.execute('ALTER TABLE kg_edges ADD COLUMN agent_id TEXT');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_kg_edges_session ON kg_edges(session_id)');
+    }
+
     console.log('[DB Migration] Migration completed successfully!');
   } catch (error) {
     console.error('[DB Migration] Migration failed:', error);

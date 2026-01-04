@@ -24,6 +24,8 @@ import {
   MessageSquare,
   Settings as SettingsIcon,
   Download,
+  ArrowUp,
+  Network,
   Trash2,
 } from 'lucide-react-native';
 import * as Haptics from '../../../src/lib/haptics';
@@ -34,6 +36,7 @@ import { useI18n } from '../../../src/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { exportAllSessionsToTxt } from '../../../src/features/chat/utils/export';
 import { useRagStore } from '../../../src/store/rag-store';
+import { useSettingsStore } from '../../../src/store/settings-store';
 import { ChevronRight, X, Folder } from 'lucide-react-native';
 import { DocumentPickerModal } from '../../../src/components/rag/DocumentPickerModal';
 import { InferenceSettings } from '../../../src/components/chat/InferenceSettings';
@@ -327,6 +330,58 @@ export default function SessionSettingsScreen() {
 
             {/* Divider */}
             <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-2" />
+
+            {/* Toggle: Enable Knowledge Graph Extraction */}
+            <View className="flex-row items-center justify-between py-2 mb-2">
+              <View className="flex-1 pr-4">
+                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                  {t.conversation.kgExtraction || '对话图谱提取'}
+                </Typography>
+                <Typography variant="caption" className="text-gray-500 mt-1">
+                  {t.conversation.kgExtractionDesc || '自动提取对话中的实体关系，构建动态知识图谱'}
+                </Typography>
+              </View>
+              <Switch
+                value={
+                  session.ragOptions?.enableKnowledgeGraph !== undefined
+                    ? session.ragOptions.enableKnowledgeGraph
+                    : (useSettingsStore.getState().globalRagConfig.enableKnowledgeGraph ?? false)
+                }
+                onValueChange={() => {
+                  const globalEnabled = useSettingsStore.getState().globalRagConfig.enableKnowledgeGraph ?? false;
+                  const current =
+                    session.ragOptions?.enableKnowledgeGraph !== undefined
+                      ? session.ragOptions.enableKnowledgeGraph
+                      : globalEnabled;
+
+                  // @ts-ignore: Dynamic property update
+                  useChatStore.getState().updateSessionOptions(id, {
+                    ragOptions: { ...session.ragOptions, enableKnowledgeGraph: !current } as any,
+                  });
+                }}
+              />
+            </View>
+
+            {/* KG Visualization Button - Always visible regardless of doc state */}
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: '/knowledge-graph', params: { sessionId: id } })}
+              className="mt-3 flex-row items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800"
+            >
+              <View className="flex-row items-center gap-3">
+                <Network size={20} color="#6366f1" />
+                <View>
+                  <Typography variant="label" className="text-indigo-900 dark:text-indigo-100 font-medium">
+                    查看当前会话图谱
+                  </Typography>
+                  <Typography variant="caption" className="text-indigo-700 dark:text-indigo-300">
+                    可视化查看上下文中提取的实体关系
+                  </Typography>
+                </View>
+              </View>
+              <ChevronRight size={18} color="#6366f1" />
+            </TouchableOpacity>
+
+            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
 
             {/* Toggle: Enable Knowledge Base */}
             <View className="flex-row items-center justify-between py-2">

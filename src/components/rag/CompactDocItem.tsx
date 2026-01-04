@@ -31,6 +31,7 @@ interface CompactDocItemProps {
   thumbnailPath?: string;
   onAssignTag?: () => void;
   onViewGraph?: () => void;
+  onExtractGraph?: (strategy: 'full' | 'summary-first') => void;
 }
 
 export const CompactDocItem = memo<CompactDocItemProps>(
@@ -52,6 +53,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
     thumbnailPath,
     onAssignTag,
     onViewGraph,
+    onExtractGraph,
   }) => {
     const { isDark } = useTheme();
 
@@ -98,27 +100,27 @@ export const CompactDocItem = memo<CompactDocItemProps>(
     const menuItems = [
       vectorized === 0 || vectorized === -1
         ? {
-            key: 'vectorize',
-            label: '向量化',
-            onPress: () => {
-              setTimeout(() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                onVectorize?.();
-              }, 10);
-            },
-          }
+          key: 'vectorize',
+          label: '向量化',
+          onPress: () => {
+            setTimeout(() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onVectorize?.();
+            }, 10);
+          },
+        }
         : null,
       vectorized === 2
         ? {
-            key: 'view-graph',
-            label: '查看知识图谱',
-            onPress: () => {
-              setTimeout(() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                onViewGraph?.();
-              }, 10);
-            },
-          }
+          key: 'view-graph',
+          label: '查看知识图谱',
+          onPress: () => {
+            setTimeout(() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onViewGraph?.();
+            }, 10);
+          },
+        }
         : null,
       {
         key: 'move',

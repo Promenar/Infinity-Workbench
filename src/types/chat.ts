@@ -135,6 +135,7 @@ export interface Session {
     activeDocIds?: string[]; // 指定文档ID（undefined=全部）
     activeFolderIds?: string[]; // 指定文件夹ID
     isGlobal?: boolean; // 是否全局搜索（忽略 activeDocIds）
+    enableKnowledgeGraph?: boolean; // ✅ Session-level KG toggle
   };
   scrollOffset?: number; // 记录滚动位置
   draft?: string; // 未发送的草稿内容

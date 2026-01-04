@@ -34,6 +34,8 @@ interface RagState {
   ) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
   vectorizeDocument: (docId: string) => Promise<void>;
+  extractDocumentGraph: (docId: string, strategy: 'full' | 'summary-first') => Promise<void>;
+  toggleDocumentGlobal: (docId: string) => Promise<void>;
 
   // 文件夹操作
   loadFolders: () => Promise<void>;
@@ -46,6 +48,7 @@ interface RagState {
 
   // 批量操作
   vectorizeBatch: (docIds: string[]) => Promise<void>;
+  extractBatch: (docIds: string[], strategy: 'full' | 'summary-first') => Promise<void>;
   deleteBatch: (docIds: string[]) => Promise<void>;
 
   // 筛选
@@ -84,13 +87,13 @@ interface RagState {
     state: {
       sessionId?: string;
       status:
-        | 'idle'
-        | 'chunking'
-        | 'summarizing'
-        | 'archived'
-        | 'summarized'
-        | 'completed'
-        | 'error';
+      | 'idle'
+      | 'chunking'
+      | 'summarizing'
+      | 'archived'
+      | 'summarized'
+      | 'completed'
+      | 'error';
       startTime?: number;
       summary?: string;
       chunks?: string[];
@@ -127,7 +130,7 @@ export const useRagStore = create<RagState>((set, get) => {
       try {
         // Use JOIN to get tags efficiently. Exclude full 'content' to prevent OOM in Debug mode.
         const results = await db.execute(`
-                    SELECT d.id, d.title, d.source, d.type, d.folder_id, d.vectorized, d.vector_count, d.file_size, d.created_at, d.updated_at, d.thumbnail_path,
+                    SELECT d.id, d.title, d.source, d.type, d.folder_id, d.vectorized, d.vector_count, d.file_size, d.created_at, d.updated_at, d.thumbnail_path, d.is_global,
                            GROUP_CONCAT(t.id || ':' || t.name || ':' || t.color, '|') as tag_list 
                     FROM documents d 
                     LEFT JOIN document_tags dt ON d.id = dt.doc_id 
@@ -168,6 +171,7 @@ export const useRagStore = create<RagState>((set, get) => {
             createdAt: row.created_at as number,
             updatedAt: row.updated_at as number | undefined,
             thumbnailPath: row.thumbnail_path as string | undefined,
+            isGlobal: !!row.is_global,
             tags,
           });
         }
@@ -180,6 +184,9 @@ export const useRagStore = create<RagState>((set, get) => {
     },
 
     addDocument: async (title, content, fileSize, type = 'text', folderId, thumbnailPath) => {
+      // Default to non-global unless specified (UI will implement toggle)
+      // For now, if uploaded via Super Assistant, we might want global.
+      // We'll leave default as 0 (false).
       const docId = generateId();
       const createdAt = Date.now();
 
@@ -237,6 +244,39 @@ export const useRagStore = create<RagState>((set, get) => {
 
       const queue = getQueue();
       await queue.enqueue(docId, doc.title, doc.content);
+    },
+
+    extractDocumentGraph: async (docId, strategy) => {
+      const doc = get().documents.find((d) => d.id === docId);
+      if (!doc) return;
+
+      const queue = getQueue();
+      // Enqueue with specific KG strategy
+      await queue.enqueue(docId, doc.title, doc.content, strategy);
+    },
+
+    toggleDocumentGlobal: async (docId) => {
+      try {
+        const doc = get().documents.find((d) => d.id === docId);
+        if (!doc) return;
+
+        const newIsGlobal = !doc.isGlobal;
+        const newVal = newIsGlobal ? 1 : 0;
+
+        await db.execute('UPDATE documents SET is_global = ? WHERE id = ?', [newVal, docId]);
+
+        set((state) => ({
+          documents: state.documents.map((d) => (d.id === docId ? { ...d, isGlobal: newIsGlobal } : d)),
+        }));
+
+        // Note: Changing scope might require re-extraction if we want to move nodes from Global to Private/None.
+        // For now, we assume this flag controls FUTURE extraction or query scope.
+        // If we want to reflect changes immediately in KG, we'd need to re-process.
+        // Let's just update the flag for now. The user can "Re-vectorize" if needed.
+      } catch (e) {
+        console.error('Failed to toggle document global status:', e);
+        throw e;
+      }
     },
 
     deleteDocument: async (id) => {
@@ -496,6 +536,15 @@ export const useRagStore = create<RagState>((set, get) => {
 
       for (const doc of docs) {
         await queue.enqueue(doc.id, doc.title, ''); // Content fetched from DB by queue
+      }
+    },
+
+    extractBatch: async (docIds, strategy) => {
+      const queue = getQueue();
+      const docs = get().documents.filter((d) => docIds.includes(d.id));
+
+      for (const doc of docs) {
+        await queue.enqueue(doc.id, doc.title, '', strategy); // Content fetched from DB
       }
     },
 

@@ -43,6 +43,7 @@ import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
 import { useApiStore } from '../../../store/api-store';
 import { ANIMATION_DURATION } from '../../../theme/animations';
 import { SummaryIndicator } from './SummaryIndicator'; // ✅ 导入摘要指示器
+import { KGExtractionIndicator } from '../../../components/rag/KGExtractionIndicator'; // ✅ Import KG Indicator
 
 interface ChatInputProps {
   onSendMessage: (
@@ -94,7 +95,7 @@ export function ChatInput({
     visible: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   // Access store directly to persist toggles
@@ -341,8 +342,11 @@ export function ChatInput({
             </TouchableOpacity>
           )}
 
-          {/* ✅ 全局摘要指示器 */}
-          <SummaryIndicator sessionId={sessionId} isDark={isDark} />
+          {/* Indicators Stack */}
+          <View className="flex-col items-start gap-1">
+            <SummaryIndicator sessionId={sessionId} isDark={isDark} />
+            <KGExtractionIndicator isExtracting={!!useChatStore((s) => s.activeKGExtractions[sessionId])} />
+          </View>
 
           <View style={{ flex: 1 }} />
 

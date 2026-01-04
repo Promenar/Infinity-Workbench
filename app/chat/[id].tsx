@@ -35,6 +35,7 @@ import { ModelPicker } from '../../src/features/settings/ModelPicker';
 import { TokenStatsModal } from '../../src/features/chat/components/TokenStatsModal';
 import { Message } from '../../src/types/chat';
 import { useI18n } from '../../src/lib/i18n';
+import { KGExtractionIndicator } from '../../src/components/rag/KGExtractionIndicator';
 
 // Create animated version of FlashList
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
@@ -335,26 +336,26 @@ export default function ChatDetailScreen() {
               onResend={
                 item.role === 'user'
                   ? () => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      sendMessage(item.content);
-                    }
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    sendMessage(item.content);
+                  }
                   : undefined
               }
               onRegenerate={
                 item.role === 'assistant'
                   ? () => {
-                      // 找到上一条用户消息
-                      const currentIndex = messages.findIndex((m) => m.id === item.id);
-                      if (currentIndex > 0) {
-                        const prevMsg = messages[currentIndex - 1];
-                        if (prevMsg.role === 'user') {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          // 删除当前 AI 消息 (可选，取决于产品逻辑，这里选择保留历史记录，追加新回答，或者覆盖)
-                          // 这里选择直接触发新生成，复用上一条 prompt
-                          sendMessage(prevMsg.content);
-                        }
+                    // 找到上一条用户消息
+                    const currentIndex = messages.findIndex((m) => m.id === item.id);
+                    if (currentIndex > 0) {
+                      const prevMsg = messages[currentIndex - 1];
+                      if (prevMsg.role === 'user') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        // 删除当前 AI 消息 (可选，取决于产品逻辑，这里选择保留历史记录，追加新回答，或者覆盖)
+                        // 这里选择直接触发新生成，复用上一条 prompt
+                        sendMessage(prevMsg.content);
                       }
                     }
+                  }
                   : undefined
               }
               modelId={session?.modelId}
@@ -578,6 +579,7 @@ export default function ChatDetailScreen() {
           label: t.common.settings,
         }}
       />
+
     </PageLayout>
   );
 }

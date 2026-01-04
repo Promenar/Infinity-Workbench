@@ -258,6 +258,13 @@ export const translations = {
       ragSettingsDesc: '配置切块、摘要、检索参数',
     },
     rag: {
+      enableTitle: '启用 RAG 知识库',
+      enableDesc: '基于本地知识库回答',
+      knowledgeGraph: '知识图谱',
+      viewGraph: '查看当前会话图谱',
+      viewGraphDesc: '可视化查看上下文中提取的实体关系',
+      viewGraphAgent: '助手图谱全景观测',
+      viewGraphAgentDesc: '浏览全局思维网络与实体关联',
       title: 'RAG 深度增强',
       quickPresets: '快速预设',
       docChunkSettings: '文档切块设置',
@@ -274,7 +281,7 @@ export const translations = {
       retrievalSettings: '检索配置',
       memoryRetrieval: '记忆检索',
       similarityThreshold: '相似度阈值',
-      docRetrieval: '文档检索',
+      docRetrieval: '指定文件夹',
       developerOptions: '开发者选项',
       viewVectorStats: '查看向量库统计',
       configStatus: '配置状态',
@@ -368,7 +375,7 @@ export const translations = {
       avatar: '助手头像',
       basicInfo: '基础信息',
       name: '名称',
-      namePlaceholder: '如：我的助手',
+      namePlaceholder: '如：我的 OpenAI',
       description: '简短描述',
       descriptionPlaceholder: '定义您的伙伴...',
       personality: '性格设定',
@@ -415,6 +422,8 @@ export const translations = {
       longTermMemoryDesc: '允许模型检索历史对话以增强上下文连贯性',
       knowledgeBase: '知识库检索',
       knowledgeBaseDesc: '允许模型搜索并引用已保存的笔记和文档',
+      kgExtraction: '对话图谱提取',
+      kgExtractionDesc: '自动提取对话中的实体关系，构建动态知识图谱',
       deleteSession: '删除会话',
       deleteSessionDesc: '永久删除此会话及其历史纪录',
       exportCurrent: '导出当前对话历史',
@@ -511,6 +520,9 @@ export const translations = {
       statsLoadError: '加载统计信息失败',
       pruneSuccess: '清理完成: 删除了 {count} 个冗余向量',
       pruneFail: '清理失败: {error}',
+    },
+    colors: {
+      title: '图标颜色',
     },
   },
   en: {
@@ -718,6 +730,15 @@ export const translations = {
         reset: 'Reset Session Stats',
         estimated: '≈ Indicates estimated value due to missing API data.',
       },
+      rag: {
+        enableTitle: 'Enable RAG Knowledge Base',
+        enableDesc: 'Answer based on local knowledge base',
+        knowledgeGraph: 'Knowledge Graph',
+        viewGraph: 'View Session Graph',
+        viewGraphDesc: 'Visualize entities extracted in context',
+        viewGraphAgent: 'View Agent Graph',
+        viewGraphAgentDesc: 'Browse global knowledge network',
+      },
       backup: {
         title: 'Data & Backup',
         localStorage: 'Local Storage',
@@ -773,6 +794,9 @@ export const translations = {
     },
     rag: {
       title: 'RAG Architecture',
+      knowledgeGraph: 'Knowledge Graph Overview',
+      advancedSettings: 'Advanced Retrieval Settings',
+      advancedSettingsDesc: 'Configure Re-ranking, Hybrid Search, and more',
       quickPresets: 'Quick Presets',
       docChunkSettings: 'Chunking Settings',
       memorySettings: 'Memory Settings',
@@ -831,8 +855,6 @@ export const translations = {
       docThresholdDesc: 'Chunks with similarity score below this will be ignored.',
 
       // Advanced Settings
-      advancedSettings: 'Advanced Retrieval',
-      advancedSettingsDesc: 'Rerank, Query Rewrite, Hybrid Search',
 
       // Rerank
       enableRerank: 'Enable Rerank',
@@ -936,6 +958,8 @@ export const translations = {
       longTermMemoryDesc: 'Allow model to retrieve history for context continuity',
       knowledgeBase: 'Knowledge Base',
       knowledgeBaseDesc: 'Allow model to search and cite saved documents',
+      kgExtraction: 'Conversation KG Extraction',
+      kgExtractionDesc: 'Extract entities from chat to build dynamic graph',
       deleteSession: 'Delete Session',
       deleteSessionDesc: 'Permanently delete this session and its history',
       exportCurrent: 'Export Current History',
@@ -1032,6 +1056,9 @@ export const translations = {
       statsLoadError: 'Failed to load stats',
       pruneSuccess: 'Pruning complete: deleted {count} redundant vectors',
       pruneFail: 'Pruning failed: {error}',
+    },
+    colors: {
+      title: 'Icon Color',
     },
   },
 };

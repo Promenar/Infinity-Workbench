@@ -67,9 +67,17 @@ export const createTables = async () => {
         created_at INTEGER NOT NULL,
         updated_at INTEGER,
         metadata TEXT, -- JSON
+        is_global INTEGER DEFAULT 0, -- 0=Session Scoped (if imported inside session) or Private, 1=Global Knowledge
         FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
       );
     `);
+
+    // Migration: ensure is_global exists
+    try {
+      await db.execute('ALTER TABLE documents ADD COLUMN is_global INTEGER DEFAULT 0;');
+    } catch (e) {
+      // Column likely exists
+    }
 
     // 6. Vectors (Embeddings)
     // Store embeddings as BLOB. SQLite handles BLOBs efficiently.

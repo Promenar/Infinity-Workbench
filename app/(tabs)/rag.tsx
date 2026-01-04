@@ -43,14 +43,32 @@ export default function RagScreen() {
       const { TagManagerSheet } = await import('../../src/components/rag/TagManagerSheet');
       const { TagAssignmentSheet } = await import('../../src/components/rag/TagAssignmentSheet');
       const { ImagePreviewModal } = await import('../../src/components/rag/ImagePreviewModal');
+      const { documentProcessor } = await import('../../src/lib/rag/document-processor'); // Import processor
       setPdfExtractorComponent(() => PdfExtractor);
       setTagCapsuleComponent(() => TagCapsule);
       setTagManagerSheetComponent(() => TagManagerSheet);
       setTagAssignmentSheetComponent(() => TagAssignmentSheet);
       setImagePreviewModalComponent(() => ImagePreviewModal);
+
+      // Initialize processor with ref is done in effect below or render?
+      // Better to do it in a separate effect when ref changes or component mounts.
     };
     loadComponents();
   }, []);
+
+  // Sync PDF Ref
+  useEffect(() => {
+    if (pdfExtractorRef.current) {
+      // Need to dynamic import here or ensure it's loaded? 
+      // We can just import at top level if not lazy, but we want lazy.
+      // Let's use the same async import pattern inside the handler to be safe,
+      // or just import globally if document-processor is small.
+      // For now, let's keep it lazy inside handlers or use a layout effect.
+      import('../../src/lib/rag/document-processor').then(({ documentProcessor }) => {
+        documentProcessor.setPdfExtractor(pdfExtractorRef.current);
+      });
+    }
+  }, [pdfExtractorRef.current]);
 
   // RagStore
   const {
@@ -142,7 +160,7 @@ export default function RagScreen() {
     visible: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     isDestructive: false,
   });
 
@@ -237,7 +255,16 @@ export default function RagScreen() {
   const handleFileImport = useCallback(async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['text/plain', 'text/markdown', 'application/json', 'application/pdf', 'image/*'],
+        type: [
+          'text/plain',
+          'text/markdown',
+          'application/json',
+          'application/pdf',
+          'image/*',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+          'application/vnd.ms-excel' // xls
+        ],
         copyToCacheDirectory: true,
         multiple: true, // 启用多选
       });
@@ -253,43 +280,30 @@ export default function RagScreen() {
       // Ensure images directory exists
       const docDir = (FileSystem as any).documentDirectory || '';
       const imagesDir = docDir + 'rag_images/';
-      await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true }).catch(() => {});
+      await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true }).catch(() => { });
+
+      const { documentProcessor } = await import('../../src/lib/rag/document-processor');
+      // Ensure ref is set just in case
+      if (pdfExtractorRef.current) documentProcessor.setPdfExtractor(pdfExtractorRef.current);
 
       const processor = async (file: any) => {
-        let content = '';
-        let fileName = file.name;
-        let mimeType = file.mimeType;
+        const fileName = file.name;
+        const mimeType = file.mimeType;
         let thumbnailPath: string | undefined;
-        let type: 'text' | 'image' = 'text';
 
-        // Image Processing
-        if (mimeType?.startsWith('image/') || fileName.match(/\.(jpg|jpeg|png|webp|heic)$/i)) {
-          type = 'image';
-          const base64 = await readFileAsBase64(file.uri);
+        // Process file via centralized processor
+        const processResult = await documentProcessor.processFile(file.uri, fileName, mimeType);
 
-          // Save image locally
+        let content = processResult.content;
+        const type = processResult.type as any; // 'text' | 'image' matched to store
+
+        // Special handling for image thumbnails (still needed locally for UI)
+        if (type === 'image') {
+          // Save image locally for thumbnail
           const ext = fileName.split('.').pop();
-          const localPath =
-            imagesDir + `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+          const localPath = imagesDir + `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
           await FileSystem.copyAsync({ from: file.uri, to: localPath });
           thumbnailPath = localPath;
-
-          // Generate description
-          try {
-            content = await imageDescriptionService.describeImage(base64);
-            content = `[Image Description for ${fileName}]\n\n${content}`;
-          } catch (e) {
-            console.warn('Image description failed, saving as placeholder', e);
-            content = `[Image: ${fileName}] - Description failed: ${(e as Error).message}`;
-          }
-        } else if (mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
-          // PDF Processing
-          if (!pdfExtractorRef.current) throw new Error('PDF Engine not ready');
-          const base64 = await readFileAsBase64(file.uri);
-          content = await pdfExtractorRef.current.extractText(base64);
-        } else {
-          // Plain Text
-          content = await readFileContent(file.uri);
         }
 
         if (!content.trim()) {
@@ -434,6 +448,51 @@ export default function RagScreen() {
     [movingDocId, movingFolderId, moveDocument, moveFolder, showToast],
   );
 
+  // KG Extraction Handlers
+  const handleExtractDoc = useCallback(
+    async (docId: string, strategy: 'full' | 'summary-first') => {
+      const { extractDocumentGraph } = useRagStore.getState();
+      showToast('已加入图谱提取队列: ' + (strategy === 'full' ? '全量' : '摘要'), 'success');
+      await extractDocumentGraph(docId, strategy);
+    },
+    [showToast],
+  );
+
+  const handleExtractFolder = useCallback(
+    async (folderId: string, strategy: 'full' | 'summary-first') => {
+      const { extractBatch, getDocumentsByFolder, folders } = useRagStore.getState();
+
+      // Recursive get docs? Or just direct children?
+      // Usually folder action applies to subtree.
+      // For simplicity/safety, let's start with direct children or flat list if easy.
+      // But store has `getDocumentsByFolder` which is direct.
+      // If we want recursive, we need to traverse.
+      // Let's implement a simple recursive collector here or assume direct.
+      // As "Batch for folder", implies contents.
+
+      // Let's do recursive collection helper
+      const collectDocs = (fId: string): string[] => {
+        const directDocs = getDocumentsByFolder(fId).map(d => d.id);
+        const subFolders = folders.filter(f => f.parentId === fId);
+        let all = [...directDocs];
+        subFolders.forEach(sub => {
+          all = all.concat(collectDocs(sub.id));
+        });
+        return all;
+      };
+
+      const docIds = collectDocs(folderId);
+      if (docIds.length === 0) {
+        showToast('文件夹为空', 'info');
+        return;
+      }
+
+      showToast(`已将 ${docIds.length} 个文档加入图谱队列`, 'success');
+      await extractBatch(docIds, strategy);
+    },
+    [showToast],
+  );
+
   // 渲染标题栏
   const renderHeader = () => (
     <View className="mb-2">
@@ -468,9 +527,9 @@ export default function RagScreen() {
         currentTask={
           currentTask
             ? {
-                docTitle: currentTask.docTitle,
-                progress: currentTask.progress,
-              }
+              docTitle: currentTask.docTitle,
+              progress: currentTask.progress,
+            }
             : null
         }
         queueLength={vectorizationQueue.length}
@@ -501,35 +560,25 @@ export default function RagScreen() {
         const { processBatchWithProgress } = await import('../../src/lib/queue-utils');
         const { readFileContent, readFileAsBase64 } = await import('../../src/lib/file-utils');
 
+        const { documentProcessor } = await import('../../src/lib/rag/document-processor');
+        if (pdfExtractorRef.current) documentProcessor.setPdfExtractor(pdfExtractorRef.current);
+
         const processor = async (asset: any) => {
-          // 跳过图片
-          if (asset.type === 'image' || asset.mimeType?.startsWith('image/')) {
-            throw new Error(`Skipping image: ${asset.fileName}`);
-          }
-
-          let content = '';
+          // Note: asset from drag-drop might have different fields
           const fileName = asset.fileName || asset.uri.split('/').pop() || 'unknown';
+          const mimeType = asset.mimeType;
 
-          // PDF 检查
-          if (asset.mimeType === 'application/pdf' || fileName?.toLowerCase().endsWith('.pdf')) {
-            if (!pdfExtractorRef.current) throw new Error('PDF Engine not ready');
+          const processResult = await documentProcessor.processFile(asset.uri, fileName, mimeType);
 
-            const base64 = await readFileAsBase64(asset.uri);
-            content = await pdfExtractorRef.current.extractText(base64);
-          } else {
-            // 普通文本
-            content = await readFileContent(asset.uri);
-          }
-
-          if (!content.trim()) {
+          if (!processResult.content.trim()) {
             throw new Error(`Empty content: ${fileName}`);
           }
 
           await addDocument(
             fileName,
-            content,
-            content.length,
-            'text',
+            processResult.content,
+            processResult.content.length,
+            processResult.type as any,
             currentFolderId ?? undefined,
           );
         };
@@ -657,10 +706,11 @@ export default function RagScreen() {
                     level={0}
                     onToggle={() => handleNavigate(folder.id)}
                     onPress={() => handleNavigate(folder.id)}
-                    onLongPress={() => {}}
+                    onLongPress={() => { }}
                     onDelete={() => handleDeleteFolder(folder.id, folder.name)}
                     onRename={() => handleRenameFolder(folder.id, folder.name)}
                     onMove={() => handleStartMoveFolder(folder.id)}
+                    onExtractGraph={(s) => handleExtractFolder(folder.id, s)}
                   />
                 </View>
               ))}
@@ -692,6 +742,7 @@ export default function RagScreen() {
                 onViewGraph={() =>
                   router.push({ pathname: '/knowledge-graph', params: { docId: doc.id } })
                 }
+                onExtractGraph={(s) => handleExtractDoc(doc.id, s)}
                 onPress={() => {
                   if (isSelectionMode) {
                     handleToggleDocSelection(doc.id);

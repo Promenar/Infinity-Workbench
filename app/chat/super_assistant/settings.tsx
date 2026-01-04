@@ -28,6 +28,7 @@ import {
   Upload,
   Database,
   ChevronRight,
+  Network,
 } from 'lucide-react-native';
 import * as Haptics from '../../../src/lib/haptics';
 import { useChatStore } from '../../../src/store/chat-store';
@@ -518,8 +519,29 @@ export default function SuperAssistantSettingsScreen() {
             )}
           </TouchableOpacity>
 
-          {/* 会话名称修改 */}
-          <SectionHeader title={t.superAssistant.title} />
+          {/* Knowledge Graph Entry */}
+          <SectionHeader title={t.rag.knowledgeGraph} />
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: '/knowledge-graph', params: { agentId: 'super_assistant' } })}
+            className="mx-4 mb-6 flex-row items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-800"
+          >
+            <View className="flex-row items-center gap-3">
+              <View className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/40 items-center justify-center">
+                <Network size={22} color="#6366f1" />
+              </View>
+              <View>
+                <Typography variant="h3" className="text-base text-indigo-900 dark:text-indigo-100">
+                  知识图谱全景观测
+                </Typography>
+                <Typography variant="caption" className="text-indigo-700 dark:text-indigo-300 mt-0.5">
+                  浏览全局思维网络与实体关联
+                </Typography>
+              </View>
+            </View>
+            <ChevronRight size={20} color="#6366f1" />
+          </TouchableOpacity>
+
+          <SectionHeader title={t.colors.title} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
             <TextInput
               className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 font-bold"
