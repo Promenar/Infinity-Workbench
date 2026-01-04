@@ -34,6 +34,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { AgentAvatar } from '../../../../src/components/chat/AgentAvatar';
 import { AgentRagConfigPanel } from '../../../../src/features/settings/components/AgentRagConfigPanel';
 import { useDebounce } from '../../../../src/hooks/useDebounce';
+import { PRESET_COLORS } from '../../../../src/types/super-assistant';
 
 const PRESET_ICONS = [
   'MessageSquare',
@@ -69,6 +70,7 @@ export default function AgentEditScreen() {
     params: agent?.params || ({} as any),
     temperature: agent?.params?.temperature || 0.7,
     avatar: agent?.avatar || 'MessageSquare',
+    color: agent?.color || PRESET_COLORS[10].value, // Default to Indigo (#6366f1) if not set. Index 10 is Indigo in list.
   });
 
   // 确认弹窗状态
@@ -140,6 +142,7 @@ export default function AgentEditScreen() {
     // Wait, preset icons usually update formData.avatar.
     // If formData.avatar !== agent.avatar, we update.
     if (debouncedFormData.avatar !== agent.avatar) hasChanges = true;
+    if (debouncedFormData.color !== agent.color) hasChanges = true;
 
     // Check params (temperature)
     if (debouncedFormData.temperature !== agent.params?.temperature) hasChanges = true;
@@ -151,10 +154,11 @@ export default function AgentEditScreen() {
         systemPrompt: debouncedFormData.systemPrompt,
         defaultModel: debouncedFormData.defaultModel,
         avatar: debouncedFormData.avatar,
+        color: debouncedFormData.color,
         params: { ...agent.params, temperature: debouncedFormData.temperature },
       });
     }
-  }, [debouncedFormData, agent?.name, agent?.description, agent?.systemPrompt, agent?.defaultModel, agent?.avatar, agent?.params?.temperature]);
+  }, [debouncedFormData, agent?.id]); // Simplified dependencies since we check deep values
 
   const handleDelete = () => {
     setConfirmState({
@@ -219,7 +223,7 @@ export default function AgentEditScreen() {
                 id={agentId}
                 name={formData.name}
                 avatar={formData.avatar}
-                color={agent.color}
+                color={formData.color}
                 size={100}
               />
               <TouchableOpacity
@@ -253,7 +257,7 @@ export default function AgentEditScreen() {
                     id={agentId}
                     name={formData.name}
                     avatar={iconName}
-                    color={agent.color}
+                    color={formData.color}
                     size={32}
                   />
                   {formData.avatar === iconName && (
@@ -292,6 +296,54 @@ export default function AgentEditScreen() {
               placeholder={t.agent.descriptionPlaceholder}
               placeholderTextColor="#94a3b8"
             />
+          </View>
+
+          {/* Theme Color Group */}
+          <SectionHeader title={t.superAssistant.iconColor || '主题色'} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginRight: -8 }}>
+              {PRESET_COLORS.map((color) => {
+                const isSelected = formData.color === color.value;
+                return (
+                  <View
+                    key={color.value}
+                    style={{ width: '25%', paddingRight: 8, marginBottom: 8 }}
+                  >
+                    <TouchableOpacity
+                      onPress={() => {
+                        setFormData({ ...formData, color: color.value });
+                        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                      }}
+                      style={{
+                        width: '100%',
+                        aspectRatio: 1,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: 16,
+                        borderWidth: 2,
+                        backgroundColor: color.value + '10',
+                        borderColor: isSelected ? color.value : isDark ? '#18181b' : '#f4f4f5',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 12,
+                          backgroundColor: color.value,
+                          ...(!isDark ? { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } : {})
+                        }}
+                      />
+                      {isSelected && (
+                        <View style={{ position: 'absolute', top: 6, right: 6 }}>
+                          <Check size={10} color={color.value} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
           </View>
 
           {/* Personality Group */}
