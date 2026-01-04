@@ -69,7 +69,9 @@ export const migrateDatabase = async () => {
     }
 
     // Migration 5 (Phase 8): Tags and KG tables
-    const tagsInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tags'");
+    const tagsInfo = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='tags'",
+    );
     if (!tagsInfo.rows || tagsInfo.rows.length === 0) {
       console.log('[DB Migration] Creating tags table...');
       await db.execute(`
@@ -82,7 +84,9 @@ export const migrateDatabase = async () => {
       `);
     }
 
-    const docTagsInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='document_tags'");
+    const docTagsInfo = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='document_tags'",
+    );
     if (!docTagsInfo.rows || docTagsInfo.rows.length === 0) {
       console.log('[DB Migration] Creating document_tags table...');
       await db.execute(`
@@ -98,7 +102,9 @@ export const migrateDatabase = async () => {
     }
 
     // Migration 6 (Phase 8): Knowledge Graph tables
-    const kgNodesInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kg_nodes'");
+    const kgNodesInfo = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='kg_nodes'",
+    );
     if (!kgNodesInfo.rows || kgNodesInfo.rows.length === 0) {
       console.log('[DB Migration] Creating kg_nodes table...');
       await db.execute(`
@@ -113,7 +119,9 @@ export const migrateDatabase = async () => {
       `);
     }
 
-    const kgEdgesInfo = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kg_edges'");
+    const kgEdgesInfo = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='kg_edges'",
+    );
     if (!kgEdgesInfo.rows || kgEdgesInfo.rows.length === 0) {
       console.log('[DB Migration] Creating kg_edges table...');
       await db.execute(`

@@ -5,201 +5,206 @@ import { MessagePreprocessor } from './message-preprocessor';
  * 引用/来源
  */
 export interface Citation {
-    title: string;
-    url: string;
-    source?: string;
+  title: string;
+  url: string;
+  source?: string;
 }
 
 /**
  * 标准化后的响应块
  */
 export interface NormalizedChunk {
-    content: string;
-    reasoning?: string;
-    citations?: Citation[];
-    images?: GeneratedImageData[];
-    tokens?: TokenUsage;
+  content: string;
+  reasoning?: string;
+  citations?: Citation[];
+  images?: GeneratedImageData[];
+  tokens?: TokenUsage;
 }
 
 /**
  * 支持的 Provider 类型
  */
-export type ProviderType = 'vertex' | 'openai' | 'gemini' | 'siliconflow' | 'zhipu' | 'moonshot' | 'deepseek' | 'github';
+export type ProviderType =
+  | 'vertex'
+  | 'openai'
+  | 'gemini'
+  | 'siliconflow'
+  | 'zhipu'
+  | 'moonshot'
+  | 'deepseek'
+  | 'github';
 
 /**
  * 响应标准化器
- * 
+ *
  * 职责：将各 Provider 的原始响应格式统一为标准格式
  * 支持的 Provider: Vertex AI, OpenAI, Gemini, SiliconFlow, Zhipu, Kimi, DeepSeek, GitHub
  */
 export class ResponseNormalizer {
-    /**
-     * 统一各 Provider 的响应格式
-     * 
-     * @param rawResponse Provider 原始响应
-     * @param providerType Provider 类型
-     * @returns 标准化后的响应块
-     */
-    static async normalize(
-        rawResponse: any,
-        providerType: ProviderType
-    ): Promise<NormalizedChunk> {
-        switch (providerType) {
-            case 'vertex':
-            case 'gemini':
-                return this.normalizeVertex(rawResponse);
-            case 'openai':
-            case 'siliconflow':
-            case 'moonshot':
-            case 'deepseek':
-            case 'github':
-                return this.normalizeOpenAI(rawResponse);
-            case 'zhipu':
-                return this.normalizeZhipu(rawResponse);
-            default:
-                return this.normalizeGeneric(rawResponse);
+  /**
+   * 统一各 Provider 的响应格式
+   *
+   * @param rawResponse Provider 原始响应
+   * @param providerType Provider 类型
+   * @returns 标准化后的响应块
+   */
+  static async normalize(rawResponse: any, providerType: ProviderType): Promise<NormalizedChunk> {
+    switch (providerType) {
+      case 'vertex':
+      case 'gemini':
+        return this.normalizeVertex(rawResponse);
+      case 'openai':
+      case 'siliconflow':
+      case 'moonshot':
+      case 'deepseek':
+      case 'github':
+        return this.normalizeOpenAI(rawResponse);
+      case 'zhipu':
+        return this.normalizeZhipu(rawResponse);
+      default:
+        return this.normalizeGeneric(rawResponse);
+    }
+  }
+
+  /**
+   * 标准化 Vertex AI / Gemini 响应
+   */
+  private static async normalizeVertex(raw: any): Promise<NormalizedChunk> {
+    const candidate = raw.candidates?.[0];
+    if (!candidate) {
+      return { content: '' };
+    }
+
+    let content = '';
+    let reasoning = '';
+    const images: GeneratedImageData[] = [];
+
+    // 解析 parts
+    if (candidate.content?.parts) {
+      for (const part of candidate.content.parts) {
+        // 1. Thinking/Reasoning
+        const isThoughtPart = part.thought === true || typeof part.thought === 'string';
+        if (isThoughtPart) {
+          if (typeof part.thought === 'string') {
+            reasoning += part.thought;
+          }
+          if (part.text) {
+            reasoning += part.text;
+          }
         }
-    }
-
-    /**
-     * 标准化 Vertex AI / Gemini 响应
-     */
-    private static async normalizeVertex(raw: any): Promise<NormalizedChunk> {
-        const candidate = raw.candidates?.[0];
-        if (!candidate) {
-            return { content: '' };
+        // 2. Text Content
+        else if (part.text) {
+          // 如果整个 chunk 包含 thought，文本也算 reasoning
+          const chunkHasThought = candidate.content.parts.some((p: any) => p.thought === true);
+          if (chunkHasThought) {
+            reasoning += part.text;
+          } else {
+            content += part.text;
+          }
         }
-
-        let content = '';
-        let reasoning = '';
-        const images: GeneratedImageData[] = [];
-
-        // 解析 parts
-        if (candidate.content?.parts) {
-            for (const part of candidate.content.parts) {
-                // 1. Thinking/Reasoning
-                const isThoughtPart = part.thought === true || typeof part.thought === 'string';
-                if (isThoughtPart) {
-                    if (typeof part.thought === 'string') {
-                        reasoning += part.thought;
-                    }
-                    if (part.text) {
-                        reasoning += part.text;
-                    }
-                }
-                // 2. Text Content
-                else if (part.text) {
-                    // 如果整个 chunk 包含 thought，文本也算 reasoning
-                    const chunkHasThought = candidate.content.parts.some((p: any) => p.thought === true);
-                    if (chunkHasThought) {
-                        reasoning += part.text;
-                    } else {
-                        content += part.text;
-                    }
-                }
-                // 3. Images
-                else if (part.inline_data || part.inlineData) {
-                    const inlineData = part.inline_data || part.inlineData;
-                    try {
-                        const imgData = await MessagePreprocessor.processAIGeneratedImage(
-                            inlineData.data,
-                            inlineData.mime_type || inlineData.mimeType || 'image/png'
-                        );
-                        images.push(imgData);
-                    } catch (error) {
-                        console.error('[ResponseNormalizer] Failed to process AI image:', error);
-                    }
-                }
-            }
+        // 3. Images
+        else if (part.inline_data || part.inlineData) {
+          const inlineData = part.inline_data || part.inlineData;
+          try {
+            const imgData = await MessagePreprocessor.processAIGeneratedImage(
+              inlineData.data,
+              inlineData.mime_type || inlineData.mimeType || 'image/png',
+            );
+            images.push(imgData);
+          } catch (error) {
+            console.error('[ResponseNormalizer] Failed to process AI image:', error);
+          }
         }
-
-        // 提取 Citations
-        const citations = this.extractVertexCitations(candidate, raw);
-
-        // 提取 Token 使用情况
-        const tokens = this.extractVertexTokens(raw);
-
-        return {
-            content,
-            reasoning: reasoning || undefined,
-            citations,
-            images: images.length > 0 ? images : undefined,
-            tokens
-        };
+      }
     }
 
-    /**
-     * 标准化 OpenAI 兼容响应
-     * 适用于：OpenAI, SiliconFlow, Kimi, DeepSeek, GitHub Models
-     */
-    private static async normalizeOpenAI(raw: any): Promise<NormalizedChunk> {
-        const delta = raw.choices?.[0]?.delta;
-        if (!delta) {
-            return { content: '' };
+    // 提取 Citations
+    const citations = this.extractVertexCitations(candidate, raw);
+
+    // 提取 Token 使用情况
+    const tokens = this.extractVertexTokens(raw);
+
+    return {
+      content,
+      reasoning: reasoning || undefined,
+      citations,
+      images: images.length > 0 ? images : undefined,
+      tokens,
+    };
+  }
+
+  /**
+   * 标准化 OpenAI 兼容响应
+   * 适用于：OpenAI, SiliconFlow, Kimi, DeepSeek, GitHub Models
+   */
+  private static async normalizeOpenAI(raw: any): Promise<NormalizedChunk> {
+    const delta = raw.choices?.[0]?.delta;
+    if (!delta) {
+      return { content: '' };
+    }
+
+    return {
+      content: delta.content || '',
+      reasoning: delta.reasoning_content || undefined,
+      // OpenAI 系列通常不返回 citations（除非使用特殊功能）
+    };
+  }
+
+  /**
+   * 标准化智谱 AI 响应
+   */
+  private static async normalizeZhipu(raw: any): Promise<NormalizedChunk> {
+    // 智谱 API 基本兼容 OpenAI
+    return this.normalizeOpenAI(raw);
+  }
+
+  /**
+   * 通用降级处理
+   */
+  private static async normalizeGeneric(raw: any): Promise<NormalizedChunk> {
+    return {
+      content: raw.content || raw.text || raw.message || '',
+    };
+  }
+
+  /**
+   * 提取 Vertex AI Citations
+   */
+  private static extractVertexCitations(candidate: any, response: any): Citation[] | undefined {
+    const metadata = candidate.groundingMetadata || response.groundingMetadata;
+    if (!metadata?.groundingChunks) {
+      return undefined;
+    }
+
+    const citations = metadata.groundingChunks
+      .map((chunk: any) => {
+        if (chunk.web) {
+          return {
+            title: chunk.web.title || 'Web Source',
+            url: chunk.web.uri,
+            source: 'Google',
+          };
         }
+        return null;
+      })
+      .filter(Boolean);
 
-        return {
-            content: delta.content || '',
-            reasoning: delta.reasoning_content || undefined
-            // OpenAI 系列通常不返回 citations（除非使用特殊功能）
-        };
+    return citations.length > 0 ? citations : undefined;
+  }
+
+  /**
+   * 提取 Vertex AI Token Usage
+   */
+  private static extractVertexTokens(response: any): TokenUsage | undefined {
+    const usage = response.usageMetadata;
+    if (!usage) {
+      return undefined;
     }
 
-    /**
-     * 标准化智谱 AI 响应
-     */
-    private static async normalizeZhipu(raw: any): Promise<NormalizedChunk> {
-        // 智谱 API 基本兼容 OpenAI
-        return this.normalizeOpenAI(raw);
-    }
-
-    /**
-     * 通用降级处理
-     */
-    private static async normalizeGeneric(raw: any): Promise<NormalizedChunk> {
-        return {
-            content: raw.content || raw.text || raw.message || ''
-        };
-    }
-
-    /**
-     * 提取 Vertex AI Citations
-     */
-    private static extractVertexCitations(candidate: any, response: any): Citation[] | undefined {
-        const metadata = candidate.groundingMetadata || response.groundingMetadata;
-        if (!metadata?.groundingChunks) {
-            return undefined;
-        }
-
-        const citations = metadata.groundingChunks
-            .map((chunk: any) => {
-                if (chunk.web) {
-                    return {
-                        title: chunk.web.title || 'Web Source',
-                        url: chunk.web.uri,
-                        source: 'Google'
-                    };
-                }
-                return null;
-            })
-            .filter(Boolean);
-
-        return citations.length > 0 ? citations : undefined;
-    }
-
-    /**
-     * 提取 Vertex AI Token Usage
-     */
-    private static extractVertexTokens(response: any): TokenUsage | undefined {
-        const usage = response.usageMetadata;
-        if (!usage) {
-            return undefined;
-        }
-
-        return {
-            input: usage.promptTokenCount || 0,
-            output: usage.candidatesTokenCount || 0,
-            total: usage.totalTokenCount || 0
-        };
-    }
+    return {
+      input: usage.promptTokenCount || 0,
+      output: usage.candidatesTokenCount || 0,
+      total: usage.totalTokenCount || 0,
+    };
+  }
 }

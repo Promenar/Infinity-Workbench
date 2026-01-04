@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 export interface PdfExtractorRef {
-    extractText: (base64: string) => Promise<string>;
+  extractText: (base64: string) => Promise<string>;
 }
 
 /**
@@ -11,12 +11,12 @@ export interface PdfExtractorRef {
  * 使用 CDN 加载 pdf.js (需联网)，作为原生解析的轻量级替代方案。
  */
 export const PdfExtractor = forwardRef<PdfExtractorRef, {}>((props, ref) => {
-    const webviewRef = useRef<WebView>(null);
-    const pendingResolves = useRef<((value: string) => void) | null>(null);
-    const pendingRejects = useRef<((reason: any) => void) | null>(null);
+  const webviewRef = useRef<WebView>(null);
+  const pendingResolves = useRef<((value: string) => void) | null>(null);
+  const pendingRejects = useRef<((reason: any) => void) | null>(null);
 
-    // HTML 模板：注入 PDF.js
-    const htmlContent = `
+  // HTML 模板：注入 PDF.js
+  const htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -76,65 +76,65 @@ export const PdfExtractor = forwardRef<PdfExtractorRef, {}>((props, ref) => {
 </html>
     `;
 
-    // 暴露给父组件的方法
-    useImperativeHandle(ref, () => ({
-        extractText: (base64: string) => {
-            return new Promise((resolve, reject) => {
-                if (pendingResolves.current) {
-                    reject(new Error('A parsing task is already in progress'));
-                    return;
-                }
-
-                pendingResolves.current = resolve;
-                pendingRejects.current = reject;
-
-                // 调用 WebView 中的全局函数
-                // 注意：Base64 可能很长，直接注入 JS 可能会受限。
-                // 如果 Base64 太大卡死，可能需要分块传输，但 PDF.js 需要完整文件。
-                // 另一种方式是 injectJavaScript。
-                if (webviewRef.current) {
-                    // 必须转义
-                    webviewRef.current.injectJavaScript(`window.extractPdfText('${base64}'); true;`);
-                } else {
-                    reject(new Error('WebView not ready'));
-                    pendingResolves.current = null;
-                    pendingRejects.current = null;
-                }
-            });
+  // 暴露给父组件的方法
+  useImperativeHandle(ref, () => ({
+    extractText: (base64: string) => {
+      return new Promise((resolve, reject) => {
+        if (pendingResolves.current) {
+          reject(new Error('A parsing task is already in progress'));
+          return;
         }
-    }));
 
-    const onMessage = (event: any) => {
-        try {
-            const data = JSON.parse(event.nativeEvent.data);
-            if (data.type === 'success') {
-                if (pendingResolves.current) {
-                    pendingResolves.current(data.text);
-                }
-            } else if (data.type === 'error') {
-                if (pendingRejects.current) {
-                    pendingRejects.current(new Error(data.message));
-                }
-            }
-        } catch (e) {
-            if (pendingRejects.current) pendingRejects.current(e);
-        } finally {
-            pendingResolves.current = null;
-            pendingRejects.current = null;
+        pendingResolves.current = resolve;
+        pendingRejects.current = reject;
+
+        // 调用 WebView 中的全局函数
+        // 注意：Base64 可能很长，直接注入 JS 可能会受限。
+        // 如果 Base64 太大卡死，可能需要分块传输，但 PDF.js 需要完整文件。
+        // 另一种方式是 injectJavaScript。
+        if (webviewRef.current) {
+          // 必须转义
+          webviewRef.current.injectJavaScript(`window.extractPdfText('${base64}'); true;`);
+        } else {
+          reject(new Error('WebView not ready'));
+          pendingResolves.current = null;
+          pendingRejects.current = null;
         }
-    };
+      });
+    },
+  }));
 
-    return (
-        <View style={{ height: 0, width: 0, overflow: 'hidden' }}>
-            <WebView
-                ref={webviewRef}
-                source={{ html: htmlContent }}
-                onMessage={onMessage}
-                javaScriptEnabled={true}
-                originWhitelist={['*']}
-                // 允许本地内容访问
-                allowFileAccess={true}
-            />
-        </View>
-    );
+  const onMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'success') {
+        if (pendingResolves.current) {
+          pendingResolves.current(data.text);
+        }
+      } else if (data.type === 'error') {
+        if (pendingRejects.current) {
+          pendingRejects.current(new Error(data.message));
+        }
+      }
+    } catch (e) {
+      if (pendingRejects.current) pendingRejects.current(e);
+    } finally {
+      pendingResolves.current = null;
+      pendingRejects.current = null;
+    }
+  };
+
+  return (
+    <View style={{ height: 0, width: 0, overflow: 'hidden' }}>
+      <WebView
+        ref={webviewRef}
+        source={{ html: htmlContent }}
+        onMessage={onMessage}
+        javaScriptEnabled={true}
+        originWhitelist={['*']}
+        // 允许本地内容访问
+        allowFileAccess={true}
+      />
+    </View>
+  );
 });

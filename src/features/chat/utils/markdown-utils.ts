@@ -4,27 +4,27 @@
  * @returns { cleanContent: string, images: Array<{src: string, alt: string}> }
  */
 export function extractImagesFromMarkdown(content: string): {
-    cleanContent: string;
-    images: Array<{ src: string; alt: string }>;
+  cleanContent: string;
+  images: Array<{ src: string; alt: string }>;
 } {
-    if (!content) {
-        return { cleanContent: '', images: [] };
-    }
+  if (!content) {
+    return { cleanContent: '', images: [] };
+  }
 
-    const images: Array<{ src: string; alt: string }> = [];
+  const images: Array<{ src: string; alt: string }> = [];
 
-    // 匹配 ![alt](url) 格式的图片
-    // 使用非贪婪匹配确保正确解析多张图片
-    const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  // 匹配 ![alt](url) 格式的图片
+  // 使用非贪婪匹配确保正确解析多张图片
+  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
-    const cleanContent = content.replace(imageRegex, (match, alt, src) => {
-        images.push({
-            src: src.trim(),
-            alt: alt.trim() || 'Generated Image'
-        });
-        // 移除图片标记，避免 Markdown 库解析问题
-        return '';
+  const cleanContent = content.replace(imageRegex, (match, alt, src) => {
+    images.push({
+      src: src.trim(),
+      alt: alt.trim() || 'Generated Image',
     });
+    // 移除图片标记，避免 Markdown 库解析问题
+    return '';
+  });
 
-    return { cleanContent, images };
+  return { cleanContent, images };
 }

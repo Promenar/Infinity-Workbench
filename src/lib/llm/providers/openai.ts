@@ -2,262 +2,293 @@ import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { ErrorNormalizer } from '../error-normalizer';
 
 export class OpenAiClient implements LlmClient {
-    private apiKey: string;
-    private baseUrl: string;
-    private model: string;
-    private temperature: number;
-    private activeXhr: XMLHttpRequest | null = null;
-    private isEmbedding: boolean = false;
+  private apiKey: string;
+  private baseUrl: string;
+  private model: string;
+  private temperature: number;
+  private activeXhr: XMLHttpRequest | null = null;
+  private isEmbedding: boolean = false;
 
-    constructor(apiKey: string, model: string, temperature: number, baseUrl: string = 'https://api.openai.com/v1', options?: { isEmbedding?: boolean }) {
-        this.apiKey = apiKey;
-        this.baseUrl = baseUrl;
-        this.model = model;
-        this.temperature = temperature;
-        this.isEmbedding = options?.isEmbedding ?? false;
+  constructor(
+    apiKey: string,
+    model: string,
+    temperature: number,
+    baseUrl: string = 'https://api.openai.com/v1',
+    options?: { isEmbedding?: boolean },
+  ) {
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl;
+    this.model = model;
+    this.temperature = temperature;
+    this.isEmbedding = options?.isEmbedding ?? false;
+  }
+
+  async streamChat(
+    messages: ChatMessage[],
+    onToken: (token: string | any) => void,
+    onError: (err: Error) => void,
+    options?: any,
+  ): Promise<void> {
+    try {
+      await this.fetchChatCompletion(messages, onToken, onError, options);
+    } catch (error: any) {
+      onError(error);
     }
+  }
 
-    async streamChat(
-        messages: ChatMessage[],
-        onToken: (token: string | any) => void,
-        onError: (err: Error) => void,
-        options?: any
-    ): Promise<void> {
-        try {
-            await this.fetchChatCompletion(messages, onToken, onError, options);
-        } catch (error: any) {
-            onError(error);
+  async chatCompletion(
+    messages: ChatMessage[],
+    options?: any,
+  ): Promise<{ content: string; usage?: { input: number; output: number; total: number } }> {
+    let result = '';
+    let finalUsage: { input: number; output: number; total: number } | undefined;
+
+    await this.fetchChatCompletion(
+      messages,
+      (token) => {
+        if (typeof token === 'string') result += token;
+        else {
+          if (token.content) result += token.content;
+          if (token.usage) finalUsage = token.usage;
         }
-    }
+      },
+      (err) => {
+        throw err;
+      },
+      { ...options, stream: false },
+    );
+    return { content: result, usage: finalUsage };
+  }
 
-    async chatCompletion(messages: ChatMessage[], options?: any): Promise<{ content: string; usage?: { input: number; output: number; total: number } }> {
-        let result = '';
-        let finalUsage: { input: number; output: number; total: number } | undefined;
+  private async fetchChatCompletion(
+    messages: ChatMessage[],
+    onToken: (token: string | any) => void,
+    onError: (err: Error) => void,
+    options?: ChatMessageOptions & { stream?: boolean },
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.activeXhr = new XMLHttpRequest();
+        const xhr = this.activeXhr;
+        xhr.open('POST', `${this.baseUrl}/chat/completions`);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('Authorization', `Bearer ${this.apiKey}`);
 
-        await this.fetchChatCompletion(
+        let lastPosition = 0;
+
+        xhr.onreadystatechange = () => {
+          if (xhr.readyState === 3 || xhr.readyState === 4) {
+            const newText = xhr.responseText.substring(lastPosition);
+            lastPosition = xhr.responseText.length;
+
+            const lines = newText.split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data: ')) continue;
+              const data = trimmed.slice(6);
+              if (data === '[DONE]') {
+                resolve();
+                return;
+              }
+              try {
+                const json = JSON.parse(data);
+                const delta = json.choices?.[0]?.delta;
+                const content = delta?.content || '';
+                const reasoning = delta?.reasoning_content;
+                const usageRaw = json.usage;
+
+                let usage: { input: number; output: number; total: number } | undefined;
+                if (usageRaw) {
+                  usage = {
+                    input: usageRaw.prompt_tokens,
+                    output: usageRaw.completion_tokens,
+                    total: usageRaw.total_tokens,
+                  };
+                }
+
+                if (content || reasoning || usage) {
+                  onToken({ content, reasoning, usage });
+                }
+              } catch (e) {
+                // Partial JSON, ignore or wait
+              }
+            }
+          }
+          if (xhr.readyState === 4) {
+            // status === 0 means aborted, don't treat as error
+            if (xhr.status === 0) {
+              resolve();
+              return;
+            }
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              // 使用错误标准化器处理API错误
+              const rawError = {
+                status: xhr.status,
+                statusText: xhr.statusText,
+                message: `API Error: ${xhr.status} ${xhr.statusText}\n${xhr.responseText}`,
+                response: xhr.responseText,
+              };
+
+              const normalized = ErrorNormalizer.normalize(rawError, 'openai');
+              const err = new Error(normalized.message);
+              (err as any).category = normalized.category;
+              (err as any).retryable = normalized.retryable;
+              (err as any).retryAfter = normalized.retryAfter;
+              (err as any).technicalMessage = normalized.technicalMessage;
+
+              onError(err);
+              reject(err);
+            }
+          }
+        };
+
+        xhr.onerror = () => {
+          const rawError = new Error('Network request failed');
+          const normalized = ErrorNormalizer.normalize(rawError, 'openai');
+          const err = new Error(normalized.message);
+          (err as any).category = normalized.category;
+          (err as any).retryable = normalized.retryable;
+
+          onError(err);
+          reject(err);
+        };
+
+        xhr.send(
+          JSON.stringify({
+            model: this.model,
             messages,
-            (token) => {
-                if (typeof token === 'string') result += token;
-                else {
-                    if (token.content) result += token.content;
-                    if (token.usage) finalUsage = token.usage;
-                }
-            },
-            (err) => { throw err; },
-            { ...options, stream: false }
+            temperature: options?.inferenceParams?.temperature ?? this.temperature,
+            top_p: options?.inferenceParams?.topP,
+            max_tokens: options?.inferenceParams?.maxTokens,
+            frequency_penalty: options?.inferenceParams?.frequencyPenalty,
+            presence_penalty: options?.inferenceParams?.presencePenalty,
+            stream: true,
+            stream_options: { include_usage: true },
+          }),
         );
-        return { content: result, usage: finalUsage };
+      } catch (e) {
+        onError(e as Error);
+        reject(e);
+      } finally {
+        // We keep it assigned until readyState 4 finishes
+      }
+    });
+  }
+
+  abort() {
+    if (this.activeXhr) {
+      this.activeXhr.abort();
+      this.activeXhr = null;
     }
+  }
 
-    private async fetchChatCompletion(
-        messages: ChatMessage[],
-        onToken: (token: string | any) => void,
-        onError: (err: Error) => void,
-        options?: ChatMessageOptions & { stream?: boolean }
-    ): Promise<void> {
-        return new Promise((resolve, reject) => {
-            try {
-                this.activeXhr = new XMLHttpRequest();
-                const xhr = this.activeXhr;
-                xhr.open('POST', `${this.baseUrl}/chat/completions`);
-                xhr.setRequestHeader('Content-Type', 'application/json');
-                xhr.setRequestHeader('Authorization', `Bearer ${this.apiKey}`);
+  async testConnection(): Promise<{ success: boolean; latency: number; error?: string }> {
+    const start = Date.now();
+    try {
+      // Use explicit flag if available, otherwise fallback to name check (bge, gte, etc for wider support)
+      const isEmbeddingModel =
+        this.isEmbedding ||
+        this.model.toLowerCase().includes('embedding') ||
+        this.model.toLowerCase().includes('bge') ||
+        this.model.toLowerCase().includes('gte') ||
+        this.model.toLowerCase().includes('vector');
 
-                let lastPosition = 0;
+      const endpoint = isEmbeddingModel
+        ? `${this.baseUrl}/embeddings`
+        : `${this.baseUrl}/chat/completions`;
 
-                xhr.onreadystatechange = () => {
-                    if (xhr.readyState === 3 || xhr.readyState === 4) {
-                        const newText = xhr.responseText.substring(lastPosition);
-                        lastPosition = xhr.responseText.length;
+      const body = isEmbeddingModel
+        ? { model: this.model, input: 'ping' }
+        : { model: this.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 };
 
-                        const lines = newText.split('\n');
-                        for (const line of lines) {
-                            const trimmed = line.trim();
-                            if (!trimmed || !trimmed.startsWith('data: ')) continue;
-                            const data = trimmed.slice(6);
-                            if (data === '[DONE]') {
-                                resolve();
-                                return;
-                            }
-                            try {
-                                const json = JSON.parse(data);
-                                const delta = json.choices?.[0]?.delta;
-                                const content = delta?.content || '';
-                                const reasoning = delta?.reasoning_content;
-                                const usageRaw = json.usage;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-                                let usage: { input: number; output: number; total: number } | undefined;
-                                if (usageRaw) {
-                                    usage = {
-                                        input: usageRaw.prompt_tokens,
-                                        output: usageRaw.completion_tokens,
-                                        total: usageRaw.total_tokens
-                                    };
-                                }
+      const latency = Date.now() - start;
 
-                                if (content || reasoning || usage) {
-                                    onToken({ content, reasoning, usage });
-                                }
-                            } catch (e) {
-                                // Partial JSON, ignore or wait
-                            }
-                        }
-                    }
-                    if (xhr.readyState === 4) {
-                        // status === 0 means aborted, don't treat as error
-                        if (xhr.status === 0) {
-                            resolve();
-                            return;
-                        }
-                        if (xhr.status >= 200 && xhr.status < 300) {
-                            resolve();
-                        } else {
-                            // 使用错误标准化器处理API错误
-                            const rawError = {
-                                status: xhr.status,
-                                statusText: xhr.statusText,
-                                message: `API Error: ${xhr.status} ${xhr.statusText}\n${xhr.responseText}`,
-                                response: xhr.responseText
-                            };
+      if (!response.ok) {
+        // Rule 8.4: Capture HTML error pages
+        const contentType = response.headers.get('Content-Type') || '';
+        const errorText = await response.text();
 
-                            const normalized = ErrorNormalizer.normalize(rawError, 'openai');
-                            const err = new Error(normalized.message);
-                            (err as any).category = normalized.category;
-                            (err as any).retryable = normalized.retryable;
-                            (err as any).retryAfter = normalized.retryAfter;
-                            (err as any).technicalMessage = normalized.technicalMessage;
-
-                            onError(err);
-                            reject(err);
-                        }
-                    }
-                };
-
-                xhr.onerror = () => {
-                    const rawError = new Error('Network request failed');
-                    const normalized = ErrorNormalizer.normalize(rawError, 'openai');
-                    const err = new Error(normalized.message);
-                    (err as any).category = normalized.category;
-                    (err as any).retryable = normalized.retryable;
-
-                    onError(err);
-                    reject(err);
-                };
-
-                xhr.send(JSON.stringify({
-                    model: this.model,
-                    messages,
-                    temperature: options?.inferenceParams?.temperature ?? this.temperature,
-                    top_p: options?.inferenceParams?.topP,
-                    max_tokens: options?.inferenceParams?.maxTokens,
-                    frequency_penalty: options?.inferenceParams?.frequencyPenalty,
-                    presence_penalty: options?.inferenceParams?.presencePenalty,
-                    stream: true,
-                    stream_options: { include_usage: true }
-                }));
-
-            } catch (e) {
-                onError(e as Error);
-                reject(e);
-            } finally {
-                // We keep it assigned until readyState 4 finishes
-            }
-        });
-    }
-
-    abort() {
-        if (this.activeXhr) {
-            this.activeXhr.abort();
-            this.activeXhr = null;
+        if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+          return {
+            success: false,
+            latency,
+            error: `HTTP ${response.status}: Received non-JSON response (possibly HTML error page).`,
+          };
         }
+
+        return {
+          success: false,
+          latency,
+          error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`,
+        };
+      }
+
+      return { success: true, latency };
+    } catch (e) {
+      const latency = Date.now() - start;
+      return { success: false, latency, error: (e as Error).message };
     }
+  }
 
-    async testConnection(): Promise<{ success: boolean; latency: number; error?: string }> {
-        const start = Date.now();
-        try {
-            // Use explicit flag if available, otherwise fallback to name check (bge, gte, etc for wider support)
-            const isEmbeddingModel = this.isEmbedding ||
-                this.model.toLowerCase().includes('embedding') ||
-                this.model.toLowerCase().includes('bge') ||
-                this.model.toLowerCase().includes('gte') ||
-                this.model.toLowerCase().includes('vector');
+  async testRerankConnection(): Promise<{ success: boolean; latency: number; error?: string }> {
+    const start = Date.now();
+    try {
+      // 处理baseUrl可能已包含/v1的情况
+      const baseUrlClean = this.baseUrl.endsWith('/v1') ? this.baseUrl : `${this.baseUrl}/v1`;
+      const endpoint = `${baseUrlClean}/rerank`;
 
-            const endpoint = isEmbeddingModel ? `${this.baseUrl}/embeddings` : `${this.baseUrl}/chat/completions`;
+      const body = {
+        model: this.model,
+        query: 'Apple',
+        documents: ['apple', 'banana'],
+        top_n: 2,
+      };
 
-            const body = isEmbeddingModel
-                ? { model: this.model, input: 'ping' }
-                : { model: this.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`,
-                },
-                body: JSON.stringify(body),
-            });
+      const latency = Date.now() - start;
 
-            const latency = Date.now() - start;
+      if (!response.ok) {
+        const contentType = response.headers.get('Content-Type') || '';
+        const errorText = await response.text();
 
-            if (!response.ok) {
-                // Rule 8.4: Capture HTML error pages
-                const contentType = response.headers.get('Content-Type') || '';
-                const errorText = await response.text();
-
-                if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
-                    return { success: false, latency, error: `HTTP ${response.status}: Received non-JSON response (possibly HTML error page).` };
-                }
-
-                return { success: false, latency, error: `HTTP ${response.status}: ${errorText.substring(0, 100)}` };
-            }
-
-            return { success: true, latency };
-        } catch (e) {
-            const latency = Date.now() - start;
-            return { success: false, latency, error: (e as Error).message };
+        if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+          return {
+            success: false,
+            latency,
+            error: `HTTP ${response.status}: Received non-JSON response (possibly HTML error page).`,
+          };
         }
+
+        return {
+          success: false,
+          latency,
+          error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`,
+        };
+      }
+
+      return { success: true, latency };
+    } catch (e) {
+      const latency = Date.now() - start;
+      return { success: false, latency, error: (e as Error).message };
     }
-
-    async testRerankConnection(): Promise<{ success: boolean; latency: number; error?: string }> {
-        const start = Date.now();
-        try {
-            // 处理baseUrl可能已包含/v1的情况
-            const baseUrlClean = this.baseUrl.endsWith('/v1') ? this.baseUrl : `${this.baseUrl}/v1`;
-            const endpoint = `${baseUrlClean}/rerank`;
-
-            const body = {
-                model: this.model,
-                query: "Apple",
-                documents: ["apple", "banana"],
-                top_n: 2
-            };
-
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`,
-                },
-                body: JSON.stringify(body),
-            });
-
-            const latency = Date.now() - start;
-
-            if (!response.ok) {
-                const contentType = response.headers.get('Content-Type') || '';
-                const errorText = await response.text();
-
-                if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
-                    return { success: false, latency, error: `HTTP ${response.status}: Received non-JSON response (possibly HTML error page).` };
-                }
-
-                return { success: false, latency, error: `HTTP ${response.status}: ${errorText.substring(0, 100)}` };
-            }
-
-            return { success: true, latency };
-        } catch (e) {
-            const latency = Date.now() - start;
-            return { success: false, latency, error: (e as Error).message };
-        }
-    }
+  }
 }

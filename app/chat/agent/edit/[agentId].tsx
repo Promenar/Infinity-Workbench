@@ -1,8 +1,26 @@
 import React, { useState } from 'react';
-import { View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import {
+  View,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { PageLayout, Typography, GlassHeader, ConfirmDialog } from '../../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Save, Sparkles, Cpu, ChevronRight, Trash2, Image as ImageIcon, Check, Database } from 'lucide-react-native';
+import {
+  ChevronLeft,
+  Save,
+  Sparkles,
+  Cpu,
+  ChevronRight,
+  Trash2,
+  Image as ImageIcon,
+  Check,
+  Database,
+} from 'lucide-react-native';
 import * as Haptics from '../../../../src/lib/haptics';
 import { useAgentStore } from '../../../../src/store/agent-store';
 import { useApiStore } from '../../../../src/store/api-store';
@@ -16,387 +34,444 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { AgentAvatar } from '../../../../src/components/chat/AgentAvatar';
 import { AgentRagConfigPanel } from '../../../../src/features/settings/components/AgentRagConfigPanel';
 
-const PRESET_ICONS = ['MessageSquare', 'Zap', 'Brain', 'Bot', 'Cpu', 'Sparkles', 'Code2', 'User', 'Globe', 'Terminal'];
+const PRESET_ICONS = [
+  'MessageSquare',
+  'Zap',
+  'Brain',
+  'Bot',
+  'Cpu',
+  'Sparkles',
+  'Code2',
+  'User',
+  'Globe',
+  'Terminal',
+];
 
 export default function AgentEditScreen() {
-    const { agentId } = useLocalSearchParams<{ agentId: string }>();
-    const router = useRouter();
-    const { isDark } = useTheme();
-    const { t } = useI18n();
-    const insets = useSafeAreaInsets();
-    const { getAgent, updateAgent, deleteAgent } = useAgentStore();
-    const { providers } = useApiStore();
-    const agent = getAgent(agentId);
+  const { agentId } = useLocalSearchParams<{ agentId: string }>();
+  const router = useRouter();
+  const { isDark } = useTheme();
+  const { t } = useI18n();
+  const insets = useSafeAreaInsets();
+  const { getAgent, updateAgent, deleteAgent } = useAgentStore();
+  const { providers } = useApiStore();
+  const agent = getAgent(agentId);
 
-    const [showModelPicker, setShowModelPicker] = useState(false);
-    const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
-    const [formData, setFormData] = useState({
-        name: agent?.name || '',
-        description: agent?.description || '',
-        systemPrompt: agent?.systemPrompt || '',
-        defaultModel: agent?.defaultModel || '',
-        params: agent?.params || {} as any,
-        temperature: agent?.params?.temperature || 0.7,
-        avatar: agent?.avatar || 'MessageSquare',
+  const [formData, setFormData] = useState({
+    name: agent?.name || '',
+    description: agent?.description || '',
+    systemPrompt: agent?.systemPrompt || '',
+    defaultModel: agent?.defaultModel || '',
+    params: agent?.params || ({} as any),
+    temperature: agent?.params?.temperature || 0.7,
+    avatar: agent?.avatar || 'MessageSquare',
+  });
+
+  // 确认弹窗状态
+  const [confirmState, setConfirmState] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDestructive?: boolean;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    isDestructive: false,
+  });
+
+  const handlePickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
     });
 
-    // 确认弹窗状态
-    const [confirmState, setConfirmState] = useState<{
-        visible: boolean;
-        title: string;
-        message: string;
-        onConfirm: () => void;
-        isDestructive?: boolean;
-    }>({
-        visible: false,
-        title: '',
-        message: '',
-        onConfirm: () => { },
-        isDestructive: false
-    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setIsProcessingImage(true);
+      const sourceUri = result.assets[0].uri;
+      const fileName = `agent-avatar-${agentId}-${Date.now()}.jpg`;
+      const destPath = `${FileSystem.documentDirectory}${fileName}`;
 
-    const handlePickImage = async () => {
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.8,
+      try {
+        await FileSystem.copyAsync({
+          from: sourceUri,
+          to: destPath,
         });
+        setFormData({ ...formData, avatar: destPath });
+        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 10);
+      } catch (e) {
+        console.error('Failed to copy avatar', e);
+        setFormData({ ...formData, avatar: sourceUri });
+      } finally {
+        setIsProcessingImage(false);
+      }
+    }
+  };
 
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-            setIsProcessingImage(true);
-            const sourceUri = result.assets[0].uri;
-            const fileName = `agent-avatar-${agentId}-${Date.now()}.jpg`;
-            const destPath = `${FileSystem.documentDirectory}${fileName}`;
+  const handleSave = () => {
+    setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      updateAgent(agentId, {
+        name: formData.name,
+        description: formData.description,
+        systemPrompt: formData.systemPrompt,
+        defaultModel: formData.defaultModel,
+        avatar: formData.avatar,
+        params: { ...agent?.params, temperature: formData.temperature },
+      });
+      router.back();
+    }, 10);
+  };
 
-            try {
-                await FileSystem.copyAsync({
-                    from: sourceUri,
-                    to: destPath
-                });
-                setFormData({ ...formData, avatar: destPath });
-                setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 10);
-            } catch (e) {
-                console.error('Failed to copy avatar', e);
-                setFormData({ ...formData, avatar: sourceUri });
-            } finally {
-                setIsProcessingImage(false);
-            }
-        }
-    };
-
-    const handleSave = () => {
+  const handleDelete = () => {
+    setConfirmState({
+      visible: true,
+      title: t.agent.deleteConfirmTitle || '确认删除',
+      message: t.agent.deleteConfirmMessage || '删除后无法恢复，确定要删除此助手吗？',
+      isDestructive: true,
+      onConfirm: () => {
         setTimeout(() => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            updateAgent(agentId, {
-                name: formData.name,
-                description: formData.description,
-                systemPrompt: formData.systemPrompt,
-                defaultModel: formData.defaultModel,
-                avatar: formData.avatar,
-                params: { ...agent?.params, temperature: formData.temperature }
-            });
-            router.back();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          deleteAgent(agentId);
+          setConfirmState((prev) => ({ ...prev, visible: false }));
+          router.push('/(tabs)/chat');
         }, 10);
-    };
+      },
+    });
+  };
 
-    const handleDelete = () => {
-        setConfirmState({
-            visible: true,
-            title: t.agent.deleteConfirmTitle || '确认删除',
-            message: t.agent.deleteConfirmMessage || '删除后无法恢复，确定要删除此助手吗？',
-            isDestructive: true,
-            onConfirm: () => {
-                setTimeout(() => {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                    deleteAgent(agentId);
-                    setConfirmState(prev => ({ ...prev, visible: false }));
-                    router.push('/(tabs)/chat');
-                }, 10);
-            }
-        });
-    };
+  if (!agent) return null;
 
-    if (!agent) return null;
+  return (
+    <PageLayout safeArea={false} className="bg-white dark:bg-black">
+      <Stack.Screen options={{ headerShown: false }} />
 
-    return (
-        <PageLayout safeArea={false} className="bg-white dark:bg-black">
-            <Stack.Screen options={{ headerShown: false }} />
+      <GlassHeader
+        title={t.agent.editTitle}
+        leftAction={{
+          icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
+          onPress: () => router.back(),
+          label: t.common.back,
+        }}
+        rightAction={{
+          icon: <Save size={24} color={isDark ? '#fff' : '#000'} strokeWidth={2} />,
+          onPress: handleSave,
+          label: t.common.save,
+        }}
+      />
 
-            <GlassHeader
-                title={t.agent.editTitle}
-                leftAction={{
-                    icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
-                    onPress: () => router.back(),
-                    label: t.common.back,
-                }}
-                rightAction={{
-                    icon: <Save size={24} color={isDark ? '#fff' : '#000'} strokeWidth={2} />,
-                    onPress: handleSave,
-                    label: t.common.save
-                }}
-            />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1"
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          className="flex-1 px-6"
+          contentContainerStyle={{
+            paddingTop: 74 + insets.top,
+            paddingBottom: 40,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Agent Avatar Group */}
+          <Typography
+            variant="label"
+            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
+          >
+            {t.agent.avatar || '助手头像'}
+          </Typography>
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-6 border border-gray-100 dark:border-zinc-800 mb-8 items-center">
+            <View className="relative mb-6">
+              <AgentAvatar
+                id={agentId}
+                name={formData.name}
+                avatar={formData.avatar}
+                color={agent.color}
+                size={100}
+              />
+              <TouchableOpacity
+                onPress={handlePickImage}
+                className="absolute bottom-0 right-0 bg-indigo-600 p-2.5 rounded-full border-4 border-gray-50 dark:border-zinc-900 shadow-md"
+              >
+                {isProcessingImage ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <ImageIcon size={18} color="white" />
+                )}
+              </TouchableOpacity>
+            </View>
 
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                className="flex-1"
-                keyboardVerticalOffset={0}
-            >
-                <ScrollView
-                    className="flex-1 px-6"
-                    contentContainerStyle={{
-                        paddingTop: 74 + insets.top,
-                        paddingBottom: 40
-                    }}
-                    showsVerticalScrollIndicator={false}
+            <View className="flex-row flex-wrap justify-center gap-3">
+              {PRESET_ICONS.map((iconName) => (
+                <TouchableOpacity
+                  key={iconName}
+                  onPress={() => {
+                    setFormData({ ...formData, avatar: iconName });
+                    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                  }}
+                  className={clsx(
+                    'w-12 h-12 rounded-2xl items-center justify-center border-2',
+                    formData.avatar === iconName
+                      ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-500'
+                      : 'bg-white dark:bg-black border-transparent',
+                  )}
                 >
-                    {/* Agent Avatar Group */}
-                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3">
-                        {t.agent.avatar || '助手头像'}
-                    </Typography>
-                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-6 border border-gray-100 dark:border-zinc-800 mb-8 items-center">
-                        <View className="relative mb-6">
-                            <AgentAvatar
-                                id={agentId}
-                                name={formData.name}
-                                avatar={formData.avatar}
-                                color={agent.color}
-                                size={100}
-                            />
-                            <TouchableOpacity
-                                onPress={handlePickImage}
-                                className="absolute bottom-0 right-0 bg-indigo-600 p-2.5 rounded-full border-4 border-gray-50 dark:border-zinc-900 shadow-md"
-                            >
-                                {isProcessingImage ? (
-                                    <ActivityIndicator size="small" color="white" />
-                                ) : (
-                                    <ImageIcon size={18} color="white" />
-                                )}
-                            </TouchableOpacity>
-                        </View>
-
-                        <View className="flex-row flex-wrap justify-center gap-3">
-                            {PRESET_ICONS.map((iconName) => (
-                                <TouchableOpacity
-                                    key={iconName}
-                                    onPress={() => {
-                                        setFormData({ ...formData, avatar: iconName });
-                                        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-                                    }}
-                                    className={clsx(
-                                        "w-12 h-12 rounded-2xl items-center justify-center border-2",
-                                        formData.avatar === iconName
-                                            ? "bg-indigo-50 dark:bg-indigo-500/20 border-indigo-500"
-                                            : "bg-white dark:bg-black border-transparent"
-                                    )}
-                                >
-                                    <AgentAvatar
-                                        id={agentId}
-                                        name={formData.name}
-                                        avatar={iconName}
-                                        color={agent.color}
-                                        size={32}
-                                    />
-                                    {formData.avatar === iconName && (
-                                        <View className="absolute -top-1 -right-1 bg-indigo-500 rounded-full p-0.5">
-                                            <Check size={8} color="white" />
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
-                            ))}
-                        </View>
+                  <AgentAvatar
+                    id={agentId}
+                    name={formData.name}
+                    avatar={iconName}
+                    color={agent.color}
+                    size={32}
+                  />
+                  {formData.avatar === iconName && (
+                    <View className="absolute -top-1 -right-1 bg-indigo-500 rounded-full p-0.5">
+                      <Check size={8} color="white" />
                     </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
-                    {/* Basic Info Group */}
-                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3">{t.agent.basicInfo}</Typography>
-                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-                        <Typography className="text-gray-900 dark:text-white font-bold mb-2">{t.agent.name}</Typography>
-                        <TextInput
-                            className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-gray-100 dark:border-zinc-800 mb-4"
-                            value={formData.name}
-                            onChangeText={(text) => setFormData({ ...formData, name: text })}
-                            placeholder={t.agent.namePlaceholder}
-                            placeholderTextColor="#94a3b8"
-                        />
-
-                        <Typography className="text-gray-900 dark:text-white font-bold mb-2">{t.agent.description}</Typography>
-                        <TextInput
-                            className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-gray-100 dark:border-zinc-800"
-                            multiline
-                            numberOfLines={2}
-                            value={formData.description}
-                            onChangeText={(text) => setFormData({ ...formData, description: text })}
-                            placeholder={t.agent.descriptionPlaceholder}
-                            placeholderTextColor="#94a3b8"
-                        />
-                    </View>
-
-                    {/* Personality Group */}
-                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center">
-                        <Sparkles size={10} color="#64748b" /> {t.agent.personality}
-                    </Typography>
-                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-                        <TextInput
-                            className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 h-40"
-                            multiline
-                            textAlignVertical="top"
-                            value={formData.systemPrompt}
-                            onChangeText={(text) => setFormData({ ...formData, systemPrompt: text })}
-                            placeholder={t.agent.personalityPlaceholder || t.agent.systemPromptPlaceholder}
-                            placeholderTextColor="#94a3b8"
-                        />
-                    </View>
-
-                    {/* Model Configuration Group */}
-                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center">
-                        <Cpu size={10} color="#64748b" /> {t.agent.modelConfig}
-                    </Typography>
-                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
-                        <TouchableOpacity
-                            onPress={() => {
-                                setTimeout(() => {
-                                    setShowModelPicker(true);
-                                }, 10);
-                            }}
-                            className="flex-row items-center justify-between p-5"
-                        >
-                            <View className="flex-1">
-                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">{t.agent.engine}</Typography>
-                                <Typography className="text-indigo-500 font-semibold">{formData.defaultModel}</Typography>
-                            </View>
-                            <ChevronRight size={20} color="#94a3b8" />
-                        </TouchableOpacity>
-
-                        <View className="border-t border-gray-100 dark:border-zinc-800 p-5">
-                            <Typography className="text-gray-900 dark:text-white font-bold mb-3">{t.agent.creativity}</Typography>
-                            <View className="flex-row justify-between mb-2">
-                                {[0, 0.3, 0.7, 1].map((temp) => (
-                                    <TouchableOpacity
-                                        key={temp}
-                                        onPress={() => {
-                                            setTimeout(() => {
-                                                setFormData({ ...formData, temperature: temp });
-                                            }, 10);
-                                        }}
-                                        className={clsx(
-                                            'flex-1 py-2 mx-1 rounded-xl border',
-                                            formData.temperature === temp
-                                                ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-900/30'
-                                                : 'bg-white dark:bg-black border-gray-100 dark:border-zinc-800'
-                                        )}
-                                    >
-                                        <Typography className={clsx(
-                                            'text-center font-bold text-xs',
-                                            formData.temperature === temp
-                                                ? 'text-indigo-600 dark:text-indigo-400'
-                                                : 'text-gray-400'
-                                        )}>
-                                            {temp === 0 ? t.agent.precise : temp === 0.3 ? '0.3' : temp === 0.7 ? '0.7' : t.agent.creative}
-                                        </Typography>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-                    </View>
-
-                    {/* RAG 配置入口 */}
-                    <Typography variant="label" className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3">
-                        <Database size={10} color="#64748b" className="mr-1" /> RAG 配置
-                    </Typography>
-                    <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
-                        <TouchableOpacity
-                            onPress={() => {
-                                setTimeout(() => {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                    router.push(`/chat/agent/edit/rag-config/${agentId}` as any);
-                                }, 10);
-                            }}
-                            className="flex-row items-center justify-between p-5"
-                        >
-                            <View className="flex-1">
-                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级RAG配置</Typography>
-                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">配置切块、摘要、检索参数</Typography>
-                            </View>
-                            <ChevronRight size={20} color="#9ca3af" />
-                        </TouchableOpacity>
-
-                        <View className="border-t border-gray-100 dark:border-zinc-800" />
-
-                        <TouchableOpacity
-                            onPress={() => {
-                                setTimeout(() => {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                    router.push(`/chat/agent/edit/advanced-retrieval/${agentId}` as any);
-                                }, 10);
-                            }}
-                            className="flex-row items-center justify-between p-5"
-                        >
-                            <View className="flex-1">
-                                <Typography className="text-gray-900 dark:text-white font-bold mb-1">高级检索配置</Typography>
-                                <Typography className="text-gray-500 dark:text-gray-400 text-sm">Rerank、查询重写、混合检索</Typography>
-                            </View>
-                            <ChevronRight size={20} color="#9ca3af" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Danger Zone */}
-                    <Typography variant="label" className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3">
-                        {t.common.dangerZone}
-                    </Typography>
-                    <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
-                        <TouchableOpacity
-                            onPress={handleDelete}
-                            className="flex-row items-center justify-between"
-                        >
-                            <View className="flex-row items-center">
-                                <View className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 items-center justify-center mr-3">
-                                    <Trash2 size={20} color="#ef4444" />
-                                </View>
-                                <View>
-                                    <Typography className="text-red-600 dark:text-red-400 font-bold">
-                                        {t.common.delete || '删除助手'}
-                                    </Typography>
-                                    <Typography variant="caption" className="text-red-400/80">
-                                        {t.agent.deleteConfirmMessage || '永久删除此助手及其配置'}
-                                    </Typography>
-                                </View>
-                            </View>
-                            <ChevronRight size={20} color="#ef4444" />
-                        </TouchableOpacity>
-                    </View>
-                </ScrollView>
-            </KeyboardAvoidingView>
-
-            <ConfirmDialog
-                visible={confirmState.visible}
-                title={confirmState.title}
-                message={confirmState.message}
-                isDestructive={confirmState.isDestructive}
-                confirmText={t.common.delete || '删除'}
-                cancelText={t.common.cancel || '取消'}
-                onConfirm={confirmState.onConfirm}
-                onCancel={() => setConfirmState(prev => ({ ...prev, visible: false }))}
+          {/* Basic Info Group */}
+          <Typography
+            variant="label"
+            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
+          >
+            {t.agent.basicInfo}
+          </Typography>
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+            <Typography className="text-gray-900 dark:text-white font-bold mb-2">
+              {t.agent.name}
+            </Typography>
+            <TextInput
+              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-gray-100 dark:border-zinc-800 mb-4"
+              value={formData.name}
+              onChangeText={(text) => setFormData({ ...formData, name: text })}
+              placeholder={t.agent.namePlaceholder}
+              placeholderTextColor="#94a3b8"
             />
 
-            {showModelPicker && (
-                <ModelPicker
-                    visible={showModelPicker}
-                    title={t.agent.selectModel}
-                    selectedUuid={formData.defaultModel}
-                    onSelect={(uuid) => {
-                        setFormData({ ...formData, defaultModel: uuid });
-                        setTimeout(() => {
-                            setShowModelPicker(false);
-                        }, 10);
+            <Typography className="text-gray-900 dark:text-white font-bold mb-2">
+              {t.agent.description}
+            </Typography>
+            <TextInput
+              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-gray-100 dark:border-zinc-800"
+              multiline
+              numberOfLines={2}
+              value={formData.description}
+              onChangeText={(text) => setFormData({ ...formData, description: text })}
+              placeholder={t.agent.descriptionPlaceholder}
+              placeholderTextColor="#94a3b8"
+            />
+          </View>
+
+          {/* Personality Group */}
+          <Typography
+            variant="label"
+            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center"
+          >
+            <Sparkles size={10} color="#64748b" /> {t.agent.personality}
+          </Typography>
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+            <TextInput
+              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 h-40"
+              multiline
+              textAlignVertical="top"
+              value={formData.systemPrompt}
+              onChangeText={(text) => setFormData({ ...formData, systemPrompt: text })}
+              placeholder={t.agent.personalityPlaceholder || t.agent.systemPromptPlaceholder}
+              placeholderTextColor="#94a3b8"
+            />
+          </View>
+
+          {/* Model Configuration Group */}
+          <Typography
+            variant="label"
+            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center"
+          >
+            <Cpu size={10} color="#64748b" /> {t.agent.modelConfig}
+          </Typography>
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
+            <TouchableOpacity
+              onPress={() => {
+                setTimeout(() => {
+                  setShowModelPicker(true);
+                }, 10);
+              }}
+              className="flex-row items-center justify-between p-5"
+            >
+              <View className="flex-1">
+                <Typography className="text-gray-900 dark:text-white font-bold mb-1">
+                  {t.agent.engine}
+                </Typography>
+                <Typography className="text-indigo-500 font-semibold">
+                  {formData.defaultModel}
+                </Typography>
+              </View>
+              <ChevronRight size={20} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <View className="border-t border-gray-100 dark:border-zinc-800 p-5">
+              <Typography className="text-gray-900 dark:text-white font-bold mb-3">
+                {t.agent.creativity}
+              </Typography>
+              <View className="flex-row justify-between mb-2">
+                {[0, 0.3, 0.7, 1].map((temp) => (
+                  <TouchableOpacity
+                    key={temp}
+                    onPress={() => {
+                      setTimeout(() => {
+                        setFormData({ ...formData, temperature: temp });
+                      }, 10);
                     }}
-                    onClose={() => {
-                        setTimeout(() => {
-                            setShowModelPicker(false);
-                        }, 10);
-                    }}
-                />
-            )}
-        </PageLayout>
-    );
+                    className={clsx(
+                      'flex-1 py-2 mx-1 rounded-xl border',
+                      formData.temperature === temp
+                        ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-900/30'
+                        : 'bg-white dark:bg-black border-gray-100 dark:border-zinc-800',
+                    )}
+                  >
+                    <Typography
+                      className={clsx(
+                        'text-center font-bold text-xs',
+                        formData.temperature === temp
+                          ? 'text-indigo-600 dark:text-indigo-400'
+                          : 'text-gray-400',
+                      )}
+                    >
+                      {temp === 0
+                        ? t.agent.precise
+                        : temp === 0.3
+                          ? '0.3'
+                          : temp === 0.7
+                            ? '0.7'
+                            : t.agent.creative}
+                    </Typography>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          {/* RAG 配置入口 */}
+          <Typography
+            variant="label"
+            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
+          >
+            <Database size={10} color="#64748b" className="mr-1" /> RAG 配置
+          </Typography>
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
+            <TouchableOpacity
+              onPress={() => {
+                setTimeout(() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push(`/chat/agent/edit/rag-config/${agentId}` as any);
+                }, 10);
+              }}
+              className="flex-row items-center justify-between p-5"
+            >
+              <View className="flex-1">
+                <Typography className="text-gray-900 dark:text-white font-bold mb-1">
+                  高级RAG配置
+                </Typography>
+                <Typography className="text-gray-500 dark:text-gray-400 text-sm">
+                  配置切块、摘要、检索参数
+                </Typography>
+              </View>
+              <ChevronRight size={20} color="#9ca3af" />
+            </TouchableOpacity>
+
+            <View className="border-t border-gray-100 dark:border-zinc-800" />
+
+            <TouchableOpacity
+              onPress={() => {
+                setTimeout(() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push(`/chat/agent/edit/advanced-retrieval/${agentId}` as any);
+                }, 10);
+              }}
+              className="flex-row items-center justify-between p-5"
+            >
+              <View className="flex-1">
+                <Typography className="text-gray-900 dark:text-white font-bold mb-1">
+                  高级检索配置
+                </Typography>
+                <Typography className="text-gray-500 dark:text-gray-400 text-sm">
+                  Rerank、查询重写、混合检索
+                </Typography>
+              </View>
+              <ChevronRight size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Danger Zone */}
+          <Typography
+            variant="label"
+            className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3"
+          >
+            {t.common.dangerZone}
+          </Typography>
+          <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
+            <TouchableOpacity
+              onPress={handleDelete}
+              className="flex-row items-center justify-between"
+            >
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 items-center justify-center mr-3">
+                  <Trash2 size={20} color="#ef4444" />
+                </View>
+                <View>
+                  <Typography className="text-red-600 dark:text-red-400 font-bold">
+                    {t.common.delete || '删除助手'}
+                  </Typography>
+                  <Typography variant="caption" className="text-red-400/80">
+                    {t.agent.deleteConfirmMessage || '永久删除此助手及其配置'}
+                  </Typography>
+                </View>
+              </View>
+              <ChevronRight size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <ConfirmDialog
+        visible={confirmState.visible}
+        title={confirmState.title}
+        message={confirmState.message}
+        isDestructive={confirmState.isDestructive}
+        confirmText={t.common.delete || '删除'}
+        cancelText={t.common.cancel || '取消'}
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
+      />
+
+      {showModelPicker && (
+        <ModelPicker
+          visible={showModelPicker}
+          title={t.agent.selectModel}
+          selectedUuid={formData.defaultModel}
+          onSelect={(uuid) => {
+            setFormData({ ...formData, defaultModel: uuid });
+            setTimeout(() => {
+              setShowModelPicker(false);
+            }, 10);
+          }}
+          onClose={() => {
+            setTimeout(() => {
+              setShowModelPicker(false);
+            }, 10);
+          }}
+        />
+      )}
+    </PageLayout>
+  );
 }

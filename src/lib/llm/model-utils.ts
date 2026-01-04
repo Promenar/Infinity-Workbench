@@ -6,21 +6,21 @@ import { MODEL_SPECS } from './model-specs';
  * @returns 模型规格对象，未找到返回 undefined
  */
 export function findModelSpec(modelId: string) {
-    const normalizedId = modelId.toLowerCase();
+  const normalizedId = modelId.toLowerCase();
 
-    for (const spec of MODEL_SPECS) {
-        if (typeof spec.pattern === 'string') {
-            if (normalizedId.includes(spec.pattern.toLowerCase())) {
-                return spec;
-            }
-        } else {
-            if (spec.pattern.test(modelId)) {
-                return spec;
-            }
-        }
+  for (const spec of MODEL_SPECS) {
+    if (typeof spec.pattern === 'string') {
+      if (normalizedId.includes(spec.pattern.toLowerCase())) {
+        return spec;
+      }
+    } else {
+      if (spec.pattern.test(modelId)) {
+        return spec;
+      }
     }
+  }
 
-    return undefined;
+  return undefined;
 }
 
 /**
@@ -29,8 +29,8 @@ export function findModelSpec(modelId: string) {
  * @returns 是否强制推理
  */
 export function isForcedReasoningModel(modelId: string): boolean {
-    const spec = findModelSpec(modelId);
-    return spec?.forcedReasoning === true;
+  const spec = findModelSpec(modelId);
+  return spec?.forcedReasoning === true;
 }
 
 /**
@@ -38,10 +38,10 @@ export function isForcedReasoningModel(modelId: string): boolean {
  * @param modelId 模型 ID
  */
 export function supportsThinkingConfig(modelId: string): boolean {
-    const lowerId = modelId.toLowerCase();
-    // 目前仅 Gemini 2.0 Flash Thinking 支持 thinkingConfig 参数
-    // 如果后续有更多，需扩展此处或 ModelSpec
-    return lowerId.includes('flash-thinking') || lowerId.includes('thinking');
+  const lowerId = modelId.toLowerCase();
+  // 目前仅 Gemini 2.0 Flash Thinking 支持 thinkingConfig 参数
+  // 如果后续有更多，需扩展此处或 ModelSpec
+  return lowerId.includes('flash-thinking') || lowerId.includes('thinking');
 }
 
 /**
@@ -49,9 +49,11 @@ export function supportsThinkingConfig(modelId: string): boolean {
  * @param modelId 模型 ID
  * @returns 模型类型，未找到返回 'chat' 作为默认值
  */
-export function getModelType(modelId: string): 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank' {
-    const spec = findModelSpec(modelId);
-    return spec?.type || 'chat';
+export function getModelType(
+  modelId: string,
+): 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank' {
+  const spec = findModelSpec(modelId);
+  return spec?.type || 'chat';
 }
 
 /**
@@ -60,8 +62,8 @@ export function getModelType(modelId: string): 'chat' | 'reasoning' | 'image' | 
  * @returns 能力对象
  */
 export function getModelCapabilities(modelId: string) {
-    const spec = findModelSpec(modelId);
-    return spec?.capabilities || {};
+  const spec = findModelSpec(modelId);
+  return spec?.capabilities || {};
 }
 
 /**
@@ -70,6 +72,6 @@ export function getModelCapabilities(modelId: string) {
  * @returns 图标标识符
  */
 export function getModelIcon(modelId: string): string | undefined {
-    const spec = findModelSpec(modelId);
-    return spec?.icon;
+  const spec = findModelSpec(modelId);
+  return spec?.icon;
 }

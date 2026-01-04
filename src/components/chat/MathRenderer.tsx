@@ -7,8 +7,8 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../theme/ThemeProvider';
 
 interface MathRendererProps {
-    content: string;
-    isBlock?: boolean; // true for $$..$$, false for $...$ 
+  content: string;
+  isBlock?: boolean; // true for $$..$$, false for $...$
 }
 
 /**
@@ -16,13 +16,13 @@ interface MathRendererProps {
  * 使用 KaTeX 通过 WebView 渲染
  */
 export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = false }) => {
-    const { isDark } = useTheme();
+  const { isDark } = useTheme();
 
-    const backgroundColor = isDark ? '#000000' : '#ffffff';
-    const textColor = isDark ? '#e4e4e7' : '#27272a';
+  const backgroundColor = isDark ? '#000000' : '#ffffff';
+  const textColor = isDark ? '#e4e4e7' : '#27272a';
 
-    // KaTeX CDN HTML
-    const html = `
+  // KaTeX CDN HTML
+  const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -79,47 +79,44 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = f
 </html>
     `;
 
-    return (
-        <View style={[
-            styles.container,
-            isBlock ? styles.blockContainer : styles.inlineContainer
-        ]}>
-            <WebView
-                source={{ html }}
-                originWhitelist={['*']}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                startInLoadingState={true}
-                style={[
-                    styles.webview,
-                    { backgroundColor },
-                    isBlock ? styles.blockWebview : styles.inlineWebview
-                ]}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-                showsHorizontalScrollIndicator={false}
-                androidLayerType="software"
-                onError={(syntheticEvent) => {
-                    const { nativeEvent } = syntheticEvent;
-                    console.warn('LaTeX WebView error:', nativeEvent);
-                }}
-                injectedJavaScript={`
+  return (
+    <View style={[styles.container, isBlock ? styles.blockContainer : styles.inlineContainer]}>
+      <WebView
+        source={{ html }}
+        originWhitelist={['*']}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        startInLoadingState={true}
+        style={[
+          styles.webview,
+          { backgroundColor },
+          isBlock ? styles.blockWebview : styles.inlineWebview,
+        ]}
+        scrollEnabled={false}
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
+        androidLayerType="software"
+        onError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.warn('LaTeX WebView error:', nativeEvent);
+        }}
+        injectedJavaScript={`
                     const height = document.body.scrollHeight;
                     window.ReactNativeWebView.postMessage(JSON.stringify({ height }));
                     true;
                 `}
-                onMessage={(event) => {
-                    // 可选：动态调整高度
-                }}
-            />
-        </View>
-    );
+        onMessage={(event) => {
+          // 可选：动态调整高度
+        }}
+      />
+    </View>
+  );
 };
 
 interface AnimatedSVGRendererProps {
-    svgContent: string;
-    width?: number | string;
-    height?: number;
+  svgContent: string;
+  width?: number | string;
+  height?: number;
 }
 
 /**
@@ -127,14 +124,14 @@ interface AnimatedSVGRendererProps {
  * 使用 WebView 渲染，支持完整的 SVG 特性
  */
 export const AnimatedSVGRenderer: React.FC<AnimatedSVGRendererProps> = ({
-    svgContent,
-    width = '100%',
-    height = 300
+  svgContent,
+  width = '100%',
+  height = 300,
 }) => {
-    const { isDark } = useTheme();
-    const backgroundColor = isDark ? '#000000' : '#ffffff';
+  const { isDark } = useTheme();
+  const backgroundColor = isDark ? '#000000' : '#ffffff';
 
-    const html = `
+  const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -172,23 +169,23 @@ export const AnimatedSVGRenderer: React.FC<AnimatedSVGRendererProps> = ({
 </html>
     `;
 
-    return (
-        <View style={[styles.svgContainer, { height }]}>
-            <WebView
-                source={{ html }}
-                style={[styles.webview, { backgroundColor }]}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-                showsHorizontalScrollIndicator={false}
-                androidLayerType="software"
-            />
-        </View>
-    );
+  return (
+    <View style={[styles.svgContainer, { height }]}>
+      <WebView
+        source={{ html }}
+        style={[styles.webview, { backgroundColor }]}
+        scrollEnabled={false}
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
+        androidLayerType="software"
+      />
+    </View>
+  );
 };
 
 interface InteractiveSVGRendererProps {
-    svgContent: string;
-    height?: number;
+  svgContent: string;
+  height?: number;
 }
 
 /**
@@ -196,134 +193,127 @@ interface InteractiveSVGRendererProps {
  * 默认显示静态 SVG (SvgXml)，点击播放按钮后切换为 WebView 渲染动画
  */
 export const InteractiveSVGRenderer: React.FC<InteractiveSVGRendererProps> = ({
-    svgContent,
-    height = 250
+  svgContent,
+  height = 250,
 }) => {
-    const { isDark } = useTheme();
-    const [isPlaying, setIsPlaying] = useState(false);
+  const { isDark } = useTheme();
+  const [isPlaying, setIsPlaying] = useState(false);
 
-    const togglePlay = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setIsPlaying(!isPlaying);
-    };
+  const togglePlay = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsPlaying(!isPlaying);
+  };
 
-    return (
-        <View style={[styles.svgContainer, { height, position: 'relative' }]}>
-            {isPlaying ? (
-                // 播放状态：WebView 渲染动画
-                <View style={{ flex: 1 }}>
-                    <AnimatedSVGRenderer svgContent={svgContent} height={height} />
-                    {/* 停止按钮 */}
-                    <TouchableOpacity
-                        onPress={togglePlay}
-                        style={styles.controlButton}
-                        activeOpacity={0.8}
-                    >
-                        <Square size={16} color="white" fill="white" />
-                        <Text style={styles.controlText}>停止</Text>
-                    </TouchableOpacity>
-                </View>
-            ) : (
-                // 静态状态：SvgXml 渲染预览
-                <View style={{ flex: 1, backgroundColor: isDark ? '#18181b' : '#f9fafb', alignItems: 'center', justifyContent: 'center' }}>
-                    <SvgXml
-                        xml={svgContent}
-                        width="100%"
-                        height="100%"
-                        onError={() => { }}
-                    />
-                    {/* 播放按钮遮罩 */}
-                    <View style={styles.overlay}>
-                        <TouchableOpacity
-                            onPress={togglePlay}
-                            style={styles.playButton}
-                            activeOpacity={0.8}
-                        >
-                            <Play size={24} color="white" fill="white" style={{ marginLeft: 4 }} />
-                        </TouchableOpacity>
-                        <Text style={styles.overlayText}>点击播放动画</Text>
-                    </View>
-                </View>
-            )}
+  return (
+    <View style={[styles.svgContainer, { height, position: 'relative' }]}>
+      {isPlaying ? (
+        // 播放状态：WebView 渲染动画
+        <View style={{ flex: 1 }}>
+          <AnimatedSVGRenderer svgContent={svgContent} height={height} />
+          {/* 停止按钮 */}
+          <TouchableOpacity onPress={togglePlay} style={styles.controlButton} activeOpacity={0.8}>
+            <Square size={16} color="white" fill="white" />
+            <Text style={styles.controlText}>停止</Text>
+          </TouchableOpacity>
         </View>
-    );
+      ) : (
+        // 静态状态：SvgXml 渲染预览
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: isDark ? '#18181b' : '#f9fafb',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <SvgXml xml={svgContent} width="100%" height="100%" onError={() => {}} />
+          {/* 播放按钮遮罩 */}
+          <View style={styles.overlay}>
+            <TouchableOpacity onPress={togglePlay} style={styles.playButton} activeOpacity={0.8}>
+              <Play size={24} color="white" fill="white" style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+            <Text style={styles.overlayText}>点击播放动画</Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
 };
 
-
 const styles = StyleSheet.create({
-    container: {
-        marginVertical: 4,
-    },
-    blockContainer: {
-        marginVertical: 12,
-        width: '100%',
-    },
-    inlineContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    webview: {
-        flex: 1,
-    },
-    blockWebview: {
-        height: 80, // 默认高度，可根据内容调整
-    },
-    inlineWebview: {
-        height: 30, // 行内公式高度
-        width: Dimensions.get('window').width * 0.8,
-    },
-    svgContainer: {
-        marginVertical: 12,
-        width: '100%',
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: 'transparent', // 占位
-    },
-    overlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.1)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    playButton: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
-    },
-    overlayText: {
-        color: 'rgba(0,0,0,0.6)',
-        fontSize: 12,
-        fontWeight: '600',
-        backgroundColor: 'rgba(255,255,255,0.8)',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 4,
-        overflow: 'hidden',
-    },
-    controlButton: {
-        position: 'absolute',
-        top: 8,
-        right: 8,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-        gap: 6,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
-    },
-    controlText: {
-        color: 'white',
-        fontSize: 12,
-        fontWeight: '600',
-    }
+  container: {
+    marginVertical: 4,
+  },
+  blockContainer: {
+    marginVertical: 12,
+    width: '100%',
+  },
+  inlineContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  webview: {
+    flex: 1,
+  },
+  blockWebview: {
+    height: 80, // 默认高度，可根据内容调整
+  },
+  inlineWebview: {
+    height: 30, // 行内公式高度
+    width: Dimensions.get('window').width * 0.8,
+  },
+  svgContainer: {
+    marginVertical: 12,
+    width: '100%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'transparent', // 占位
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  overlayText: {
+    color: 'rgba(0,0,0,0.6)',
+    fontSize: 12,
+    fontWeight: '600',
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  controlButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  controlText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });

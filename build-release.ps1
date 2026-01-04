@@ -52,7 +52,7 @@ $InjectionMarker
 "@
 
 $NewContent = $CurrentContent + $InjectionBlock
-Set-Content $GradlePropsFile $NewContent -NoNewline
+Set-Content $GradlePropsFile $NewContent -NoNewline -Encoding Utf8
 
 Write-Host "✅ Injection Complete. Signing config is active."
 
@@ -70,6 +70,6 @@ Set-Location ..
 Write-Host "🧹 Cleaning up credentials..."
 $PostBuildContent = Get-Content $GradlePropsFile -Raw
 $CleanedContent = $PostBuildContent -replace "(?s)${InjectionMarker}.*${InjectionMarker}", ""
-Set-Content $GradlePropsFile $CleanedContent -NoNewline
+Set-Content $GradlePropsFile $CleanedContent -NoNewline -Encoding Utf8
 
 Write-Host "✨ Build Workflow Complete!" -ForegroundColor Green

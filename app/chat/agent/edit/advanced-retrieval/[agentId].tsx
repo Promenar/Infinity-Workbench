@@ -9,42 +9,42 @@ import { AgentAdvancedRetrievalPanel } from '../../../../../src/features/setting
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AgentAdvancedRetrievalScreen() {
-    const { agentId } = useLocalSearchParams<{ agentId: string }>();
-    const router = useRouter();
-    const { isDark } = useTheme();
-    const insets = useSafeAreaInsets();
-    const { getAgent, updateAgent } = useAgentStore();
-    const agent = getAgent(agentId);
+  const { agentId } = useLocalSearchParams<{ agentId: string }>();
+  const router = useRouter();
+  const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { getAgent, updateAgent } = useAgentStore();
+  const agent = getAgent(agentId);
 
-    if (!agent) return null;
+  if (!agent) return null;
 
-    return (
-        <PageLayout safeArea={false} className="bg-white dark:bg-black">
-            <Stack.Screen options={{ headerShown: false }} />
+  return (
+    <PageLayout safeArea={false} className="bg-white dark:bg-black">
+      <Stack.Screen options={{ headerShown: false }} />
 
-            <GlassHeader
-                title="高级检索配置"
-                subtitle={agent.name}
-                leftAction={{
-                    icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
-                    onPress: () => router.back(),
-                    label: '返回',
-                }}
-            />
+      <GlassHeader
+        title="高级检索配置"
+        subtitle={agent.name}
+        leftAction={{
+          icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
+          onPress: () => router.back(),
+          label: '返回',
+        }}
+      />
 
-            <ScrollView
-                className="flex-1 px-6"
-                contentContainerStyle={{
-                    paddingTop: 74 + insets.top,
-                    paddingBottom: 40
-                }}
-                showsVerticalScrollIndicator={false}
-            >
-                <AgentAdvancedRetrievalPanel
-                    agent={agent}
-                    onUpdate={(updates) => updateAgent(agentId, updates)}
-                />
-            </ScrollView>
-        </PageLayout>
-    );
+      <ScrollView
+        className="flex-1 px-6"
+        contentContainerStyle={{
+          paddingTop: 74 + insets.top,
+          paddingBottom: 40,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <AgentAdvancedRetrievalPanel
+          agent={agent}
+          onUpdate={(updates) => updateAgent(agentId, updates)}
+        />
+      </ScrollView>
+    </PageLayout>
+  );
 }

@@ -41,7 +41,6 @@ export const createTables = async () => {
       );
     `);
 
-
     // 4. Folders (Knowledge Base Organization)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS folders (
@@ -110,28 +109,31 @@ export const createTables = async () => {
     try {
       // 创建 FTS5 虚拟表
       await db.execute(
-        'CREATE VIRTUAL TABLE IF NOT EXISTS vectors_fts USING fts5(content, content="vectors", content_rowid="rowid")'
+        'CREATE VIRTUAL TABLE IF NOT EXISTS vectors_fts USING fts5(content, content="vectors", content_rowid="rowid")',
       );
 
       // 触发器：插入时同步
       await db.execute(
-        'CREATE TRIGGER IF NOT EXISTS vectors_fts_insert AFTER INSERT ON vectors BEGIN INSERT INTO vectors_fts(rowid, content) VALUES(new.rowid, new.content); END'
+        'CREATE TRIGGER IF NOT EXISTS vectors_fts_insert AFTER INSERT ON vectors BEGIN INSERT INTO vectors_fts(rowid, content) VALUES(new.rowid, new.content); END',
       );
 
       // 触发器：更新时同步
       await db.execute(
-        'CREATE TRIGGER IF NOT EXISTS vectors_fts_update AFTER UPDATE ON vectors BEGIN UPDATE vectors_fts SET content = new.content WHERE rowid = old.rowid; END'
+        'CREATE TRIGGER IF NOT EXISTS vectors_fts_update AFTER UPDATE ON vectors BEGIN UPDATE vectors_fts SET content = new.content WHERE rowid = old.rowid; END',
       );
 
       // 触发器：删除时同步
       await db.execute(
-        'CREATE TRIGGER IF NOT EXISTS vectors_fts_delete AFTER DELETE ON vectors BEGIN DELETE FROM vectors_fts WHERE rowid = old.rowid; END'
+        'CREATE TRIGGER IF NOT EXISTS vectors_fts_delete AFTER DELETE ON vectors BEGIN DELETE FROM vectors_fts WHERE rowid = old.rowid; END',
       );
 
       console.log('[DB] FTS5 full-text search enabled');
     } catch (ftsError: any) {
       // FTS5 未启用或不可用时，会自动回退到 LIKE 查询（keyword-search.ts 中已实现）
-      console.warn('[DB] FTS5 not available, keyword search will fall back to LIKE:', ftsError.message);
+      console.warn(
+        '[DB] FTS5 not available, keyword search will fall back to LIKE:',
+        ftsError.message,
+      );
     }
 
     // 9. Tags System (Smart Tags)

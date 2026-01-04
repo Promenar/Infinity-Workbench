@@ -1,12 +1,32 @@
-
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, ActivityIndicator, FlatList, Platform, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Modal,
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  StyleSheet,
+} from 'react-native';
 import { Switch } from '../../components/ui';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useToast } from '../../components/ui/Toast';
-import { Cloud, Upload, Download, Save, RefreshCw, X, Folder, FileJson, CheckCircle } from 'lucide-react-native';
+import {
+  Cloud,
+  Upload,
+  Download,
+  Save,
+  RefreshCw,
+  X,
+  Folder,
+  FileJson,
+  CheckCircle,
+} from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -20,473 +40,582 @@ import { SettingsItem } from './components/SettingsItem';
 import { Colors } from '../../theme/colors';
 
 export function BackupSettings() {
-    const { isDark } = useTheme();
-    const { t } = useI18n();
-    const { showToast } = useToast();
-    const [loading, setLoading] = useState(false);
-    const [status, setStatus] = useState<string>('');
+  const { isDark } = useTheme();
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<string>('');
 
-    // Confirm Dialog State
-    const [confirmDialog, setConfirmDialog] = useState({
-        visible: false,
-        title: '',
-        message: '',
-        confirmText: '',
-        isDestructive: false,
-        onConfirm: () => { }
+  // Confirm Dialog State
+  const [confirmDialog, setConfirmDialog] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    confirmText: '',
+    isDestructive: false,
+    onConfirm: () => {},
+  });
+
+  const showConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    isDestructive = false,
+  ) => {
+    setConfirmDialog({
+      visible: true,
+      title,
+      message,
+      confirmText: t.common.confirm || 'Confirm',
+      isDestructive,
+      onConfirm: () => {
+        setConfirmDialog((prev) => ({ ...prev, visible: false }));
+        onConfirm();
+      },
     });
+  };
 
-    const showConfirm = (title: string, message: string, onConfirm: () => void, isDestructive = false) => {
-        setConfirmDialog({
-            visible: true,
-            title,
-            message,
-            confirmText: t.common.confirm || 'Confirm',
-            isDestructive,
-            onConfirm: () => {
-                setConfirmDialog(prev => ({ ...prev, visible: false }));
-                onConfirm();
-            }
-        });
-    };
+  // WebDAV Config
+  const [webDavConfig, setWebDavConfig] = useState({
+    url: '',
+    username: '',
+    password: '',
+    enabled: false,
+  });
+  const [showWebDavModal, setShowWebDavModal] = useState(false);
+  const [remoteFiles, setRemoteFiles] = useState<WebDavFile[]>([]);
+  const [showRemoteFilesModal, setShowRemoteFilesModal] = useState(false);
 
-    // WebDAV Config
-    const [webDavConfig, setWebDavConfig] = useState({
-        url: '',
-        username: '',
-        password: '',
-        enabled: false
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const loadConfig = async () => {
+    const json = await AsyncStorage.getItem('backup_config');
+    if (json) {
+      setWebDavConfig(JSON.parse(json));
+    }
+  };
+
+  const saveConfig = async (newConfig: any) => {
+    setWebDavConfig(newConfig);
+    await AsyncStorage.setItem('backup_config', JSON.stringify(newConfig));
+  };
+
+  // --- Local Operations ---
+
+  const handleLocalExport = async () => {
+    setLoading(true);
+    setStatus(t.settings.backup.generating);
+    try {
+      const data = await BackupManager.exportData();
+      const json = JSON.stringify(data, null, 2);
+
+      const filename = `nexara_backup_${new Date().toISOString().split('T')[0]}.json`;
+      const fileUri = ((FileSystem as any).documentDirectory || '') + filename;
+
+      await FileSystem.writeAsStringAsync(fileUri, json);
+
+      setStatus(t.settings.backup.backupCreated);
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri);
+      } else {
+        showToast(t.settings.backup.backupCreated, 'success');
+      }
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+      setStatus('');
+    }
+  };
+
+  const handleLocalImport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) return;
+
+      showConfirm(
+        t.settings.backup.restoreTitle,
+        t.settings.backup.restoreWarning,
+        async () => {
+          setLoading(true);
+          setStatus(t.settings.backup.restoring);
+          try {
+            const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
+            const backup: BackupData = JSON.parse(content);
+            await BackupManager.importData(backup);
+            showToast(t.settings.backup.restoreSuccess, 'success');
+          } catch (e: any) {
+            showToast(e.message, 'error');
+          } finally {
+            setLoading(false);
+            setStatus('');
+          }
+        },
+        true,
+      );
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    }
+  };
+
+  // --- WebDAV Operations ---
+
+  const getClient = () => {
+    if (!webDavConfig.url) throw new Error('WebDAV URL not configured');
+    return new WebDavClient({
+      url: webDavConfig.url,
+      username: webDavConfig.username,
+      password: webDavConfig.password,
     });
-    const [showWebDavModal, setShowWebDavModal] = useState(false);
-    const [remoteFiles, setRemoteFiles] = useState<WebDavFile[]>([]);
-    const [showRemoteFilesModal, setShowRemoteFilesModal] = useState(false);
+  };
 
-    useEffect(() => {
-        loadConfig();
-    }, []);
-
-    const loadConfig = async () => {
-        const json = await AsyncStorage.getItem('backup_config');
-        if (json) {
-            setWebDavConfig(JSON.parse(json));
-        }
-    };
-
-    const saveConfig = async (newConfig: any) => {
-        setWebDavConfig(newConfig);
-        await AsyncStorage.setItem('backup_config', JSON.stringify(newConfig));
-    };
-
-    // --- Local Operations ---
-
-    const handleLocalExport = async () => {
-        setLoading(true);
-        setStatus(t.settings.backup.generating);
-        try {
-            const data = await BackupManager.exportData();
-            const json = JSON.stringify(data, null, 2);
-
-            const filename = `nexara_backup_${new Date().toISOString().split('T')[0]}.json`;
-            const fileUri = ((FileSystem as any).documentDirectory || '') + filename;
-
-            await FileSystem.writeAsStringAsync(fileUri, json);
-
-            setStatus(t.settings.backup.backupCreated);
-
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(fileUri);
-            } else {
-                showToast(t.settings.backup.backupCreated, 'success');
-            }
-        } catch (e: any) {
-            showToast(e.message, 'error');
-        } finally {
-            setLoading(false);
-            setStatus('');
-        }
-    };
-
-    const handleLocalImport = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: 'application/json',
-                copyToCacheDirectory: true
-            });
-
-            if (result.canceled) return;
-
-            showConfirm(
-                t.settings.backup.restoreTitle,
-                t.settings.backup.restoreWarning,
-                async () => {
-                    setLoading(true);
-                    setStatus(t.settings.backup.restoring);
-                    try {
-                        const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
-                        const backup: BackupData = JSON.parse(content);
-                        await BackupManager.importData(backup);
-                        showToast(t.settings.backup.restoreSuccess, 'success');
-                    } catch (e: any) {
-                        showToast(e.message, 'error');
-                    } finally {
-                        setLoading(false);
-                        setStatus('');
-                    }
-                },
-                true
-            );
-
-        } catch (e: any) {
-            showToast(e.message, 'error');
-        }
-    };
-
-    // --- WebDAV Operations ---
-
-    const getClient = () => {
-        if (!webDavConfig.url) throw new Error('WebDAV URL not configured');
-        return new WebDavClient({
-            url: webDavConfig.url,
-            username: webDavConfig.username,
-            password: webDavConfig.password
-        });
-    };
-
-    const handleWebDavTest = async () => {
-        setLoading(true);
-        try {
-            const client = getClient();
-            await client.checkConnection();
-            showToast(t.settings.backup.connectionSuccess, 'success');
-        } catch (e: any) {
-            showToast(e.message, 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
-    const handleWebDavUpload = async () => {
-        if (!webDavConfig.enabled) {
-            showToast(t.settings.backup.webDavDisabled, 'info');
-            return;
-        }
-
-        setLoading(true);
-        setStatus(t.settings.backup.uploading);
-        try {
-            const client = getClient();
-            const data = await BackupManager.exportData();
-            const json = JSON.stringify(data);
-            const filename = `nexara_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-
-            await client.uploadFile(filename, json);
-            showToast(t.settings.backup.uploadSuccess, 'success');
-        } catch (e: any) {
-            showToast(e.message, 'error');
-        } finally {
-            setLoading(false);
-            setStatus('');
-        }
-    };
-
-    const handleWebDavRestore = async () => {
-        if (!webDavConfig.enabled) {
-            showToast(t.settings.backup.webDavDisabled, 'info');
-            return;
-        }
-
-        setLoading(true);
-        setStatus(t.settings.backup.fetchingList);
-        try {
-            const client = getClient();
-            const files = await client.listFiles('/'); // List root
-            // Filter for JSON files, sort by date desc
-            const backups = files
-                .filter(f => f.filename.endsWith('.json') && f.filename.includes('nexara'))
-                .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-
-            setRemoteFiles(backups);
-            setShowRemoteFilesModal(true);
-        } catch (e: any) {
-            showToast(e.message, 'error');
-        } finally {
-            setLoading(false);
-            setStatus('');
-        }
-    };
-
-    const confirmRemoteRestore = (file: WebDavFile) => {
-        setShowRemoteFilesModal(false);
-        showConfirm(
-            t.settings.backup.confirmCloudRestore,
-            t.settings.backup.confirmCloudRestoreDesc.replace('{filename}', file.filename),
-            async () => {
-                setLoading(true);
-                setStatus(t.settings.backup.downloading.replace('{filename}', file.filename));
-                try {
-                    const client = getClient();
-                    const content = await client.downloadFile(file.filename);
-                    setStatus(t.settings.backup.restoring);
-                    const backup: BackupData = JSON.parse(content);
-                    await BackupManager.importData(backup);
-                    showToast(t.settings.backup.restoreSuccess, 'success');
-                } catch (e: any) {
-                    showToast(e.message, 'error');
-                } finally {
-                    setLoading(false);
-                    setStatus('');
-                }
-            },
-            true
-        );
+  const handleWebDavTest = async () => {
+    setLoading(true);
+    try {
+      const client = getClient();
+      await client.checkConnection();
+      showToast(t.settings.backup.connectionSuccess, 'success');
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  const handleWebDavUpload = async () => {
+    if (!webDavConfig.enabled) {
+      showToast(t.settings.backup.webDavDisabled, 'info');
+      return;
     }
 
-    return (
-        <>
-            <SettingsSection title={t.settings.backup.backupHeader}>
-                {/* Local Actions */}
-                <ConfirmDialog
-                    visible={confirmDialog.visible}
-                    title={confirmDialog.title}
-                    message={confirmDialog.message}
-                    confirmText={confirmDialog.confirmText}
-                    isDestructive={confirmDialog.isDestructive}
-                    onConfirm={confirmDialog.onConfirm}
-                    onCancel={() => setConfirmDialog(prev => ({ ...prev, visible: false }))}
-                />
-                <View style={{ borderBottomWidth: 1, borderBottomColor: isDark ? Colors.dark.borderDefault : '#eee', padding: 16 }}>
-                    <Text style={{ fontWeight: '600', marginBottom: 12, color: isDark ? Colors.dark.textPrimary : '#111' }}>{t.settings.backup.localStorage}</Text>
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                        <TouchableOpacity
-                            onPress={handleLocalExport}
-                            disabled={loading}
-                            style={{
-                                flex: 1,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: 12,
-                                borderRadius: 12,
-                                backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
-                            }}
-                        >
-                            <Upload size={18} color={isDark ? '#fff' : '#000'} />
-                            <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.export}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            onPress={handleLocalImport}
-                            disabled={loading}
-                            style={{
-                                flex: 1,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: 12,
-                                borderRadius: 12,
-                                backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
-                            }}
-                        >
-                            <Download size={18} color={isDark ? '#fff' : '#000'} />
-                            <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.import}</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
+    setLoading(true);
+    setStatus(t.settings.backup.uploading);
+    try {
+      const client = getClient();
+      const data = await BackupManager.exportData();
+      const json = JSON.stringify(data);
+      const filename = `nexara_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
 
-                {/* WebDAV Settings */}
-                <View style={{ padding: 16 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Cloud size={20} color={Colors.primary} />
-                            <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? Colors.dark.textPrimary : '#111' }}>{t.settings.backup.webDavCloud}</Text>
-                        </View>
-                        <Switch
-                            value={webDavConfig.enabled}
-                            onValueChange={(v) => {
-                                if (v && !webDavConfig.url) setShowWebDavModal(true);
-                                saveConfig({ ...webDavConfig, enabled: v });
-                            }}
-                        />
-                    </View>
+      await client.uploadFile(filename, json);
+      showToast(t.settings.backup.uploadSuccess, 'success');
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+      setStatus('');
+    }
+  };
 
-                    {webDavConfig.enabled && (
-                        <View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? Colors.dark.borderDefault : '#eee', paddingBottom: 12 }}>
-                                <Text style={{ fontSize: 14, color: isDark ? Colors.dark.textSecondary : '#4b5563' }}>{t.settings.backup.autoBackup}</Text>
-                                <Switch
-                                    value={(webDavConfig as any).autoBackup || false}
-                                    onValueChange={(v) => saveConfig({ ...webDavConfig, autoBackup: v })}
-                                />
-                            </View>
+  const handleWebDavRestore = async () => {
+    if (!webDavConfig.enabled) {
+      showToast(t.settings.backup.webDavDisabled, 'info');
+      return;
+    }
 
-                            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
-                                <TouchableOpacity
-                                    onPress={handleWebDavUpload}
-                                    disabled={loading}
-                                    style={{
-                                        flex: 1,
-                                        flexDirection: 'row',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        padding: 12,
-                                        borderRadius: 12,
-                                        backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
-                                    }}
-                                >
-                                    <Upload size={18} color={isDark ? '#fff' : '#000'} />
-                                    <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.backupToCloud}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={handleWebDavRestore}
-                                    disabled={loading}
-                                    style={{
-                                        flex: 1,
-                                        flexDirection: 'row',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        padding: 12,
-                                        borderRadius: 12,
-                                        backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9'
-                                    }}
-                                >
-                                    <Download size={18} color={isDark ? '#fff' : '#000'} />
-                                    <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{t.settings.backup.restoreFromCloud}</Text>
-                                </TouchableOpacity>
-                            </View>
-                            <TouchableOpacity
-                                onPress={() => setShowWebDavModal(true)}
-                                style={{
-                                    padding: 12,
-                                    borderRadius: 12,
-                                    borderWidth: 1,
-                                    borderColor: isDark ? Colors.dark.borderDefault : '#e5e7eb',
-                                    backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f9fafb',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                <Text style={{ fontWeight: '600', color: isDark ? Colors.dark.textSecondary : '#4b5563' }}>{t.settings.backup.configureServer}</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                </View>
+    setLoading(true);
+    setStatus(t.settings.backup.fetchingList);
+    try {
+      const client = getClient();
+      const files = await client.listFiles('/'); // List root
+      // Filter for JSON files, sort by date desc
+      const backups = files
+        .filter((f) => f.filename.endsWith('.json') && f.filename.includes('nexara'))
+        .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
 
-                {loading && (
-                    <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', zIndex: 50, borderRadius: 24 }]}>
-                        <View style={{ padding: 24, borderRadius: 24, alignItems: 'center', backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#fff' }}>
-                            <ActivityIndicator size="large" color={Colors.primary} />
-                            <Text style={{ marginTop: 12, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>{status}</Text>
-                        </View>
-                    </View>
-                )}
-            </SettingsSection>
+      setRemoteFiles(backups);
+      setShowRemoteFilesModal(true);
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+      setStatus('');
+    }
+  };
 
-            {/* WebDAV Configuration Modal */}
-            <Modal visible={showWebDavModal} transparent animationType="slide">
-                <View className="flex-1 justify-end bg-black/50">
-                    <KeyboardAvoidingView
-                        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-                        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-                        style={{ width: '100%' }}
-                    >
-                        <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#fff' }}>
-                            <View className="flex-row justify-between items-center mb-6">
-                                <Text className={`text-xl font-bold ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.settingsTitle}</Text>
-                                <TouchableOpacity onPress={() => setShowWebDavModal(false)}>
-                                    <X size={24} color={isDark ? '#fff' : '#000'} />
-                                </TouchableOpacity>
-                            </View>
-
-                            <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{t.settings.backup.serverUrl}</Text>
-                            <TextInput
-                                value={webDavConfig.url}
-                                onChangeText={t => setWebDavConfig(prev => ({ ...prev, url: t.trim() }))}
-                                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
-                                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                                placeholder="https://..."
-                                placeholderTextColor={isDark ? '#666' : '#999'}
-                                autoCapitalize="none"
-                            />
-
-                            <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{t.settings.backup.username}</Text>
-                            <TextInput
-                                value={webDavConfig.username}
-                                onChangeText={t => setWebDavConfig(prev => ({ ...prev, username: t.trim() }))}
-                                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
-                                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                                autoCapitalize="none"
-                            />
-
-                            <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{t.settings.backup.password}</Text>
-                            <TextInput
-                                value={webDavConfig.password}
-                                onChangeText={t => setWebDavConfig(prev => ({ ...prev, password: t.trim() }))}
-                                className={`p-3 rounded-lg mb-6 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
-                                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                                secureTextEntry
-                            />
-                            <Text className={`text-xs mb-6 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                                {t.settings.backup.appPasswordHint || 'Note: If using 2FA/Nutstore, use an App Password.'}
-                            </Text>
-
-                            <View className="flex-row gap-3">
-                                <TouchableOpacity
-                                    onPress={handleWebDavTest}
-                                    className={`flex-1 p-4 rounded-xl items-center border ${isDark ? 'border-zinc-700' : 'border-gray-300'}`}
-                                    style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                                >
-                                    <Text className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.testConnection}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        saveConfig(webDavConfig);
-                                        setShowWebDavModal(false);
-                                    }}
-                                    className="flex-1 bg-indigo-600 p-4 rounded-xl items-center"
-                                >
-                                    <Text className="text-white font-bold">{t.settings.backup.save}</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </KeyboardAvoidingView>
-                </View>
-            </Modal>
-
-            {/* Remote Files List Modal */}
-            <Modal visible={showRemoteFilesModal} transparent animationType="slide">
-                <View className="flex-1 bg-black/50">
-                    <View className={`flex-1 mt-20 rounded-t-3xl ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
-                        <View className="p-4 border-b border-gray-100 dark:border-zinc-800 flex-row justify-between items-center">
-                            <Text className={`text-lg font-bold ${isDark ? 'text-white' : 'text-black'}`}>{t.settings.backup.selectBackupTitle}</Text>
-                            <TouchableOpacity onPress={() => setShowRemoteFilesModal(false)}>
-                                <X size={24} color={isDark ? '#fff' : '#000'} />
-                            </TouchableOpacity>
-                        </View>
-
-                        <FlatList
-                            data={remoteFiles}
-                            keyExtractor={item => item.filename}
-                            contentContainerStyle={{ padding: 16 }}
-                            renderItem={({ item }) => (
-                                <TouchableOpacity
-                                    onPress={() => confirmRemoteRestore(item)}
-                                    className={`flex-row items-center p-4 mb-3 rounded-xl border ${isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-gray-50 border-gray-200'}`}
-                                >
-                                    <FileJson size={24} color="#6366f1" />
-                                    <View className="ml-3 flex-1">
-                                        <Text className={`font-medium ${isDark ? 'text-white' : 'text-black'}`}>{item.filename}</Text>
-                                        <Text className="text-xs text-gray-500 mt-1">
-                                            {new Date(item.lastModified).toLocaleString()} • {(item.size / 1024 / 1024).toFixed(2)} MB
-                                        </Text>
-                                    </View>
-                                </TouchableOpacity>
-                            )}
-                            ListEmptyComponent={
-                                <View className="items-center py-10">
-                                    <Text className="text-gray-500">{t.settings.backup.noBackupsFound}</Text>
-                                </View>
-                            }
-                        />
-                    </View>
-                </View>
-            </Modal>
-        </>
+  const confirmRemoteRestore = (file: WebDavFile) => {
+    setShowRemoteFilesModal(false);
+    showConfirm(
+      t.settings.backup.confirmCloudRestore,
+      t.settings.backup.confirmCloudRestoreDesc.replace('{filename}', file.filename),
+      async () => {
+        setLoading(true);
+        setStatus(t.settings.backup.downloading.replace('{filename}', file.filename));
+        try {
+          const client = getClient();
+          const content = await client.downloadFile(file.filename);
+          setStatus(t.settings.backup.restoring);
+          const backup: BackupData = JSON.parse(content);
+          await BackupManager.importData(backup);
+          showToast(t.settings.backup.restoreSuccess, 'success');
+        } catch (e: any) {
+          showToast(e.message, 'error');
+        } finally {
+          setLoading(false);
+          setStatus('');
+        }
+      },
+      true,
     );
+  };
+
+  return (
+    <>
+      <SettingsSection title={t.settings.backup.backupHeader}>
+        {/* Local Actions */}
+        <ConfirmDialog
+          visible={confirmDialog.visible}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmText={confirmDialog.confirmText}
+          isDestructive={confirmDialog.isDestructive}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog((prev) => ({ ...prev, visible: false }))}
+        />
+        <View
+          style={{
+            borderBottomWidth: 1,
+            borderBottomColor: isDark ? Colors.dark.borderDefault : '#eee',
+            padding: 16,
+          }}
+        >
+          <Text
+            style={{
+              fontWeight: '600',
+              marginBottom: 12,
+              color: isDark ? Colors.dark.textPrimary : '#111',
+            }}
+          >
+            {t.settings.backup.localStorage}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity
+              onPress={handleLocalExport}
+              disabled={loading}
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 12,
+                borderRadius: 12,
+                backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9',
+              }}
+            >
+              <Upload size={18} color={isDark ? '#fff' : '#000'} />
+              <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>
+                {t.settings.backup.export}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleLocalImport}
+              disabled={loading}
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 12,
+                borderRadius: 12,
+                backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9',
+              }}
+            >
+              <Download size={18} color={isDark ? '#fff' : '#000'} />
+              <Text style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>
+                {t.settings.backup.import}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* WebDAV Settings */}
+        <View style={{ padding: 16 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 12,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Cloud size={20} color={Colors.primary} />
+              <Text
+                style={{
+                  marginLeft: 8,
+                  fontWeight: '600',
+                  color: isDark ? Colors.dark.textPrimary : '#111',
+                }}
+              >
+                {t.settings.backup.webDavCloud}
+              </Text>
+            </View>
+            <Switch
+              value={webDavConfig.enabled}
+              onValueChange={(v) => {
+                if (v && !webDavConfig.url) setShowWebDavModal(true);
+                saveConfig({ ...webDavConfig, enabled: v });
+              }}
+            />
+          </View>
+
+          {webDavConfig.enabled && (
+            <View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
+                  borderBottomWidth: 1,
+                  borderBottomColor: isDark ? Colors.dark.borderDefault : '#eee',
+                  paddingBottom: 12,
+                }}
+              >
+                <Text
+                  style={{ fontSize: 14, color: isDark ? Colors.dark.textSecondary : '#4b5563' }}
+                >
+                  {t.settings.backup.autoBackup}
+                </Text>
+                <Switch
+                  value={(webDavConfig as any).autoBackup || false}
+                  onValueChange={(v) => saveConfig({ ...webDavConfig, autoBackup: v })}
+                />
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                <TouchableOpacity
+                  onPress={handleWebDavUpload}
+                  disabled={loading}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9',
+                  }}
+                >
+                  <Upload size={18} color={isDark ? '#fff' : '#000'} />
+                  <Text
+                    style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}
+                  >
+                    {t.settings.backup.backupToCloud}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleWebDavRestore}
+                  disabled={loading}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f1f5f9',
+                  }}
+                >
+                  <Download size={18} color={isDark ? '#fff' : '#000'} />
+                  <Text
+                    style={{ marginLeft: 8, fontWeight: '600', color: isDark ? '#fff' : '#000' }}
+                  >
+                    {t.settings.backup.restoreFromCloud}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowWebDavModal(true)}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: isDark ? Colors.dark.borderDefault : '#e5e7eb',
+                  backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#f9fafb',
+                  alignItems: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    fontWeight: '600',
+                    color: isDark ? Colors.dark.textSecondary : '#4b5563',
+                  }}
+                >
+                  {t.settings.backup.configureServer}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {loading && (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 50,
+                borderRadius: 24,
+              },
+            ]}
+          >
+            <View
+              style={{
+                padding: 24,
+                borderRadius: 24,
+                alignItems: 'center',
+                backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#fff',
+              }}
+            >
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={{ marginTop: 12, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>
+                {status}
+              </Text>
+            </View>
+          </View>
+        )}
+      </SettingsSection>
+
+      {/* WebDAV Configuration Modal */}
+      <Modal visible={showWebDavModal} transparent animationType="slide">
+        <View className="flex-1 justify-end bg-black/50">
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+            style={{ width: '100%' }}
+          >
+            <View
+              style={{
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                padding: 24,
+                backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#fff',
+              }}
+            >
+              <View className="flex-row justify-between items-center mb-6">
+                <Text className={`text-xl font-bold ${isDark ? 'text-white' : 'text-black'}`}>
+                  {t.settings.backup.settingsTitle}
+                </Text>
+                <TouchableOpacity onPress={() => setShowWebDavModal(false)}>
+                  <X size={24} color={isDark ? '#fff' : '#000'} />
+                </TouchableOpacity>
+              </View>
+
+              <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                {t.settings.backup.serverUrl}
+              </Text>
+              <TextInput
+                value={webDavConfig.url}
+                onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, url: t.trim() }))}
+                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+                placeholder="https://..."
+                placeholderTextColor={isDark ? '#666' : '#999'}
+                autoCapitalize="none"
+              />
+
+              <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                {t.settings.backup.username}
+              </Text>
+              <TextInput
+                value={webDavConfig.username}
+                onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, username: t.trim() }))}
+                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+                autoCapitalize="none"
+              />
+
+              <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                {t.settings.backup.password}
+              </Text>
+              <TextInput
+                value={webDavConfig.password}
+                onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, password: t.trim() }))}
+                className={`p-3 rounded-lg mb-6 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+                secureTextEntry
+              />
+              <Text className={`text-xs mb-6 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                {t.settings.backup.appPasswordHint ||
+                  'Note: If using 2FA/Nutstore, use an App Password.'}
+              </Text>
+
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  onPress={handleWebDavTest}
+                  className={`flex-1 p-4 rounded-xl items-center border ${isDark ? 'border-zinc-700' : 'border-gray-300'}`}
+                  style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+                >
+                  <Text className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>
+                    {t.settings.backup.testConnection}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    saveConfig(webDavConfig);
+                    setShowWebDavModal(false);
+                  }}
+                  className="flex-1 bg-indigo-600 p-4 rounded-xl items-center"
+                >
+                  <Text className="text-white font-bold">{t.settings.backup.save}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Remote Files List Modal */}
+      <Modal visible={showRemoteFilesModal} transparent animationType="slide">
+        <View className="flex-1 bg-black/50">
+          <View className={`flex-1 mt-20 rounded-t-3xl ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
+            <View className="p-4 border-b border-gray-100 dark:border-zinc-800 flex-row justify-between items-center">
+              <Text className={`text-lg font-bold ${isDark ? 'text-white' : 'text-black'}`}>
+                {t.settings.backup.selectBackupTitle}
+              </Text>
+              <TouchableOpacity onPress={() => setShowRemoteFilesModal(false)}>
+                <X size={24} color={isDark ? '#fff' : '#000'} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={remoteFiles}
+              keyExtractor={(item) => item.filename}
+              contentContainerStyle={{ padding: 16 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => confirmRemoteRestore(item)}
+                  className={`flex-row items-center p-4 mb-3 rounded-xl border ${isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-gray-50 border-gray-200'}`}
+                >
+                  <FileJson size={24} color="#6366f1" />
+                  <View className="ml-3 flex-1">
+                    <Text className={`font-medium ${isDark ? 'text-white' : 'text-black'}`}>
+                      {item.filename}
+                    </Text>
+                    <Text className="text-xs text-gray-500 mt-1">
+                      {new Date(item.lastModified).toLocaleString()} •{' '}
+                      {(item.size / 1024 / 1024).toFixed(2)} MB
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View className="items-center py-10">
+                  <Text className="text-gray-500">{t.settings.backup.noBackupsFound}</Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
 }

@@ -1,4 +1,3 @@
-
 let lastNavTime = 0;
 
 /**
@@ -7,12 +6,12 @@ let lastNavTime = 0;
  * @param delay Minimum time in ms between actions (default 1000ms)
  */
 export const preventDoubleTap = (callback: () => void, delay = 1000) => {
-    const now = Date.now();
-    if (now - lastNavTime < delay) return;
-    lastNavTime = now;
+  const now = Date.now();
+  if (now - lastNavTime < delay) return;
+  lastNavTime = now;
 
-    // Enforce 10ms delay for thread safety (User Rule 8.1)
-    setTimeout(() => {
-        callback();
-    }, 10);
+  // Enforce 10ms delay for thread safety (User Rule 8.1)
+  setTimeout(() => {
+    callback();
+  }, 10);
 };

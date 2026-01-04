@@ -6,72 +6,78 @@ import { graphStore, KGNode, KGEdge } from '../../lib/rag/graph-store';
 import { Typography } from '../ui';
 
 interface KnowledgeGraphViewProps {
-    onNodeSelect?: (nodeId: string) => void;
-    docId?: string;
+  onNodeSelect?: (nodeId: string) => void;
+  docId?: string;
 }
 
 export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ onNodeSelect, docId }) => {
-    const { isDark } = useTheme();
-    const webViewRef = useRef<WebView>(null);
-    const [graphData, setGraphData] = useState<{ nodes: any[], edges: any[] } | null>(null);
-    const [loading, setLoading] = useState(true);
+  const { isDark } = useTheme();
+  const webViewRef = useRef<WebView>(null);
+  const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        loadData();
-    }, [docId]);
+  useEffect(() => {
+    loadData();
+  }, [docId]);
 
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const data = await graphStore.getGraphData(docId);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const data = await graphStore.getGraphData(docId);
 
-            // Transform for Vis.js
-            // Nodes: { id, label, group, title }
-            // Edges: { from, to, label }
-            const nodes = data.nodes.map(n => ({
-                id: n.id,
-                label: n.name.length > 10 ? n.name.substring(0, 10) + '...' : n.name,
-                fullLabel: n.name,
-                group: n.type,
-                title: `${n.name} (${n.type})`
-            }));
+      // Transform for Vis.js
+      // Nodes: { id, label, group, title }
+      // Edges: { from, to, label }
+      const nodes = data.nodes.map((n) => ({
+        id: n.id,
+        label: n.name.length > 10 ? n.name.substring(0, 10) + '...' : n.name,
+        fullLabel: n.name,
+        group: n.type,
+        title: `${n.name} (${n.type})`,
+      }));
 
-            const edges = data.edges.map(e => ({
-                from: e.sourceId,
-                to: e.targetId,
-                label: e.relation,
-                arrows: 'to',
-                font: { size: 10, align: 'middle' }
-            }));
+      const edges = data.edges.map((e) => ({
+        from: e.sourceId,
+        to: e.targetId,
+        label: e.relation,
+        arrows: 'to',
+        font: { size: 10, align: 'middle' },
+      }));
 
-            setGraphData({ nodes, edges });
-        } catch (e) {
-            console.error('Failed to load graph data', e);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color="#6366f1" />
-                <Typography style={{ marginTop: 10, color: isDark ? '#fff' : '#000' }}>Loading Graph...</Typography>
-            </View>
-        );
+      setGraphData({ nodes, edges });
+    } catch (e) {
+      console.error('Failed to load graph data', e);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    if (!graphData || graphData.nodes.length === 0) {
-        return (
-            <View style={styles.center}>
-                <Typography style={{ color: isDark ? '#fff' : '#000' }}>No Knowledge Graph data found.</Typography>
-                <Typography variant="label" style={{ marginTop: 8 }}>Try extracting knowledge from documents first.</Typography>
-            </View>
-        );
-    }
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Typography style={{ marginTop: 10, color: isDark ? '#fff' : '#000' }}>
+          Loading Graph...
+        </Typography>
+      </View>
+    );
+  }
 
-    // HTML Template using Vis.js via CDN (Local assets would be better for offline, but CDN is easier for prototype)
-    const htmlContent = `
+  if (!graphData || graphData.nodes.length === 0) {
+    return (
+      <View style={styles.center}>
+        <Typography style={{ color: isDark ? '#fff' : '#000' }}>
+          No Knowledge Graph data found.
+        </Typography>
+        <Typography variant="label" style={{ marginTop: 8 }}>
+          Try extracting knowledge from documents first.
+        </Typography>
+      </View>
+    );
+  }
+
+  // HTML Template using Vis.js via CDN (Local assets would be better for offline, but CDN is easier for prototype)
+  const htmlContent = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -166,33 +172,33 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ onNodeSe
     </html>
     `;
 
-    return (
-        <View style={{ flex: 1 }}>
-            <WebView
-                ref={webViewRef}
-                source={{ html: htmlContent }}
-                style={{ flex: 1, backgroundColor: 'transparent' }}
-                onMessage={(event) => {
-                    if (onNodeSelect) {
-                        try {
-                            const data = JSON.parse(event.nativeEvent.data);
-                            if (data.type === 'nodeSelect') {
-                                onNodeSelect(data.nodeId);
-                            }
-                        } catch (e) {
-                            // ignore
-                        }
-                    }
-                }}
-            />
-        </View>
-    );
+  return (
+    <View style={{ flex: 1 }}>
+      <WebView
+        ref={webViewRef}
+        source={{ html: htmlContent }}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
+        onMessage={(event) => {
+          if (onNodeSelect) {
+            try {
+              const data = JSON.parse(event.nativeEvent.data);
+              if (data.type === 'nodeSelect') {
+                onNodeSelect(data.nodeId);
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        }}
+      />
+    </View>
+  );
 };
 
 const styles = StyleSheet.create({
-    center: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center'
-    }
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
