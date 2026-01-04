@@ -50,16 +50,17 @@ import Constants from 'expo-constants';
 export default function SettingsScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'app' | 'providers'>('app');
+  const [eggCount, setEggCount] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [modelModalVisible, setModelModalVisible] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerConfig, setPickerConfig] = useState<{
     title: string;
     key:
-      | 'defaultSummaryModel'
-      | 'defaultSpeechModel'
-      | 'defaultEmbeddingModel'
-      | 'defaultRerankModel';
+    | 'defaultSummaryModel'
+    | 'defaultSpeechModel'
+    | 'defaultEmbeddingModel'
+    | 'defaultRerankModel';
     filterType?: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank';
   }>({ title: '', key: 'defaultSummaryModel' });
 
@@ -430,6 +431,8 @@ export default function SettingsScreen() {
             <BackupSettings />
 
             {/* 应用信息 */}
+
+            {/* 应用信息 */}
             <SettingsSection title={t.settings.appSection}>
               <SettingsItem
                 icon={Bell}
@@ -443,12 +446,26 @@ export default function SettingsScreen() {
                 title={t.settings.about}
                 subtitle={`v${Constants.expoConfig?.version ?? '1.1'} (${Constants.expoConfig?.android?.versionCode ?? 2})`}
                 isLast
-                onPress={() =>
-                  showToast(`Nexara v${Constants.expoConfig?.version ?? '1.1'}`, 'info')
-                }
+                onPress={() => {
+                  const newCount = (eggCount || 0) + 1;
+                  setEggCount(newCount);
+
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+                  if (newCount >= 5) {
+                    setEggCount(0);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    showToast('Developer Mode: Visual Demo Unlocked', 'success');
+                    router.push('/visual-demo');
+                  } else if (newCount > 1) {
+                    // Subtle hints for 2, 3, 4 taps? maybe not needed to keep it hidden
+                  } else {
+                    showToast(`Nexara v${Constants.expoConfig?.version ?? '1.1'}`, 'info');
+                  }
+                }}
               />
             </SettingsSection>
-          </>
+          </> // End fragment
         ) : (
           // 服务商管理
           <View>
@@ -661,6 +678,6 @@ export default function SettingsScreen() {
           showToast('默认模型已更新', 'success');
         }}
       />
-    </PageLayout>
+    </PageLayout >
   );
 }

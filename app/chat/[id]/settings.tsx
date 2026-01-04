@@ -37,9 +37,9 @@ import { useRagStore } from '../../../src/store/rag-store';
 import { ChevronRight, X, Folder } from 'lucide-react-native';
 import { DocumentPickerModal } from '../../../src/components/rag/DocumentPickerModal';
 import { InferenceSettings } from '../../../src/components/chat/InferenceSettings';
-import { Sliders } from 'lucide-react-native';
 import { ContextManagementPanel } from '../../../src/features/chat/settings/ContextManagementPanel';
 import { preventDoubleTap } from '../../../src/lib/navigation-utils';
+import { useDebounce } from '../../../src/hooks/useDebounce';
 
 export default function SessionSettingsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -94,20 +94,25 @@ export default function SessionSettingsScreen() {
     visible: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     isDestructive: false,
   });
 
-  const handleSave = () => {
-    if (!session) return;
+  // Auto-save title and prompt
+  const debouncedTitle = useDebounce(formData.title, 1000);
+  const debouncedPrompt = useDebounce(formData.customPrompt, 1000);
 
-    setTimeout(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      updateSessionTitle(id, formData.title.trim());
-      updateSessionPrompt(id, formData.customPrompt.trim());
-      router.back();
-    }, 10);
-  };
+  useEffect(() => {
+    if (session && debouncedTitle !== session.title) {
+      updateSessionTitle(id, debouncedTitle.trim());
+    }
+  }, [debouncedTitle, session?.title]);
+
+  useEffect(() => {
+    if (session && debouncedPrompt !== session.customPrompt) {
+      updateSessionPrompt(id, debouncedPrompt.trim());
+    }
+  }, [debouncedPrompt, session?.customPrompt]);
 
   const handleGenerateTitle = async () => {
     if (isGeneratingTitle) return;
@@ -175,6 +180,15 @@ export default function SessionSettingsScreen() {
     });
   };
 
+  const SectionHeader = ({ title }: { title: string }) => (
+    <View className="flex-row items-center mb-4 mt-2">
+      <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
+      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+        {title}
+      </Typography>
+    </View>
+  );
+
   if (!session || !agent) return null;
 
   return (
@@ -189,11 +203,7 @@ export default function SessionSettingsScreen() {
           onPress: () => router.back(),
           label: t.common.back,
         }}
-        rightAction={{
-          icon: <Save size={24} color={isDark ? '#fff' : '#000'} strokeWidth={2} />,
-          onPress: handleSave,
-          label: t.common.save,
-        }}
+        rightAction={undefined}
       />
 
       <KeyboardAvoidingView
@@ -209,13 +219,8 @@ export default function SessionSettingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Parent Agent Reference */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            {t.agent.basicInfo}
-          </Typography>
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
+          <SectionHeader title={t.agent.basicInfo} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center flex-1">
                 <View
@@ -248,6 +253,7 @@ export default function SessionSettingsScreen() {
           </View>
 
           {/* Export Current Activity */}
+          <SectionHeader title={t.superAssistant.exportHistory} />
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleExportCurrent}
@@ -266,17 +272,12 @@ export default function SessionSettingsScreen() {
           </TouchableOpacity>
 
           {/* Session Title */}
-          <View className="flex-row items-center justify-between mb-3">
-            <Typography
-              variant="label"
-              className="text-gray-400 font-bold uppercase text-[10px] tracking-widest"
-            >
-              {t.conversation.editTitle}
-            </Typography>
+          <View className="flex-row items-center justify-between mb-2">
+            <SectionHeader title={t.conversation.editTitle} />
             <TouchableOpacity
               onPress={handleGenerateTitle}
               disabled={isGeneratingTitle}
-              className="flex-row items-center"
+              className="flex-row items-center mt-2"
             >
               {isGeneratingTitle ? (
                 <ActivityIndicator size="small" color="#6366f1" />
@@ -301,13 +302,7 @@ export default function SessionSettingsScreen() {
           </View>
 
           {/* RAG Settings */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center"
-          >
-            <Sparkles size={10} color="#64748b" className="mr-1" />{' '}
-            {t.conversation.ragSettings || 'Knowledge & Memory'}
-          </Typography>
+          <SectionHeader title={t.conversation.ragSettings || 'Knowledge & Memory'} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
             {/* Toggle: Enable Memory */}
             <View className="flex-row items-center justify-between py-2 mb-2">
@@ -373,74 +368,74 @@ export default function SessionSettingsScreen() {
                 {/* Selected items preview */}
                 {((session.ragOptions?.activeDocIds?.length || 0) > 0 ||
                   (session.ragOptions?.activeFolderIds?.length || 0) > 0) && (
-                  <View className="flex-row flex-wrap gap-2 mt-3">
-                    {session.ragOptions?.activeDocIds?.map((docId) => {
-                      const doc = documents.find((d) => d.id === docId);
-                      if (!doc) return null;
-                      return (
-                        <View
-                          key={docId}
-                          className="flex-row items-center bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-500/20"
-                        >
-                          <Typography
-                            className="text-[10px] text-indigo-600 dark:text-indigo-400 mr-1"
-                            numberOfLines={1}
+                    <View className="flex-row flex-wrap gap-2 mt-3">
+                      {session.ragOptions?.activeDocIds?.map((docId) => {
+                        const doc = documents.find((d) => d.id === docId);
+                        if (!doc) return null;
+                        return (
+                          <View
+                            key={docId}
+                            className="flex-row items-center bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-500/20"
                           >
-                            {doc.title}
-                          </Typography>
-                          <TouchableOpacity
-                            onPress={() => {
-                              const newIds = session.ragOptions?.activeDocIds?.filter(
-                                (id) => id !== docId,
-                              );
-                              useChatStore.getState().updateSessionOptions(id, {
-                                ragOptions: {
-                                  ...session.ragOptions,
-                                  activeDocIds: newIds?.length ? newIds : undefined,
-                                },
-                              });
-                            }}
+                            <Typography
+                              className="text-[10px] text-indigo-600 dark:text-indigo-400 mr-1"
+                              numberOfLines={1}
+                            >
+                              {doc.title}
+                            </Typography>
+                            <TouchableOpacity
+                              onPress={() => {
+                                const newIds = session.ragOptions?.activeDocIds?.filter(
+                                  (id) => id !== docId,
+                                );
+                                useChatStore.getState().updateSessionOptions(id, {
+                                  ragOptions: {
+                                    ...session.ragOptions,
+                                    activeDocIds: newIds?.length ? newIds : undefined,
+                                  },
+                                });
+                              }}
+                            >
+                              <X size={12} color="#6366f1" />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                      {session.ragOptions?.activeFolderIds?.map((folderId) => {
+                        const folder = folders.find((f) => f.id === folderId);
+                        if (!folder) return null;
+                        return (
+                          <View
+                            key={folderId}
+                            className="flex-row items-center bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-500/20"
                           >
-                            <X size={12} color="#6366f1" />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })}
-                    {session.ragOptions?.activeFolderIds?.map((folderId) => {
-                      const folder = folders.find((f) => f.id === folderId);
-                      if (!folder) return null;
-                      return (
-                        <View
-                          key={folderId}
-                          className="flex-row items-center bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-500/20"
-                        >
-                          <Folder size={10} color="#f59e0b" className="mr-1" />
-                          <Typography
-                            className="text-[10px] text-amber-600 dark:text-amber-400 mr-1"
-                            numberOfLines={1}
-                          >
-                            {folder.name}
-                          </Typography>
-                          <TouchableOpacity
-                            onPress={() => {
-                              const newIds = session.ragOptions?.activeFolderIds?.filter(
-                                (id) => id !== folderId,
-                              );
-                              useChatStore.getState().updateSessionOptions(id, {
-                                ragOptions: {
-                                  ...session.ragOptions,
-                                  activeFolderIds: newIds?.length ? newIds : undefined,
-                                },
-                              });
-                            }}
-                          >
-                            <X size={12} color="#f59e0b" />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
+                            <Folder size={10} color="#f59e0b" className="mr-1" />
+                            <Typography
+                              className="text-[10px] text-amber-600 dark:text-amber-400 mr-1"
+                              numberOfLines={1}
+                            >
+                              {folder.name}
+                            </Typography>
+                            <TouchableOpacity
+                              onPress={() => {
+                                const newIds = session.ragOptions?.activeFolderIds?.filter(
+                                  (id) => id !== folderId,
+                                );
+                                useChatStore.getState().updateSessionOptions(id, {
+                                  ragOptions: {
+                                    ...session.ragOptions,
+                                    activeFolderIds: newIds?.length ? newIds : undefined,
+                                  },
+                                });
+                              }}
+                            >
+                              <X size={12} color="#f59e0b" />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
 
                 {/* Modal */}
                 <DocumentPickerModal
@@ -465,13 +460,7 @@ export default function SessionSettingsScreen() {
           </View>
 
           {/* Inference Parameters */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center"
-          >
-            <Sliders size={10} color="#64748b" className="mr-1" />{' '}
-            {t.conversation.inferenceSettings || 'Inference Parameters'}
-          </Typography>
+          <SectionHeader title={t.conversation.inferenceSettings || 'Inference Parameters'} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
             <InferenceSettings
               params={session.inferenceParams || {}}
@@ -484,12 +473,7 @@ export default function SessionSettingsScreen() {
           <ContextManagementPanel sessionId={id} />
 
           {/* Custom Prompt */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center"
-          >
-            <Sparkles size={10} color="#64748b" className="mr-1" /> {t.conversation.customPrompt}
-          </Typography>
+          <SectionHeader title={t.conversation.customPrompt} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
             <View className="bg-indigo-50 dark:bg-indigo-500/10 p-3.5 rounded-xl mb-4">
               <Typography className="text-[12px] text-indigo-700 dark:text-indigo-300 flex-1 leading-tight">
@@ -508,12 +492,7 @@ export default function SessionSettingsScreen() {
           </View>
 
           {/* Danger Zone */}
-          <Typography
-            variant="label"
-            className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            {t.common.dangerZone}
-          </Typography>
+          <SectionHeader title={t.common.dangerZone} />
           <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
             <TouchableOpacity
               onPress={handleDeleteSession}
@@ -549,3 +528,4 @@ export default function SessionSettingsScreen() {
     </PageLayout>
   );
 }
+

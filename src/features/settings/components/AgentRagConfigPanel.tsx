@@ -15,10 +15,10 @@ interface Props {
 }
 
 // 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => (
-  <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-    <View className="w-1.5 h-4 bg-indigo-500 rounded-full mr-3" />
-    <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 12 }) => (
+  <View style={{ marginTop: mt }} className="flex-row items-center mb-4 mt-2">
+    <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
+    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
       {title}
     </Typography>
   </View>

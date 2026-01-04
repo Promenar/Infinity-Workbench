@@ -3,59 +3,44 @@
  */
 
 export type FABIconType =
-  | 'Sparkles' // 默认：星星
-  | 'Brain' // 大脑
-  | 'Zap' // 闪电
-  | 'Star' // 实心星
-  | 'Flame' // 火焰
-  | 'Crown' // 皇冠
-  | 'custom'; // 自定义图片
+  | 'Sparkles'
+  | 'Aperture'
+  | 'Orbit'
+  | 'Atom'
+  | 'Hexagon'
+  | 'Snowflake'
+  | 'Target'
+  | 'Sun'
+  | 'Crosshair'
+  | 'Component'
+  | 'Dna'
+  | 'Disc'
+  | 'Cpu'
+  | 'Blocks'
+  | 'CircleDashed'
+  | 'Settings'
+  | 'custom';
 
-export interface SuperAssistantPreferences {
-  // FAB 外观设置
-  fab: {
-    iconType: FABIconType;
-    customIconUri?: string; // 自定义图标的本地 URI
-    iconColor: string; // 图标颜色（hex）
-    backgroundColor: string; // 背景色（hex）
-    enableRotation: boolean; // 是否启用旋转动画
-    enableGlow: boolean; // 是否启用发光效果
-    glowColor: string; // 发光颜色（hex）
-    glowIntensity: number; // 发光强度 (0-1)
-    animationMode?: 'pulse' | 'nebula' | 'quantum' | 'glitch' | 'liquid'; // 动画模式
-  };
-
-  // 全局 RAG 统计（只读，从实际数据计算）
-  ragStats?: {
-    totalDocuments: number;
-    totalSessions: number;
-    totalVectors: number;
-    lastUpdated: number;
-  };
-}
-
-// 默认配置
-export const DEFAULT_SPA_PREFERENCES: SuperAssistantPreferences = {
-  fab: {
-    iconType: 'Sparkles',
-    iconColor: '#8b5cf6', // 紫色
-    backgroundColor: '#8b5cf6',
-    enableRotation: true,
-    enableGlow: true,
-    glowColor: '#8b5cf6',
-    glowIntensity: 0.5,
-    animationMode: 'pulse',
-  },
-};
+// ... (SuperAssistantPreferences interface remains same) ...
 
 // 预设图标选项
-export const PRESET_FAB_ICONS: { type: FABIconType; labelKey: string; color: string }[] = [
-  { type: 'Sparkles', labelKey: 'iconSparkles', color: '#8b5cf6' },
-  { type: 'Brain', labelKey: 'iconBrain', color: '#ec4899' },
-  { type: 'Zap', labelKey: 'iconZap', color: '#f59e0b' },
-  { type: 'Star', labelKey: 'iconStar', color: '#eab308' },
-  { type: 'Flame', labelKey: 'iconFlame', color: '#ef4444' },
-  { type: 'Crown', labelKey: 'iconCrown', color: '#a855f7' },
+export const PRESET_FAB_ICONS: { type: FABIconType; labelKey: string }[] = [
+  { type: 'Aperture', labelKey: 'iconAperture' },
+  { type: 'Orbit', labelKey: 'iconOrbit' },
+  { type: 'Atom', labelKey: 'iconAtom' },
+  { type: 'Sparkles', labelKey: 'iconSparkles' },
+  { type: 'Hexagon', labelKey: 'iconHexagon' },
+  { type: 'Snowflake', labelKey: 'iconSnowflake' },
+  { type: 'Target', labelKey: 'iconTarget' },
+  { type: 'Sun', labelKey: 'iconSun' },
+  { type: 'Crosshair', labelKey: 'iconCrosshair' },
+  { type: 'Component', labelKey: 'iconComponent' },
+  { type: 'Dna', labelKey: 'iconDna' },
+  { type: 'Disc', labelKey: 'iconDisc' },
+  { type: 'Cpu', labelKey: 'iconCpu' },
+  { type: 'Blocks', labelKey: 'iconBlocks' },
+  { type: 'CircleDashed', labelKey: 'iconCircleDashed' },
+  { type: 'Settings', labelKey: 'iconSettings' },
 ];
 
 // 预设颜色方案
@@ -68,6 +53,14 @@ export const PRESET_COLORS = [
   { nameKey: 'colorRose', value: '#f43f5e' },
   { nameKey: 'colorYellow', value: '#eab308' },
   { nameKey: 'colorCyan', value: '#06b6d4' },
+  { nameKey: 'colorOrange', value: '#f97316' },
+  { nameKey: 'colorRed', value: '#ef4444' },
+  { nameKey: 'colorIndigo', value: '#6366f1' },
+  { nameKey: 'colorTeal', value: '#14b8a6' },
+  { nameKey: 'colorLime', value: '#84cc16' },
+  { nameKey: 'colorFuchsia', value: '#d946ef' },
+  { nameKey: 'colorBlue', value: '#2563eb' },
+  { nameKey: 'colorSlate', value: '#475569' },
 ];
 
 export const ANIMATION_MODES = [

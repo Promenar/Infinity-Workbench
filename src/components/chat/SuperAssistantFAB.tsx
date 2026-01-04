@@ -23,7 +23,7 @@ import { useSPAStore } from '../../store/spa-store';
 import { useChatStore } from '../../store/chat-store';
 import * as LucideIcons from 'lucide-react-native';
 import { preventDoubleTap } from '../../lib/navigation-utils';
-import { SilkyGlow } from '../ui/SilkyGlow';
+import { ParticleEnergyGlow } from '../ui/ParticleEnergyGlow';
 
 interface SuperAssistantFABProps {
   onPress: () => void;
@@ -202,18 +202,19 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
     : 'transparent'; // Fallback to icon color if glow color not set
 
   return (
-    <View pointerEvents="box-none" style={[styles.wrapper, { bottom: 85 + insets.bottom }]}>
+    // Bottom Offset Adjustment:
+    // Old Bottom: 85. Center from Bottom: 85 + 32 = 117.
+    // New Size: 160. New Bottom: 117 - 80 = 37.
+    <View pointerEvents="box-none" style={[styles.wrapper, { bottom: 37 + insets.bottom }]}>
       {/* 🌟 Silky Glow Background (Windows 7 Fusion Style) */}
+      {/* Wrapper is now large (160x160) to avoid Android clipping. */}
+      {/* Glow fills the wrapper. */}
       {preferences.fab.enableGlow && (
-        <SilkyGlow
+        <ParticleEnergyGlow
           color={glowColor}
-          size={160} // 160px enables r=50 circle [(160-60)/2], clearly visible behind 64px button
-          style={{
-            position: 'absolute',
-            // Center the 160px glow container relative to the 64px button container
-            top: (64 - 160) / 2,
-            left: (64 - 160) / 2,
-          }}
+          size={160}
+          style={StyleSheet.absoluteFillObject} // Fill the 160x160 wrapper
+          isDark={isDark} // Pass theme status for adaptive rendering
         />
       )}
 
@@ -221,7 +222,7 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
       {mode === 'quantum' && <QuantumRings isGenerating={isGenerating} color={iconColor} />}
       {mode === 'glitch' && <GlitchEffect isGenerating={isGenerating} color={iconColor} />}
 
-      {/* Main Button Container */}
+      {/* Main Button Container (Centered 64x64) */}
       <Animated.View
         style={[
           styles.container,
@@ -234,7 +235,7 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
       >
         <TouchableOpacity activeOpacity={0.8} onPress={handlePress} style={styles.touchable}>
           <BlurView
-            intensity={isDark ? 30 : 50} // Reduced intensity for clearer glow
+            intensity={isDark ? 30 : 50}
             tint={isDark ? 'dark' : 'light'}
             style={styles.blur}
           >
@@ -242,7 +243,7 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
               style={[
                 styles.inner,
                 {
-                  backgroundColor: isCustomIcon ? 'transparent' : backgroundColor + '4D', // 30% -> 4D (30%)
+                  backgroundColor: isCustomIcon ? 'transparent' : backgroundColor + '4D',
                   borderColor: backgroundColor + '80',
                 },
               ]}
@@ -269,17 +270,24 @@ export const SuperAssistantFAB: React.FC<SuperAssistantFABProps> = ({ onPress })
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    right: 24,
-    width: 64,
-    height: 64,
+    // Center alignment adjustment:
+    // Old Size: 64, Old Right: 24. Center from Right: 24 + 32 = 56.
+    // New Size: 160. New Right: 56 - 80 = -24.
+    right: -24,
+    width: 160, // Expanded to contain glow
+    height: 160,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 9999,
+    // pointerEvents handled by View prop "box-none" to let touches pass through glow area if needed,
+    // but React Native View doesn't support pointerEvents in styles, it's a prop.
+    // The top-level View has pointerEvents="box-none".
   },
   container: {
     width: 64,
     height: 64,
     borderRadius: 32,
+    // Ensure button stays on top of glow in stacking order (DOM order handles this naturally)
   },
   glowLayer: {
     position: 'absolute',

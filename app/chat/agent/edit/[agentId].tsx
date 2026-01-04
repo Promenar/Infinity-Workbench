@@ -33,6 +33,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { AgentAvatar } from '../../../../src/components/chat/AgentAvatar';
 import { AgentRagConfigPanel } from '../../../../src/features/settings/components/AgentRagConfigPanel';
+import { useDebounce } from '../../../../src/hooks/useDebounce';
 
 const PRESET_ICONS = [
   'MessageSquare',
@@ -81,7 +82,7 @@ export default function AgentEditScreen() {
     visible: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     isDestructive: false,
   });
 
@@ -104,31 +105,56 @@ export default function AgentEditScreen() {
           from: sourceUri,
           to: destPath,
         });
-        setFormData({ ...formData, avatar: destPath });
+
+        // Immediate update for Avatar
+        updateAgent(agentId, { avatar: destPath });
+        setFormData(prev => ({ ...prev, avatar: destPath }));
+
         setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 10);
       } catch (e) {
         console.error('Failed to copy avatar', e);
-        setFormData({ ...formData, avatar: sourceUri });
+
+        // Fallback immediate update
+        updateAgent(agentId, { avatar: sourceUri });
+        setFormData(prev => ({ ...prev, avatar: sourceUri }));
       } finally {
         setIsProcessingImage(false);
       }
     }
   };
 
-  const handleSave = () => {
-    setTimeout(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  // Auto-save logic
+  const debouncedFormData = useDebounce(formData, 1000);
+
+  React.useEffect(() => {
+    if (!agent) return;
+
+    let hasChanges = false;
+    if (debouncedFormData.name !== agent.name) hasChanges = true;
+    if (debouncedFormData.description !== agent.description) hasChanges = true;
+    if (debouncedFormData.systemPrompt !== agent.systemPrompt) hasChanges = true;
+    if (debouncedFormData.defaultModel !== agent.defaultModel) hasChanges = true;
+
+    // Only update if avatar purely via basic string change (preset), handled via logic below
+    // But preset icons might update formData directly. 
+    // Wait, preset icons usually update formData.avatar.
+    // If formData.avatar !== agent.avatar, we update.
+    if (debouncedFormData.avatar !== agent.avatar) hasChanges = true;
+
+    // Check params (temperature)
+    if (debouncedFormData.temperature !== agent.params?.temperature) hasChanges = true;
+
+    if (hasChanges) {
       updateAgent(agentId, {
-        name: formData.name,
-        description: formData.description,
-        systemPrompt: formData.systemPrompt,
-        defaultModel: formData.defaultModel,
-        avatar: formData.avatar,
-        params: { ...agent?.params, temperature: formData.temperature },
+        name: debouncedFormData.name,
+        description: debouncedFormData.description,
+        systemPrompt: debouncedFormData.systemPrompt,
+        defaultModel: debouncedFormData.defaultModel,
+        avatar: debouncedFormData.avatar,
+        params: { ...agent.params, temperature: debouncedFormData.temperature },
       });
-      router.back();
-    }, 10);
-  };
+    }
+  }, [debouncedFormData, agent?.name, agent?.description, agent?.systemPrompt, agent?.defaultModel, agent?.avatar, agent?.params?.temperature]);
 
   const handleDelete = () => {
     setConfirmState({
@@ -147,6 +173,15 @@ export default function AgentEditScreen() {
     });
   };
 
+  const SectionHeader = ({ title }: { title: string }) => (
+    <View className="flex-row items-center mb-4 mt-2">
+      <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
+      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+        {title}
+      </Typography>
+    </View>
+  );
+
   if (!agent) return null;
 
   return (
@@ -160,11 +195,7 @@ export default function AgentEditScreen() {
           onPress: () => router.back(),
           label: t.common.back,
         }}
-        rightAction={{
-          icon: <Save size={24} color={isDark ? '#fff' : '#000'} strokeWidth={2} />,
-          onPress: handleSave,
-          label: t.common.save,
-        }}
+        rightAction={undefined}
       />
 
       <KeyboardAvoidingView
@@ -181,12 +212,7 @@ export default function AgentEditScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Agent Avatar Group */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            {t.agent.avatar || '助手头像'}
-          </Typography>
+          <SectionHeader title={t.agent.avatar || '助手头像'} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-6 border border-gray-100 dark:border-zinc-800 mb-8 items-center">
             <View className="relative mb-6">
               <AgentAvatar
@@ -241,12 +267,7 @@ export default function AgentEditScreen() {
           </View>
 
           {/* Basic Info Group */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            {t.agent.basicInfo}
-          </Typography>
+          <SectionHeader title={t.agent.basicInfo} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
             <Typography className="text-gray-900 dark:text-white font-bold mb-2">
               {t.agent.name}
@@ -274,12 +295,7 @@ export default function AgentEditScreen() {
           </View>
 
           {/* Personality Group */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center"
-          >
-            <Sparkles size={10} color="#64748b" /> {t.agent.personality}
-          </Typography>
+          <SectionHeader title={t.agent.personality} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
             <TextInput
               className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 h-40"
@@ -293,12 +309,7 @@ export default function AgentEditScreen() {
           </View>
 
           {/* Model Configuration Group */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3 flex-row items-center"
-          >
-            <Cpu size={10} color="#64748b" /> {t.agent.modelConfig}
-          </Typography>
+          <SectionHeader title={t.agent.modelConfig} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
             <TouchableOpacity
               onPress={() => {
@@ -362,12 +373,7 @@ export default function AgentEditScreen() {
           </View>
 
           {/* RAG 配置入口 */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            <Database size={10} color="#64748b" className="mr-1" /> RAG 配置
-          </Typography>
+          <SectionHeader title="RAG 配置" />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
             <TouchableOpacity
               onPress={() => {
@@ -413,12 +419,7 @@ export default function AgentEditScreen() {
           </View>
 
           {/* Danger Zone */}
-          <Typography
-            variant="label"
-            className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            {t.common.dangerZone}
-          </Typography>
+          <SectionHeader title={t.common.dangerZone} />
           <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
             <TouchableOpacity
               onPress={handleDelete}
@@ -442,6 +443,7 @@ export default function AgentEditScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
 
       <ConfirmDialog
         visible={confirmState.visible}

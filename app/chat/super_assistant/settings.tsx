@@ -8,6 +8,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { clsx } from 'clsx';
 import {
   PageLayout,
   Typography,
@@ -35,24 +36,223 @@ import { useI18n } from '../../../src/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { exportAllSessionsToTxt } from '../../../src/features/chat/utils/export';
 import { useSPAStore } from '../../../src/store/spa-store';
-import { useAgentStore } from '../../../src/store/agent-store';
 import {
   PRESET_FAB_ICONS,
   PRESET_COLORS,
   FABIconType,
-  ANIMATION_MODES,
 } from '../../../src/types/super-assistant';
 import * as ImagePicker from 'expo-image-picker';
 import * as LucideIcons from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { vectorStore } from '../../../src/lib/rag/vector-store';
 import { InferenceSettings } from '../../../src/components/chat/InferenceSettings';
-import { Sliders } from 'lucide-react-native';
 import { ContextManagementPanel } from '../../../src/features/chat/settings/ContextManagementPanel';
-import { AgentRagConfigPanel } from '../../../src/features/settings/components/AgentRagConfigPanel';
-import { preventDoubleTap } from '../../../src/lib/navigation-utils';
+import { useDebounce } from '../../../src/hooks/useDebounce';
 
 const SPA_SESSION_ID = 'super_assistant';
+
+const SectionHeader = ({ title }: { title: string }) => (
+  <View className="flex-row items-center mb-4 mt-2">
+    <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
+    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+      {title}
+    </Typography>
+  </View>
+);
+
+const SubHeader = ({ title }: { title: string }) => (
+  <View className="flex-row items-center mb-3 mt-1">
+    <View className="w-1 h-3 bg-indigo-500 rounded-full mr-2" />
+    <Typography className="font-bold text-gray-700 dark:text-gray-300 text-sm">
+      {title}
+    </Typography>
+  </View>
+);
+
+interface FABIconProps {
+  type: FABIconType;
+  size: number;
+  color: string;
+  customIconUri?: string | null;
+}
+
+const FABIconRenderer = React.memo(({ type, size, color, customIconUri }: FABIconProps) => {
+  if (type === 'custom' && customIconUri) {
+    return (
+      <Image
+        source={{ uri: customIconUri }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        contentFit="cover"
+        cachePolicy="disk"
+      />
+    );
+  }
+
+  const IconComponent = (LucideIcons as any)[type];
+  if (IconComponent) {
+    return <IconComponent size={size} color={color} />;
+  }
+  return <Sparkles size={size} color={color} />;
+});
+
+const FABIconGrid = React.memo(({
+  preferences,
+  isDark,
+  onSelect,
+  onCustomSelect,
+  customLabel
+}: {
+  preferences: any;
+  isDark: boolean;
+  onSelect: (type: FABIconType) => void;
+  onCustomSelect: () => void;
+  customLabel: string;
+}) => {
+  // Robust Negative Margin Layout Strategy
+  // Container has marginRight: -8 to pull right boundary
+  // Items are exactly 25% width
+  // Items have paddingRight: 8 to create the gap
+  // This ensures perfect alignment regardless of container width
+  const gap = 8;
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginRight: -gap }}>
+        {PRESET_FAB_ICONS.map((preset, index) => {
+          const isSelected = preferences.fab.iconType === preset.type;
+
+          return (
+            <View
+              key={preset.type}
+              style={{ width: '25%', paddingRight: gap, marginBottom: gap }}
+            >
+              <TouchableOpacity
+                onPress={() => onSelect(preset.type)}
+                style={{
+                  width: '100%',
+                  aspectRatio: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 16,
+                  backgroundColor: isSelected
+                    ? (isDark ? 'rgba(99, 102, 241, 0.2)' : '#eef2ff')
+                    : (isDark ? '#000000' : '#ffffff'),
+                  borderWidth: isSelected ? 2 : 1,
+                  borderColor: isSelected
+                    ? '#6366f1'
+                    : (isDark ? '#27272a' : '#e5e7eb'),
+                  ...((isSelected && !isDark) ? { shadowColor: "#6366f1", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 } : {})
+                }}
+              >
+                <FABIconRenderer
+                  type={preset.type}
+                  size={24}
+                  color={isSelected ? '#6366f1' : isDark ? '#9ca3af' : '#6b7280'}
+                  customIconUri={preferences.fab.customIconUri}
+                />
+                {isSelected && (
+                  <View style={{ position: 'absolute', top: 6, right: 6 }}>
+                    <Check size={10} color="#6366f1" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+      </View>
+
+      <TouchableOpacity
+        onPress={onCustomSelect}
+        style={{
+          width: '100%',
+          paddingVertical: 16,
+
+          marginTop: 0, // Reset margin since grid has internal marginBottom
+
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 16,
+          backgroundColor: preferences.fab.iconType === 'custom'
+            ? (isDark ? 'rgba(99, 102, 241, 0.2)' : '#eef2ff')
+            : (isDark ? '#000000' : '#ffffff'),
+          borderWidth: preferences.fab.iconType === 'custom' ? 2 : 1,
+          borderColor: preferences.fab.iconType === 'custom'
+            ? '#6366f1'
+            : (isDark ? '#27272a' : '#e5e7eb')
+        }}
+      >
+        {preferences.fab.iconType === 'custom' && preferences.fab.customIconUri ? (
+          <FABIconRenderer type="custom" size={20} color="#6366f1" customIconUri={preferences.fab.customIconUri} />
+        ) : (
+          <Upload size={20} color="#6366f1" style={{ marginRight: 8 }} />
+        )}
+        <Typography style={{
+          fontWeight: '600',
+          color: preferences.fab.iconType === 'custom' ? '#6366f1' : '#6b7280'
+        }}>
+          {customLabel}
+        </Typography>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+const FABColorGrid = React.memo(({
+  preferences,
+  isDark,
+  onSelect
+}: {
+  preferences: any;
+  isDark: boolean;
+  onSelect: (color: string) => void;
+}) => {
+  const gap = 8;
+
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginRight: -gap }}>
+      {PRESET_COLORS.map((color, index) => {
+        const isSelected = preferences.fab.iconColor === color.value;
+
+        return (
+          <View
+            key={color.value}
+            style={{ width: '25%', paddingRight: gap, marginBottom: gap }}
+          >
+            <TouchableOpacity
+              onPress={() => onSelect(color.value)}
+              style={{
+                width: '100%',
+                aspectRatio: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 16,
+                borderWidth: 2,
+                backgroundColor: color.value + '10',
+                borderColor: isSelected ? color.value : isDark ? '#18181b' : '#f4f4f5',
+              }}
+            >
+              <View
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  backgroundColor: color.value,
+                  ...(!isDark ? { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } : {})
+                }}
+              />
+              {isSelected && (
+                <View style={{ position: 'absolute', top: 6, right: 6 }}>
+                  <Check size={10} color={color.value} />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        );
+      })}
+    </View>
+  );
+});
 
 export default function SuperAssistantSettingsScreen() {
   const router = useRouter();
@@ -65,7 +265,6 @@ export default function SuperAssistantSettingsScreen() {
     getSession,
     updateSessionTitle,
     updateSessionInferenceParams,
-    generateSessionTitle,
     deleteSession,
   } = useChatStore();
   const { preferences, updateFABConfig, updateRAGStats } = useSPAStore();
@@ -97,9 +296,7 @@ export default function SuperAssistantSettingsScreen() {
     title: session?.title || 'Super Personal Assistant',
   });
 
-  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState<'icon' | 'glow' | null>(null);
 
   // 加载 RAG 统计
   useEffect(() => {
@@ -116,35 +313,18 @@ export default function SuperAssistantSettingsScreen() {
     visible: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     isDestructive: false,
   });
 
-  const handleSave = () => {
-    setTimeout(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      updateSessionTitle(SPA_SESSION_ID, formData.title.trim());
-      showToast(t.superAssistant.settingsSaved, 'success');
-      router.back();
-    }, 10);
-  };
+  // Auto-save title
+  const debouncedTitle = useDebounce(formData.title, 1000);
 
-  const handleGenerateTitle = async () => {
-    if (isGeneratingTitle) return;
-    setIsGeneratingTitle(true);
-    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 10);
-
-    try {
-      const newTitle = await generateSessionTitle(SPA_SESSION_ID);
-      if (newTitle) {
-        setFormData((prev) => ({ ...prev, title: newTitle }));
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsGeneratingTitle(false);
+  useEffect(() => {
+    if (session && debouncedTitle !== session.title) {
+      updateSessionTitle(SPA_SESSION_ID, debouncedTitle.trim());
     }
-  };
+  }, [debouncedTitle, session?.title]);
 
   const handleExportCurrent = async () => {
     if (isExporting || !session) return;
@@ -157,7 +337,7 @@ export default function SuperAssistantSettingsScreen() {
         setConfirmState({
           visible: true,
           title: t.superAssistant.exportSuccess,
-          message: t.superAssistant.exportSuccess, // Simply using the success message again or add a dedicated desc key if needed
+          message: t.superAssistant.exportSuccess,
           onConfirm: () => setConfirmState((prev) => ({ ...prev, visible: false })),
         });
       } else if (result.error !== 'Permission denied') {
@@ -184,7 +364,7 @@ export default function SuperAssistantSettingsScreen() {
     setConfirmState({
       visible: true,
       title: t.superAssistant.deleteSession,
-      message: t.superAssistant.deleteSessionDesc, // Reusing description for dialog message
+      message: t.superAssistant.deleteSessionDesc,
       isDestructive: true,
       onConfirm: async () => {
         await deleteSession(SPA_SESSION_ID);
@@ -195,12 +375,25 @@ export default function SuperAssistantSettingsScreen() {
     });
   };
 
-  const handlePickCustomIcon = async () => {
+  const handleIconSelect = React.useCallback((type: FABIconType) => {
+    updateFABConfig({ iconType: type });
+    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+  }, [updateFABConfig]);
+
+  const handleColorSelect = React.useCallback((color: string) => {
+    updateFABConfig({
+      iconColor: color,
+      backgroundColor: color,
+      glowColor: color,
+    });
+    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+  }, [updateFABConfig]);
+
+  const handlePickCustomIcon = React.useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // GIFs are classified as images
-      allowsEditing: false, // Must disable editing to preserve GIF animation
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
       quality: 0.8,
-      // aspect: [1, 1], // Removed because editing is disabled
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -209,26 +402,7 @@ export default function SuperAssistantSettingsScreen() {
         customIconUri: result.assets[0].uri,
       });
     }
-  };
-
-  const renderFABIcon = (type: FABIconType, size: number, color: string) => {
-    if (type === 'custom' && preferences.fab.customIconUri) {
-      return (
-        <Image
-          source={{ uri: preferences.fab.customIconUri }}
-          style={{ width: size, height: size, borderRadius: size / 2 }}
-          contentFit="cover"
-          cachePolicy="disk"
-        />
-      );
-    }
-
-    const IconComponent = (LucideIcons as any)[type];
-    if (IconComponent) {
-      return <IconComponent size={size} color={color} />;
-    }
-    return <Sparkles size={size} color={color} />;
-  };
+  }, [updateFABConfig]);
 
   if (!session) return null;
 
@@ -240,16 +414,13 @@ export default function SuperAssistantSettingsScreen() {
 
       <GlassHeader
         title={t.superAssistant.title}
+        subtitle="Super Personal Assistant"
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
           label: t.common.back,
         }}
-        rightAction={{
-          icon: <Save size={24} color={isDark ? '#fff' : '#000'} strokeWidth={2} />,
-          onPress: handleSave,
-          label: t.common.save,
-        }}
+        rightAction={undefined}
       />
 
       <KeyboardAvoidingView
@@ -264,30 +435,24 @@ export default function SuperAssistantSettingsScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          {/* RAG Status Card (Read-only) */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            <Sparkles size={10} color="#64748b" className="mr-1" />{' '}
-            {t.superAssistant.globalKnowledge}
-          </Typography>
-          <View className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-3xl p-5 border border-purple-200 dark:border-purple-800/30 mb-8">
+          {/* RAG 统计监控 */}
+          <SectionHeader title={t.superAssistant.globalKnowledge} />
+          <View className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-3xl p-5 border border-indigo-200 dark:border-indigo-800/30 mb-6">
             <View className="flex-row items-center mb-4">
-              <View className="w-10 h-10 rounded-full bg-purple-500 items-center justify-center mr-3">
+              <View className="w-10 h-10 rounded-full bg-indigo-500 items-center justify-center mr-3">
                 <Sparkles size={20} color="#fff" />
               </View>
               <View className="flex-1">
-                <Typography className="text-lg font-bold text-purple-900 dark:text-purple-100">
+                <Typography className="text-lg font-bold text-indigo-900 dark:text-indigo-100">
                   {t.superAssistant.globalRagEnabled}
                 </Typography>
-                <Typography variant="caption" className="text-purple-600 dark:text-purple-300">
+                <Typography variant="caption" className="text-indigo-600 dark:text-indigo-300">
                   {t.superAssistant.accessAllData}
                 </Typography>
               </View>
             </View>
 
-            <View className="bg-white/50 dark:bg-black/20 rounded-2xl p-4 space-y-2">
+            <View className="bg-white/50 dark:bg-black/20 rounded-2xl p-4 space-y-2 mb-4">
               <View className="flex-row items-center justify-between">
                 <Typography className="text-sm text-gray-700 dark:text-gray-300">
                   📄 {t.superAssistant.docCount}
@@ -314,7 +479,7 @@ export default function SuperAssistantSettingsScreen() {
               </View>
             </View>
 
-            <View className="mt-4 flex-row items-center justify-between">
+            <View className="flex-row items-center justify-between">
               <View className="flex-row items-center">
                 <View className="w-2 h-2 rounded-full bg-green-500 mr-2" />
                 <Typography className="text-xs text-gray-600 dark:text-gray-400">
@@ -324,21 +489,22 @@ export default function SuperAssistantSettingsScreen() {
 
               <TouchableOpacity
                 onPress={handlePruneGhostData}
-                className="bg-white/60 dark:bg-black/20 px-3 py-1.5 rounded-full flex-row items-center border border-purple-100 dark:border-purple-500/20"
+                className="bg-white/60 dark:bg-black/20 px-3 py-1.5 rounded-full flex-row items-center border border-indigo-100 dark:border-indigo-500/20"
               >
-                <Database size={12} color="#9333ea" className="mr-1.5" />
-                <Typography className="text-xs font-bold text-purple-700 dark:text-purple-300">
+                <Database size={12} color="#6366f1" className="mr-1.5" />
+                <Typography className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
                   {t.superAssistant.pruneGhostData}
                 </Typography>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Export */}
+          {/* 导出历史记录 */}
+          <SectionHeader title={t.superAssistant.exportHistory} />
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleExportCurrent}
-            className="flex-row items-center justify-center py-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl mb-8 border border-indigo-100 dark:border-indigo-500/20"
+            className="flex-row items-center justify-center py-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl mb-6 border border-indigo-100 dark:border-indigo-500/20"
           >
             {isExporting ? (
               <ActivityIndicator size="small" color="#6366f1" />
@@ -352,48 +518,9 @@ export default function SuperAssistantSettingsScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Inference Parameters */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            <Sliders size={10} color="#64748b" className="mr-1" />{' '}
-            {t.conversation.inferenceSettings}
-          </Typography>
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-            <InferenceSettings
-              params={session.inferenceParams || {}}
-              onUpdate={(params) => updateSessionInferenceParams(SPA_SESSION_ID, params)}
-              agentDefaultParams={{ temperature: 0.7 }}
-            />
-          </View>
-
-          {/* Session Title */}
-          <View className="flex-row items-center justify-between mb-3">
-            <Typography
-              variant="label"
-              className="text-gray-400 font-bold uppercase text-[10px] tracking-widest"
-            >
-              {t.superAssistant.title}
-            </Typography>
-            <TouchableOpacity
-              onPress={handleGenerateTitle}
-              disabled={isGeneratingTitle}
-              className="flex-row items-center"
-            >
-              {isGeneratingTitle ? (
-                <ActivityIndicator size="small" color="#6366f1" />
-              ) : (
-                <>
-                  <Sparkles size={12} color="#6366f1" className="mr-1" />
-                  <Typography className="text-indigo-600 text-[10px] font-bold">
-                    {t.superAssistant.aiGenerate}
-                  </Typography>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          {/* 会话名称修改 */}
+          <SectionHeader title={t.superAssistant.title} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
             <TextInput
               className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 font-bold"
               value={formData.title}
@@ -403,154 +530,32 @@ export default function SuperAssistantSettingsScreen() {
             />
           </View>
 
-          {/* FAB Appearance Settings */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            🎨 {t.superAssistant.fabAppearance}
-          </Typography>
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-            {/* Icon Type */}
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
-              {t.superAssistant.iconStyle}
-            </Typography>
-            <View className="flex-row flex-wrap gap-2 mb-4">
-              {PRESET_FAB_ICONS.map((preset) => (
-                <TouchableOpacity
-                  key={preset.type}
-                  onPress={() => {
-                    updateFABConfig({ iconType: preset.type, iconColor: preset.color });
-                    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-                  }}
-                  className={`flex-1 min-w-[45%] p-3 rounded-xl ${
-                    preferences.fab.iconType === preset.type
-                      ? 'bg-indigo-50 dark:bg-indigo-500/20 border-2 border-indigo-500'
-                      : 'bg-white dark:bg-black border border-gray-200 dark:border-zinc-800'
-                  }`}
-                >
-                  <View className="flex-row items-center">
-                    {renderFABIcon(preset.type, 20, preset.color)}
-                    <Typography
-                      className={`ml-2 text-sm font-semibold ${
-                        preferences.fab.iconType === preset.type
-                          ? 'text-indigo-600 dark:text-indigo-400'
-                          : 'text-gray-600 dark:text-gray-400'
-                      }`}
-                    >
-                      {(t.superAssistant as any)[preset.labelKey]}
-                    </Typography>
-                    {preferences.fab.iconType === preset.type && (
-                      <Check size={16} color="#6366f1" className="ml-auto" />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                onPress={handlePickCustomIcon}
-                className={`flex-1 min-w-[45%] p-3 rounded-xl ${
-                  preferences.fab.iconType === 'custom'
-                    ? 'bg-indigo-50 dark:bg-indigo-500/20 border-2 border-indigo-500'
-                    : 'bg-white dark:bg-black border border-gray-200 dark:border-zinc-800'
-                }`}
-              >
-                <View className="flex-row items-center">
-                  {preferences.fab.iconType === 'custom' && preferences.fab.customIconUri ? (
-                    renderFABIcon('custom', 20, '#6366f1')
-                  ) : (
-                    <Upload size={20} color="#6366f1" />
-                  )}
-                  <Typography
-                    className={`ml-2 text-sm font-semibold ${
-                      preferences.fab.iconType === 'custom'
-                        ? 'text-indigo-600 dark:text-indigo-400'
-                        : 'text-gray-600 dark:text-gray-400'
-                    }`}
-                  >
-                    {t.superAssistant.custom}
-                  </Typography>
-                </View>
-              </TouchableOpacity>
-            </View>
+          {/* FAB 外观设置 */}
+          <SectionHeader title={t.superAssistant.fabAppearance} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6 pb-4">
+            {/* 图标样式 Grid (4列 对齐) */}
+            <SubHeader title={t.superAssistant.iconStyle} />
+            <FABIconGrid
+              preferences={preferences}
+              isDark={isDark}
+              onSelect={handleIconSelect}
+              onCustomSelect={handlePickCustomIcon}
+              customLabel={t.superAssistant.custom}
+            />
 
             <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
 
-            {/* Icon Color */}
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
-              {t.superAssistant.iconColor}
-            </Typography>
-            <View className="flex-row flex-wrap gap-2 mb-4">
-              {PRESET_COLORS.map((color) => (
-                <TouchableOpacity
-                  key={color.value}
-                  onPress={() => {
-                    updateFABConfig({
-                      iconColor: color.value,
-                      backgroundColor: color.value, // 同步背景色
-                      glowColor: color.value, // 同步光环色
-                    });
-                    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-                  }}
-                  className="w-12 h-12 rounded-xl border-2 items-center justify-center"
-                  style={{
-                    backgroundColor: color.value + '20',
-                    borderColor:
-                      preferences.fab.iconColor === color.value ? color.value : 'transparent',
-                  }}
-                >
-                  <View className="w-6 h-6 rounded-full" style={{ backgroundColor: color.value }} />
-                </TouchableOpacity>
-              ))}
-            </View>
+            {/* 图标颜色 Grid (4列 对齐) */}
+            <SubHeader title={t.superAssistant.iconColor} />
+            <FABColorGrid
+              preferences={preferences}
+              isDark={isDark}
+              onSelect={handleColorSelect}
+            />
 
             <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
 
-            {/* Animation Mode Selector */}
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
-              {t.superAssistant.animationMode || 'Animation Mode'}
-            </Typography>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-              <View className="flex-row gap-3">
-                {ANIMATION_MODES.map((mode) => (
-                  <TouchableOpacity
-                    key={mode.mode}
-                    onPress={() => {
-                      updateFABConfig({ animationMode: mode.mode });
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    }}
-                    className={`px-4 py-3 rounded-xl items-center justify-center min-w-[100px] ${
-                      preferences.fab.animationMode === mode.mode
-                        ? 'bg-indigo-50 dark:bg-indigo-500/20 border-2 border-indigo-500'
-                        : 'bg-white dark:bg-black border border-gray-200 dark:border-zinc-800'
-                    }`}
-                  >
-                    {(LucideIcons as any)[mode.icon] &&
-                      React.createElement((LucideIcons as any)[mode.icon], {
-                        size: 20,
-                        color:
-                          preferences.fab.animationMode === mode.mode
-                            ? '#6366f1'
-                            : isDark
-                              ? '#9ca3af'
-                              : '#6b7280',
-                      })}
-                    <Typography
-                      className={`mt-2 text-xs font-bold ${
-                        preferences.fab.animationMode === mode.mode
-                          ? 'text-indigo-600 dark:text-indigo-400'
-                          : 'text-gray-600 dark:text-gray-400'
-                      }`}
-                    >
-                      {mode.label}
-                    </Typography>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
-
-            {/* Animation Toggles */}
+            {/* 动画开关 */}
             <View className="flex-row items-center justify-between py-2 mb-2">
               <View className="flex-1 pr-4">
                 <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
@@ -582,18 +587,11 @@ export default function SuperAssistantSettingsScreen() {
                 onValueChange={(val) => updateFABConfig({ enableGlow: val })}
               />
             </View>
-
-            {/* Glow Color removed as per user request (unified with Icon Color) */}
           </View>
 
           {/* RAG 配置入口 */}
-          <Typography
-            variant="label"
-            className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            <Database size={10} color="#64748b" className="mr-1" /> {t.settings.ragSection}
-          </Typography>
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
+          <SectionHeader title={t.settings.ragSection} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-6 overflow-hidden">
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {
@@ -601,7 +599,7 @@ export default function SuperAssistantSettingsScreen() {
                   router.push('/chat/super_assistant/rag-config' as any);
                 }, 10);
               }}
-              className="flex-row items-center justify-between p-5"
+              className="flex-row items-center justify-between p-5 bg-white dark:bg-black/20"
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
@@ -611,10 +609,10 @@ export default function SuperAssistantSettingsScreen() {
                   {t.settings.ragSettingsDesc}
                 </Typography>
               </View>
-              <ChevronRight size={20} color="#9ca3af" />
+              <ChevronRight size={18} color="#9ca3af" />
             </TouchableOpacity>
 
-            <View className="border-t border-gray-100 dark:border-zinc-800" />
+            <View className="h-[1px] bg-gray-100 dark:bg-zinc-800" />
 
             <TouchableOpacity
               onPress={() => {
@@ -623,7 +621,7 @@ export default function SuperAssistantSettingsScreen() {
                   router.push('/chat/super_assistant/advanced-retrieval' as any);
                 }, 10);
               }}
-              className="flex-row items-center justify-between p-5"
+              className="flex-row items-center justify-between p-5 bg-white dark:bg-black/20"
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
@@ -633,21 +631,26 @@ export default function SuperAssistantSettingsScreen() {
                   {t.rag.advancedSettingsDesc}
                 </Typography>
               </View>
-              <ChevronRight size={20} color="#9ca3af" />
+              <ChevronRight size={18} color="#9ca3af" />
             </TouchableOpacity>
           </View>
 
-          {/* Context Management */}
+          {/* 上下文管理 */}
           <ContextManagementPanel sessionId={SPA_SESSION_ID} />
 
-          {/* Danger Zone */}
-          <Typography
-            variant="label"
-            className="text-red-400 font-bold uppercase text-[10px] tracking-widest mb-3"
-          >
-            {t.common.dangerZone}
-          </Typography>
-          <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
+          {/* 推理参数设置 */}
+          <SectionHeader title={t.conversation.inferenceSettings} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
+            <InferenceSettings
+              params={session.inferenceParams || {}}
+              onUpdate={(params) => updateSessionInferenceParams(SPA_SESSION_ID, params)}
+              agentDefaultParams={{ temperature: 0.7 }}
+            />
+          </View>
+
+          {/* 危险区域 */}
+          <SectionHeader title={t.common.dangerZone} />
+          <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-8">
             <TouchableOpacity
               onPress={handleDeleteSession}
               className="flex-row items-center justify-between"

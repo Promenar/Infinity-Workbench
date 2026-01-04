@@ -1,23 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
-  ScrollView,
-  StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { RefreshCw, Archive, FileText, Brain, AlertCircle, Check, X } from 'lucide-react-native';
+import { RefreshCw, Archive, Brain, AlertCircle, X, Download } from 'lucide-react-native';
 import { useChatStore } from '../../../store/chat-store';
 import { ContextManager, ContextSummary } from '../utils/ContextManager';
 import { db } from '../../../lib/db';
 import { useTheme } from '../../../theme/ThemeProvider';
+import { useI18n } from '../../../lib/i18n';
+import { Typography } from '../../../components/ui/Typography';
+import { clsx } from 'clsx';
+import * as Haptics from '../../../lib/haptics';
 
 interface ContextManagementPanelProps {
   sessionId: string;
 }
 
+const SectionHeader = ({ title }: { title: string }) => (
+  <View className="flex-row items-center mb-4 mt-2">
+    <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
+    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+      {title}
+    </Typography>
+  </View>
+);
+
 export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ sessionId }) => {
+  const { t } = useI18n();
   const session = useChatStore((s) => s.getSession(sessionId));
   const [summaries, setSummaries] = useState<ContextSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,7 +46,6 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
     setLoading(true);
     setLastError(null);
     try {
-      // Fetch summaries
       const result = await db.execute(
         'SELECT * FROM context_summaries WHERE session_id = ? ORDER BY created_at DESC',
         [sessionId],
@@ -43,20 +53,16 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
 
       const loadedSummaries: ContextSummary[] = [];
 
-      // Robust result parsing for op-sqlite / expo-sqlite compatibility
       if (result && result.rows) {
-        // Check if rows is directly an array
         if (Array.isArray(result.rows)) {
           (result.rows as any[]).forEach((item) => {
             loadedSummaries.push(mapRowToSummary(item));
           });
         } else if (Array.isArray((result.rows as any)._array)) {
-          // Expo SQLite style
           (result.rows as any)._array.forEach((item: any) => {
             loadedSummaries.push(mapRowToSummary(item));
           });
         } else if (typeof (result.rows as any).length === 'number') {
-          // Standard WebSQL style
           const len = (result.rows as any).length;
           for (let i = 0; i < len; i++) {
             const item = (result.rows as any)[i];
@@ -67,12 +73,10 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
 
       setSummaries(loadedSummaries);
 
-      // Calculate stats
-      // This is estimation. In real app, we might query count(messages)
       setStats({
         totalTokens: session.stats?.totalTokens || 0,
         activeMessages: session.messages.filter((m) => m.role !== 'system').length,
-        archivedMessages: loadedSummaries.length * 20, // Rough estimate
+        archivedMessages: loadedSummaries.length * 20,
         summarizedCount: loadedSummaries.length,
       });
     } catch (e) {
@@ -95,16 +99,17 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
 
   useEffect(() => {
     loadData();
-  }, [sessionId, session?.messages.length]); // Reload when messages change
+  }, [sessionId, session?.messages.length]);
 
   const handleManualSummarize = async () => {
     if (!session) return;
     setLoading(true);
     setLastError(null);
     try {
+      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 10);
       await ContextManager.checkAndSummarize(sessionId, session.messages, undefined, {
         maxMessages: 20,
-        summarizeThreshold: 0, // Force summarization of any pending messages
+        summarizeThreshold: 0,
       });
       await loadData();
     } catch (e) {
@@ -126,10 +131,10 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
   };
 
   const handleDeleteSummary = async (id: string) => {
-    // In a real app, show confirmation dialog
     try {
+      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
       await ContextManager.deleteSummary(id);
-      await loadData(); // Reload
+      await loadData();
     } catch (e) {
       console.error('Failed to delete summary', e);
       setLastError('删除失败');
@@ -142,163 +147,160 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
 
   const displayedSummaries = summaries.slice(0, visibleCount);
 
-  // Theme-based colors (simplified match to Tailwind tokens)
-  const grayBg = isDark ? '#18181b' : '#f9fafb'; // zinc-900 / gray-50
-  const grayBorder = isDark ? '#27272a' : '#f3f4f6'; // zinc-800 / gray-100
-  const innerBorder = isDark ? 'rgba(63, 63, 70, 0.5)' : '#f3f4f6'; // zinc-700/50 / gray-100 (matching InferenceSettings)
-  const cardBg = isDark ? '#000000' : '#ffffff';
-  const textColor = isDark ? '#f1f5f9' : '#1e293b';
-  const subTextColor = isDark ? '#94a3b8' : '#64748b';
-
   return (
-    <View style={styles.container}>
-      {/* Section Label */}
-      <View style={styles.sectionLabelContainer}>
-        <Brain size={12} color="#94a3b8" style={{ marginRight: 6 }} />
-        <Text style={styles.sectionLabel}>高级上下文管理 (Advanced Context)</Text>
+    <View className="mb-8">
+      <SectionHeader title={t.rag.contextManagement} />
 
-        {/* Refresh Button moved to Label row (optional) or keep inside? 
-                    Let's put Refresh inside the gray box for better encapsulation like the "Settings" icon in header.
-                    Actually, let's put it top-right of the label row for cleaner look.
-                */}
-        <TouchableOpacity onPress={loadData} disabled={loading} style={{ marginLeft: 'auto' }}>
-          <RefreshCw size={14} color="#94a3b8" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Main Gray Container */}
-      <View style={[styles.grayContainer, { backgroundColor: grayBg, borderColor: grayBorder }]}>
+      <View className="bg-gray-50 dark:bg-zinc-900 rounded-[32px] p-5 border border-gray-100 dark:border-zinc-800">
         {lastError && (
-          <View style={styles.errorContainer}>
-            <AlertCircle size={16} color="#dc2626" style={{ marginRight: 6 }} />
-            <Text style={styles.errorText}>{lastError}</Text>
+          <View className="flex-row items-center bg-red-50 dark:bg-red-900/10 rounded-2xl p-3 mb-4 border border-red-100 dark:border-red-900/20">
+            <AlertCircle size={16} color="#ef4444" className="mr-2" />
+            <Typography className="text-red-600 dark:text-red-400 text-xs flex-1">
+              {lastError}
+            </Typography>
           </View>
         )}
 
         {/* Card 1: Token Stats */}
-        <View
-          style={[
-            styles.innerCard,
-            { backgroundColor: cardBg, borderColor: innerBorder, borderWidth: 1 },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={[styles.cardTitle, { color: textColor }]}>Token 消耗概览</Text>
+        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm">
+          <View className="flex-row justify-between items-center mb-4">
+            <View className="flex-row items-center">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-white mr-2">
+                {t.rag.tokenStats}
+              </Typography>
+              <TouchableOpacity
+                onPress={() => {
+                  setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                  loadData();
+                }}
+                disabled={loading}
+              >
+                <RefreshCw size={12} color="#94a3b8" className={clsx(loading && "animate-spin")} />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               onPress={handleManualSummarize}
               disabled={loading}
-              style={[styles.actionButton, loading && styles.actionButtonDisabled]}
+              className={clsx(
+                "flex-row items-center bg-indigo-600 px-3 py-1.5 rounded-full",
+                loading && "opacity-50"
+              )}
             >
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Brain size={12} color="#fff" />
+                <Brain size={12} color="#fff" className="mr-1.5" />
               )}
-              <Text style={styles.actionButtonText}>立即摘要</Text>
+              <Typography className="text-[11px] font-bold text-white">
+                {t.rag.summarizeNow}
+              </Typography>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: textColor }]}>{stats.activeMessages}</Text>
-              <Text style={styles.statLabel}>活跃消息</Text>
+          <View className="flex-row justify-between items-center mb-5">
+            <View className="items-center flex-1">
+              <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
+                {stats.activeMessages}
+              </Typography>
+              <Typography className="text-[10px] text-gray-400">{t.rag.activeMsg}</Typography>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: textColor }]}>{stats.summarizedCount}</Text>
-              <Text style={styles.statLabel}>已归档</Text>
+            <View className="w-[1px] h-5 bg-gray-100 dark:bg-zinc-800" />
+            <View className="items-center flex-1">
+              <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
+                {stats.summarizedCount}
+              </Typography>
+              <Typography className="text-[10px] text-gray-400">{t.rag.archived}</Typography>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: textColor }]}>
+            <View className="w-[1px] h-5 bg-gray-100 dark:bg-zinc-800" />
+            <View className="items-center flex-1">
+              <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
                 {(stats.totalTokens / 1000).toFixed(1)}k
-              </Text>
-              <Text style={styles.statLabel}>Token</Text>
+              </Typography>
+              <Typography className="text-[10px] text-gray-400">Token</Typography>
             </View>
           </View>
 
-          {/* Bar & Legend */}
-          <View style={styles.barContainer}>
-            <View style={[styles.barSegment, { flex: 2, backgroundColor: '#3b82f6' }]} />
-            <View style={[styles.barSegment, { flex: 1, backgroundColor: '#10b981' }]} />
-            <View style={[styles.barSegment, { flex: 1, backgroundColor: '#f59e0b' }]} />
+          <View className="h-1.5 flex-row rounded-full overflow-hidden bg-gray-100 dark:bg-zinc-800">
+            <View className="flex-[2] bg-blue-500" />
+            <View className="flex-[1] bg-emerald-500" />
+            <View className="flex-[1] bg-amber-500" />
           </View>
         </View>
 
         {/* Card 2: Memory Archives */}
-        <View
-          style={[
-            styles.innerCard,
-            { backgroundColor: cardBg, marginTop: 12, borderColor: innerBorder, borderWidth: 1 },
-          ]}
-        >
-          <View style={styles.cardHeaderRow}>
-            <Text style={[styles.cardTitle, { color: textColor }]}>记忆归档 (Archives)</Text>
-            <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{summaries.length}</Text>
+        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm mt-4">
+          <View className="flex-row justify-between items-center mb-4">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-white">
+              {t.rag.memoryArchives}
+            </Typography>
+            <View className="bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+              <Typography className="text-[10px] font-bold text-gray-500 dark:text-gray-400">
+                {summaries.length}
+              </Typography>
             </View>
           </View>
 
           {summaries.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Archive size={24} color="#cbd5e1" />
-              <Text style={styles.emptyText}>暂无摘要记录</Text>
+            <View className="items-center py-6">
+              <Archive size={24} color={isDark ? '#3f3f46' : '#cbd5e1'} />
+              <Typography className="text-gray-400 text-xs mt-2">{t.rag.noArchives}</Typography>
             </View>
           ) : (
-            <>
+            <View>
               {displayedSummaries.map((summary, index) => (
                 <View
                   key={summary.id}
-                  style={[
-                    styles.summaryItem,
-                    index !== displayedSummaries.length - 1 && styles.summaryItemBorder,
-                  ]}
+                  className={clsx(
+                    "py-3",
+                    index !== displayedSummaries.length - 1 && "border-b border-gray-50 dark:border-zinc-800/50"
+                  )}
                 >
-                  <View style={styles.summaryHeader}>
-                    <View style={styles.summaryBadge}>
-                      <Text style={styles.summaryBadgeText}>SUMMARY</Text>
+                  <View className="flex-row items-center mb-2">
+                    <View className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-full mr-2">
+                      <Typography className="text-purple-600 dark:text-purple-400 text-[9px] font-bold">
+                        SUMMARY
+                      </Typography>
                     </View>
-                    <Text style={styles.summaryDate}>
+                    <Typography className="text-[11px] text-gray-400 flex-1">
                       {new Date(summary.createdAt).toLocaleString('zh-CN', {
                         month: 'numeric',
                         day: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                    </Text>
+                    </Typography>
                     <TouchableOpacity
-                      style={styles.deleteButton}
                       onPress={() => handleDeleteSummary(summary.id)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      className="p-1.5 bg-gray-50 dark:bg-zinc-800/50 rounded-full"
                     >
-                      <X size={14} color="#94a3b8" />
+                      <X size={12} color="#94a3b8" />
                     </TouchableOpacity>
                   </View>
-                  <Text
-                    style={[styles.summaryContent, { color: isDark ? '#cbd5e1' : '#475569' }]}
+                  <Typography
+                    className="text-xs text-gray-600 dark:text-gray-300 leading-5"
                     numberOfLines={3}
                   >
                     {summary.summaryContent}
-                  </Text>
+                  </Typography>
                 </View>
               ))}
 
               {summaries.length > 3 && (
-                <View style={styles.paginationContainer}>
+                <View className="items-center pt-3 border-t border-gray-50 dark:border-zinc-800/50 mt-1">
                   {visibleCount < summaries.length ? (
-                    <TouchableOpacity onPress={handleLoadMore} style={styles.paginationTextBtn}>
-                      <Text style={styles.paginationTextLink}>
+                    <TouchableOpacity onPress={handleLoadMore}>
+                      <Typography className="text-indigo-500 text-xs font-bold">
                         展开更多 ({summaries.length - visibleCount})
-                      </Text>
+                      </Typography>
                     </TouchableOpacity>
                   ) : (
-                    <TouchableOpacity onPress={handleShowLess} style={styles.paginationTextBtn}>
-                      <Text style={styles.paginationTextLink}>收起列表</Text>
+                    <TouchableOpacity onPress={handleShowLess}>
+                      <Typography className="text-indigo-500 text-xs font-bold">收起列表</Typography>
                     </TouchableOpacity>
                   )}
                 </View>
               )}
-            </>
+            </View>
           )}
         </View>
       </View>
@@ -306,171 +308,3 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: 24, // Outer margin to separate from next section
-  },
-  sectionLabelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  sectionLabel: {
-    color: '#94a3b8', // text-gray-400
-    fontWeight: '700',
-    fontSize: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 1, // tracking-widest
-  },
-  grayContainer: {
-    borderRadius: 24, // rounded-3xl
-    padding: 20, // p-5
-    borderWidth: 1,
-  },
-  innerCard: {
-    borderRadius: 16, // rounded-2xl? or xl? settings uses rounded-xl usually inside
-    padding: 16,
-    // No shadow for inner cards usually in this design style, just flat white
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#4f46e5',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  actionButtonDisabled: { opacity: 0.7 },
-  actionButtonText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginLeft: 4,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: '#e2e8f0',
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 10,
-    color: '#94a3b8',
-  },
-  barContainer: {
-    height: 6,
-    flexDirection: 'row',
-    borderRadius: 3,
-    overflow: 'hidden',
-    backgroundColor: '#f1f5f9',
-  },
-  barSegment: {},
-
-  // ... Archives styles
-  countBadge: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  countBadgeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#64748b',
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    color: '#94a3b8',
-    fontSize: 12,
-    marginTop: 8,
-  },
-  summaryItem: {
-    paddingVertical: 12,
-  },
-  summaryItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  summaryBadge: {
-    backgroundColor: '#f3e8ff',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  summaryBadgeText: {
-    color: '#7c3aed',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  summaryDate: {
-    fontSize: 11,
-    color: '#94a3b8',
-    flex: 1,
-    marginTop: 1,
-  },
-  deleteButton: {
-    padding: 6,
-    backgroundColor: '#f8fafc', // Subtle bg for delete button
-    borderRadius: 12,
-  },
-  summaryContent: {
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  paginationContainer: {
-    alignItems: 'center',
-    paddingTop: 12,
-  },
-  paginationTextBtn: {
-    paddingVertical: 4,
-  },
-  paginationTextLink: {
-    color: '#6366f1',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  // Errors
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef2f2',
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 12,
-  },
-  errorText: { color: '#b91c1c', fontSize: 12 },
-});

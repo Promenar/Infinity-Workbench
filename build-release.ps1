@@ -60,6 +60,10 @@ Write-Host "✅ Injection Complete. Signing config is active."
 Write-Host "🚀 Starting Release Build..."
 Set-Location android
 .\gradlew clean assembleRelease
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "❌ Gradle Build Failed with exit code $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
 Set-Location ..
 
 # 6. Cleanup (Optional: Clean properties to avoid committing credentials if file tracked)

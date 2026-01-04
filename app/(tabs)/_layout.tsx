@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { MessageSquare, Library, Settings } from 'lucide-react-native';
+import * as LucideIcons from 'lucide-react-native';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useI18n } from '../../src/lib/i18n';
 
@@ -51,6 +52,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Settings size={24} color={color} />,
         }}
       />
+
     </Tabs>
   );
 }
