@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { PageLayout, Typography, LargeTitleHeader } from '../../src/components/ui';
+import { PageLayout, Typography, GlassHeader } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { useTokenStatsStore } from '../../src/store/token-stats-store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -125,12 +125,13 @@ export default function TokenUsageScreen() {
     <PageLayout className="bg-white dark:bg-black" safeArea={false}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <LargeTitleHeader
+      <GlassHeader
         title="Token Usage"
         subtitle="Global Statistics Breakdown"
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
+          label: 'Back',
         }}
       />
 

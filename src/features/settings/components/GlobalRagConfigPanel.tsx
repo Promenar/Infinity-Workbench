@@ -515,12 +515,8 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
       {/* 统计信息看板 */}
 
-      <Typography
-        variant="label"
-        className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-8 mb-3"
-      >
-        {t.rag.viewVectorStats}
-      </Typography>
+      {/* 统计信息看板 */}
+      <SectionHeader title={t.rag.viewVectorStats} />
       <View className="bg-white dark:bg-zinc-900 rounded-[24px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         <View className="flex-row justify-between items-center mb-6">
           <View className="flex-row items-center gap-3">

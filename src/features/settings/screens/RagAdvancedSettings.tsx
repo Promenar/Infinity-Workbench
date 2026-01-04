@@ -30,17 +30,34 @@ import {
 import { useApiStore } from '../../../store/api-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 24 }) => {
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
   const { isDark } = useTheme();
   return (
-    <View style={{ marginTop: mt, marginBottom: 16 }}>
+    <View
+      style={{
+        marginTop: mt,
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+        paddingHorizontal: 4,
+      }}
+    >
+      <View
+        style={{
+          width: 6,
+          height: 16,
+          borderRadius: 999,
+          marginRight: 12,
+          backgroundColor: Colors.primary,
+        }}
+      />
       <Typography
         style={{
-          fontSize: 13,
+          fontSize: 14,
           fontWeight: 'bold',
-          color: isDark ? Colors.dark.textSecondary : Colors.light.textSecondary,
           textTransform: 'uppercase',
           letterSpacing: 0.5,
+          color: isDark ? Colors.dark.textPrimary : Colors.light.textPrimary,
         }}
       >
         {title}
