@@ -79,6 +79,7 @@ export class BackupManager {
       'api-storage-v2',
       'agent-storage',
       'spa-storage',
+      'token-stats-storage',
       'theme_mode',
       'backup_config',
       'last_auto_backup_time',
