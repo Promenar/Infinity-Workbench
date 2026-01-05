@@ -102,7 +102,7 @@ export default function SettingsScreen() {
       <LargeTitleHeader title={t.settings.title} subtitle={t.settings.subtitle} />
 
       <ScrollView
-        style={{ flex: 1, paddingHorizontal: 24 }}
+        style={{ flex: 1, paddingHorizontal: 16 }} // Reduced 24 -> 16
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >

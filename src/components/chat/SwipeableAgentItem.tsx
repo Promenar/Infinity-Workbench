@@ -92,8 +92,8 @@ export const SwipeableAgentItem = ({ item, onPress, onPin, onDelete }: Swipeable
           backgroundColor: isDark ? '#000' : '#fff', // Keep pure black/white for list items for contrast
           flexDirection: 'row',
           alignItems: 'center',
-          paddingHorizontal: 24,
-          paddingVertical: 16,
+          paddingHorizontal: 16, // Reduced 24 -> 16
+          paddingVertical: 13,   // Reduced 16 -> 13
           width: '100%',
         }}
         onPress={() => {
@@ -102,13 +102,13 @@ export const SwipeableAgentItem = ({ item, onPress, onPin, onDelete }: Swipeable
         }}
       >
         {/* Avatar Container */}
-        <View className="relative mr-4">
+        <View className="relative mr-3">
           <AgentAvatar
             id={item.id}
             name={item.name}
             avatar={item.avatar}
             color={item.color}
-            size={52}
+            size={46} // Reduced 52 -> 46
           />
           {item.isPinned && (
             <View
@@ -130,13 +130,13 @@ export const SwipeableAgentItem = ({ item, onPress, onPin, onDelete }: Swipeable
 
         {/* Content */}
         <View className="flex-1 justify-center py-1">
-          <View className="flex-row justify-between items-baseline mb-1 pr-1">
+          <View className="flex-row justify-between items-baseline mb-0.5 pr-1">
             <Typography
               variant="h3"
               style={{
-                fontSize: 18,
+                fontSize: 16.5, // Reduced 18 -> 16.5
                 fontWeight: 'bold',
-                lineHeight: 22,
+                lineHeight: 20, // Reduced 22 -> 20
                 color: themeColors.textPrimary,
               }}
             >

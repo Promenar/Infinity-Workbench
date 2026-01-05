@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Modal, TouchableWithoutFeedback, View, TouchableOpacity, Dimensions } from 'react-native';
+import { Modal, TouchableWithoutFeedback, View, TouchableOpacity, Dimensions, GestureResponderEvent } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -37,33 +37,55 @@ export function ContextMenu({ children, items }: ContextMenuProps) {
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const triggerRef = useRef<View>(null);
 
-  const handleOpen = () => {
+  const handleOpen = (event?: GestureResponderEvent) => {
+    // 优先使用触摸点坐标
+    if (event && event.nativeEvent) {
+      const { pageX, pageY } = event.nativeEvent;
+      calculateAndShow(pageX, pageY, 0, 0); // width/height 0 for point anchoring
+      return;
+    }
+
+    // 降级使用组件测量
     if (!triggerRef.current) return;
-
     triggerRef.current.measure((x, y, width, height, pageX, pageY) => {
-      // Android 测量兜底
       if (pageX === undefined || pageY === undefined) return;
+      calculateAndShow(pageX, pageY, width, height);
+    });
+  };
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const calculateAndShow = (pageX: number, pageY: number, targetWidth: number, targetHeight: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      const menuWidth = 220;
-      const menuHeight = items.length * 56 + 16;
+    const menuWidth = 220;
+    const menuHeight = items.length * 56 + 16;
 
-      let posX = pageX + width / 2 - menuWidth / 2;
-      let posY = pageY + height;
+    // 默认居中于目标 (如果是触摸点，targetWidth=0)
+    let posX = pageX + targetWidth / 2 - menuWidth / 2;
+    // 默认在目标下方 (如果是触摸点，就是触摸点下方)
+    let posY = pageY + targetHeight;
 
-      // 边界检查
-      if (posX < 20) posX = 20;
-      if (posX + menuWidth > SCREEN_WIDTH - 20) posX = SCREEN_WIDTH - menuWidth - 20;
+    // 如果是触摸点触发，增加一点垂直偏移，避免手指遮挡
+    if (targetHeight === 0) {
+      posY += 20;
+    }
 
-      // 如果底部放不下，则在上方弹出，逻辑依然保持抽屉感
-      if (pageY + height + menuHeight > SCREEN_HEIGHT - 60) {
+    // 边界检查
+    if (posX < 20) posX = 20;
+    if (posX + menuWidth > SCREEN_WIDTH - 20) posX = SCREEN_WIDTH - menuWidth - 20;
+
+    // 如果底部放不下，则在上方弹出
+    if (posY + menuHeight > SCREEN_HEIGHT - 60) {
+      if (targetHeight === 0) {
+        // 触摸点触发：显示在手指上方
+        posY = pageY - menuHeight - 20;
+      } else {
+        // 组件触发：显示在组件上方
         posY = pageY - menuHeight;
       }
+    }
 
-      setMenuPos({ x: posX, y: posY, width: menuWidth, height: menuHeight });
-      setVisible(true);
-    });
+    setMenuPos({ x: posX, y: posY, width: menuWidth, height: menuHeight });
+    setVisible(true);
   };
 
   const handleClose = () => setVisible(false);
@@ -72,7 +94,9 @@ export function ContextMenu({ children, items }: ContextMenuProps) {
     <>
       <View ref={triggerRef} collapsable={false}>
         <TouchableOpacity
-          onPress={handleOpen}
+          onPress={(e) => {
+            // 短按不触发菜单，或者根据需求处理
+          }}
           onLongPress={handleOpen}
           delayLongPress={250} // 显著缩短长按判定时间
           activeOpacity={0.7}

@@ -37,7 +37,10 @@ import { Message } from '../../src/types/chat';
 import { useI18n } from '../../src/lib/i18n';
 import { KGExtractionIndicator } from '../../src/components/rag/KGExtractionIndicator';
 
-// Create animated version of FlashList
+import { graphExtractor } from '../../src/lib/rag/graph-extractor'; // ✅
+import * as Clipboard from 'expo-clipboard'; // ✅
+import { Platform as RNPlatform, ToastAndroid, Alert } from 'react-native'; // ✅
+
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
 export default function ChatDetailScreen() {
@@ -138,29 +141,49 @@ export default function ChatDetailScreen() {
       const visibleHeight = event.layoutMeasurement.height;
       const totalHeight = event.contentSize.height;
 
-      // Standard List: Bottom is when offset + visible >= total
-      const isBottom = totalHeight - (offset + visibleHeight) < 50;
+      // Update isAtBottom state
+      const isBottom = totalHeight - (offset + visibleHeight) < 150;
       isAtBottom.value = isBottom;
 
-      // 🔑 自动恢复追踪：如果用户手动滚回到底部，恢复自动追踪
-      if (isBottom) {
-        userScrolledAway.value = false;
-      }
-
-      // ❌ 移除 onScroll 中的打断检测
-      // 之前的逻辑会导致：当内容快速增长时（流式输出），contentSize变大但scroll还没到底，
-      // 导致 isAtBottom 暂时为 false，从而误判为用户打断，停止了自动滚动。
-      // 现在完全依靠 onBeginDrag 来判断用户主动打断。
+      // ❌ REMOVED: Do NOT resume tracking here.
+      // Doing so causes the list to fight the user while they are dragging up from the bottom.
     },
     onBeginDrag: () => {
       'worklet';
-      // 用户开始拖动时，标记为打断
+      // User interaction intentionally breaks auto-scroll
       userScrolledAway.value = true;
+    },
+    onEndDrag: (event) => {
+      'worklet';
+      // Resume tracking ONLY if user releases and is at the bottom
+      const offset = event.contentOffset.y;
+      const visibleHeight = event.layoutMeasurement.height;
+      const totalHeight = event.contentSize.height;
+
+      // 🔑 Stricter threshold: Resume tracking only if within 20px of bottom
+      const isBottom = totalHeight - (offset + visibleHeight) < 20;
+
+      if (isBottom) {
+        userScrolledAway.value = false;
+      }
     },
     onMomentumBegin: () => {
       'worklet';
-      // 惯性滑动开始时，也标记为打断
       userScrolledAway.value = true;
+    },
+    onMomentumEnd: (event) => {
+      'worklet';
+      // Resume tracking if momentum stops at bottom
+      const offset = event.contentOffset.y;
+      const visibleHeight = event.layoutMeasurement.height;
+      const totalHeight = event.contentSize.height;
+
+      // 🔑 Stricter threshold
+      const isBottom = totalHeight - (offset + visibleHeight) < 20;
+
+      if (isBottom) {
+        userScrolledAway.value = false;
+      }
     },
   });
 
@@ -181,10 +204,12 @@ export default function ChatDetailScreen() {
           listRef.current?.scrollToEnd({ animated: true });
         }
       }
-    } else if (loading && !userScrolledAway.value) {
-      // 🔑 内容持续更新：只要没打断，就强制追踪
-      // 不再检查 isAtBottom.value，因为流式输出时它可能因为渲染延迟而暂时为 false
-      listRef.current?.scrollToEnd({ animated: true });
+    } else if (loading) {
+      // 🔑 Content updating: Only scroll if user hasn't scrolled away
+      // Strict check: if userScrolledAway is true, DO NOT SCROLL even if loading
+      if (!userScrolledAway.value) {
+        listRef.current?.scrollToEnd({ animated: true });
+      }
     }
     lastMessageCount.current = messages.length;
   };
@@ -287,11 +312,65 @@ export default function ChatDetailScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const handleDeleteMessage = () => {
-    // Functionality moved to native selection/actions if needed
+  const handleDeleteMessage = (messageId: string) => {
+    useChatStore.getState().deleteMessage(id, messageId);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  // const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+  const handleExtractGraph = async (message: Message) => {
+    if (!message.content.trim() || !agent) return;
+    const messageContent = message.content;
+
+    try {
+      useChatStore.getState().setKGExtractionStatus(id, true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      InteractionManager.runAfterInteractions(async () => {
+        try {
+          await graphExtractor.extractAndSave(messageContent, undefined, {
+            sessionId: id,
+            agentId: agent.id,
+          });
+          console.log('[ManualExtraction] Success');
+          if (RNPlatform.OS === 'android') {
+            ToastAndroid.show('知识图谱提取成功', ToastAndroid.SHORT);
+          }
+        } catch (e) {
+          console.warn('[ManualExtraction] Failed', e);
+          Alert.alert(t.common.error, 'Extraction failed: ' + (e as Error).message);
+        } finally {
+          useChatStore.getState().setKGExtractionStatus(id, false);
+        }
+      });
+    } catch (e) {
+      console.error(e);
+      useChatStore.getState().setKGExtractionStatus(id, false);
+    }
+  };
+
+  const handleManualVectorize = async (messageId: string) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await useChatStore.getState().vectorizeMessage(id, messageId);
+      if (RNPlatform.OS === 'android') {
+        ToastAndroid.show('消息已加入向量库', ToastAndroid.SHORT);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Vectorization failed');
+    }
+  };
+
+  const handleManualSummarize = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (RNPlatform.OS === 'android') {
+        ToastAndroid.show('正在生成摘要...', ToastAndroid.SHORT);
+      }
+      await useChatStore.getState().summarizeSession(id);
+    } catch (e) {
+      Alert.alert('Error', 'Summarization failed');
+    }
+  };
 
   if (!session || !agent) {
     return (
@@ -325,14 +404,10 @@ export default function ChatDetailScreen() {
               agentName={agent.name}
               sessionId={id}
               isGenerating={loading && index === messages.length - 1}
-              onDelete={() => {
-                useChatStore.getState().deleteMessage(id, item.id);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              }}
-              onLongPress={(message) => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                // Handle long press
-              }}
+              onDelete={() => handleDeleteMessage(item.id)}
+              onExtractGraph={() => handleExtractGraph(item)} // ✅ Manual Extract
+              onVectorize={() => handleManualVectorize(item.id)} // ✅ Manual Vectorize
+              onSummarize={handleManualSummarize} // ✅ Manual Summarize
               onResend={
                 item.role === 'user'
                   ? () => {
@@ -342,26 +417,20 @@ export default function ChatDetailScreen() {
                   : undefined
               }
               onRegenerate={
-                item.role === 'assistant'
+                item.role === 'user'
                   ? () => {
-                    // 找到上一条用户消息
-                    const currentIndex = messages.findIndex((m) => m.id === item.id);
-                    if (currentIndex > 0) {
-                      const prevMsg = messages[currentIndex - 1];
-                      if (prevMsg.role === 'user') {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                        // 删除当前 AI 消息 (可选，取决于产品逻辑，这里选择保留历史记录，追加新回答，或者覆盖)
-                        // 这里选择直接触发新生成，复用上一条 prompt
-                        sendMessage(prevMsg.content);
-                      }
-                    }
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    sendMessage(item.content);
                   }
-                  : undefined
+                  : async () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    // ✅ Call regenerateMessage for AI messages (in-place regeneration)
+                    await useChatStore.getState().regenerateMessage(id, item.id);
+                  }
               }
               modelId={session?.modelId}
               isDark={isDark}
               onLayout={(event) => {
-                // 缓存消息高度，消除滚动抖动
                 const { height } = event.nativeEvent.layout;
                 if (height > 0) {
                   useChatStore.getState().updateMessageLayout(id, item.id, height);
@@ -371,19 +440,18 @@ export default function ChatDetailScreen() {
           )}
           estimatedItemSize={400}
           overrideItemLayout={(layout: { size?: number; span?: number }, item: Message) => {
-            // 如果有缓存的高度，直接使用，实现精准布局
             if (item.layoutHeight) {
               layout.size = item.layoutHeight;
             }
           }}
           onEndReachedThreshold={0.5}
-          drawDistance={2000} // Keep high buffer for smooth scrolling
+          drawDistance={2000}
           overflowSize={500}
-          removeClippedSubviews={Platform.OS === 'android'} // Android optimization
+          removeClippedSubviews={Platform.OS === 'android'}
           getItemType={(item: any) => item.role}
           contentContainerStyle={{
             paddingTop: insets.top + 70,
-            paddingBottom: insets.bottom + 100,
+            paddingBottom: insets.bottom + 80,
           }}
           onLayout={() => setIsListReady(true)}
           onContentSizeChange={handleContentSizeChange}
@@ -395,7 +463,7 @@ export default function ChatDetailScreen() {
           scrollEventThrottle={16}
         />
 
-        {/* Loading Overlay - Only covers message list area */}
+        {/* Loading Overlay */}
         {isInitialLoad && (
           <View
             style={{
@@ -416,7 +484,7 @@ export default function ChatDetailScreen() {
         )}
       </Animated.View>
 
-      {/* Floating ChatInput with keyboard avoidance */}
+      {/* Floating ChatInput */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
         keyboardVerticalOffset={0}
@@ -429,7 +497,6 @@ export default function ChatDetailScreen() {
       >
         <ChatInput
           onSendMessage={(content, options) => {
-            // 🔑 规则3: 发送消息后立即滚动到底部
             sendMessage(content, options);
             userScrolledAway.value = false;
             isAtBottom.value = true;
@@ -459,7 +526,7 @@ export default function ChatDetailScreen() {
             position: 'absolute',
             bottom: insets.bottom + 110,
             right: 30,
-            zIndex: 9999, // 极高优先级
+            zIndex: 9999,
           },
           scrollButtonStyle,
         ]}
@@ -559,7 +626,7 @@ export default function ChatDetailScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Glass Header - Moved to end for stacking context */}
+      {/* Glass Header */}
       <GlassHeader
         title={session.title}
         subtitle={headerSubtitle}
@@ -571,7 +638,6 @@ export default function ChatDetailScreen() {
         rightAction={{
           icon: <Settings size={20} color={isDark ? '#fff' : '#000'} />,
           onPress: () => {
-            // Route to dedicated settings page for Super Assistant
             const settingsRoute =
               id === 'super_assistant' ? '/chat/super_assistant/settings' : `/chat/${id}/settings`;
             router.push(settingsRoute);
@@ -579,7 +645,6 @@ export default function ChatDetailScreen() {
           label: t.common.settings,
         }}
       />
-
     </PageLayout>
   );
 }

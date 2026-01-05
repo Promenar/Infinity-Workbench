@@ -103,7 +103,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   ];
 
   return (
-    <View className="mx-6 mb-1">
+    <View className="mx-6 mb-1.5">
       <View className="flex-row items-center">
         {/* 文件夹主体 */}
         <TouchableOpacity

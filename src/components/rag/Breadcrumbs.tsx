@@ -77,9 +77,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
                 )}
 
                 <Typography
-                  className={`text-sm font-semibold ${
-                    isLast ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
-                  }`}
+                  className={`text-sm font-semibold ${isLast ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
+                    }`}
                 >
                   {isRoot ? '首页' : item.name}
                 </Typography>

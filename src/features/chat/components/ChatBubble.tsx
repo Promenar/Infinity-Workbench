@@ -12,8 +12,9 @@ import {
   StyleSheet,
   Image,
   Dimensions,
+  Pressable, // ✅ Import Pressable
 } from 'react-native';
-import { Typography } from '../../../components/ui';
+import { Typography, ContextMenu } from '../../../components/ui'; // ✅ Import ContextMenu
 import { useChatStore } from '../../../store/chat-store';
 import { Message } from '../../../types/chat';
 import { db } from '../../../lib/db'; // ✅ 导入db
@@ -78,6 +79,9 @@ import {
   Bot,
   Volume2,
   AlertCircle,
+  FileInput,
+  FileText,
+  MoreHorizontal,
 } from 'lucide-react-native';
 import { ActivityIndicator } from 'react-native';
 
@@ -91,8 +95,11 @@ interface ChatBubbleProps {
   onLongPress?: (message: Message) => void;
   onResend?: () => void;
   onRegenerate?: () => void;
+  onExtractGraph?: () => void;
+  onVectorize?: () => void;
+  onSummarize?: () => void;
   modelId?: string;
-  sessionId: string; // ✅ 新增：会话ID用于ProcessingIndicator
+  sessionId: string;
   isDark?: boolean;
   onLayout?: (event: any) => void;
 }
@@ -637,6 +644,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   onLongPress,
   onResend,
   onRegenerate,
+  onExtractGraph, // ✅ 新增
+  onVectorize, // ✅ 新增
+  onSummarize, // ✅ 新增
   isGenerating,
   modelId,
   sessionId, // ✅ 新增：会话ID
@@ -871,7 +881,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     xml={content}
                     width="100%"
                     height={200}
-                    onError={() => {}} // 内部捕获
+                    onError={() => { }} // 内部捕获
                   />
                 </View>
               </View>
@@ -953,67 +963,89 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         style={{
           flexDirection: 'row',
           justifyContent: 'flex-end',
-          marginBottom: 32,
+          marginBottom: 20, // Reduced 32 -> 20
           width: '100%',
-          paddingHorizontal: 20,
+          paddingHorizontal: 20, // Keep padding horizontal
         }}
       >
         <View style={{ maxWidth: '80%' }}>
-          <View
-            ref={bubbleRef}
-            collapsable={false}
-            style={{
-              paddingVertical: 4,
-              alignItems: 'flex-end',
-              width: '100%',
-            }}
+          <ContextMenu
+            items={[
+              {
+                label: '复制内容',
+                icon: <Copy />,
+                onPress: () => {
+                  Clipboard.setStringAsync(message.content);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                },
+              },
+              {
+                label: '删除消息',
+                icon: <Trash2 />,
+                destructive: true,
+                onPress: () => {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                  onDelete?.();
+                },
+              },
+            ]}
           >
-            <Markdown
-              rules={markdownRules}
+            <View
+              ref={bubbleRef}
+              collapsable={false}
               style={{
-                body: {
-                  color: isDark ? '#fafafa' : '#18181b',
-                  fontSize: 16,
-                  lineHeight: 24,
-                  fontWeight: '600',
-                  letterSpacing: 0.2,
-                  textAlign: 'left',
-                },
-                paragraph: { marginVertical: 0, paddingVertical: 0, textAlign: 'left' },
-                blockquote: {
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                  borderLeftWidth: 4,
-                  borderLeftColor: '#6366f1',
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 12,
-                  marginVertical: 10,
-                },
+                paddingVertical: 4,
+                alignItems: 'flex-end',
+                width: '100%',
               }}
-              {...({ selectable: true } as any)}
             >
-              {processedContent || ''}
-            </Markdown>
-            {message.images && message.images.length > 0 && (
-              <View
+              <Markdown
+                rules={markdownRules}
                 style={{
-                  flexDirection: 'row',
-                  flexWrap: 'wrap',
-                  marginTop: message.content ? 8 : 0,
-                  gap: 4,
+                  body: {
+                    color: isDark ? '#fafafa' : '#18181b',
+                    fontSize: 15,
+                    lineHeight: 24,
+                    fontWeight: '600',
+                    letterSpacing: 0.2,
+                    textAlign: 'left',
+                  },
+                  paragraph: { marginVertical: 0, paddingVertical: 0, textAlign: 'left' },
+                  blockquote: {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                    borderLeftWidth: 3,
+                    borderLeftColor: '#6366f1',
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 8,
+                    marginVertical: 8,
+                  },
                 }}
+                {...({ selectable: true } as any)}
               >
-                {message.images.map((img, index) => (
-                  <SafeUserImage
-                    key={index}
-                    uri={img.thumbnail}
-                    onPress={() => setViewImageUri(img.thumbnail)}
-                    isDark={isDark}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
+                {processedContent || ''}
+              </Markdown>
+              {message.images && message.images.length > 0 && (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    marginTop: message.content ? 8 : 0,
+                    gap: 4,
+                  }}
+                >
+                  {message.images.map((img, index) => (
+                    <SafeUserImage
+                      key={index}
+                      uri={img.thumbnail}
+                      onPress={() => setViewImageUri(img.thumbnail)}
+                      isDark={isDark}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          </ContextMenu>
 
           <View
             style={{
@@ -1066,7 +1098,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       entering={isRecent ? FadeIn.duration(300) : undefined}
       exiting={FadeOut.duration(300)}
       layout={LinearTransition.duration(200)}
-      style={{ marginBottom: 40, width: '100%', paddingHorizontal: 20 }}
+      style={{ marginBottom: 24, width: '100%', paddingHorizontal: 20 }} // Reduced 40 -> 24
       ref={bubbleRef}
       collapsable={false}
       onLayout={onLayout} // ✅ 传递 onLayout
@@ -1229,109 +1261,152 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       )}
 
       {/* Main Content (No indentation) */}
-      <View style={{ minHeight: 20 }}>
-        {isWaitingForContent ? (
-          <View className="items-start py-2">
-            <LoadingDots isDark={isDark} color={agentColor} />
-          </View>
-        ) : !message.content && !message.reasoning ? (
-          <View className="py-2">
-            <LoadingDots isDark={isDark} />
-          </View>
-        ) : (
-          <>
-            <Markdown
-              style={{
-                body: {
-                  color: isDark ? '#E4E4E7' : '#27272A',
-                  fontSize: 16,
-                  lineHeight: 28,
-                },
-                code_inline: {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                  borderRadius: 4,
-                  paddingHorizontal: 4,
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                  fontSize: 14,
-                  fontWeight: '500',
-                },
-                fence: {
-                  backgroundColor: isDark ? '#111' : '#f8fafc',
-                  borderColor: isDark ? '#27272a' : '#e2e8f0',
-                  borderWidth: 1,
-                  borderRadius: 16,
-                  marginVertical: 12,
-                  padding: 0,
-                },
-                blockquote: {
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                  borderLeftWidth: 4,
-                  borderLeftColor: agentColor,
-                  paddingHorizontal: 16,
-                  paddingVertical: 12,
-                  borderRadius: 12,
-                  marginVertical: 12,
-                },
-                list_item: { marginVertical: 6 },
-                bullet_list: { marginVertical: 10 },
-                ordered_list: { marginVertical: 10 },
-                heading1: {
-                  marginTop: 28,
-                  marginBottom: 14,
-                  fontWeight: '800',
-                  fontSize: 24,
-                  color: isDark ? '#fff' : '#000',
-                },
-                heading2: {
-                  marginTop: 24,
-                  marginBottom: 12,
-                  fontWeight: '700',
-                  fontSize: 20,
-                  color: isDark ? '#fff' : '#000',
-                },
-                heading3: {
-                  marginTop: 20,
-                  marginBottom: 10,
-                  fontWeight: '700',
-                  fontSize: 18,
-                  color: isDark ? '#fff' : '#000',
-                },
-                paragraph: { marginVertical: 10 },
-              }}
-              {...({ selectable: true } as any)}
-              rules={markdownRules}
-            >
-              {(() => {
-                // Extract AI-generated images
-                const { cleanContent, images } = extractImagesFromMarkdown(processedContent || '');
-                // Store extracted images for rendering below
-                (React as any)._aiImages = images;
-                return cleanContent;
-              })()}
-            </Markdown>
-            {/* Render extracted AI-generated images */}
-            {!isUser &&
-              (() => {
-                const images = (React as any)._aiImages || [];
-                if (images.length === 0) return null;
+      <ContextMenu
+        items={[
+          {
+            label: '复制内容',
+            icon: <Copy />,
+            onPress: () => {
+              Clipboard.setStringAsync(message.content);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            },
+          },
+          {
+            label: '提取知识图谱',
+            icon: <BrainCircuit />,
+            onPress: () => {
+              onExtractGraph?.();
+            },
+          },
+          {
+            label: '手动切片向量化',
+            icon: <FileInput />,
+            onPress: () => {
+              onVectorize?.();
+            },
+          },
+          {
+            label: '手动触发摘要',
+            icon: <FileText />,
+            onPress: () => {
+              onSummarize?.();
+            },
+          },
+          {
+            label: '删除消息',
+            icon: <Trash2 />,
+            destructive: true,
+            onPress: () => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              onDelete?.();
+            },
+          },
+        ].filter(Boolean) as any}
+      >
+        <View style={{ minHeight: 20 }}>
+          {isWaitingForContent ? (
+            <View className="items-start py-2">
+              <LoadingDots isDark={isDark} color={agentColor} />
+            </View>
+          ) : !message.content && !message.reasoning ? (
+            <View className="py-2">
+              <LoadingDots isDark={isDark} />
+            </View>
+          ) : (
+            <>
+              <Markdown
+                style={{
+                  body: {
+                    color: isDark ? '#E4E4E7' : '#27272A',
+                    fontSize: 15, // Reduced 16 -> 15
+                    lineHeight: 26, // Reduced 28 -> 26
+                  },
+                  code_inline: {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                    borderRadius: 4,
+                    paddingHorizontal: 4,
+                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                    fontSize: 13, // Reduced 14 -> 13
+                    fontWeight: '500',
+                  },
+                  fence: {
+                    backgroundColor: isDark ? '#111' : '#f8fafc',
+                    borderColor: isDark ? '#27272a' : '#e2e8f0',
+                    borderWidth: 1,
+                    borderRadius: 12, // Reduced 16 -> 12
+                    marginVertical: 8, // Reduced 12 -> 8
+                    padding: 0,
+                  },
+                  blockquote: {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                    borderLeftWidth: 3, // Reduced 4 -> 3
+                    borderLeftColor: agentColor,
+                    paddingHorizontal: 12, // Reduced 16 -> 12
+                    paddingVertical: 8, // Reduced 12 -> 8
+                    borderRadius: 8, // Reduced 12 -> 8
+                    marginVertical: 8, // Reduced 12 -> 8
+                  },
+                  list_item: { marginVertical: 4 }, // Reduced 6 -> 4
+                  bullet_list: { marginVertical: 6 }, // Reduced 10 -> 6
+                  ordered_list: { marginVertical: 6 }, // Reduced 10 -> 6
+                  heading1: {
+                    marginTop: 20, // Reduced 28 -> 20
+                    marginBottom: 10, // Reduced 14 -> 10
+                    fontWeight: '800',
+                    fontSize: 22, // Reduced 24 -> 22
+                    color: isDark ? '#fff' : '#000',
+                  },
+                  heading2: {
+                    marginTop: 18, // Reduced 24 -> 18
+                    marginBottom: 8, // Reduced 12 -> 8
+                    fontWeight: '700',
+                    fontSize: 18, // Reduced 20 -> 18
+                    color: isDark ? '#fff' : '#000',
+                  },
+                  heading3: {
+                    marginTop: 14, // Reduced 20 -> 14
+                    marginBottom: 6, // Reduced 10 -> 6
+                    fontWeight: '700',
+                    fontSize: 16, // Reduced 18 -> 16
+                    color: isDark ? '#fff' : '#000',
+                  },
+                  paragraph: { marginVertical: 6 }, // Reduced 10 -> 6
+                }}
+                {...({ selectable: true } as any)}
+                rules={markdownRules}
+              >
+                {(() => {
+                  // Extract AI-generated images
+                  const { cleanContent, images } = extractImagesFromMarkdown(processedContent || '');
+                  // Store extracted images for rendering below
+                  (React as any)._aiImages = images;
+                  return cleanContent;
+                })()}
+              </Markdown>
+              {/* Render extracted AI-generated images */}
+              {!isUser &&
+                (() => {
+                  const images = (React as any)._aiImages || [];
+                  if (images.length === 0) return null;
 
-                return (
-                  <View style={{ marginTop: 12, gap: 12 }}>
-                    {images.map((img: { src: string; alt: string }, index: number) => (
-                      <GeneratedImage
-                        key={`ai-img-${index}`}
-                        src={img.src}
-                        alt={img.alt}
-                        isDark={isDark}
-                        t={t}
-                      />
-                    ))}
-                  </View>
-                );
-              })()}
-          </>
-        )}
-      </View>
+                  return (
+                    <View style={{ marginTop: 12, gap: 12 }}>
+                      {images.map((img: { src: string; alt: string }, index: number) => (
+                        <GeneratedImage
+                          key={`ai-img-${index}`}
+                          src={img.src}
+                          alt={img.alt}
+                          isDark={isDark}
+                          t={t}
+                        />
+                      ))}
+                    </View>
+                  );
+                })()}
+            </>
+          )}
+        </View>
+      </ContextMenu>
 
       {/* Action Bar (Bottom Alignment) */}
       <View

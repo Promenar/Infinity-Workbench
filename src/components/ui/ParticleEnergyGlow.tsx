@@ -55,8 +55,9 @@ export const ParticleEnergyGlow: React.FC<ParticleEnergyGlowProps> = ({ size, co
     const particleGroups = useMemo(() => {
         return Array.from({ length: LAYERS }).map((_, layerIndex) => {
             // Volumetric Band distribution relative to LOGICAL size
-            const minRadius = size * 0.15 + (layerIndex * size * 0.05);
-            const maxRadius = minRadius + (size * 0.2);
+            // Reduced by ~1/3 as requested (0.15 -> 0.10, 0.05 -> 0.033)
+            const minRadius = size * 0.10 + (layerIndex * size * 0.033);
+            const maxRadius = minRadius + (size * 0.14); // 0.2 -> 0.14
 
             return Array.from({ length: PARTICLES_PER_LAYER }).map((__, i) => {
                 const angle = (i / PARTICLES_PER_LAYER) * Math.PI * 2 + (Math.random() * 2);
@@ -94,11 +95,11 @@ export const ParticleEnergyGlow: React.FC<ParticleEnergyGlowProps> = ({ size, co
                 }}
             >
                 <Canvas style={{ flex: 1 }}>
-                    {/* 1. Core Glow - Adjusted for Light Mode */}
-                    <Circle cx={canvasCenter} cy={canvasCenter} r={size * 0.35} opacity={coreGlowOpacity}>
+                    {/* 1. Core Glow - Adjusted for Light Mode & Resized (0.35 -> 0.24) */}
+                    <Circle cx={canvasCenter} cy={canvasCenter} r={size * 0.24} opacity={coreGlowOpacity}>
                         <RadialGradient
                             c={vec(canvasCenter, canvasCenter)}
-                            r={size * 0.35}
+                            r={size * 0.24}
                             colors={['white', color, 'transparent']}
                             positions={[0, 0.5, 1]}
                         />

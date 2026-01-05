@@ -37,7 +37,7 @@ export function SettingsSection({ title, children, containerStyle }: SettingsSec
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 24,
+    marginBottom: 16, // Reduced 24 -> 16
   },
   sectionTitle: {
     fontSize: 10,

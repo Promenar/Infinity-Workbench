@@ -161,7 +161,7 @@ export default function AgentExplorerScreen() {
             style={{
               height: 1,
               backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#f9fafb', // Using lighter gray for light mode to match design
-              marginHorizontal: 24,
+              marginHorizontal: 16, // Reduced 24 -> 16
             }}
           />
         )}

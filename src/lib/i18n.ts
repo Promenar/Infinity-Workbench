@@ -368,6 +368,7 @@ export const translations = {
       add: '添加',
       settings: '设置',
       dangerZone: '危险区域',
+      copied: '已复制',
     },
     agent: {
       editTitle: '编辑助手',
@@ -894,6 +895,7 @@ export const translations = {
       back: 'Back',
       success: 'Success',
       error: 'Error',
+      copied: 'Copied',
       languageChanged: 'Language switched to English',
       save: 'Save',
       delete: 'Delete',

@@ -6,6 +6,14 @@ $GradlePropsFile = "android\gradle.properties"
 
 Write-Host "🔐 Starting Secure Build Process..." -ForegroundColor Cyan
 
+# 0. Auto-Bump Version
+Write-Host "📦 Bumping Version (Patch)..."
+npm run bump:patch
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "❌ Version Bump Failed"
+    exit $LASTEXITCODE
+}
+
 # 1. Check Secure Environment
 if (-not (Test-Path "$SecureDir\promenar.keystore")) {
     Write-Error "❌ Keystore file missing in $SecureDir"

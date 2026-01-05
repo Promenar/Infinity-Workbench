@@ -522,7 +522,7 @@ export default function SuperAssistantSettingsScreen() {
           {/* Knowledge Graph Entry */}
           <SectionHeader title={t.rag.knowledgeGraph} />
           <TouchableOpacity
-            onPress={() => router.push({ pathname: '/knowledge-graph', params: { agentId: 'super_assistant' } })}
+            onPress={() => router.push({ pathname: '/knowledge-graph', params: { sessionId: 'super_assistant' } })}
             className="mx-4 mb-6 flex-row items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-800"
           >
             <View className="flex-row items-center gap-3">

@@ -129,8 +129,11 @@ interface ChatState {
 
   updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
   setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
-  updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => void; // ✅ 新增
+  updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => void;
   setKGExtractionStatus: (sessionId: SessionId, isExtracting: boolean) => void;
+  vectorizeMessage: (sessionId: string, messageId: string) => Promise<void>;
+  summarizeSession: (sessionId: string) => Promise<void>;
+  regenerateMessage: (sessionId: string, messageId: string) => Promise<void>; // ✅ New Action
 }
 
 export const useChatStore = create<ChatState>()(
@@ -588,16 +591,35 @@ export const useChatStore = create<ChatState>()(
 
           if (options?.webSearch && !isNativeSearch) {
             try {
-              get().updateMessageContent(
-                sessionId,
-                assistantMsgId,
-                '',
-                undefined,
-                undefined,
-                initialCitations,
+              // 1. Get Search Config
+              const searchConfig = useApiStore.getState().googleSearchConfig;
+
+              // 2. Set loading state (showing "Searching..." via initialCitations hack or just wait)
+              // Actually, streaming hasn't started yet, so we can just wait or show a toast?
+              // Better: Just do it. The user will see "Thinking..." anyway.
+
+              // 3. Perform Search
+              const { context, sources } = await performWebSearch(
+                content, // Use user query
+                searchConfig?.apiKey,
+                searchConfig?.cx
               );
+
+              searchContext = context;
+              initialCitations = sources;
+
+              // ✅ 关键修复：将客户端搜索结果直接赋值给 accumulatedCitations
+              // 这样后续的 scheduleUpdate 就能正确传递这些引用
+              accumulatedCitations = sources;
+
+              console.log('[ChatStore] Client-side search completed', {
+                sources: sources.length,
+                hasContext: !!context
+              });
+
             } catch (err) {
               console.error('Client-side search failed', err);
+              // Fallback is handled inside performWebSearch (returns mock or empty)
             }
           }
 
@@ -957,9 +979,40 @@ export const useChatStore = create<ChatState>()(
           }
 
           // 🔑 关键修复: 触发 AI 回复的知识图谱实体提取 (KG Extraction)
-          if (finalRagOptions.enableDocs !== false && accumulatedContent.trim()) {
+          // 逻辑修正：不再依赖 enableDocs，而是独立的 enableKnowledgeGraph 开关
+          if (accumulatedContent.trim()) {
             setTimeout(async () => {
               try {
+                const { useSettingsStore } = require('../store/settings-store');
+                const globalConfig = useSettingsStore.getState().globalRagConfig;
+                const session = get().getSession(sessionId);
+                if (!session) return;
+
+                // 1. 计算是否启用
+                // 优先级: Session Override > Global Setting
+                // 特例: Super Assistant 总是启用 (视为全域知识维护者)
+                const isSuperAssistant = sessionId === 'super_assistant';
+                const sessionKgOption = session.ragOptions?.enableKnowledgeGraph;
+                const isKgEnabled =
+                  isSuperAssistant ||
+                  (sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph);
+
+                if (!isKgEnabled) return;
+
+                // 2. 检查提取策略 (Cost Strategy)
+                // 'on-demand': 仅手动触发 (MessageContextMenu)
+                // 'summary-first' / 'full': 自动触发 (对于会话流，summary-first等同于full，以免丢失细节)
+                const costStrategy =
+                  agent?.ragConfig?.costStrategy || globalConfig.costStrategy || 'summary-first';
+
+                if (costStrategy === 'on-demand' && !isSuperAssistant) {
+                  // 超级助手即使在按需模式下，也建议自动提取以维持全域助手智商？
+                  // 或者尊重用户设置？用户说是“按需”，那可能真的想按需。
+                  // 但用户之前的反馈暗示希望能自动提取。
+                  // 为了安全起见，若显式设为 on-demand 则跳过，由用户手动点。
+                  return;
+                }
+
                 // Indicate start of extraction
                 get().setKGExtractionStatus(sessionId, true);
 
@@ -1284,6 +1337,304 @@ export const useChatStore = create<ChatState>()(
           console.error('Failed to generate title:', error);
         }
         return undefined;
+      },
+
+      vectorizeMessage: async (sessionId, messageId) => {
+        const session = get().getSession(sessionId);
+        if (!session) return;
+        const message = session.messages.find((m) => m.id === messageId);
+        if (!message || !message.content) return;
+
+        try {
+          const { MemoryManager } = require('../lib/rag/memory-manager');
+          await MemoryManager.upsertMemory({
+            id: messageId,
+            content: message.content,
+            sessionId,
+            role: message.role,
+            createdAt: message.createdAt,
+            type: 'message',
+            usage: 0,
+          }, session.agentId);
+          console.log('[ChatStore] Message manually vectorized:', messageId);
+        } catch (e) {
+          console.error('[ChatStore] Failed to vectorize message:', e);
+          throw e;
+        }
+      },
+
+      regenerateMessage: async (sessionId, messageId) => {
+        const state = get();
+        const session = state.getSession(sessionId);
+        if (!session) return;
+
+        // 1. Find message and predecessor
+        const msgIndex = session.messages.findIndex((m) => m.id === messageId);
+        if (msgIndex <= 0) {
+          console.error('Cannot regenerate: Message not found or is first message');
+          return;
+        }
+
+        const targetMsg = session.messages[msgIndex];
+        const userMsg = session.messages[msgIndex - 1];
+
+        if (targetMsg.role !== 'assistant' || userMsg.role !== 'user') {
+          console.error('Cannot regenerate: Invalid message sequence');
+          return;
+        }
+
+        // 2. Reset Target Message & Truncate History
+        // Remove all messages AFTER the target message
+        // Clear content of the target message
+        set((state) => ({
+          sessions: state.sessions.map((s) => {
+            if (s.id === sessionId) {
+              const truncatedMessages = s.messages.slice(0, msgIndex + 1);
+              // Reset the last message (target)
+              truncatedMessages[msgIndex] = {
+                ...truncatedMessages[msgIndex],
+                content: '',
+                reasoning: undefined,
+                citations: undefined,
+                ragReferences: [],
+                status: 'streaming', // Set generic status
+                tokens: undefined, // Clear token stats
+              };
+              return { ...s, messages: truncatedMessages };
+            }
+            return s;
+          }),
+          currentGeneratingSessionId: sessionId,
+        }));
+
+        // 3. Reuse Generation Logic (Copied from generateMessage)
+        const agentStore = useAgentStore.getState();
+        const apiStore = useApiStore.getState();
+        const agent = agentStore.getAgent(session.agentId);
+        if (!agent) return;
+
+        // Resolve Model
+        const modelId = session.modelId || agent.defaultModel; // Use session model
+        let provider = apiStore.providers.find(
+          (p) => p.enabled && p.models.some((m) => m.uuid === modelId),
+        );
+        let modelConfig = provider?.models.find((m) => m.uuid === modelId);
+
+        if (!provider) {
+          provider = apiStore.providers.find(
+            (p) => p.enabled && p.models.some((m) => m.id === modelId),
+          );
+          modelConfig = provider?.models.find((m) => m.id === modelId);
+        }
+
+        if (!provider || !modelConfig) return;
+
+        // 4. Setup Client & Config
+        const extendedConfig = {
+          ...modelConfig,
+          provider: provider.type,
+          apiKey: provider.apiKey,
+          baseUrl: provider.baseUrl,
+          temperature: agent.params?.temperature ?? 0.7,
+          vertexProject: provider.vertexProject,
+          vertexLocation: provider.vertexLocation,
+          vertexKeyJson: provider.vertexKeyJson,
+        };
+
+        const client = createLlmClient(extendedConfig as any);
+        set((state) => ({ activeRequests: { ...state.activeRequests, [sessionId]: client } }));
+
+        // 5. RAG & Search Setup (Re-run)
+        const isNativeSearch = provider.type === 'gemini' || provider.type === 'google';
+        let searchContext = '';
+        let initialCitations: { title: string; url: string; source?: string }[] = [];
+
+        const options = session.options || {};
+
+        if (options.webSearch && !isNativeSearch) {
+          try {
+            const searchConfig = useApiStore.getState().googleSearchConfig;
+            const { context, sources } = await performWebSearch(
+              userMsg.content,
+              searchConfig?.apiKey,
+              searchConfig?.cx
+            );
+            searchContext = context;
+            initialCitations = sources;
+            // Initialize accumulatedCitations by pushing empty update with citations
+            get().updateMessageContent(sessionId, messageId, '', undefined, undefined, initialCitations);
+          } catch (e) {
+            console.error('Regenerate search failed', e);
+          }
+        }
+
+        // RAG Logic
+        let ragContext = '';
+        const sessionRagOptions = session.ragOptions || {};
+        const finalRagOptions = {
+          enableMemory: sessionRagOptions.enableMemory ?? true,
+          enableDocs: sessionRagOptions.enableDocs ?? false,
+          activeDocIds: sessionRagOptions.activeDocIds ?? [],
+          activeFolderIds: sessionRagOptions.activeFolderIds ?? [],
+          isGlobal: sessionRagOptions.isGlobal ?? false,
+        };
+
+        let ragReferences: RagReference[] = [];
+        let ragUsage: { ragSystem: number; isEstimated: boolean } | undefined;
+
+        if (finalRagOptions.enableMemory || finalRagOptions.enableDocs) {
+          try {
+            // Set loading state if needed
+            const isSuperAssistant = sessionId === 'super_assistant';
+            const effectiveRagOptions = {
+              ...finalRagOptions,
+              isGlobal: isSuperAssistant ? true : finalRagOptions.isGlobal,
+              enableDocs: isSuperAssistant ? true : finalRagOptions.enableDocs,
+              enableMemory: isSuperAssistant ? true : finalRagOptions.enableMemory,
+              ragConfig: agent.ragConfig,
+              onProgress: (stage: string, percentage: number) => {
+                // Since updateMessageProgress is not exposed, we just update generic status or skip
+                // get().updateMessageContent(sessionId, messageId, '', undefined, undefined, undefined, [], true);
+              },
+            };
+
+            const { MemoryManager } = require('../lib/rag/memory-manager');
+            const {
+              context: retrievedContext,
+              references,
+              metadata,
+              billingUsage,
+            } = await MemoryManager.retrieveContext(
+              userMsg.content,
+              sessionId,
+              effectiveRagOptions,
+            );
+
+            if (billingUsage) ragUsage = billingUsage;
+            ragContext = retrievedContext;
+            ragReferences = references;
+
+          } catch (e) {
+            console.error("RAG regenerate failed", e);
+          }
+        }
+
+
+        // 6. Context Construction
+        const activeWindowSize = agent.ragConfig?.contextWindow || 10;
+        let finalSystemPrompt = agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
+        if (ragContext) finalSystemPrompt += `\n\n${ragContext}`;
+
+        let contextMsgs: any[] = [];
+        if (searchContext) {
+          contextMsgs.push({ role: 'system', content: finalSystemPrompt + '\n\n' + searchContext });
+        } else {
+          contextMsgs.push({ role: 'system', content: finalSystemPrompt });
+        }
+
+        // History: messages before userMsg
+        const formatContent = async (mContent: string, mImages?: any[]) => {
+          const hasVision = modelConfig?.capabilities.vision;
+          if (!mImages || mImages.length === 0 || !hasVision) return mContent;
+          const parts: any[] = [{ type: 'text', text: mContent }];
+          const { FileSystem } = require('expo-file-system/legacy');
+          for (const img of mImages) {
+            try {
+              const base64 = await FileSystem.readAsStringAsync(img.original, { encoding: 'base64' });
+              parts.push({ type: 'image_url', image_url: { url: `data:${img.mime || 'image/jpeg'};base64,${base64}` } });
+            } catch (e) { }
+          }
+          return parts;
+        };
+
+        const historyMsgs = session.messages.slice(0, msgIndex);
+        const history = await Promise.all(
+          historyMsgs.slice(-activeWindowSize).map(async (m) => ({
+            role: m.role,
+            content: await formatContent(m.content, m.images),
+          }))
+        );
+
+        contextMsgs = [...contextMsgs, ...history] as any;
+
+        // 7. Stream
+        let accumulatedContent = '';
+        let accumulatedReasoning = '';
+        let accumulatedCitations = initialCitations;
+        let accumulatedUsage: any;
+
+        let updateTimer: NodeJS.Timeout | null = null;
+        const scheduleUpdate = () => {
+          if (updateTimer) return;
+          updateTimer = setTimeout(() => {
+            updateTimer = null;
+            const inputTokens = accumulatedUsage?.input || 0;
+            const completionTokens = accumulatedUsage?.output || 0;
+            get().updateMessageContent(
+              sessionId,
+              messageId,
+              accumulatedContent,
+              { input: inputTokens, output: completionTokens, total: inputTokens + completionTokens },
+              accumulatedReasoning,
+              accumulatedCitations,
+              ragReferences
+            );
+          }, 100);
+        };
+
+        await client.streamChat(
+          ContextManager.trimContext(contextMsgs, activeWindowSize),
+          (chunk) => {
+            if (typeof chunk === 'string') {
+              accumulatedContent += chunk;
+            } else {
+              if (chunk.content) accumulatedContent += chunk.content;
+              if (chunk.reasoning) accumulatedReasoning += chunk.reasoning;
+              if (chunk.citations) accumulatedCitations = chunk.citations;
+              if (chunk.usage) accumulatedUsage = chunk.usage;
+            }
+            scheduleUpdate();
+          },
+          (error) => console.warn('Regenerate error', error),
+          options
+        );
+
+        // Final update
+        const ragSystemTokens = ragUsage?.ragSystem || 0;
+        const finalInput = (accumulatedUsage?.input || 0) + ragSystemTokens;
+        const finalOutput = accumulatedUsage?.output || 0;
+
+        get().updateMessageContent(
+          sessionId,
+          messageId,
+          accumulatedContent,
+          {
+            input: finalInput,
+            output: finalOutput,
+            total: finalInput + finalOutput,
+          },
+          accumulatedReasoning,
+          accumulatedCitations,
+          ragReferences,
+        );
+
+        set({ currentGeneratingSessionId: null });
+      },
+
+      summarizeSession: async (sessionId) => {
+        const session = get().getSession(sessionId);
+        if (!session) return;
+        const agentStore = useAgentStore.getState();
+        const agent = agentStore.getAgent(session.agentId);
+        if (!agent) return;
+
+        try {
+          await ContextManager.checkAndSummarize(sessionId, session.messages, agent);
+          console.log('[ChatStore] Session summary triggered manually');
+        } catch (e) {
+          console.error('[ChatStore] Failed to summarize session:', e);
+          throw e;
+        }
       },
     }),
     {

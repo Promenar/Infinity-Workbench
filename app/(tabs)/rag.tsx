@@ -379,7 +379,8 @@ export default function RagScreen() {
 
     try {
       if (folderModalMode === 'create') {
-        await addFolder(newFolderName.trim());
+        const parentId = currentFolderId ?? undefined;
+        await addFolder(newFolderName.trim(), parentId);
         showToast('文件夹已创建', 'success');
       } else if (editingFolderId) {
         await renameFolder(editingFolderId, newFolderName.trim());
@@ -391,7 +392,7 @@ export default function RagScreen() {
     } catch (e) {
       showToast('操作失败: ' + (e as Error).message, 'error');
     }
-  }, [newFolderName, folderModalMode, editingFolderId, addFolder, renameFolder, showToast]);
+  }, [newFolderName, folderModalMode, editingFolderId, addFolder, renameFolder, showToast, currentFolderId]);
 
   const handleDeleteFolder = useCallback(
     (id: string, name: string) => {
@@ -502,9 +503,9 @@ export default function RagScreen() {
 
   // 渲染标题栏
   const renderHeader = () => (
-    <View className="mb-2">
+    <View className="mb-0">
       {/* 搜索栏 */}
-      <View className="px-6 pb-2">
+      <View className="px-4 pb-2">
         <View
           className={`h-12 ${isSearchFocused ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500' : 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'} 
                                border rounded-2xl flex-row items-center px-4 transition-all`}
@@ -542,15 +543,7 @@ export default function RagScreen() {
         queueLength={vectorizationQueue.length}
       />
 
-      {/* 文档数量 */}
-      <View className="px-6 mb-1">
-        <Typography
-          variant="sectionHeader"
-          className="text-gray-400 font-bold text-[11px] uppercase tracking-wider"
-        >
-          {searchQuery ? `搜索结果 (${filteredDocuments.length})` : `文档 (${documents.length})`}
-        </Typography>
-      </View>
+
     </View>
   );
 
@@ -628,7 +621,7 @@ export default function RagScreen() {
       <DragDropContentView style={{ flex: 1 }} onDrop={handleDrop}>
         <View style={{ flex: 1 }}>
           {/* 标题 */}
-          <View style={{ paddingTop: 64, paddingBottom: 4, paddingHorizontal: 24 }}>
+          <View style={{ paddingTop: 52, paddingBottom: 4, paddingHorizontal: 16 }}>
             <View
               style={{
                 flexDirection: 'row',
@@ -686,7 +679,7 @@ export default function RagScreen() {
 
           {/* 面包屑导航 (非搜索模式显示) */}
           {!searchQuery && (
-            <View className="mb-3">
+            <View className="mb-1.5">
               <Breadcrumbs
                 currentFolderId={currentFolderId}
                 allFolders={folders}
@@ -704,23 +697,22 @@ export default function RagScreen() {
             {/* 文件夹 (搜索模式隐藏) */}
             {!searchQuery &&
               currentViewContent.folders.map((folder) => (
-                <View key={folder.id} className="px-6 mb-2">
-                  <FolderItem
-                    id={folder.id}
-                    name={folder.name}
-                    childCount={folder.childCount}
-                    isExpanded={false}
-                    level={0}
-                    onToggle={() => handleNavigate(folder.id)}
-                    onPress={() => handleNavigate(folder.id)}
-                    onLongPress={() => { }}
-                    onDelete={() => handleDeleteFolder(folder.id, folder.name)}
-                    onRename={() => handleRenameFolder(folder.id, folder.name)}
-                    onMove={() => handleStartMoveFolder(folder.id)}
-                    onViewGraph={() => handleViewFolderGraph(folder.id)}
-                    onExtractGraph={(s) => handleExtractFolder(folder.id, s)}
-                  />
-                </View>
+                <FolderItem
+                  key={folder.id}
+                  id={folder.id}
+                  name={folder.name}
+                  childCount={folder.childCount}
+                  isExpanded={false}
+                  level={0}
+                  onToggle={() => handleNavigate(folder.id)}
+                  onPress={() => handleNavigate(folder.id)}
+                  onLongPress={() => { }}
+                  onDelete={() => handleDeleteFolder(folder.id, folder.name)}
+                  onRename={() => handleRenameFolder(folder.id, folder.name)}
+                  onMove={() => handleStartMoveFolder(folder.id)}
+                  onViewGraph={() => handleViewFolderGraph(folder.id)}
+                  onExtractGraph={(s) => handleExtractFolder(folder.id, s)}
+                />
               ))}
 
             {/* 文档 */}

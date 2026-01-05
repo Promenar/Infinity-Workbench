@@ -19,27 +19,38 @@ interface KGExtractionIndicatorProps {
 
 export const KGExtractionIndicator = React.memo(({ isExtracting }: KGExtractionIndicatorProps) => {
     const { t } = useI18n();
-    const rotation = useSharedValue(0);
+
+    // Animations
+    const glowScale = useSharedValue(1);
+    const glowOpacity = useSharedValue(0.5);
 
     React.useEffect(() => {
         if (isExtracting) {
-            rotation.value = withRepeat(
-                withTiming(360, { duration: 2000, easing: Easing.linear }),
+            // Breathing animation
+            glowScale.value = withRepeat(
+                withTiming(1.6, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
                 -1,
-                false
+                true,
+            );
+            glowOpacity.value = withRepeat(
+                withTiming(0.1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+                -1,
+                true,
             );
         } else {
-            rotation.value = 0;
+            glowScale.value = 1;
+            glowOpacity.value = 0;
         }
     }, [isExtracting]);
 
-    const animatedStyle = useAnimatedStyle(() => {
-        return {
-            transform: [{ rotate: `${rotation.value}deg` }],
-        };
-    });
+    const glowStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: glowScale.value }],
+        opacity: glowOpacity.value,
+    }));
 
     if (!isExtracting) return null;
+
+    const accentColor = "#6366f1"; // Indigo-500
 
     return (
         <Animated.View
@@ -48,18 +59,31 @@ export const KGExtractionIndicator = React.memo(({ isExtracting }: KGExtractionI
             style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                paddingHorizontal: 8,
+                paddingHorizontal: 6,
                 paddingVertical: 2,
                 borderRadius: 10,
-                backgroundColor: 'rgba(0,0,0,0.03)',
+                backgroundColor: 'rgba(99, 102, 241, 0.05)',
                 marginRight: 6
             }}
         >
-            <Animated.View style={[animatedStyle, { marginRight: 6 }]}>
-                <Network size={12} color="#6366f1" />
-            </Animated.View>
-            <Typography variant="caption" className="text-indigo-600 dark:text-indigo-300 font-medium text-[10px]">
-                更新图谱中
+            <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
+                <Animated.View
+                    style={[
+                        glowStyle,
+                        {
+                            position: 'absolute',
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: accentColor,
+                            // Hazy/Blur effect simulation via background color opacity + scale
+                        }
+                    ]}
+                />
+                <Network size={10} color={accentColor} />
+            </View>
+            <Typography className="font-black ml-1 text-[9px] uppercase tracking-tighter" style={{ color: accentColor }}>
+                GRAPHING...
             </Typography>
         </Animated.View>
     );
