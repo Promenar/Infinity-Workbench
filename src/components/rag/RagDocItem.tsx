@@ -109,25 +109,23 @@ export const RagDocItem = memo(
             </Animated.View>
           </TouchableOpacity>
 
-          {!isSelectionMode && (
-            <View className="pr-1 justify-center">
-              <ContextMenu
-                items={[
-                  // { label: t.library.rename, icon: <Edit2 size={16} />, onPress: () => showToast(t.library.rename, 'info') }, // TODO
-                  {
-                    label: t.library.delete,
-                    icon: <Trash2 size={16} />,
-                    destructive: true,
-                    onPress: onDelete,
-                  },
-                ]}
-              >
-                <View className="p-3 opacity-60">
-                  <MoreVertical size={16} color={isSelected ? '#6366f1' : '#94a3b8'} />
-                </View>
-              </ContextMenu>
-            </View>
-          )}
+          <View className="pr-1 justify-center">
+            <ContextMenu
+              items={[
+                // { label: t.library.rename, icon: <Edit2 size={16} />, onPress: () => showToast(t.library.rename, 'info') }, // TODO
+                {
+                  label: t.library.delete,
+                  icon: <Trash2 size={16} />,
+                  destructive: true,
+                  onPress: onDelete,
+                },
+              ]}
+            >
+              <View className="p-3 opacity-60">
+                <MoreVertical size={16} color={isSelected ? '#6366f1' : '#94a3b8'} />
+              </View>
+            </ContextMenu>
+          </View>
         </View>
       </View>
     );

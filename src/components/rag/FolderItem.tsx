@@ -24,6 +24,7 @@ interface FolderItemProps {
   onDelete?: () => void;
   onRename?: () => void;
   onMove?: () => void;
+  onViewGraph?: () => void;
   onExtractGraph?: (strategy: 'full' | 'summary-first') => void;
 }
 
@@ -39,6 +40,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   onDelete,
   onRename,
   onMove,
+  onViewGraph,
   onExtractGraph,
 }) => {
   const { isDark } = useTheme();
@@ -68,6 +70,15 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   }));
 
   const menuItems: ContextMenuItem[] = [
+    {
+      label: '查看知识图谱',
+      onPress: () => {
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          onViewGraph?.();
+        }, 10);
+      },
+    },
     {
       label: '生成全量图谱 (批量)',
       onPress: () => onExtractGraph?.('full'),

@@ -11,6 +11,7 @@ import {
   Scissors,
   CheckCircle2,
   AlertCircle,
+  X,
 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 
@@ -124,14 +125,28 @@ export function RagStatusIndicator() {
           <Typography className="text-[10px] text-gray-500 font-medium">{config.text}</Typography>
         </View>
 
-        {/* 队列计数 */}
-        {queueCount > 1 && (
-          <View className="bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
-            <Typography className="text-[10px] font-bold text-gray-500">
-              +{queueCount - 1}
-            </Typography>
-          </View>
-        )}
+        {/* 队列计数 & 取消按钮 */}
+        <View className="flex-row items-center gap-2">
+          {queueCount > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                const { clearVectorizationQueue } = useRagStore.getState();
+                clearVectorizationQueue();
+              }}
+              className="w-6 h-6 rounded-full bg-gray-100 dark:bg-zinc-800 items-center justify-center border border-gray-200 dark:border-zinc-700"
+            >
+              <X size={12} color="#64748b" />
+            </TouchableOpacity>
+          )}
+
+          {queueCount > 1 && (
+            <View className="bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+              <Typography className="text-[10px] font-bold text-gray-500">
+                +{queueCount - 1}
+              </Typography>
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );

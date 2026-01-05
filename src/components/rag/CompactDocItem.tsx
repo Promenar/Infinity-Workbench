@@ -142,6 +142,25 @@ export const CompactDocItem = memo<CompactDocItemProps>(
           }, 10);
         },
       },
+      // 知识图谱提取
+      {
+        key: 'extract-full',
+        label: '提取知识图谱 (全量)',
+        onPress: () => {
+          setTimeout(() => {
+            onExtractGraph?.('full');
+          }, 10);
+        },
+      },
+      {
+        key: 'extract-summary',
+        label: '提取知识图谱 (摘要)',
+        onPress: () => {
+          setTimeout(() => {
+            onExtractGraph?.('summary-first');
+          }, 10);
+        },
+      },
       {
         key: 'delete',
         label: '删除',

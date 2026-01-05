@@ -493,6 +493,13 @@ export default function RagScreen() {
     [showToast],
   );
 
+  const handleViewFolderGraph = useCallback((folderId: string) => {
+    router.push({
+      pathname: '/knowledge-graph',
+      params: { folderId }
+    });
+  }, [router]);
+
   // 渲染标题栏
   const renderHeader = () => (
     <View className="mb-2">
@@ -710,6 +717,7 @@ export default function RagScreen() {
                     onDelete={() => handleDeleteFolder(folder.id, folder.name)}
                     onRename={() => handleRenameFolder(folder.id, folder.name)}
                     onMove={() => handleStartMoveFolder(folder.id)}
+                    onViewGraph={() => handleViewFolderGraph(folder.id)}
                     onExtractGraph={(s) => handleExtractFolder(folder.id, s)}
                   />
                 </View>

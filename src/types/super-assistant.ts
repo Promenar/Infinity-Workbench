@@ -21,7 +21,41 @@ export type FABIconType =
   | 'Settings'
   | 'custom';
 
-// ... (SuperAssistantPreferences interface remains same) ...
+export interface SuperAssistantPreferences {
+  fab: {
+    iconType: FABIconType;
+    customIconUri?: string;
+    iconColor: string;
+    backgroundColor: string;
+    enableGlow: boolean;
+    glowColor?: string;
+    animationMode: 'pulse' | 'nebula' | 'quantum' | 'glitch' | 'liquid';
+    enableRotation: boolean;
+  };
+  ragStats: {
+    totalDocuments: number;
+    totalSessions: number;
+    totalVectors: number;
+    lastUpdated: number;
+  };
+}
+
+export const DEFAULT_SPA_PREFERENCES: SuperAssistantPreferences = {
+  fab: {
+    iconType: 'Sparkles',
+    iconColor: '#ffffff',
+    backgroundColor: '#000000',
+    enableGlow: true,
+    animationMode: 'pulse',
+    enableRotation: false,
+  },
+  ragStats: {
+    totalDocuments: 0,
+    totalSessions: 0,
+    totalVectors: 0,
+    lastUpdated: 0,
+  },
+};
 
 // 预设图标选项
 export const PRESET_FAB_ICONS: { type: FABIconType; labelKey: string }[] = [

@@ -1,0 +1,807 @@
+--------- beginning of crash
+06-26 00:34:18.959  1153  1153 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 1153 (init), pid 1153 (init)
+06-26 00:34:18.973  1153  1153 F libc    : Crash due to signal: crash_dump helper failed to exec, or was killed
+01-05 10:54:37.423  6733  6733 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 6733 (init), pid 6733 (init)
+01-05 10:54:37.467  6733  6733 F libc    : Crash due to signal: crash_dump helper failed to exec, or was killed
+--------- beginning of system
+01-05 11:17:40.254  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:40.324 29154 29193 E ActivityThread: Failed to find provider info for com.google.android.gms.chimera
+01-05 11:17:40.695 10140 10188 E ActivityThread: Failed to find provider info for com.google.android.gms.chimera
+01-05 11:17:40.717 10140 10188 E ActivityThread: Failed to find provider info for com.google.android.gms.chimera
+01-05 11:17:40.717 10140 10188 E ActivityThread: Failed to find provider info for com.google.android.gms.chimera
+01-05 11:17:40.719 10140 10228 E ActivityThread: Failed to find provider info for com.google.android.gms.phenotype
+01-05 11:17:40.732  3292  3408 E OplusCustomizeRestrictionManagerService: isBiometricDisabled start
+01-05 11:17:40.732  3292  4360 E OplusCustomizeRestrictionManagerService: isBiometricDisabled start
+01-05 11:17:40.733  3292  3408 E OplusCustomizeRestrictionManagerService: isBiometricDisabled start
+01-05 11:17:41.368  3292  4762 E UAH-Framework: invalid window type -1
+01-05 11:17:42.333  3292  3521 E OplusThermalStats: Error getting package info: com.coloros.filemanager
+01-05 11:17:42.333  3292  5495 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:42.362  3292  3455 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:42.384  3292  5495 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:42.396  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:43
+01-05 11:17:43.436  3292  5974 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:43.466  3292  5974 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:43.471  3292  3521 E OplusThermalStats: Error getting package info: system
+01-05 11:17:43.486 10666 10666 E OplusCustomizePackageManager: mIOplusCustomizePackageManagerService is null
+01-05 11:17:43.486 10666 10666 E OplusCustomizePackageManager: mIOplusCustomizePackageManagerService is null
+01-05 11:17:43.486 10666 10666 E OplusCustomizePackageManager: isOplusCertificatePackage Errorjava.lang.NullPointerException: Attempt to invoke interface method 'boolean android.os.customize.IOplusCustomizePackageManagerService.isOplusCertificatePackage(java.lang.String)' on a null object reference
+01-05 11:17:43.492 10656 10656 E OplusCustomizeRestrictionManager: sInstance is null, start a new sInstance
+01-05 11:17:43.519  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:43.528  3292  9991 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:43.578  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:44
+01-05 11:17:44.528  3292  5974 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:44.559  3292  5495 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:44.566  3292  3521 E OplusThermalStats: Error getting package info: com.android.packageinstaller
+01-05 11:17:44.598  3292  4361 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:44.601  3292  9991 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:44.616 10810 10810 E OplusCustomizeRestrictionManager: sInstance is null, start a new sInstance
+01-05 11:17:44.622  3292  3509 E AppOps  : package  not found, can't check for attributionTag null
+01-05 11:17:44.622  3292  3509 E AppOps  : Bad call made by uid 1000. Package "" does not belong to uid -2.
+01-05 11:17:44.622  3292  3509 E AppOps  : Cannot getAppOpMode: non-application UID -2
+01-05 11:17:44.639  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:44.640  3292  4361 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:44.649  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:45
+01-05 11:17:44.996  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:44.999  3292  3509 E AppOps  : package  not found, can't check for attributionTag null
+01-05 11:17:44.999  3292  3509 E AppOps  : Bad call made by uid 1000. Package "" does not belong to uid -2.
+01-05 11:17:44.999  3292  3509 E AppOps  : Cannot getAppOpMode: non-application UID -2
+01-05 11:17:45.001  3292  6198 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:45.006  3292  9991 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:45.011  3292  4361 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:45.019  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:45.032  3292  4762 E UAH-Framework: invalid window type -1
+01-05 11:17:45.061  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:46
+01-05 11:17:45.063  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:45.089  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:45.128 10810 11016 E ActivityThread: Failed to find provider info for com.google.android.gms.fonts
+01-05 11:17:46.086  3292  4360 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:46.088  3292  4360 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:46.092  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:46.096  3292  4762 E UAH-Framework: invalid window type -1
+01-05 11:17:46.114  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:47
+01-05 11:17:46.117  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:17:46.320  3292  4397 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.tencent.mobileqq
+01-05 11:17:46.478  5822  5976 E ActivityThread: Failed to find provider info for com.oplus.assistantscreen.configuration.change.provider
+01-05 11:18:03.321  3292  4397 E JobScheduler.Background: Couldn't determine stopped state for unknown package: com.tencent.mobileqq
+01-05 11:18:03.365  3292  3662 E PackageManagerServiceUtilsExtImpl: Fix up user restrict data of pkg: com.promenar.nexara
+01-05 11:18:03.379  3292 11130 E OplusDexoptUtils:  get apk path wrong! android.content.pm.PackageManager$NameNotFoundException: com.promenar.nexara
+01-05 11:18:04.238  3292  4361 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:04.242  3292  5495 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:04.250  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:04.250  3292  4762 E UAH-Framework: invalid window type -1
+01-05 11:18:04.282  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:48
+01-05 11:18:04.284  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+--------- beginning of main
+01-05 11:18:04.488 11177 11177 E OplusContextUtil: java.lang.NullPointerException: Attempt to invoke virtual method 'android.content.pm.PackageManager android.content.Context.getPackageManager()' on a null object reference
+01-05 11:18:04.488 11177 11177 E _Arouter: invoke error:com.oplus.uxdesign.externalscreen.ExternalScreenApplication.onCreate []
+01-05 11:18:04.491 11177 11177 E ANDR-PERF-CLIENT-SYS: death recipent object is fine
+01-05 11:18:04.502  3292  3458 E DynamicFramerate [DynamicFrameRateManagerImpl]: setFrameRateInternalForWindow: TIMING_DO_WINDOW_ANIMATION request is = FrameRateRequest: {  mUniqueID = 2747157, mVelocity = -2, mPreviousFrameRate = 90, mBindWithSC = true, mSc = Surface(name=b0312a8 com.android.packageinstaller/com.android.packageinstaller.InstallSuccess)/@0x29eb15, mTransaction = android.view.SurfaceControl$Transaction@9c2241b, Type = 20102 } , frameRate 0
+01-05 11:18:04.502  3292  3458 E DynamicFramerate [DynamicFrameRateManagerImpl]: setFrameRateInternalForWindow: TIMING_DO_WINDOW_ANIMATION request is = FrameRateRequest: {  mUniqueID = 240217437, mVelocity = -2, mPreviousFrameRate = 90, mBindWithSC = true, mSc = Surface(name=8cb8ec0 com.android.packageinstaller/com.android.packageinstaller.InstallSuccess)/@0xe516d5d, mTransaction = android.view.SurfaceControl$Transaction@de5e3a3, Type = 20102 } , frameRate 0
+01-05 11:18:04.507 24075 11369 E MSP-LOG-SDK-ColorOSVersionUtils: oplus ver:37
+01-05 11:18:04.511 24075 11369 E MSP-LOG-SDK-RateLimitManager: not_allow_invoke because of time_window_not_allow queue = [1767576345685], config = RateLimitConfig{maxCalls=1, timeWindowSeconds=21600, callIntervalSeconds=0}, ipcInvokeTimeQueueMapKey = com.heytap.nearx.tangramconfig.kit.client.ICloudCtrlServiceModule?@?global-domain_1961?@?1?@?com.coloros.phonemanager, has already call 1 times in 21600 seconds before
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: MspSdkException{code=3014,message=com.heytap.mspsdk.ratelimit.MspRateLimitExceededException: ipc rate limit exceeded in time window}
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.mspsdk.ratelimit.b.a(RateLimitInterceptor.java:56)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.mspsdk.interceptor.c.a(StandardListChain.java:40)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.mspsdk.proxy.b.a(CompatCheckInterceptor.java:30)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.mspsdk.interceptor.c.a(StandardListChain.java:40)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.mspsdk.proxy.e.invoke(InnerInvocationHandler.java:202)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at java.lang.reflect.Proxy.invoke(Proxy.java:1006)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at $Proxy18.getDynamicCondition(Unknown Source)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.nearx.tangramconfig.kit.client.KitProxy.getDynamicCondition$lambda$0(KitProxy.kt:25)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.nearx.tangramconfig.kit.client.KitProxy.b(KitProxy.kt:1)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at com.heytap.nearx.tangramconfig.kit.client.b.run(R8$$SyntheticClass:9)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+01-05 11:18:04.513 24075 11369 E MSP-LOG-SDK-: 	at java.lang.Thread.run(Thread.java:1119)
+01-05 11:18:04.545 11246 11327 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.566 11177 11177 E _Arouter: invoke error:com.oplus.uxdesign.language.LanguageApplication.onTrimMemory [int]
+01-05 11:18:04.567 11177 11177 E _Arouter: invoke error:com.oplus.uxdesign.externalscreen.ExternalScreenApplication.onTrimMemory [int]
+01-05 11:18:04.567 11177 11177 E _Arouter: invoke error:com.oplus.theme.OplusThemeApplication.onTrimMemory [int]
+01-05 11:18:04.567 11177 11177 E _Arouter: invoke error:com.oplus.uxdesign.uxcolor.UxColorApplication.onTrimMemory [int]
+01-05 11:18:04.567 11177 11177 E _Arouter: invoke error:com.oplus.uxdesign.personal.PersonalApplication.onTrimMemory [int]
+01-05 11:18:04.567 11177 11177 E _Arouter: invoke error:com.oplus.uxdesign.icon.IconStyleApplication.onTrimMemory [int]
+01-05 11:18:04.628 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.632 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.655 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.664 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.671 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.672 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.675 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.676 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.677 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.680 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.684  3292  6734 E OplusListManagerImpl: com.nearme.gamecenteris not kept alive
+01-05 11:18:04.685 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.685 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.686 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.687 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.687 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.688 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.689 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.690 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.693 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.695 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.698 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.699 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.699 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.701 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.704 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.705 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.708 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.709 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.710 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.710 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.711 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.712 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.713 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.717  5822  5976 E ActivityThread: Failed to find provider info for com.oplus.assistantscreen.configuration.change.provider
+01-05 11:18:04.720  5822  5976 E ActivityThread: Failed to find provider info for com.oplus.assistantscreen.configuration.change.provider
+01-05 11:18:04.723 24552 24552 E SkillTipsSDK_SkillRulerParserJsInterface: parseRuleSetFromLocal error: com.google.gson.JsonSyntaxException: java.lang.IllegalStateException: Expected BEGIN_ARRAY but was BEGIN_OBJECT at line 1 column 2 path $ -> java.lang.IllegalStateException: Expected BEGIN_ARRAY but was BEGIN_OBJECT at line 1 column 2 path $
+01-05 11:18:04.725 11273 11438 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+01-05 11:18:04.734 10573 28866 E SG::OCSCacheHelper: checkFromPackageReceiver resolvedInfo is empty,pkg = com.promenar.nexara
+01-05 11:18:04.741 11492 11492 E loros.securepay: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:04.745 23782 23913 E ActivityThread: Failed to find provider info for com.platform.usercenter.vip
+01-05 11:18:04.745 23782 23838 E FileStrategy: java.io.IOException: Read-only file system
+01-05 11:18:04.753 11492 11492 E loros.securepay: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:04.767 10573 11490 E SG::ServiceInfoUpdater:  resetPkgNameWhenInstall ACTION_PACKAGE_ADDED packageName：com.promenar.nexara,serviceInfos:0
+01-05 11:18:04.768 11517 11517 E com.opos.ads: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:04.771 11517 11517 E com.opos.ads: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:04.771 10573 28866 E SG::OCSCacheHelper: checkFromPackageReceiver resolvedInfo is empty,pkg = com.promenar.nexara
+01-05 11:18:04.782  6290  6312 E StartupManager: loadPreventRecordAppLabel: not found package com.oplus.deepthinker
+01-05 11:18:04.786 23782 23916 E ActivityThread: Failed to find provider info for com.platform.usercenter.vip
+01-05 11:18:04.795  2033  2033 E android.hardware.power.stats-impl.oplus: HandleFactory::read open charger_input_current_now(/proc/charger/input_current_now) failed! fd: -1 errno: 2
+01-05 11:18:04.804 11564 11564 E pthinker:worker: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:04.811 11564 11564 E pthinker:worker: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:04.813  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13574
+01-05 11:18:04.813  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13574
+01-05 11:18:04.813  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13574
+01-05 11:18:04.813  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13574
+01-05 11:18:04.813  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13574
+01-05 11:18:04.813  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13574
+01-05 11:18:04.819  3292  9869 E AppSearchAppsIndexerImpl: Certificate not found for package: org.chromium.webapk.a787e80890783e57e_v2
+01-05 11:18:04.828  1949  2060 E PERFHAL-OPTSHANDLER: PERFHAL-OPTSHANDLER: handle_early_wakeup_hint() 2454: Display not enabled
+01-05 11:18:04.828  1949  2060 E PERFHAL-RESOURCEQS: PERFHAL-RESOURCEQS: AddAndApply() 159: Failed to apply optimization [7, 3]
+01-05 11:18:04.854  1949  2060 E PERFHAL-OPTSHANDLER: PERFHAL-OPTSHANDLER: handle_early_wakeup_hint() 2454: Display not enabled
+01-05 11:18:04.854  1949  2060 E PERFHAL-RESOURCEQS: PERFHAL-RESOURCEQS: RemoveAndApply() 299: Failed to reset optimization here [7, 3]
+01-05 11:18:04.856 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.876  1753  1804 E TetherController: property_get sys.radio.data.modem_share_flag return 0, 1!
+01-05 11:18:04.893 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.907 11273 11485 E SQLiteLog: (1) no such table: download in "SELECT * FROM download ORDER BY _id DESC"
+01-05 11:18:04.908 11273 11485 E fatal_log: android.database.sqlite.SQLiteException: no such table: download (code 1 SQLITE_ERROR): , while compiling: SELECT * FROM download ORDER BY _id DESC
+01-05 11:18:04.908  1147  1147 E lowmemorykiller: device memory 1483524 free 87733 file 1350298
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: write /dev/memcg/memory.force_shrink_file failed
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: java.io.IOException: write failed: EBUSY (Device or resource busy)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at libcore.io.IoBridge.write(IoBridge.java:651)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at java.io.FileOutputStream.write(FileOutputStream.java:436)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.writeBytes(StreamEncoder.java:233)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.implFlushBuffer(StreamEncoder.java:309)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.implFlush(StreamEncoder.java:313)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.flush(StreamEncoder.java:153)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at java.io.OutputStreamWriter.flush(OutputStreamWriter.java:248)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at com.android.server.oplus.osense.utils.OsenseCommonUtils.writeFile(OsenseCommonUtils.java:154)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction.doGlobalShrink(OplusOsenseCompressAction.java:1886)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction.-$$Nest$mdoGlobalShrink(Unknown Source:0)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction$CompressHandler.handleMessage(OplusOsenseCompressAction.java:1334)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at android.os.Handler.dispatchMessage(Handler.java:115)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at android.os.Looper.loopOnce(Looper.java:298)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at android.os.Looper.loop(Looper.java:408)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: Caused by: android.system.ErrnoException: write failed: EBUSY (Device or resource busy)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at libcore.io.Linux.writeBytes(Native Method)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at libcore.io.Linux.write(Linux.java:336)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at libcore.io.ForwardingOs.write(ForwardingOs.java:948)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at libcore.io.BlockGuardOs.write(BlockGuardOs.java:448)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	at libcore.io.IoBridge.write(IoBridge.java:646)
+01-05 11:18:04.911  3292  4362 E OsenseCommonUtils: 	... 14 more
+01-05 11:18:04.919  1147  1147 E lowmemorykiller: device memory 1482703 free 83655 file 1353635
+01-05 11:18:04.937 11517 11686 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+01-05 11:18:04.943 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.954  6290  6312 E StartupManager: loadPreventRecordAppLabel: not found package com.oplus.games
+01-05 11:18:04.958 11273 11651 E IDHelper: 1078:com.oplus.stdid
+01-05 11:18:04.971 11729 11729 E com.oplus.games: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:04.974 11729 11729 E com.oplus.games: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:04.974 11517 11704 E LoganThread: ad_com_opos_ads_2025_12_29_11.dog3被删除
+01-05 11:18:04.978 11492 11768 E Channel.Client[1000027].securepay.ChannelClientLogUtil: (pool-3-thread-1)registerContentObserver error exception:Permission Denial: opening provider com.pantanal.server.decision.result.DecisionProvider from ProcessRecord{1b295eb 11492:com.coloros.securepay/u0a204} (pid=11492, uid=10204) requires com.oplus.permission.safe.ASSISTANT or com.oplus.permission.safe.ASSISTANT
+01-05 11:18:04.985 11492 11492 E [UAH_CLIENT]: uahInit enter
+01-05 11:18:04.987 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:04.988 11177 11336 E UXDesign--Common: ZipUtils-->changeModFile : java.nio.file.FileSystemException: /data/oplus/uxicons/morph_icons_whitelist.xml: Operation not permitted
+01-05 11:18:04.998 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.003 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.004 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.005 11492 11492 E SchedAssist: open sharedFd failed with error=Permission denied
+01-05 11:18:05.005 11492 11492 E SchedAssist: open sharedFd failed with error=Permission denied
+01-05 11:18:05.005 11492 11492 E SchedAssist: open sharedFd failed with error=Permission denied
+01-05 11:18:05.006 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.016 11564 11564 E ANDR-PERF-CLIENT-SYS: death recipent object is fine
+01-05 11:18:05.019  1147  1147 E lowmemorykiller: device memory 1475065 free 61295 file 1367383
+01-05 11:18:05.020  7169  7255 E horae   : tz(cpu-0-1-1) temp changed suddenly, cut temp to:51800
+01-05 11:18:05.020  7169  7255 E horae   : Recording abnormal tz:8 state:4.
+01-05 11:18:05.037 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.090 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.096  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.096  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.096  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.108 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.110 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.112  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.112  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.112  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.116 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.117  1147  1147 E lowmemorykiller: device memory 1480644 free 72826 file 1369737
+01-05 11:18:05.122 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.128 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.129 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.133 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.135 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.137 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.139 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.145 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.149 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.151 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.153 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.154 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.155 11729 11729 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+01-05 11:18:05.166 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.169 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.170 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.170 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.172 11729 11729 E [UAH_CLIENT]: uahInit enter
+01-05 11:18:05.173 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.174 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.176 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.178 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.184 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.186 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.189 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.189 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.190 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.192 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.193 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.202 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.204 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.206 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.209 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.210 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.211 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.217  1147  1147 E lowmemorykiller: device memory 1477843 free 58899 file 1385789
+01-05 11:18:05.224 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.236 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.241 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.244 24075 24130 E PhoneManager.CloudScanManager:  queryTeeList() size = 1
+01-05 11:18:05.246 24075 24130 E PhoneManager.CloudScanManagerUtil:  queryTeeList() app num=1, list size=32, inputParams: {"appnum":"1","applist":"0048000B8451464948EACE744CD0A35C"}
+01-05 11:18:05.246 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.249 24075 11258 E OplusUXIconLoader: checkConfig parse xml failed:android.content.pm.PackageManager$NameNotFoundException: 
+01-05 11:18:05.252 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.255 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.258 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.260 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.274  1197  1260 E QC-time-services: Receive Passed == base = 13, unit = 1, operation = 2, result = 0
+01-05 11:18:05.275  1636  1656 E QC-time-services: Daemon: Time-services: Waiting to acceptconnection
+01-05 11:18:05.276  1636  1656 E QC-time-services: Daemon: Time-services: Waiting to acceptconnection
+01-05 11:18:05.276 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.277 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.278 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.284 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.288 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.289 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.290 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.293 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.293 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.301 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.302 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.303 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.308 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.309  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.309  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.309  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.310 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.312 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.316 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.318  1147  1147 E lowmemorykiller: device memory 1477477 free 91691 file 1370619
+01-05 11:18:05.318 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.319 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.319 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.320 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.320 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.327 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.329 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.331 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.333 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.333 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.334 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.334 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.337 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.338  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.338  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.338  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.343 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.346 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.347 12036 12036 E ent.mm:hotpot..: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:05.348 12036 12036 E ent.mm:hotpot..: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:05.348 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.353 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.357 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.358 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.359 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.359 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.360 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.361 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.364 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.365 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.365 11273 11901 E CursorWindow: Failed alloc newOffset: 457156mAllocOffset: 457152mSlotsOffset: 457152: No such file or directory
+01-05 11:18:05.365 11273 11901 E CursorWindow: Failed NO_MEMORY: No such file or directory
+01-05 11:18:05.366 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.367 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.372  1197  1260 E QC-time-services: Receive Passed == base = 13, unit = 1, operation = 2, result = 0
+01-05 11:18:05.372  1636  1656 E QC-time-services: Daemon: Time-services: Waiting to acceptconnection
+01-05 11:18:05.372  1636  1656 E QC-time-services: Daemon: Time-services: Waiting to acceptconnection
+01-05 11:18:05.373 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.375 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.377 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.383 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.386 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.389 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.393 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.396 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.404 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.406 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.407 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.409 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.412 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.416 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.419 10810 10810 E IJankManager: slideSceneEnd unknown scene 1000 mScene:-1
+01-05 11:18:05.419  1147  1147 E lowmemorykiller: device memory 1486517 free 89114 file 1381567
+01-05 11:18:05.420 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.422 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.424 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.425 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.429 12313 14246 E FileStrategy: java.io.IOException: Read-only file system
+01-05 11:18:05.432 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.434 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.435 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.436 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.436 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.439 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.441 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.442 11749 11749 E AdviceSDK.CompatUtils: notifyPackageChangeCallBack, pkg: com.promenar.nexara-[16.0.29-0f0e5e9]
+01-05 11:18:05.445 12209 12209 E nstant.platform: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:05.447 12209 12209 E nstant.platform: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:05.451 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.452 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.459  3292  9322 E WindowProcessControllerExtImpl: shouldMakeAbnormalActivityFinishing, list may empty, mHasActivities: false
+01-05 11:18:05.465 11749 14124 E FileStrategy: java.io.IOException: Read-only file system
+01-05 11:18:05.466 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.467 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.470 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.473 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.475 11246 11376 E AppFeatureProviderUtils: getString: getStringForFeature return null
+01-05 11:18:05.476  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.476  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.476  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.486 11749 16774 E FileStrategy: java.io.IOException: Read-only file system
+01-05 11:18:05.492 11749 31164 E AstScreen.SubscribeHelper: getCardData null
+01-05 11:18:05.505  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.505  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.505  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.517  1147  1147 E lowmemorykiller: device memory 1470636 free 60214 file 1394814
+01-05 11:18:05.524  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.524  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.524  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.525  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.525  1949  2060 E PERFHAL-OPTSHANDLER: PERFHAL-OPTSHANDLER: handle_early_wakeup_hint() 2454: Display not enabled
+01-05 11:18:05.525  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.525  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.525  1949  2060 E PERFHAL-RESOURCEQS: PERFHAL-RESOURCEQS: AddAndApply() 159: Failed to apply optimization [7, 3]
+01-05 11:18:05.535  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.535  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.535  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.535  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.535  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.535  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.538  3292  4361 E system_server: No package ID 7f found for resource ID 0x7f13021d.
+01-05 11:18:05.539  2064  2064 E cryptoeng_hidl: process com.oplus.deepthinker have no permission calling cmd:10009.
+01-05 11:18:05.542  1949  2060 E PERFHAL-OPTSHANDLER: PERFHAL-OPTSHANDLER: handle_early_wakeup_hint() 2454: Display not enabled
+01-05 11:18:05.542  1949  2060 E PERFHAL-RESOURCEQS: PERFHAL-RESOURCEQS: RemoveAndApply() 299: Failed to reset optimization here [7, 3]
+01-05 11:18:05.557  5168  5301 E OplusBracketLog: [OplusViewMirrorManager] updateHostViewRootIfNeeded, not support android.view.ViewRootImpl@9306f08
+01-05 11:18:05.565  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:49
+01-05 11:18:05.572  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:05.573  2064  2064 E cryptoeng_hidl: process com.oplus.deepthinker have no permission calling cmd:10009.
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: write /dev/memcg/memory.force_shrink_file failed
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: java.io.IOException: write failed: EBUSY (Device or resource busy)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at libcore.io.IoBridge.write(IoBridge.java:651)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at java.io.FileOutputStream.write(FileOutputStream.java:436)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.writeBytes(StreamEncoder.java:233)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.implFlushBuffer(StreamEncoder.java:309)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.implFlush(StreamEncoder.java:313)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at sun.nio.cs.StreamEncoder.flush(StreamEncoder.java:153)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at java.io.OutputStreamWriter.flush(OutputStreamWriter.java:248)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at com.android.server.oplus.osense.utils.OsenseCommonUtils.writeFile(OsenseCommonUtils.java:154)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction.doGlobalShrink(OplusOsenseCompressAction.java:1886)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction.-$$Nest$mdoGlobalShrink(Unknown Source:0)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at com.android.server.am.OplusOsenseCompressAction$CompressHandler.handleMessage(OplusOsenseCompressAction.java:1334)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at android.os.Handler.dispatchMessage(Handler.java:115)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at android.os.Looper.loopOnce(Looper.java:298)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at android.os.Looper.loop(Looper.java:408)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: Caused by: android.system.ErrnoException: write failed: EBUSY (Device or resource busy)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at libcore.io.Linux.writeBytes(Native Method)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at libcore.io.Linux.write(Linux.java:336)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at libcore.io.ForwardingOs.write(ForwardingOs.java:948)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at libcore.io.BlockGuardOs.write(BlockGuardOs.java:448)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	at libcore.io.IoBridge.write(IoBridge.java:646)
+01-05 11:18:05.580  3292  4362 E OsenseCommonUtils: 	... 14 more
+01-05 11:18:05.594 12277 12277 E promenar.nexara: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:05.597 12277 12277 E promenar.nexara: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:05.600  1755  1784 E statsd  : Stats puller failed for tag: 150134 at 1437145925960
+01-05 11:18:05.605  3292  4361 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:05.606  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.606  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.606  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.611  3292  3521 E OplusThermalStats: Error getting package info: com.promenar.nexara
+01-05 11:18:05.614  1755  1784 E statsd  : Stats puller failed for tag: 150134 at 1437204340127
+01-05 11:18:05.620  1755  1784 E statsd  : Gauge Stats puller failed for tag: 150119 at 1437204340127
+01-05 11:18:05.620  1147  1147 E lowmemorykiller: device memory 1465092 free 50610 file 1397624
+01-05 11:18:05.621  2033  2033 E android.hardware.power.stats-impl.oplus: HandleFactory::read open charger_input_current_now(/proc/charger/input_current_now) failed! fd: -1 errno: 2
+01-05 11:18:05.621  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13583
+01-05 11:18:05.621  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13583
+01-05 11:18:05.621  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13583
+01-05 11:18:05.626 12277 12277 E [UAH_CLIENT]: uahInit enter
+01-05 11:18:05.626  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.626  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.626  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.642  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.642  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.642  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.642  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.642  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.643  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.643  2064  2064 E cryptoeng_hidl: process com.oplus.deepthinker have no permission calling cmd:10009.
+01-05 11:18:05.645 12277 12277 E SchedAssist: open sharedFd failed with error=Permission denied
+01-05 11:18:05.645 12277 12277 E SchedAssist: open sharedFd failed with error=Permission denied
+01-05 11:18:05.645 12277 12277 E SchedAssist: open sharedFd failed with error=Permission denied
+01-05 11:18:05.649 12277 12277 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+01-05 11:18:05.651  2030  2030 E qspmHal : GPU profile file NOT found !!
+01-05 11:18:05.651 12277 12277 E OplusPredictiveBackController:  NoSuchMethodException 
+01-05 11:18:05.671  3292  4361 E SchedAssist: ofbCfgFrameTask tid(12326) failed with error=Socket operation on non-socket
+01-05 11:18:05.673 12277 12277 E OplusBracketLog: [OplusViewMirrorManager] updateHostViewRootIfNeeded, not support android.view.ViewRootImpl@c89e76a
+01-05 11:18:05.675  3292  3408 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:05.675  3292  3408 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:05.698  1755  1784 E statsd  : Gauge Stats puller failed for tag: 150146 at 1437279637002
+01-05 11:18:05.699  1755  1784 E statsd  : Gauge Stats puller failed for tag: 150134 at 1437283090595
+01-05 11:18:05.704 12313 12950 E metis_v2_JenaHandlerManager: local thread match [7f0000011767582200256215224552|p_24552_3bb42d@2|p_12313_8114cac@124|com.oplus.metis] [base|com.oplus.metis|2.0.20-aa39d14]
+01-05 11:18:05.704 12313 12950 E metis_v2_JenaHandlerManager: local thread match [7f0000011767582200256215224552|p_24552_3bb42d@2|p_12313_8114cac@124|com.oplus.metis]
+01-05 11:18:05.706 12313 21787 E metis_v2_FactManager: There is no subModel: com.oplus.linker
+01-05 11:18:05.709  2064  2064 E cryptoeng_hidl: process com.oplus.deepthinker have no permission calling cmd:10009.
+01-05 11:18:05.714 12209 12209 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+01-05 11:18:05.716  1147  1147 E lowmemorykiller: device memory 1447248 free 75260 file 1369289
+01-05 11:18:05.723  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.723  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.723  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.741  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.741  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.741  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.752  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.752  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.752  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.752  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.752  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.752  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.757 12277 12334 E OplusCustomizeRestrictionManager: sInstance is null, start a new sInstance
+01-05 11:18:05.761  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.761  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.761  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.763  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.763  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.763  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.791 27544 27647 E FileStrategy: java.io.IOException: Read-only file system
+01-05 11:18:05.791 12209 12209 E nstant.platform: hiddenapi: Accessing hidden method Ldalvik/system/VMRuntime;->setHiddenApiExemptions([Ljava/lang/String;)V (runtime_flags=CorePlatformApi, domain=core-platform, api=blocked,core-platform-api) from Lorg/hapjs/common/utils/hiddenapi/BootstrapClass; (domain=app) using reflection: denied
+01-05 11:18:05.817  1147  1147 E lowmemorykiller: device memory 1440557 free 56362 file 1378145
+01-05 11:18:05.821  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.821  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.821  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.824  1904  1975 E WifiHAL : wifi_get_cached_scan_results: Wifi Cached Scan Result not supported by driver
+01-05 11:18:05.824  3292  4639 E WifiStaIfaceAidlImpl: getCachedScanData failed with service-specific exception: android.os.ServiceSpecificException:  (code 4)
+01-05 11:18:05.841 10573 13250 E CardService[1006120].CardServiceServerProviderProxy: call: illegal call without permission
+01-05 11:18:05.845  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.845  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.845  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.866  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.866  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.866  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.878  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.878  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.878  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.891  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.891  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.891  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.913  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.913  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.913  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.915 23782 23916 E ActivityThread: Failed to find provider info for com.platform.usercenter.vip
+01-05 11:18:05.919  1147  1147 E lowmemorykiller: device memory 1432470 free 52285 file 1378573
+01-05 11:18:05.934 12209 12444 E IDHelper: 1078:com.oplus.stdid
+01-05 11:18:05.937 12209 12458 E IDHelper: 1078:com.oplus.stdid
+01-05 11:18:05.942 12209 12380 E AppOnMainProcess: onAppCreateAsync preload~~~~~~~~~~~~~~~
+01-05 11:18:05.943 12209 12455 E IDHelper: 1078:com.oplus.stdid
+01-05 11:18:05.948  1147  1147 E lowmemorykiller: device memory 1431800 free 52443 file 1377524
+01-05 11:18:05.989  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.989  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.989  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.989  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.989  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.989  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.991  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:05.991  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:05.991  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:05.994  7169  7255 E horae   : tz(cpu-0-1-1) temp changed suddenly, cut temp to:64300
+01-05 11:18:05.994  7169  7255 E horae   : Recording abnormal tz:8 state:4.
+01-05 11:18:06.018  1147  1147 E lowmemorykiller: device memory 1430372 free 54124 file 1373054
+01-05 11:18:06.044  3292  5053 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.052  1147  1147 E lowmemorykiller: device memory 1428549 free 54800 file 1370268
+01-05 11:18:06.117  1147  1147 E lowmemorykiller: device memory 1421230 free 65227 file 1355280
+01-05 11:18:06.195  3292  4907 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.214 10810 10810 E WindowManager: android.view.WindowLeaked: Activity com.android.packageinstaller.InstallSuccess has leaked window com.android.internal.policy.DecorView{418a74f V.E...... R.....ID 0,0-1083,544 alpha=1.0 viewInfo = }[InstallSuccess] that was originally added here
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.ViewRootImpl.<init>(ViewRootImpl.java:1346)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.ViewRootImpl.<init>(ViewRootImpl.java:1323)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.WindowManagerGlobal.addView(WindowManagerGlobal.java:480)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:158)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.Dialog.show(Dialog.java:370)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.packageinstaller.InstallSuccess.d(Unknown Source:67)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.packageinstaller.InstallSuccess.onCreate(Unknown Source:78)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.Activity.performCreate(Activity.java:9391)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.Activity.performCreate(Activity.java:9363)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1541)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4604)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4827)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:242)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:138)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:108)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:85)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:3116)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.os.Handler.dispatchMessage(Handler.java:115)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.os.Looper.loopOnce(Looper.java:298)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.os.Looper.loop(Looper.java:408)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread.main(ActivityThread.java:9964)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at java.lang.reflect.Method.invoke(Native Method)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:613)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1074)
+01-05 11:18:06.214 10810 10810 E WindowManager: android.view.WindowLeaked: Activity com.android.packageinstaller.InstallSuccess has leaked window com.android.internal.policy.DecorView{ceadb36 V.E...... R.....ID 0,0-1083,544 alpha=1.0 viewInfo = }[InstallSuccess] that was originally added here
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.ViewRootImpl.<init>(ViewRootImpl.java:1346)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.ViewRootImpl.<init>(ViewRootImpl.java:1323)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.WindowManagerGlobal.addView(WindowManagerGlobal.java:480)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:158)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.Dialog.show(Dialog.java:370)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.packageinstaller.InstallSuccess.d(Unknown Source:67)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.packageinstaller.InstallSuccess.onResume(Unknown Source:3)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.Instrumentation.callActivityOnResume(Instrumentation.java:1737)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.Activity.performResume(Activity.java:9562)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread.performResumeActivity(ActivityThread.java:6060)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread.handleResumeActivity(ActivityThread.java:6121)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.ResumeActivityItem.execute(ResumeActivityItem.java:80)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.ActivityTransactionItem.execute(ActivityTransactionItem.java:63)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.TransactionExecutor.executeLifecycleItem(TransactionExecutor.java:174)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:106)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:85)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:3116)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.os.Handler.dispatchMessage(Handler.java:115)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.os.Looper.loopOnce(Looper.java:298)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.os.Looper.loop(Looper.java:408)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at android.app.ActivityThread.main(ActivityThread.java:9964)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at java.lang.reflect.Method.invoke(Native Method)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:613)
+01-05 11:18:06.214 10810 10810 E WindowManager: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1074)
+01-05 11:18:06.217  1147  1147 E lowmemorykiller: device memory 1435879 free 59349 file 1365519
+01-05 11:18:06.220 10810 10810 E InputEventReceiver: channel '8cb8ec0 com.android.packageinstaller/com.android.packageinstaller.InstallSuccess' ~ Publisher closed input channel or an error occurred. events=0x9
+01-05 11:18:06.220  5822  5976 E ActivityThread: Failed to find provider info for com.oplus.assistantscreen.configuration.change.provider
+01-05 11:18:06.229  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: FATAL EXCEPTION: mqt_v_native
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: Process: com.promenar.nexara, PID: 12277
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: com.facebook.react.common.JavascriptException: TypeError: Cannot read property 'fab' of undefined
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: This error is located at:
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SuperAssistantFAB (address at index.android.bundle:1:3012502)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RCTView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at View (address at index.android.bundle:1:556907)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at CssInterop.View (address at index.android.bundle:1:561527)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at PageLayout (address at index.android.bundle:1:2562575)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at AgentExplorerScreen (address at index.android.bundle:1:2533226)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Suspense (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Route (address at index.android.bundle:1:1408149)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at BaseRoute (address at index.android.bundle:1:1415053)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at StaticContainer (address at index.android.bundle:1:1379696)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at EnsureSingleNavigator (address at index.android.bundle:1:1324632)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SceneView (address at index.android.bundle:1:1377480)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RCTView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at View (address at index.android.bundle:1:556907)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RCTView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at View (address at index.android.bundle:1:556907)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at CssInterop.View (address at index.android.bundle:1:561527)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Animated(View) (address at index.android.bundle:1:646361)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Background (address at index.android.bundle:1:1426846)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Screen (address at index.android.bundle:1:1470760)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RNSScreen (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Animated(Anonymous) (address at index.android.bundle:1:646361)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Suspender (address at index.android.bundle:1:1487811)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Suspense (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Freeze (address at index.android.bundle:1:1487872)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at DelayedFreeze (address at index.android.bundle:1:1487453)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at InnerScreen (address at index.android.bundle:1:1485169)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1486851)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at MaybeScreen (address at index.android.bundle:1:1480717)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RNSScreenContainer (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ScreenContainer (address at index.android.bundle:1:1494402)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at MaybeScreenContainer (address at index.android.bundle:1:1480878)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RCTView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at View (address at index.android.bundle:1:556907)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at FrameSizeProvider (address at index.android.bundle:1:1458505)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SafeAreaProviderCompat (address at index.android.bundle:1:1469962)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at BottomTabView (address at index.android.bundle:1:1421309)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at PreventRemoveProvider (address at index.android.bundle:1:1355806)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NavigationStateListenerProvider (address at index.android.bundle:1:1385028)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NavigationContent (address at index.android.bundle:1:1374564)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1374467)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at BottomTabNavigator (address at index.android.bundle:1:1420390)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1407069)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at TabLayout (address at index.android.bundle:1:1291826)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Suspense (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Route (address at index.android.bundle:1:1408149)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at BaseRoute (address at index.android.bundle:1:1415053)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at StaticContainer (address at index.android.bundle:1:1379696)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at EnsureSingleNavigator (address at index.android.bundle:1:1324632)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SceneView (address at index.android.bundle:1:1377480)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RNSScreenContentWrapper (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ScreenContentWrapper (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at DebugContainer (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RNSScreen (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Animated(Anonymous) (address at index.android.bundle:1:646361)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Suspender (address at index.android.bundle:1:1487811)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Suspense (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Freeze (address at index.android.bundle:1:1487872)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at DelayedFreeze (address at index.android.bundle:1:1487453)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at InnerScreen (address at index.android.bundle:1:1485169)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1486851)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ScreenStackItem (address at index.android.bundle:1:1497037)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SceneView (address at index.android.bundle:1:1520378)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RNSScreenStack (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1496114)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ScreenStack (address at index.android.bundle:1:1495300)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RCTView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at View (address at index.android.bundle:1:556907)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at FrameSizeProvider (address at index.android.bundle:1:1458505)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SafeAreaProviderCompat (address at index.android.bundle:1:1469962)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NativeStackView (address at index.android.bundle:1:1518937)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at PreventRemoveProvider (address at index.android.bundle:1:1355806)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NavigationStateListenerProvider (address at index.android.bundle:1:1385028)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NavigationContent (address at index.android.bundle:1:1374564)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1374467)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NativeStackNavigator (address at index.android.bundle:1:1515295)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1407069)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1297146)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ThemeProvider (address at index.android.bundle:1:1326793)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ToastProvider (address at index.android.bundle:1:2563212)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at KeyboardControllerView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Animated(Anonymous) (address at index.android.bundle:1:646361)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at AnimatedComponent(Animated(Anonymous)) (address at index.android.bundle:1:947714)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Animated(Anonymous) (address at index.android.bundle:1:947907)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at KeyboardProvider (address at index.android.bundle:1:4396343)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ThemeProvider (address at index.android.bundle:1:2516455)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RNGestureHandlerRootView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at GestureHandlerRootView (address at index.android.bundle:1:3291829)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RootLayout (address at index.android.bundle:1:4490081)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Suspense (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Route (address at index.android.bundle:1:1408149)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at BaseRoute (address at index.android.bundle:1:1415053)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at StaticContainer (address at index.android.bundle:1:1379696)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at EnsureSingleNavigator (address at index.android.bundle:1:1324632)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SceneView (address at index.android.bundle:1:1377480)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at PreventRemoveProvider (address at index.android.bundle:1:1355806)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NavigationStateListenerProvider (address at index.android.bundle:1:1385028)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NavigationContent (address at index.android.bundle:1:1374564)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1374467)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at Content (address at index.android.bundle:1:1617721)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SafeAreaEnv (address at index.android.bundle:1:1189364)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RNCSafeAreaProvider (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SafeAreaProvider (address at index.android.bundle:1:1191274)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at SafeAreaProviderShim (address at index.android.bundle:1:1189761)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at LinkPreviewContextProvider (address at index.android.bundle:1:1528536)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at anonymous (address at index.android.bundle:1:1616615)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ThemeProvider (address at index.android.bundle:1:1326793)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at EnsureSingleNavigator (address at index.android.bundle:1:1324632)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at BaseNavigationContainer (address at index.android.bundle:1:1303340)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at NavigationContainerInner (address at index.android.bundle:1:1619581)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ContextNavigator (address at index.android.bundle:1:1616844)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at ExpoRoot (address at index.android.bundle:1:1616487)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at App (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at RCTView (<anonymous>)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at View (address at index.android.bundle:1:556907)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at CssInterop.View (address at index.android.bundle:1:561527)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime:     at AppContainer (address at index.android.bundle:1:556234), stack:
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: SuperAssistantFAB@1:3012597
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: renderWithHooks@1:315603
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: updateFunctionComponent@1:334386
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: beginWork@1:342229
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: performUnitOfWork@1:360898
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: workLoopSync@1:359906
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: renderRootSync@1:359738
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: performWorkOnRoot@1:357382
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: performSyncWorkOnRoot@1:311190
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: flushSyncWorkAcrossRoots_impl@1:310081
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: flushPassiveEffects@1:363757
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: anonymous@1:362412
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at com.facebook.react.modules.core.ExceptionsManagerModule.reportException(ExceptionsManagerModule.kt:52)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at com.facebook.jni.NativeRunnable.run(Native Method)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at android.os.Handler.handleCallback(Handler.java:1027)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:108)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at com.facebook.react.bridge.queue.MessageQueueThreadHandler.dispatchMessage(MessageQueueThreadHandler.kt:21)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:298)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:408)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at com.facebook.react.bridge.queue.MessageQueueThreadImpl$Companion.startNewBackgroundThread$lambda$1(MessageQueueThreadImpl.kt:175)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at com.facebook.react.bridge.queue.MessageQueueThreadImpl$Companion.$r8$lambda$ldnZnqelhYFctGaUKkOKYj5rxo4(Unknown Source:0)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at com.facebook.react.bridge.queue.MessageQueueThreadImpl$Companion$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+01-05 11:18:06.241 12277 12336 E AndroidRuntime: 	at java.lang.Thread.run(Thread.java:1119)
+01-05 11:18:06.261  3292  4361 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.261  3292  4361 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.264  3292  3521 E OplusThermalStats: Error getting package info: com.android.packageinstaller
+01-05 11:18:06.266  1755  1784 E statsd  : Stats puller failed for tag: 150134 at 1437850322158
+01-05 11:18:06.266  1755  1784 E statsd  : Stats puller failed for tag: 150134 at 1437855590595
+01-05 11:18:06.268  1755  1784 E statsd  : Gauge Stats puller failed for tag: 150119 at 1437855590595
+01-05 11:18:06.270  2033  2033 E android.hardware.power.stats-impl.oplus: HandleFactory::read open charger_input_current_now(/proc/charger/input_current_now) failed! fd: -1 errno: 2
+01-05 11:18:06.270  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13642
+01-05 11:18:06.270  7196 14663 E midasd  : getTotalFlipsFromSf mCurFrameCount: 13642
+01-05 11:18:06.272  1755  1784 E statsd  : Gauge Stats puller failed for tag: 150146 at 1437859341220
+01-05 11:18:06.274  1755  1784 E statsd  : Stats puller failed for tag: 150134 at 1437865129970
+01-05 11:18:06.276  3292  3521 E OplusThermalStats: Error getting package info: com.coloros.filemanager
+01-05 11:18:06.276  3292  5053 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.278 19049 19049 E FileManager::Injector: inject has error:No definition found for class:'zi.a' q:''. Check your definitions!
+01-05 11:18:06.279 19049 19049 E FileManager::TouchShareSupplier: registerTapShare 1006 register:false, intercept register!!!
+01-05 11:18:06.284  1755  1784 E statsd  : Stats puller failed for tag: 150134 at 1437872574970
+01-05 11:18:06.284  1755  1784 E statsd  : Gauge Stats puller failed for tag: 150119 at 1437872574970
+01-05 11:18:06.284 12313 12950 E metis_v2_JenaHandlerManager: local thread match [7f0000011767582200256215224552|p_24552_3bb42d@2|p_12313_8114cac@124|com.oplus.metis]
+01-05 11:18:06.286  1755  1784 E statsd  : Gauge Stats puller failed for tag: 150146 at 1437874744866
+01-05 11:18:06.288 12576 12576 E .oplus.thirdkit: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:06.291 12576 12576 E .oplus.thirdkit: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:06.295  2033  2033 E android.hardware.power.stats-impl.oplus: HandleFactory::read open charger_input_current_now(/proc/charger/input_current_now) failed! fd: -1 errno: 2
+01-05 11:18:06.296 12313 12950 E metis_v2_JenaHandlerManager: local thread match [7f0000011767582200256215224552|p_24552_3bb42d@2|p_12313_8114cac@124|com.oplus.metis]
+01-05 11:18:06.296  3292  3458 E OplusAppQuickStart_AppQuickStartController: not start from launcher transition:50
+01-05 11:18:06.299  5340  5340 E SmsApplication: com.android.mms lost android:read_cell_broadcasts:  (fixing)
+01-05 11:18:06.302  3292  3458 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.306 12313 21802 E metis_v2_FactManager: There is no subModel: com.oplus.linker
+01-05 11:18:06.308 12313 12950 E metis_v2_JenaHandlerManager: local thread match [7f0000011767582200256215224552|p_24552_3bb42d@2|p_12313_8114cac@124|com.oplus.metis]
+01-05 11:18:06.308  3292  9706 E OplusStorageUFSBandwidth: storage_io_metrics_path is /proc/oplus_storage/io_metrics/forever/
+01-05 11:18:06.310  3292  9706 E OplusStorageUFSBandwidth: Bandwidth - Read: 565.15 MB/s, Write: 15.48 MB/s
+01-05 11:18:06.310  3292  9706 E OplusStorageUFSBandwidth: Task time: 2ms
+01-05 11:18:06.312  3292  9706 E OplusStorageUFSBandwidth: Alarm set to trigger in 10 seconds
+01-05 11:18:06.315  3292  4587 E IPCThreadState: Binder transaction failure. id: 889075, BR_*: 29189, error: -3 (No such process)
+01-05 11:18:06.317 12313 12950 E metis_v2_JenaHandlerManager: local thread match [7f0000011767582200256215224552|p_24552_3bb42d@2|p_12313_8114cac@124|com.oplus.metis]
+01-05 11:18:06.318  1147  1147 E lowmemorykiller: device memory 1449929 free 86801 file 1354798
+01-05 11:18:06.318  9830  9830 E InputEventReceiver: channel 'ClientState{78895d7 mUid=10345 mPid=12277 mSelfReportedDisplayId=0}' ~ Publisher closed input channel or an error occurred. events=0x9
+01-05 11:18:06.322  1755  1784 E statsd  : Stats puller failed for tag: 150134 at 1437913160283
+01-05 11:18:06.327 12313 21802 E metis_v2_FactManager: There is no subModel: com.oplus.linker
+01-05 11:18:06.349 12576 12576 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+01-05 11:18:06.360 12576 12576 E ANDR-PERF-CLIENT-SYS: death recipent object is fine
+01-05 11:18:06.420  1147  1147 E lowmemorykiller: device memory 1454163 free 87007 file 1358794
+01-05 11:18:06.500  5340  7421 E PhoneInterfaceManager: getServiceStateForSlot retuning null for invalid slotIndex=-1
+01-05 11:18:06.520  1147  1147 E lowmemorykiller: device memory 1456046 free 79324 file 1367414
+01-05 11:18:06.596 12634 12634 E loros.shortcuts: Unknown bits set in runtime_flags: 0x40000000
+01-05 11:18:06.598 12634 12634 E loros.shortcuts: Not starting debugger since process cannot load the jdwp agent.
+01-05 11:18:06.622  1147  1147 E lowmemorykiller: device memory 1453014 free 72269 file 1371183
+01-05 11:18:06.654 12634 12675 E IDHelper: 1078:com.oplus.stdid
+01-05 11:18:06.657 12634 12674 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+01-05 11:18:06.675 12634 12675 E DeviceUtil: HLog未初始化-->==== getDeviceOSVersion【V16.0.0】
+01-05 11:18:06.693 12634 12674 E SceneSDK.6.1.9.SceneManager: getSupportSceneList: failure context is null
+01-05 11:18:06.724  1147  1147 E lowmemorykiller: device memory 1449722 free 70401 file 1370359
+01-05 11:18:06.737  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:06.737  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:06.737  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:06.747  1193  1193 E KeymasterUtils: IKMHal_sendCmd failed with rsp_header->status: -28
+01-05 11:18:06.747  1193  1193 E KeyMasterHalDevice: abort_operation
+01-05 11:18:06.748  1193  1193 E KeyMasterHalDevice: ret: -28
+01-05 11:18:06.777 11749 13181 E AstScreen.ShortcutDAOV2: shortcutDataManager updateLegalStatusMap, legalStatusCache:{14=0, -1012862034=0, 15=0, 16=0, 18=0, 19=0, 20=0, 21=0, 24=0, 25=0, 27=0, 28=0, 29=0, 30=0, 31=0, 32=0, -845193793=0, 33=0, 1258314529=0, -1300648355=0, 922111699=0, 42=0, 43=0, 44=0, 46=0, 47=0, 48=0, 49=0, 50=0, 51=0, 53=0, 664498092=0, 56=0, 154133778=0, -1709882794=0, 72=0, 80=0, 82=0, -103517822=0, 101=0, 102=0, 703863186=0, 105=0, -1292231023=0, 108=0, 111=0, -1763354987=0, -1590766241=0, 118=0, 124=0, 125=0, 1174097286=0, 126=0, 127=0, 313184810=0, 132=0, 134=4, 136=0, 947455218=0, 140=0, 141=0, 142=0, 144=4, 145=4, 146=4, 1666793419=0, 147=4, 148=4, 1897569679=0, -1817713859=7, 156=0, -104850075=0, 173=0, 1411902602=0, 1880698029=0, 1175237305=0, -853066344=0, 207=0, 926482423=0, 395281247=0, 644871869=0, 655652806=0, 219=0, 1687678028=0, 220=0, 223=0, 1176395519=0, 227=0, 839671528=0, 230=0, 231=0, 232=0, 233=0, 308353672=0, 234=0, 235=0, 236=0, 237=0, -1079643320=0, 238=0, 239=0, 240=0, 242=0, 243=0, 244=4, 245=0, 246=0, 1271916345=0, 247=0, 248=0, 249=0, 251=4, 252=0, 253=0, 254=0, 255=0, 256=0, -1606001344=0, 277=4, 278=0, 279=0, 280=0, 1523335149=7, 40391494=0, -1943382780=0, -1637701853=0, -1958346218=0, 1605934816=0, -357240877=0, -1635328017=0, -1357050264=0, 730819318=0, 1156888975=0, 1254578009=0, -1159916687=0, 256457446=0, -1891421549=0, 841170930=0, 2008655469=0, -2016201212=0, 771221524=0, 1266951777=0, 1116722044=0, 1730484946=0, -1848306725=0, -1186720938=0, 847156324=0, -1975547870=0, 1780378685=0, 568722390=0, -1605005728=0, 1228655483=0, 1568024370=0, 1851809831=0, 1838074833=0, 438725699=0, 1877659010=0, 88587062=0, -644965387=0, 1062746585=0, -973170826=0, 793257435=0, 2056029204=0, -1903345632=0, -1547964138=0, 747770415=0, 1654990951=0, 1534272944=0, 752555548=0, 1855462465=0, 1380298910=0, 1240231728=0, -1658702906=0, -945730221=0, -1450225804=0, 246848950=0, -69877540=0, 1423017949=0, 180689382=0, 10619783=0, -1080182607=0, 1673600245=0, 949069732=0, -1361117725=0, 720897457=0, -1897170512=0, 320673862=0, -993440874=0, -695601689=0, -257531938=0, -30315083=0, 515982662=0, -1046965711=0, 1591529847=0, 1994036591=0, 1275866042=0, -2075712516=0, 535446614=0, 761205473=0, 2049668591=0, -1923356010=0, 1283073952=0, 1056984291=0, 909131224=0, 184318231=0, -30394914=0, -543674259=0}
+01-05 11:18:06.823 12036 12036 E ent.mm:hotpot..: hiddenapi: Accessing hidden field Landroid/app/ActivityThread$H;->RELAUNCH_ACTIVITY:I (runtime_flags=0, domain=platform, api=max-target-o) from Lcom/tencent/tinker/loader/shareutil/ShareReflectUtil; (domain=app) using reflection: denied
+01-05 11:18:06.824  1147  1147 E lowmemorykiller: device memory 1436665 free 63221 file 1365950
+01-05 11:18:06.834 12036 12036 E ent.mm:hotpot..: hiddenapi: Accessing hidden field Landroid/app/ActivityThread$H;->APPLICATION_INFO_CHANGED:I (runtime_flags=0, domain=platform, api=max-target-o) from Lcom/tencent/tinker/loader/shareutil/ShareReflectUtil; (domain=app) using reflection: denied
+01-05 11:18:06.920  3292  5663 E IPCThreadState: Binder transaction failure. id: 891555, BR_*: 29189, error: -22 (Invalid argument)
+01-05 11:18:06.922  3292  5663 E FlexibleWindowManagerService: notifyTaskObserverToAttachController not need to notify!
+01-05 11:18:06.926  1147  1147 E lowmemorykiller: device memory 1449983 free 73683 file 1369325
+01-05 11:18:06.956  3292  3292 E OplusGestureAnimationManagerPolicy: mScreenHeight:2616 mScreenWidth:1140 mRotation:0

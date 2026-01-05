@@ -338,11 +338,25 @@ export class VectorizationQueue {
   }
 
   /**
-   * 清空队列（谨慎使用）
+   * 取消指定任务
+   */
+  cancel(docId: string) {
+    // 1. 如果在等待队列中，直接移除
+    this.queue = this.queue.filter(t => t.docId !== docId);
+
+    // 2. 如果是当前正在处理的任务，无法立即中断 Promise 链，
+    // 但我们可以标记状态，让后续步骤检查是否应继续
+    // (需要重构 processNext 来支持 abort signal，目前简化为仅移除队列)
+
+    this.notifyStateChange();
+  }
+
+  /**
+   * 清空队列（强力停止）
    */
   clear() {
     this.queue = [];
-    this.isProcessing = false;
+    this.isProcessing = false; // 强制重置状态
     this.notifyStateChange();
   }
 }

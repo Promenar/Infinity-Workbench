@@ -101,6 +101,10 @@ interface RagState {
     messageId?: string,
   ) => void;
 
+  // 队列控制
+  cancelVectorization: (docId: string) => void;
+  clearVectorizationQueue: () => void;
+
   // 统计信息
   getVectorStats: () => { totalDocs: number; totalVectors: number; totalSize: number };
 }
@@ -705,6 +709,22 @@ export const useRagStore = create<RagState>((set, get) => {
         }
 
         return newState;
+      });
+    },
+
+    cancelVectorization: (docId) => {
+      const queue = getQueue();
+      queue.cancel(docId);
+    },
+
+    clearVectorizationQueue: () => {
+      const queue = getQueue();
+      queue.clear();
+      // 强制刷新状态防止UI卡死
+      set({
+        vectorizationQueue: [],
+        currentTask: null,
+        processingState: { status: 'idle', chunks: [] } // Reset global indicator too if needed
       });
     },
 

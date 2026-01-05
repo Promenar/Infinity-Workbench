@@ -14,6 +14,7 @@ export default function KnowledgeGraphScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const docId = params.docId as string | undefined;
+  const folderId = params.folderId as string | undefined;
   const sessionId = params.sessionId as string | undefined;
   const agentId = params.agentId as string | undefined;
 
@@ -23,39 +24,67 @@ export default function KnowledgeGraphScreen() {
   // State filtering logic
   let activeDocIds: string[] | undefined = undefined;
 
+  const ragState = useRagStore.getState();
+
+  // Helper: Recursive Document Resolution
+  const getRecursiveFolderDocs = (startFolderId: string): string[] => {
+    const getAllChildFolderIds = (parentId: string): string[] => {
+      const children = ragState.folders.filter(f => f.parentId === parentId).map(f => f.id);
+      let grandChildren: string[] = [];
+      children.forEach(childId => {
+        grandChildren = [...grandChildren, ...getAllChildFolderIds(childId)];
+      });
+      return [...children, ...grandChildren];
+    };
+
+    const targetFolderIds = [startFolderId, ...getAllChildFolderIds(startFolderId)];
+
+    return ragState.documents
+      .filter(d => d.folderId && targetFolderIds.includes(d.folderId))
+      .map(d => d.id);
+  };
+
   if (docId) {
     title = '文档图谱';
     subtitle = '当前文档的实体关系网';
     activeDocIds = [docId];
+  } else if (folderId) {
+    const folder = ragState.folders.find(f => f.id === folderId);
+    title = folder ? `${folder.name}` : '文件夹图谱';
+    subtitle = '文件夹及其子目录的知识网络';
+
+    activeDocIds = getRecursiveFolderDocs(folderId);
   } else if (sessionId) {
-    title = '会话图谱';
-    subtitle = '当前对话上下文的知识网络';
+    // 1. Super Assistant -> Global View (No filters)
+    if (sessionId === 'super_assistant') {
+      title = '全域知识图谱';
+      subtitle = '全量会话与知识库网络';
+      activeDocIds = undefined; // Undefined means ALL
+    } else {
+      // 2. Ordinary Session -> Scoped View
+      title = '会话图谱';
+      subtitle = '当前对话上下文的知识网络';
 
-    // Resolve session active docs + global docs
-    const session = useChatStore.getState().getSession(sessionId);
-    const ragState = useRagStore.getState();
-    const globalDocs = ragState.documents.filter(d => d.isGlobal).map(d => d.id);
+      // Resolve session active docs + global docs
+      const session = useChatStore.getState().getSession(sessionId);
+      const globalDocs = ragState.documents.filter(d => d.isGlobal).map(d => d.id);
 
-    // Get agent active folders/docs
-    const agentState = useAgentStore.getState(); // Assuming we can access agent store
-    const agent = session ? agentState.getAgent(session.agentId) : undefined;
+      const sessionDocIds = session?.ragOptions?.activeDocIds || [];
+      const sessionFolderIds = session?.ragOptions?.activeFolderIds || [];
 
-    // Check session overrides, then agent defaults
-    // Note: This logic duplicates MemoryManager partly, strictly we should use MemoryManager helper
-    // But for UI, let's just grab explicit valid IDs.
+      // Recursive Folder Resolution
+      let allFolderDocIds: string[] = [];
+      sessionFolderIds.forEach(fid => {
+        allFolderDocIds = [...allFolderDocIds, ...getRecursiveFolderDocs(fid)];
+      });
 
-    const sessionDocIds = session?.ragOptions?.activeDocIds || [];
-    // const agentDocIds = agent?.ragConfig?.activeDocIds || []; // Removed invalid access
-
-    // Note: Ideally we recursively resolve folders too. 
-    // For now, let's include global + session specific.
-    activeDocIds = [...new Set([...globalDocs, ...sessionDocIds])];
+      activeDocIds = [...new Set([...globalDocs, ...sessionDocIds, ...allFolderDocIds])];
+    }
 
   } else if (agentId) {
     title = '助手图谱';
     subtitle = '该助手的专属知识库';
     // Get agent valid docs + global
-    const ragState = useRagStore.getState();
     const globalDocs = ragState.documents.filter(d => d.isGlobal).map(d => d.id);
     // Agent docs? 
     activeDocIds = globalDocs; // Simplified for now
@@ -76,7 +105,7 @@ export default function KnowledgeGraphScreen() {
       <View style={{ flex: 1 }}>
         <KnowledgeGraphView
           docIds={activeDocIds}
-          sessionId={sessionId}
+          sessionId={sessionId === 'super_assistant' ? undefined : sessionId}
           agentId={agentId}
           onNodeSelect={(id) => console.log('Selected Node:', id)}
         />

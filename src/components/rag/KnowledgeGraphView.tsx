@@ -29,6 +29,20 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   const [selectedNodeData, setSelectedNodeData] = useState<{ id: string; label: string; group?: string } | null>(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
 
+  // Cleanup on unmount to prevent crashes (MUST BE BEFORE CONDITIONAL RETURNS)
+  useEffect(() => {
+    return () => {
+      const stopScript = `
+        if (typeof network !== 'undefined' && network) {
+          network.stopSimulation();
+          network.destroy();
+          network = null;
+        }
+      `;
+      webViewRef.current?.injectJavaScript(stopScript);
+    };
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [JSON.stringify(docIds), sessionId, agentId]); // Deep compare docIds or use JSON string
@@ -203,12 +217,15 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     </html>
     `;
 
+
+
   return (
     <View style={{ flex: 1 }}>
       <WebView
         ref={webViewRef}
         source={{ html: htmlContent }}
-        style={{ flex: 1, backgroundColor: 'transparent' }}
+        style={{ flex: 1, backgroundColor: 'transparent', opacity: loading ? 0 : 1 }}
+        androidLayerType="hardware" // Ensure acceleration
         onMessage={(event) => {
           if (onNodeSelect) {
             try {
