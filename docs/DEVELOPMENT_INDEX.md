@@ -13,7 +13,7 @@ These guides are maintained in the `.agent` directory to persist across sessions
 - **[Code Structure](../.agent/memory/CODE_STRUCTURE.md)**: High-level overview of the codebase organization.
 
 ### Specific Guides
-- **[Release Protocol](../.agent/memory/release-protocol.md)**: How to bump versions, sign APKs, and build for release.
+- **[Release Protocol](../.agent/docs/release-protocol.md)**: How to bump versions, sign APKs, and build for release.
 - **[Android Build Guide](../.agent/docs/android-build-guide.md)**: Troubleshooting Android builds on Windows.
 - **[Native Bridge Defensive Guide](../.agent/docs/native-bridge-defensive-guide.md)**: Preventing crashes/deadlocks in native interaction (Haptics/Nav).
 - **[Settings Panels Reference](../.agent/docs/settings-panels-reference.md)**: Guide to the settings UI architecture.
