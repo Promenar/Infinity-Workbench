@@ -428,6 +428,17 @@ export default function SettingsScreen() {
               />
             </SettingsSection>
 
+            <SettingsSection title="随身工作台">
+              <SettingsItem
+                icon={Monitor}
+                title="Portable Workbench"
+                subtitle="在局域网PC上使用APP"
+                showChevron
+                isLast
+                onPress={() => router.push('/settings/workbench' as any)}
+              />
+            </SettingsSection>
+
             <BackupSettings />
 
             {/* 应用信息 */}

@@ -41,7 +41,8 @@
         }
       ],
       "./plugins/withCustomApkName",
-      "./plugins/withAndroidDebugConfig"
+      "./plugins/withAndroidDebugConfig",
+      "expo-asset"
     ]
   }
 }
