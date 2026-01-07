@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator } from 'react-native';
-import { PageLayout, Typography, useToast, ConfirmDialog } from '../../src/components/ui';
+import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader } from '../../src/components/ui';
 import { Search, X, FolderInput, Folder } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
@@ -621,42 +621,11 @@ export default function RagScreen() {
       <DragDropContentView style={{ flex: 1 }} onDrop={handleDrop}>
         <View style={{ flex: 1 }}>
           {/* 标题 */}
-          <View style={{ paddingTop: 52, paddingBottom: 4, paddingHorizontal: 16 }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                height: 48,
-                marginBottom: 12,
-              }}
-            >
-              <View>
-                <Text
-                  style={{
-                    fontSize: 32,
-                    fontWeight: '900',
-                    color: isDark ? '#fff' : '#111',
-                    letterSpacing: -1.5,
-                    lineHeight: 38,
-                  }}
-                >
-                  {t.library.title}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 'bold',
-                    color: '#9ca3af',
-                    textTransform: 'uppercase',
-                    letterSpacing: 2,
-                    marginTop: 4,
-                    lineHeight: 11,
-                  }}
-                >
-                  知识库管理
-                </Text>
-              </View>
+          {/* 标题 */}
+          <LargeTitleHeader
+            title={t.library.title}
+            subtitle="知识库管理"
+            rightElement={
               <TouchableOpacity
                 onPress={handleFileImport}
                 style={{
@@ -672,8 +641,8 @@ export default function RagScreen() {
               >
                 <FolderInput size={24} color="#6366f1" strokeWidth={2.5} />
               </TouchableOpacity>
-            </View>
-          </View>
+            }
+          />
 
           {renderHeader()}
 
