@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, User, Copy, Check, RotateCw, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
+import { Bot, User, Copy, Check, RotateCw, Trash2, Share2, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -10,14 +10,23 @@ import { CodeBlock } from './CodeBlock';
 import { ReasoningBlock } from './ReasoningBlock';
 import { SearchSourcesBlock } from './SearchSourcesBlock';
 import { RagReferencesList } from './RagReferencesList';
+import { useI18n } from '../lib/i18n';
 import 'katex/dist/katex.min.css';
 
 interface MessageBubbleProps {
     message: ChatMessage;
     isStreaming?: boolean;
+    onRegenerate?: (messageId: string) => void;
+    onDelete?: (messageId: string) => void;
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreaming }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({
+    message,
+    isStreaming,
+    onRegenerate,
+    onDelete
+}) => {
+    const { t } = useI18n();
     const isUser = message.role === 'user';
     const [copied, setCopied] = useState(false);
     const [isReasoningExpanded, setIsReasoningExpanded] = useState(false);
@@ -34,6 +43,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
         navigator.clipboard.writeText(message.content);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleShare = async () => {
+        if (navigator.share) {
+            try {
+                await navigator.share({ text: message.content });
+            } catch (err) {
+                console.debug('Share failed/cancelled', err);
+            }
+        } else {
+            handleCopy();
+        }
     };
 
     // Derive vectorization status
@@ -60,7 +81,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
                 {/* Header (Role Name - Optional, maybe just timestamp or hidden) */}
                 <div className="flex items-center gap-2">
                     <span className="font-medium text-sm text-gray-300">
-                        {isUser ? 'You' : 'AI Assistant'} // TODO: Localize
+                        {isUser ? 'You' : 'AI Assistant'}
                     </span>
                     <span className="text-xs text-gray-600">
                         {new Date(message.createdAt).toLocaleTimeString()}
@@ -163,25 +184,25 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
                         {showProcessing && (
                             <span className="text-[10px] flex items-center gap-1.5 text-amber-500 font-medium animate-pulse bg-amber-500/10 px-2 py-0.5 rounded-full">
                                 <Loader2 size={10} className="animate-spin" />
-                                Processing
+                                {t.chat.processing}
                             </span>
                         )}
                         {showSuccess && (
                             <span className="text-[10px] flex items-center gap-1.5 text-emerald-500 font-medium animate-in fade-in zoom-in bg-emerald-500/10 px-2 py-0.5 rounded-full">
                                 <Check size={10} />
-                                Memorized
+                                {t.chat.memorized}
                             </span>
                         )}
                         {showError && (
                             <span className="text-[10px] flex items-center gap-1.5 text-red-500 font-medium bg-red-500/10 px-2 py-0.5 rounded-full">
-                                Error
+                                {t.chat.failed}
                             </span>
                         )}
                     </div>
 
                     {/* Action Buttons */}
                     {!isStreaming && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <div className="flex items-center gap-1 transition-opacity duration-200">
                             <button
                                 onClick={handleCopy}
                                 className={clsx(
@@ -190,18 +211,43 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
                                 )}
                                 title="Copy"
                             >
-                                {copied ? <span className="text-xs font-bold px-1">Copied</span> : <Copy size={14} />}
+                                {copied ? <span className="text-xs font-bold px-1">{t.common.copied}</span> : <Copy size={14} />}
                             </button>
-                            <button className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 rounded-lg transition-colors" title="Regenerate">
-                                <RotateCw size={14} />
+
+                            <button
+                                onClick={handleShare}
+                                className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 rounded-lg transition-colors"
+                                title="Share"
+                            >
+                                <Share2 size={14} />
                             </button>
-                            <div className="h-4 w-px bg-white/10 mx-1"></div>
-                            <button className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 rounded-lg transition-colors">
-                                <ThumbsUp size={14} />
-                            </button>
-                            <button className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 rounded-lg transition-colors">
-                                <ThumbsDown size={14} />
-                            </button>
+
+                            {(onRegenerate && !isUser) && (
+                                <button
+                                    onClick={() => onRegenerate && onRegenerate(message.id)}
+                                    className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/5 rounded-lg transition-colors"
+                                    title="Regenerate"
+                                >
+                                    <RotateCw size={14} />
+                                </button>
+                            )}
+
+                            {onDelete && (
+                                <>
+                                    <div className="h-4 w-px bg-white/10 mx-1"></div>
+                                    <button
+                                        onClick={() => {
+                                            if (window.confirm(t.chat.deleteMessageConfirm)) {
+                                                onDelete(message.id);
+                                            }
+                                        }}
+                                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                        title="Delete"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>

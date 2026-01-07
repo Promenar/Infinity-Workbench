@@ -11,6 +11,21 @@ type Translations = {
         cancel: string;
         save: string;
         delete: string;
+        confirm: string;
+        copied: string;
+    };
+    sidebar: {
+        dashboard: string;
+        library: string;
+        graph: string;
+        settings: string;
+        assistants: string;
+        manage: string;
+        newChat: string;
+        signOut: string;
+        systemOnline: string;
+        menu: string;
+        unassigned: string;
     };
     chat: {
         placeholder: string;
@@ -27,6 +42,16 @@ type Translations = {
         clearHistory: string;
         confirmClear: string;
         aiGenerated: string;
+        processing: string;
+        memorized: string;
+        failed: string;
+        deleteMessageConfirm: string;
+    };
+    settings: {
+        title: string;
+        language: string;
+        theme: string;
+        about: string;
     };
     status: {
         idle: string;
@@ -45,6 +70,21 @@ const translations: Record<Language, Translations> = {
             cancel: 'Cancel',
             save: 'Save',
             delete: 'Delete',
+            confirm: 'Confirm',
+            copied: 'Copied',
+        },
+        sidebar: {
+            dashboard: 'Dashboard',
+            library: 'Library',
+            graph: 'Knowledge Graph',
+            settings: 'Settings',
+            assistants: 'ASSISTANTS',
+            manage: 'Manage',
+            newChat: 'New Chat',
+            signOut: 'Sign Out',
+            systemOnline: 'System Online',
+            menu: 'MENU',
+            unassigned: 'UNASSIGNED',
         },
         chat: {
             placeholder: 'Type a message...',
@@ -61,6 +101,16 @@ const translations: Record<Language, Translations> = {
             clearHistory: 'Clear History',
             confirmClear: 'Are you sure you want to clear history?',
             aiGenerated: 'AI GENERATED CONTENT MAY BE INACCURATE',
+            processing: 'Processing',
+            memorized: 'Memorized',
+            failed: 'Error',
+            deleteMessageConfirm: 'Delete this message?',
+        },
+        settings: {
+            title: 'Settings',
+            language: 'Language',
+            theme: 'Theme',
+            about: 'About',
         },
         status: {
             idle: 'Idle',
@@ -77,6 +127,21 @@ const translations: Record<Language, Translations> = {
             cancel: '取消',
             save: '保存',
             delete: '删除',
+            confirm: '确认',
+            copied: '已复制',
+        },
+        sidebar: {
+            dashboard: '概览',
+            library: '知识库',
+            graph: '知识图谱',
+            settings: '设置',
+            assistants: '智能助手',
+            manage: '管理',
+            newChat: '新对话',
+            signOut: '退出登录',
+            systemOnline: '系统在线',
+            menu: '菜单',
+            unassigned: '未分类',
         },
         chat: {
             placeholder: '输入消息...',
@@ -93,6 +158,16 @@ const translations: Record<Language, Translations> = {
             clearHistory: '清除历史',
             confirmClear: '确定要清除历史记录吗？',
             aiGenerated: 'AI 生成内容可能不准确，请核实',
+            processing: '处理中',
+            memorized: '已记忆',
+            failed: '错误',
+            deleteMessageConfirm: '确定要删除这条消息吗？',
+        },
+        settings: {
+            title: '设置',
+            language: '语言',
+            theme: '主题',
+            about: '关于',
         },
         status: {
             idle: '空闲',

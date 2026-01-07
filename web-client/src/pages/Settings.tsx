@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { workbenchClient } from '../services/WorkbenchClient';
-import { Save, Plus, Trash2, Eye, EyeOff, Server, Cpu } from 'lucide-react';
+import { Save, Plus, Trash2, Eye, EyeOff, Server, Cpu, Globe } from 'lucide-react';
 import { RagSettingsPanel } from '../components/RagSettingsPanel';
+import { useI18n } from '../lib/i18n';
 
 interface ModelConfig {
     id: string;
@@ -31,6 +32,7 @@ interface ConfigState {
 }
 
 export const Settings = () => {
+    const { t, language, setLanguage } = useI18n();
     const [config, setConfig] = useState<ConfigState | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -149,7 +151,7 @@ export const Settings = () => {
             <header className="flex justify-between items-center mb-8 relative z-10">
                 <div>
                     <h1 className="text-3xl font-bold text-white tracking-tight">
-                        Settings
+                        {t.settings.title}
                     </h1>
                     <p className="text-zinc-400 mt-1">Configure AI providers and default models</p>
                 </div>
@@ -164,6 +166,33 @@ export const Settings = () => {
             </header>
 
             <div className="space-y-8 max-w-4xl relative z-10">
+
+
+
+                {/* General Settings (Language) */}
+                <section className="bg-[#18181b]/40 backdrop-blur-xl rounded-2xl p-6 border border-white/5 shadow-xl">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-pink-500/10 rounded-lg text-pink-400">
+                            <Globe size={24} />
+                        </div>
+                        <h2 className="text-xl font-semibold">{t.settings.language}</h2>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => setLanguage('en')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${language === 'en' ? 'bg-pink-500/20 text-pink-400 border-pink-500/30' : 'bg-white/5 text-zinc-400 border-transparent hover:bg-white/10'}`}
+                        >
+                            English
+                        </button>
+                        <button
+                            onClick={() => setLanguage('zh')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${language === 'zh' ? 'bg-pink-500/20 text-pink-400 border-pink-500/30' : 'bg-white/5 text-zinc-400 border-transparent hover:bg-white/10'}`}
+                        >
+                            中文
+                        </button>
+                    </div>
+                </section>
 
                 {/* System Defaults Section */}
                 <section className="bg-[#18181b]/40 backdrop-blur-xl rounded-2xl p-6 border border-white/5 shadow-xl">

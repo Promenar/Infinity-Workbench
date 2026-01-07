@@ -144,6 +144,14 @@ class WorkbenchClient extends EventEmitter {
         return this.request('CMD_ABORT_GENERATION', { sessionId });
     }
 
+    async deleteMessage(sessionId: string, messageId: string) {
+        return this.request('CMD_DELETE_MESSAGE', { sessionId, messageId });
+    }
+
+    async regenerateMessage(sessionId: string, messageId: string) {
+        return this.request('CMD_REGENERATE_MESSAGE', { sessionId, messageId });
+    }
+
     async getHistory(id: string) {
         return this.request('CMD_GET_HISTORY', { id });
     }

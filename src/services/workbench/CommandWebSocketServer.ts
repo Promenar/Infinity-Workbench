@@ -135,6 +135,8 @@ class CommandWebSocketServer {
         workbenchRouter.register('CMD_DELETE_SESSION', ChatController.deleteSession);
         workbenchRouter.register('CMD_SEND_MESSAGE', ChatController.sendMessage);
         workbenchRouter.register('CMD_ABORT_GENERATION', ChatController.abortGeneration);
+        workbenchRouter.register('CMD_DELETE_MESSAGE', ChatController.deleteMessage);
+        workbenchRouter.register('CMD_REGENERATE_MESSAGE', ChatController.regenerateMessage);
 
         workbenchRouter.register('CMD_GET_CONFIG', ConfigController.getConfig);
         workbenchRouter.register('CMD_UPDATE_CONFIG', ConfigController.updateConfig);

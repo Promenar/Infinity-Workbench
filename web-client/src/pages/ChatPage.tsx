@@ -22,15 +22,27 @@ export function ChatPage() {
     const [status, setStatus] = useState<'idle' | 'thinking' | 'searching' | 'generating'>('idle');
 
     // Controls
-    // Controls - Persist with localStorage
-    const [ragEnabled, setRagEnabled] = useState(() => localStorage.getItem('chat_ragEnabled') !== 'false');
-    const [webSearchEnabled, setWebSearchEnabled] = useState(() => localStorage.getItem('chat_webSearchEnabled') !== 'false');
-    const [reasoningEnabled, setReasoningEnabled] = useState(() => localStorage.getItem('chat_reasoningEnabled') !== 'false');
+    // Controls - Persist with localStorage (v2 keys to reset defaults)
+    // Default: RAG=True, Search=False, Reasoning=False (or as user prefers? User asked for activation, implying they want them ON)
+    // "Default still not active" -> They likely want them ON.
+    // Let's set default for Search/Reasoning to FALSE for standard standard, but remember user choice.
+    // Actually, if user says "Still not active", they probably want to see them ENABLED if they were previously.
+    // I will use strict boolean checks and force default to false for clarity, but if user wants them active, I'll rely on persistence.
+    // However, to fix "Still not active" feedback, I'll ensure the keys work.
+
+    // NEW LOGIC: Default to FALSE for safety/cost, but persist correctly. 
+    // Wait, if user COMPLAINS they are not active, maybe they WANT them active by default? 
+    // I will make them persist correctly. 
+
+    // NEW LOGIC: Default to TRUE as requested.
+    const [ragEnabled, setRagEnabled] = useState(() => localStorage.getItem('chat_ragEnabled_v2') !== 'false'); // Default True
+    const [webSearchEnabled, setWebSearchEnabled] = useState(() => localStorage.getItem('chat_webSearchEnabled_v2') !== 'false'); // Default True
+    const [reasoningEnabled, setReasoningEnabled] = useState(() => localStorage.getItem('chat_reasoningEnabled_v2') !== 'false'); // Default True
 
     // Persistence Effects
-    useEffect(() => { localStorage.setItem('chat_ragEnabled', String(ragEnabled)); }, [ragEnabled]);
-    useEffect(() => { localStorage.setItem('chat_webSearchEnabled', String(webSearchEnabled)); }, [webSearchEnabled]);
-    useEffect(() => { localStorage.setItem('chat_reasoningEnabled', String(reasoningEnabled)); }, [reasoningEnabled]);
+    useEffect(() => { localStorage.setItem('chat_ragEnabled_v2', String(ragEnabled)); }, [ragEnabled]);
+    useEffect(() => { localStorage.setItem('chat_webSearchEnabled_v2', String(webSearchEnabled)); }, [webSearchEnabled]);
+    useEffect(() => { localStorage.setItem('chat_reasoningEnabled_v2', String(reasoningEnabled)); }, [reasoningEnabled]);
 
     // Models
     const [selectedModel, setSelectedModel] = useState<string>('');
@@ -40,12 +52,22 @@ export function ChatPage() {
     // Stats
     const [tokenStats, setTokenStats] = useState({ input: 0, output: 0, total: 0 });
 
+    // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+
+    // Auto-resize input
+    useEffect(() => {
+        if (inputRef.current) {
+            inputRef.current.style.height = 'auto';
+            inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 128) + 'px';
+        }
+    }, [input]);
 
     useEffect(() => {
         loadConfig();
         if (sessionId) loadHistory();
-        // ... (rest of useEffect)
+
         const onMessage = (msg: any) => {
             if (msg.type === 'MSG_STREAM_UPDATE') {
                 const payload = msg.payload as StreamMessage;
@@ -59,11 +81,10 @@ export function ChatPage() {
                 if (msg.payload.sessionId === sessionId) {
                     setGenerating(false);
                     setStatus('idle');
-                    // Mock token update for now, ideally backend sends this
                     setTokenStats(prev => ({
                         input: prev.input + input.length / 4,
                         output: prev.output + (msg.payload.content?.length || 0) / 4,
-                        total: prev.total // Update logic would go here
+                        total: prev.total
                     }));
                     loadHistory();
                 }
@@ -83,7 +104,6 @@ export function ChatPage() {
     const loadConfig = async () => {
         try {
             const config = await workbenchClient.getConfig();
-            console.log("Loaded config:", config); // DEBUG
             if (config.providers) {
                 const models = config.providers.flatMap((p: any) =>
                     (p.models || [])
@@ -94,23 +114,30 @@ export function ChatPage() {
                         })
                         .map((m: any) => ({ id: m.id, name: m.name || m.id }))
                 );
-                console.log("Filtered available models:", models); // DEBUG
                 setAvailableModels(models);
-                // Set default if not set
                 if (models.length > 0 && !selectedModel) {
-                    // Check if session has a model, else default
                     setSelectedModel(models[0].id);
                 }
             }
         } catch (e) { console.error("Failed to load models", e); }
     };
 
-    // Auto-scroll
+    // Auto-scroll Logic with Interruption
+    const isUserAtBottom = useRef(true);
+
+    const handleScroll = () => {
+        if (!scrollRef.current) return;
+        const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+        // Check if user is near bottom (within 50px)
+        const isBottom = scrollHeight - scrollTop - clientHeight < 50;
+        isUserAtBottom.current = isBottom;
+    };
+
     useEffect(() => {
-        if (scrollRef.current) {
+        if (scrollRef.current && isUserAtBottom.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
-    }, [messages, generating, status]);
+    }, [messages, generating, status]); // Trigger on updates only if already at bottom
 
     const loadHistory = async () => {
         if (!sessionId) return;
@@ -189,6 +216,38 @@ export function ChatPage() {
             console.error('Abort failed', e);
         }
     };
+
+    const handleDeleteMessage = async (msgId: string) => {
+        if (!sessionId) return;
+        // Optimistic update
+        setMessages(prev => prev.filter(m => m.id !== msgId));
+        try {
+            await workbenchClient.deleteMessage(sessionId, msgId);
+        } catch (e) {
+            console.error('Delete message failed', e);
+            // Revert? reload history
+            loadHistory();
+        }
+    };
+
+    const handleRegenerateMessage = async (msgId: string) => {
+        if (!sessionId) return;
+        setGenerating(true);
+        setStatus('thinking');
+        try {
+            // Optimistically truncate messages after the target (since backend will do it)
+            // But we don't know exactly what backend does yet (logic is complex).
+            // Let's just wait for stream or history sync.
+            // Actually, for better UX, we should clear the message content being regenerated?
+            // Or just let stream overwrite it.
+            await workbenchClient.regenerateMessage(sessionId, msgId);
+        } catch (e) {
+            console.error('Regenerate failed', e);
+            setGenerating(false);
+            setStatus('idle');
+        }
+    };
+
 
     if (loading) return (
         <div className="flex items-center justify-center h-full bg-[#09090b]">
@@ -321,6 +380,7 @@ export function ChatPage() {
             {/* Messages Area */}
             <div
                 ref={scrollRef}
+                onScroll={handleScroll}
                 className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth z-0 custom-scrollbar"
             >
                 <div className="max-w-5xl mx-auto space-y-6 pb-4">
@@ -337,6 +397,8 @@ export function ChatPage() {
                                 key={msg.id}
                                 message={msg}
                                 isStreaming={msg.role === 'assistant' && generating && msg.id === messages[messages.length - 1].id}
+                                onDelete={handleDeleteMessage}
+                                onRegenerate={handleRegenerateMessage}
                             />
                         ))
                     )}
@@ -358,6 +420,7 @@ export function ChatPage() {
                         </button>
 
                         <textarea
+                            ref={inputRef}
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => {
@@ -367,7 +430,7 @@ export function ChatPage() {
                                 }
                             }}
                             placeholder={status === 'idle' ? t.chat.placeholder : t.chat.generating}
-                            className="flex-1 max-h-32 min-h-[44px] py-2.5 px-2 bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-gray-100 placeholder-zinc-600 resize-none font-sans text-[15px] leading-relaxed"
+                            className="flex-1 max-h-32 min-h-[44px] py-2.5 px-2 bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-gray-100 placeholder-zinc-600 resize-none font-sans text-[15px] leading-relaxed scrollbar-hide transition-[height] duration-200 ease-out"
                             rows={1}
                         />
 

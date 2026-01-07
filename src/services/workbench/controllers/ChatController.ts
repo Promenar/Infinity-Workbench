@@ -97,5 +97,28 @@ export const ChatController = {
         abortGeneration(sessionId);
 
         return { success: true };
+    },
+
+    async deleteMessage(payload: any, context: RouterContext) {
+        const { sessionId, messageId } = payload;
+        if (!sessionId || !messageId) throw new Error('Session ID and Message ID required');
+
+        const { deleteMessage } = useChatStore.getState();
+        deleteMessage(sessionId, messageId);
+
+        return { success: true, messageId };
+    },
+
+    async regenerateMessage(payload: any, context: RouterContext) {
+        const { sessionId, messageId } = payload;
+        if (!sessionId || !messageId) throw new Error('Session ID and Message ID required');
+
+        // Fire and forget (it streams updates via other channels)
+        const { regenerateMessage } = useChatStore.getState();
+        regenerateMessage(sessionId, messageId).catch(err => {
+            console.error('[ChatController] Regenerate failed:', err);
+        });
+
+        return { success: true };
     }
 };
