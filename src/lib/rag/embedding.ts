@@ -219,7 +219,8 @@ export class EmbeddingClient {
     const endpoint = `${baseUrl}/embeddings`;
 
     // OpenAI 批量限制通常为 2048，但保守处理
-    const batchSize = 100;
+    // SiliconFlow 等 API 代理限制较严（如 64），调整为 50 以确保兼容性
+    const batchSize = 50;
     const allEmbeddings: number[][] = [];
     let totalTokens = 0;
 

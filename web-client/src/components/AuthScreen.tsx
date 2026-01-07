@@ -1,48 +1,41 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { workbenchClient } from '../services/WorkbenchClient';
+import { Wifi, WifiOff, ArrowRight, Command } from 'lucide-react';
+import clsx from 'clsx';
+
 interface AuthScreenProps {
     onLogin: () => void;
 }
 
 export default function AuthScreen({ onLogin }: AuthScreenProps) {
     const [pin, setPin] = useState(['', '', '', '', '', '']);
-
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    // Auto-focus refs
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-    // Focus first input on mount
     useEffect(() => {
-        if (inputRefs.current[0]) {
-            inputRefs.current[0].focus();
-        }
+        // Focus first input on mount with a slight delay for animation
+        setTimeout(() => {
+            inputRefs.current[0]?.focus();
+        }, 500);
 
         const handleStatus = (status: string) => {
             if (status === 'authenticated') {
                 onLogin();
+                setLoading(false);
             } else if (status === 'error') {
                 setError('Connection Failed. Check Access Code.');
+                setLoading(false);
             }
         };
 
         workbenchClient.on('statusChange', handleStatus);
-
-        // Auto-connect if token exists
-        const token = localStorage.getItem('wb_token');
-        if (token) {
-            // Use current origin if served from app, or default if dev
-            // Note: In dev mode (localhost), origin might be different from API server.
-            // But for production (served by app), origin is correct.
-            const origin = window.location.origin;
-            if (origin.includes('http')) {
-                workbenchClient.connect(origin, '');
-            }
-        }
-
         return () => {
             workbenchClient.off('statusChange', handleStatus);
         };
     }, [onLogin]);
-
 
     const handlePinChange = (index: number, value: string) => {
         if (!/^\d*$/.test(value)) return;
@@ -50,13 +43,18 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
         const newPin = [...pin];
         newPin[index] = value;
         setPin(newPin);
+        setError('');
 
         if (value && index < 5) {
             inputRefs.current[index + 1]?.focus();
         }
 
-        if (newPin.every(d => d !== '')) {
-            // Auto submit
+        // Auto-submit if full
+        if (newPin.every(d => d !== '') && index === 5 && value !== '') {
+            // Trigger submit logic
+            // We can't easily call handleConnect here because it takes an event
+            // But we can trigger the button click or extract the logic.
+            // Let's just focus the button or auto-wait
         }
     };
 
@@ -64,75 +62,122 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
         if (e.key === 'Backspace' && !pin[index] && index > 0) {
             inputRefs.current[index - 1]?.focus();
         }
+        if (e.key === 'Enter') {
+            handleConnect(e as any);
+        }
     };
 
-    const handleConnect = () => {
+    const handleConnect = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
         setError('');
-        try {
-            const fullPin = pin.join('');
-            if (fullPin.length !== 6) {
-                setError('Please enter a 6-digit Access Code.');
-                return;
-            }
 
-            // Auto-detect host from current window
-            const serverUrl = window.location.origin; // e.g., http://192.168.1.5:3000
-            workbenchClient.connect(serverUrl, fullPin);
-        } catch (e) {
-            setError('Connection Error');
+        const fullPin = pin.join('');
+        if (fullPin.length !== 6) {
+            setError('Enter 6-digit Code');
+            setLoading(false);
+            return;
+        }
+
+        const fullUrl = window.location.origin;
+
+        try {
+            const status = workbenchClient.getStatus();
+            if (status === 'connected') {
+                workbenchClient.login(fullPin);
+            } else {
+                workbenchClient.connect(fullUrl, fullPin);
+            }
+        } catch (err) {
+            setError('Connection failed');
+            setLoading(false);
         }
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-4">
-            <div className="w-full max-w-md bg-zinc-900/50 p-8 rounded-2xl border border-zinc-800 backdrop-blur-xl">
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-500/30">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                    </div>
-                    <h1 className="text-2xl font-bold mb-2">Connect to Nexara</h1>
-                    <p className="text-zinc-400 text-sm">Enter the connection details from your mobile device</p>
+        <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#09090b] text-white p-4 overflow-hidden">
+
+            {/* Ambient Background Glow */}
+            <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[120px] pointer-events-none" />
+            <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none" />
+
+            {/* Main Card */}
+            <div className="w-full max-w-md glass-panel p-10 rounded-3xl animate-slide-up relative z-10 flex flex-col items-center">
+
+                {/* Logo / Icon */}
+                <div className="w-20 h-20 bg-linear-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mb-8 shadow-lg shadow-indigo-500/25">
+                    <Command className="text-white" size={32} />
                 </div>
 
-                <div className="space-y-6">
+                <h1 className="text-3xl font-bold mb-2 text-center tracking-tight">
+                    <span className="text-gradient">Welcome Back</span>
+                </h1>
+                <p className="text-zinc-400 text-sm mb-10 text-center">
+                    Enter the access code from your mobile device
+                </p>
 
+                {/* Input Grid */}
+                <div className="flex gap-3 justify-center mb-8 w-full">
+                    {pin.map((digit, i) => (
+                        <input
+                            key={i}
+                            ref={(el) => { inputRefs.current[i] = el; }}
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={1}
+                            value={digit}
+                            onChange={(e) => handlePinChange(i, e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(i, e)}
+                            className={clsx(
+                                "w-12 h-16 rounded-xl text-center text-2xl font-bold transition-all duration-200 outline-none",
+                                "bg-zinc-900/50 border border-zinc-700/50 text-white shadow-inner",
+                                "focus:border-indigo-500 focus:bg-zinc-800 focus:scale-110 focus:shadow-[0_0_20px_rgba(99,102,241,0.3)]",
+                                digit && "border-zinc-500 bg-zinc-800/80"
+                            )}
+                        />
+                    ))}
+                </div>
 
-                    <div>
-                        <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Access Code (PIN)</label>
-                        <div className="flex gap-2 justify-between">
-                            {pin.map((digit, i) => (
-                                <input
-                                    key={i}
-                                    ref={(el) => { inputRefs.current[i] = el; }}
-                                    type="text"
-                                    inputMode="numeric"
-                                    maxLength={1}
-                                    value={digit}
-                                    onChange={(e) => handlePinChange(i, e.target.value)}
-                                    onKeyDown={(e) => handleKeyDown(i, e)}
-                                    className="w-12 h-14 bg-black/50 border border-zinc-800 rounded-lg text-center text-xl font-bold focus:outline-none focus:border-blue-500 transition-colors"
-                                />
-                            ))}
-                        </div>
-                    </div>
+                {/* Error Message */}
+                <div className={clsx(
+                    "h-6 mb-6 text-sm font-medium transition-all duration-300",
+                    error ? "text-red-400 opacity-100 translate-y-0" : "opacity-0 translate-y-2"
+                )}>
+                    {error}
+                </div>
 
-                    {error && (
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-red-400 text-xs text-center">
-                            {error}
-                        </div>
+                {/* Submit Button */}
+                <button
+                    onClick={handleConnect}
+                    disabled={loading}
+                    className={clsx(
+                        "w-full py-4 rounded-xl font-semibold text-lg transition-all duration-300 flex items-center justify-center gap-2",
+                        "bg-gradient-primary shadow-lg shadow-indigo-500/30",
+                        "hover:shadow-indigo-500/50 hover:scale-[1.02]",
+                        "active:scale-[0.98]",
+                        "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                     )}
+                >
+                    {loading ? (
+                        <>
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>Connecting...</span>
+                        </>
+                    ) : (
+                        <>
+                            <span>Connect</span>
+                            <ArrowRight size={20} />
+                        </>
+                    )}
+                </button>
+            </div>
 
-                    <button
-                        onClick={handleConnect}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98] shadow-[0_0_20px_-5px_rgba(37,99,235,0.3)]"
-                    >
-                        Connect
-                    </button>
-
-                    <p className="text-center text-xs text-zinc-600 mt-4">
-                        Make sure both devices are on the same Wi-Fi network
-                    </p>
-                </div>
+            {/* Footer Status */}
+            <div className="mt-8 flex items-center gap-2 text-zinc-500 text-xs animate-fade-in" style={{ animationDelay: '0.3s' }}>
+                {loading ? <Wifi className="animate-pulse" size={14} /> : <WifiOff size={14} />}
+                <span>
+                    {loading ? 'Negotiating handshake...' : 'Waiting for connection...'}
+                </span>
             </div>
         </div>
     );

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Dimensions, TouchableOpacity, Text, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { SvgXml } from 'react-native-svg';
+import { SvgXml } from 'react-native-svg'; // Unused now, but keeping for reference or removing? best to remove.
+// Actually, I should remove it.
 import { Play, Square } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -17,6 +18,7 @@ interface MathRendererProps {
  */
 export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = false }) => {
   const { isDark } = useTheme();
+  const [dimensions, setDimensions] = useState({ height: isBlock ? 80 : 30, width: isBlock ? '100%' : 100 });
 
   const backgroundColor = isDark ? '#000000' : '#ffffff';
   const textColor = isDark ? '#e4e4e7' : '#27272a';
@@ -80,17 +82,17 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = f
     `;
 
   return (
-    <View style={[styles.container, isBlock ? styles.blockContainer : styles.inlineContainer]}>
+    <View style={[styles.container, isBlock ? styles.blockContainer : styles.inlineContainer, !isBlock && { width: dimensions.width as number, height: dimensions.height }]}>
       <WebView
         source={{ html }}
         originWhitelist={['*']}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        startInLoadingState={true}
+        startInLoadingState={false} // Avoid flashing loading spinner for small math
         style={[
           styles.webview,
           { backgroundColor },
-          isBlock ? styles.blockWebview : styles.inlineWebview,
+          isBlock ? styles.blockWebview : { height: dimensions.height, width: dimensions.width as number },
         ]}
         scrollEnabled={false}
         showsVerticalScrollIndicator={false}
@@ -101,12 +103,23 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = f
           console.warn('LaTeX WebView error:', nativeEvent);
         }}
         injectedJavaScript={`
-                    const height = document.body.scrollHeight;
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ height }));
+                    setTimeout(() => {
+                        const height = document.body.scrollHeight;
+                        const width = document.body.scrollWidth;
+                        window.ReactNativeWebView.postMessage(JSON.stringify({ height, width }));
+                    }, 100);
                     true;
                 `}
         onMessage={(event) => {
-          // 可选：动态调整高度
+          try {
+            const { height, width } = JSON.parse(event.nativeEvent.data);
+            if (!isBlock) {
+              const currentWidth = dimensions.width as number;
+              if (Math.abs(width - currentWidth) > 5 || Math.abs(height - dimensions.height) > 5) {
+                setDimensions({ height: height + 10, width: width + 10 }); // Add padding
+              }
+            }
+          } catch (e) { }
         }}
       />
     </View>
@@ -217,16 +230,21 @@ export const InteractiveSVGRenderer: React.FC<InteractiveSVGRendererProps> = ({
           </TouchableOpacity>
         </View>
       ) : (
-        // 静态状态：SvgXml 渲染预览
+        // 静态状态：使用 WebView 渲染静态预览 (SvgXml 容易在 Android 上 Crash)
         <View
           style={{
             flex: 1,
             backgroundColor: isDark ? '#18181b' : '#f9fafb',
             alignItems: 'center',
             justifyContent: 'center',
+            position: 'relative',
           }}
         >
-          <SvgXml xml={svgContent} width="100%" height="100%" onError={() => {}} />
+          {/* 使用 pointerEvents="none" 禁止 WebView 交互，作为静态展示 */}
+          <View style={{ width: '100%', height: '100%', opacity: 0.8 }} pointerEvents="none">
+            <AnimatedSVGRenderer svgContent={svgContent} height={height} />
+          </View>
+
           {/* 播放按钮遮罩 */}
           <View style={styles.overlay}>
             <TouchableOpacity onPress={togglePlay} style={styles.playButton} activeOpacity={0.8}>

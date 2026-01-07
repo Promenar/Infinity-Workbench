@@ -9,6 +9,8 @@ import { AuthController } from './controllers/AuthController';
 import { AgentController } from './controllers/AgentController';
 import { ChatController } from './controllers/ChatController';
 import { ConfigController } from './controllers/ConfigController';
+import { LibraryController } from './controllers/LibraryController';
+import { storeSyncService } from './StoreSyncService';
 
 export const workbenchEvents = new EventEmitter();
 
@@ -21,6 +23,8 @@ interface WebSocketClient {
     handshakeComplete: boolean;
     authenticated: boolean;
     buffer: Buffer;
+    writeQueue: (() => Promise<void>)[];
+    isWriting: boolean;
 }
 
 class CommandWebSocketServer {
@@ -57,6 +61,8 @@ class CommandWebSocketServer {
                         handshakeComplete: false,
                         authenticated: false,
                         buffer: Buffer.alloc(0),
+                        writeQueue: [],
+                        isWriting: false,
                     };
 
                     this.clients.set(clientId, client);
@@ -67,6 +73,19 @@ class CommandWebSocketServer {
                     });
 
                     socket.on('error', (error: any) => {
+                        // Suppress common network errors usually caused by client disconnects
+                        const msg = (typeof error === 'string' ? error : error?.message) || '';
+
+                        if (msg.includes('Broken pipe') ||
+                            msg.includes('ECONNRESET') ||
+                            msg.includes('EPIPE') ||
+                            msg.includes('Stream closed') ||
+                            msg.includes('Socket closed')) {
+                            // Just remove client quietly
+                            this.removeClient(clientId);
+                            return;
+                        }
+
                         console.error('[WS] Client error:', clientId, error);
                         this.removeClient(clientId);
                     });
@@ -114,12 +133,22 @@ class CommandWebSocketServer {
         workbenchRouter.register('CMD_GET_HISTORY', ChatController.getSessionHistory);
         workbenchRouter.register('CMD_CREATE_SESSION', ChatController.createSession);
         workbenchRouter.register('CMD_DELETE_SESSION', ChatController.deleteSession);
+        workbenchRouter.register('CMD_SEND_MESSAGE', ChatController.sendMessage);
+        workbenchRouter.register('CMD_ABORT_GENERATION', ChatController.abortGeneration);
 
         workbenchRouter.register('CMD_GET_CONFIG', ConfigController.getConfig);
         workbenchRouter.register('CMD_UPDATE_CONFIG', ConfigController.updateConfig);
 
+        workbenchRouter.register('CMD_GET_LIBRARY', LibraryController.getLibrary);
+        workbenchRouter.register('CMD_UPLOAD_FILE', LibraryController.uploadFile);
+        workbenchRouter.register('CMD_DELETE_FILE', LibraryController.deleteFile);
+        workbenchRouter.register('CMD_CREATE_FOLDER', LibraryController.createFolder);
+        workbenchRouter.register('CMD_DELETE_FOLDER', LibraryController.deleteFolder);
+        workbenchRouter.register('CMD_GET_GRAPH', LibraryController.getGraphData);
+
         try {
             await startServer(10);
+            storeSyncService.start();
         } catch (e) {
             console.error('[WS] Failed to start server after retries:', e);
             // Don't crash app
@@ -134,9 +163,11 @@ class CommandWebSocketServer {
         this.clients.clear();
         this.updateClientCount();
         workbenchRouter.stop();
+        storeSyncService.stop();
     }
 
     private handleData(client: WebSocketClient, data: Buffer) {
+        // console.log(`[WS] Received data from ${client.id}: ${data.length} bytes`);
         client.buffer = Buffer.concat([client.buffer, data]);
 
         if (!client.handshakeComplete) {
@@ -250,7 +281,43 @@ class CommandWebSocketServer {
         return result as any;
     }
 
-    private async sendFrame(client: WebSocketClient, data: Buffer | string, opcode = 0x1) {
+    private async sendFrame(client: WebSocketClient, data: Buffer | string, opcode = 0x2) {
+        // Enqueue the write operation to ensure atomicity
+        return new Promise<void>((resolve, reject) => {
+            const task = async () => {
+                try {
+                    await this.performSendFrame(client, data, opcode);
+                    resolve();
+                } catch (e) {
+                    reject(e);
+                }
+            };
+
+            client.writeQueue.push(task);
+            if (!client.isWriting) {
+                this.processWriteQueue(client);
+            }
+        });
+    }
+
+    private async processWriteQueue(client: WebSocketClient) {
+        if (client.isWriting || client.writeQueue.length === 0) return;
+
+        client.isWriting = true;
+        while (client.writeQueue.length > 0) {
+            const task = client.writeQueue.shift();
+            if (task) {
+                try {
+                    await task();
+                } catch (e) {
+                    console.error('[WS] Write task failed:', e);
+                }
+            }
+        }
+        client.isWriting = false;
+    }
+
+    private async performSendFrame(client: WebSocketClient, data: Buffer | string, opcode = 0x2) {
         if (typeof data === 'string') {
             data = Buffer.from(data);
         }
@@ -278,28 +345,48 @@ class CommandWebSocketServer {
         const fullPacket = Buffer.concat([header, data]);
 
         // Chunked Write for reliability
-        const CHUNK_SIZE = 16 * 1024; // 16KB
+        const CHUNK_SIZE = 1400;
         let offset = 0;
-        // console.warn(`[WS] Sending frame op = ${ opcode } len = ${ length } chunks = ${ Math.ceil(fullPacket.length / CHUNK_SIZE) } `);
+
+        // Log large packets for debug
+        if (fullPacket.length > 5000) {
+            console.log(`[WS] Sending large frame: ${fullPacket.length} bytes, op=${opcode}`);
+        }
 
         try {
             while (offset < fullPacket.length) {
-                // Safety check: if client disconnected, stop writing
+                // Safety check
                 if (!this.clients.has(client.id)) break;
 
                 const chunk = fullPacket.slice(offset, offset + CHUNK_SIZE);
-                // The write call might throw if socket is closed on native side
-                const ok = client.socket.write(chunk);
+                // Convert to base64 for safe transport across RN Bridge
+                const ok = client.socket.write(chunk.toString('base64'), 'base64');
+
 
                 if (!ok) {
-                    await new Promise(r => setTimeout(r, 10)); // Backpressure
+                    // Wait for drain
+                    await new Promise<void>(resolve => {
+                        const onDrain = () => {
+                            client.socket.removeListener('drain', onDrain);
+                            resolve();
+                        };
+                        client.socket.once('drain', onDrain);
+
+                        // Fallback timeout in case drain never fires
+                        setTimeout(() => {
+                            client.socket.removeListener('drain', onDrain);
+                            resolve();
+                        }, 1000);
+                    });
                 }
                 offset += CHUNK_SIZE;
             }
-        } catch (e) {
-            console.warn('[WS] Failed to write to socket (closed?):', e);
+        } catch (e: any) {
+            // Suppress write errors for closed sockets
+            if (!e.message?.includes('Broken pipe') && !e.message?.includes('EPIPE') && !e.message?.includes('ECONNRESET')) {
+                console.warn('[WS] Failed to write to socket:', e);
+            }
         }
-        // console.warn('[WS] Frame sent');
     }
 
     private handleMessage(client: WebSocketClient, message: string) {
@@ -338,7 +425,8 @@ class CommandWebSocketServer {
     }
 
     private sendJson(client: WebSocketClient, json: any) {
-        this.sendFrame(client, JSON.stringify(json));
+        // Force Opcode 0x2 (Binary) to avoid Browser strict UTF-8 decoding on fragmented packets
+        this.sendFrame(client, JSON.stringify(json), 0x2);
     }
 
     private removeClient(id: string) {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
-import { PageLayout, LargeTitleHeader, Switch } from '../../src/components/ui';
+import { PageLayout, Switch, GlassHeader } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useWorkbenchStore } from '../../src/store/workbench-store';
 import { staticServerService } from '../../src/services/workbench/StaticServerService';
@@ -11,7 +11,8 @@ import { Monitor, Server, Wifi, Smartphone, Users, Globe, Lock, RefreshCw, Copy,
 import * as Clipboard from 'expo-clipboard';
 import { useToast } from '../../src/components/ui/Toast';
 import * as Haptics from '../../src/lib/haptics';
-// import { generateSecureRandom } from 'react-native-securerandom';
+import { useI18n } from '../../src/lib/i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Simple random 6 digit code generator
 const generateAccessCode = () => {
@@ -22,14 +23,14 @@ export default function PortableWorkbenchScreen() {
     const router = useRouter();
     const { isDark } = useTheme();
     const { showToast } = useToast();
+    const { t } = useI18n();
+    const insets = useSafeAreaInsets();
     const {
         serverStatus,
         serverUrl,
         accessCode,
         connectedClients,
         setAccessCode,
-        incrementClients,
-        decrementClients
     } = useWorkbenchStore();
 
     const [loading, setLoading] = useState(false);
@@ -47,18 +48,18 @@ export default function PortableWorkbenchScreen() {
                 commandWebSocketServer.start();
 
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                showToast('Workbench Server Started', 'success');
+                showToast(t.settings.workbench.toggleSuccess, 'success');
             } else {
                 // Stop Services
                 await staticServerService.stop();
                 commandWebSocketServer.stop();
 
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                showToast('Workbench Server Stopped', 'info');
+                showToast(t.settings.workbench.toggleStop, 'info');
             }
         } catch (error) {
             console.error(error);
-            showToast('Failed to toggle server', 'error');
+            showToast(t.settings.workbench.toggleError, 'error');
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } finally {
             setLoading(false);
@@ -68,22 +69,30 @@ export default function PortableWorkbenchScreen() {
     const copyToClipboard = async (text: string | null) => {
         if (!text) return;
         await Clipboard.setStringAsync(text);
-        showToast('Copied to Clipboard', 'success');
+        showToast(t.settings.workbench.copied, 'success');
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     };
 
     return (
         <PageLayout className="bg-white dark:bg-black" safeArea={false}>
-            <LargeTitleHeader
-                title="Portable Workbench"
-                subtitle="Control Nexara from your PC"
+            <Stack.Screen options={{ headerShown: false }} />
+
+            <GlassHeader
+                title={t.settings.workbench.title}
+                subtitle={t.settings.workbench.subtitle}
                 leftAction={{
-                    icon: <ArrowLeft size={24} color={isDark ? '#fff' : '#111'} />,
-                    onPress: () => router.back()
+                    icon: <ArrowLeft size={24} color={isDark ? '#fff' : '#000'} />,
+                    onPress: () => router.back(),
                 }}
             />
 
-            <ScrollView className="flex-1 px-4 pt-4" contentContainerStyle={{ paddingBottom: 100 }}>
+            <ScrollView
+                className="flex-1 px-4"
+                contentContainerStyle={{
+                    paddingTop: 100 + insets.top, // Header height + extra spacing
+                    paddingBottom: 100
+                }}
+            >
                 {/* Status Card */}
                 <View style={{
                     backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#f3f4f6',
@@ -122,7 +131,9 @@ export default function PortableWorkbenchScreen() {
                         color: isDark ? '#fff' : '#111',
                         marginBottom: 4
                     }}>
-                        {serverStatus === 'running' ? 'Active' : (serverStatus === 'starting' ? 'Starting...' : 'Inactive')}
+                        {serverStatus === 'running'
+                            ? t.settings.workbench.status.active
+                            : (serverStatus === 'starting' ? t.settings.workbench.status.Starting : t.settings.workbench.status.inactive)}
                     </Text>
                     <Text style={{
                         fontSize: 14,
@@ -130,8 +141,8 @@ export default function PortableWorkbenchScreen() {
                         textAlign: 'center'
                     }}>
                         {serverStatus === 'running'
-                            ? 'Web interface is ready to connect'
-                            : 'Start the server to access from PC'}
+                            ? t.settings.workbench.status.ready
+                            : t.settings.workbench.status.start}
                     </Text>
 
                     <View style={{ marginTop: 24, width: '100%' }}>
@@ -143,7 +154,9 @@ export default function PortableWorkbenchScreen() {
                             padding: 16,
                             borderRadius: 16
                         }}>
-                            <Text style={{ color: isDark ? '#fff' : '#111', fontWeight: '600' }}>Enable Server</Text>
+                            <Text style={{ color: isDark ? '#fff' : '#111', fontWeight: '600' }}>
+                                {t.settings.workbench.enableServer}
+                            </Text>
                             <Switch value={serverStatus === 'running' || serverStatus === 'starting'} onValueChange={toggleServer} disabled={loading} />
                         </View>
                     </View>
@@ -163,7 +176,7 @@ export default function PortableWorkbenchScreen() {
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                                 <Globe size={20} color={Colors.primary} style={{ marginRight: 8 }} />
                                 <Text style={{ color: isDark ? '#d1d5db' : '#4b5563', fontWeight: '600' }}>
-                                    Browser Address
+                                    {t.settings.workbench.browserAddress}
                                 </Text>
                             </View>
 
@@ -185,7 +198,7 @@ export default function PortableWorkbenchScreen() {
                             </TouchableOpacity>
 
                             <Text style={{ marginTop: 8, fontSize: 12, color: isDark ? '#6b7280' : '#9ca3af' }}>
-                                Type this exactly in your PC browser address bar
+                                {t.settings.workbench.browserAddressLimit}
                             </Text>
                         </View>
 
@@ -200,7 +213,7 @@ export default function PortableWorkbenchScreen() {
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                                 <Lock size={20} color="#f59e0b" style={{ marginRight: 8 }} />
                                 <Text style={{ color: isDark ? '#d1d5db' : '#4b5563', fontWeight: '600' }}>
-                                    Access Code
+                                    {t.settings.workbench.accessCode}
                                 </Text>
                             </View>
 
@@ -248,7 +261,7 @@ export default function PortableWorkbenchScreen() {
                             </View>
 
                             <Text style={{ marginTop: 12, fontSize: 12, color: isDark ? '#6b7280' : '#9ca3af' }}>
-                                You will need this code to log in on the PC
+                                {t.settings.workbench.accessCodeDesc}
                             </Text>
                         </View>
 
@@ -261,7 +274,7 @@ export default function PortableWorkbenchScreen() {
                         }}>
                             <Users size={16} color={connectedClients > 0 ? '#22c55e' : (isDark ? '#6b7280' : '#9ca3af')} style={{ marginRight: 6 }} />
                             <Text style={{ color: isDark ? '#d1d5db' : '#6b7280' }}>
-                                {connectedClients} Device{connectedClients !== 1 ? 's' : ''} Connected
+                                {t.settings.workbench.connected.replace('{count}', connectedClients.toString())}
                             </Text>
                         </View>
 

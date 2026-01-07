@@ -26,6 +26,12 @@ class WorkbenchClient extends EventEmitter {
     }
 
     public connect(url: string, accessCode: string) {
+        // Prevent duplicate connection attempts (fixes React.StrictMode double-mount issue)
+        if (this.status === 'connected' || this.status === 'authenticated' || this.status === 'connecting') {
+            console.log('[WorkbenchClient] Already connected/connecting, ignoring duplicate call');
+            return;
+        }
+
         if (this.ws) {
             this.ws.close();
         }
@@ -72,9 +78,13 @@ class WorkbenchClient extends EventEmitter {
             this.emit('statusChange', this.status);
         };
 
-        this.ws.onmessage = (event) => {
+        this.ws.onmessage = async (event) => {
             try {
-                const msg = JSON.parse(event.data);
+                let data = event.data;
+                if (data instanceof Blob || (data && typeof data.text === 'function')) {
+                    data = await data.text();
+                }
+                const msg = JSON.parse(data);
                 this.handleMessage(msg);
             } catch (e) {
                 console.error('Failed to parse message', e);
@@ -99,6 +109,43 @@ class WorkbenchClient extends EventEmitter {
 
     async updateConfig(config: any) {
         return this.request('CMD_UPDATE_CONFIG', config);
+    }
+
+    async getGraph(filters?: { docIds?: string[], sessionId?: string, agentId?: string }) {
+        return this.request('CMD_GET_GRAPH', filters || {});
+    }
+
+    async getLibrary() {
+        return this.request('CMD_GET_LIBRARY');
+    }
+
+    async uploadFile(fileData: { title: string; content: string; size: number; type: string; folderId?: string }) {
+        return this.request('CMD_UPLOAD_FILE', fileData);
+    }
+
+    async deleteFile(id: string) {
+        return this.request('CMD_DELETE_FILE', { id });
+    }
+
+    async createFolder(name: string, parentId?: string) {
+        return this.request('CMD_CREATE_FOLDER', { name, parentId });
+    }
+
+    async deleteFolder(id: string) {
+        return this.request('CMD_DELETE_FOLDER', { id });
+    }
+
+    // Chat Methods
+    async sendMessage(sessionId: string, content: string, options?: any) {
+        return this.request('CMD_SEND_MESSAGE', { sessionId, content, options });
+    }
+
+    async abortGeneration(sessionId: string) {
+        return this.request('CMD_ABORT_GENERATION', { sessionId });
+    }
+
+    async getHistory(id: string) {
+        return this.request('CMD_GET_HISTORY', { id });
     }
 
     public getStatus() {
@@ -134,6 +181,14 @@ class WorkbenchClient extends EventEmitter {
         });
     }
 
+    public login(code: string) {
+        if (this.status === 'connected') {
+            this.send('AUTH', { code });
+        } else {
+            console.warn('[WorkbenchClient] Cannot login, not connected');
+        }
+    }
+
     private handleMessage(msg: RpcResponse) {
         // 1. Check if it's a response to a pending request
         if (msg.id && this.pendingRequests.has(msg.id)) {
@@ -158,11 +213,14 @@ class WorkbenchClient extends EventEmitter {
             }
             this.emit('statusChange', this.status);
         } else if (msg.type === 'AUTH_FAIL') {
-            this.status = 'error';
+            // Auth failed (invalid token or code), but connection is fine
+            this.status = 'connected'; // Revert to connected (waiting for auth)
             // Clear invalid token
             localStorage.removeItem('wb_token');
             this.emit('statusChange', this.status);
-            this.emit('error', 'Authentication Failed');
+            this.emit('auth_fail'); // Explicit event for UI to force logout
+            // Do NOT emit 'error' to avoid UI thinking connection broke. 
+            // The UI will see status != authenticated and show AuthScreen.
         }
 
         // 3. Emit general events

@@ -38,7 +38,7 @@ import Animated, {
   LinearTransition,
 } from 'react-native-reanimated';
 import * as FileSystem from 'expo-file-system/legacy';
-import { SvgXml } from 'react-native-svg';
+// import { SvgXml } from 'react-native-svg'; // Removed to prevent native crashes
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
 import { AgentAvatar } from '../../../components/chat/AgentAvatar';
@@ -104,53 +104,7 @@ interface ChatBubbleProps {
   onLayout?: (event: any) => void;
 }
 
-// SVG 错误边界组件
-class SVGErrorBoundary extends Component<
-  { children: React.ReactNode; isDark: boolean; t: any },
-  { hasError: boolean; error?: Error }
-> {
-  constructor(props: any) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.log('SVG Rendering Error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <View
-          style={{
-            marginVertical: 12,
-            padding: 16,
-            backgroundColor: this.props.isDark ? '#27272a' : '#fef2f2',
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: this.props.isDark ? '#3f3f46' : '#fecaca',
-          }}
-        >
-          <Typography
-            style={{ color: '#ef4444', fontSize: 14, fontWeight: '600', marginBottom: 4 }}
-          >
-            {this.props.t.agent.svgErrorTitle}
-          </Typography>
-          <Typography style={{ color: this.props.isDark ? '#a1a1aa' : '#6b7280', fontSize: 12 }}>
-            {this.props.t.agent.svgErrorDesc}
-          </Typography>
-        </View>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
+// SVGErrorBoundary removed as we use WebView now
 // 生成图片组件 - 独立组件避免在 Markdown rules 中使用 hooks
 const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: any }> = React.memo(
   ({ src, alt, isDark, t }) => {
@@ -863,29 +817,28 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             );
           }
 
-          // 静态 SVG 继续使用 SvgXml（性能更好）
+          // 静态 SVG 也统一使用 WebView 渲染以避免 Android 原生解析崩溃 (PathParser error)
           return (
-            // @ts-ignore
-            <SVGErrorBoundary key={node.key + content.length} isDark={isDark} t={t}>
-              <View style={{ marginVertical: 12, alignItems: 'center', width: '100%' }}>
-                <View
-                  style={{
-                    backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                    padding: 12,
-                    borderRadius: 12,
-                    width: '100%',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <SvgXml
-                    xml={content}
-                    width="100%"
-                    height={200}
-                    onError={() => { }} // 内部捕获
-                  />
-                </View>
+            <View
+              key={node.key + content.length}
+              collapsable={false}
+              style={{ marginVertical: 12, width: '100%' }}
+            >
+              <View
+                style={{
+                  backgroundColor: isDark ? '#18181b' : '#f9fafb',
+                  borderRadius: 12,
+                  width: '100%',
+                  height: 250, // 稍微增加高度
+                  overflow: 'hidden',
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                }}
+              >
+                {/* 使用 AnimatedSVGRenderer (WebView) 替代 SvgXml */}
+                <AnimatedSVGRenderer svgContent={content} height={250} />
               </View>
-            </SVGErrorBoundary>
+            </View>
           );
         }
 
@@ -942,6 +895,49 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       image: (node: any, children: any, parent: any, styles: any) => {
         const { src, alt } = node.attributes;
         return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} />;
+      },
+      // ✅ Allow inline text + math mixing
+      paragraph: (node: any, children: any, parent: any, styles: any) => (
+        <View
+          key={node.key}
+          style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginVertical: 8 }}
+        >
+          {children}
+        </View>
+      ),
+      // ✅ Detect Inline Math ($...$)
+      text: (node: any, children: any, parent: any, styles: any) => {
+        const content = node.content;
+        // Simple optimization: check for possible math delimiter before splitting
+        if (!content.includes('$')) {
+          return <Text key={node.key} style={styles.text}>{content}</Text>;
+        }
+
+        const parts = content.split(/(\$[^\$]+\$)/g);
+
+        return (
+          <React.Fragment key={node.key}>
+            {parts.map((part: string, index: number) => {
+              if (part.startsWith('$') && part.endsWith('$')) {
+                // Remove $ delimiters
+                const math = part.slice(1, -1);
+                return (
+                  <View key={index} style={{ marginHorizontal: 2 }}>
+                    <MathRenderer content={math} isBlock={false} />
+                  </View>
+                );
+              }
+              // Skip empty text parts (e.g. caused by split at start/end)
+              if (!part) return null;
+
+              return (
+                <Text key={index} style={styles.text}>
+                  {part}
+                </Text>
+              );
+            })}
+          </React.Fragment>
+        );
       },
     }),
     [isDark],
