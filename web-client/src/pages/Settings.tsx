@@ -1,13 +1,30 @@
 import { useEffect, useState } from 'react';
 import { workbenchClient } from '../services/WorkbenchClient';
-import { Save, Plus, Trash2, Eye, EyeOff, Server, Cpu, Globe } from 'lucide-react';
-import { RagSettingsPanel } from '../components/RagSettingsPanel';
+import { Save, Globe, Server, Database, HardDrive, BarChart3, ChevronRight, Settings as SettingsIcon, Search, Network } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
+import { clsx } from 'clsx';
+import { AnimatePresence, motion } from 'framer-motion';
 
+// Section Components
+import { GeneralSection } from './settings/GeneralSection';
+import { ModelSection } from './settings/ModelSection';
+import { RagBasicSettings } from './settings/RagBasicSettings';
+import { RagRetrievalSettings } from './settings/RagRetrievalSettings';
+import { RagKgSettings } from './settings/RagKgSettings';
+import { BackupSection } from './settings/BackupSection';
+import { UsageSection } from './settings/UsageSection';
+
+// Types (Ideally move to types/settings.ts)
 interface ModelConfig {
     id: string;
     name: string;
     enabled?: boolean;
+    capabilities?: {
+        internet?: boolean;
+        vision?: boolean;
+        reasoning?: boolean;
+    };
+    contextLength?: number;
 }
 
 interface ProviderConfig {
@@ -29,30 +46,22 @@ interface ConfigState {
         defaultRerankModel?: string;
     };
     providers: ProviderConfig[];
+    rag?: any; // Add rag prop to ConfigState
 }
 
+type SettingsSection = 'general' | 'models' | 'rag-basic' | 'rag-retrieval' | 'rag-kg' | 'backup' | 'usage';
+
 export const Settings = () => {
-    const { t, language, setLanguage } = useI18n();
+    const { t } = useI18n();
+    const [activeSection, setActiveSection] = useState<SettingsSection>('general');
     const [config, setConfig] = useState<ConfigState | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
-
-    const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
 
     useEffect(() => {
         console.log('[Settings] Component Mounted');
         loadConfig();
     }, []);
-
-    useEffect(() => {
-        if (config?.providers) {
-            const models = config.providers.flatMap(p =>
-                (p.models || []).map(m => ({ id: m.id, name: `${p.name} - ${m.name || m.id}` }))
-            );
-            setAvailableModels(models);
-        }
-    }, [config]);
 
     const loadConfig = async () => {
         try {
@@ -71,18 +80,28 @@ export const Settings = () => {
         setSaving(true);
         try {
             await workbenchClient.updateConfig(config);
-            alert('Settings saved successfully!');
+            // alert('Settings saved successfully!'); // Use a toast preferably
         } catch (e) {
+            console.error('Failed to save settings:', e);
             alert('Failed to save settings: ' + e);
         } finally {
             setSaving(false);
         }
     };
 
-    const toggleShowKey = (id: string) => {
-        setShowKeys(prev => ({ ...prev, [id]: !prev[id] }));
+    // Updates the RagConfig update logic
+    const updateRagConfig = (key: string, value: any) => {
+        if (!config) return;
+        setConfig({
+            ...config,
+            rag: {
+                ...config.rag,
+                [key]: value
+            }
+        });
     };
 
+    // --- Provider/Model Handlers ---
     const updateProvider = (id: string, updates: Partial<ProviderConfig>) => {
         if (!config) return;
         setConfig({
@@ -116,14 +135,6 @@ export const Settings = () => {
         });
     };
 
-    const updateDefault = (key: string, value: string) => {
-        if (!config) return;
-        setConfig({
-            ...config,
-            defaults: { ...config.defaults, [key]: value }
-        });
-    };
-
     const toggleModel = (providerId: string, modelId: string, enabled: boolean) => {
         if (!config) return;
         setConfig({
@@ -140,236 +151,151 @@ export const Settings = () => {
         });
     };
 
-    if (loading) return <div className="flex-1 p-8 bg-[#09090b] text-white flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div></div>;
-    if (!config) return <div className="flex-1 p-8 bg-[#09090b] text-white">Failed to load configuration.</div>;
+    const updateModelCapability = (providerId: string, modelId: string, capability: 'internet' | 'vision' | 'reasoning') => {
+        if (!config) return;
+        setConfig({
+            ...config,
+            providers: config.providers.map(p => {
+                if (p.id !== providerId) return p;
+                return {
+                    ...p,
+                    models: p.models.map(m => {
+                        if (m.id !== modelId) return m;
+                        const currentCaps = m.capabilities || {};
+                        return {
+                            ...m,
+                            capabilities: {
+                                ...currentCaps,
+                                [capability]: !currentCaps[capability]
+                            }
+                        };
+                    })
+                };
+            })
+        });
+    };
+
+
+
+    if (loading) return (
+        <div className="flex-1 flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+        </div>
+    );
+
+    if (!config) return (
+        <div className="flex-1 flex items-center justify-center h-full text-zinc-500">
+            Failed to load configuration.
+        </div>
+    );
+
+    const menuItems = [
+        { id: 'general', icon: Globe, label: t.settings.language },
+        { id: 'models', icon: Server, label: t.settings.models.title },
+
+        // Split RAG Sections
+        { id: 'rag-basic', icon: Database, label: t.settings.ragBasic?.title || 'RAG Basic' },
+        { id: 'rag-retrieval', icon: Search, label: t.settings.ragRetrieval?.title || 'Retrieval' },
+        { id: 'rag-kg', icon: Network, label: t.settings.ragKg?.title || 'Knowledge Graph' },
+
+        { id: 'backup', icon: HardDrive, label: t.settings.backup.title },
+        { id: 'usage', icon: BarChart3, label: t.settings.usage.title },
+    ];
 
     return (
-        <div className="flex-1 overflow-auto bg-[#09090b] text-white p-8 relative">
+        <div className="flex h-full overflow-hidden bg-[#09090b] text-white relative">
             {/* Ambient Background */}
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-500/5 blur-[120px] pointer-events-none" />
+            <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-500/5 blur-[120px] pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-pink-500/5 blur-[100px] pointer-events-none" />
 
-            <header className="flex justify-between items-center mb-8 relative z-10">
-                <div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">
-                        {t.settings.title}
-                    </h1>
-                    <p className="text-zinc-400 mt-1">Configure AI providers and default models</p>
+            <div className="w-full h-full flex max-w-7xl mx-auto p-4 md:p-8 gap-8 relative z-10">
+
+                {/* Sidebar Navigation */}
+                <div className="w-64 shrink-0 flex flex-col gap-2">
+                    <div className="mb-6 px-2">
+                        <h1 className="text-2xl font-bold flex items-center gap-2">
+                            <SettingsIcon className="text-indigo-500" />
+                            {t.settings.title}
+                        </h1>
+                    </div>
+
+                    {menuItems.map((item) => (
+                        <button
+                            key={item.id}
+                            onClick={() => setActiveSection(item.id as SettingsSection)}
+                            className={clsx(
+                                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium",
+                                activeSection === item.id
+                                    ? "bg-indigo-600/10 text-indigo-400 ring-1 ring-indigo-500/50 shadow-lg shadow-indigo-900/20"
+                                    : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                            )}
+                        >
+                            <item.icon size={18} />
+                            <span>{item.label}</span>
+                            {activeSection === item.id && <ChevronRight size={14} className="ml-auto opacity-50" />}
+                        </button>
+                    ))}
+
+                    <div className="mt-auto pt-6 border-t border-white/5 px-2">
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className={clsx(
+                                "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95",
+                                saving
+                                    ? "bg-emerald-500/20 text-emerald-400 cursor-wait"
+                                    : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20"
+                            )}
+                        >
+                            <Save size={18} />
+                            {saving ? t.common.save + '...' : t.common.save}
+                        </button>
+                    </div>
                 </div>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-colors disabled:opacity-50 shadow-lg shadow-indigo-600/20 active:scale-95"
-                >
-                    <Save size={18} />
-                    {saving ? 'Saved' : 'Save Changes'}
-                </button>
-            </header>
 
-            <div className="space-y-8 max-w-4xl relative z-10">
-
-
-
-                {/* General Settings (Language) */}
-                <section className="bg-[#18181b]/40 backdrop-blur-xl rounded-2xl p-6 border border-white/5 shadow-xl">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="p-2 bg-pink-500/10 rounded-lg text-pink-400">
-                            <Globe size={24} />
-                        </div>
-                        <h2 className="text-xl font-semibold">{t.settings.language}</h2>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => setLanguage('en')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${language === 'en' ? 'bg-pink-500/20 text-pink-400 border-pink-500/30' : 'bg-white/5 text-zinc-400 border-transparent hover:bg-white/10'}`}
+                {/* Main Content Area */}
+                <div className="flex-1 h-full overflow-y-auto custom-scrollbar pr-2">
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={activeSection}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                            className="pb-10"
                         >
-                            English
-                        </button>
-                        <button
-                            onClick={() => setLanguage('zh')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${language === 'zh' ? 'bg-pink-500/20 text-pink-400 border-pink-500/30' : 'bg-white/5 text-zinc-400 border-transparent hover:bg-white/10'}`}
-                        >
-                            中文
-                        </button>
-                    </div>
-                </section>
+                            {activeSection === 'general' && <GeneralSection />}
 
-                {/* System Defaults Section */}
-                <section className="bg-[#18181b]/40 backdrop-blur-xl rounded-2xl p-6 border border-white/5 shadow-xl">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
-                            <Cpu size={24} />
-                        </div>
-                        <h2 className="text-xl font-semibold">Default Models</h2>
-                    </div>
+                            {activeSection === 'models' && (
+                                <ModelSection
+                                    providers={config.providers}
+                                    onUpdateProvider={updateProvider}
+                                    onDeleteProvider={deleteProvider}
+                                    onAddProvider={addProvider}
+                                    onToggleModel={toggleModel}
+                                    onUpdateCapability={updateModelCapability}
+                                />
+                            )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {[
-                            { label: 'Chat Model', key: 'defaultTempSessionModel' },
-                            { label: 'Summary Model', key: 'defaultSummaryModel' },
-                            { label: 'Embedding Model', key: 'defaultEmbeddingModel' },
-                            { label: 'Title Generation', key: 'defaultSpeechModel' },
-                        ].map(({ label, key }) => (
-                            <div key={key}>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{label}</label>
-                                <div className="relative group">
-                                    <div className="absolute -inset-0.5 bg-indigo-500/20 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity blur duration-500" />
-                                    <select
-                                        value={config.defaults[key as keyof typeof config.defaults] || ''}
-                                        onChange={(e) => updateDefault(key, e.target.value)}
-                                        className="relative w-full bg-[#18181b]/80 border border-white/10 rounded-xl px-3 py-2.5 focus:border-indigo-500/50 outline-none text-zinc-200 transition-colors appearance-none"
-                                    >
-                                        <option value="">Select a model...</option>
-                                        {availableModels.map(m => (
-                                            <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                    </select>
-                                    <div className="absolute right-3 top-3 pointer-events-none text-zinc-500">
-                                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
+                            {activeSection === 'rag-basic' && (
+                                <RagBasicSettings config={config.rag} onChange={updateRagConfig} />
+                            )}
 
-                {/* RAG Settings Section */}
-                <section className="bg-[#18181b]/40 backdrop-blur-xl rounded-2xl p-0 border border-white/5 overflow-hidden shadow-xl">
-                    <RagSettingsPanel />
-                </section>
+                            {activeSection === 'rag-retrieval' && (
+                                <RagRetrievalSettings config={config.rag} onChange={updateRagConfig} />
+                            )}
 
-                {/* Providers Section */}
-                <section className="space-y-4">
-                    <div className="flex justify-between items-end">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
-                                <Server size={24} />
-                            </div>
-                            <h2 className="text-xl font-semibold text-white">Model Providers</h2>
-                        </div>
-                        <button
-                            onClick={addProvider}
-                            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-sm font-medium transition-colors text-zinc-300 hover:text-white"
-                        >
-                            <Plus size={16} />
-                            Add Provider
-                        </button>
-                    </div>
+                            {activeSection === 'rag-kg' && (
+                                <RagKgSettings config={config.rag} onChange={updateRagConfig} />
+                            )}
 
-                    <div className="grid gap-4">
-                        {config.providers.map((provider) => (
-                            <div key={provider.id} className="bg-[#18181b]/40 backdrop-blur-xl rounded-2xl p-6 border border-white/5 hover:border-indigo-500/30 transition-all group">
-                                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                            {activeSection === 'backup' && <BackupSection />}
 
-                                    {/* Name & Type */}
-                                    <div className="md:col-span-3 space-y-4">
-                                        <div>
-                                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Name</label>
-                                            <input
-                                                type="text"
-                                                value={provider.name}
-                                                onChange={(e) => updateProvider(provider.id, { name: e.target.value })}
-                                                className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 mt-1.5 text-sm text-white focus:border-indigo-500/50 outline-none transition-colors"
-                                                placeholder="Provider Name"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Type</label>
-                                            <div className="relative mt-1.5">
-                                                <select
-                                                    value={provider.type}
-                                                    onChange={(e) => updateProvider(provider.id, { type: e.target.value })}
-                                                    className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:border-indigo-500/50 outline-none appearance-none"
-                                                >
-                                                    <option value="openai">OpenAI Compatible</option>
-                                                    <option value="anthropic">Anthropic</option>
-                                                    <option value="google">Google Gemini</option>
-                                                    <option value="ollama">Ollama</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
+                            {activeSection === 'usage' && <UsageSection />}
 
-                                    {/* Config Fields */}
-                                    <div className="md:col-span-8 space-y-4">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Base URL</label>
-                                                <input
-                                                    type="text"
-                                                    value={provider.baseUrl || ''}
-                                                    onChange={(e) => updateProvider(provider.id, { baseUrl: e.target.value })}
-                                                    className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 mt-1.5 font-mono text-sm text-zinc-400 focus:text-white focus:border-indigo-500/50 outline-none transition-colors"
-                                                    placeholder="https://api.openai.com/v1"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">API Key</label>
-                                                <div className="relative mt-1.5">
-                                                    <input
-                                                        type={showKeys[provider.id] ? "text" : "password"}
-                                                        value={provider.apiKey}
-                                                        onChange={(e) => updateProvider(provider.id, { apiKey: e.target.value })}
-                                                        className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 font-mono text-sm text-zinc-400 focus:text-white pr-10 focus:border-indigo-500/50 outline-none transition-colors"
-                                                        placeholder="sk-..."
-                                                    />
-                                                    <button
-                                                        onClick={() => toggleShowKey(provider.id)}
-                                                        className="absolute right-2 top-2.5 text-zinc-500 hover:text-zinc-300"
-                                                    >
-                                                        {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="pt-2">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="text-xs text-zinc-500 flex items-center gap-2">
-                                                    <span className={`w-2 h-2 rounded-full ${provider.models && provider.models.length > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                                                    Models detected: <span className="text-zinc-300 font-mono">{provider.models?.length || 0}</span>
-                                                </div>
-                                            </div>
-
-                                            {/* Model List with Toggles */}
-                                            {provider.models && provider.models.length > 0 && (
-                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2 bg-[#09090b]/30 rounded-lg border border-white/5 max-h-40 overflow-y-auto custom-scrollbar">
-                                                    {provider.models.map(m => (
-                                                        <label key={m.id} className="flex items-center gap-2 p-1.5 rounded hover:bg-white/5 cursor-pointer group/model">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={m.enabled !== false} // Default to true if undefined
-                                                                onChange={(e) => toggleModel(provider.id, m.id, e.target.checked)}
-                                                                className="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
-                                                            />
-                                                            <span className={`text-xs truncate ${m.enabled !== false ? 'text-zinc-300 group-hover/model:text-white' : 'text-zinc-600'}`} title={m.name || m.id}>
-                                                                {m.name || m.id}
-                                                            </span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="md:col-span-1 flex justify-end">
-                                        <button
-                                            onClick={() => deleteProvider(provider.id)}
-                                            className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                            title="Delete Provider"
-                                        >
-                                            <Trash2 size={20} />
-                                        </button>
-                                    </div>
-
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
+                        </motion.div>
+                    </AnimatePresence>
+                </div>
             </div>
         </div>
     );

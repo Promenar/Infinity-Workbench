@@ -13,6 +13,7 @@ import { useToast } from '../../src/components/ui/Toast';
 import * as Haptics from '../../src/lib/haptics';
 import { useI18n } from '../../src/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 // Simple random 6 digit code generator
 const generateAccessCode = () => {
@@ -32,6 +33,16 @@ export default function PortableWorkbenchScreen() {
         connectedClients,
         setAccessCode,
     } = useWorkbenchStore();
+
+    // Keep screen awake when server is running
+    useEffect(() => {
+        if (serverStatus === 'running') {
+            activateKeepAwakeAsync();
+        } else {
+            deactivateKeepAwake();
+        }
+        return () => { deactivateKeepAwake(); };
+    }, [serverStatus]);
 
     const [loading, setLoading] = useState(false);
 
@@ -133,7 +144,7 @@ export default function PortableWorkbenchScreen() {
                     }}>
                         {serverStatus === 'running'
                             ? t.settings.workbench.status.active
-                            : (serverStatus === 'starting' ? t.settings.workbench.status.Starting : t.settings.workbench.status.inactive)}
+                            : (serverStatus === 'starting' ? t.settings.workbench.status.starting : t.settings.workbench.status.inactive)}
                     </Text>
                     <Text style={{
                         fontSize: 14,

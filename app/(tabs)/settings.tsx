@@ -421,18 +421,18 @@ export default function SettingsScreen() {
               <SettingsItem
                 icon={BarChart2}
                 title={t.settings.tokenUsage || '流量消耗统计'}
-                subtitle="查看 Chat、RAG 和 System 的 Token 消耗总量"
+                subtitle={t.settings.tokenUsageDesc}
                 showChevron
                 isLast
                 onPress={() => router.push('/settings/token-usage' as any)}
               />
             </SettingsSection>
 
-            <SettingsSection title="随身工作台">
+            <SettingsSection title={t.settings.workbench.title}>
               <SettingsItem
                 icon={Monitor}
-                title="Portable Workbench"
-                subtitle="在局域网PC上使用APP"
+                title={t.settings.workbench.title}
+                subtitle={t.settings.workbench.subtitle}
                 showChevron
                 isLast
                 onPress={() => router.push('/settings/workbench' as any)}

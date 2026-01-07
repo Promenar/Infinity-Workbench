@@ -19,6 +19,7 @@ class WorkbenchClient extends EventEmitter {
     private ws: WebSocket | null = null;
     private status: ConnectionStatus = 'disconnected';
     private pendingRequests: Map<string, { resolve: (data: any) => void; reject: (err: any) => void; timer: any }> = new Map();
+    private heartbeatInterval: any = null;
 
 
     constructor() {
@@ -58,16 +59,16 @@ class WorkbenchClient extends EventEmitter {
                 this.send('AUTH', { token: savedToken });
             } else {
                 // If we have an access code passed in connect (usually from manual entry), use it
-                if (accessCode) {
-                    this.send('AUTH', { code: accessCode });
-                }
+                this.send('AUTH', { code: accessCode });
             }
+            this.startHeartbeat();
         };
 
         this.ws.onclose = () => {
             console.log('[WorkbenchClient] Disconnected');
             this.status = 'disconnected';
             this.emit('statusChange', this.status);
+            this.stopHeartbeat();
             this.cleanup();
             // Auto reconnect if not manually closed? For now simple manual reconnect logic in UI
         };
@@ -115,27 +116,16 @@ class WorkbenchClient extends EventEmitter {
         return this.request('CMD_GET_GRAPH', filters || {});
     }
 
-    async getLibrary() {
-        return this.request('CMD_GET_LIBRARY');
-    }
-
-    async uploadFile(fileData: { title: string; content: string; size: number; type: string; folderId?: string }) {
-        return this.request('CMD_UPLOAD_FILE', fileData);
-    }
-
-    async deleteFile(id: string) {
-        return this.request('CMD_DELETE_FILE', { id });
-    }
-
-    async createFolder(name: string, parentId?: string) {
-        return this.request('CMD_CREATE_FOLDER', { name, parentId });
-    }
-
-    async deleteFolder(id: string) {
-        return this.request('CMD_DELETE_FOLDER', { id });
-    }
-
     // Chat Methods
+    async deleteSession(sessionId: string): Promise<boolean> {
+        const res = await this.request('CMD_DELETE_SESSION', { id: sessionId });
+        return res?.success || false;
+    }
+
+    async getSessions(): Promise<any[]> { // Changed return type to any[] as ChatSession is not defined
+        return this.request('CMD_GET_SESSIONS');
+    }
+
     async sendMessage(sessionId: string, content: string, options?: any) {
         return this.request('CMD_SEND_MESSAGE', { sessionId, content, options });
     }
@@ -152,8 +142,69 @@ class WorkbenchClient extends EventEmitter {
         return this.request('CMD_REGENERATE_MESSAGE', { sessionId, messageId });
     }
 
-    async getHistory(id: string) {
-        return this.request('CMD_GET_HISTORY', { id });
+    // Stats
+    async getStats() {
+        return this.request('CMD_GET_STATS');
+    }
+
+    async resetStats(modelId?: string) {
+        return this.request('CMD_RESET_STATS', { modelId });
+    }
+
+    // Backup (WebDAV)
+    async getWebDavConfig() {
+        return this.request('CMD_GET_WEBDAV');
+    }
+
+    async updateWebDavConfig(config: any) {
+        return this.request('CMD_UPDATE_WEBDAV', config);
+    }
+
+    // Library
+    async getLibrary() {
+        return this.request('CMD_GET_LIBRARY');
+    }
+
+    async uploadFile(file: File, folderId?: string) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async () => {
+                try {
+                    const content = reader.result as string;
+                    // For text files, we send content. For binary, might need base64.
+                    // Assuming text/markdown for now or base64 data url.
+                    // This logic matches App's file handling simplified.
+                    await this.request('CMD_UPLOAD_FILE', {
+                        title: file.name,
+                        content: content, // This might be Data URL for images
+                        size: file.size,
+                        type: file.type.startsWith('image') ? 'image' : 'text',
+                        folderId,
+                    });
+                    resolve(true);
+                } catch (e) {
+                    reject(e);
+                }
+            };
+            reader.onerror = reject;
+            if (file.type.startsWith('image')) {
+                reader.readAsDataURL(file);
+            } else {
+                reader.readAsText(file);
+            }
+        });
+    }
+
+    async deleteFile(id: string) {
+        return this.request('CMD_DELETE_FILE', { id });
+    }
+
+    async createFolder(name: string, parentId?: string) {
+        return this.request('CMD_CREATE_FOLDER', { name, parentId });
+    }
+
+    async deleteFolder(id: string) {
+        return this.request('CMD_DELETE_FOLDER', { id });
     }
 
     public getStatus() {
@@ -242,6 +293,23 @@ class WorkbenchClient extends EventEmitter {
             reject(new Error('Connection closed'));
         });
         this.pendingRequests.clear();
+        this.stopHeartbeat();
+    }
+
+    private startHeartbeat() {
+        this.stopHeartbeat();
+        this.heartbeatInterval = setInterval(() => {
+            if (this.status === 'connected' || this.status === 'authenticated') {
+                this.send('HEARTBEAT', {});
+            }
+        }, 10000); // 10s heartbeat
+    }
+
+    private stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
     }
 }
 

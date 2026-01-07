@@ -10,6 +10,8 @@ import { AgentController } from './controllers/AgentController';
 import { ChatController } from './controllers/ChatController';
 import { ConfigController } from './controllers/ConfigController';
 import { LibraryController } from './controllers/LibraryController';
+import { StatsController } from './controllers/StatsController';
+import { BackupController } from './controllers/BackupController';
 import { storeSyncService } from './StoreSyncService';
 
 export const workbenchEvents = new EventEmitter();
@@ -25,11 +27,13 @@ interface WebSocketClient {
     buffer: Buffer;
     writeQueue: (() => Promise<void>)[];
     isWriting: boolean;
+    lastHeartbeat: number;
 }
 
 class CommandWebSocketServer {
     private server: any = null;
     private clients: Map<string, WebSocketClient> = new Map();
+    private checkInterval: any = null;
 
     // Imports moved to top
 
@@ -63,6 +67,7 @@ class CommandWebSocketServer {
                         buffer: Buffer.alloc(0),
                         writeQueue: [],
                         isWriting: false,
+                        lastHeartbeat: Date.now(),
                     };
 
                     this.clients.set(clientId, client);
@@ -148,6 +153,14 @@ class CommandWebSocketServer {
         workbenchRouter.register('CMD_DELETE_FOLDER', LibraryController.deleteFolder);
         workbenchRouter.register('CMD_GET_GRAPH', LibraryController.getGraphData);
 
+        // Stats API
+        workbenchRouter.register('CMD_GET_STATS', StatsController.getStats);
+        workbenchRouter.register('CMD_RESET_STATS', StatsController.resetStats);
+
+        // Backup API
+        workbenchRouter.register('CMD_GET_WEBDAV', BackupController.getWebDavConfig);
+        workbenchRouter.register('CMD_UPDATE_WEBDAV', BackupController.updateWebDavConfig);
+
         try {
             await startServer(10);
             storeSyncService.start();
@@ -155,6 +168,9 @@ class CommandWebSocketServer {
             console.error('[WS] Failed to start server after retries:', e);
             // Don't crash app
         }
+
+        // Start Cleanup Timer
+        this.startCleanupTimer();
     }
 
     stop() {
@@ -164,6 +180,7 @@ class CommandWebSocketServer {
         }
         this.clients.clear();
         this.updateClientCount();
+        if (this.checkInterval) clearInterval(this.checkInterval);
         workbenchRouter.stop();
         storeSyncService.stop();
     }
@@ -407,6 +424,11 @@ class CommandWebSocketServer {
                 return;
             }
 
+            if (msg.type === 'HEARTBEAT') {
+                client.lastHeartbeat = Date.now();
+                return;
+            }
+
             workbenchRouter.handle(msg, {
                 client: routerContextClient,
                 server: this
@@ -440,6 +462,21 @@ class CommandWebSocketServer {
 
     private updateClientCount() {
         useWorkbenchStore.getState().setConnectedClients(this.clients.size);
+    }
+
+    private startCleanupTimer() {
+        if (this.checkInterval) clearInterval(this.checkInterval);
+        this.checkInterval = setInterval(() => {
+            const now = Date.now();
+            this.clients.forEach((client, id) => {
+                // If no heartbeat for 30s, disconnect
+                if (now - client.lastHeartbeat > 30000) {
+                    console.log(`[WS] Client ${id} timed out`);
+                    try { client.socket.destroy(); } catch (e) { }
+                    this.removeClient(id);
+                }
+            });
+        }, 10000);
     }
 }
 

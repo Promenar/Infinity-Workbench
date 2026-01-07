@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, User, Copy, Check, RotateCw, Trash2, Share2, Loader2 } from 'lucide-react';
+import { Bot, User, Copy, Check, RotateCw, Trash2, Share2, Loader2, Library, Sparkles, Globe, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -31,6 +31,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     const [copied, setCopied] = useState(false);
     const [isReasoningExpanded, setIsReasoningExpanded] = useState(false);
     const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
+    const [isRagExpanded, setIsRagExpanded] = useState(false);
 
     // Auto-expand reasoning when streaming starts
     useEffect(() => {
@@ -88,15 +89,103 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     </span>
                 </div>
 
-                {/* Reasoning Block */}
-                {message.reasoning && (
-                    <ReasoningBlock
-                        content={message.reasoning}
-                        expanded={isReasoningExpanded}
-                        onToggle={() => setIsReasoningExpanded(!isReasoningExpanded)}
-                        loading={isStreaming && !message.content}
-                    />
+                {/* Header Metadata Row (Reasoning, Search, Knowledge) */}
+                {(!isUser && (message.reasoning || (message.citations && message.citations.length > 0) || (message.ragReferences && message.ragReferences.length > 0) || isStreaming)) && (
+                    <div className="flex flex-wrap gap-2 mb-2 items-center">
+                        {/* Reasoning Button */}
+                        {(message.reasoning || (isStreaming && !message.content)) && (
+                            <button
+                                onClick={() => setIsReasoningExpanded(!isReasoningExpanded)}
+                                className={clsx(
+                                    "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200",
+                                    (isStreaming && !message.content) || isReasoningExpanded
+                                        ? "bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-400"
+                                        : "bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10"
+                                )}
+                            >
+                                <Sparkles size={12} className={(isStreaming && !message.content) ? "animate-pulse" : ""} />
+                                <span>{(isStreaming && !message.content) ? t.status.thinking : isReasoningExpanded ? 'Deep Thinking' : t.chat.thinking}</span>
+                                <ChevronDown size={12} className={clsx("transition-transform duration-200", isReasoningExpanded && "rotate-180")} />
+                            </button>
+                        )}
+
+                        {/* Search Button */}
+                        {message.citations && message.citations.length > 0 && (
+                            <button
+                                onClick={() => setIsSourcesExpanded(!isSourcesExpanded)}
+                                className={clsx(
+                                    "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200",
+                                    isSourcesExpanded
+                                        ? "bg-indigo-500/10 border-indigo-500/40 text-indigo-600 dark:text-indigo-400"
+                                        : "bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10"
+                                )}
+                            >
+                                <Globe size={12} />
+                                <span>{message.citations.length} {t.chat.search}</span>
+                                <ChevronDown size={12} className={clsx("transition-transform duration-200", isSourcesExpanded && "rotate-180")} />
+                            </button>
+                        )}
+
+                        {/* Knowledge Button */}
+                        {message.ragReferences && message.ragReferences.length > 0 && (
+                            <button
+                                onClick={() => setIsRagExpanded(!isRagExpanded)}
+                                className={clsx(
+                                    "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200",
+                                    isRagExpanded
+                                        ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                                        : "bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10"
+                                )}
+                            >
+                                <Library size={12} />
+                                <span>{message.ragReferences.length} Knowledge</span>
+                                <ChevronDown size={12} className={clsx("transition-transform duration-200", isRagExpanded && "rotate-180")} />
+                            </button>
+                        )}
+
+                        {/* Vectorization Status (Moved to Header) */}
+                        {showProcessing && (
+                            <span className="text-[10px] flex items-center gap-1.5 text-amber-500 font-medium animate-pulse bg-amber-500/10 px-2 py-0.5 rounded-full ml-auto">
+                                <Loader2 size={10} className="animate-spin" />
+                                {t.chat.processing}
+                            </span>
+                        )}
+                        {showSuccess && (
+                            <span className="text-[10px] flex items-center gap-1.5 text-emerald-500 font-medium animate-in fade-in zoom-in bg-emerald-500/10 px-2 py-0.5 rounded-full ml-auto">
+                                <Check size={10} />
+                                {t.chat.memorized}
+                            </span>
+                        )}
+                    </div>
                 )}
+
+                {/* Expanded Content Stack */}
+                <div className="space-y-2 mb-2">
+                    {message.reasoning && (
+                        <ReasoningBlock
+                            content={message.reasoning}
+                            expanded={isReasoningExpanded}
+                            onToggle={() => setIsReasoningExpanded(!isReasoningExpanded)}
+                            loading={isStreaming && !message.content}
+                            hideTrigger={true}
+                        />
+                    )}
+                    {message.citations && message.citations.length > 0 && (
+                        <SearchSourcesBlock
+                            citations={message.citations}
+                            expanded={isSourcesExpanded}
+                            onToggle={() => setIsSourcesExpanded(!isSourcesExpanded)}
+                            hideTrigger={true}
+                        />
+                    )}
+                    {message.ragReferences && message.ragReferences.length > 0 && (
+                        <RagReferencesList
+                            references={message.ragReferences}
+                            expanded={isRagExpanded}
+                            hideTrigger={true}
+                        />
+                    )}
+                </div>
 
                 {/* Main Content */}
                 <div className="prose prose-invert max-w-none text-gray-300 leading-relaxed">
@@ -161,38 +250,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     </ReactMarkdown>
                 </div>
 
-                {/* Search Sources */}
-                {message.citations && message.citations.length > 0 && (
-                    <SearchSourcesBlock
-                        citations={message.citations}
-                        expanded={isSourcesExpanded}
-                        onToggle={() => setIsSourcesExpanded(!isSourcesExpanded)}
-                    />
-                )}
 
-                {/* RAG References */}
-                {message.ragReferences && message.ragReferences.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-white/5">
-                        <RagReferencesList references={message.ragReferences} />
-                    </div>
-                )}
 
                 {/* Footer Actions & Status */}
                 <div className="flex items-center justify-between pt-2">
-                    {/* Status Indicators */}
+                    {/* Status Indicators (Removed from Footer) */}
                     <div className="flex items-center gap-4 h-6">
-                        {showProcessing && (
-                            <span className="text-[10px] flex items-center gap-1.5 text-amber-500 font-medium animate-pulse bg-amber-500/10 px-2 py-0.5 rounded-full">
-                                <Loader2 size={10} className="animate-spin" />
-                                {t.chat.processing}
-                            </span>
-                        )}
-                        {showSuccess && (
-                            <span className="text-[10px] flex items-center gap-1.5 text-emerald-500 font-medium animate-in fade-in zoom-in bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                                <Check size={10} />
-                                {t.chat.memorized}
-                            </span>
-                        )}
                         {showError && (
                             <span className="text-[10px] flex items-center gap-1.5 text-red-500 font-medium bg-red-500/10 px-2 py-0.5 rounded-full">
                                 {t.chat.failed}

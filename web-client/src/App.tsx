@@ -1,9 +1,9 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import AuthScreen from './components/AuthScreen';
-import { DashboardLayout } from './components/DashboardLayout';
+import { MainLayout } from './components/layout/MainLayout';
+import { HomePage } from './pages/HomePage';
 import { Assistants } from './pages/Assistants';
-import { Sessions } from './pages/Sessions';
 import { Settings } from './pages/Settings';
 import { Library } from './pages/Library';
 import { ChatPage } from './pages/ChatPage';
@@ -114,19 +114,23 @@ const router = createBrowserRouter([
     path: "/",
     element: (
       <AuthGuard>
-        <DashboardLayout />
+        <MainLayout />
       </AuthGuard>
     ),
     children: [
-      { index: true, element: <Navigate to="/sessions" replace /> },
+      { index: true, element: <HomePage /> },
       { path: "assistants", element: <Assistants /> },
-      { path: "sessions", element: <Sessions /> },
-      { path: "chat/:sessionId", element: <ChatPage /> },
+      { path: "settings", element: <Settings /> },
       { path: "library", element: <Library /> },
       { path: "graph", element: <KnowledgeGraph /> },
-      { path: "settings", element: <Settings /> },
-      // Dashboard route removed or redirected
-      { path: "dashboard", element: <Navigate to="/sessions" replace /> },
+
+      // Chat Routes
+      { path: "agent/:agentId", element: <ChatPage /> },
+      { path: "chat/:sessionId", element: <ChatPage /> },
+
+      // Redirects
+      { path: "sessions", element: <Navigate to="/" replace /> },
+      { path: "dashboard", element: <Navigate to="/" replace /> },
     ]
   },
   {

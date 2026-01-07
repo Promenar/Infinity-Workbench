@@ -7,6 +7,7 @@ interface ReasoningBlockProps {
     loading?: boolean;
     expanded: boolean;
     onToggle: () => void;
+    hideTrigger?: boolean;
 }
 
 export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({
@@ -14,30 +15,33 @@ export const ReasoningBlock: React.FC<ReasoningBlockProps> = ({
     loading,
     expanded,
     onToggle,
+    hideTrigger,
 }) => {
     const { t } = useI18n();
 
     return (
         <div className="mb-2">
-            <button
-                onClick={onToggle}
-                className={`
-                    flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200
-                    ${loading || expanded
-                        ? 'bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-400'
-                        : 'bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'
-                    }
-                `}
-            >
-                <Sparkles size={12} className={loading ? "animate-pulse" : ""} />
-                <span>
-                    {loading ? t.status.thinking : expanded ? '已深度思考' : t.chat.thinking}
-                </span>
-                <ChevronDown
-                    size={12}
-                    className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
-                />
-            </button>
+            {!hideTrigger && (
+                <button
+                    onClick={onToggle}
+                    className={`
+                        flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200
+                        ${loading || expanded
+                            ? 'bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-400'
+                            : 'bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'
+                        }
+                    `}
+                >
+                    <Sparkles size={12} className={loading ? "animate-pulse" : ""} />
+                    <span>
+                        {loading ? t.status.thinking : expanded ? '已深度思考' : t.chat.thinking}
+                    </span>
+                    <ChevronDown
+                        size={12}
+                        className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+                    />
+                </button>
+            )}
 
             {(expanded || loading) && (
                 <div className={`

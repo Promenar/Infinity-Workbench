@@ -8,6 +8,8 @@ export interface Assistant {
     description: string;
     modelId: string;
     systemPrompt: string;
+    color?: string;
+    defaultModel?: string;
     // ... other fields
 }
 

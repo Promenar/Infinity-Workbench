@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { workbenchClient } from '../services/WorkbenchClient';
 import { Folder, FileText, Upload, Trash2, FolderPlus, ChevronRight, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useI18n } from '../lib/i18n';
 
 interface RagDocument {
     id: string;
@@ -21,10 +22,9 @@ interface RagFolder {
 }
 
 export const Library = () => {
+    const { t } = useI18n();
     const [documents, setDocuments] = useState<RagDocument[]>([]);
     const [folders, setFolders] = useState<RagFolder[]>([]);
-    // Stats currently unused
-    // const [stats, setStats] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
@@ -41,7 +41,6 @@ export const Library = () => {
             const data = await workbenchClient.getLibrary();
             setDocuments(data.documents);
             setFolders(data.folders);
-            // setStats(data.stats);
         } catch (e) {
             console.error('Failed to load library', e);
         } finally {
@@ -59,17 +58,10 @@ export const Library = () => {
 
         setUploading(true);
         try {
-            const text = await file.text();
-            await workbenchClient.uploadFile({
-                title: file.name,
-                content: text,
-                size: file.size,
-                type: 'text',
-                folderId: currentFolderId
-            });
+            await workbenchClient.uploadFile(file, currentFolderId);
             await loadLibrary();
         } catch (error) {
-            alert('Upload failed: ' + error);
+            alert(t.common.error + ': ' + error);
         } finally {
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -77,33 +69,33 @@ export const Library = () => {
     };
 
     const handleDeleteFile = async (id: string) => {
-        if (!window.confirm('Delete this file?')) return;
+        if (!window.confirm(t.library.deleteFileConfirm)) return;
         try {
             await workbenchClient.deleteFile(id);
             await loadLibrary();
         } catch (e) {
-            alert('Delete failed: ' + e);
+            alert(t.common.error + ': ' + e);
         }
     };
 
     const handleCreateFolder = async () => {
-        const name = prompt('Folder Name:');
+        const name = prompt(t.library.newFolder + ':');
         if (!name) return;
         try {
             await workbenchClient.createFolder(name, currentFolderId);
             await loadLibrary();
         } catch (e) {
-            alert('Create folder failed: ' + e);
+            alert(t.common.error + ': ' + e);
         }
     };
 
     const handleDeleteFolder = async (id: string) => {
-        if (!window.confirm('Delete this folder and its contents?')) return;
+        if (!window.confirm(t.library.deleteFolderConfirm)) return;
         try {
             await workbenchClient.deleteFolder(id);
             await loadLibrary();
         } catch (e) {
-            alert('Delete folder failed: ' + e);
+            alert(t.common.error + ': ' + e);
         }
     }
 
@@ -136,9 +128,9 @@ export const Library = () => {
             <header className="flex justify-between items-center mb-6 z-10">
                 <div>
                     <h1 className="text-2xl font-bold text-white tracking-tight">
-                        Library
+                        {t.library.title}
                     </h1>
-                    <p className="text-zinc-400 text-sm mt-1">Manage knowledge base ({documents.length} files)</p>
+                    <p className="text-zinc-400 text-sm mt-1">{t.library.subtitle} ({documents.length} files)</p>
                 </div>
                 <div className="flex gap-2">
                     <button onClick={loadLibrary} className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-zinc-400 hover:text-white">
@@ -146,7 +138,7 @@ export const Library = () => {
                     </button>
                     <button onClick={handleCreateFolder} className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-sm font-medium">
                         <FolderPlus size={16} />
-                        New Folder
+                        {t.library.newFolder}
                     </button>
                     <button
                         onClick={handleUploadClick}
@@ -154,7 +146,7 @@ export const Library = () => {
                         className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-lg shadow-emerald-600/20 active:scale-95 text-sm font-medium disabled:opacity-50"
                     >
                         <Upload size={16} />
-                        {uploading ? 'Uploading...' : 'Upload File'}
+                        {uploading ? t.library.uploading : t.library.upload}
                     </button>
                     <input
                         type="file"
@@ -178,7 +170,7 @@ export const Library = () => {
                                 crumb.id === currentFolderId ? "text-white font-medium" : "text-zinc-500"
                             )}
                         >
-                            {crumb.name}
+                            {crumb.name || 'Root'}
                         </button>
                     </div>
                 ))}
@@ -187,10 +179,10 @@ export const Library = () => {
             {/* Content Area */}
             <div className="flex-1 bg-[#18181b]/40 backdrop-blur-xl rounded-2xl border border-white/5 overflow-hidden flex flex-col shadow-2xl z-10">
                 <div className="grid grid-cols-12 gap-4 p-4 border-b border-white/5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider bg-white/2">
-                    <div className="col-span-6">Name</div>
-                    <div className="col-span-2">Type</div>
-                    <div className="col-span-2">Size</div>
-                    <div className="col-span-2 text-right">Actions</div>
+                    <div className="col-span-6">{t.library.name}</div>
+                    <div className="col-span-2">{t.library.type}</div>
+                    <div className="col-span-2">{t.library.size}</div>
+                    <div className="col-span-2 text-right">{t.library.actions}</div>
                 </div>
 
                 <div className="flex-1 overflow-auto p-2 space-y-1 custom-scrollbar">
@@ -253,7 +245,7 @@ export const Library = () => {
                             <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
                                 <FolderPlus size={32} className="opacity-50" />
                             </div>
-                            <p>This folder is empty</p>
+                            <p>{t.library.empty}</p>
                         </div>
                     )}
                 </div>

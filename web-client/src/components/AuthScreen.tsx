@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { workbenchClient } from '../services/WorkbenchClient';
-import { Wifi, WifiOff, ArrowRight, Command } from 'lucide-react';
+import { Wifi, WifiOff, Command } from 'lucide-react';
 import clsx from 'clsx';
 
 interface AuthScreenProps {
@@ -51,10 +51,7 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
 
         // Auto-submit if full
         if (newPin.every(d => d !== '') && index === 5 && value !== '') {
-            // Trigger submit logic
-            // We can't easily call handleConnect here because it takes an event
-            // But we can trigger the button click or extract the logic.
-            // Let's just focus the button or auto-wait
+            handleConnect(null, newPin.join(''));
         }
     };
 
@@ -67,12 +64,12 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
         }
     };
 
-    const handleConnect = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleConnect = async (e: React.FormEvent | null, pinOverride?: string) => {
+        if (e) e.preventDefault();
         setLoading(true);
         setError('');
 
-        const fullPin = pin.join('');
+        const fullPin = pinOverride || pin.join('');
         if (fullPin.length !== 6) {
             setError('Enter 6-digit Code');
             setLoading(false);
@@ -147,29 +144,7 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
                 </div>
 
                 {/* Submit Button */}
-                <button
-                    onClick={handleConnect}
-                    disabled={loading}
-                    className={clsx(
-                        "w-full py-4 rounded-xl font-semibold text-lg transition-all duration-300 flex items-center justify-center gap-2",
-                        "bg-gradient-primary shadow-lg shadow-indigo-500/30",
-                        "hover:shadow-indigo-500/50 hover:scale-[1.02]",
-                        "active:scale-[0.98]",
-                        "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                    )}
-                >
-                    {loading ? (
-                        <>
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            <span>Connecting...</span>
-                        </>
-                    ) : (
-                        <>
-                            <span>Connect</span>
-                            <ArrowRight size={20} />
-                        </>
-                    )}
-                </button>
+
             </div>
 
             {/* Footer Status */}
@@ -179,6 +154,6 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
                     {loading ? 'Negotiating handshake...' : 'Waiting for connection...'}
                 </span>
             </div>
-        </div>
+        </div >
     );
 }

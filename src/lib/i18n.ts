@@ -65,6 +65,7 @@ export const translations = {
         save: '保存配置',
       },
       tokenUsage: '流量消耗统计',
+      tokenUsageDesc: '查看 Chat、RAG 和 System 的 Token 消耗总量',
 
       // Backup
       appSection: '应用',
@@ -114,7 +115,7 @@ export const translations = {
         subtitle: '在局域网 PC 上控制 Nexara',
         status: {
           active: '运行中',
-          Starting: '启动中...',
+          starting: '启动中...',
           inactive: '已停止',
           ready: 'Web 端已就绪，等待连接',
           start: '请启动服务以开始使用',
@@ -612,6 +613,7 @@ export const translations = {
         save: 'Save Config',
       },
       tokenUsage: 'Token Usage Stats',
+      tokenUsageDesc: 'View total Token usage for Chat, RAG, and System',
 
       // Backup
       appSection: 'App',
@@ -661,7 +663,7 @@ export const translations = {
         subtitle: 'Control Nexara from your PC',
         status: {
           active: 'Active',
-          Starting: 'Starting...',
+          starting: 'Starting...',
           inactive: 'Inactive',
           ready: 'Web interface is ready to connect',
           start: 'Start the server to access from PC',

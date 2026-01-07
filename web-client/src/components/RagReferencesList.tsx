@@ -5,34 +5,40 @@ import type { RagReference } from '../types/chat';
 interface RagReferencesListProps {
     references: RagReference[];
     expanded?: boolean;
+    onToggle?: () => void;
+    hideTrigger?: boolean;
 }
 
-export const RagReferencesList: React.FC<RagReferencesListProps> = ({ references }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
+export const RagReferencesList: React.FC<RagReferencesListProps> = ({ references, expanded, onToggle, hideTrigger }) => {
+    const [internalExpanded, setInternalExpanded] = useState(false);
+    const isExpanded = expanded !== undefined ? expanded : internalExpanded;
+    const handleToggle = onToggle || (() => setInternalExpanded(!internalExpanded));
 
     if (!references || references.length === 0) return null;
 
     return (
         <div className="mb-2">
-            <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className={`
-                    flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200
-                    ${isExpanded
-                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'
-                    }
-                `}
-            >
-                <Library size={12} />
-                <span>
-                    {references.length} 个知识点
-                </span>
-                <ChevronDown
-                    size={12}
-                    className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                />
-            </button>
+            {!hideTrigger && (
+                <button
+                    onClick={handleToggle}
+                    className={`
+                        flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200
+                        ${isExpanded
+                            ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                            : 'bg-gray-100 dark:bg-white/5 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10'
+                        }
+                    `}
+                >
+                    <Library size={12} />
+                    <span>
+                        {references.length} 个知识点
+                    </span>
+                    <ChevronDown
+                        size={12}
+                        className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                    />
+                </button>
+            )}
 
             {isExpanded && (
                 <div className="mt-2 space-y-2">
