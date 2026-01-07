@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Dimensions, TouchableOpacity, Text, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, Dimensions, TouchableOpacity, Text, Platform, Modal, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { SvgXml } from 'react-native-svg'; // Unused now, but keeping for reference or removing? best to remove.
-// Actually, I should remove it.
-import { Play, Square } from 'lucide-react-native';
+import { SvgXml } from 'react-native-svg';
+import { Play, Square, Eye, Maximize2, X, Minimize2 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../theme/ThemeProvider';
 
@@ -118,6 +117,11 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = f
               if (Math.abs(width - currentWidth) > 5 || Math.abs(height - dimensions.height) > 5) {
                 setDimensions({ height: height + 10, width: width + 10 }); // Add padding
               }
+            } else {
+              // For block math, update height if significantly different
+              if (Math.abs(height - dimensions.height) > 10) {
+                setDimensions({ ...dimensions, height: height + 24 });
+              }
             }
           } catch (e) { }
         }}
@@ -129,26 +133,60 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = f
 interface AnimatedSVGRendererProps {
   svgContent: string;
   width?: number | string;
-  height?: number;
+  minHeight?: number;
+  initialHeight?: number;
+  onHeightChange?: (height: number) => void;
+  enableZoom?: boolean;
 }
 
 /**
  * SVG 动画渲染组件（支持 CSS 动画和 SMIL）
  * 使用 WebView 渲染，支持完整的 SVG 特性
+ * 支持自动高度检测
  */
 export const AnimatedSVGRenderer: React.FC<AnimatedSVGRendererProps> = ({
   svgContent,
   width = '100%',
-  height = 300,
+  minHeight = 200,
+  initialHeight = 300,
+  onHeightChange,
+  enableZoom = false,
 }) => {
   const { isDark } = useTheme();
   const backgroundColor = isDark ? '#000000' : '#ffffff';
+  const [webViewHeight, setWebViewHeight] = useState(initialHeight);
+
+  // 注入脚本以获取内容高度
+  const injectedJS = `
+    function postHeight() {
+      const svg = document.querySelector('svg');
+      let height = 0;
+      if (svg) {
+         // 尝试获取 viewBox 的高度比例
+         if (svg.viewBox && svg.viewBox.baseVal) {
+             const ratio = svg.viewBox.baseVal.height / svg.viewBox.baseVal.width;
+             height = document.body.clientWidth * ratio;
+         } else {
+             height = svg.getBoundingClientRect().height;
+         }
+      } 
+      // Fallback
+      if(!height || height < 50) height = document.body.scrollHeight;
+      
+      window.ReactNativeWebView.postMessage(JSON.stringify({ height: height }));
+    }
+    // 监听加载和调整大小
+    window.addEventListener('load', postHeight);
+    window.addEventListener('resize', postHeight);
+    setTimeout(postHeight, 500); // 延迟再次检查
+    true;
+  `;
 
   const html = `
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=${enableZoom ? 'yes' : 'no'}">
     <style>
         * {
             margin: 0;
@@ -157,21 +195,22 @@ export const AnimatedSVGRenderer: React.FC<AnimatedSVGRendererProps> = ({
         }
         body {
             background-color: ${backgroundColor};
-            display: flex;
+            display: ${enableZoom ? 'block' : 'flex'};
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             margin: 0;
             padding: 0;
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
+            width: ${enableZoom ? 'auto' : '100vw'}; 
+            height: ${enableZoom ? 'auto' : '100%'}; /* 100% for flex centering */
+            overflow: ${enableZoom ? 'auto' : 'hidden'}; /* Allow scrolling in both axes when zoomed */
         }
         svg {
             width: 100% !important;
-            height: 100% !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-            margin: auto;
+            height: auto !important;
+            min-width: ${enableZoom ? '100vw' : '0'}; /* Ensure it fills screen width at minimum */
+            max-width: none !important; /* Allow growing */
+            margin: 0 auto;
             display: block;
         }
     </style>
@@ -183,80 +222,177 @@ export const AnimatedSVGRenderer: React.FC<AnimatedSVGRendererProps> = ({
     `;
 
   return (
-    <View style={[styles.svgContainer, { height }]}>
+    <View style={[styles.svgContainer, { height: webViewHeight, borderColor: 'transparent', marginVertical: 0 }]}>
       <WebView
         source={{ html }}
         style={[styles.webview, { backgroundColor }]}
-        scrollEnabled={false}
-        showsVerticalScrollIndicator={false}
-        showsHorizontalScrollIndicator={false}
+        scrollEnabled={enableZoom}
+        showsVerticalScrollIndicator={enableZoom}
+        showsHorizontalScrollIndicator={enableZoom}
         androidLayerType="software"
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        injectedJavaScript={injectedJS}
+        onMessage={(event) => {
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.height) {
+              const newHeight = Math.max(minHeight, Math.ceil(data.height) + 20); // Add padding
+              if (Math.abs(newHeight - webViewHeight) > 10) {
+                setWebViewHeight(newHeight);
+                onHeightChange?.(newHeight);
+              }
+            }
+          } catch (e) { }
+        }}
+        // 允许缩放
+        scalesPageToFit={Platform.OS === 'android'}
       />
     </View>
   );
 };
 
-interface InteractiveSVGRendererProps {
+// 全屏 SVG 查看模态框
+const SVGViewerModal: React.FC<{
+  visible: boolean;
   svgContent: string;
-  height?: number;
+  onClose: () => void;
+}> = ({ visible, svgContent, onClose }) => {
+  const { isDark } = useTheme();
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={onClose}
+    >
+      <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}>
+        <View style={{
+          flexDirection: 'row',
+          justifyContent: 'flex-end',
+          padding: 16,
+          paddingTop: Platform.OS === 'android' ? 40 : 16,
+          backgroundColor: isDark ? '#18181b' : '#f4f4f5',
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? '#27272a' : '#e4e4e7',
+        }}>
+          <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
+            <X size={28} color={isDark ? '#fff' : '#000'} />
+          </TouchableOpacity>
+        </View>
+        <View style={{ flex: 1 }}>
+          <AnimatedSVGRenderer
+            svgContent={svgContent}
+            initialHeight={Dimensions.get('window').height}
+            enableZoom={true}
+            minHeight={Dimensions.get('window').height * 0.8}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+interface LazySVGRendererProps {
+  svgContent: string;
+  isDark?: boolean;
 }
 
 /**
- * 交互式 SVG 渲染器
- * 默认显示静态 SVG (SvgXml)，点击播放按钮后切换为 WebView 渲染动画
+ * 懒加载 SVG 渲染器
+ * 默认隐藏，点击眼睛显示，支持全屏
  */
-export const InteractiveSVGRenderer: React.FC<InteractiveSVGRendererProps> = ({
-  svgContent,
-  height = 250,
-}) => {
-  const { isDark } = useTheme();
-  const [isPlaying, setIsPlaying] = useState(false);
+export const LazySVGRenderer: React.FC<LazySVGRendererProps> = ({ svgContent, isDark }) => { // Removed isDark explicit prop usage for theme hook
+  const { isDark: themeIsDark } = useTheme(); // Use hook for consistency
+  const dark = isDark ?? themeIsDark;
 
-  const togglePlay = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsPlaying(!isPlaying);
-  };
+  const [isVisible, setIsVisible] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   return (
-    <View style={[styles.svgContainer, { height, position: 'relative' }]}>
-      {isPlaying ? (
-        // 播放状态：WebView 渲染动画
-        <View style={{ flex: 1 }}>
-          <AnimatedSVGRenderer svgContent={svgContent} height={height} />
-          {/* 停止按钮 */}
-          <TouchableOpacity onPress={togglePlay} style={styles.controlButton} activeOpacity={0.8}>
-            <Square size={16} color="white" fill="white" />
-            <Text style={styles.controlText}>停止</Text>
+    <View style={[styles.svgContainer, {
+      borderColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+      backgroundColor: dark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+    }]}>
+      {/* Toolbar */}
+      <View style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 12,
+        borderBottomWidth: isVisible ? 1 : 0,
+        borderBottomColor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{
+            fontSize: 12,
+            fontWeight: '600',
+            color: dark ? '#a1a1aa' : '#71717a'
+          }}>
+            SVG 图表
+          </Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.selectionAsync();
+              setIsVisible(!isVisible);
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+          >
+            <Eye size={16} color={isVisible ? '#6366f1' : (dark ? '#a1a1aa' : '#71717a')} />
+            <Text style={{
+              fontSize: 12,
+              color: isVisible ? '#6366f1' : (dark ? '#a1a1aa' : '#71717a')
+            }}>
+              {isVisible ? '隐藏' : '查看'}
+            </Text>
           </TouchableOpacity>
+
+          {isVisible && (
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.selectionAsync();
+                setIsFullscreen(true);
+              }}
+            >
+              <Maximize2 size={16} color={dark ? '#a1a1aa' : '#71717a'} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Content Area */}
+      {isVisible ? (
+        <View style={{ minHeight: 100 }}>
+          <AnimatedSVGRenderer svgContent={svgContent} />
         </View>
       ) : (
-        // 静态状态：使用 WebView 渲染静态预览 (SvgXml 容易在 Android 上 Crash)
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: isDark ? '#18181b' : '#f9fafb',
-            alignItems: 'center',
-            justifyContent: 'center',
-            position: 'relative',
-          }}
-        >
-          {/* 使用 pointerEvents="none" 禁止 WebView 交互，作为静态展示 */}
-          <View style={{ width: '100%', height: '100%', opacity: 0.8 }} pointerEvents="none">
-            <AnimatedSVGRenderer svgContent={svgContent} height={height} />
-          </View>
-
-          {/* 播放按钮遮罩 */}
-          <View style={styles.overlay}>
-            <TouchableOpacity onPress={togglePlay} style={styles.playButton} activeOpacity={0.8}>
-              <Play size={24} color="white" fill="white" style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
-            <Text style={styles.overlayText}>点击播放动画</Text>
-          </View>
+        <View style={{
+          height: 60,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderStyle: 'dashed',
+        }}>
+          <Text style={{ fontSize: 12, color: dark ? '#52525b' : '#a1a1aa' }}>
+            点击上方“查看”按钮加载图表
+          </Text>
         </View>
       )}
+
+      {/* Fullscreen Modal */}
+      <SVGViewerModal
+        visible={isFullscreen}
+        svgContent={svgContent}
+        onClose={() => setIsFullscreen(false)}
+      />
     </View>
   );
 };
+
+export const InteractiveSVGRenderer = LazySVGRenderer; // Re-export as InteractiveSVGRenderer for backward compatibility if needed, but we will update call sites.
 
 const styles = StyleSheet.create({
   container: {
@@ -286,7 +422,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'transparent', // 占位
+    borderColor: 'transparent',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

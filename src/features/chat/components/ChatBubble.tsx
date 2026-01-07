@@ -49,8 +49,7 @@ import { findModelSpec } from '../../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
 import {
   MathRenderer,
-  AnimatedSVGRenderer,
-  InteractiveSVGRenderer,
+  LazySVGRenderer,
 } from '../../../components/chat/MathRenderer';
 import { extractImagesFromMarkdown } from '../utils/markdown-utils';
 
@@ -829,48 +828,17 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
           // 检测是否包含动画标签（CSS 动画、SMIL 动画）
           // 恢复动画检测：交由 InteractiveSVGRenderer 处理（默认静态，点击播放）
-          const hasAnimation =
-            content.includes('<animate') ||
-            content.includes('<animateTransform') ||
-            content.includes('<animateMotion') ||
-            content.includes('@keyframes') ||
-            content.includes('animation:') ||
-            content.includes('<style>');
+          // 检测是否包含动画标签（CSS 动画、SMIL 动画）
+          // 统一使用 LazySVGRenderer 处理所有 SVG，包括动画和静态
+          // 移除了手动检测动画逻辑，全部通过 LazySVGRenderer 实现懒加载和全屏
 
-          // 如果包含动画，使用 InteractiveSVGRenderer 提供播放开关
-          if (hasAnimation) {
-            return (
-              <View
-                key={node.key + '-animated'}
-                collapsable={false}
-                style={{ marginVertical: 12, width: '100%' }}
-              >
-                <InteractiveSVGRenderer svgContent={content} height={250} />
-              </View>
-            );
-          }
-
-          // 静态 SVG 也统一使用 WebView 渲染以避免 Android 原生解析崩溃 (PathParser error)
           return (
             <View
-              key={node.key + content.length}
+              key={node.key + '-svg'}
               collapsable={false}
               style={{ marginVertical: 12, width: '100%' }}
             >
-              <View
-                style={{
-                  backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                  borderRadius: 12,
-                  width: '100%',
-                  height: 250, // 稍微增加高度
-                  overflow: 'hidden',
-                  borderWidth: 1,
-                  borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                }}
-              >
-                {/* 使用 AnimatedSVGRenderer (WebView) 替代 SvgXml */}
-                <AnimatedSVGRenderer svgContent={content} height={250} />
-              </View>
+              <LazySVGRenderer svgContent={content} isDark={isDark} />
             </View>
           );
         }
@@ -1038,6 +1006,12 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     fontWeight: '600',
                     letterSpacing: 0.2,
                     textAlign: 'left',
+                  },
+                  text: {
+                    color: isDark ? '#fafafa' : '#18181b',
+                    fontSize: 15,
+                    lineHeight: 24,
+                    fontWeight: '600',
                   },
                   paragraph: { marginVertical: 0, paddingVertical: 0, textAlign: 'left' },
                   blockquote: {
@@ -1349,6 +1323,11 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     color: isDark ? '#E4E4E7' : '#27272A',
                     fontSize: 15, // Reduced 16 -> 15
                     lineHeight: 26, // Reduced 28 -> 26
+                  },
+                  text: {
+                    color: isDark ? '#E4E4E7' : '#27272A',
+                    fontSize: 15,
+                    lineHeight: 26,
                   },
                   code_inline: {
                     backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
