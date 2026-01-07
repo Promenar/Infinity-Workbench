@@ -42,6 +42,7 @@
       ],
       "./plugins/withCustomApkName",
       "./plugins/withAndroidDebugConfig",
+      "./plugins/withWideColorGamut",
       "expo-asset"
     ]
   }

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { View, ViewStyle, StyleProp } from 'react-native';
-import { Canvas, Group, Circle, BlurMask, RadialGradient, vec } from '@shopify/react-native-skia';
+import { Canvas, Group, Circle, BlurMask, RadialGradient, vec, ColorMatrix } from '@shopify/react-native-skia';
 import Animated, {
     useSharedValue,
     withRepeat,
@@ -17,9 +17,19 @@ interface ParticleEnergyGlowProps {
     isDark?: boolean; // Add isDark prop for theme-aware rendering
 }
 
-// Visual Configuration
+// 视觉配置 (Visual Configuration)
 const LAYERS = 6;
 const PARTICLES_PER_LAYER = 15;
+
+// HDR 增强矩阵 (HDR Boost Matrix)
+// 将 RGB 通道乘以 3.0 以激发 OLED 峰值亮度 (High Dynamic Range)
+// 保持 Alpha 通道不变
+const HDR_BOOST_MATRIX = [
+    3, 0, 0, 0, 0,
+    0, 3, 0, 0, 0,
+    0, 0, 3, 0, 0,
+    0, 0, 0, 1, 0,
+];
 
 export const ParticleEnergyGlow: React.FC<ParticleEnergyGlowProps> = ({ size, color, style, isDark = true }) => {
     // ---------------------------------------------------------------------------
@@ -94,62 +104,68 @@ export const ParticleEnergyGlow: React.FC<ParticleEnergyGlowProps> = ({ size, co
                     top: offset
                 }}
             >
-                <Canvas style={{ flex: 1 }}>
-                    {/* 1. Core Glow - Adjusted for Light Mode & Resized (0.35 -> 0.24) */}
-                    <Circle cx={canvasCenter} cy={canvasCenter} r={size * 0.24} opacity={coreGlowOpacity}>
-                        <RadialGradient
-                            c={vec(canvasCenter, canvasCenter)}
-                            r={size * 0.24}
-                            colors={['white', color, 'transparent']}
-                            positions={[0, 0.5, 1]}
-                        />
-                        <BlurMask blur={30} style="normal" />
-                    </Circle>
+                {/* @ts-ignore: colorType might be missing in strict types but supported in runtime or we force it */}
+                <Canvas style={{ flex: 1 }} colorType="float16" colorSpace="p3">
+                    {/* 全局 HDR 增强滤镜 (Global HDR Correction) */}
+                    <Group>
+                        <ColorMatrix matrix={HDR_BOOST_MATRIX} />
 
-                    {/* 2. Particle Cloud Layers */}
+                        {/* 1. Core Glow - Adjusted for Light Mode & Resized (0.35 -> 0.24) */}
+                        <Circle cx={canvasCenter} cy={canvasCenter} r={size * 0.24} opacity={coreGlowOpacity}>
+                            <RadialGradient
+                                c={vec(canvasCenter, canvasCenter)}
+                                r={size * 0.24}
+                                colors={['white', color, 'transparent']}
+                                positions={[0, 0.5, 1]}
+                            />
+                            <BlurMask blur={30} style="normal" />
+                        </Circle>
 
-                    <Group origin={vec(canvasCenter, canvasCenter)} transform={rotate1}>
-                        {particleGroups[0].map((p, i) => (
-                            <Circle key={`l1-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity} />
-                        ))}
-                        <BlurMask blur={10} style="normal" />
+                        {/* 2. Particle Cloud Layers */}
+
+                        <Group origin={vec(canvasCenter, canvasCenter)} transform={rotate1}>
+                            {particleGroups[0].map((p, i) => (
+                                <Circle key={`l1-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity} />
+                            ))}
+                            <BlurMask blur={10} style="normal" />
+                        </Group>
+
+                        <Group origin={vec(canvasCenter, canvasCenter)} transform={rotate2}>
+                            {particleGroups[1].map((p, i) => (
+                                <Circle key={`l2-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.8} />
+                            ))}
+                            <BlurMask blur={8} style="normal" />
+                        </Group>
+
+                        <Group origin={vec(canvasCenter, canvasCenter)} transform={rotateFast}>
+                            {particleGroups[2].map((p, i) => (
+                                <Circle key={`l3-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.6} />
+                            ))}
+                            <BlurMask blur={12} style="normal" />
+                        </Group>
+
+                        <Group origin={vec(canvasCenter, canvasCenter)} transform={rotateSlow}>
+                            {particleGroups[3].map((p, i) => (
+                                <Circle key={`l4-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.5} />
+                            ))}
+                            <BlurMask blur={15} style="normal" />
+                        </Group>
+
+                        <Group origin={vec(canvasCenter, canvasCenter)} transform={rotateBack}>
+                            {particleGroups[4].map((p, i) => (
+                                <Circle key={`l5-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.3} />
+                            ))}
+                            <BlurMask blur={20} style="normal" />
+                        </Group>
+
+                        <Group origin={vec(canvasCenter, canvasCenter)} transform={rotate1}>
+                            {particleGroups[5].map((p, i) => (
+                                <Circle key={`l6-${i}`} cx={p.cx} cy={p.cy} r={p.r * 1.5} color={color} opacity={p.opacity * 0.2} />
+                            ))}
+                            <BlurMask blur={30} style="normal" />
+                        </Group>
+
                     </Group>
-
-                    <Group origin={vec(canvasCenter, canvasCenter)} transform={rotate2}>
-                        {particleGroups[1].map((p, i) => (
-                            <Circle key={`l2-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.8} />
-                        ))}
-                        <BlurMask blur={8} style="normal" />
-                    </Group>
-
-                    <Group origin={vec(canvasCenter, canvasCenter)} transform={rotateFast}>
-                        {particleGroups[2].map((p, i) => (
-                            <Circle key={`l3-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.6} />
-                        ))}
-                        <BlurMask blur={12} style="normal" />
-                    </Group>
-
-                    <Group origin={vec(canvasCenter, canvasCenter)} transform={rotateSlow}>
-                        {particleGroups[3].map((p, i) => (
-                            <Circle key={`l4-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.5} />
-                        ))}
-                        <BlurMask blur={15} style="normal" />
-                    </Group>
-
-                    <Group origin={vec(canvasCenter, canvasCenter)} transform={rotateBack}>
-                        {particleGroups[4].map((p, i) => (
-                            <Circle key={`l5-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity * 0.3} />
-                        ))}
-                        <BlurMask blur={20} style="normal" />
-                    </Group>
-
-                    <Group origin={vec(canvasCenter, canvasCenter)} transform={rotate1}>
-                        {particleGroups[5].map((p, i) => (
-                            <Circle key={`l6-${i}`} cx={p.cx} cy={p.cy} r={p.r * 1.5} color={color} opacity={p.opacity * 0.2} />
-                        ))}
-                        <BlurMask blur={30} style="normal" />
-                    </Group>
-
                 </Canvas>
             </View>
         </View>
