@@ -63,20 +63,19 @@ export const KGExtractionIndicator = React.memo(({ isExtracting }: KGExtractionI
                 paddingVertical: 2,
                 borderRadius: 10,
                 backgroundColor: 'rgba(99, 102, 241, 0.05)',
-                marginRight: 6
+                // marginRight: 6 // Let parent handle gap
             }}
         >
-            <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
                 <Animated.View
                     style={[
                         glowStyle,
                         {
                             position: 'absolute',
-                            width: 8,
-                            height: 8,
-                            borderRadius: 4,
+                            width: 10, // Match icon size
+                            height: 10,
+                            borderRadius: 5,
                             backgroundColor: accentColor,
-                            // Hazy/Blur effect simulation via background color opacity + scale
                         }
                     ]}
                 />

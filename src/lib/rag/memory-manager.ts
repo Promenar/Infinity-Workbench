@@ -666,4 +666,121 @@ export class MemoryManager {
       console.error('[MemoryManager] 归档轮次失败:', e);
     }
   }
+
+  /**
+   * Manually upsert a single memory item (e.g. manual vectorization of a specific message)
+   */
+  static async upsertMemory(
+    item: {
+      id: string;
+      content: string;
+      sessionId: string;
+      role?: string;
+      createdAt?: number;
+      type?: string;
+      usage?: number;
+    },
+    agentId?: string,
+  ) {
+    const { content, sessionId, id } = item;
+    if (!content) return;
+
+    // Sanitize
+    const sanitize = (text: string) =>
+      text.replace(/!\[(.*?)\]\(data:image\/.*?;base64,.*?\)/g, '[Image: $1]');
+    const cleanContent = sanitize(content);
+
+    const apiStore = useApiStore.getState();
+    const settings = useSettingsStore.getState();
+    const preferredModelId = settings.defaultEmbeddingModel;
+
+    let provider: any;
+    let modelId: string | undefined;
+
+    // Resolve Embedding Model (Same logic as addTurnToMemory)
+    if (preferredModelId) {
+      provider = apiStore.providers.find(
+        (p) =>
+          p.enabled &&
+          p.models.some(
+            (m: any) => (m.uuid === preferredModelId || m.id === preferredModelId) && m.enabled,
+          ),
+      );
+      if (provider) {
+        const model = provider.models.find(
+          (m: any) => m.uuid === preferredModelId || m.id === preferredModelId,
+        );
+        modelId = model?.id;
+      }
+    }
+
+    if (!provider || !modelId) {
+      provider = apiStore.providers.find(
+        (p) => p.enabled && p.models.some((m: any) => m.enabled && m.type === 'embedding'),
+      );
+      if (provider) {
+        const embeddingModel = provider.models.find(
+          (m: any) => m.enabled && m.type === 'embedding',
+        );
+        modelId = embeddingModel?.id;
+      }
+    }
+
+    if (!provider || !modelId) throw new Error('No embedding model available');
+
+    try {
+      // Ensure session exists
+      const now = Date.now();
+      await db.execute(
+        `INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+        [sessionId, 'Shadow Session', now, now],
+      );
+
+      // Get configuration
+      const chatStore = (await import('../../store/chat-store')).useChatStore.getState();
+      const agentStore = (await import('../../store/agent-store')).useAgentStore.getState();
+      const session = chatStore.getSession(sessionId);
+      const agent = agentStore.getAgent(agentId || session?.agentId || 'default');
+      const ragConfig = agent?.ragConfig || settings.globalRagConfig;
+
+      // Split
+      const splitter = new TrigramTextSplitter({
+        chunkSize: ragConfig.memoryChunkSize,
+        chunkOverlap: ragConfig.chunkOverlap,
+      });
+      const chunks = await splitter.splitText(cleanContent);
+
+      // Embed
+      const embeddingClient = new EmbeddingClient(provider, modelId);
+      const { embeddings, usage } = await embeddingClient.embedDocuments(chunks);
+
+      // Track Stats
+      let archiveTokens = usage ? usage.total_tokens : estimateTokens(chunks.join('\n'));
+      try {
+        const { useTokenStatsStore } = await import('../../store/token-stats-store');
+        useTokenStatsStore.getState().trackUsage({
+          modelId: modelId || 'embedding-model',
+          usage: {
+            ragSystem: { count: archiveTokens, isEstimated: !usage },
+          },
+        });
+      } catch (e) { /* ignore */ }
+
+      // Save Vectors
+      const vectors = chunks.map((chunk, i) => ({
+        sessionId,
+        content: chunk,
+        embedding: embeddings[i],
+        metadata: { type: 'memory', chunkIndex: i, role: item.role },
+        startMessageId: id, // Link to this specific message
+        endMessageId: id,
+      }));
+
+      await vectorStore.addVectors(vectors);
+      console.log(`[MemoryManager] Upserted memory for message ${id}`);
+    } catch (e) {
+      console.error('[MemoryManager] Upsert failed:', e);
+      throw e;
+    }
+  }
 }

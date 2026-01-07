@@ -6,6 +6,7 @@ import { RagSettingsPanel } from '../components/RagSettingsPanel';
 interface ModelConfig {
     id: string;
     name: string;
+    enabled?: boolean;
 }
 
 interface ProviderConfig {
@@ -121,6 +122,22 @@ export const Settings = () => {
         });
     };
 
+    const toggleModel = (providerId: string, modelId: string, enabled: boolean) => {
+        if (!config) return;
+        setConfig({
+            ...config,
+            providers: config.providers.map(p => {
+                if (p.id !== providerId) return p;
+                return {
+                    ...p,
+                    models: p.models.map(m =>
+                        m.id === modelId ? { ...m, enabled } : m
+                    )
+                };
+            })
+        });
+    };
+
     if (loading) return <div className="flex-1 p-8 bg-[#09090b] text-white flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div></div>;
     if (!config) return <div className="flex-1 p-8 bg-[#09090b] text-white">Failed to load configuration.</div>;
 
@@ -142,7 +159,7 @@ export const Settings = () => {
                     className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-colors disabled:opacity-50 shadow-lg shadow-indigo-600/20 active:scale-95"
                 >
                     <Save size={18} />
-                    {saving ? 'Saving...' : 'Save Changes'}
+                    {saving ? 'Saved' : 'Save Changes'}
                 </button>
             </header>
 
@@ -248,40 +265,63 @@ export const Settings = () => {
 
                                     {/* Config Fields */}
                                     <div className="md:col-span-8 space-y-4">
-                                        <div>
-                                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Base URL</label>
-                                            <input
-                                                type="text"
-                                                value={provider.baseUrl || ''}
-                                                onChange={(e) => updateProvider(provider.id, { baseUrl: e.target.value })}
-                                                className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 mt-1.5 font-mono text-sm text-zinc-400 focus:text-white focus:border-indigo-500/50 outline-none transition-colors"
-                                                placeholder="https://api.openai.com/v1"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">API Key</label>
-                                            <div className="relative mt-1.5">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Base URL</label>
                                                 <input
-                                                    type={showKeys[provider.id] ? "text" : "password"}
-                                                    value={provider.apiKey}
-                                                    onChange={(e) => updateProvider(provider.id, { apiKey: e.target.value })}
-                                                    className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 font-mono text-sm text-zinc-400 focus:text-white pr-10 focus:border-indigo-500/50 outline-none transition-colors"
-                                                    placeholder="sk-..."
+                                                    type="text"
+                                                    value={provider.baseUrl || ''}
+                                                    onChange={(e) => updateProvider(provider.id, { baseUrl: e.target.value })}
+                                                    className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 mt-1.5 font-mono text-sm text-zinc-400 focus:text-white focus:border-indigo-500/50 outline-none transition-colors"
+                                                    placeholder="https://api.openai.com/v1"
                                                 />
-                                                <button
-                                                    onClick={() => toggleShowKey(provider.id)}
-                                                    className="absolute right-2 top-2.5 text-zinc-500 hover:text-zinc-300"
-                                                >
-                                                    {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                </button>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">API Key</label>
+                                                <div className="relative mt-1.5">
+                                                    <input
+                                                        type={showKeys[provider.id] ? "text" : "password"}
+                                                        value={provider.apiKey}
+                                                        onChange={(e) => updateProvider(provider.id, { apiKey: e.target.value })}
+                                                        className="w-full bg-[#09090b]/50 border border-white/10 rounded-lg px-3 py-2 font-mono text-sm text-zinc-400 focus:text-white pr-10 focus:border-indigo-500/50 outline-none transition-colors"
+                                                        placeholder="sk-..."
+                                                    />
+                                                    <button
+                                                        onClick={() => toggleShowKey(provider.id)}
+                                                        className="absolute right-2 top-2.5 text-zinc-500 hover:text-zinc-300"
+                                                    >
+                                                        {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
 
                                         <div className="pt-2">
-                                            <div className="text-xs text-zinc-500 flex items-center gap-2">
-                                                <span className={`w-2 h-2 rounded-full ${provider.models && provider.models.length > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                                                Models detected: <span className="text-zinc-300 font-mono">{provider.models?.length || 0}</span>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="text-xs text-zinc-500 flex items-center gap-2">
+                                                    <span className={`w-2 h-2 rounded-full ${provider.models && provider.models.length > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                                    Models detected: <span className="text-zinc-300 font-mono">{provider.models?.length || 0}</span>
+                                                </div>
                                             </div>
+
+                                            {/* Model List with Toggles */}
+                                            {provider.models && provider.models.length > 0 && (
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2 bg-[#09090b]/30 rounded-lg border border-white/5 max-h-40 overflow-y-auto custom-scrollbar">
+                                                    {provider.models.map(m => (
+                                                        <label key={m.id} className="flex items-center gap-2 p-1.5 rounded hover:bg-white/5 cursor-pointer group/model">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={m.enabled !== false} // Default to true if undefined
+                                                                onChange={(e) => toggleModel(provider.id, m.id, e.target.checked)}
+                                                                className="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
+                                                            />
+                                                            <span className={`text-xs truncate ${m.enabled !== false ? 'text-zinc-300 group-hover/model:text-white' : 'text-zinc-600'}`} title={m.name || m.id}>
+                                                                {m.name || m.id}
+                                                            </span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

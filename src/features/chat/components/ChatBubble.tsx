@@ -500,7 +500,8 @@ const ActionBar: React.FC<{
   onRegenerate?: () => void;
   isDark: boolean;
   isArchived?: boolean; // ✅ 新增：归档状态
-}> = ({ content, onDelete, onShare, onSelect, onResend, onRegenerate, isDark, isArchived }) => {
+  isProcessing?: boolean; // ✅ 新增：处理中状态
+}> = ({ content, onDelete, onShare, onSelect, onResend, onRegenerate, isDark, isArchived, isProcessing }) => {
   const handleCopy = async () => {
     await Clipboard.setStringAsync(content);
     setTimeout(() => {
@@ -543,8 +544,15 @@ const ActionBar: React.FC<{
         </TouchableOpacity>
       )}
 
+      {/* ✅ 处理中状态 (黄色 Loading) */}
+      {isProcessing && (
+        <View className={btnStyle}>
+          <ActivityIndicator size="small" color="#f59e0b" />
+        </View>
+      )}
+
       {/* ✅ 归档状态绿勾 */}
-      {isArchived && (
+      {isArchived && !isProcessing && (
         <View className={btnStyle}>
           <Check size={16} color="#10b981" />
         </View>
@@ -637,13 +645,38 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   const [isProcessingExpanded, setProcessingExpanded] = useState(false); // ✅ 新增：ProcessingIndicator展开状态
   const [isArchived, setIsArchived] = useState(message.isArchived || false); // ✅ 归档状态
 
-  // ✅ Query/Sync archive status
+  // Determine processing state from store status if available
+  // Refined Logic:
+  // 1. If explicit status is 'processing', showing spinner.
+  // 2. If no status, but message is recent (< 1 min) AND AI message AND not generating, show spinner (fallback for gap between generation and status update).
+  // 3. User messages should NOT show spinner unless explicitly processing (e.g. uploading/vectorizing).
+  const isProcessing =
+    message.vectorizationStatus === 'processing' ||
+    (!isUser && !isGenerating && !message.isArchived && !message.vectorizationStatus && Date.now() - message.createdAt < 60000);
+
+  // Sync archive status
   useEffect(() => {
-    // If store already knows it's archived, trust it
+    // 1. Force false if generating or processing or error
+    if (isGenerating || isProcessing || message.vectorizationStatus === 'error' || message.vectorizationStatus === 'processing') {
+      setIsArchived(false);
+      return;
+    }
+
+    // 2. Trust explicit success
+    if (message.vectorizationStatus === 'success') {
+      setIsArchived(true);
+      return;
+    }
+
+    // 3. Trust legacy prop (only if not very new, to avoid optimistic glitches)
     if (message.isArchived) {
       setIsArchived(true);
       return;
     }
+
+    // 4. DB Check (Fallback)
+    // Only check if message is old enough (> 2s) to avoid race conditions with creation
+    if (Date.now() - message.createdAt < 2000) return;
 
     const checkArchiveStatus = async () => {
       if (message.role === 'system') return;
@@ -663,7 +696,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       }
     };
     checkArchiveStatus();
-  }, [message.id, sessionId, message.isArchived]);
+  }, [message.id, sessionId, message.isArchived, message.vectorizationStatus, isGenerating, isProcessing]);
 
   // Auto-collapse reasoning when done
   useEffect(() => {
@@ -1421,6 +1454,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           onRegenerate={onRegenerate}
           isDark={isDark}
           isArchived={isArchived} // ✅ 传递归档状态
+          isProcessing={isProcessing} // ✅ Pass processing state
         />
       </View>
 
@@ -1447,6 +1481,12 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
 
   if (prev.agentColor !== next.agentColor) return false;
   if (prev.isGenerating !== next.isGenerating) return false;
+
+  // ✅ Check Status Changes
+  // @ts-ignore
+  if (prev.message.vectorizationStatus !== next.message.vectorizationStatus) return false;
+  // @ts-ignore
+  if (prev.message.isArchived !== next.message.isArchived) return false;
 
   // 比较 citations（浅比较）
   // @ts-ignore

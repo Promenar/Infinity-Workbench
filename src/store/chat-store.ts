@@ -48,10 +48,14 @@ const enrichMessagesWithArchiveStatus = async (
     }
 
     // 标记消息是否已归档
-    return messages.map((msg) => ({
-      ...msg,
-      isArchived: archivedMessageIds.has(msg.id),
-    }));
+    return messages.map((msg) => {
+      const isArchived = archivedMessageIds.has(msg.id);
+      return {
+        ...msg,
+        isArchived,
+        vectorizationStatus: isArchived ? 'success' : undefined,
+      };
+    });
   } catch (e) {
     console.error('[ChatStore] Failed to enrich messages with archive status:', e);
     return messages;
@@ -128,7 +132,8 @@ interface ChatState {
   toggleSessionPin: (sessionId: SessionId) => void;
 
   updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
-  setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
+  // Deprecated: setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
+  setVectorizationStatus: (sessionId: SessionId, messageIds: string[], status: 'processing' | 'success' | 'error') => void;
   updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => void;
   setKGExtractionStatus: (sessionId: SessionId, isExtracting: boolean) => void;
   vectorizeMessage: (sessionId: string, messageId: string) => Promise<void>;
@@ -432,29 +437,32 @@ export const useChatStore = create<ChatState>()(
         }));
       },
 
-      setMessagesArchived: (sessionId, messageIds) =>
+      setVectorizationStatus: (sessionId, messageIds, status) => {
         set((state) => {
           const session = state.sessions.find((s) => s.id === sessionId);
           if (!session) return {};
 
           const idSet = new Set(messageIds);
-
           return {
             sessions: state.sessions.map((s) => {
               if (s.id === sessionId) {
                 return {
                   ...s,
                   messages: s.messages.map((m) =>
-                    idSet.has(m.id) ? { ...m, isArchived: true } : m,
+                    idSet.has(m.id) ? {
+                      ...m,
+                      vectorizationStatus: status,
+                      isArchived: status === 'success' ? true : m.isArchived // Update legacy flag too
+                    } : m
                   ),
-                  // 🔑 关键修复：保留 stats.billing，防止被覆盖
-                  stats: s.stats, // 保持原有统计数据不变
+                  stats: s.stats,
                 };
               }
               return s;
             }),
           };
-        }),
+        });
+      },
 
       abortGeneration: (sessionId) => {
         const client = get().activeRequests[sessionId];
@@ -910,13 +918,23 @@ export const useChatStore = create<ChatState>()(
             ragReferences,
           );
 
+          // 🏁 立即结束生成状态，解耦后续的向量化操作
+          set((state) => {
+            const newRequests = { ...state.activeRequests };
+            delete newRequests[sessionId];
+            return { activeRequests: newRequests, currentGeneratingSessionId: null };
+          });
+
           // 🔑 关键修复1: 归档本轮对话到向量记忆
           // ✅ 仅当enableMemory开启时才归档
           if (finalRagOptions.enableMemory !== false) {
+            // 🎯 立即标记为处理中
+            get().setVectorizationStatus(sessionId, [userMsg.id, assistantMsgId], 'processing');
+
             try {
               const archiveStartTime = Date.now();
 
-              // 🎯 启动归档状态
+              // 🎯 启动归档状态 (RAG Store for internal details)
               const { updateProcessingState } = await import('../store/rag-store').then((m) =>
                 m.useRagStore.getState(),
               );
@@ -948,7 +966,6 @@ export const useChatStore = create<ChatState>()(
               }
 
               // 🎯 归档完成（添加切片数量信息）
-              const estimatedChunks = Math.ceil((content.length + accumulatedContent.length) / 500);
               updateProcessingState(
                 {
                   sessionId,
@@ -959,11 +976,14 @@ export const useChatStore = create<ChatState>()(
               );
 
               // ✅ 关键修复3：更新Store中的消息状态，通知UI显示绿勾
-              get().setMessagesArchived(sessionId, [userMsg.id, assistantMsgId]);
+              get().setVectorizationStatus(sessionId, [userMsg.id, assistantMsgId], 'success');
 
               console.log('[RAG] 对话已归档到向量库');
             } catch (e) {
               console.error('[RAG] 记忆归档失败:', e);
+              // ❌ 失败状态
+              get().setVectorizationStatus(sessionId, [userMsg.id, assistantMsgId], 'error');
+
               // 错误状态
               const { updateProcessingState } = await import('../store/rag-store').then((m) =>
                 m.useRagStore.getState(),
@@ -1346,7 +1366,7 @@ export const useChatStore = create<ChatState>()(
         if (!message || !message.content) return;
 
         try {
-          const { MemoryManager } = require('../lib/rag/memory-manager');
+          const { MemoryManager } = await import('../lib/rag/memory-manager');
           await MemoryManager.upsertMemory({
             id: messageId,
             content: message.content,

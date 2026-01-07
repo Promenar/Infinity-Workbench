@@ -22,9 +22,15 @@ export function ChatPage() {
     const [status, setStatus] = useState<'idle' | 'thinking' | 'searching' | 'generating'>('idle');
 
     // Controls
-    const [ragEnabled, setRagEnabled] = useState(true);
-    const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-    const [reasoningEnabled, setReasoningEnabled] = useState(false);
+    // Controls - Persist with localStorage
+    const [ragEnabled, setRagEnabled] = useState(() => localStorage.getItem('chat_ragEnabled') !== 'false');
+    const [webSearchEnabled, setWebSearchEnabled] = useState(() => localStorage.getItem('chat_webSearchEnabled') !== 'false');
+    const [reasoningEnabled, setReasoningEnabled] = useState(() => localStorage.getItem('chat_reasoningEnabled') !== 'false');
+
+    // Persistence Effects
+    useEffect(() => { localStorage.setItem('chat_ragEnabled', String(ragEnabled)); }, [ragEnabled]);
+    useEffect(() => { localStorage.setItem('chat_webSearchEnabled', String(webSearchEnabled)); }, [webSearchEnabled]);
+    useEffect(() => { localStorage.setItem('chat_reasoningEnabled', String(reasoningEnabled)); }, [reasoningEnabled]);
 
     // Models
     const [selectedModel, setSelectedModel] = useState<string>('');
@@ -39,7 +45,7 @@ export function ChatPage() {
     useEffect(() => {
         loadConfig();
         if (sessionId) loadHistory();
-
+        // ... (rest of useEffect)
         const onMessage = (msg: any) => {
             if (msg.type === 'MSG_STREAM_UPDATE') {
                 const payload = msg.payload as StreamMessage;
@@ -77,10 +83,18 @@ export function ChatPage() {
     const loadConfig = async () => {
         try {
             const config = await workbenchClient.getConfig();
+            console.log("Loaded config:", config); // DEBUG
             if (config.providers) {
                 const models = config.providers.flatMap((p: any) =>
-                    (p.models || []).map((m: any) => ({ id: m.id, name: m.name || m.id }))
+                    (p.models || [])
+                        .filter((m: any) => {
+                            if (m.enabled === false) return false;
+                            if (p.enabled === false) return false;
+                            return true;
+                        })
+                        .map((m: any) => ({ id: m.id, name: m.name || m.id }))
                 );
+                console.log("Filtered available models:", models); // DEBUG
                 setAvailableModels(models);
                 // Set default if not set
                 if (models.length > 0 && !selectedModel) {
@@ -337,7 +351,7 @@ export function ChatPage() {
                     {/* Glowing border effect */}
                     <div className="absolute -inset-0.5 bg-linear-to-r from-indigo-500 to-purple-500 rounded-2xl opacity-0 group-focus-within:opacity-30 transition-opacity blur duration-700 pointer-events-none" />
 
-                    <form onSubmit={handleSend} className="relative flex items-end gap-2 bg-[#18181b] p-2 rounded-2xl border border-white/10 shadow-2xl focus-within:border-white/20 transition-colors">
+                    <form onSubmit={handleSend} className="relative flex items-center gap-2 bg-[#18181b] p-2 rounded-2xl border border-white/10 shadow-2xl focus-within:border-white/20 transition-colors">
 
                         <button type="button" className="p-2.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl transition-all">
                             <ImageIcon size={20} />

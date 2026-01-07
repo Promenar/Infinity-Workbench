@@ -121,19 +121,38 @@ export class GraphExtractor {
 
       // 3. Parse JSON
       let jsonString = content.trim();
-      // Remove markdown code blocks if present
-      if (jsonString.startsWith('```json')) {
-        jsonString = jsonString.replace(/^```json/, '').replace(/```$/, '');
-      } else if (jsonString.startsWith('```')) {
-        jsonString = jsonString.replace(/^```/, '').replace(/```$/, '');
+
+      // Better JSON extraction logic
+      const jsonBlockRegex = /```json\s*([\s\S]*?)\s*```/i;
+      const genericBlockRegex = /```\s*([\s\S]*?)\s*```/;
+
+      const jsonMatch = jsonString.match(jsonBlockRegex);
+      const genericMatch = jsonString.match(genericBlockRegex);
+
+      if (jsonMatch) {
+        jsonString = jsonMatch[1].trim();
+      } else if (genericMatch) {
+        // Attempt to parse generic block if it looks like JSON starts with {
+        const potentialJson = genericMatch[1].trim();
+        if (potentialJson.startsWith('{')) {
+          jsonString = potentialJson;
+        }
+      } else {
+        // Fallback: Try to find the outermost JSON object
+        const firstBrace = jsonString.indexOf('{');
+        const lastBrace = jsonString.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          jsonString = jsonString.substring(firstBrace, lastBrace + 1);
+        }
       }
 
       let result: ExtractionResult;
       try {
         result = JSON.parse(jsonString);
       } catch (parseError) {
-        console.error('[GraphExtractor] JSON Parse Error:', parseError);
-        console.log('Raw output:', content);
+        // Use warn instead of error to prevent RedBox
+        console.warn('[GraphExtractor] JSON Parse Error:', parseError);
+        console.log('Raw output preview:', content.slice(0, 200) + '...');
         return { nodes: [], edges: [] };
       }
 

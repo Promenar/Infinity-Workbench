@@ -137,6 +137,7 @@ export const useApiStore = create<ApiState>()(
       toggleModel: (providerId, modelId, enabled) =>
         set(
           produce((state: ApiState) => {
+            // 1. Update enabledModels map
             if (!state.enabledModels[providerId]) {
               state.enabledModels[providerId] = [];
             }
@@ -148,6 +149,15 @@ export const useApiStore = create<ApiState>()(
               state.enabledModels[providerId] = state.enabledModels[providerId].filter(
                 (m) => m !== modelId,
               );
+            }
+
+            // 2. Sync to providers list (SSOT for WebUI)
+            const provider = state.providers.find(p => p.id === providerId);
+            if (provider) {
+              const model = provider.models.find(m => m.id === modelId || m.uuid === modelId);
+              if (model) {
+                model.enabled = enabled;
+              }
             }
           }),
         ),
