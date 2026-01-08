@@ -43,5 +43,6 @@ yarn-error.*
 /ios
 /android
 
+
 # Secure Environment
 secure_env/
