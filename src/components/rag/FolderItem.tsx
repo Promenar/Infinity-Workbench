@@ -103,44 +103,40 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   ];
 
   return (
-    <View className="mx-6 mb-1.5">
-      <View className="flex-row items-center">
-        {/* 文件夹主体 */}
-        <TouchableOpacity
-          onPress={handlePress}
-          onLongPress={onLongPress}
-          activeOpacity={0.7}
-          className="flex-1 bg-gray-50 dark:bg-zinc-900/50 rounded-xl flex-row items-center px-3 py-2.5 
-                     border border-gray-100 dark:border-zinc-800"
-        >
-          {/* 文件夹图标 */}
-          <View className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-900/20 items-center justify-center mr-3">
-            {isExpanded ? (
-              <FolderOpen size={16} color="#f59e0b" strokeWidth={2} />
-            ) : (
-              <Folder size={16} color="#f59e0b" strokeWidth={2} />
-            )}
-          </View>
+    <View className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-gray-100 dark:border-zinc-800 pr-1">
+      <TouchableOpacity
+        onPress={handlePress}
+        onLongPress={onLongPress}
+        activeOpacity={0.7}
+        className="flex-1 flex-row items-center px-3 py-2.5"
+      >
+        {/* 文件夹图标 */}
+        <View className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-900/20 items-center justify-center mr-3">
+          {isExpanded ? (
+            <FolderOpen size={16} color="#f59e0b" strokeWidth={2} />
+          ) : (
+            <Folder size={16} color="#f59e0b" strokeWidth={2} />
+          )}
+        </View>
 
-          {/* 文件夹信息 */}
-          <View className="flex-1">
-            <Typography
-              className="font-bold text-sm text-gray-900 dark:text-white"
-              numberOfLines={1}
-            >
-              {name}
-            </Typography>
-            <Typography className="text-xs text-gray-400 mt-0.5">{childCount} 个项目</Typography>
-          </View>
+        {/* 文件夹信息 */}
+        <View className="flex-1">
+          <Typography
+            className="font-bold text-sm text-gray-900 dark:text-white"
+            numberOfLines={1}
+          >
+            {name}
+          </Typography>
+          <Typography className="text-xs text-gray-400 mt-0.5">{childCount} 个项目</Typography>
+        </View>
+      </TouchableOpacity>
 
-          {/* 操作图标 */}
-          <ContextMenu items={menuItems}>
-            <View className="w-6 h-6 items-center justify-center">
-              <MoreVertical size={16} color="#94a3b8" />
-            </View>
-          </ContextMenu>
-        </TouchableOpacity>
-      </View>
+      {/* 操作图标 - 独立触摸区域 */}
+      <ContextMenu items={menuItems} triggerOnPress>
+        <View className="p-3">
+          <MoreVertical size={16} color="#94a3b8" />
+        </View>
+      </ContextMenu>
     </View>
   );
 };

@@ -505,7 +505,8 @@ export default function RagScreen() {
   const renderHeader = () => (
     <View className="mb-0">
       {/* 搜索栏 */}
-      <View className="px-4 pb-2">
+      {/* 搜索栏 */}
+      <View className="px-6 pb-2">
         <View
           className={`h-12 ${isSearchFocused ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500' : 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'} 
                                border rounded-2xl flex-row items-center px-4 transition-all`}

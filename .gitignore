@@ -46,3 +46,6 @@ yarn-error.*
 
 # Secure Environment
 secure_env/
+
+# Worktrees
+R/

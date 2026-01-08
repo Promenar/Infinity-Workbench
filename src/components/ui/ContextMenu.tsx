@@ -24,6 +24,7 @@ export interface ContextMenuItem {
 interface ContextMenuProps {
   children: React.ReactNode;
   items: ContextMenuItem[];
+  triggerOnPress?: boolean; // 新增：是否支持短按触发
 }
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -32,14 +33,14 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
  * Lumina 抽屉式上下文菜单
  * 优化了长按触发阈值 (250ms) 并采用抽屉式滑入动画
  */
-export function ContextMenu({ children, items }: ContextMenuProps) {
+export function ContextMenu({ children, items, triggerOnPress = false }: ContextMenuProps) {
   const [visible, setVisible] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const triggerRef = useRef<View>(null);
 
   const handleOpen = (event?: GestureResponderEvent) => {
-    // 优先使用触摸点坐标
-    if (event && event.nativeEvent) {
+    // 优先使用触摸点坐标 (如果有 event)
+    if (event && event.nativeEvent && event.nativeEvent.pageX !== undefined) {
       const { pageX, pageY } = event.nativeEvent;
       calculateAndShow(pageX, pageY, 0, 0); // width/height 0 for point anchoring
       return;
@@ -95,10 +96,13 @@ export function ContextMenu({ children, items }: ContextMenuProps) {
       <View ref={triggerRef} collapsable={false}>
         <TouchableOpacity
           onPress={(e) => {
-            // 短按不触发菜单，或者根据需求处理
+            if (triggerOnPress) {
+              // 确保在这里捕获的是当前点击的坐标
+              handleOpen(e);
+            }
           }}
-          onLongPress={handleOpen}
-          delayLongPress={250} // 显著缩短长按判定时间
+          onLongPress={(e) => handleOpen(e)}
+          delayLongPress={250}
           activeOpacity={0.7}
         >
           {children}

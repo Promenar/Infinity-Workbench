@@ -24,7 +24,8 @@ export default function KnowledgeGraphScreen() {
   // State filtering logic
   let activeDocIds: string[] | undefined = undefined;
 
-  const ragState = useRagStore.getState();
+  // Use reactive hook to ensure updates when docs load
+  const ragState = useRagStore();
 
   // Helper: Recursive Document Resolution
   const getRecursiveFolderDocs = (startFolderId: string): string[] => {

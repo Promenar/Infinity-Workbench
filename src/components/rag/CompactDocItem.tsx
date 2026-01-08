@@ -178,14 +178,14 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       <Animated.View
         entering={FadeIn.duration(200)}
         exiting={FadeOut.duration(150)}
-        className="mx-6 mb-1.5"
+        className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-gray-100 dark:border-zinc-800 pr-1"
+        style={isSelected ? { borderColor: '#6366f1', backgroundColor: isDark ? 'rgba(49, 46, 129, 0.2)' : '#eef2ff' } : undefined}
       >
         <TouchableOpacity
           onPress={onPress}
           onLongPress={onLongPress}
           activeOpacity={0.7}
-          className={`bg-gray-50 dark:bg-zinc-900/50 rounded-xl flex-row items-center px-3 py-2.5 
-                    border ${isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-zinc-800'}`}
+          className="flex-1 flex-row items-center px-3 py-2.5"
         >
           {/* 文档图标 (Document Icon/Thumbnail) */}
           <View className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 items-center justify-center mr-3 overflow-hidden">
@@ -220,16 +220,16 @@ export const CompactDocItem = memo<CompactDocItemProps>(
 
           {/* 状态指示器 / Checkbox */}
           <View className="w-6 h-6 items-center justify-center mr-2">{getStatusIcon()}</View>
-
-          {/* 操作菜单 - 仅在非选择模式下显示 */}
-          {!isSelectionMode && (
-            <ContextMenu items={menuItems as any}>
-              <View className="w-6 h-6 items-center justify-center">
-                <MoreVertical size={16} color="#94a3b8" />
-              </View>
-            </ContextMenu>
-          )}
         </TouchableOpacity>
+
+        {/* 操作菜单 - 独立触摸区域 */}
+        {!isSelectionMode && (
+          <ContextMenu items={menuItems as any} triggerOnPress>
+            <View className="p-3">
+              <MoreVertical size={16} color="#94a3b8" />
+            </View>
+          </ContextMenu>
+        )}
       </Animated.View>
     );
   },
