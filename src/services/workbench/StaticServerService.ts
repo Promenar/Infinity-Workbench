@@ -5,6 +5,7 @@ import { Asset } from 'expo-asset';
 import { NetworkInfo } from 'react-native-network-info';
 import { useWorkbenchStore } from '../../store/workbench-store';
 import { Buffer } from 'buffer';
+import { backgroundService } from '../BackgroundService';
 
 // Require the web assets to bundle them (using .bundle extension to avoid Metro trying to bundle them)
 const WEB_ASSETS = {
@@ -216,7 +217,14 @@ class StaticServerService {
             await startServer(10);
 
             setServerUrl(fullUrl);
+            setServerUrl(fullUrl);
             setServerStatus('running');
+
+            // Start Background Service & Request Permissions
+            await backgroundService.start();
+            // Proactive Battery Request (optional, might be annoying if popups every time, but user asked for it)
+            // We can check if already optimized? For now just call it, logic inside can decide.
+            backgroundService.requestBatteryOptimization();
 
             return fullUrl;
         } catch (error) {
@@ -234,6 +242,7 @@ class StaticServerService {
             this.server.close();
             this.server = null;
         }
+        await backgroundService.stop();
         setServerStatus('idle');
         setServerUrl(null);
     }

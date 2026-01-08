@@ -37,7 +37,7 @@ export function RagRetrievalSettings({ config, onChange }: Props) {
                     {t.settings.ragRetrieval.title}
                 </h3>
                 <p className="text-zinc-400 text-sm">
-                    Fine-tune how the AI finds and processes relevant information.
+                    {t.settings.ragRetrieval.subtitle}
                 </p>
             </div>
 

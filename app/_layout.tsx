@@ -1,5 +1,6 @@
 import 'react-native-get-random-values';
 import '../global.css';
+import '../src/services/NotifeeBackgroundRunner'; // Register background task
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

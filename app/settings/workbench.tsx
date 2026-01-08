@@ -6,8 +6,9 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { useWorkbenchStore } from '../../src/store/workbench-store';
 import { staticServerService } from '../../src/services/workbench/StaticServerService';
 import { commandWebSocketServer } from '../../src/services/workbench/CommandWebSocketServer';
+import { backgroundService } from '../../src/services/BackgroundService';
 import { Colors } from '../../src/theme/colors';
-import { Monitor, Server, Wifi, Smartphone, Users, Globe, Lock, RefreshCw, Copy, ArrowLeft } from 'lucide-react-native';
+import { Monitor, Server, Wifi, Smartphone, Users, Globe, Lock, RefreshCw, Copy, ArrowLeft, AlertTriangle, Battery, Bell, AppWindow } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useToast } from '../../src/components/ui/Toast';
 import * as Haptics from '../../src/lib/haptics';
@@ -169,6 +170,76 @@ export default function PortableWorkbenchScreen() {
                                 {t.settings.workbench.enableServer}
                             </Text>
                             <Switch value={serverStatus === 'running' || serverStatus === 'starting'} onValueChange={toggleServer} disabled={loading} />
+                        </View>
+                    </View>
+                </View>
+
+                {/* Background Stability Guide */}
+                <View style={{
+                    backgroundColor: isDark ? 'rgba(234, 179, 8, 0.1)' : '#fefce8',
+                    borderRadius: 24,
+                    padding: 20,
+                    marginBottom: 24,
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(234, 179, 8, 0.2)' : '#fde047',
+                }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                        <AlertTriangle size={20} color="#eab308" style={{ marginRight: 8 }} />
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: isDark ? '#fef08a' : '#854d0e' }}>
+                            {t.settings.workbench.stability || 'Prevent Background Killing'}
+                        </Text>
+                    </View>
+
+                    <View style={{ gap: 12 }}>
+                        {/* Notification Permission */}
+                        <TouchableOpacity
+                            onPress={() => backgroundService.requestUserPermission()}
+                            style={{ flexDirection: 'row', alignItems: 'center' }}
+                        >
+                            <View style={{ width: 32, alignItems: 'center' }}>
+                                <Bell size={18} color={isDark ? '#fde047' : '#ca8a04'} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
+                                    {t.settings.workbench.permNotification || '1. Grant Notification Permission'}
+                                </Text>
+                                <Text style={{ fontSize: 12, color: isDark ? '#d1d5db' : '#4b5563' }}>
+                                    {t.settings.workbench.permNotificationDesc}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* Battery Optimization */}
+                        <TouchableOpacity
+                            onPress={() => backgroundService.requestBatteryOptimization()}
+                            style={{ flexDirection: 'row', alignItems: 'center' }}
+                        >
+                            <View style={{ width: 32, alignItems: 'center' }}>
+                                <Battery size={18} color={isDark ? '#fde047' : '#ca8a04'} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
+                                    {t.settings.workbench.permBattery || '2. Ignore Battery Optimization'}
+                                </Text>
+                                <Text style={{ fontSize: 12, color: isDark ? '#d1d5db' : '#4b5563' }}>
+                                    {t.settings.workbench.permBatteryDesc}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* Recent Apps Lock */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <View style={{ width: 32, alignItems: 'center' }}>
+                                <AppWindow size={18} color={isDark ? '#fde047' : '#ca8a04'} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? '#fff' : '#111' }}>
+                                    {t.settings.workbench.permLock || '3. Lock in Recent Apps'}
+                                </Text>
+                                <Text style={{ fontSize: 12, color: isDark ? '#d1d5db' : '#4b5563' }}>
+                                    {t.settings.workbench.permLockDesc}
+                                </Text>
+                            </View>
                         </View>
                     </View>
                 </View>

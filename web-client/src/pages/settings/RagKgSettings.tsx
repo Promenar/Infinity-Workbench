@@ -31,7 +31,7 @@ export function RagKgSettings({ config, onChange }: Props) {
                         {t.settings.ragKg.title}
                     </h3>
                     <p className="text-zinc-400 text-sm max-w-lg">
-                        {t.settings.ragKg.description}
+                        {t.settings.ragKg.subtitle}
                     </p>
                 </div>
 
@@ -66,9 +66,9 @@ export function RagKgSettings({ config, onChange }: Props) {
                     </h4>
                     <div className="grid grid-cols-1 gap-2">
                         {[
-                            { id: 'summary-first', label: 'Summary First', desc: 'Lowest cost. Analyzing summaries only.' },
-                            { id: 'on-demand', label: 'On Demand', desc: 'Manual extraction trigger only.' },
-                            { id: 'full', label: 'Full Scan', desc: 'Process every chunk. High cost.' },
+                            { id: 'summary-first', ...t.settings.ragKg.strategies.summary },
+                            { id: 'on-demand', ...t.settings.ragKg.strategies.onDemand },
+                            { id: 'full', ...t.settings.ragKg.strategies.full },
                         ].map(opt => (
                             <button
                                 key={opt.id}

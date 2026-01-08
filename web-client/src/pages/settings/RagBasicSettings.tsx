@@ -36,7 +36,7 @@ export function RagBasicSettings({ config, onChange }: Props) {
                     {t.settings.ragBasic.title}
                 </h3>
                 <p className="text-zinc-400 text-sm">
-                    Configure how documents are processed and monitored.
+                    {t.settings.ragBasic.subtitle}
                 </p>
             </div>
 
@@ -105,10 +105,13 @@ export function RagBasicSettings({ config, onChange }: Props) {
                         <input type="checkbox" checked={c.trackRetrievalMetrics ?? false} onChange={(e) => onChange('trackRetrievalMetrics', e.target.checked)} className="rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-0" />
                         <span className="text-sm font-medium text-zinc-300">{t.settings.ragBasic.observability.metrics}</span>
                     </label>
-                    <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5 cursor-pointer hover:bg-white/10 transition-colors">
-                        <input type="checkbox" checked={c.autoCleanup ?? false} onChange={(e) => onChange('autoCleanup', e.target.checked)} className="rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-0" />
-                        <span className="text-sm font-medium text-zinc-300">{t.settings.ragBasic.observability.cleanup}</span>
-                    </label>
+                    <div className="p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
+                        <label className="flex items-center gap-3 cursor-pointer mb-1">
+                            <input type="checkbox" checked={c.autoCleanup ?? false} onChange={(e) => onChange('autoCleanup', e.target.checked)} className="rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-0" />
+                            <span className="text-sm font-medium text-zinc-300">{t.settings.ragBasic.observability.cleanup}</span>
+                        </label>
+                        <p className="text-xs text-zinc-500 ml-7">{t.settings.ragBasic.observability.cleanupDesc}</p>
+                    </div>
                 </div>
             </div>
         </div>

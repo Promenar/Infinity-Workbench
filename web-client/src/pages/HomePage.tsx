@@ -4,9 +4,11 @@ import { Sparkles, ArrowRight, Zap, Bot } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../components/ui/glass-card';
 import { storeService, type Assistant } from '../services/StoreService';
+import { useI18n } from '../lib/i18n';
 
 export function HomePage() {
     const navigate = useNavigate();
+    const { t } = useI18n();
     const [assistants, setAssistants] = useState<Assistant[]>([]);
     const [query, setQuery] = useState('');
 
@@ -42,15 +44,15 @@ export function HomePage() {
                     >
                         <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white drop-shadow-2xl">
                             <span className="text-transparent bg-clip-text bg-linear-to-b from-white to-white/60">
-                                What will you
+                                {t.home.heroTitle1}
                             </span>
                             <br />
                             <span className="text-transparent bg-clip-text bg-linear-to-r from-indigo-400 via-purple-400 to-indigo-400 animate-gradient-x">
-                                create today?
+                                {t.home.heroTitle2}
                             </span>
                         </h1>
                         <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
-                            Orchestrate your AI workforce. Select an agent to start a specialized task or ask Super Assistant for general help.
+                            {t.home.heroSubtitle}
                         </p>
                     </motion.div>
 
@@ -70,7 +72,7 @@ export function HomePage() {
                                 type="text"
                                 value={query}
                                 onChange={e => setQuery(e.target.value)}
-                                placeholder="Ask anything, or describe a task..."
+                                placeholder={t.home.inputPlaceholder}
                                 className="flex-1 bg-transparent border-none outline-none text-lg text-white px-4 py-3 placeholder:text-zinc-600"
                                 autoFocus
                             />
@@ -86,7 +88,7 @@ export function HomePage() {
                     <div className="flex items-center justify-between px-2">
                         <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                             <Zap className="text-yellow-400" size={20} />
-                            Active Agents
+                            {t.home.activeAgents}
                         </h2>
                     </div>
 
@@ -121,7 +123,7 @@ export function HomePage() {
                                     </p>
 
                                     <div className="mt-6 flex items-center gap-2 text-indigo-400 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <span>Start Session</span>
+                                        <span>{t.home.startSession}</span>
                                         <ArrowRight size={16} />
                                     </div>
                                 </GlassCard>
@@ -139,7 +141,7 @@ export function HomePage() {
                             <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
                                 <Sparkles className="text-zinc-500 group-hover:text-white" size={24} />
                             </div>
-                            <span className="text-zinc-500 group-hover:text-white font-medium">Create New Agent</span>
+                            <span className="text-zinc-500 group-hover:text-white font-medium">{t.home.createAgent}</span>
                         </motion.button>
                     </div>
                 </div>

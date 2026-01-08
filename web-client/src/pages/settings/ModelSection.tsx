@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Eye, EyeOff, Server, Edit2, X } from 'lucide-react';
+import { Plus, Trash2, Eye, EyeOff, Server, Edit2, X, RefreshCw } from 'lucide-react';
 import { GlassCard } from '../../components/ui/glass-card';
+import { CustomSelect } from '../../components/ui/custom-select';
 import { useI18n } from '../../lib/i18n';
 
 // Interfaces
@@ -76,6 +77,13 @@ export const ModelSection: React.FC<ModelSectionProps> = ({
         onUpdateProvider(provider.id, { models: newModels });
     };
 
+    const handleFetchModels = async (provider: ProviderConfig) => {
+        // Prepare to fetch models from the provider
+        console.log("Fetching models for", provider.name);
+        // This is a placeholder for the actual API call logic
+        // In a real implementation, you would call an API service here
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-end">
@@ -85,7 +93,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({
                     </div>
                     <div>
                         <h2 className="text-xl font-bold text-white">{t.settings.models.title}</h2>
-                        <p className="text-sm text-zinc-400">Configure AI providers and model capabilities</p>
+                        <p className="text-sm text-zinc-400">{t.settings.models.subtitle}</p>
                     </div>
                 </div>
                 <button
@@ -104,7 +112,16 @@ export const ModelSection: React.FC<ModelSectionProps> = ({
                             {/* Name & Type */}
                             <div className="md:col-span-3 space-y-4">
                                 <div>
-                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Name</label>
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Name</label>
+                                        <button
+                                            onClick={() => onDeleteProvider(provider.id)}
+                                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                            title={t.settings.models.deleteProvider}
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
                                     <input
                                         type="text"
                                         value={provider.name}
@@ -115,17 +132,17 @@ export const ModelSection: React.FC<ModelSectionProps> = ({
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Type</label>
-                                    <div className="relative mt-1.5">
-                                        <select
+                                    <div className="mt-1.5">
+                                        <CustomSelect
                                             value={provider.type}
-                                            onChange={(e) => onUpdateProvider(provider.id, { type: e.target.value })}
-                                            className="w-full bg-[#09090b]/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:border-indigo-500/50 outline-none appearance-none"
-                                        >
-                                            <option value="openai">OpenAI Compatible</option>
-                                            <option value="anthropic">Anthropic</option>
-                                            <option value="google">Google Gemini</option>
-                                            <option value="ollama">Ollama</option>
-                                        </select>
+                                            onChange={(val) => onUpdateProvider(provider.id, { type: val })}
+                                            options={[
+                                                { value: 'openai', label: 'OpenAI Compatible' },
+                                                { value: 'anthropic', label: 'Anthropic' },
+                                                { value: 'google', label: 'Google Gemini' },
+                                                { value: 'ollama', label: 'Ollama' }
+                                            ]}
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -169,15 +186,23 @@ export const ModelSection: React.FC<ModelSectionProps> = ({
                                             <span className={`w-2 h-2 rounded-full ${provider.models && provider.models.length > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                                             Models detected: <span className="text-zinc-300 font-mono">{provider.models?.length || 0}</span>
                                         </div>
-                                        <button
-                                            onClick={() => {
-                                                setEditingModel({ providerId: provider.id, model: { id: '', name: '', contextLength: 4096 } });
-                                                setIsNewModel(true);
-                                            }}
-                                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-zinc-300 transition-colors"
-                                        >
-                                            <Plus size={12} /> {t.settings.models.addModel}
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleFetchModels(provider)}
+                                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium transition-colors border border-emerald-500/20"
+                                            >
+                                                <RefreshCw size={12} /> {t.settings.models.fetchModels}
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setEditingModel({ providerId: provider.id, model: { id: '', name: '', contextLength: 4096 } });
+                                                    setIsNewModel(true);
+                                                }}
+                                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-zinc-300 transition-colors"
+                                            >
+                                                <Plus size={12} /> {t.settings.models.addModel}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Model List with Capabilities */}
@@ -245,16 +270,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({
                             </div>
                         </div>
 
-                        {/* Provider Actions */}
-                        <div className="absolute top-6 right-6">
-                            <button
-                                onClick={() => onDeleteProvider(provider.id)}
-                                className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                                title={t.settings.models.deleteProvider}
-                            >
-                                <Trash2 size={20} />
-                            </button>
-                        </div>
+                        {/* Provider Actions - Moved to Name Field */}
                     </GlassCard>
                 ))}
             </div>

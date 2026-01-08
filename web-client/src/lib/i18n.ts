@@ -27,6 +27,15 @@ type Translations = {
         menu: string;
         unassigned: string;
     };
+    home: {
+        heroTitle1: string;
+        heroTitle2: string;
+        heroSubtitle: string;
+        inputPlaceholder: string;
+        activeAgents: string;
+        startSession: string;
+        createAgent: string;
+    };
     chat: {
         placeholder: string;
         generating: string;
@@ -95,6 +104,7 @@ type Translations = {
         };
         ragBasic: {
             title: string;
+            subtitle: string;
             chunking: {
                 title: string;
                 docSize: string;
@@ -108,10 +118,12 @@ type Translations = {
                 details: string;
                 metrics: string;
                 cleanup: string;
+                cleanupDesc: string;
             };
         };
         ragRetrieval: {
             title: string;
+            subtitle: string;
             rerank: {
                 title: string;
                 enable: string;
@@ -134,16 +146,24 @@ type Translations = {
         ragKg: {
             title: string;
             description: string;
+            subtitle: string;
             strategy: string;
             optimization: string;
             prompt: string;
             incremental: string;
             local: string;
+            strategies: {
+                summary: { label: string; desc: string };
+                onDemand: { label: string; desc: string };
+                full: { label: string; desc: string };
+            };
         };
         models: {
             title: string;
+            subtitle: string;
             addProvider: string;
             addModel: string;
+            fetchModels: string;
             editModel: string;
             deleteProvider: string;
             save: string;
@@ -201,6 +221,34 @@ type Translations = {
         searching: string;
         generating: string;
     };
+    workbench: {
+        title: string;
+        subtitle: string;
+        toggleSuccess: string;
+        toggleStop: string;
+        toggleError: string;
+        status: {
+            active: string;
+            starting: string;
+            inactive: string;
+            ready: string;
+            start: string;
+        };
+        enableServer: string;
+        browserAddress: string;
+        browserAddressLimit: string;
+        accessCode: string;
+        accessCodeDesc: string;
+        connected: string;
+        copied: string;
+        stability: string;
+        permNotification: string;
+        permNotificationDesc: string;
+        permBattery: string;
+        permBatteryDesc: string;
+        permLock: string;
+        permLockDesc: string;
+    };
 };
 
 const translations: Record<Language, Translations> = {
@@ -218,7 +266,7 @@ const translations: Record<Language, Translations> = {
         sidebar: {
             dashboard: 'Dashboard',
             library: 'Library',
-            graph: 'Knowledge Graph',
+            graph: 'Graph',
             settings: 'Settings',
             assistants: 'ASSISTANTS',
             manage: 'Manage',
@@ -227,6 +275,15 @@ const translations: Record<Language, Translations> = {
             systemOnline: 'System Online',
             menu: 'MENU',
             unassigned: 'UNASSIGNED',
+        },
+        home: {
+            heroTitle1: 'What will you',
+            heroTitle2: 'create today?',
+            heroSubtitle: 'Orchestrate your AI workforce. Select an agent to start a specialized task or ask Super Assistant for general help.',
+            inputPlaceholder: 'Ask anything, or describe a task...',
+            activeAgents: 'Active Agents',
+            startSession: 'Start Session',
+            createAgent: 'Create New Agent',
         },
         chat: {
             placeholder: 'Type a message...',
@@ -293,6 +350,7 @@ const translations: Record<Language, Translations> = {
             },
             ragBasic: {
                 title: 'RAG Foundation',
+                subtitle: 'Configure how documents are processed and monitored.',
                 chunking: {
                     title: 'Chunking & Context',
                     docSize: 'Doc Chunk Size',
@@ -306,10 +364,12 @@ const translations: Record<Language, Translations> = {
                     details: 'Show Retrieval Details',
                     metrics: 'Track Metrics',
                     cleanup: 'Auto Cleanup Context',
+                    cleanupDesc: 'Automatically removes oldest messages when context limit is reached to save tokens.',
                 },
             },
             ragRetrieval: {
                 title: 'Retrieval Strategy',
+                subtitle: 'Fine-tune how the AI finds and processes relevant information.',
                 rerank: {
                     title: 'Rerank',
                     enable: 'Enable Rerank',
@@ -332,19 +392,27 @@ const translations: Record<Language, Translations> = {
             ragKg: {
                 title: 'Knowledge Graph',
                 description: 'Extract entities & relationships during ingestion.',
+                subtitle: 'Extract entities & relationships during ingestion.',
                 strategy: 'Extraction Strategy',
                 optimization: 'Optimization',
                 prompt: 'Extraction Prompt',
                 incremental: 'Incremental Hash Check',
                 local: 'Local Pre-process',
+                strategies: {
+                    summary: { label: 'Summary First', desc: 'Lowest cost. Analyzing summaries only.' },
+                    onDemand: { label: 'On Demand', desc: 'Manual extraction trigger only.' },
+                    full: { label: 'Full Scan', desc: 'Process every chunk. High cost.' },
+                }
             },
             rag: {
                 title: 'Advanced RAG', // Legacy
             },
             models: {
                 title: 'Model Management',
+                subtitle: 'Configure AI providers and model capabilities',
                 addProvider: 'Add Provider',
                 addModel: 'Add Custom Model',
+                fetchModels: 'Fetch Models',
                 editModel: 'Edit Model',
                 deleteProvider: 'Delete Provider',
                 save: 'Save Model',
@@ -402,6 +470,34 @@ const translations: Record<Language, Translations> = {
             searching: 'Searching',
             generating: 'Generating',
         },
+        workbench: {
+            title: 'Portable Workbench',
+            subtitle: 'Manage knowledge base in a browser on the same local network',
+            toggleSuccess: 'Service started',
+            toggleStop: 'Service stopped',
+            toggleError: 'Operation failed',
+            status: {
+                active: 'Running',
+                starting: 'Starting',
+                inactive: 'Inactive',
+                ready: 'Service ready, please access via browser',
+                start: 'Click the switch below to start the service',
+            },
+            enableServer: 'Enable Wireless Access',
+            browserAddress: 'Browser Access Address',
+            browserAddressLimit: 'Local network access only, ensure your phone and computer are on the same Wi-Fi',
+            accessCode: 'Security Code',
+            accessCodeDesc: 'This code is required when connecting from a browser',
+            connected: 'Currently connected {count} clients',
+            copied: 'Address copied',
+            stability: 'Prevent background termination',
+            permNotification: '1. Grant notification permission',
+            permNotificationDesc: 'Required to keep service alive. Tap to grant.',
+            permBattery: '2. Ignore battery optimization',
+            permBatteryDesc: 'Prevent system from killing app. Tap to set.',
+            permLock: '3. Lock background task',
+            permLockDesc: 'Open Recent Apps → Long press Nexara → Lock 🔒',
+        },
     },
     zh: {
         common: {
@@ -417,7 +513,7 @@ const translations: Record<Language, Translations> = {
         sidebar: {
             dashboard: '概览',
             library: '知识库',
-            graph: '知识图谱',
+            graph: '图谱',
             settings: '设置',
             assistants: '智能助手',
             manage: '管理',
@@ -426,6 +522,15 @@ const translations: Record<Language, Translations> = {
             systemOnline: '系统在线',
             menu: '菜单',
             unassigned: '未分类',
+        },
+        home: {
+            heroTitle1: '今天想要',
+            heroTitle2: '创造什么？',
+            heroSubtitle: '编排您的 AI 劳动力。选择一个智能体开始专业任务，或向超级助手寻求通用帮助。',
+            inputPlaceholder: '问任何问题，或描述一个任务...',
+            activeAgents: '活跃智能体',
+            startSession: '开始会话',
+            createAgent: '创建新智能体',
         },
         chat: {
             placeholder: '输入消息...',
@@ -491,7 +596,8 @@ const translations: Record<Language, Translations> = {
                 },
             },
             ragBasic: {
-                title: 'RAG 基础配置',
+                title: 'RAG配置',
+                subtitle: '配置文档处理方式和监控选项。',
                 chunking: {
                     title: '切块与上下文',
                     docSize: '文档切块大小',
@@ -505,10 +611,12 @@ const translations: Record<Language, Translations> = {
                     details: '显示检索详情',
                     metrics: '记录检索指标',
                     cleanup: '自动清理上下文',
+                    cleanupDesc: '当达到上下文限制时自动压缩历史消息以节省 Token（本地记录仅归档不删除），并保持连贯性。',
                 },
             },
             ragRetrieval: {
-                title: 'RAG 检索策略',
+                title: '检索策略',
+                subtitle: '微调 AI 查找和处理相关信息的方式。',
                 rerank: {
                     title: '重排序 (Rerank)',
                     enable: '启用重排序',
@@ -529,21 +637,29 @@ const translations: Record<Language, Translations> = {
                 },
             },
             ragKg: {
-                title: '知识图谱配置',
+                title: '知识图谱',
+                subtitle: '在提取过程中构建实体与关系。',
                 description: '在提取过程中构建实体与关系。',
                 strategy: '提取策略',
                 optimization: '优化选项',
                 prompt: '提取提示词',
                 incremental: '增量哈希检查',
                 local: '本地预处理',
+                strategies: {
+                    summary: { label: '仅摘要', desc: '成本最低。仅分析文档摘要。' },
+                    onDemand: { label: '按需提取', desc: '仅手动触发提取。' },
+                    full: { label: '全量扫描', desc: '处理所有切块。成本较高。' },
+                }
             },
             rag: { // Keeping generic keys just in case, but structure implies we move them
                 title: 'RAG 高级配置', // Legacy
             },
             models: {
                 title: '模型管理',
+                subtitle: '配置 AI 服务商和模型能力',
                 addProvider: '添加服务商',
                 addModel: '添加自定义模型',
+                fetchModels: '自动拉取模型',
                 editModel: '编辑模型',
                 deleteProvider: '删除服务商',
                 save: '保存模型',
@@ -601,6 +717,34 @@ const translations: Record<Language, Translations> = {
             searching: '搜索中',
             generating: '生成中',
         },
+        workbench: {
+            title: '便携工作台',
+            subtitle: '在同一局域网下的浏览器中管理知识库',
+            toggleSuccess: '服务已启动',
+            toggleStop: '服务已停止',
+            toggleError: '操作失败',
+            status: {
+                active: '运行中',
+                starting: '启动中',
+                inactive: '未运行',
+                ready: '服务已就绪，请使用浏览器访问',
+                start: '点击下方开关启动服务',
+            },
+            enableServer: '启用无线访问',
+            browserAddress: '浏览器访问地址',
+            browserAddressLimit: '仅限局域网访问，请确保手机与电脑连接同一Wi-Fi',
+            accessCode: '安全验证码',
+            accessCodeDesc: '浏览器连接时需输入此验证码',
+            connected: '当前已连接 {count} 个客户端',
+            copied: '地址已复制',
+            stability: '防止后台被杀',
+            permNotification: '1. 授予通知权限',
+            permNotificationDesc: '保持服务存活的必要权限，点击授予',
+            permBattery: '2. 忽略电池优化',
+            permBatteryDesc: '防止系统杀后台，点击设置',
+            permLock: '3. 锁定后台任务',
+            permLockDesc: '在最近任务页 → 长按Nexara → 锁定 🔒',
+        },
     },
 };
 
@@ -619,6 +763,7 @@ export const useI18n = create<I18nStore>()(
         }),
         {
             name: 'i18n-storage',
+            version: 1, // Force state reset to load new translations
         }
     )
 );

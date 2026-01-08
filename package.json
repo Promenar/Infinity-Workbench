@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@caporeista/reactnative-math-latex": "^1.0.5",
+    "@notifee/react-native": "^9.1.8",
     "@op-engineering/op-sqlite": "^15.1.14",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/slider": "^5.0.1",
