@@ -1,4 +1,4 @@
-import notifee, { AndroidImportance, AndroidColor, AndroidForegroundServiceType } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidColor, AndroidForegroundServiceType, EventType } from '@notifee/react-native';
 
 class BackgroundService {
     private isRunning = false;
@@ -10,11 +10,24 @@ class BackgroundService {
 
         // Proactive Permission Requests
         await this.requestUserPermission();
-        // Battery optimization request is best triggered by UI interaction, but we can check status here
-        // or let the UI handle the "request" part to avoid jarring context switches on start.
-        // The user asked to "actively request" on launch, but blocking with settings screens is bad UX.
-        // We will expose a method for the UI to call, or call it here if strictly required.
-        // For now, let's just ensure we have notification permission.
+
+        // Register Action Event Listener
+        // We use onForegroundEvent for in-app interactions.
+        // For background interactions (killed app), we technically need index.js registration, 
+        // but for a Foreground Service, the app instance is usually kept alive.
+        const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
+            if (type === EventType.ACTION_PRESS && detail.pressAction?.id === 'stop_service') {
+                console.log('[BackgroundService] Stop Action Pressed');
+                await this.stop();
+            }
+        });
+        // We also need to handle background events if the app is in background (but process alive)
+        notifee.onBackgroundEvent(async ({ type, detail }) => {
+            if (type === EventType.ACTION_PRESS && detail.pressAction?.id === 'stop_service') {
+                console.log('[BackgroundService] Stop Action Pressed (Background)');
+                await this.stop();
+            }
+        });
 
         try {
             await notifee.createChannel({

@@ -188,7 +188,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 </div>
 
                 {/* Main Content */}
-                <div className="prose prose-invert max-w-none text-gray-300 leading-relaxed">
+                <div className="prose prose-invert max-w-none text-gray-300 leading-8 tracking-wide">
                     <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[rehypeKatex]}
@@ -201,7 +201,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 if (!inline) {
                                     if (language === 'svg') {
                                         return (
-                                            <div className="my-4 p-4 bg-white/5 rounded-xl border border-white/10 overflow-x-auto flex justify-center">
+                                            <div className="my-6 p-6 bg-white/5 rounded-2xl border border-white/10 overflow-x-auto flex justify-center shadow-inner">
                                                 <div dangerouslySetInnerHTML={{ __html: content }} />
                                             </div>
                                         );
@@ -223,19 +223,20 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     />
                                 );
                             },
+                            p: ({ children }) => <p className="mb-6 last:mb-0">{children}</p>,
                             table: (props: any) => (
-                                <div className="overflow-x-auto my-4 border border-white/10 rounded-lg">
+                                <div className="overflow-x-auto my-6 border border-white/10 rounded-xl shadow-lg">
                                     <table className="min-w-full divide-y divide-white/10 text-sm text-left" {...props} />
                                 </div>
                             ),
                             thead: (props: any) => <thead className="bg-white/5 text-gray-200" {...props} />,
-                            th: (props: any) => <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider" {...props} />,
-                            td: (props: any) => <td className="px-4 py-3 whitespace-nowrap text-gray-300 border-t border-white/5" {...props} />,
+                            th: (props: any) => <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider" {...props} />,
+                            td: (props: any) => <td className="px-6 py-4 whitespace-nowrap text-gray-300 border-t border-white/5" {...props} />,
                             blockquote: (props: any) => (
-                                <blockquote className="border-l-4 border-indigo-500/50 bg-white/5 rounded-r-lg pl-4 pr-2 py-1 my-4 italic text-gray-400" {...props} />
+                                <blockquote className="border-l-4 border-indigo-500/50 bg-white/5 rounded-r-xl pl-6 pr-4 py-3 my-6 italic text-gray-400" {...props} />
                             ),
-                            ul: (props: any) => <ul className="list-disc pl-6 space-y-1 my-4 marker:text-gray-500" {...props} />,
-                            ol: (props: any) => <ol className="list-decimal pl-6 space-y-1 my-4 marker:text-gray-500" {...props} />,
+                            ul: (props: any) => <ul className="list-disc pl-6 space-y-2 my-6 marker:text-gray-500" {...props} />,
+                            ol: (props: any) => <ol className="list-decimal pl-6 space-y-2 my-6 marker:text-gray-500" {...props} />,
                             a: (props: any) => (
                                 <a
                                     className="text-indigo-400 hover:text-indigo-300 underline decoration-indigo-500/30 hover:decoration-indigo-500/80 transition-all font-medium"
