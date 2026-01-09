@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
 import { graphStore, KGNode, KGEdge } from '../../lib/rag/graph-store';
+import { VIS_NETWORK_SOURCE } from '../../assets/libs/vis-network-source';
 import { Typography } from '../ui';
 import { KGNodeEditModal } from './KGNodeEditModal';
 
@@ -127,7 +128,9 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+        <script type="text/javascript">
+          ${VIS_NETWORK_SOURCE}
+        </script>
         <style type="text/css">
             html, body {
                 width: 100%;

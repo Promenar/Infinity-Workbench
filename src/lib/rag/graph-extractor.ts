@@ -2,6 +2,7 @@ import { useApiStore } from '../../store/api-store';
 import { useSettingsStore } from '../../store/settings-store';
 import { createLlmClient, ExtendedModelConfig } from '../llm/factory';
 import { graphStore } from './graph-store';
+import { DEFAULT_KG_PROMPT } from './defaults';
 
 interface ExtractionResult {
   nodes: Array<{
@@ -80,11 +81,21 @@ export class GraphExtractor {
 
     // If custom prompt is present, use it (injecting entity types if placeholder exists)
     if (customPrompt && customPrompt.trim().length > 0) {
-      return customPrompt.replace('{entityTypes}', entityTypes.join(', '));
+      if (customPrompt.includes('{entityTypes}')) {
+        return customPrompt.replace('{entityTypes}', entityTypes.join(', '));
+      } else {
+        // Fallback: Append expectation if user removed placeholder
+        return `${customPrompt}\n\nTarget Entity Types: ${entityTypes.join(', ')}\nEnsure output is valid JSON.`;
+      }
     }
 
-    // Fallback (shouldn't happen if store has default)
-    return `Extract entities (${entityTypes.join(', ')}) and relations. Return JSON.`;
+    // Use default prompt from defaults.ts
+    // 确保默认 Prompt 也能正确替换
+    if (DEFAULT_KG_PROMPT && DEFAULT_KG_PROMPT.includes('{entityTypes}')) {
+      return DEFAULT_KG_PROMPT.replace('{entityTypes}', entityTypes.join(', '));
+    }
+
+    return DEFAULT_KG_PROMPT;
   }
 
   /**

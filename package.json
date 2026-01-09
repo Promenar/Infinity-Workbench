@@ -8,7 +8,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "bump:patch": "node scripts/bump-version.js patch",
-    "bump:minor": "node scripts/bump-version.js minor"
+    "bump:minor": "node scripts/bump-version.js minor",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@caporeista/reactnative-math-latex": "^1.0.5",
@@ -83,6 +84,7 @@
     "@types/react": "~19.1.0",
     "@types/react-native": "^0.72.8",
     "babel-preset-expo": "^54.0.9",
+    "patch-package": "^8.0.1",
     "prettier": "^3.7.4",
     "typescript": "~5.9.2"
   },

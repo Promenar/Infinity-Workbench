@@ -42,27 +42,65 @@ export class GraphStore {
   ): Promise<string> {
     try {
       // Check if exists (scope aware)
-      let query = 'SELECT id FROM kg_nodes WHERE name = ?';
+      // Note: We query SELECT * to get existing metadata/type for merging
+      let query = 'SELECT * FROM kg_nodes WHERE name = ?';
       const params: any[] = [name];
-
-      // Strategy: 
-      // If scope is provided, we prefer specific node. 
-      // BUT for now, to keep it simple and connected, we perform a global check first.
-      // If we want isolation, we should check AND session_id = ?
-      // Let's adopt a "Shared Global + Private Session" stragegy.
-      // If found in Global (session_id IS NULL), reuse it.
-      // If found in current Session, reuse it.
-      // If not found, create in current Session (if scoped) or Global.
 
       const existing = await db.execute(query, params);
 
-      // Filter in memory for specific logic if needed, or refine query. 
-      // Simple logic: deduplicate by name regardless of scope? 
-      // NO, "Apple" (Fruit) vs "Apple" (Tech) in different contexts might differ.
-      // But for RAG, linking them is often desired.
-      // Current decision: Reuse ANY existing node with same name to promote connectivity.
       if (existing.rows && existing.rows.length > 0) {
-        return (existing.rows as any)[0].id;
+        const row = (existing.rows as any)[0];
+        const id = row.id;
+
+        // --- MERGE LOGIC START ---
+        // 1. Parsing old metadata
+        let oldMetadata = {};
+        try {
+          oldMetadata = row.metadata ? JSON.parse(row.metadata) : {};
+        } catch (e) {
+          console.warn('[GraphStore] Failed to parse existing metadata for merge', e);
+        }
+
+        const mergedMetadata = { ...oldMetadata };
+
+        // 2. Merge metadata properties
+        if (metadata) {
+          Object.keys(metadata).forEach((key) => {
+            const newVal = metadata[key];
+            const oldVal = (mergedMetadata as any)[key];
+
+            if (Array.isArray(newVal) && Array.isArray(oldVal)) {
+              // Array: Combine and Unique (e.g. aliases, roles)
+              const combined = [...oldVal, ...newVal];
+              const unique = combined.filter((item, index, self) =>
+                index === self.findIndex((t) => (
+                  JSON.stringify(t) === JSON.stringify(item)
+                ))
+              );
+              (mergedMetadata as any)[key] = unique;
+            } else if (newVal !== undefined && newVal !== null) {
+              // Simple value: Overwrite (Last Write Wins)
+              // This allows updating 'description', 'age', etc.
+              (mergedMetadata as any)[key] = newVal;
+            }
+          });
+        }
+
+        // 3. Update Type
+        // Logic: specific type replaces generic 'concept', otherwise overwrite
+        let updatedType = row.type;
+        if (type && type !== 'concept') {
+          updatedType = type;
+        }
+
+        // 4. Update DB
+        await db.execute(
+          'UPDATE kg_nodes SET type = ?, metadata = ?, updated_at = ? WHERE id = ?',
+          [updatedType, JSON.stringify(mergedMetadata), Date.now(), id]
+        );
+        // --- MERGE LOGIC END ---
+
+        return id;
       }
 
       // Create new

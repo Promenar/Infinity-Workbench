@@ -108,9 +108,9 @@ android {
             }
         }
     
-    ndkVersion rootProject.ext.ndkVersion
+    ndkVersion "27.1.12297006"
 
-    buildToolsVersion rootProject.ext.buildToolsVersion
+    buildToolsVersion "36.0.0"
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace 'com.promenar.nexara'
@@ -130,7 +130,6 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        // [Main Branch]: Release signing disabled. Build release APKs in worktrees/release only.
     }
     buildTypes {
         
@@ -140,12 +139,9 @@ android {
             resValue "string", "app_name", "Nexara (Dev)"
         }
         release {
-            // Check if release signing is configured (has password)
-            if (signingConfigs.release.storePassword) {
-                signingConfig signingConfigs.release
-            } else {
-                signingConfig signingConfigs.debug // Fallback
-            }
+            // Caution! In production, you need to generate your own keystore file.
+            // see https://reactnative.dev/docs/signed-apk-android.
+            signingConfig signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

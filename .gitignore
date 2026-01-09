@@ -42,7 +42,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
-/android_sdk
 
 # Secure Environment
 secure_env/

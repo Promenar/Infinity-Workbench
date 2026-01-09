@@ -26,9 +26,12 @@ import {
   Bot,
   Check,
   X,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { useApiStore } from '../../../store/api-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FloatingTextEditorModal } from '../../../components/ui/FloatingTextEditorModal';
 
 const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
   const { isDark } = useTheme();
@@ -86,10 +89,54 @@ export default function RagAdvancedSettings() {
 
   // Local state for prompt editing (to avoid heavy store updates on every keystroke)
   const [promptText, setPromptText] = useState(globalRagConfig.kgExtractionPrompt || '');
+  const [isEditorVisible, setIsEditorVisible] = useState(false);
 
-  const handleSavePrompt = () => {
-    updateGlobalRagConfig({ kgExtractionPrompt: promptText });
-    Alert.alert('已保存', '抽取提示词已更新');
+  // Sync with store when config changes externally
+  React.useEffect(() => {
+    if (globalRagConfig.kgExtractionPrompt !== undefined) {
+      setPromptText(globalRagConfig.kgExtractionPrompt);
+    }
+  }, [globalRagConfig.kgExtractionPrompt]);
+
+  const handleSavePrompt = (content: string) => {
+    // Validation
+    if (!content.trim()) {
+      Alert.alert('Error', 'Prompt cannot be empty');
+      return;
+    }
+
+    // Warning Checks
+    const issues: string[] = [];
+    if (!content.includes('{entityTypes}')) {
+      issues.push('- 缺少 {entityTypes} 占位符');
+    }
+    if (!content.toLowerCase().includes('json')) {
+      issues.push('- 缺少 JSON 输出格式要求');
+    }
+
+    const save = () => {
+      updateGlobalRagConfig({ kgExtractionPrompt: content });
+      // promptText is already updated via onSave prop from modal? 
+      // No, modal calls this with new content. We should update local state too.
+      setPromptText(content);
+      setIsEditorVisible(false);
+      Alert.alert('已保存', '抽取提示词已更新');
+    };
+
+    if (issues.length > 0) {
+      Alert.alert(
+        '格式警告 (Format Warning)',
+        '检测到以下问题可能导致知识提取失败:\n\n' +
+        issues.join('\n') +
+        '\n\n是否确认保存?',
+        [
+          { text: '取消', style: 'cancel' },
+          { text: '强制保存', style: 'destructive', onPress: save },
+        ]
+      );
+    } else {
+      save();
+    }
   };
 
   return (
@@ -298,49 +345,68 @@ export default function RagAdvancedSettings() {
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
                 实体关系抽取 Prompt
               </Typography>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <TouchableOpacity
-                  onPress={() => {
-                    const { DEFAULT_KG_PROMPT } = require('../../../lib/rag/defaults');
-                    setPromptText(DEFAULT_KG_PROMPT);
-                    Alert.alert('已重置', '提示词已恢复默认值，请点击保存。');
-                  }}
-                  style={{ flexDirection: 'row', alignItems: 'center' }}
-                >
-                  <Edit3 size={14} color="#94a3b8" style={{ marginRight: 4 }} />
-                  <Typography className="text-xs font-bold text-gray-500">重置</Typography>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={handleSavePrompt}
-                  style={{ flexDirection: 'row', alignItems: 'center' }}
-                >
-                  <Save size={14} color="#6366f1" style={{ marginRight: 4 }} />
-                  <Typography className="text-xs font-bold text-indigo-600">保存</Typography>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  const { DEFAULT_KG_PROMPT } = require('../../../lib/rag/defaults');
+                  setPromptText(DEFAULT_KG_PROMPT);
+                  setIsEditorVisible(true); // Open editor with default
+                }}
+                className="flex-row items-center bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full"
+              >
+                <RotateCcw size={12} color="#64748b" style={{ marginRight: 4 }} />
+                <Typography className="text-xs font-bold text-gray-500">重置默认</Typography>
+              </TouchableOpacity>
             </View>
 
-            <TextInput
-              value={promptText}
-              onChangeText={setPromptText}
-              multiline
-              style={{
-                minHeight: 120,
-                textAlignVertical: 'top',
-                color: isDark ? '#e5e7eb' : '#374151',
-                backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                padding: 12,
-                borderRadius: 8,
-                fontSize: 13,
-                lineHeight: 20,
-              }}
-              placeholder="输入系统提示词..."
-            />
-            <Typography className="text-xs text-gray-400 mt-2">
-              提示: 使用 JSON 格式描述输出要求效果最佳。
-            </Typography>
+            <TouchableOpacity
+              onPress={() => setIsEditorVisible(true)}
+              activeOpacity={0.7}
+              className={`p-4 rounded-xl border border-dashed ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'
+                }`}
+            >
+              <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center">
+                  <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
+                  <Typography className="font-bold text-gray-700 dark:text-gray-300">
+                    点击编辑提取指令
+                  </Typography>
+                </View>
+                {promptText ? (
+                  <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-green-700 dark:text-green-400">已配置</Typography>
+                  </View>
+                ) : (
+                  <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-gray-500">使用默认</Typography>
+                  </View>
+                )}
+              </View>
+
+              <Typography
+                numberOfLines={3}
+                className="text-xs text-gray-500 dark:text-gray-400 leading-5"
+              >
+                {promptText || "当前使用系统默认 Prompt (点击查看或修改)..."}
+              </Typography>
+            </TouchableOpacity>
+
+            <View className="mt-3 flex-row items-start">
+              <AlertTriangle size={12} color="#f59e0b" style={{ marginTop: 2, marginRight: 6 }} />
+              <Typography className="text-[10px] text-orange-500 flex-1 leading-4">
+                修改提示词可能导致解析失败，请务必保留 JSON 输出格式要求。
+              </Typography>
+            </View>
           </View>
+
+          <FloatingTextEditorModal
+            visible={isEditorVisible}
+            initialContent={promptText}
+            title="编辑提取 Prompt"
+            placeholder="输入系统提示词..."
+            warningMessage="⚠️ 务必确认包含 {entityTypes} 占位符，并明确要求输出 JSON 格式，否则将导致知识提取失败。"
+            onClose={() => setIsEditorVisible(false)}
+            onSave={handleSavePrompt}
+          />
 
           {/* 4. 可视化入口 (Beta) */}
           <SectionHeader title="可视化 (Beta)" />
