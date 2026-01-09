@@ -576,7 +576,10 @@ export const useChatStore = create<ChatState>()(
             provider: provider.type,
             apiKey: provider.apiKey,
             baseUrl: provider.baseUrl,
-            temperature: agent.params?.temperature ?? 0.7,
+            // 🔑 Fix: Session params > Agent params > Default
+            temperature: session.inferenceParams?.temperature ?? agent.params?.temperature ?? 0.7,
+            topP: session.inferenceParams?.topP ?? agent.params?.topP ?? 1.0,
+            maxTokens: session.inferenceParams?.maxTokens ?? agent.params?.maxTokens ?? 4096,
             vertexProject: provider.vertexProject,
             vertexLocation: provider.vertexLocation,
             vertexKeyJson: provider.vertexKeyJson,

@@ -1,11 +1,16 @@
 import { useChatStore } from '../../store/chat-store';
-import { commandWebSocketServer } from './CommandWebSocketServer';
+import type { CommandWebSocketServer } from './CommandWebSocketServer';
 import { Message, Session } from '../../types/chat';
 
 class StoreSyncService {
     private unsub: (() => void) | null = null;
     private lastState: any = null;
     private lastMessageLengths: Record<string, number> = {};
+    private server: CommandWebSocketServer | null = null;
+
+    public registerServer(server: CommandWebSocketServer) {
+        this.server = server;
+    }
 
     start() {
         console.log('[StoreSync] Starting service...');
@@ -50,7 +55,7 @@ class StoreSyncService {
 
         // If length different -> List changed
         if (currentSessions.length !== prevSessions.length) {
-            commandWebSocketServer.broadcast({ type: 'SESSION_LIST_UPDATED' });
+            this.server?.broadcast({ type: 'SESSION_LIST_UPDATED' });
             return;
         }
 
@@ -67,7 +72,7 @@ class StoreSyncService {
         const prevIds = prevSessions.map(s => s.id).join(',');
 
         if (currentIds !== prevIds) {
-            commandWebSocketServer.broadcast({ type: 'SESSION_LIST_UPDATED' });
+            this.server?.broadcast({ type: 'SESSION_LIST_UPDATED' });
         }
     }
 
@@ -87,7 +92,7 @@ class StoreSyncService {
             // Let's send FULL content for the *current message* to ensure consistency, 
             // as it's local LAN.
 
-            commandWebSocketServer.broadcast({
+            this.server?.broadcast({
                 type: 'MSG_STREAM_UPDATE',
                 payload: {
                     sessionId,
@@ -103,7 +108,7 @@ class StoreSyncService {
 
     private handleGenerationFinished(sessionId: string) {
         // Notify that generation is done
-        commandWebSocketServer.broadcast({
+        this.server?.broadcast({
             type: 'MSG_STREAM_COMPLETE',
             payload: {
                 sessionId
@@ -111,7 +116,7 @@ class StoreSyncService {
         });
 
         // Also trigger session list refresh because "lastMessage" and "updatedAt" are final
-        commandWebSocketServer.broadcast({ type: 'SESSION_LIST_UPDATED' });
+        this.server?.broadcast({ type: 'SESSION_LIST_UPDATED' });
 
         // Clear cache
         this.lastMessageLengths = {};

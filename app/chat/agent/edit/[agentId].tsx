@@ -35,6 +35,7 @@ import { AgentAvatar } from '../../../../src/components/chat/AgentAvatar';
 import { AgentRagConfigPanel } from '../../../../src/features/settings/components/AgentRagConfigPanel';
 import { useDebounce } from '../../../../src/hooks/useDebounce';
 import { PRESET_COLORS } from '../../../../src/types/super-assistant';
+import { InferencePresets } from '../../../../src/components/chat/InferencePresets';
 
 const PRESET_ICONS = [
   'MessageSquare',
@@ -72,6 +73,15 @@ export default function AgentEditScreen() {
     avatar: agent?.avatar || 'MessageSquare',
     color: agent?.color || PRESET_COLORS[10].value, // Default to Indigo (#6366f1) if not set. Index 10 is Indigo in list.
   });
+
+  const displayModelName = React.useMemo(() => {
+    if (!formData.defaultModel) return t.agent.selectModel;
+    for (const provider of providers) {
+      const model = provider.models.find(m => m.uuid === formData.defaultModel || m.id === formData.defaultModel);
+      if (model) return model.name;
+    }
+    return formData.defaultModel;
+  }, [providers, formData.defaultModel]);
 
   // 确认弹窗状态
   const [confirmState, setConfirmState] = useState<{
@@ -155,7 +165,11 @@ export default function AgentEditScreen() {
         defaultModel: debouncedFormData.defaultModel,
         avatar: debouncedFormData.avatar,
         color: debouncedFormData.color,
-        params: { ...agent.params, temperature: debouncedFormData.temperature },
+        params: {
+          ...agent.params,
+          ...debouncedFormData.params,
+          temperature: debouncedFormData.temperature
+        },
       });
     }
   }, [debouncedFormData, agent?.id]); // Simplified dependencies since we check deep values
@@ -375,8 +389,8 @@ export default function AgentEditScreen() {
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
                   {t.agent.engine}
                 </Typography>
-                <Typography className="text-indigo-500 font-semibold">
-                  {formData.defaultModel}
+                <Typography className="text-indigo-500 font-semibold" numberOfLines={1}>
+                  {displayModelName}
                 </Typography>
               </View>
               <ChevronRight size={20} color="#94a3b8" />
@@ -386,41 +400,19 @@ export default function AgentEditScreen() {
               <Typography className="text-gray-900 dark:text-white font-bold mb-3">
                 {t.agent.creativity}
               </Typography>
-              <View className="flex-row justify-between mb-2">
-                {[0, 0.3, 0.7, 1].map((temp) => (
-                  <TouchableOpacity
-                    key={temp}
-                    onPress={() => {
-                      setTimeout(() => {
-                        setFormData({ ...formData, temperature: temp });
-                      }, 10);
-                    }}
-                    className={clsx(
-                      'flex-1 py-2 mx-1 rounded-xl border',
-                      formData.temperature === temp
-                        ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-900/30'
-                        : 'bg-white dark:bg-black border-gray-100 dark:border-zinc-800',
-                    )}
-                  >
-                    <Typography
-                      className={clsx(
-                        'text-center font-bold text-xs',
-                        formData.temperature === temp
-                          ? 'text-indigo-600 dark:text-indigo-400'
-                          : 'text-gray-400',
-                      )}
-                    >
-                      {temp === 0
-                        ? t.agent.precise
-                        : temp === 0.3
-                          ? '0.3'
-                          : temp === 0.7
-                            ? '0.7'
-                            : t.agent.creative}
-                    </Typography>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <InferencePresets
+                currentTemperature={formData.temperature}
+                onSelect={(params) => {
+                  setFormData((prev) => ({
+                    ...prev,
+                    temperature: params.temperature ?? prev.temperature,
+                    params: {
+                      ...prev.params,
+                      ...params,
+                    }
+                  }));
+                }}
+              />
             </View>
           </View>
 

@@ -30,10 +30,14 @@ interface WebSocketClient {
     lastHeartbeat: number;
 }
 
-class CommandWebSocketServer {
+export class CommandWebSocketServer {
     private server: any = null;
     private clients: Map<string, WebSocketClient> = new Map();
     private checkInterval: any = null;
+
+    constructor() {
+        storeSyncService.registerServer(this);
+    }
 
     // Imports moved to top
 

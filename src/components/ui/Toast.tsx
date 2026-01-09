@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback } from 'react';
-import { View, SafeAreaView } from 'react-native';
+import { View } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp, SlideInDown, FadeInUp } from 'react-native-reanimated';
 import { Typography } from './Typography';
 import { Check, AlertCircle, Info, AlertTriangle } from 'lucide-react-native';

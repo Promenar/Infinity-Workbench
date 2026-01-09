@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Typography, ContextMenu } from '../ui';
 import { Folder, FolderOpen, ChevronRight, MoreVertical } from 'lucide-react-native';
@@ -60,10 +60,12 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   };
 
   const chevronRotation = useSharedValue(isExpanded ? 90 : 0);
-  chevronRotation.value = withSpring(isExpanded ? 90 : 0, {
-    damping: 15,
-    stiffness: 200,
-  });
+  useEffect(() => {
+    chevronRotation.value = withSpring(isExpanded ? 90 : 0, {
+      damping: 15,
+      stiffness: 200,
+    });
+  }, [isExpanded]);
 
   const chevronStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${chevronRotation.value}deg` }],

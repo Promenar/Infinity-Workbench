@@ -4,7 +4,11 @@ import '../src/services/NotifeeBackgroundRunner'; // Register background task
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, LogBox } from 'react-native';
+
+LogBox.ignoreLogs([
+  'SafeAreaView has been deprecated',
+]);
 import { ThemeProvider } from '../src/theme/ThemeProvider';
 import { ToastProvider } from '../src/components/ui/Toast';
 import { useI18n } from '../src/lib/i18n';

@@ -50,6 +50,7 @@
     "iconv-lite": "^0.7.1",
     "immer": "^11.1.0",
     "jsrsasign": "^11.1.0",
+    "lightningcss": "^1.30.2",
     "lucide-react-native": "^0.562.0",
     "mammoth": "^1.11.0",
     "nativewind": "^4.2.1",
