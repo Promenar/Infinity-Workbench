@@ -43,6 +43,7 @@
       "./plugins/withCustomApkName",
       "./plugins/withAndroidDebugConfig",
       "./plugins/withWideColorGamut",
+      "./plugins/withAndroidSigning",
       "expo-asset",
       "./plugins/withForegroundService"
     ]
