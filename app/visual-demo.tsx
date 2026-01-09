@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SilkyGlow } from '../src/components/ui/SilkyGlow';
-import { ParticleEnergyGlow } from '../src/components/demo/ParticleGlow';
+import { ParticleEnergyGlow } from '../src/components/ui';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { Stack } from 'expo-router';
 

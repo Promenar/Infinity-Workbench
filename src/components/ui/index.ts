@@ -8,3 +8,8 @@ export * from './GlassHeader';
 export * from './ConfirmDialog';
 export * from './Switch';
 export * from './LargeTitleHeader';
+export * from './RainbowSlider';
+export * from './ColorPickerPanel';
+export * from './FloatingTextEditorModal';
+export * from './GlassBottomSheet';
+export * from './ParticleEnergyGlow';
