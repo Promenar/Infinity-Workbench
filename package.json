@@ -1,6 +1,6 @@
 {
   "name": "temp_init",
-  "version": "1.1.24",
+  "version": "1.1.25",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
