@@ -101,7 +101,7 @@ export default function RagAdvancedSettings() {
   const handleSavePrompt = (content: string) => {
     // Validation
     if (!content.trim()) {
-      Alert.alert('Error', 'Prompt cannot be empty');
+      Alert.alert('错误', '提示词不能为空');
       return;
     }
 
@@ -339,11 +339,11 @@ export default function RagAdvancedSettings() {
           </View>
 
           {/* 3. 提示词配置 (Playground) */}
-          <SectionHeader title="抽取提示词 (Prompts)" />
+          <SectionHeader title="抽取提示词" />
           <View className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800">
             <View className="flex-row justify-between items-center mb-4">
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                实体关系抽取 Prompt
+                实体关系抽取提示词
               </Typography>
               <TouchableOpacity
                 onPress={() => {
@@ -386,12 +386,11 @@ export default function RagAdvancedSettings() {
                 numberOfLines={3}
                 className="text-xs text-gray-500 dark:text-gray-400 leading-5"
               >
-                {promptText || "当前使用系统默认 Prompt (点击查看或修改)..."}
+                {promptText || "当前使用系统默认提示词 (点击查看或修改)..."}
               </Typography>
             </TouchableOpacity>
 
-            <View className="mt-3 flex-row items-start">
-              <AlertTriangle size={12} color="#f59e0b" style={{ marginTop: 2, marginRight: 6 }} />
+            <View className="mt-3">
               <Typography className="text-[10px] text-orange-500 flex-1 leading-4">
                 修改提示词可能导致解析失败，请务必保留 JSON 输出格式要求。
               </Typography>
@@ -401,9 +400,9 @@ export default function RagAdvancedSettings() {
           <FloatingTextEditorModal
             visible={isEditorVisible}
             initialContent={promptText}
-            title="编辑提取 Prompt"
+            title="编辑提取提示词"
             placeholder="输入系统提示词..."
-            warningMessage="⚠️ 务必确认包含 {entityTypes} 占位符，并明确要求输出 JSON 格式，否则将导致知识提取失败。"
+            warningMessage="务必确认包含 {entityTypes} 占位符，并明确要求输出 JSON 格式，否则将导致知识提取失败。"
             onClose={() => setIsEditorVisible(false)}
             onSave={handleSavePrompt}
           />

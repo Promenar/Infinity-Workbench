@@ -1,5 +1,5 @@
 import { View, ScrollView } from 'react-native';
-import { PageLayout, GlassHeader } from '../../src/components/ui';
+import { PageLayout, GlassHeader, Typography } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { AdvancedRetrievalPanel } from '../../src/features/settings/components/AdvancedRetrievalPanel';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -16,6 +16,7 @@ export default function AdvancedRetrievalScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <GlassHeader
         title={t.rag.advancedSettings}
+        subtitle={t.rag.advancedSettingsDesc}
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
@@ -32,6 +33,7 @@ export default function AdvancedRetrievalScreen() {
           paddingHorizontal: 16,
         }}
       >
+
         <AdvancedRetrievalPanel />
       </ScrollView>
     </PageLayout>

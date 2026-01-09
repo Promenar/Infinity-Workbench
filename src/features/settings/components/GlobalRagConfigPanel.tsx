@@ -361,128 +361,6 @@ export const GlobalRagConfigPanel: React.FC = () => {
         </View>
       </View>
 
-      {/* 检索配置 */}
-      <Typography
-        variant="label"
-        className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-8 mb-3"
-      >
-        {t.rag.retrievalSettings}
-      </Typography>
-      <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-        <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
-          {t.rag.memoryRetrieval}
-        </Typography>
-
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.memoryLimit}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.memoryLimitDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-            <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
-              {t.rag.items.replace('{count}', (globalRagConfig.memoryLimit ?? 5).toString())}
-            </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
-          </View>
-          <Slider
-            value={globalRagConfig.memoryLimit ?? 5}
-            onValueChange={(val) => updateGlobalRagConfig({ memoryLimit: Math.round(val) })}
-            minimumValue={3}
-            maximumValue={10}
-            step={1}
-            minimumTrackTintColor={Colors.primary}
-            maximumTrackTintColor={themeColors.surfaceSecondary}
-            thumbTintColor={Colors.primary}
-          />
-        </View>
-
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.similarityThreshold}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.memoryThresholdDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">50%</Typography>
-            <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
-              {Math.round((globalRagConfig.memoryThreshold ?? 0.7) * 100)}%
-            </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">95%</Typography>
-          </View>
-          <Slider
-            value={globalRagConfig.memoryThreshold ?? 0.7}
-            onValueChange={(val) => updateGlobalRagConfig({ memoryThreshold: val })}
-            minimumValue={0.5}
-            maximumValue={0.95}
-            step={0.05}
-            minimumTrackTintColor={Colors.primary}
-            maximumTrackTintColor={themeColors.surfaceSecondary}
-            thumbTintColor={Colors.primary}
-          />
-        </View>
-
-        <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
-
-        <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
-          {t.rag.docRetrieval}
-        </Typography>
-
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.docLimit}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.docLimitDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
-            <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
-              {t.rag.items.replace('{count}', (globalRagConfig.docLimit ?? 8).toString())}
-            </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">15</Typography>
-          </View>
-          <Slider
-            value={globalRagConfig.docLimit ?? 8}
-            onValueChange={(val) => updateGlobalRagConfig({ docLimit: Math.round(val) })}
-            minimumValue={5}
-            maximumValue={15}
-            step={1}
-            minimumTrackTintColor={Colors.primary}
-            maximumTrackTintColor={themeColors.surfaceSecondary}
-            thumbTintColor={Colors.primary}
-          />
-        </View>
-
-        <View>
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.similarityThreshold}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.docThresholdDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">30%</Typography>
-            <Typography className="text-sm font-bold" style={{ color: Colors.primary }}>
-              {Math.round((globalRagConfig.docThreshold ?? 0.45) * 100)}%
-            </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">80%</Typography>
-          </View>
-          <Slider
-            value={globalRagConfig.docThreshold ?? 0.45}
-            onValueChange={(val) => updateGlobalRagConfig({ docThreshold: val })}
-            minimumValue={0.3}
-            maximumValue={0.8}
-            step={0.05}
-            minimumTrackTintColor={Colors.primary}
-            maximumTrackTintColor={themeColors.surfaceSecondary}
-            thumbTintColor={Colors.primary}
-          />
-        </View>
-      </View>
 
       {/* 知识图谱与高级配置 (Phase 8) */}
       <SectionHeader title="高级知识配置" />
@@ -598,14 +476,14 @@ export const GlobalRagConfigPanel: React.FC = () => {
       >
         <Trash2 size={18} color="#EF4444" style={{ marginRight: 8 }} />
         <Typography style={{ fontWeight: 'bold', color: '#EF4444' }}>
-          {isClearing ? '清空中...' : '⚠️ 清空所有向量数据'}
+          {isClearing ? '清空中...' : '清空所有向量数据'}
         </Typography>
       </TouchableOpacity>
 
       {/* 确认对话框 */}
       <ConfirmDialog
         visible={showClearConfirm}
-        title="⚠️ 危险操作"
+        title="危险操作"
         message="确定要清空所有向量数据吗？此操作不可恢复！"
         confirmText="确认清空"
         cancelText="取消"

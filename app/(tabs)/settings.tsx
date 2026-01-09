@@ -404,7 +404,7 @@ export default function SettingsScreen() {
             <SettingsSection title={t.settings.ragSection}>
               <SettingsItem
                 icon={Database}
-                title="高级RAG配置"
+                title={t.settings.ragSection}
                 subtitle={t.settings.ragSettingsDesc}
                 showChevron
                 onPress={() => router.push('/settings/rag-config' as any)}
@@ -412,8 +412,8 @@ export default function SettingsScreen() {
 
               <SettingsItem
                 icon={Sliders}
-                title="高级检索配置"
-                subtitle="Rerank、查询重写、混合检索"
+                title={t.rag.advancedSettings}
+                subtitle={t.rag.advancedSettingsDesc}
                 showChevron
                 onPress={() => router.push('/settings/advanced-retrieval' as any)}
               />
