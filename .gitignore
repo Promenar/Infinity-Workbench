@@ -48,4 +48,4 @@ yarn-error.*
 secure_env/
 
 # Worktrees
-R/
+worktrees/
