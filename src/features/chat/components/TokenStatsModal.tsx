@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { translations } from '../../../lib/i18n';
+import { useI18n } from '../../../lib/i18n';
 import { View, Modal, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -25,6 +25,7 @@ interface TokenStatsModalProps {
 
 export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({ visible, onClose, session }) => {
   const { isDark } = useTheme();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const updateSession = useChatStore((state) => state.updateSession);
 
@@ -130,10 +131,10 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({ visible, onClo
                   className="text-2xl font-black text-black dark:text-white"
                   style={{ letterSpacing: -0.5 }}
                 >
-                  {translations[isDark ? 'en' : 'zh'].settings.tokenStats.title}
+                  {t.settings.tokenStats.title}
                 </Typography>
                 <Typography className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-[1px] mt-0.5">
-                  {translations[isDark ? 'en' : 'zh'].settings.tokenStats.subtitle}
+                  {t.settings.tokenStats.subtitle}
                 </Typography>
               </View>
               <TouchableOpacity
@@ -162,7 +163,7 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({ visible, onClo
                   {stats.total.toLocaleString()}
                 </Typography>
                 <Typography className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
-                  {translations[isDark ? 'en' : 'zh'].settings.tokenStats.totalToken}
+                  {t.settings.tokenStats.totalToken}
                 </Typography>
               </View>
             </View>
@@ -170,7 +171,7 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({ visible, onClo
             {/* Breakdown */}
             <View style={styles.breakdown}>
               <MetricRow
-                label={translations[isDark ? 'en' : 'zh'].settings.tokenStats.prompt}
+                label={t.settings.tokenStats.prompt}
                 count={stats.chatInput.count}
                 pct={inputPct}
                 color="#8b5cf6"
@@ -178,7 +179,7 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({ visible, onClo
                 isEstimated={stats.chatInput.isEstimated}
               />
               <MetricRow
-                label={translations[isDark ? 'en' : 'zh'].settings.tokenStats.completion}
+                label={t.settings.tokenStats.completion}
                 count={stats.chatOutput.count}
                 pct={outputPct}
                 color="#f59e0b"
@@ -186,7 +187,7 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({ visible, onClo
                 isEstimated={stats.chatOutput.isEstimated}
               />
               <MetricRow
-                label={translations[isDark ? 'en' : 'zh'].settings.tokenStats.ragSystem}
+                label={t.settings.tokenStats.ragSystem}
                 count={stats.ragSystem.count}
                 pct={ragPct}
                 color="#10b981"
@@ -209,12 +210,12 @@ export const TokenStatsModal: React.FC<TokenStatsModalProps> = ({ visible, onClo
               >
                 <RotateCcw size={14} color="#ef4444" />
                 <Typography className="text-xs font-bold text-red-500 ml-2">
-                  {translations[isDark ? 'en' : 'zh'].settings.tokenStats.reset}
+                  {t.settings.tokenStats.reset}
                 </Typography>
               </TouchableOpacity>
 
               <Typography className="text-[10px] text-gray-400 text-center mt-3">
-                {translations[isDark ? 'en' : 'zh'].settings.tokenStats.estimated}
+                {t.settings.tokenStats.estimated}
               </Typography>
             </View>
           </BlurView>

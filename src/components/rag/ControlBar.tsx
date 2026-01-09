@@ -2,8 +2,9 @@ import React from 'react';
 import { View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Typography } from '../ui';
 import { FolderPlus, Network } from 'lucide-react-native';
-import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from 'expo-haptics';
+import { useI18n } from '../../lib/i18n';
+import { useTheme } from '../../theme/ThemeProvider';
 
 interface ControlBarProps {
   onNewFolder: () => void;
@@ -21,7 +22,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   currentTask,
   queueLength,
 }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
+  const { t } = useI18n();
 
   const handlePress = (action: () => void) => {
     setTimeout(() => {
@@ -39,12 +41,12 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         {/* 操作按钮 - 使用 flex-1 平分空间 */}
         <TouchableOpacity
           onPress={() => handlePress(onNewFolder)}
-          className="flex-1 h-10 px-2 bg-indigo-50 dark:bg-indigo-900/30 
-                       rounded-xl flex-row items-center justify-center gap-2 active:opacity-70"
+          style={{ backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : colors.opacity10 }}
+          className="flex-1 h-10 px-2 rounded-xl flex-row items-center justify-center gap-2 border border-transparent active:opacity-70"
         >
-          <FolderPlus size={18} color="#6366f1" strokeWidth={2.5} />
-          <Typography className="text-indigo-600 dark:text-indigo-400 font-bold text-sm" numberOfLines={1}>
-            新建
+          <FolderPlus size={18} color={colors[500]} strokeWidth={2.5} />
+          <Typography style={{ color: colors[500] }} className="font-bold text-sm" numberOfLines={1}>
+            {t.library.new}
           </Typography>
         </TouchableOpacity>
 
@@ -55,19 +57,21 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         >
           <Network size={18} color="#8b5cf6" strokeWidth={2.5} />
           <Typography className="text-violet-600 dark:text-violet-400 font-bold text-sm" numberOfLines={1}>
-            知识图谱
+            {t.rag.knowledgeGraph}
           </Typography>
         </TouchableOpacity>
 
         {/* 任务状态 - 自适应宽度 */}
         {currentTask && (
           <View className="flex-row items-center gap-2 pl-1 border-l border-gray-100 dark:border-zinc-800">
-            <ActivityIndicator size="small" color="#6366f1" />
+            <ActivityIndicator size="small" color={colors[500]} />
             <View>
               <Typography className="text-xs font-bold text-gray-900 dark:text-white">
                 {currentTask.progress}%
               </Typography>
-              <Typography className="text-[10px] text-gray-400">{queueLength} 待处理</Typography>
+              <Typography className="text-[10px] text-gray-400">
+                {t.library.pending.replace('{count}', queueLength.toString())}
+              </Typography>
             </View>
           </View>
         )}

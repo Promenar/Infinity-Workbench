@@ -46,7 +46,7 @@ export const FloatingTextEditorModal: React.FC<FloatingTextEditorModalProps> = (
     onClose,
     multiline = true,
 }) => {
-    const { isDark } = useTheme();
+    const { isDark, colors } = useTheme();
     const [content, setContent] = useState(initialContent);
     const keyboardHeight = useSharedValue(0);
 
@@ -153,7 +153,8 @@ export const FloatingTextEditorModal: React.FC<FloatingTextEditorModalProps> = (
 
                                 <TouchableOpacity
                                     onPress={() => onSave(content)}
-                                    className="p-2 -mr-2 rounded-full bg-indigo-500"
+                                    className="p-2 -mr-2 rounded-full"
+                                    style={{ backgroundColor: colors[500] }}
                                 >
                                     <Check size={20} color="#ffffff" />
                                 </TouchableOpacity>

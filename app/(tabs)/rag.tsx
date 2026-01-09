@@ -24,7 +24,7 @@ export default function RagScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { showToast } = useToast();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
   const pdfExtractorRef = React.useRef<PdfExtractorRef>(null);
@@ -194,18 +194,18 @@ export default function RagScreen() {
 
     setConfirmState({
       visible: true,
-      title: '批量删除',
-      message: `确定要删除选中的 ${count} 个文档吗? 此操作不可撤销。`,
+      title: t.library.batchDelete,
+      message: t.library.batchDeleteConfirm.replace('{count}', count.toString()),
       isDestructive: true,
       onConfirm: async () => {
         try {
           const { deleteBatch } = useRagStore.getState();
           await deleteBatch(Array.from(selectedDocIds));
-          showToast(`已删除 ${count} 个文档`, 'success');
+          showToast(t.library.batchDeleteSuccess.replace('{count}', count.toString()), 'success');
           exitSelectionMode();
           setConfirmState((prev) => ({ ...prev, visible: false }));
         } catch (e) {
-          showToast('批量删除失败', 'error');
+          showToast(t.library.batchDeleteFail, 'error');
         }
       },
     });
@@ -219,10 +219,10 @@ export default function RagScreen() {
     try {
       const { vectorizeBatch } = useRagStore.getState();
       await vectorizeBatch(Array.from(selectedDocIds));
-      showToast(`已将 ${count} 个文档加入向量化队列`, 'success');
+      showToast(t.library.batchVectorizeSuccess.replace('{count}', count.toString()), 'success');
       exitSelectionMode();
     } catch (e) {
-      showToast('批量操作失败', 'error');
+      showToast(t.library.batchVectorizeFail, 'error');
     }
   }, [selectedDocIds, showToast, exitSelectionMode]);
 
@@ -271,7 +271,7 @@ export default function RagScreen() {
 
       if (result.canceled || !result.assets) return;
 
-      showToast(`准备导入 ${result.assets.length} 个文件...`, 'info');
+      showToast(t.library.importPreparing.replace('{count}', result.assets.length.toString()), 'info');
 
       const { processBatchWithProgress } = await import('../../src/lib/queue-utils');
       const { readFileContent, readFileAsBase64 } = await import('../../src/lib/file-utils');
@@ -328,13 +328,13 @@ export default function RagScreen() {
       );
 
       if (resultStats.failed > 0) {
-        showToast(`导入完成: ${resultStats.success} 成功, ${resultStats.failed} 失败`, 'warning');
+        showToast(t.library.importStats.replace('{success}', resultStats.success.toString()).replace('{failed}', resultStats.failed.toString()), 'warning');
       } else {
-        showToast(`成功导入 ${resultStats.success} 个文件`, 'success');
+        showToast(t.library.importSuccess.replace('{count}', resultStats.success.toString()), 'success');
       }
     } catch (e) {
       console.error(e);
-      showToast('导入失败: ' + (e as Error).message, 'error');
+      showToast(t.library.importFail.replace('{error}', (e as Error).message), 'error');
     }
   }, [addDocument, showToast, currentFolderId]);
 
@@ -343,12 +343,12 @@ export default function RagScreen() {
     (id: string, title: string) => {
       setConfirmState({
         visible: true,
-        title: '删除文档',
-        message: `确定删除 "${title}"? 此操作不可撤销。`,
+        title: t.library.deleteDoc,
+        message: t.library.deleteDocConfirm.replace('{title}', title),
         isDestructive: true,
         onConfirm: async () => {
           await deleteDocument(id);
-          showToast('已删除', 'success');
+          showToast(t.common.delete + t.common.success, 'success');
           setConfirmState((prev) => ({ ...prev, visible: false }));
         },
       });
@@ -373,7 +373,7 @@ export default function RagScreen() {
 
   const handleFolderSubmit = useCallback(async () => {
     if (!newFolderName.trim()) {
-      showToast('请输入名称', 'error');
+      showToast(t.library.enterName, 'error');
       return;
     }
 
@@ -381,16 +381,16 @@ export default function RagScreen() {
       if (folderModalMode === 'create') {
         const parentId = currentFolderId ?? undefined;
         await addFolder(newFolderName.trim(), parentId);
-        showToast('文件夹已创建', 'success');
+        showToast(t.library.folderCreated, 'success');
       } else if (editingFolderId) {
         await renameFolder(editingFolderId, newFolderName.trim());
-        showToast('已重命名', 'success');
+        showToast(t.library.renamed, 'success');
       }
       setShowFolderModal(false);
       setNewFolderName('');
       setEditingFolderId(null);
     } catch (e) {
-      showToast('操作失败: ' + (e as Error).message, 'error');
+      showToast(t.common.error + ': ' + (e as Error).message, 'error');
     }
   }, [newFolderName, folderModalMode, editingFolderId, addFolder, renameFolder, showToast, currentFolderId]);
 
@@ -398,12 +398,12 @@ export default function RagScreen() {
     (id: string, name: string) => {
       setConfirmState({
         visible: true,
-        title: '删除文件夹',
-        message: `确定删除 "${name}"? 文档将移至根目录，子文件夹将被级联删除。`,
+        title: t.library.deleteFolder,
+        message: t.library.deleteFolderConfirm.replace('{name}', name),
         isDestructive: true,
         onConfirm: async () => {
           await deleteFolder(id);
-          showToast('已删除', 'success');
+          showToast(t.common.delete + t.common.success, 'success');
           setConfirmState((prev) => ({ ...prev, visible: false }));
         },
       });
@@ -429,21 +429,21 @@ export default function RagScreen() {
       try {
         if (movingDocId) {
           await moveDocument(movingDocId, targetFolderId);
-          showToast('文档已移动', 'success');
+          showToast(t.library.moveDocSuccess, 'success');
         } else if (movingFolderId) {
           // Prevent moving folder into itself or its children (simple check: validation logic needed ideally)
           if (targetFolderId === movingFolderId) {
-            showToast('不能移动到自己', 'error');
+            showToast(t.library.moveSelfError, 'error');
             return;
           }
           await moveFolder(movingFolderId, targetFolderId);
-          showToast('文件夹已移动', 'success');
+          showToast(t.library.moveFolderSuccess, 'success');
         }
         setShowMoveModal(false);
         setMovingDocId(null);
         setMovingFolderId(null);
       } catch (e) {
-        showToast('移动失败: ' + (e as Error).message, 'error');
+        showToast(t.library.moveFail.replace('{error}', (e as Error).message), 'error');
       }
     },
     [movingDocId, movingFolderId, moveDocument, moveFolder, showToast],
@@ -453,7 +453,7 @@ export default function RagScreen() {
   const handleExtractDoc = useCallback(
     async (docId: string, strategy: 'full' | 'summary-first') => {
       const { extractDocumentGraph } = useRagStore.getState();
-      showToast('已加入图谱提取队列: ' + (strategy === 'full' ? '全量' : '摘要'), 'success');
+      showToast(t.library.extractQueue.replace('{strategy}', (strategy === 'full' ? t.rag.kg.fullScan : t.rag.kg.summaryFirst)), 'success');
       await extractDocumentGraph(docId, strategy);
     },
     [showToast],
@@ -484,11 +484,11 @@ export default function RagScreen() {
 
       const docIds = collectDocs(folderId);
       if (docIds.length === 0) {
-        showToast('文件夹为空', 'info');
+        showToast(t.library.folderEmpty, 'info');
         return;
       }
 
-      showToast(`已将 ${docIds.length} 个文档加入图谱队列`, 'success');
+      showToast(t.library.extractBatchQueue.replace('{count}', docIds.length.toString()), 'success');
       await extractBatch(docIds, strategy);
     },
     [showToast],
@@ -508,10 +508,17 @@ export default function RagScreen() {
       {/* 搜索栏 */}
       <View className="px-6 pb-2">
         <View
-          className={`h-12 ${isSearchFocused ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500' : 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'} 
-                               border rounded-2xl flex-row items-center px-4 transition-all`}
+          className="h-12 border rounded-2xl flex-row items-center px-4 transition-all"
+          style={{
+            backgroundColor: isSearchFocused
+              ? (isDark ? colors.opacity20 : colors[50])
+              : (isDark ? '#18181b' : '#f9fafb'),
+            borderColor: isSearchFocused
+              ? colors[500]
+              : (isDark ? '#27272a' : '#f3f4f6')
+          }}
         >
-          <Search size={18} color={isSearchFocused ? '#6366f1' : '#94a3b8'} strokeWidth={2} />
+          <Search size={18} color={isSearchFocused ? colors[500] : '#94a3b8'} strokeWidth={2} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -554,7 +561,7 @@ export default function RagScreen() {
       const assets = event.assets;
       if (!assets || assets.length === 0) return;
 
-      showToast(`开始导入 ${assets.length} 个文件...`, 'info');
+      showToast(t.library.importPreparing.replace('{count}', assets.length.toString()), 'info');
 
       try {
         // 动态导入工具函数
@@ -596,16 +603,16 @@ export default function RagScreen() {
 
         if (result.failed > 0) {
           if (result.success === 0) {
-            showToast(`导入失败 (${result.failed} 个文件出错)`, 'error');
+            showToast(t.library.importFail.replace('{error}', result.failed.toString()), 'error');
           } else {
-            showToast(`导入完成: ${result.success} 成功, ${result.failed} 失败`, 'warning');
+            showToast(t.library.importStats.replace('{success}', result.success.toString()).replace('{failed}', result.failed.toString()), 'warning');
           }
         } else {
-          showToast(`成功导入 ${result.success} 个文件`, 'success');
+          showToast(t.library.importSuccess.replace('{count}', result.success.toString()), 'success');
         }
       } catch (e) {
         console.error('Drag drop batch import failed:', e);
-        showToast('批量导入发生错误: ' + (e as Error).message, 'error');
+        showToast(t.common.error + ': ' + (e as Error).message, 'error');
       }
     },
     [addDocument, showToast, currentFolderId],
@@ -625,22 +632,22 @@ export default function RagScreen() {
           {/* 标题 */}
           <LargeTitleHeader
             title={t.library.title}
-            subtitle="知识库管理"
+            subtitle={t.library.subtitle}
             rightElement={
               <TouchableOpacity
                 onPress={handleFileImport}
                 style={{
                   width: 48,
                   height: 48,
-                  backgroundColor: isDark ? '#18181b' : '#eef2ff',
+                  backgroundColor: isDark ? '#18181b' : colors[50], // Dynamic light bg
                   borderWidth: 1,
-                  borderColor: isDark ? '#27272a' : '#e0e7ff',
+                  borderColor: isDark ? '#27272a' : colors[200], // Dynamic light border
                   borderRadius: 16,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <FolderInput size={24} color="#6366f1" strokeWidth={2.5} />
+                <FolderInput size={24} color={colors[500]} strokeWidth={2.5} />
               </TouchableOpacity>
             }
           />
@@ -759,7 +766,7 @@ export default function RagScreen() {
               currentViewContent.folders.length === 0 &&
               currentViewContent.docs.length === 0 && (
                 <View className="items-center justify-center py-20 opacity-50">
-                  <Typography className="text-gray-400 font-medium">此文件夹为空</Typography>
+                  <Typography className="text-gray-400 font-medium">{t.library.emptyState}</Typography>
                 </View>
               )}
           </ScrollView>
@@ -787,7 +794,7 @@ export default function RagScreen() {
               <X size={20} color="#94a3b8" />
             </TouchableOpacity>
             <Text className="text-lg font-bold text-gray-900 dark:text-white">
-              已选 {selectedDocIds.size} 项
+              {t.library.selected.replace('{count}', selectedDocIds.size.toString())}
             </Text>
           </View>
 

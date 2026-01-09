@@ -5,6 +5,7 @@ import { FileText, MoreVertical, Edit2, Share, Trash2, Check } from 'lucide-reac
 import Animated, { useAnimatedStyle, SharedValue } from 'react-native-reanimated';
 import { clsx } from 'clsx';
 import { useI18n } from '../../lib/i18n';
+import { useTheme } from '../../theme/ThemeProvider';
 
 export const RagDocItem = memo(
   ({
@@ -27,6 +28,7 @@ export const RagDocItem = memo(
     showToast: (m: string, t: any) => void;
   }) => {
     const { t } = useI18n();
+    const { isDark, colors } = useTheme();
     const contentStyle = useAnimatedStyle(() => ({
       transform: [{ translateX: selectionProgress.value * 42 }],
     }));
@@ -39,11 +41,10 @@ export const RagDocItem = memo(
     return (
       <View className="px-6 mb-2">
         <View
+          style={isSelected ? { backgroundColor: isDark ? colors.opacity20 : colors.opacity10, borderColor: colors.opacity30 } : {}}
           className={clsx(
-            'flex-row items-center rounded-[22px] border overflow-hidden',
-            isSelected
-              ? 'bg-indigo-50/80 dark:bg-indigo-900/40 border-indigo-200 dark:border-indigo-800'
-              : 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800',
+            'flex-row items-center p-4 mb-3 rounded-2xl border transition-all duration-300',
+            !isSelected && 'bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800',
           )}
         >
           <TouchableOpacity
@@ -62,11 +63,10 @@ export const RagDocItem = memo(
                 className="flex-row items-center"
               >
                 <View
+                  style={isSelected ? { backgroundColor: colors[500], borderColor: colors[500] } : {}}
                   className={clsx(
-                    'w-5 h-5 rounded-full items-center justify-center border',
-                    isSelected
-                      ? 'bg-indigo-500 border-indigo-500'
-                      : 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-700',
+                    'w-5 h-5 rounded-full border-2 items-center justify-center mr-3',
+                    !isSelected && 'border-gray-300 dark:border-zinc-700',
                   )}
                 >
                   {isSelected && <Check size={12} color="white" strokeWidth={3} />}
@@ -81,7 +81,7 @@ export const RagDocItem = memo(
                     : 'bg-white dark:bg-zinc-800 border-gray-50 dark:border-zinc-700',
                 )}
               >
-                <FileText size={20} color={isSelected ? '#6366f1' : '#94a3b8'} strokeWidth={1.5} />
+                <FileText size={20} color={isSelected ? colors[500] : '#94a3b8'} strokeWidth={1.5} />
               </View>
               <View className="flex-1">
                 <Typography
@@ -98,9 +98,10 @@ export const RagDocItem = memo(
                 </Typography>
                 <Typography
                   variant="caption"
+                  style={isSelected ? { color: colors[400] } : {}}
                   className={clsx(
-                    'font-medium mt-0.5 text-[11px]',
-                    isSelected ? 'text-indigo-400' : 'text-gray-400',
+                    'text-[10px] mt-0.5',
+                    !isSelected && 'text-gray-400',
                   )}
                 >
                   {item.size} • {item.date}

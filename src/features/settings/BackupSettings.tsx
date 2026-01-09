@@ -37,10 +37,11 @@ import { WebDavClient, WebDavFile } from '../../lib/backup/WebDavClient';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { SettingsSection } from './components/SettingsSection';
 import { SettingsItem } from './components/SettingsItem';
+import { GlassBottomSheet } from '../../components/ui/GlassBottomSheet';
 import { Colors } from '../../theme/colors';
 
 export function BackupSettings() {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { t } = useI18n();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -53,7 +54,7 @@ export function BackupSettings() {
     message: '',
     confirmText: '',
     isDestructive: false,
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   const showConfirm = (
@@ -344,7 +345,7 @@ export function BackupSettings() {
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Cloud size={20} color={Colors.primary} />
+              <Cloud size={20} color={colors[500]} />
               <Text
                 style={{
                   marginLeft: 8,
@@ -475,7 +476,7 @@ export function BackupSettings() {
                 backgroundColor: isDark ? Colors.dark.surfaceTertiary : '#fff',
               }}
             >
-              <ActivityIndicator size="large" color={Colors.primary} />
+              <ActivityIndicator size="large" color={colors[500]} />
               <Text style={{ marginTop: 12, fontWeight: '600', color: isDark ? '#fff' : '#000' }}>
                 {status}
               </Text>
@@ -485,137 +486,116 @@ export function BackupSettings() {
       </SettingsSection>
 
       {/* WebDAV Configuration Modal */}
-      <Modal visible={showWebDavModal} transparent animationType="slide">
-        <View className="flex-1 justify-end bg-black/50">
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-            style={{ width: '100%' }}
-          >
-            <View
-              style={{
-                borderTopLeftRadius: 24,
-                borderTopRightRadius: 24,
-                padding: 24,
-                backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#fff',
-              }}
-            >
-              <View className="flex-row justify-between items-center mb-6">
-                <Text className={`text-xl font-bold ${isDark ? 'text-white' : 'text-black'}`}>
-                  {t.settings.backup.settingsTitle}
+      {/* WebDAV Configuration Modal */}
+      <GlassBottomSheet
+        visible={showWebDavModal}
+        onClose={() => setShowWebDavModal(false)}
+        title={t.settings.backup.settingsTitle}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+          style={{ flex: 1 }}
+        >
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
+            <Text className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              {t.settings.backup.serverUrl}
+            </Text>
+            <TextInput
+              value={webDavConfig.url}
+              onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, url: t.trim() }))}
+              className={`p-3.5 rounded-xl mb-6 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+              style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+              placeholder="https://..."
+              placeholderTextColor={isDark ? '#666' : '#999'}
+              autoCapitalize="none"
+            />
+
+            <Text className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              {t.settings.backup.username}
+            </Text>
+            <TextInput
+              value={webDavConfig.username}
+              onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, username: t.trim() }))}
+              className={`p-3.5 rounded-xl mb-6 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+              style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+              autoCapitalize="none"
+            />
+
+            <Text className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              {t.settings.backup.password}
+            </Text>
+            <TextInput
+              value={webDavConfig.password}
+              onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, password: t.trim() }))}
+              className={`p-3.5 rounded-xl mb-8 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
+              style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+              secureTextEntry
+            />
+            <Text className={`text-xs mb-8 leading-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+              {t.settings.backup.appPasswordHint ||
+                'Note: If using 2FA/Nutstore, use an App Password.'}
+            </Text>
+
+            <View className="flex-row gap-4">
+              <TouchableOpacity
+                onPress={handleWebDavTest}
+                className={`flex-1 p-4 rounded-xl items-center border ${isDark ? 'border-zinc-700' : 'border-gray-300'}`}
+                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
+              >
+                <Text className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>
+                  {t.settings.backup.testConnection}
                 </Text>
-                <TouchableOpacity onPress={() => setShowWebDavModal(false)}>
-                  <X size={24} color={isDark ? '#fff' : '#000'} />
-                </TouchableOpacity>
-              </View>
-
-              <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t.settings.backup.serverUrl}
-              </Text>
-              <TextInput
-                value={webDavConfig.url}
-                onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, url: t.trim() }))}
-                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
-                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                placeholder="https://..."
-                placeholderTextColor={isDark ? '#666' : '#999'}
-                autoCapitalize="none"
-              />
-
-              <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t.settings.backup.username}
-              </Text>
-              <TextInput
-                value={webDavConfig.username}
-                onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, username: t.trim() }))}
-                className={`p-3 rounded-lg mb-4 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
-                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                autoCapitalize="none"
-              />
-
-              <Text className={`text-sm mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t.settings.backup.password}
-              </Text>
-              <TextInput
-                value={webDavConfig.password}
-                onChangeText={(t) => setWebDavConfig((prev) => ({ ...prev, password: t.trim() }))}
-                className={`p-3 rounded-lg mb-6 border ${isDark ? 'border-zinc-700 text-white' : 'bg-gray-50 border-gray-200 text-black'}`}
-                style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                secureTextEntry
-              />
-              <Text className={`text-xs mb-6 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                {t.settings.backup.appPasswordHint ||
-                  'Note: If using 2FA/Nutstore, use an App Password.'}
-              </Text>
-
-              <View className="flex-row gap-3">
-                <TouchableOpacity
-                  onPress={handleWebDavTest}
-                  className={`flex-1 p-4 rounded-xl items-center border ${isDark ? 'border-zinc-700' : 'border-gray-300'}`}
-                  style={isDark ? { backgroundColor: Colors.dark.surfaceTertiary } : {}}
-                >
-                  <Text className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>
-                    {t.settings.backup.testConnection}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    saveConfig(webDavConfig);
-                    setShowWebDavModal(false);
-                  }}
-                  className="flex-1 bg-indigo-600 p-4 rounded-xl items-center"
-                >
-                  <Text className="text-white font-bold">{t.settings.backup.save}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-
-      {/* Remote Files List Modal */}
-      <Modal visible={showRemoteFilesModal} transparent animationType="slide">
-        <View className="flex-1 bg-black/50">
-          <View className={`flex-1 mt-20 rounded-t-3xl ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
-            <View className="p-4 border-b border-gray-100 dark:border-zinc-800 flex-row justify-between items-center">
-              <Text className={`text-lg font-bold ${isDark ? 'text-white' : 'text-black'}`}>
-                {t.settings.backup.selectBackupTitle}
-              </Text>
-              <TouchableOpacity onPress={() => setShowRemoteFilesModal(false)}>
-                <X size={24} color={isDark ? '#fff' : '#000'} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  saveConfig(webDavConfig);
+                  setShowWebDavModal(false);
+                }}
+                style={{ backgroundColor: colors[600] }}
+                className="flex-1 p-4 rounded-xl items-center shadow-sm"
+              >
+                <Text className="text-white font-bold">{t.settings.backup.save}</Text>
               </TouchableOpacity>
             </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </GlassBottomSheet>
 
-            <FlatList
-              data={remoteFiles}
-              keyExtractor={(item) => item.filename}
-              contentContainerStyle={{ padding: 16 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  onPress={() => confirmRemoteRestore(item)}
-                  className={`flex-row items-center p-4 mb-3 rounded-xl border ${isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-gray-50 border-gray-200'}`}
-                >
-                  <FileJson size={24} color="#6366f1" />
-                  <View className="ml-3 flex-1">
-                    <Text className={`font-medium ${isDark ? 'text-white' : 'text-black'}`}>
-                      {item.filename}
-                    </Text>
-                    <Text className="text-xs text-gray-500 mt-1">
-                      {new Date(item.lastModified).toLocaleString()} •{' '}
-                      {(item.size / 1024 / 1024).toFixed(2)} MB
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <View className="items-center py-10">
-                  <Text className="text-gray-500">{t.settings.backup.noBackupsFound}</Text>
-                </View>
-              }
-            />
-          </View>
-        </View>
-      </Modal>
+      {/* Remote Files List Modal */}
+      <GlassBottomSheet
+        visible={showRemoteFilesModal}
+        onClose={() => setShowRemoteFilesModal(false)}
+        title={t.settings.backup.selectBackupTitle}
+      >
+        <FlatList
+          data={remoteFiles}
+          keyExtractor={(item) => item.filename}
+          contentContainerStyle={{ padding: 24 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              onPress={() => confirmRemoteRestore(item)}
+              className={`flex-row items-center p-4 mb-3 rounded-xl border ${isDark ? 'bg-zinc-800/50 border-zinc-700' : 'bg-white border-gray-200'}`}
+            >
+              <FileJson size={24} color={colors[500]} />
+              <View className="ml-3 flex-1">
+                <Text className={`font-medium ${isDark ? 'text-white' : 'text-black'}`}>
+                  {item.filename}
+                </Text>
+                <Text className="text-xs text-gray-500 mt-1">
+                  {new Date(item.lastModified).toLocaleString()} •{' '}
+                  {(item.size / 1024 / 1024).toFixed(2)} MB
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <View className="items-center py-10">
+              <Text className="text-gray-500">{t.settings.backup.noBackupsFound}</Text>
+            </View>
+          }
+        />
+      </GlassBottomSheet>
     </>
   );
 }

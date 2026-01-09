@@ -79,7 +79,7 @@ export function ChatInput({
   onTokenPress,
 }: ChatInputProps) {
   const { t } = useI18n();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const rotation = useSharedValue(0);
   const [text, setText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
@@ -485,7 +485,7 @@ export function ChatInput({
                 styles.sendButton,
                 {
                   backgroundColor:
-                    text.trim() || selectedImages.length > 0 || loading ? agentColor : '#cbd5e1',
+                    text.trim() || selectedImages.length > 0 || loading ? (agentColor === '#6366f1' ? colors[500] : agentColor) : (isDark ? '#3f3f46' : '#cbd5e1'),
                   opacity: text.trim() || selectedImages.length > 0 || loading ? 1 : 0.4,
                 },
               ]}

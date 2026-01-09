@@ -5,7 +5,7 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { useI18n } from '../../src/lib/i18n';
 
 export default function TabLayout() {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { t, language } = useI18n();
 
   return (
@@ -26,7 +26,7 @@ export default function TabLayout() {
           paddingBottom: 12,
           paddingTop: 4,
         },
-        tabBarActiveTintColor: '#6366f1',
+        tabBarActiveTintColor: colors[500],
         tabBarInactiveTintColor: isDark ? '#64748b' : '#94a3b8',
         tabBarHideOnKeyboard: true,
       }}

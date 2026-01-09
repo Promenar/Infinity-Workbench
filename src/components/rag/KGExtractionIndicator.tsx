@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Typography } from '../ui/Typography';
 import { useI18n } from '../../lib/i18n';
+import { useTheme } from '../../theme/ThemeProvider';
 
 interface KGExtractionIndicatorProps {
     isExtracting: boolean;
@@ -19,6 +20,7 @@ interface KGExtractionIndicatorProps {
 
 export const KGExtractionIndicator = React.memo(({ isExtracting }: KGExtractionIndicatorProps) => {
     const { t } = useI18n();
+    const { isDark, colors } = useTheme();
 
     // Animations
     const glowScale = useSharedValue(1);
@@ -50,7 +52,7 @@ export const KGExtractionIndicator = React.memo(({ isExtracting }: KGExtractionI
 
     if (!isExtracting) return null;
 
-    const accentColor = "#6366f1"; // Indigo-500
+    const accentColor = colors[500]; // Theme Primary
 
     return (
         <Animated.View

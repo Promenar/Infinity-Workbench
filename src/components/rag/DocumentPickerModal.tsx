@@ -3,6 +3,7 @@ import { View, TouchableOpacity, Modal, BackHandler, ScrollView } from 'react-na
 import { Typography, GlassHeader, PageLayout } from '../ui';
 import { X, Check, ChevronRight, Folder, FileText } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
+import { clsx } from 'clsx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RagDocument, RagFolder } from '../../types/rag';
 import * as Haptics from 'expo-haptics';
@@ -26,7 +27,7 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
   selectedFolderIds = [],
   onConfirm,
 }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [tempSelectedDocIds, setTempSelectedDocIds] = useState<Set<string>>(
@@ -150,7 +151,7 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
             onPress: handleClose,
           }}
           rightAction={{
-            icon: <Check size={24} color="#6366f1" strokeWidth={2.5} />,
+            icon: <Check size={24} color={colors[500]} strokeWidth={2.5} />,
             onPress: handleConfirm,
             label: `${tempSelectedDocIds.size + tempSelectedFolderIds.size}`,
           }}
@@ -165,11 +166,10 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
                 className="py-1 px-2 rounded-lg active:bg-gray-100 dark:active:bg-zinc-800"
               >
                 <Typography
-                  className={`text-sm font-semibold ${
-                    index === breadcrumbs.length - 1
-                      ? 'text-gray-900 dark:text-white'
-                      : 'text-gray-400'
-                  }`}
+                  className={`text-sm font-semibold ${index === breadcrumbs.length - 1
+                    ? 'text-gray-900 dark:text-white'
+                    : 'text-gray-400'
+                    }`}
                 >
                   {crumb.name}
                 </Typography>
@@ -195,11 +195,10 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
                 key={folder.id}
                 onPress={() => setCurrentFolderId(folder.id)}
                 onLongPress={() => handleToggleFolder(folder.id)}
-                className={`mb-2 rounded-xl p-4 flex-row items-center border ${
-                  isSelected
-                    ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-500'
-                    : 'bg-gray-50 dark:bg-zinc-900/50 border-gray-100 dark:border-zinc-800'
-                }`}
+                className={`mb-2 rounded-xl p-4 flex-row items-center border ${isSelected
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-500'
+                  : 'bg-gray-50 dark:bg-zinc-900/50 border-gray-100 dark:border-zinc-800'
+                  }`}
               >
                 <View className="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 items-center justify-center mr-3">
                   <Folder size={20} color="#f59e0b" strokeWidth={2} />
@@ -233,18 +232,20 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
               <TouchableOpacity
                 key={doc.id}
                 onPress={() => handleToggleDoc(doc.id)}
-                className={`mb-2 rounded-xl p-4 flex-row items-center border ${
-                  isSelected
-                    ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500'
-                    : 'bg-gray-50 dark:bg-zinc-900/50 border-gray-100 dark:border-zinc-800'
-                }`}
+                style={isSelected ? { backgroundColor: isDark ? colors.opacity20 : colors.opacity10, borderColor: colors.opacity30 } : {}}
+                className={clsx(
+                  'mb-2 rounded-xl p-4 flex-row items-center border',
+                  !isSelected && 'bg-gray-50 dark:bg-zinc-900/50 border-gray-100 dark:border-zinc-800',
+                )}
               >
                 <View
-                  className={`w-10 h-10 rounded-lg items-center justify-center mr-3 ${
-                    isSelected ? 'bg-indigo-100 dark:bg-indigo-900/40' : 'bg-white dark:bg-zinc-800'
-                  }`}
+                  style={isSelected ? { backgroundColor: isDark ? colors.opacity30 : colors.opacity20 } : {}}
+                  className={clsx(
+                    'w-10 h-10 rounded-lg items-center justify-center mr-3',
+                    !isSelected && 'bg-white dark:bg-zinc-800',
+                  )}
                 >
-                  <FileText size={20} color="#6366f1" strokeWidth={2} />
+                  <FileText size={20} color={isSelected ? colors[500] : '#94a3b8'} strokeWidth={2} />
                 </View>
 
                 <View className="flex-1">
@@ -257,7 +258,7 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
                 </View>
 
                 {isSelected && (
-                  <View className="w-6 h-6 rounded-full bg-indigo-500 items-center justify-center">
+                  <View style={{ backgroundColor: colors[500] }} className="w-6 h-6 rounded-full items-center justify-center">
                     <Check size={16} color="#fff" strokeWidth={3} />
                   </View>
                 )}
@@ -272,6 +273,6 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
           )}
         </ScrollView>
       </PageLayout>
-    </Modal>
+    </Modal >
   );
 };

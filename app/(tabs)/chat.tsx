@@ -22,7 +22,7 @@ import { Colors } from '../../src/theme/colors';
 export default function AgentExplorerScreen() {
   const router = useRouter();
   const { t } = useI18n();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { agents } = useAgentStore();
   // Filter out super_assistant - it's only accessible via floating button
   const displayAgents = agents.filter((a) => a.id !== 'super_assistant');
@@ -135,15 +135,15 @@ export default function AgentExplorerScreen() {
             style={{
               width: 48,
               height: 48,
-              backgroundColor: isDark ? '#18181b' : '#eef2ff',
+              backgroundColor: isDark ? '#18181b' : colors[50], // Dynamic light bg
               borderWidth: 1,
-              borderColor: isDark ? '#27272a' : '#e0e7ff',
+              borderColor: isDark ? '#27272a' : colors[200], // Dynamic light border
               borderRadius: 16,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Plus size={24} color={Colors.primary} strokeWidth={2.5} />
+            <Plus size={24} color={colors[500]} strokeWidth={2.5} />
           </TouchableOpacity>
         }
       />

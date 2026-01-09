@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Typography, ConfirmDialog, Switch } from '../../../components/ui';
+import { ThemedSlider as Slider } from '../../../components/ui/Slider';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useI18n } from '../../../lib/i18n';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Agent, RagConfiguration } from '../../../types/chat';
-import Slider from '@react-native-community/slider';
 import { RefreshCw } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 
@@ -15,18 +15,21 @@ interface Props {
 }
 
 // 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => (
-  <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-    <View className="w-1.5 h-4 bg-purple-500 rounded-full mr-3" />
-    <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
-      {title}
-    </Typography>
-  </View>
-);
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
+  const { colors } = useTheme();
+  return (
+    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
+      <View style={{ backgroundColor: colors[500] }} className="w-1.5 h-4 rounded-full mr-3" />
+      <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
+        {title}
+      </Typography>
+    </View>
+  );
+};
 
 export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }) => {
   const { t } = useI18n();
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const globalConfig = useSettingsStore((s) => s.globalRagConfig);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
@@ -36,7 +39,6 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
 
   // 修改配置
   const handleChange = (updates: Partial<RagConfiguration>) => {
-    // 确保创建副本并强制转换为助手配置
     const baseConfig = agent.ragConfig || { ...globalConfig };
     const newConfig = { ...baseConfig, ...updates };
     onUpdate({ ragConfig: newConfig });
@@ -54,7 +56,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             </Typography>
             <Typography
               className="text-sm font-medium"
-              style={{ color: isUsingGlobal ? '#10b981' : '#a855f7' }}
+              style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
             >
               {isUsingGlobal ? '继承全局配置' : '自定义配置'}
             </Typography>
@@ -68,10 +70,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                 }, 10);
               }}
               activeOpacity={0.7}
-              className="flex-row items-center bg-green-50 dark:bg-green-900/10 px-4 py-2 rounded-2xl border border-green-100 dark:border-green-900/20"
+              style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+              className="flex-row items-center px-4 py-2 rounded-2xl border"
             >
-              <RefreshCw size={14} color="#10b981" />
-              <Typography className="ml-2 text-sm font-bold text-green-600 dark:text-green-400">
+              <RefreshCw size={14} color={colors[600]} />
+              <Typography style={{ color: colors[600] }} className="ml-2 text-sm font-bold">
                 重置
               </Typography>
             </TouchableOpacity>
@@ -110,7 +113,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {currentConfig.rerankTopK ?? 30} 条
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
@@ -121,9 +124,6 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             minimumValue={10}
             maximumValue={100}
             step={5}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
 
@@ -137,7 +137,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {currentConfig.rerankFinalK ?? 8} 条
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
@@ -148,9 +148,6 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             minimumValue={3}
             maximumValue={20}
             step={1}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
       </View>
@@ -186,18 +183,17 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
               <TouchableOpacity
                 key={strategy}
                 onPress={() => handleChange({ queryRewriteStrategy: strategy })}
-                className={`flex-1 py-3 px-3 rounded-xl border ${
-                  (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy
-                    ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-500'
-                    : 'bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700'
-                }`}
+                style={{
+                  backgroundColor: (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors.opacity10 : 'transparent',
+                  borderColor: (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors[500] : 'rgba(156, 163, 175, 0.2)'
+                }}
+                className="flex-1 py-3 px-3 rounded-xl border"
               >
                 <Typography
-                  className={`text-xs font-bold text-center ${
-                    (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy
-                      ? 'text-amber-600 dark:text-amber-400'
-                      : 'text-gray-600 dark:text-gray-400'
-                  }`}
+                  style={{
+                    color: (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors[600] : '#6b7280'
+                  }}
+                  className="text-xs font-bold text-center"
                 >
                   {strategy === 'hyde' ? 'HyDE' : strategy === 'multi-query' ? '多查询' : '扩展'}
                 </Typography>
@@ -216,7 +212,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">2</Typography>
-            <Typography className="text-sm font-bold text-amber-600 dark:text-amber-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {currentConfig.queryRewriteCount ?? 3} 个
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
@@ -227,9 +223,6 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             minimumValue={2}
             maximumValue={5}
             step={1}
-            minimumTrackTintColor="#f59e0b"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#f59e0b"
           />
         </View>
       </View>
@@ -265,7 +258,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
-            <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {((currentConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">100%</Typography>
@@ -276,9 +269,6 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             minimumValue={0}
             maximumValue={1}
             step={0.1}
-            minimumTrackTintColor="#06b6d4"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#06b6d4"
           />
         </View>
 
@@ -292,7 +282,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
-            <Typography className="text-sm font-bold text-cyan-600 dark:text-cyan-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {(currentConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">2.0x</Typography>
@@ -303,9 +293,6 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             minimumValue={0.5}
             maximumValue={2.0}
             step={0.1}
-            minimumTrackTintColor="#06b6d4"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#06b6d4"
           />
         </View>
       </View>

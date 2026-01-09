@@ -24,7 +24,7 @@ export function SettingsItem({
   showChevron = false,
   isLast = false,
 }: SettingsItemProps) {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const themeColors = isDark ? Colors.dark : Colors.light;
 
   const handlePress = () => {
@@ -47,7 +47,7 @@ export function SettingsItem({
       ]}
     >
       <View style={styles.iconContainer}>
-        <Icon size={20} color={isDark ? themeColors.textTertiary : Colors.light.textSecondary} />
+        <Icon size={20} color={colors[500]} />
       </View>
 
       <View style={styles.content}>

@@ -1,35 +1,36 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, TextInput } from 'react-native';
 import { Typography, ConfirmDialog, Switch } from '../../../components/ui';
+import { ThemedSlider as Slider } from '../../../components/ui/Slider';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useI18n } from '../../../lib/i18n';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Agent, RagConfiguration } from '../../../types/chat';
-import Slider from '@react-native-community/slider';
-import { RefreshCw, Zap, BookOpen, Code } from 'lucide-react-native';
+import { RefreshCw, Zap, BookOpen, Code, Edit3 } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
+import { FloatingTextEditorModal } from '../../../components/ui/FloatingTextEditorModal';
 
 interface Props {
   agent: Agent;
   onUpdate: (updates: Partial<Agent>) => void;
 }
 
-// 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 12 }) => (
-  <View style={{ marginTop: mt }} className="flex-row items-center mb-4 mt-2">
-    <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
-    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-      {title}
-    </Typography>
-  </View>
-);
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 12 }) => {
+  const { colors } = useTheme();
+  return (
+    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 mt-2">
+      <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
+      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+        {title}
+      </Typography>
+    </View>
+  );
+};
 
-// 预设配置
 const PRESETS = {
   balanced: {
     name: '平衡',
     icon: Zap,
-    color: '#6366f1',
     config: {
       contextWindow: 20,
       summaryThreshold: 10,
@@ -42,7 +43,6 @@ const PRESETS = {
   writing: {
     name: '写作',
     icon: BookOpen,
-    color: '#8b5cf6',
     config: {
       contextWindow: 30,
       summaryThreshold: 15,
@@ -55,7 +55,6 @@ const PRESETS = {
   coding: {
     name: '代码',
     icon: Code,
-    color: '#06b6d4',
     config: {
       contextWindow: 15,
       summaryThreshold: 8,
@@ -69,9 +68,10 @@ const PRESETS = {
 
 export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
   const { t } = useI18n();
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const globalConfig = useSettingsStore((s) => s.globalRagConfig);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [isEditorVisible, setIsEditorVisible] = useState(false);
 
   // 当前配置：优先使用助手级，否则使用全局
   const currentConfig = agent.ragConfig || globalConfig;
@@ -112,7 +112,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             </Typography>
             <Typography
               className="text-sm font-medium"
-              style={{ color: isUsingGlobal ? '#10b981' : '#f59e0b' }}
+              style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
             >
               {isUsingGlobal ? t.rag.modeInherit : t.rag.modeCustom}
             </Typography>
@@ -126,10 +126,11 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
                 }, 10);
               }}
               activeOpacity={0.7}
-              className="flex-row items-center bg-green-50 dark:bg-green-900/10 px-4 py-2 rounded-2xl border border-green-100 dark:border-green-900/20"
+              style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+              className="flex-row items-center px-4 py-2 rounded-2xl border"
             >
-              <RefreshCw size={14} color="#10b981" />
-              <Typography className="ml-2 text-sm font-bold text-green-600 dark:text-green-400">
+              <RefreshCw size={14} color={colors[600]} />
+              <Typography style={{ color: colors[600] }} className="ml-2 text-sm font-bold">
                 {t.rag.reset}
               </Typography>
             </TouchableOpacity>
@@ -157,7 +158,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
               activeOpacity={0.7}
               className="flex-1 bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800 items-center shadow-sm"
             >
-              <Icon size={22} color={preset.color} />
+              <Icon size={22} color={colors[500]} />
               <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
                 {presetName}
               </Typography>
@@ -178,7 +179,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
-            <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.messageCount.replace(
                 '{count}',
                 (currentConfig.contextWindow ?? 20).toString(),
@@ -192,9 +193,6 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             minimumValue={10}
             maximumValue={50}
             step={5}
-            minimumTrackTintColor="#6366f1"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#6366f1"
           />
         </View>
 
@@ -209,7 +207,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
-            <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.messageCount.replace(
                 '{count}',
                 (currentConfig.summaryThreshold ?? 10).toString(),
@@ -223,9 +221,6 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             minimumValue={5}
             maximumValue={30}
             step={5}
-            minimumTrackTintColor="#6366f1"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#6366f1"
           />
         </View>
 
@@ -238,18 +233,55 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {t.rag.agentSummaryTemplateDesc}
           </Typography>
-          <TextInput
-            value={currentConfig.summaryPrompt}
-            onChangeText={(text) => handleChange({ summaryPrompt: text })}
-            multiline
-            numberOfLines={4}
-            className="text-gray-600 dark:text-gray-300 bg-gray-50/50 dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800"
-            style={{ textAlignVertical: 'top', minHeight: 120 }}
-            placeholderTextColor="#94a3b8"
-            placeholder={t.rag.promptPlaceholder}
-          />
+          <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
+            <View className="flex-row items-center justify-between mb-2">
+              <View className="flex-row items-center">
+                <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
+                <Typography className="font-bold text-gray-700 dark:text-gray-300">
+                  {t.rag.clickToEditPrompt}
+                </Typography>
+              </View>
+              {currentConfig.summaryPrompt ? (
+                <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                  <Typography className="text-[10px] text-green-700 dark:text-green-400">
+                    {t.rag.configured}
+                  </Typography>
+                </View>
+              ) : (
+                <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
+                  <Typography className="text-[10px] text-gray-500">
+                    {t.rag.usingDefault}
+                  </Typography>
+                </View>
+              )}
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setIsEditorVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Typography
+                numberOfLines={3}
+                className="text-xs text-gray-500 dark:text-gray-400 leading-5"
+              >
+                {currentConfig.summaryPrompt || t.rag.promptPlaceholder}
+              </Typography>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
+
+      <FloatingTextEditorModal
+        visible={isEditorVisible}
+        initialContent={currentConfig.summaryPrompt || ''}
+        title={t.rag.summaryTemplate}
+        placeholder={t.rag.promptPlaceholder}
+        onClose={() => setIsEditorVisible(false)}
+        onSave={(text) => {
+          handleChange({ summaryPrompt: text });
+          setIsEditorVisible(false);
+        }}
+      />
 
       {/* 检索配置 */}
       <SectionHeader title={t.rag.retrievalSettings} />
@@ -267,7 +299,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-            <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.items.replace('{count}', (currentConfig.memoryLimit ?? 5).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
@@ -278,9 +310,6 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             minimumValue={3}
             maximumValue={10}
             step={1}
-            minimumTrackTintColor="#6366f1"
-            maximumTrackTintColor={isDark ? '#27272a' : '#e5e7eb'}
-            thumbTintColor="#6366f1"
           />
         </View>
 
@@ -293,7 +322,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">50%</Typography>
-            <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {Math.round((currentConfig.memoryThreshold ?? 0.7) * 100)}%
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">95%</Typography>
@@ -304,9 +333,6 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             minimumValue={0.5}
             maximumValue={0.95}
             step={0.05}
-            minimumTrackTintColor="#6366f1"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#6366f1"
           />
         </View>
 
@@ -325,7 +351,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
-            <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.items.replace('{count}', (currentConfig.docLimit ?? 8).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">15</Typography>
@@ -336,9 +362,6 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             minimumValue={5}
             maximumValue={15}
             step={1}
-            minimumTrackTintColor="#6366f1"
-            maximumTrackTintColor={isDark ? '#27272a' : '#e5e7eb'}
-            thumbTintColor="#6366f1"
           />
         </View>
 
@@ -351,7 +374,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">30%</Typography>
-            <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {Math.round((currentConfig.docThreshold ?? 0.45) * 100)}%
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">80%</Typography>
@@ -362,9 +385,6 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             minimumValue={0.3}
             maximumValue={0.8}
             step={0.05}
-            minimumTrackTintColor="#6366f1"
-            maximumTrackTintColor={isDark ? '#27272a' : '#e5e7eb'}
-            thumbTintColor="#6366f1"
           />
         </View>
       </View>

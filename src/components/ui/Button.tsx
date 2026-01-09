@@ -4,6 +4,7 @@ import { twMerge } from 'tailwind-merge';
 import { Typography } from './Typography';
 import * as Haptics from '../../lib/haptics';
 import { Colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeProvider';
 
 interface ButtonProps extends TouchableOpacityProps {
   variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger';
@@ -26,11 +27,13 @@ export function Button({
   onPress,
   ...props
 }: ButtonProps) {
+  const { colors } = useTheme();
+
   const baseStyle =
     'flex-row items-center justify-center rounded-lg font-medium transition-all active:scale-[0.98]';
 
   const variants = {
-    primary: 'bg-primary-600 active:bg-primary-700 shadow-sm',
+    primary: '', // Handled via style for dynamic color
     secondary: 'bg-surface-secondary active:bg-surface-tertiary border border-border-default',
     ghost: 'bg-transparent active:bg-surface-secondary',
     outline: 'bg-transparent border border-border-default active:bg-surface-secondary',
@@ -77,10 +80,15 @@ export function Button({
       disabled={disabled || loading}
       activeOpacity={0.8}
       onPress={handlePress}
+      style={[
+        variant === 'primary' && !disabled && !loading && { backgroundColor: colors[600] },
+        variant === 'primary' && (disabled || loading) && { backgroundColor: colors[300] },
+        props.style as any
+      ]}
       {...props}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={variant === 'primary' ? 'white' : Colors.primary} />
+        <ActivityIndicator size="small" color={variant === 'primary' ? 'white' : colors[500]} />
       ) : (
         <>
           {icon && <View className="mr-2">{icon}</View>}

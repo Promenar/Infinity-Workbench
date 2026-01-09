@@ -14,6 +14,10 @@ interface SettingsState {
   hapticsEnabled: boolean;
   setHapticsEnabled: (enabled: boolean) => void;
 
+  // 主题色配置
+  accentColor: string;
+  setAccentColor: (color: string) => void;
+
   // 默认模型设置
   defaultSummaryModel?: string; // 总结模型
   defaultTempSessionModel?: string; // 临时会话模型
@@ -47,6 +51,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       hapticsEnabled: false,
       setHapticsEnabled: (enabled) => set({ hapticsEnabled: enabled }),
+
+      accentColor: '#6366f1',
+      setAccentColor: (color) => set({ accentColor: color }),
 
       defaultSummaryModel: undefined,
       defaultTempSessionModel: undefined,
@@ -138,6 +145,7 @@ export const useSettingsStore = create<SettingsState>()(
         defaultSpeechModel: state.defaultSpeechModel,
         defaultRerankModel: state.defaultRerankModel,
         globalRagConfig: state.globalRagConfig,
+        accentColor: state.accentColor,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

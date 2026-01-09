@@ -82,7 +82,7 @@ const PROVIDER_PRESETS: Record<string, { name: string; baseUrl: string; type: Ap
 
 export function ProviderModal({ visible, onClose, onSave, editingProvider }: ProviderModalProps) {
   const { t } = useI18n();
-  const { theme, isDark } = useTheme();
+  const { theme, isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   const [name, setName] = useState('');
@@ -337,7 +337,7 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
                           style={{
                             fontSize: 14,
                             fontWeight: selectedPreset === key ? '600' : '400',
-                            color: selectedPreset === key ? '#6366f1' : isDark ? '#fff' : '#111',
+                            color: selectedPreset === key ? colors[500] : isDark ? '#fff' : '#111',
                           }}
                         >
                           {preset.name}
@@ -605,7 +605,7 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
           <TouchableOpacity
             onPress={handleSave}
             style={{
-              backgroundColor: '#6366f1',
+              backgroundColor: colors[500],
               borderRadius: 12,
               paddingVertical: 14,
               alignItems: 'center',

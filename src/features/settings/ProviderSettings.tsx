@@ -14,6 +14,7 @@ import {
 import { useApiStore, ApiProviderType, ProviderConfig } from '../../store/api-store';
 import { useSettingsStore } from '../../store/settings-store';
 import { ModelService, parseVertexAIConfig } from '../../lib/provider-parser';
+import { useTheme } from '../../theme/ThemeProvider';
 import * as DocumentPicker from 'expo-document-picker';
 import { clsx } from 'clsx';
 import * as Haptics from '../../lib/haptics';
@@ -23,6 +24,7 @@ import * as Haptics from '../../lib/haptics';
  * 支持供应商增删改查、JSON 导入、模型管理
  */
 export const ProviderSettings = () => {
+  const { colors } = useTheme();
   const {
     providers,
     addProvider,
@@ -61,7 +63,7 @@ export const ProviderSettings = () => {
     visible: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     isDestructive: false,
   });
 
@@ -160,7 +162,8 @@ export const ProviderSettings = () => {
               setIsAddModalOpen(true);
             }, 10);
           }}
-          className="bg-indigo-600 p-2 rounded-full"
+          style={{ backgroundColor: colors[600] }}
+          className="p-2 rounded-full"
         >
           <Plus size={20} color="white" />
         </TouchableOpacity>
@@ -185,7 +188,7 @@ export const ProviderSettings = () => {
               </View>
               <View className="flex-row">
                 <TouchableOpacity onPress={() => fetchModels(p)} className="p-2 mr-1">
-                  <RefreshCw size={18} color="#6366f1" />
+                  <RefreshCw size={18} color={colors[500]} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => {
@@ -229,7 +232,7 @@ export const ProviderSettings = () => {
                   setTimeout(() => resetStats(p.id), 10);
                 }}
               >
-                <Typography className="text-xs text-indigo-500 font-bold">重置统计</Typography>
+                <Typography style={{ color: colors[600] }} className="text-xs font-bold">重置统计</Typography>
               </TouchableOpacity>
             </View>
           </View>
@@ -259,30 +262,28 @@ export const ProviderSettings = () => {
                     onPress={() => {
                       setTimeout(() => toggleModel(activeProviderModels.id, m.id, !isEnabled), 10);
                     }}
-                    className={clsx(
-                      'flex-row justify-between items-center p-4 mb-2 rounded-xl border',
-                      isEnabled
-                        ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800'
-                        : 'bg-gray-50 border-gray-100 dark:bg-zinc-800 dark:border-zinc-700',
-                    )}
+                    style={{
+                      backgroundColor: isEnabled ? colors.opacity10 : 'rgba(249, 250, 251, 0.5)',
+                      borderColor: isEnabled ? colors[500] : 'rgba(229, 231, 235, 0.5)'
+                    }}
+                    className="flex-row justify-between items-center p-4 mb-2 rounded-xl border"
                   >
                     <View>
                       <Typography
-                        className={clsx(
-                          isEnabled
-                            ? 'text-indigo-600 font-bold'
-                            : 'text-gray-600 dark:text-gray-300',
-                        )}
+                        style={{
+                          color: isEnabled ? colors[600] : undefined
+                        }}
+                        className={clsx(!isEnabled && 'text-gray-600 dark:text-gray-300', isEnabled && 'font-bold')}
                       >
                         {m.name}
                       </Typography>
                       {m.type === 'reasoning' && (
-                        <Typography className="text-[10px] text-indigo-500 mt-0.5">
+                        <Typography style={{ color: colors[500] }} className="text-[10px] mt-0.5">
                           Reasoning
                         </Typography>
                       )}
                     </View>
-                    {isEnabled && <Check size={18} color="#4f46e5" />}
+                    {isEnabled && <Check size={18} color={colors[600]} />}
                   </TouchableOpacity>
                 );
               })}
@@ -325,9 +326,12 @@ export const ProviderSettings = () => {
                   <TouchableOpacity
                     key={t}
                     onPress={() => setFormData({ ...formData, type: t })}
+                    style={{
+                      backgroundColor: formData.type === t ? colors[600] : undefined
+                    }}
                     className={clsx(
                       'px-4 py-2 rounded-full mr-2',
-                      formData.type === t ? 'bg-indigo-600' : 'bg-gray-100 dark:bg-zinc-800',
+                      formData.type !== t && 'bg-gray-100 dark:bg-zinc-800',
                     )}
                   >
                     <Text
@@ -346,10 +350,11 @@ export const ProviderSettings = () => {
                 <View>
                   <TouchableOpacity
                     onPress={handlePickJson}
-                    className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl mb-4 border border-dashed border-indigo-200 dark:border-indigo-800 flex-row justify-center items-center"
+                    style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+                    className="p-4 rounded-xl mb-4 border border-dashed flex-row justify-center items-center"
                   >
-                    <FileJson size={18} color="#4f46e5" className="mr-2" />
-                    <Typography className="text-indigo-600 font-bold">
+                    <FileJson size={18} color={colors[600]} className="mr-2" />
+                    <Typography style={{ color: colors[600] }} className="font-bold">
                       导入 Service Account JSON
                     </Typography>
                   </TouchableOpacity>
@@ -393,7 +398,8 @@ export const ProviderSettings = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSave}
-                className="flex-1 py-3 bg-indigo-600 rounded-xl items-center"
+                style={{ backgroundColor: colors[600] }}
+                className="flex-1 py-3 rounded-xl items-center"
               >
                 <Text className="font-bold text-white">确认</Text>
               </TouchableOpacity>

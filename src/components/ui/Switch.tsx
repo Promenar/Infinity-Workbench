@@ -17,7 +17,7 @@ interface SwitchProps {
 }
 
 export const Switch: React.FC<SwitchProps> = ({ value, onValueChange, disabled = false }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
 
   // 动画共享值：0 为关闭，1 为开启
   const progress = useSharedValue(value ? 1 : 0);
@@ -43,16 +43,16 @@ export const Switch: React.FC<SwitchProps> = ({ value, onValueChange, disabled =
       progress.value,
       [0, 1],
       isDark
-        ? ['rgba(255, 255, 255, 0.1)', 'rgba(99, 102, 241, 0.3)'] // Dark mode: subtle grey -> indigo tint
-        : ['rgba(0, 0, 0, 0.05)', 'rgba(99, 102, 241, 0.2)'], // Light mode: grey -> indigo tint
+        ? ['rgba(255, 255, 255, 0.1)', colors.opacity30] // Dark mode: subtle grey -> dynamic tint
+        : ['rgba(0, 0, 0, 0.05)', colors.opacity20], // Light mode: grey -> dynamic tint
     );
 
     const borderColor = interpolateColor(
       progress.value,
       [0, 1],
       isDark
-        ? ['rgba(255, 255, 255, 0.15)', 'rgba(99, 102, 241, 0.5)']
-        : ['rgba(0, 0, 0, 0.1)', 'rgba(99, 102, 241, 0.5)'],
+        ? ['rgba(255, 255, 255, 0.15)', colors.opacity30]
+        : ['rgba(0, 0, 0, 0.1)', colors.opacity20],
     );
 
     return {
@@ -69,8 +69,8 @@ export const Switch: React.FC<SwitchProps> = ({ value, onValueChange, disabled =
       progress.value,
       [0, 1],
       isDark
-        ? ['#94a3b8', '#6366f1'] // slate -> indigo
-        : ['#cbd5e1', '#6366f1'], // slate-light -> indigo
+        ? ['#94a3b8', colors[500]] // slate -> dynamic primary
+        : ['#cbd5e1', colors[500]], // slate-light -> dynamic primary
     );
 
     return {

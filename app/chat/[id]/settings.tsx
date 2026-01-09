@@ -37,8 +37,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { exportAllSessionsToTxt } from '../../../src/features/chat/utils/export';
 import { useRagStore } from '../../../src/store/rag-store';
 import { useSettingsStore } from '../../../src/store/settings-store';
-import { ChevronRight, X, Folder } from 'lucide-react-native';
+import { ChevronRight, X, Folder, Edit3 } from 'lucide-react-native';
 import { DocumentPickerModal } from '../../../src/components/rag/DocumentPickerModal';
+import { FloatingTextEditorModal } from '../../../src/components/ui/FloatingTextEditorModal';
 import { InferenceSettings } from '../../../src/components/chat/InferenceSettings';
 import { ContextManagementPanel } from '../../../src/features/chat/settings/ContextManagementPanel';
 import { preventDoubleTap } from '../../../src/lib/navigation-utils';
@@ -47,7 +48,7 @@ import { useDebounce } from '../../../src/hooks/useDebounce';
 export default function SessionSettingsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
@@ -82,6 +83,7 @@ export default function SessionSettingsScreen() {
     title: session?.title || '',
     customPrompt: session?.customPrompt || '',
   });
+  const [isPromptEditorVisible, setIsPromptEditorVisible] = useState(false);
 
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -144,14 +146,14 @@ export default function SessionSettingsScreen() {
       if (result.success) {
         setConfirmState({
           visible: true,
-          title: t.conversation.exportSuccessTitle,
-          message: t.conversation.exportSuccessMessage,
+          title: t.agent.conversation.exportSuccessTitle,
+          message: t.agent.conversation.exportSuccessMessage,
           onConfirm: () => setConfirmState((prev) => ({ ...prev, visible: false })),
         });
       } else if (result.error !== 'Permission denied') {
         setConfirmState({
           visible: true,
-          title: t.conversation.exportFailedTitle,
+          title: t.agent.conversation.exportFailedTitle,
           message: result.error || 'Unknown Error',
           onConfirm: () => setConfirmState((prev) => ({ ...prev, visible: false })),
         });
@@ -171,26 +173,29 @@ export default function SessionSettingsScreen() {
   const handleDeleteSession = async () => {
     setConfirmState({
       visible: true,
-      title: t.conversation.deleteSession,
-      message: t.conversation.deleteConfirm,
+      title: t.agent.conversation.deleteSession,
+      message: t.agent.conversation.deleteConfirm,
       isDestructive: true,
       onConfirm: async () => {
         await deleteSession(id);
-        showToast(t.conversation.sessionDeleted, 'success');
+        showToast(t.agent.conversation.sessionDeleted, 'success');
         setConfirmState((prev) => ({ ...prev, visible: false }));
         router.replace('/(tabs)/chat');
       },
     });
   };
 
-  const SectionHeader = ({ title }: { title: string }) => (
-    <View className="flex-row items-center mb-4 mt-2">
-      <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
-      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-        {title}
-      </Typography>
-    </View>
-  );
+  const SectionHeader = ({ title }: { title: string }) => {
+    const { colors } = useTheme();
+    return (
+      <View className="flex-row items-center mb-4 mt-2">
+        <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
+        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+          {title}
+        </Typography>
+      </View>
+    );
+  };
 
   if (!session || !agent) return null;
 
@@ -199,7 +204,7 @@ export default function SessionSettingsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <GlassHeader
-        title={t.conversation.settings}
+        title={t.agent.conversation.settings}
         subtitle={session.title}
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
@@ -237,7 +242,7 @@ export default function SessionSettingsScreen() {
                     {agent.name}
                   </Typography>
                   <Typography variant="caption" className="text-gray-500">
-                    {t.conversation.inheritFrom.replace('{agentName}', '')}
+                    {t.agent.conversation.inheritFrom.replace('{agentName}', '')}
                   </Typography>
                 </View>
               </View>
@@ -256,19 +261,20 @@ export default function SessionSettingsScreen() {
           </View>
 
           {/* Export Current Activity */}
-          <SectionHeader title={t.superAssistant.exportHistory} />
+          <SectionHeader title={t.agent.superAssistant.exportHistory} />
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleExportCurrent}
-            className="flex-row items-center justify-center py-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl mb-8 border border-indigo-100 dark:border-indigo-500/20"
+            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+            className="flex-row items-center justify-center py-4 rounded-2xl mb-8 border"
           >
             {isExporting ? (
-              <ActivityIndicator size="small" color="#6366f1" />
+              <ActivityIndicator size="small" color={colors[500]} />
             ) : (
               <>
-                <Download size={18} color="#6366f1" className="mr-2" />
-                <Typography className="text-indigo-600 dark:text-indigo-400 font-bold">
-                  {t.conversation.exportCurrent}
+                <Download size={18} color={colors[600]} className="mr-2" />
+                <Typography style={{ color: colors[600] }} className="font-bold">
+                  {t.agent.conversation.exportCurrent}
                 </Typography>
               </>
             )}
@@ -276,19 +282,19 @@ export default function SessionSettingsScreen() {
 
           {/* Session Title */}
           <View className="flex-row items-center justify-between mb-2">
-            <SectionHeader title={t.conversation.editTitle} />
+            <SectionHeader title={t.agent.conversation.editTitle} />
             <TouchableOpacity
               onPress={handleGenerateTitle}
               disabled={isGeneratingTitle}
               className="flex-row items-center mt-2"
             >
               {isGeneratingTitle ? (
-                <ActivityIndicator size="small" color="#6366f1" />
+                <ActivityIndicator size="small" color={colors[500]} />
               ) : (
                 <>
-                  <Sparkles size={12} color="#6366f1" className="mr-1" />
-                  <Typography className="text-indigo-600 text-[10px] font-bold">
-                    {t.conversation.aiGenerated}
+                  <Sparkles size={12} color={colors[500]} className="mr-1" />
+                  <Typography style={{ color: colors[600] }} className="text-[10px] font-bold">
+                    {t.agent.conversation.aiGenerated}
                   </Typography>
                 </>
               )}
@@ -299,22 +305,32 @@ export default function SessionSettingsScreen() {
               className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 font-bold"
               value={formData.title}
               onChangeText={(text) => setFormData({ ...formData, title: text })}
-              placeholder={t.conversation.editTitle}
+              placeholder={t.agent.conversation.editTitle}
               placeholderTextColor="#94a3b8"
             />
           </View>
 
+          {/* Inference Parameters */}
+          <SectionHeader title={t.agent.conversation.inferenceSettings || 'Inference Parameters'} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+            <InferenceSettings
+              params={session.inferenceParams || {}}
+              onUpdate={(params) => updateSessionInferenceParams(id, params)}
+              agentDefaultParams={agent.params}
+            />
+          </View>
+
           {/* RAG Settings */}
-          <SectionHeader title={t.conversation.ragSettings || 'Knowledge & Memory'} />
+          <SectionHeader title={t.agent.conversation.ragSettings || 'Knowledge & Memory'} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
             {/* Toggle: Enable Memory */}
             <View className="flex-row items-center justify-between py-2 mb-2">
               <View className="flex-1 pr-4">
                 <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.conversation.longTermMemory}
+                  {t.agent.conversation.longTermMemory}
                 </Typography>
                 <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.conversation.longTermMemoryDesc}
+                  {t.agent.conversation.longTermMemoryDesc}
                 </Typography>
               </View>
               <Switch
@@ -335,10 +351,10 @@ export default function SessionSettingsScreen() {
             <View className="flex-row items-center justify-between py-2 mb-2">
               <View className="flex-1 pr-4">
                 <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.conversation.kgExtraction || '对话图谱提取'}
+                  {t.agent.conversation.kgExtraction || '对话图谱提取'}
                 </Typography>
                 <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.conversation.kgExtractionDesc || '自动提取对话中的实体关系，构建动态知识图谱'}
+                  {t.agent.conversation.kgExtractionDesc || '自动提取对话中的实体关系，构建动态知识图谱'}
                 </Typography>
               </View>
               <Switch
@@ -365,20 +381,23 @@ export default function SessionSettingsScreen() {
             {/* KG Visualization Button - Always visible regardless of doc state */}
             <TouchableOpacity
               onPress={() => router.push({ pathname: '/knowledge-graph', params: { sessionId: id } })}
-              className="mt-3 flex-row items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800"
+              style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)' }}
+              className="mt-3 flex-row items-center justify-between p-4 rounded-2xl border border-indigo-100/50 dark:border-indigo-400/10"
             >
               <View className="flex-row items-center gap-3">
-                <Network size={20} color="#6366f1" />
+                <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
+                  <Network size={20} color={colors[600]} />
+                </View>
                 <View>
-                  <Typography variant="label" className="text-indigo-900 dark:text-indigo-100 font-medium">
+                  <Typography style={{ color: colors[900] }} className="text-sm font-bold">
                     查看当前会话图谱
                   </Typography>
-                  <Typography variant="caption" className="text-indigo-700 dark:text-indigo-300">
+                  <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
                     可视化查看上下文中提取的实体关系
                   </Typography>
                 </View>
               </View>
-              <ChevronRight size={18} color="#6366f1" />
+              <ChevronRight size={18} color={colors[600]} />
             </TouchableOpacity>
 
             <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
@@ -387,10 +406,10 @@ export default function SessionSettingsScreen() {
             <View className="flex-row items-center justify-between py-2">
               <View className="flex-1 pr-4">
                 <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.conversation.knowledgeBase}
+                  {t.agent.conversation.knowledgeBase}
                 </Typography>
                 <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.conversation.knowledgeBaseDesc}
+                  {t.agent.conversation.knowledgeBaseDesc}
                 </Typography>
               </View>
               <Switch
@@ -411,13 +430,13 @@ export default function SessionSettingsScreen() {
                   onPress={() => setShowDocPicker(true)}
                   className="flex-row items-center justify-between bg-white dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800"
                 >
-                  <Typography className="font-bold text-indigo-500">
+                  <Typography style={{ color: colors[600] }} className="font-bold">
                     {t.library.selectDocs} (
                     {(session.ragOptions?.activeDocIds?.length || 0) +
                       (session.ragOptions?.activeFolderIds?.length || 0)}
                     )
                   </Typography>
-                  <ChevronRight size={20} color="#6366f1" />
+                  <ChevronRight size={20} color={colors[600]} />
                 </TouchableOpacity>
 
                 {/* Selected items preview */}
@@ -430,10 +449,12 @@ export default function SessionSettingsScreen() {
                         return (
                           <View
                             key={docId}
-                            className="flex-row items-center bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-500/20"
+                            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+                            className="flex-row items-center px-2 py-1 rounded-lg border"
                           >
                             <Typography
-                              className="text-[10px] text-indigo-600 dark:text-indigo-400 mr-1"
+                              style={{ color: colors[600] }}
+                              className="text-[10px] mr-1"
                               numberOfLines={1}
                             >
                               {doc.title}
@@ -451,7 +472,7 @@ export default function SessionSettingsScreen() {
                                 });
                               }}
                             >
-                              <X size={12} color="#6366f1" />
+                              <X size={12} color={colors[600]} />
                             </TouchableOpacity>
                           </View>
                         );
@@ -514,40 +535,71 @@ export default function SessionSettingsScreen() {
             )}
           </View>
 
-          {/* Inference Parameters */}
-          <SectionHeader title={t.conversation.inferenceSettings || 'Inference Parameters'} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-            <InferenceSettings
-              params={session.inferenceParams || {}}
-              onUpdate={(params) => updateSessionInferenceParams(id, params)}
-              agentDefaultParams={agent.params}
-            />
-          </View>
-
           {/* Context Management */}
           <ContextManagementPanel sessionId={id} />
 
           {/* Custom Prompt */}
-          <SectionHeader title={t.conversation.customPrompt} />
+          <SectionHeader title={t.agent.conversation.customPrompt} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-            <View className="bg-indigo-50 dark:bg-indigo-500/10 p-3.5 rounded-xl mb-4">
-              <Typography className="text-[12px] text-indigo-700 dark:text-indigo-300 flex-1 leading-tight">
-                {t.conversation.customPromptPlaceholder}
+            <View style={{ backgroundColor: colors.opacity10 }} className="p-3.5 rounded-xl mb-4">
+              <Typography style={{ color: colors[700] }} className="text-[12px] flex-1 leading-tight">
+                {t.agent.conversation.customPromptPlaceholder}
               </Typography>
             </View>
-            <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 h-60"
-              multiline
-              textAlignVertical="top"
-              value={formData.customPrompt}
-              onChangeText={(text) => setFormData({ ...formData, customPrompt: text })}
-              placeholder={t.conversation.customPromptPlaceholder}
-              placeholderTextColor="#94a3b8"
-            />
+
+            <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
+              <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center">
+                  <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
+                  <Typography className="font-bold text-gray-700 dark:text-gray-300">
+                    {t.agent.conversation.customPrompt || '额外 Prompt 指令'}
+                  </Typography>
+                </View>
+                {formData.customPrompt ? (
+                  <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-green-700 dark:text-green-400">
+                      {t.rag.configured || '已配置'}
+                    </Typography>
+                  </View>
+                ) : (
+                  <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-gray-500">
+                      {t.rag.usingDefault || '未设置'}
+                    </Typography>
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setIsPromptEditorVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Typography
+                  numberOfLines={4}
+                  className="text-xs text-gray-500 dark:text-gray-400 leading-5"
+                >
+                  {formData.customPrompt || t.agent.conversation.customPromptPlaceholder}
+                </Typography>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          <FloatingTextEditorModal
+            visible={isPromptEditorVisible}
+            initialContent={formData.customPrompt || ''}
+            title={t.agent.conversation.customPrompt}
+            placeholder={t.agent.conversation.customPromptPlaceholder}
+            onClose={() => setIsPromptEditorVisible(false)}
+            onSave={(text) => {
+              setFormData({ ...formData, customPrompt: text });
+              setIsPromptEditorVisible(false);
+            }}
+          />
 
           {/* Danger Zone */}
           <SectionHeader title={t.common.dangerZone} />
+
+          {/* Danger Zone */}
           <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
             <TouchableOpacity
               onPress={handleDeleteSession}
@@ -559,10 +611,10 @@ export default function SessionSettingsScreen() {
                 </View>
                 <View>
                   <Typography className="text-red-600 dark:text-red-400 font-bold">
-                    {t.conversation.deleteSession}
+                    {t.agent.conversation.deleteSession}
                   </Typography>
                   <Typography variant="caption" className="text-red-400/80">
-                    {t.conversation.deleteSessionDesc}
+                    {t.agent.conversation.deleteSessionDesc}
                   </Typography>
                 </View>
               </View>

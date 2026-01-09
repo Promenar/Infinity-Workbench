@@ -6,10 +6,15 @@ import { graphStore, KGNode, KGEdge } from '../../lib/rag/graph-store';
 import { VIS_NETWORK_SOURCE } from '../../assets/libs/vis-network-source';
 import { Typography } from '../ui';
 import { KGNodeEditModal } from './KGNodeEditModal';
+import { KGEdgeEditModal } from './KGEdgeEditModal';
+import { Plus, Link as LinkIcon, Unlink } from 'lucide-react-native';
+import { TouchableOpacity } from 'react-native';
+import * as Haptics from '../../lib/haptics';
+import { useI18n } from '../../lib/i18n';
 
 interface KnowledgeGraphViewProps {
   onNodeSelect?: (nodeId: string) => void;
-  docIds?: string[]; // Changed from single docId to array
+  docIds?: string[]; // 支持多个文档 ID (Changed from single docId to array)
   sessionId?: string;
   agentId?: string;
 }
@@ -20,7 +25,8 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   sessionId,
   agentId,
 }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
+  const { t } = useI18n();
   const webViewRef = useRef<WebView>(null);
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +36,13 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   const [selectedNodeData, setSelectedNodeData] = useState<{ id: string; label: string; group?: string } | null>(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
 
-  // Cleanup on unmount to prevent crashes (MUST BE BEFORE CONDITIONAL RETURNS)
+  // Editing State
+  const [isLinkMode, setIsLinkMode] = useState(false);
+  const [linkSourceId, setLinkSourceId] = useState<string | null>(null);
+  const [selectedEdgeData, setSelectedEdgeData] = useState<{ id: string; label: string; from: string; to: string } | null>(null);
+  const [isEdgeModalVisible, setIsEdgeModalVisible] = useState(false);
+
+  // 组件卸载时清理资源，防止崩溃 (必须位于条件返回之前)
   useEffect(() => {
     return () => {
       const stopScript = `
@@ -79,7 +91,33 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     }
   };
 
-  const handleNodeClick = (nodeId: string) => {
+  const handleNodeClick = async (nodeId: string) => {
+    // Link Mode Logic
+    if (isLinkMode) {
+      if (!linkSourceId) {
+        setLinkSourceId(nodeId);
+        Haptics.selectionAsync();
+        // Ideally show toast here: "Select target node"
+      } else {
+        if (linkSourceId === nodeId) {
+          setLinkSourceId(null); // Cancel
+          return;
+        }
+        // Create Edge
+        try {
+          await graphStore.createEdge(linkSourceId, nodeId, 'related_to', undefined, 1.0, { sessionId, agentId });
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setLinkSourceId(null);
+          loadData(); // Refresh
+        } catch (e) {
+          console.error(e);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+      }
+      return;
+    }
+
+    // Normal Edit Logic
     const node = graphData?.nodes.find(n => n.id === nodeId);
     if (node) {
       setSelectedNodeData({ id: node.id, label: node.fullLabel || node.label, group: node.group });
@@ -92,18 +130,34 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     }
   };
 
+  const handleEdgeClick = (edgeId: string) => {
+    if (isLinkMode) return;
+    const edge = graphData?.edges.find(e => e.id === edgeId);
+    if (edge) {
+      setSelectedEdgeData(edge);
+      setIsEdgeModalVisible(true);
+    }
+  }
+
+  const handleCreateNode = () => {
+    setSelectedNodeData(null); // Clear for creation
+    setIsEditModalVisible(true);
+  };
+
   const handleReload = () => {
     loadData();
     setIsEditModalVisible(false);
+    setIsEdgeModalVisible(false);
     setSelectedNodeId(null);
+    setSelectedEdgeData(null);
   };
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color={colors[500]} />
         <Typography style={{ marginTop: 10, color: isDark ? '#fff' : '#000' }}>
-          Loading Graph...
+          {t.rag.kg.loadingGraph}
         </Typography>
       </View>
     );
@@ -113,10 +167,10 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     return (
       <View style={styles.center}>
         <Typography style={{ color: isDark ? '#fff' : '#000' }}>
-          No Knowledge Graph data found.
+          {t.rag.kg.noData}
         </Typography>
         <Typography variant="label" style={{ marginTop: 8 }}>
-          Try extracting knowledge from documents first.
+          {t.rag.kg.noDataDesc}
         </Typography>
       </View>
     );
@@ -128,8 +182,27 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src * 'unsafe-inline'; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline';">
         <script type="text/javascript">
-          ${VIS_NETWORK_SOURCE}
+          window.onerror = function(message, source, lineno, colno, error) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'error',
+              message: message,
+              source: source,
+              lineno: lineno
+            }));
+          };
+          // INJECT_VIS_Here
+          if (typeof vis === 'undefined') {
+             window.ReactNativeWebView.postMessage(JSON.stringify({
+               type: 'error',
+               message: 'Vis library failed to load: vis is undefined',
+               source: 'inline',
+               lineno: 0
+             }));
+          } else {
+             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Vis library loaded successfully' }));
+          }
         </script>
         <style type="text/css">
             html, body {
@@ -169,7 +242,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
                     borderWidth: 2,
                     color: {
                         background: '${isDark ? '#333333' : '#eeeeee'}',
-                        border: '#6366f1',
+                        border: '${colors[500]}',
                         highlight: {
                              background: '#818cf8',
                              border: '#4338ca'
@@ -179,7 +252,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
                 edges: {
                     color: {
                         color: '${isDark ? '#555555' : '#cccccc'}',
-                        highlight: '#6366f1'
+                        highlight: '${colors[500]}'
                     },
                     width: 1,
                     smooth: {
@@ -213,6 +286,11 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
                          type: 'nodeSelect',
                          nodeId: params.nodes[0]
                      }));
+                } else if (params.edges.length > 0) {
+                     window.ReactNativeWebView.postMessage(JSON.stringify({
+                         type: 'edgeSelect',
+                         edgeId: params.edges[0]
+                     }));
                 }
             });
         </script>
@@ -220,25 +298,31 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     </html>
     `;
 
+  const finalHtml = htmlContent.replace('// INJECT_VIS_Here', VIS_NETWORK_SOURCE);
+
 
 
   return (
     <View style={{ flex: 1 }}>
       <WebView
         ref={webViewRef}
-        source={{ html: htmlContent }}
+        source={{ html: finalHtml }}
         style={{ flex: 1, backgroundColor: 'transparent', opacity: loading ? 0 : 1 }}
         androidLayerType="hardware" // Ensure acceleration
         onMessage={(event) => {
-          if (onNodeSelect) {
-            try {
-              const data = JSON.parse(event.nativeEvent.data);
-              if (data.type === 'nodeSelect') {
-                handleNodeClick(data.nodeId);
-              }
-            } catch (e) {
-              // ignore
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === 'nodeSelect') {
+              if (onNodeSelect || true) handleNodeClick(data.nodeId);
+            } else if (data.type === 'edgeSelect') {
+              handleEdgeClick(data.edgeId);
+            } else if (data.type === 'error') {
+              console.error('WebView Error:', data.message, 'at', data.source, 'line', data.lineno);
+            } else if (data.type === 'log') {
+              console.log('WebView Log:', data.message);
             }
+          } catch (e) {
+            // ignore
           }
         }}
       />
@@ -248,7 +332,65 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
         node={selectedNodeData}
         onClose={() => setIsEditModalVisible(false)}
         onSave={handleReload}
+        sessionId={sessionId}
+        agentId={agentId}
       />
+
+      <KGEdgeEditModal
+        visible={isEdgeModalVisible}
+        edge={selectedEdgeData}
+        onClose={() => setIsEdgeModalVisible(false)}
+        onSave={handleReload}
+      />
+
+      {/* Floating Action Buttons */}
+      <View style={{ position: 'absolute', bottom: 30, right: 20, gap: 12 }}>
+        {/* Link Mode Toggle */}
+        <TouchableOpacity
+          onPress={() => {
+            setIsLinkMode(!isLinkMode);
+            setLinkSourceId(null);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }}
+          style={{
+            backgroundColor: isLinkMode ? colors[500] : (isDark ? '#27272a' : '#ffffff'),
+            width: 50,
+            height: 50,
+            borderRadius: 25,
+            justifyContent: 'center',
+            alignItems: 'center',
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 3.84,
+            elevation: 5,
+            borderWidth: isLinkMode ? 0 : 1,
+            borderColor: isDark ? '#3f3f46' : '#e5e7eb'
+          }}
+        >
+          {isLinkMode ? <Unlink size={24} color="#fff" /> : <LinkIcon size={24} color={isDark ? '#fff' : '#000'} />}
+        </TouchableOpacity>
+
+        {/* Create Node FAB */}
+        <TouchableOpacity
+          onPress={handleCreateNode}
+          style={{
+            backgroundColor: colors[500],
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            justifyContent: 'center',
+            alignItems: 'center',
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 3.84,
+            elevation: 5
+          }}
+        >
+          <Plus size={30} color="#fff" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };

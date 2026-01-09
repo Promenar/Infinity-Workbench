@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSettingsStore } from '../store/settings-store';
+import { ColorPalette, generatePalette } from '../lib/color-utils';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -8,6 +10,7 @@ interface ThemeContextType {
   theme: ThemeMode;
   setTheme: (mode: ThemeMode) => void;
   isDark: boolean;
+  colors: ColorPalette;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -15,6 +18,9 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { colorScheme, setColorScheme } = useColorScheme();
   const [mode, setModeState] = useState<ThemeMode>('system');
+  const { accentColor } = useSettingsStore();
+
+  const dynamicColors = useMemo(() => generatePalette(accentColor), [accentColor]);
 
   useEffect(() => {
     AsyncStorage.getItem('theme_mode').then((stored) => {
@@ -39,17 +45,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isDark = colorScheme === 'dark';
-  console.log(
-    '[ThemeProvider] Current - mode:',
-    mode,
-    'colorScheme:',
-    colorScheme,
-    'isDark:',
-    isDark,
-  );
 
   return (
-    <ThemeContext.Provider value={{ theme: mode, setTheme, isDark }}>
+    <ThemeContext.Provider value={{ theme: mode, setTheme, isDark, colors: dynamicColors }}>
       {children}
     </ThemeContext.Provider>
   );

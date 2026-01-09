@@ -42,10 +42,10 @@ export const InferenceSettings: React.FC<Props> = ({ params, onUpdate, agentDefa
         <View className="flex-row justify-between items-center mb-4">
           <View className="flex-1 mr-4">
             <Typography className="font-bold text-base text-gray-900 dark:text-gray-100 mb-1">
-              {t.inference.temperature}
+              {t.agent.inference.temperature}
             </Typography>
             <Typography variant="caption" className="text-gray-400 text-xs leading-4">
-              {t.inference.temperatureDesc}
+              {t.agent.inference.temperatureDesc}
             </Typography>
           </View>
           <View className="bg-white dark:bg-black px-2.5 py-1 rounded-xl border border-gray-100 dark:border-white/5 shadow-sm">
@@ -70,10 +70,10 @@ export const InferenceSettings: React.FC<Props> = ({ params, onUpdate, agentDefa
         <View className="flex-row justify-between items-center mb-4">
           <View className="flex-1 mr-4">
             <Typography className="font-bold text-base text-gray-900 dark:text-gray-100 mb-1">
-              {t.inference.topP}
+              {t.agent.inference.topP}
             </Typography>
             <Typography variant="caption" className="text-gray-400 text-xs leading-4">
-              {t.inference.topPDesc || 'Controls diversity via nucleus sampling'}
+              {t.agent.inference.topPDesc || 'Controls diversity via nucleus sampling'}
             </Typography>
           </View>
           <View className="bg-white dark:bg-black px-2.5 py-1 rounded-xl border border-gray-100 dark:border-white/5 shadow-sm">
@@ -98,10 +98,10 @@ export const InferenceSettings: React.FC<Props> = ({ params, onUpdate, agentDefa
         <View className="flex-row justify-between items-center">
           <View className="flex-1 mr-4">
             <Typography className="font-bold text-base text-gray-900 dark:text-gray-100 mb-1">
-              {t.inference.maxTokens}
+              {t.agent.inference.maxTokens}
             </Typography>
             <Typography variant="caption" className="text-gray-400 text-xs leading-4">
-              {t.inference.maxTokensDesc}
+              {t.agent.inference.maxTokensDesc}
             </Typography>
           </View>
           <TextInput
@@ -109,7 +109,7 @@ export const InferenceSettings: React.FC<Props> = ({ params, onUpdate, agentDefa
             value={maxTokens?.toString()}
             keyboardType="numeric"
             onChangeText={(text) => onUpdate({ ...params, maxTokens: parseInt(text) || undefined })}
-            placeholder={t.inference.limit}
+            placeholder={t.agent.inference.limit}
             placeholderTextColor="#9ca3af"
           />
         </View>

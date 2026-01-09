@@ -28,13 +28,17 @@ import {
   X,
   RotateCcw,
   AlertTriangle,
+  Database,
+  Trash2,
 } from 'lucide-react-native';
 import { useApiStore } from '../../../store/api-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloatingTextEditorModal } from '../../../components/ui/FloatingTextEditorModal';
+import { ModelPicker } from '../ModelPicker';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 
 const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   return (
     <View
       style={{
@@ -51,7 +55,7 @@ const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 3
           height: 16,
           borderRadius: 999,
           marginRight: 12,
-          backgroundColor: Colors.primary,
+          backgroundColor: colors[500],
         }}
       />
       <Typography
@@ -64,19 +68,27 @@ const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 3
         }}
       >
         {title}
+
       </Typography>
     </View>
   );
 };
 
 export default function RagAdvancedSettings() {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
   const { globalRagConfig, updateGlobalRagConfig } = useSettingsStore();
   const { providers } = useApiStore();
   const [modelModalVisible, setModelModalVisible] = useState(false);
+  const [confirmState, setConfirmState] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+    isDestructive: false,
+  });
 
   const selectedModelName = useMemo(() => {
     if (!globalRagConfig.kgExtractionModel) return null;
@@ -101,37 +113,35 @@ export default function RagAdvancedSettings() {
   const handleSavePrompt = (content: string) => {
     // Validation
     if (!content.trim()) {
-      Alert.alert('错误', '提示词不能为空');
+      Alert.alert(t.common.error, t.rag.kg.promptEmptyError);
       return;
     }
 
     // Warning Checks
     const issues: string[] = [];
     if (!content.includes('{entityTypes}')) {
-      issues.push('- 缺少 {entityTypes} 占位符');
+      issues.push('- ' + t.rag.kg.missingPlaceholder.replace('{placeholder}', '{entityTypes}'));
     }
     if (!content.toLowerCase().includes('json')) {
-      issues.push('- 缺少 JSON 输出格式要求');
+      issues.push('- ' + t.rag.kg.missingJsonFormat);
     }
 
     const save = () => {
       updateGlobalRagConfig({ kgExtractionPrompt: content });
       // promptText is already updated via onSave prop from modal? 
-      // No, modal calls this with new content. We should update local state too.
       setPromptText(content);
       setIsEditorVisible(false);
-      Alert.alert('已保存', '抽取提示词已更新');
+      Alert.alert(t.rag.kg.saveChanges, t.rag.kg.editPromptTitle);
     };
 
     if (issues.length > 0) {
       Alert.alert(
-        '格式警告 (Format Warning)',
-        '检测到以下问题可能导致知识提取失败:\n\n' +
+        t.rag.kg.promptWarning,
         issues.join('\n') +
-        '\n\n是否确认保存?',
+        '\n\n' + t.common.confirm + '?',
         [
-          { text: '取消', style: 'cancel' },
-          { text: '强制保存', style: 'destructive', onPress: save },
+          { text: t.common.cancel, style: 'cancel' },
+          { text: t.common.save, style: 'destructive', onPress: save },
         ]
       );
     } else {
@@ -144,8 +154,8 @@ export default function RagAdvancedSettings() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <GlassHeader
-        title="高级知识配置"
-        subtitle="知识图谱 & 降本策略"
+        title={t.common.ragSection} // Or custom title if needed, utilizing standard keys
+        subtitle={t.rag.kg.title}
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
@@ -166,18 +176,20 @@ export default function RagAdvancedSettings() {
           showsVerticalScrollIndicator={false}
         >
           {/* 0. 知识图谱总开关 */}
-          <SectionHeader title="知识图谱 (Knowledge Graph)" mt={10} />
-          <View className="bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-zinc-800 mb-6">
+          <SectionHeader title={t.rag.kg.title} mt={10} />
+          <View
+            className="bg-white dark:bg-zinc-900 rounded-[24px] border border-gray-100 dark:border-zinc-800 mb-6 overflow-hidden shadow-sm"
+          >
             <View className="p-4 flex-row justify-between items-center">
               <View style={{ flex: 1 }}>
                 <View className="flex-row items-center mb-1">
-                  <Network size={16} color="#6366f1" style={{ marginRight: 6 }} />
+                  <Network size={16} color={colors[500]} style={{ marginRight: 6 }} />
                   <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                    启用知识图谱
+                    {t.rag.kg.enable}
                   </Typography>
                 </View>
-                <Typography className="text-xs text-gray-500">
-                  在向量化时自动抽取实体与关系 (需配置 LLM)
+                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
+                  {t.rag.kg.enableDesc}
                 </Typography>
               </View>
               <Switch
@@ -188,7 +200,7 @@ export default function RagAdvancedSettings() {
 
             {/* Model Selection Row - Always visible */}
             <View>
-              <View className="h-[1px] bg-gray-100 dark:bg-zinc-800 mx-4" />
+              <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }} className="h-[1px] mx-4" />
               <TouchableOpacity
                 onPress={() => globalRagConfig.enableKnowledgeGraph && setModelModalVisible(true)}
                 activeOpacity={globalRagConfig.enableKnowledgeGraph ? 0.7 : 1}
@@ -198,44 +210,44 @@ export default function RagAdvancedSettings() {
                   <View className="flex-row items-center mb-1">
                     <Bot
                       size={16}
-                      color={globalRagConfig.enableKnowledgeGraph ? '#10b981' : '#94a3b8'}
+                      color={globalRagConfig.enableKnowledgeGraph ? colors[500] : '#94a3b8'}
                       style={{ marginRight: 6 }}
                     />
                     <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                      抽取模型 (Extraction Model)
+                      {t.rag.kg.extractionModel}
                     </Typography>
                   </View>
-                  <Typography className="text-xs text-gray-500">
+                  <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
                     {selectedModelName
-                      ? `当前: ${selectedModelName}`
-                      : '默认 (跟随系统 Summary 模型)'}
+                      ? t.rag.kg.currentModel.replace('{name}', selectedModelName)
+                      : t.rag.kg.extractionModelDefault}
                   </Typography>
                 </View>
-                {globalRagConfig.enableKnowledgeGraph && (
-                  <View className="flex-row items-center">
-                    <Typography className="text-xs text-indigo-500 font-bold mr-1">更换</Typography>
-                    <ChevronLeft
-                      size={16}
-                      color="#6366f1"
-                      style={{ transform: [{ rotate: '180deg' }] }}
-                    />
-                  </View>
-                )}
+                <View className="flex-row items-center">
+                  <Typography style={{ color: colors[600] }} className="text-xs font-bold mr-1">{t.rag.kg.change}</Typography>
+                  <ChevronLeft
+                    size={16}
+                    color={colors[500]}
+                    style={{ transform: [{ rotate: '180deg' }] }}
+                  />
+                </View>
               </TouchableOpacity>
             </View>
           </View>
 
           {/* 1. 策略选择 (降本核心) */}
-          <SectionHeader title="降本增效策略 (Cost Strategy)" mt={0} />
-          <View className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800 mb-6">
+          <SectionHeader title={t.rag.kg.costStrategyTitle} mt={10} />
+          <View
+            className="bg-white dark:bg-zinc-900 rounded-[24px] p-5 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm"
+          >
             <View className="flex-row items-center mb-4">
-              <DollarSign size={20} color="#10b981" style={{ marginRight: 8 }} />
+              <DollarSign size={20} color={colors[500]} style={{ marginRight: 8 }} />
               <View style={{ flex: 1 }}>
                 <Typography className="text-base font-bold text-gray-900 dark:text-white">
-                  抽取策略
+                  {t.rag.kg.costStrategyTitle}
                 </Typography>
-                <Typography className="text-xs text-gray-500">
-                  决定何时以及如何调用 LLM 进行知识抽取
+                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
+                  {t.rag.kg.costStrategyDesc}
                 </Typography>
               </View>
             </View>
@@ -244,30 +256,31 @@ export default function RagAdvancedSettings() {
             {[
               {
                 key: 'summary-first',
-                label: '摘要优先 (Summary First)',
-                desc: '仅分析文档摘要，成本最低 (推荐)',
-                color: '#10b981',
+                label: t.rag.kg.summaryFirst,
+                desc: t.rag.kg.summaryFirstDesc,
+                color: colors[500],
               },
               {
                 key: 'on-demand',
-                label: '按需深挖 (On-Demand)',
-                desc: '仅手动触发详细抽取',
-                color: '#f59e0b',
+                label: t.rag.kg.onDemand,
+                desc: t.rag.kg.onDemandDesc,
+                color: colors[400],
               },
               {
                 key: 'full',
-                label: '全量扫描 (Full Scan)',
-                desc: '分析每个片段，成本极高',
+                label: t.rag.kg.fullScan,
+                desc: t.rag.kg.fullScanDesc,
                 color: '#ef4444',
               },
             ].map((opt) => (
               <TouchableOpacity
                 key={opt.key}
                 onPress={() => updateGlobalRagConfig({ costStrategy: opt.key as any })}
-                className={`p-3 rounded-xl mb-2 border ${globalRagConfig.costStrategy === opt.key ? 'bg-gray-50 dark:bg-zinc-800' : 'border-transparent'}`}
                 style={{
+                  backgroundColor: globalRagConfig.costStrategy === opt.key ? colors.opacity10 : 'transparent',
                   borderColor: globalRagConfig.costStrategy === opt.key ? opt.color : 'transparent',
                 }}
+                className="p-3 rounded-xl mb-2 border"
               >
                 <View className="flex-row items-center">
                   <View
@@ -300,18 +313,18 @@ export default function RagAdvancedSettings() {
           </View>
 
           {/* 2. 本地优化开关 */}
-          <SectionHeader title="本地预处理 (Local Optimization)" />
+          <SectionHeader title={t.rag.kg.localOptimization} />
           <View className="bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-zinc-800 mb-6">
             <View className="p-4 border-b border-gray-100 dark:border-gray-800 flex-row justify-between items-center">
               <View style={{ flex: 1 }}>
                 <View className="flex-row items-center mb-1">
-                  <Cpu size={16} color="#6366f1" style={{ marginRight: 6 }} />
+                  <Cpu size={16} color={colors[500]} style={{ marginRight: 6 }} />
                   <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                    增量哈希校验
+                    {t.rag.kg.incrementalHash}
                   </Typography>
                 </View>
-                <Typography className="text-xs text-gray-500">
-                  跳过内容未变更的文档，避免重复抽取
+                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
+                  {t.rag.kg.incrementalHashDesc}
                 </Typography>
               </View>
               <Switch
@@ -322,13 +335,13 @@ export default function RagAdvancedSettings() {
             <View className="p-4 flex-row justify-between items-center">
               <View style={{ flex: 1 }}>
                 <View className="flex-row items-center mb-1">
-                  <Network size={16} color="#8b5cf6" style={{ marginRight: 6 }} />
+                  <Network size={16} color={colors[500]} style={{ marginRight: 6 }} />
                   <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                    规则预筛选
+                    {t.rag.kg.rulesPreFilter}
                   </Typography>
                 </View>
-                <Typography className="text-xs text-gray-500">
-                  使用正则过滤低价值文本，不发送给 LLM
+                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
+                  {t.rag.kg.rulesPreFilterDesc}
                 </Typography>
               </View>
               <Switch
@@ -339,11 +352,11 @@ export default function RagAdvancedSettings() {
           </View>
 
           {/* 3. 提示词配置 (Playground) */}
-          <SectionHeader title="抽取提示词" />
+          <SectionHeader title={t.rag.kg.extractionPrompt} />
           <View className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800">
             <View className="flex-row justify-between items-center mb-4">
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                实体关系抽取提示词
+                {t.rag.kg.entityRelationPrompt}
               </Typography>
               <TouchableOpacity
                 onPress={() => {
@@ -354,7 +367,7 @@ export default function RagAdvancedSettings() {
                 className="flex-row items-center bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full"
               >
                 <RotateCcw size={12} color="#64748b" style={{ marginRight: 4 }} />
-                <Typography className="text-xs font-bold text-gray-500">重置默认</Typography>
+                <Typography className="text-xs font-bold text-gray-500">{t.rag.kg.resetDefault}</Typography>
               </TouchableOpacity>
             </View>
 
@@ -368,16 +381,16 @@ export default function RagAdvancedSettings() {
                 <View className="flex-row items-center">
                   <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
                   <Typography className="font-bold text-gray-700 dark:text-gray-300">
-                    点击编辑提取指令
+                    {t.rag.kg.editPrompt}
                   </Typography>
                 </View>
                 {promptText ? (
                   <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
-                    <Typography className="text-[10px] text-green-700 dark:text-green-400">已配置</Typography>
+                    <Typography className="text-[10px] text-green-700 dark:text-green-400">{t.rag.configured}</Typography>
                   </View>
                 ) : (
                   <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
-                    <Typography className="text-[10px] text-gray-500">使用默认</Typography>
+                    <Typography className="text-[10px] text-gray-500">{t.rag.usingDefault}</Typography>
                   </View>
                 )}
               </View>
@@ -386,13 +399,13 @@ export default function RagAdvancedSettings() {
                 numberOfLines={3}
                 className="text-xs text-gray-500 dark:text-gray-400 leading-5"
               >
-                {promptText || "当前使用系统默认提示词 (点击查看或修改)..."}
+                {promptText || t.rag.kg.usingDefaultPrompt}
               </Typography>
             </TouchableOpacity>
 
             <View className="mt-3">
               <Typography className="text-[10px] text-orange-500 flex-1 leading-4">
-                修改提示词可能导致解析失败，请务必保留 JSON 输出格式要求。
+                {t.rag.kg.promptWarning}
               </Typography>
             </View>
           </View>
@@ -400,111 +413,115 @@ export default function RagAdvancedSettings() {
           <FloatingTextEditorModal
             visible={isEditorVisible}
             initialContent={promptText}
-            title="编辑提取提示词"
-            placeholder="输入系统提示词..."
-            warningMessage="务必确认包含 {entityTypes} 占位符，并明确要求输出 JSON 格式，否则将导致知识提取失败。"
+            title={t.rag.kg.editPromptTitle}
+            placeholder={t.rag.kg.promptPlaceholder}
+            warningMessage={t.rag.kg.promptFormatWarning}
             onClose={() => setIsEditorVisible(false)}
             onSave={handleSavePrompt}
           />
 
           {/* 4. 可视化入口 (Beta) */}
-          <SectionHeader title="可视化 (Beta)" />
+          <SectionHeader title={t.rag.kg.visualization} />
           <TouchableOpacity
             onPress={() => router.push('/knowledge-graph')}
-            className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl items-center border border-indigo-100 dark:border-indigo-800"
+            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+            className="p-4 rounded-2xl items-center border mb-6"
           >
-            <Typography className="font-bold text-indigo-600 dark:text-indigo-400">
-              查看全量知识图谱 &gt;
+            <Typography style={{ color: colors[600] }} className="font-bold">
+              {t.rag.kg.viewFullGraph}
             </Typography>
           </TouchableOpacity>
+
+          {/* 5. 向量库统计 (View Vector Stats) */}
+          <SectionHeader title={t.rag.vectorStats.title.toUpperCase()} mt={32} />
+          <View
+            className="bg-white dark:bg-zinc-900 rounded-[24px] p-5 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm"
+          >
+            <View className="flex-row items-center justify-between mb-4">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/20 items-center justify-center mr-3">
+                  <Database size={20} color={colors[500]} />
+                </View>
+                <View>
+                  <Typography className="font-bold text-gray-900 dark:text-white">
+                    {t.rag.vectorStats.title}
+                  </Typography>
+                  <Typography variant="caption" className="text-gray-500">
+                    {t.rag.vectorStats.localStore}
+                  </Typography>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/settings/vector-stats')}>
+                <Typography style={{ color: colors[600] }} className="text-xs font-bold">
+                  {t.rag.vectorStats.viewDetails}
+                </Typography>
+              </TouchableOpacity>
+            </View>
+
+            <View className="flex-row gap-3 mb-4">
+              <View className="flex-1 bg-gray-50 dark:bg-black/20 p-4 rounded-2xl items-center">
+                <Typography className="text-xl font-bold text-gray-900 dark:text-white mb-1">5</Typography>
+                <Typography className="text-[10px] text-gray-500 uppercase tracking-wider">{t.rag.vectorStats.totalDocs}</Typography>
+              </View>
+              <View className="flex-1 bg-gray-50 dark:bg-black/20 p-4 rounded-2xl items-center">
+                <Typography style={{ color: colors[500] }} className="text-xl font-bold mb-1">1133</Typography>
+                <Typography className="text-[10px] text-gray-500 uppercase tracking-wider">{t.rag.vectorStats.totalChunks}</Typography>
+              </View>
+              <View className="flex-1 bg-gray-50 dark:bg-black/20 p-4 rounded-2xl items-center">
+                <Typography className="text-xl font-bold text-gray-900 dark:text-white mb-1">0.4</Typography>
+                <Typography className="text-[10px] text-gray-500 uppercase tracking-wider">{t.rag.vectorStats.storageUsage}</Typography>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => {
+                Alert.alert(t.common.dangerZone, t.rag.vectorStats.clearData + '?', [
+                  { text: t.common.cancel, style: 'cancel' },
+                  { text: t.common.confirm, style: 'destructive', onPress: () => { } }
+                ]);
+              }}
+              className="flex-row items-center justify-center p-4 rounded-2xl bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20"
+            >
+              <Trash2 size={18} color="#ef4444" className="mr-2" />
+              <Typography className="text-red-600 dark:text-red-400 font-bold">
+                {t.rag.vectorStats.clearData}
+              </Typography>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <ModelSelectionModal
+      <ModelPicker
         visible={modelModalVisible}
         onClose={() => setModelModalVisible(false)}
-        onSelect={(modelId) => updateGlobalRagConfig({ kgExtractionModel: modelId })}
-        currentModelId={globalRagConfig.kgExtractionModel}
+        onSelect={(uuid) => {
+          // ModelPicker returns UUID, but we store ID
+          // We need to find the ID corresponding to this UUID
+          let foundId = undefined;
+          for (const p of providers) {
+            const m = p.models.find((model) => model.uuid === uuid);
+            if (m) {
+              foundId = m.id;
+              break;
+            }
+          }
+          if (foundId) {
+            updateGlobalRagConfig({ kgExtractionModel: foundId });
+          }
+        }}
+        selectedUuid={(() => {
+          if (!globalRagConfig.kgExtractionModel) return undefined;
+          for (const p of providers) {
+            const m = p.models.find((m) => m.id === globalRagConfig.kgExtractionModel);
+            if (m) return m.uuid;
+          }
+          return undefined;
+        })()}
+        title={t.rag.kg.extractionModel}
+        filterType="chat"
       />
-    </PageLayout>
+    </PageLayout >
   );
 }
 
-const ModelSelectionModal: React.FC<{
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (modelId: string | undefined) => void;
-  currentModelId?: string;
-}> = ({ visible, onClose, onSelect, currentModelId }) => {
-  const { isDark } = useTheme();
-  const { providers } = useApiStore();
 
-  const allModels = useMemo(() => {
-    const models: any[] = [];
-    providers.forEach((p) => {
-      if (p.enabled) {
-        p.models.forEach((m) => {
-          if (m.enabled) {
-            // Only enabled models
-            models.push({ ...m, provider: p.name });
-          }
-        });
-      }
-    });
-    return models;
-  }, [providers]);
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 bg-black/50 justify-center px-6">
-        <View className="bg-white dark:bg-zinc-900 rounded-3xl max-h-[70%] overflow-hidden">
-          <View className="p-4 border-b border-gray-100 dark:border-gray-800 flex-row justify-between items-center">
-            <Typography className="font-bold text-lg text-gray-900 dark:text-white">
-              选择模型
-            </Typography>
-            <TouchableOpacity onPress={onClose}>
-              <X size={24} color={isDark ? '#fff' : '#000'} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView className="p-2">
-            <TouchableOpacity
-              onPress={() => {
-                onSelect(undefined);
-                onClose();
-              }}
-              className={`p-4 rounded-xl mb-2 flex-row justify-between items-center ${!currentModelId ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'bg-gray-50 dark:bg-zinc-800'}`}
-            >
-              <View>
-                <Typography className="font-bold text-gray-900 dark:text-white">
-                  跟随系统默认
-                </Typography>
-                <Typography className="text-xs text-gray-500">使用全局默认总结模型</Typography>
-              </View>
-              {!currentModelId && <Check size={20} color="#6366f1" />}
-            </TouchableOpacity>
-
-            {allModels.map((model) => (
-              <TouchableOpacity
-                key={model.id}
-                onPress={() => {
-                  onSelect(model.id);
-                  onClose();
-                }}
-                className={`p-4 rounded-xl mb-2 flex-row justify-between items-center ${currentModelId === model.id ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'bg-gray-50 dark:bg-zinc-800'}`}
-              >
-                <View>
-                  <Typography className="font-bold text-gray-900 dark:text-white">
-                    {model.name}
-                  </Typography>
-                  <Typography className="text-xs text-gray-500">{model.provider}</Typography>
-                </View>
-                {currentModelId === model.id && <Check size={20} color="#6366f1" />}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-};

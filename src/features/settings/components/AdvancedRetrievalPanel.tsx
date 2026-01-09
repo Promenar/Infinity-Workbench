@@ -4,20 +4,23 @@ import { Typography, Switch } from '../../../components/ui';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useI18n } from '../../../lib/i18n';
-import Slider from '@react-native-community/slider';
+import { ThemedSlider } from '../../../components/ui/Slider';
 
 // 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => (
-  <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-    <View className="w-1.5 h-4 bg-purple-500 rounded-full mr-3" />
-    <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
-      {title}
-    </Typography>
-  </View>
-);
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
+  const { colors } = useTheme();
+  return (
+    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
+      <View style={{ backgroundColor: colors[500] }} className="w-1.5 h-4 rounded-full mr-3" />
+      <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
+        {title}
+      </Typography>
+    </View>
+  );
+};
 
 export const AdvancedRetrievalPanel: React.FC = () => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { t } = useI18n();
   const { globalRagConfig, updateGlobalRagConfig } = useSettingsStore();
 
@@ -39,20 +42,17 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-              {t.rag.items.replace('{count}', (globalRagConfig.memoryLimit ?? 5).toString())}
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {t.rag.unitItems.replace('{count}', (globalRagConfig.memoryLimit ?? 5).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.memoryLimit ?? 5}
             onValueChange={(val) => updateGlobalRagConfig({ memoryLimit: Math.round(val) })}
             minimumValue={3}
             maximumValue={10}
             step={1}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
 
@@ -65,20 +65,17 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">50%</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {Math.round((globalRagConfig.memoryThreshold ?? 0.7) * 100)}%
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">95%</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.memoryThreshold ?? 0.7}
             onValueChange={(val) => updateGlobalRagConfig({ memoryThreshold: val })}
             minimumValue={0.5}
             maximumValue={0.95}
             step={0.05}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
 
@@ -97,20 +94,17 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-              {t.rag.items.replace('{count}', (globalRagConfig.docLimit ?? 8).toString())}
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {t.rag.unitItems.replace('{count}', (globalRagConfig.memoryLimit ?? 8).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">15</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.docLimit ?? 8}
             onValueChange={(val) => updateGlobalRagConfig({ docLimit: Math.round(val) })}
             minimumValue={5}
             maximumValue={15}
             step={1}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
 
@@ -123,35 +117,32 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">30%</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {Math.round((globalRagConfig.docThreshold ?? 0.45) * 100)}%
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">80%</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.docThreshold ?? 0.45}
             onValueChange={(val) => updateGlobalRagConfig({ docThreshold: val })}
             minimumValue={0.3}
             maximumValue={0.8}
             step={0.05}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
       </View>
 
       {/* Rerank配置 */}
-      <SectionHeader title="Rerank 二次精排" />
+      <SectionHeader title={t.rag.rerankTitle} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 启用Rerank */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              启用Rerank
+              {t.rag.rerankEnable}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              使用专门的重排序模型对检索结果进行二次精排
+              {t.rag.rerankEnableDesc}
             </Typography>
           </View>
           <Switch
@@ -165,69 +156,63 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         {/* 初召回数量 */}
         <View className="mb-4">
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            初召回数量
+            {t.rag.initialRecall}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Rerank前召回的文档数量（建议20-50）
+            {t.rag.initialRecallDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-              {globalRagConfig.rerankTopK ?? 30} 条
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {t.rag.unitItems.replace('{count}', (globalRagConfig.rerankTopK ?? 30).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.rerankTopK ?? 30}
             onValueChange={(val) => updateGlobalRagConfig({ rerankTopK: Math.round(val) })}
             minimumValue={10}
             maximumValue={100}
             step={5}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
 
         {/* 精排后返回数量 */}
         <View>
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            精排后返回
+            {t.rag.finalRecall}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Rerank后实际使用的文档数量（建议5-10）
+            {t.rag.finalRecallDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-              {globalRagConfig.rerankFinalK ?? 8} 条
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {t.rag.unitItems.replace('{count}', (globalRagConfig.rerankFinalK ?? 8).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.rerankFinalK ?? 8}
             onValueChange={(val) => updateGlobalRagConfig({ rerankFinalK: Math.round(val) })}
             minimumValue={3}
             maximumValue={20}
             step={1}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
       </View>
 
       {/* 查询重写配置 */}
-      <SectionHeader title="查询重写" />
+      <SectionHeader title={t.rag.queryRewriteTitle} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 启用查询重写 */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              启用查询重写
+              {t.rag.queryRewriteEnable}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              生成多个查询变体以提升召回率
+              {t.rag.queryRewriteEnableDesc}
             </Typography>
           </View>
           <Switch
@@ -241,25 +226,26 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         {/* 重写策略 */}
         <View className="mb-4">
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
-            重写策略
+            {t.rag.rewriteStrategyTitle}
           </Typography>
           <View className="flex-row gap-2">
             {(['hyde', 'multi-query', 'expansion'] as const).map((strategy) => (
               <TouchableOpacity
                 key={strategy}
                 onPress={() => updateGlobalRagConfig({ queryRewriteStrategy: strategy })}
-                className={`flex-1 py-3 px-3 rounded-xl border ${(globalRagConfig.queryRewriteStrategy ?? 'multi-query') === strategy
-                  ? 'bg-purple-50 dark:bg-purple-500/10 border-purple-500'
-                  : 'bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700'
-                  }`}
+                style={{
+                  backgroundColor: (globalRagConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors.opacity10 : 'transparent',
+                  borderColor: (globalRagConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors[500] : 'rgba(156, 163, 175, 0.2)'
+                }}
+                className="flex-1 py-3 px-3 rounded-xl border"
               >
                 <Typography
-                  className={`text-xs font-bold text-center ${(globalRagConfig.queryRewriteStrategy ?? 'multi-query') === strategy
-                    ? 'text-purple-600 dark:text-purple-400'
-                    : 'text-gray-600 dark:text-gray-400'
-                    }`}
+                  style={{
+                    color: (globalRagConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors[600] : '#6b7280'
+                  }}
+                  className="text-xs font-bold text-center"
                 >
-                  {strategy === 'hyde' ? 'HyDE' : strategy === 'multi-query' ? '多查询' : '扩展'}
+                  {strategy === 'hyde' ? t.rag.strategyHyde : strategy === 'multi-query' ? t.rag.strategyMultiQuery : t.rag.strategyExpansion}
                 </Typography>
               </TouchableOpacity>
             ))}
@@ -269,42 +255,39 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         {/* 变体数量 */}
         <View>
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            变体数量
+            {t.rag.variantCount}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            生成的查询变体数量（2-5个）
+            {t.rag.variantCountDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">2</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
-              {globalRagConfig.queryRewriteCount ?? 3} 个
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {t.rag.unitItems.replace('{count}', (globalRagConfig.queryRewriteCount ?? 3).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.queryRewriteCount ?? 3}
             onValueChange={(val) => updateGlobalRagConfig({ queryRewriteCount: Math.round(val) })}
             minimumValue={2}
             maximumValue={5}
             step={1}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
       </View>
 
       {/* 混合检索配置 */}
-      <SectionHeader title="混合检索" />
+      <SectionHeader title={t.rag.hybridTitle} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 启用混合检索 */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              启用混合检索
+              {t.rag.hybridEnable}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              结合向量检索和关键词检索（BM25）
+              {t.rag.hybridEnableDesc}
             </Typography>
           </View>
           <Switch
@@ -318,69 +301,63 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         {/* 向量权重 */}
         <View className="mb-4">
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            向量检索权重
+            {t.rag.vectorWeight}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            向量检索在混合检索中的权重（0.5为均衡）
+            {t.rag.vectorWeightDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {((globalRagConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">100%</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.hybridAlpha ?? 0.6}
             onValueChange={(val) => updateGlobalRagConfig({ hybridAlpha: val })}
             minimumValue={0}
             maximumValue={1}
             step={0.1}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
 
         {/* BM25权重增益 */}
         <View>
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            BM25权重增益
+            {t.rag.bm25Boost}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            BM25分数的放大倍数（默认1.0）
+            {t.rag.bm25BoostDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-400">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {(globalRagConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">2.0x</Typography>
           </View>
-          <Slider
+          <ThemedSlider
             value={globalRagConfig.hybridBM25Boost ?? 1.0}
             onValueChange={(val) => updateGlobalRagConfig({ hybridBM25Boost: val })}
             minimumValue={0.5}
             maximumValue={2.0}
             step={0.1}
-            minimumTrackTintColor="#a855f7"
-            maximumTrackTintColor={isDark ? '#27272a' : '#f1f5f9'}
-            thumbTintColor="#a855f7"
           />
         </View>
       </View>
 
       {/* 可观测性配置 */}
-      <SectionHeader title="可观测性" />
+      <SectionHeader title={t.rag.observability} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 显示检索进度 */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              显示检索进度
+              {t.rag.showProgress}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              显示实时检索进度条
+              {t.rag.showProgressDesc}
             </Typography>
           </View>
           <Switch
@@ -395,10 +372,10 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              显示检索详情
+              {t.rag.showDetails}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              显示详细的检索统计面板
+              {t.rag.showDetailsDesc}
             </Typography>
           </View>
           <Switch
@@ -413,10 +390,10 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         <View className="flex-row items-center justify-between">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              记录检索指标
+              {t.rag.recordMetrics}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              记录耗时、召回率等指标用于后续分析
+              {t.rag.recordMetricsDesc}
             </Typography>
           </View>
           <Switch

@@ -22,7 +22,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from '../../../lib/haptics';
 import Markdown from 'react-native-markdown-display';
 import { clsx } from 'clsx';
-// import { useTheme } from '../../../theme/ThemeProvider'; // Moved to parent component
+import { useTheme } from '../../../theme/ThemeProvider';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -258,6 +258,7 @@ const SearchSourcesBlock: React.FC<{
   onToggle: () => void;
   t: any;
 }> = ({ citations, isDark, expanded, onToggle, t }) => {
+  const { colors } = useTheme();
   return (
     <TouchableOpacity
       activeOpacity={0.7}
@@ -273,7 +274,7 @@ const SearchSourcesBlock: React.FC<{
         borderColor: expanded
           ? isDark
             ? 'rgba(99, 102, 241, 0.4)'
-            : '#6366f1'
+            : colors[500]
           : isDark
             ? 'rgba(255, 255, 255, 0.05)'
             : 'rgba(0,0,0,0.05)',
@@ -282,13 +283,13 @@ const SearchSourcesBlock: React.FC<{
     >
       <Globe
         size={12}
-        color={isDark ? (expanded ? '#818cf8' : '#a1a1aa') : expanded ? '#6366f1' : '#64748b'}
+        color={isDark ? (expanded ? '#818cf8' : '#a1a1aa') : expanded ? colors[500] : '#64748b'}
       />
       <Typography
         style={{
           fontSize: 11,
           fontWeight: '600',
-          color: isDark ? (expanded ? '#818cf8' : '#a1a1aa') : expanded ? '#4f46e5' : '#4b5563',
+          color: isDark ? (expanded ? '#818cf8' : '#a1a1aa') : expanded ? colors[600] : '#4b5563',
         }}
       >
         {t.agent.citations.replace('{count}', citations.length.toString())}
@@ -378,6 +379,7 @@ const SelectTextModal: React.FC<{
   isDark: boolean;
   t: any;
 }> = ({ isVisible, content, onClose, isDark, t }) => {
+  const { colors } = useTheme();
   const bgOpacity = useSharedValue(0);
   const contentTranslateY = useSharedValue(600);
   const [modalVisible, setModalVisible] = useState(isVisible);
@@ -463,7 +465,7 @@ const SelectTextModal: React.FC<{
               <X size={24} color={isDark ? '#e4e4e7' : '#27272a'} />
             </TouchableOpacity>
             <Typography className="text-base font-bold">{t.agent.viewAndSelectText}</Typography>
-            <TouchableOpacity onPress={handleCopy} className="p-2 bg-indigo-500 rounded-full">
+            <TouchableOpacity onPress={handleCopy} style={{ backgroundColor: colors[500] }} className="p-2 rounded-full">
               <Copy size={20} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -616,6 +618,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   isDark = false, // Default fallback
 }) => {
   const { t } = useI18n();
+  const { colors, isDark: themeIsDark } = useTheme();
   const isUser = message.role === 'user';
   // const { isDark } = useTheme(); // REMOVED to avoid context crash during unmount
 
@@ -813,14 +816,14 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                   selectable={true}
                   style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}
                 >
-                  {t.agent.svgErrorTitle}
+                  {t.svgErrorTitle}
                 </Typography>
                 <Typography
                   selectable={true}
                   variant="caption"
                   style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}
                 >
-                  {t.agent.svgBlockedDesc}
+                  {t.svgBlockedDesc}
                 </Typography>
               </View>
             );
@@ -1017,7 +1020,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                   blockquote: {
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                     borderLeftWidth: 3,
-                    borderLeftColor: '#6366f1',
+                    borderLeftColor: colors[500],
                     paddingHorizontal: 12,
                     paddingVertical: 8,
                     borderRadius: 8,

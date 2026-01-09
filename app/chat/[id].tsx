@@ -565,7 +565,7 @@ export default function ChatDetailScreen() {
       {/* Model Picker */}
       <ModelPicker
         visible={showModelPicker}
-        title={t.conversation.switchModel}
+        title={t.agent.conversation.switchModel}
         selectedUuid={session.modelId || agent.defaultModel}
         filterType="chat"
         onSelect={(uuid) => {
@@ -596,12 +596,12 @@ export default function ChatDetailScreen() {
             className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-gray-100 dark:border-zinc-800"
           >
             <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              {t.conversation.editTitle}
+              {t.agent.conversation.editTitle}
             </Typography>
             <TextInput
               value={editingTitle}
               onChangeText={setEditingTitle}
-              placeholder={t.superAssistant.enterTitle}
+              placeholder={t.agent.superAssistant.enterTitle}
               placeholderTextColor="#9ca3af"
               autoFocus
               className="bg-gray-50 dark:bg-black p-4 rounded-xl border border-gray-200 dark:border-zinc-800 text-gray-900 dark:text-white mb-4"

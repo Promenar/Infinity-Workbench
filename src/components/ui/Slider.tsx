@@ -13,13 +13,13 @@ interface Props {
 }
 
 export const ThemedSlider: React.FC<Props> = ({ ...props }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   return (
     <Slider
       style={{ width: '100%', height: 40 }}
-      minimumTrackTintColor="#6366f1"
+      minimumTrackTintColor={colors[500]}
       maximumTrackTintColor={isDark ? '#3f3f46' : '#e2e8f0'}
-      thumbTintColor="#6366f1"
+      thumbTintColor={colors[500]}
       {...props}
     />
   );

@@ -18,14 +18,17 @@ interface ContextManagementPanelProps {
   sessionId: string;
 }
 
-const SectionHeader = ({ title }: { title: string }) => (
-  <View className="flex-row items-center mb-4 mt-2">
-    <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
-    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-      {title}
-    </Typography>
-  </View>
-);
+const SectionHeader = ({ title }: { title: string }) => {
+  const { colors } = useTheme();
+  return (
+    <View className="flex-row items-center mb-4 mt-2">
+      <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
+      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+        {title}
+      </Typography>
+    </View>
+  );
+};
 
 export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ sessionId }) => {
   const { t } = useI18n();
@@ -141,7 +144,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
     }
   };
 
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
 
   if (!session) return null;
 
@@ -181,10 +184,8 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
             <TouchableOpacity
               onPress={handleManualSummarize}
               disabled={loading}
-              className={clsx(
-                "flex-row items-center bg-indigo-600 px-3 py-1.5 rounded-full",
-                loading && "opacity-50"
-              )}
+              style={loading ? { opacity: 0.5 } : { backgroundColor: colors[600] }}
+              className="flex-row items-center px-3 py-1.5 rounded-full"
             >
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" />
@@ -256,8 +257,11 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
                   )}
                 >
                   <View className="flex-row items-center mb-2">
-                    <View className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-full mr-2">
-                      <Typography className="text-purple-600 dark:text-purple-400 text-[9px] font-bold">
+                    <View
+                      style={{ backgroundColor: colors.opacity10 }}
+                      className="px-2 py-0.5 rounded-full mr-2"
+                    >
+                      <Typography style={{ color: colors[600] }} className="text-[9px] font-bold">
                         SUMMARY
                       </Typography>
                     </View>
@@ -289,13 +293,15 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
                 <View className="items-center pt-3 border-t border-gray-50 dark:border-zinc-800/50 mt-1">
                   {visibleCount < summaries.length ? (
                     <TouchableOpacity onPress={handleLoadMore}>
-                      <Typography className="text-indigo-500 text-xs font-bold">
+                      <Typography style={{ color: colors[600] }} className="text-xs font-bold">
                         展开更多 ({summaries.length - visibleCount})
                       </Typography>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity onPress={handleShowLess}>
-                      <Typography className="text-indigo-500 text-xs font-bold">收起列表</Typography>
+                      <Typography style={{ color: colors[600] }} className="text-xs font-bold">
+                        收起列表
+                      </Typography>
                     </TouchableOpacity>
                   )}
                 </View>

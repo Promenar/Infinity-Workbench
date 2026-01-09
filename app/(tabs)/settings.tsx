@@ -38,6 +38,9 @@ import {
   Monitor,
   ArrowUpDown,
   BarChart2,
+  Calendar,
+  Settings as SettingsIcon,
+  Palette,
 } from 'lucide-react-native';
 
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
@@ -69,7 +72,7 @@ export default function SettingsScreen() {
     null,
   );
   const { t } = useI18n();
-  const { theme, setTheme, isDark } = useTheme();
+  const { theme, setTheme, isDark, colors } = useTheme();
   const { showToast } = useToast();
   const {
     language,
@@ -226,7 +229,7 @@ export default function SettingsScreen() {
                         style={{
                           fontSize: 12,
                           fontWeight: 'bold',
-                          color: language === 'zh' ? '#6366f1' : '#9ca3af',
+                          color: language === 'zh' ? colors[500] : '#9ca3af',
                         }}
                       >
                         中
@@ -251,7 +254,7 @@ export default function SettingsScreen() {
                         style={{
                           fontSize: 12,
                           fontWeight: 'bold',
-                          color: language === 'en' ? '#6366f1' : '#9ca3af',
+                          color: language === 'en' ? colors[500] : '#9ca3af',
                         }}
                       >
                         EN
@@ -306,12 +309,20 @@ export default function SettingsScreen() {
                             justifyContent: 'center',
                           }}
                         >
-                          <Icon size={14} color={theme === m ? '#6366f1' : '#9ca3af'} />
+                          <Icon size={14} color={theme === m ? colors[500] : '#9ca3af'} />
                         </TouchableOpacity>
                       );
                     })}
                   </View>
                 }
+              />
+
+              <SettingsItem
+                icon={Palette}
+                title={t.settings.themeColor || '主题颜色'}
+                subtitle={t.settings.personalizationDesc}
+                showChevron
+                onPress={() => router.push('/settings/theme' as any)}
               />
 
               <SettingsItem
@@ -354,7 +365,8 @@ export default function SettingsScreen() {
                 }}
               />
 
-              <SettingsItem
+              {/* 暂时隐藏语音处理服务配置 */}
+              {/* <SettingsItem
                 icon={Mic}
                 title={t.settings.modelPresets.speech}
                 subtitle={getModelName(defaultSpeechModel)}
@@ -367,7 +379,7 @@ export default function SettingsScreen() {
                   });
                   setPickerVisible(true);
                 }}
-              />
+              /> */}
 
               <SettingsItem
                 icon={Layers}
@@ -445,12 +457,22 @@ export default function SettingsScreen() {
 
             {/* 应用信息 */}
             <SettingsSection title={t.settings.appSection}>
+              {/* 暂时隐藏通知设置
               <SettingsItem
                 icon={Bell}
                 title={t.settings.notifications}
                 subtitle={t.settings.notificationsDesc}
                 onPress={() => showToast('通知设置', 'info')}
-              />
+              /> */}
+
+              {/* Theme moved to appearance section */}
+              {/* <SettingsItem
+                icon={Palette}
+                title={t.settings.personalization}
+                subtitle={t.settings.personalizationDesc}
+                showChevron
+                onPress={() => router.push('/settings/theme' as any)}
+              /> */}
 
               <SettingsItem
                 icon={Info}
@@ -493,7 +515,7 @@ export default function SettingsScreen() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: Colors.primary,
+                backgroundColor: colors[500],
                 paddingVertical: 14,
                 borderRadius: 16,
                 marginBottom: 24,
@@ -554,7 +576,7 @@ export default function SettingsScreen() {
                             justifyContent: 'center',
                           }}
                         >
-                          <Server size={20} color={Colors.primary} />
+                          <Server size={20} color={colors[500]} />
                         </View>
                         <View style={{ marginLeft: 12 }}>
                           <Text
@@ -588,7 +610,7 @@ export default function SettingsScreen() {
                           }}
                           style={{ padding: 8 }}
                         >
-                          <Edit2 size={18} color="#6366f1" />
+                          <Edit2 size={18} color={colors[500]} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => {
@@ -623,8 +645,8 @@ export default function SettingsScreen() {
                         borderRadius: 20,
                       }}
                     >
-                      <Cpu size={14} color={Colors.primary} style={{ marginRight: 6 }} />
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.primary }}>
+                      <Cpu size={14} color={colors[500]} style={{ marginRight: 6 }} />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors[500] }}>
                         {t.settings.modelSettings.title}
                       </Text>
                     </TouchableOpacity>

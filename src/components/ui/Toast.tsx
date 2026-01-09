@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp, SlideInDown, FadeInUp } from 'react-native-reanimated';
 import { Typography } from './Typography';
 import { Check, AlertCircle, Info, AlertTriangle } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from '../../lib/haptics';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -18,6 +19,7 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
  * 采用顶部悬浮胶囊设计，优化了动画曲线，使其更加轻盈专业
  */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
   const timeoutRef = useRef<any>(null);
 
@@ -52,11 +54,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             entering={FadeInUp.duration(400).springify().damping(18).stiffness(120)}
             exiting={FadeOutUp.duration(200)}
             className={`flex-row items-center px-6 py-3.5 rounded-full shadow-[0_25px_60px_rgba(0,0,0,0.3)] border border-white/30 dark:border-white/10
-                            ${toast.type === 'success' ? 'bg-indigo-600' : ''}
                             ${toast.type === 'error' ? 'bg-red-600' : ''}
                             ${toast.type === 'info' ? 'bg-zinc-900' : ''}
                             ${toast.type === 'warning' ? 'bg-amber-500' : ''}
                         `}
+            style={toast.type === 'success' ? { backgroundColor: colors[500] } : {}}
           >
             <View className="mr-3 bg-white/20 p-1 rounded-full">
               {toast.type === 'success' && <Check size={14} color="white" strokeWidth={4} />}

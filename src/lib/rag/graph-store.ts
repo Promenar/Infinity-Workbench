@@ -204,6 +204,48 @@ export class GraphStore {
   }
 
   /**
+   * Update edge properties
+   */
+  async updateEdge(id: string, updates: { relation?: string; weight?: number }): Promise<void> {
+    try {
+      if (!updates.relation && updates.weight === undefined) return;
+
+      let query = 'UPDATE kg_edges SET ';
+      const params: any[] = [];
+      const parts: string[] = [];
+
+      if (updates.relation) {
+        parts.push('relation = ?');
+        params.push(updates.relation);
+      }
+      if (updates.weight !== undefined) {
+        parts.push('weight = ?');
+        params.push(updates.weight);
+      }
+
+      query += parts.join(', ') + ' WHERE id = ?';
+      params.push(id);
+
+      await db.execute(query, params);
+    } catch (e) {
+      console.error('Failed to update KG edge:', e);
+      throw e;
+    }
+  }
+
+  /**
+   * Delete edge
+   */
+  async deleteEdge(id: string): Promise<void> {
+    try {
+      await db.execute('DELETE FROM kg_edges WHERE id = ?', [id]);
+    } catch (e) {
+      console.error('Failed to delete KG edge:', e);
+      throw e;
+    }
+  }
+
+  /**
    * Get all nodes
    */
   async getAllNodes(): Promise<KGNode[]> {

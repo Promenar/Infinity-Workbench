@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
   Check,
   Database,
+  Edit3,
 } from 'lucide-react-native';
 import * as Haptics from '../../../../src/lib/haptics';
 import { useAgentStore } from '../../../../src/store/agent-store';
@@ -32,10 +33,12 @@ import { clsx } from 'clsx';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { AgentAvatar } from '../../../../src/components/chat/AgentAvatar';
+import { FloatingTextEditorModal } from '../../../../src/components/ui/FloatingTextEditorModal';
 import { AgentRagConfigPanel } from '../../../../src/features/settings/components/AgentRagConfigPanel';
 import { useDebounce } from '../../../../src/hooks/useDebounce';
 import { PRESET_COLORS } from '../../../../src/types/super-assistant';
 import { InferencePresets } from '../../../../src/components/chat/InferencePresets';
+import { ColorPickerPanel } from '../../../../src/components/ui/ColorPickerPanel';
 
 const PRESET_ICONS = [
   'MessageSquare',
@@ -53,7 +56,7 @@ const PRESET_ICONS = [
 export default function AgentEditScreen() {
   const { agentId } = useLocalSearchParams<{ agentId: string }>();
   const router = useRouter();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const { getAgent, updateAgent, deleteAgent } = useAgentStore();
@@ -62,6 +65,7 @@ export default function AgentEditScreen() {
 
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [isPromptEditorVisible, setIsPromptEditorVisible] = useState(false);
 
   const [formData, setFormData] = useState({
     name: agent?.name || '',
@@ -191,14 +195,17 @@ export default function AgentEditScreen() {
     });
   };
 
-  const SectionHeader = ({ title }: { title: string }) => (
-    <View className="flex-row items-center mb-4 mt-2">
-      <View className="w-1 h-4 bg-indigo-500 rounded-full mr-2" />
-      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-        {title}
-      </Typography>
-    </View>
-  );
+  const SectionHeader = ({ title }: { title: string }) => {
+    const { colors } = useTheme();
+    return (
+      <View className="flex-row items-center mb-4 mt-2">
+        <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
+        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+          {title}
+        </Typography>
+      </View>
+    );
+  };
 
   if (!agent) return null;
 
@@ -208,6 +215,7 @@ export default function AgentEditScreen() {
 
       <GlassHeader
         title={t.agent.editTitle}
+        subtitle={t.agent.editSubtitle}
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
@@ -242,7 +250,8 @@ export default function AgentEditScreen() {
               />
               <TouchableOpacity
                 onPress={handlePickImage}
-                className="absolute bottom-0 right-0 bg-indigo-600 p-2.5 rounded-full border-4 border-gray-50 dark:border-zinc-900 shadow-md"
+                style={{ backgroundColor: colors[600] }}
+                className="absolute bottom-0 right-0 p-2.5 rounded-full border-4 border-gray-50 dark:border-zinc-900 shadow-md"
               >
                 {isProcessingImage ? (
                   <ActivityIndicator size="small" color="white" />
@@ -263,9 +272,13 @@ export default function AgentEditScreen() {
                   className={clsx(
                     'w-12 h-12 rounded-2xl items-center justify-center border-2',
                     formData.avatar === iconName
-                      ? 'bg-indigo-50 dark:bg-indigo-500/20 border-indigo-500'
+                      ? 'border-transparent' // We use inline style for border-color below to avoid class conflict
                       : 'bg-white dark:bg-black border-transparent',
                   )}
+                  style={formData.avatar === iconName ? {
+                    backgroundColor: colors.opacity10,
+                    borderColor: colors[500]
+                  } : {}}
                 >
                   <AgentAvatar
                     id={agentId}
@@ -275,7 +288,7 @@ export default function AgentEditScreen() {
                     size={32}
                   />
                   {formData.avatar === iconName && (
-                    <View className="absolute -top-1 -right-1 bg-indigo-500 rounded-full p-0.5">
+                    <View style={{ backgroundColor: colors[500] }} className="absolute -top-1 -right-1 rounded-full p-0.5">
                       <Check size={8} color="white" />
                     </View>
                   )}
@@ -313,66 +326,68 @@ export default function AgentEditScreen() {
           </View>
 
           {/* Theme Color Group */}
-          <SectionHeader title={t.superAssistant.iconColor || '主题色'} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginRight: -8 }}>
-              {PRESET_COLORS.map((color) => {
-                const isSelected = formData.color === color.value;
-                return (
-                  <View
-                    key={color.value}
-                    style={{ width: '25%', paddingRight: 8, marginBottom: 8 }}
-                  >
-                    <TouchableOpacity
-                      onPress={() => {
-                        setFormData({ ...formData, color: color.value });
-                        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-                      }}
-                      style={{
-                        width: '100%',
-                        aspectRatio: 1,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: 16,
-                        borderWidth: 2,
-                        backgroundColor: color.value + '10',
-                        borderColor: isSelected ? color.value : isDark ? '#18181b' : '#f4f4f5',
-                      }}
-                    >
-                      <View
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 12,
-                          backgroundColor: color.value,
-                          ...(!isDark ? { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } : {})
-                        }}
-                      />
-                      {isSelected && (
-                        <View style={{ position: 'absolute', top: 6, right: 6 }}>
-                          <Check size={10} color={color.value} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </View>
+          <View className="mb-0">
+            <ColorPickerPanel
+              color={formData.color}
+              onColorChange={(color) => {
+                setFormData({ ...formData, color: color });
+                setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+              }}
+              title={t.common.color.title}
+            />
           </View>
 
           {/* Personality Group */}
           <SectionHeader title={t.agent.personality} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-            <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 h-40"
-              multiline
-              textAlignVertical="top"
-              value={formData.systemPrompt}
-              onChangeText={(text) => setFormData({ ...formData, systemPrompt: text })}
-              placeholder={t.agent.personalityPlaceholder || t.agent.systemPromptPlaceholder}
-              placeholderTextColor="#94a3b8"
-            />
+            <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
+              <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center">
+                  <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
+                  <Typography className="font-bold text-gray-700 dark:text-gray-300">
+                    {t.agent.personality}
+                  </Typography>
+                </View>
+                {formData.systemPrompt ? (
+                  <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-green-700 dark:text-green-400">
+                      {t.rag.configured || '已配置'}
+                    </Typography>
+                  </View>
+                ) : (
+                  <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-gray-500">
+                      {t.common.notSet}
+                    </Typography>
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setIsPromptEditorVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Typography
+                  numberOfLines={4}
+                  className="text-xs text-gray-500 dark:text-gray-400 leading-5"
+                >
+                  {formData.systemPrompt || (t.agent.personalityPlaceholder || t.agent.systemPromptPlaceholder)}
+                </Typography>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          <FloatingTextEditorModal
+            visible={isPromptEditorVisible}
+            initialContent={formData.systemPrompt || ''}
+            title={t.agent.personality}
+            placeholder={t.agent.personalityPlaceholder || t.agent.systemPromptPlaceholder}
+            onClose={() => setIsPromptEditorVisible(false)}
+            onSave={(text) => {
+              setFormData({ ...formData, systemPrompt: text });
+              setIsPromptEditorVisible(false);
+            }}
+          />
 
           {/* Model Configuration Group */}
           <SectionHeader title={t.agent.modelConfig} />
@@ -389,7 +404,7 @@ export default function AgentEditScreen() {
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
                   {t.agent.engine}
                 </Typography>
-                <Typography className="text-indigo-500 font-semibold" numberOfLines={1}>
+                <Typography style={{ color: colors[500] }} className="font-semibold" numberOfLines={1}>
                   {displayModelName}
                 </Typography>
               </View>
@@ -402,7 +417,7 @@ export default function AgentEditScreen() {
               </Typography>
               <InferencePresets
                 currentTemperature={formData.temperature}
-                onSelect={(params) => {
+                onSelect={(params: any) => {
                   setFormData((prev) => ({
                     ...prev,
                     temperature: params.temperature ?? prev.temperature,
@@ -417,7 +432,7 @@ export default function AgentEditScreen() {
           </View>
 
           {/* RAG 配置入口 */}
-          <SectionHeader title="RAG 配置" />
+          <SectionHeader title={t.agent.ragConfigTitle} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
             <TouchableOpacity
               onPress={() => {
@@ -430,10 +445,10 @@ export default function AgentEditScreen() {
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
-                  高级RAG配置
+                  {t.common.ragSection}
                 </Typography>
                 <Typography className="text-gray-500 dark:text-gray-400 text-sm">
-                  配置切块、摘要、检索参数
+                  {t.agent.ragConfigDesc}
                 </Typography>
               </View>
               <ChevronRight size={20} color="#9ca3af" />
@@ -452,10 +467,10 @@ export default function AgentEditScreen() {
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
-                  高级检索配置
+                  {t.agent.advancedRetrievalTitle}
                 </Typography>
                 <Typography className="text-gray-500 dark:text-gray-400 text-sm">
-                  Rerank、查询重写、混合检索
+                  {t.agent.advancedRetrievalDesc}
                 </Typography>
               </View>
               <ChevronRight size={20} color="#9ca3af" />

@@ -4,6 +4,7 @@ import { Typography } from '../ui';
 import { Folder, MoreVertical, Check } from 'lucide-react-native';
 import Animated, { ZoomIn, ZoomOut } from 'react-native-reanimated';
 import { clsx } from 'clsx';
+import { useTheme } from '../../theme/ThemeProvider';
 
 export const RagFolderCard = ({
   label,
@@ -22,17 +23,18 @@ export const RagFolderCard = ({
   onPress: () => void;
   onLongPress: () => void;
 }) => {
+  const { isDark, colors } = useTheme();
+
   return (
     <TouchableOpacity
       activeOpacity={0.7}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={200}
+      style={isSelected ? { backgroundColor: isDark ? colors.opacity20 : colors.opacity10, borderColor: colors.opacity30 } : {}}
       className={clsx(
-        'p-4 rounded-[28px] flex-1 h-36 justify-between border relative overflow-hidden',
-        isSelected
-          ? 'bg-indigo-50/80 dark:bg-indigo-900/40 border-indigo-200 dark:border-indigo-800'
-          : 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800',
+        'p-4 rounded-2xl border mb-3',
+        !isSelected && 'bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-zinc-800',
       )}
     >
       <View className="flex-row justify-between items-start">
@@ -44,18 +46,17 @@ export const RagFolderCard = ({
               : 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-700',
           )}
         >
-          <Folder size={24} color={isSelected ? '#6366f1' : iconColor} strokeWidth={1.5} />
+          <Folder size={24} color={isSelected ? colors[500] : iconColor} strokeWidth={1.5} />
         </View>
 
         {isSelectionMode ? (
           <Animated.View
             entering={ZoomIn.duration(300)}
             exiting={ZoomOut.duration(200)}
+            style={isSelected ? { backgroundColor: colors[500], borderColor: colors[500] } : {}}
             className={clsx(
-              'w-6 h-6 rounded-full items-center justify-center border',
-              isSelected
-                ? 'bg-indigo-500 border-indigo-500'
-                : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700',
+              'w-5 h-5 rounded-full border-2 items-center justify-center mr-3',
+              !isSelected && 'border-gray-300 dark:border-zinc-700',
             )}
           >
             {isSelected && <Check size={14} color="white" strokeWidth={3} />}
@@ -70,18 +71,20 @@ export const RagFolderCard = ({
       <View>
         <Typography
           variant="h3"
+          style={isSelected ? { color: isDark ? colors[100] : colors[900] } : {}}
           className={clsx(
-            'font-black text-[19px] mb-0.5',
-            isSelected ? 'text-indigo-900 dark:text-indigo-100' : 'text-gray-900 dark:text-white',
+            'font-bold text-base',
+            !isSelected && 'text-gray-900 dark:text-white',
           )}
         >
           {label}
         </Typography>
         <Typography
           variant="caption"
+          style={isSelected ? { color: colors[400] } : {}}
           className={clsx(
-            'font-bold uppercase text-[10px] tracking-widest',
-            isSelected ? 'text-indigo-400' : 'text-gray-400',
+            'text-[11px] font-medium mt-0.5',
+            !isSelected && 'text-gray-400',
           )}
         >
           {count}

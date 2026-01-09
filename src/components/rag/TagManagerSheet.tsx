@@ -36,7 +36,7 @@ const TAG_colors = [
 ];
 
 export const TagManagerSheet: React.FC<TagManagerSheetProps> = ({ visible, onClose }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { availableTags, createTag, deleteTag } = useRagStore();
 
   const [newTagName, setNewTagName] = useState('');
@@ -103,7 +103,8 @@ export const TagManagerSheet: React.FC<TagManagerSheetProps> = ({ visible, onClo
                     <TouchableOpacity
                       onPress={handleCreate}
                       disabled={!newTagName.trim()}
-                      className={`h-10 w-10 items-center justify-center rounded-lg ${!newTagName.trim() ? 'bg-gray-300 dark:bg-zinc-700' : 'bg-indigo-600'}`}
+                      style={newTagName.trim() ? { backgroundColor: colors[500] } : {}}
+                      className={`h-10 w-10 items-center justify-center rounded-lg ${!newTagName.trim() ? 'bg-gray-300 dark:bg-zinc-700' : ''}`}
                     >
                       <Plus size={20} color="white" />
                     </TouchableOpacity>

@@ -58,9 +58,6 @@ const ModelItem = React.memo(
     onUpdate,
     onTest,
     testStatus,
-    theme,
-    isDark,
-    t,
   }: {
     model: ModelConfig;
     onToggle: (uuid: string, enabled: boolean) => void;
@@ -68,10 +65,9 @@ const ModelItem = React.memo(
     onUpdate: (uuid: string, updates: Partial<ModelConfig>) => void;
     onTest: (model: ModelConfig) => void;
     testStatus?: { loading: boolean; success?: boolean; latency?: number; error?: string };
-    theme: string;
-    isDark: boolean;
-    t: any;
   }) => {
+    const { t } = useI18n();
+    const { isDark, colors } = useTheme();
     // 性能优化：使用本地状态管理输入，仅在 OnBlur 时同步到全局
     const [localName, setLocalName] = useState(model.name);
     const [localId, setLocalId] = useState(model.id);
@@ -157,7 +153,7 @@ const ModelItem = React.memo(
               style={{ padding: 4 }}
             >
               {testStatus?.loading ? (
-                <ActivityIndicator size="small" color="#6366f1" />
+                <ActivityIndicator size="small" color={colors[500]} />
               ) : (
                 <RefreshCw
                   size={18}
@@ -166,7 +162,7 @@ const ModelItem = React.memo(
                       ? '#22c55e'
                       : testStatus?.success === false
                         ? '#ef4444'
-                        : '#6366f1'
+                        : colors[500]
                   }
                 />
               )}
@@ -213,13 +209,13 @@ const ModelItem = React.memo(
             >
               {testStatus.success
                 ? t.settings.modelSettings.testSuccess.replace(
-                    '{latency}',
-                    testStatus.latency?.toString(),
-                  )
+                  '{latency}',
+                  (testStatus.latency || 0).toString(),
+                )
                 : t.settings.modelSettings.testError.replace(
-                    '{error}',
-                    testStatus.error || 'Unknown',
-                  )}
+                  '{error}',
+                  testStatus.error || 'Unknown',
+                )}
             </Text>
           </View>
         )}
@@ -230,7 +226,7 @@ const ModelItem = React.memo(
               key={type}
               label={
                 t.settings.modelSettings[
-                  `type${type.charAt(0).toUpperCase() + type.slice(1)}` as keyof typeof t.settings.modelSettings
+                `type${type.charAt(0).toUpperCase() + type.slice(1)}` as keyof typeof t.settings.modelSettings
                 ] as string
               }
               active={(model.type || 'chat') === type}
@@ -312,8 +308,7 @@ const ModelItem = React.memo(
       prev.model.capabilities.vision === next.model.capabilities.vision &&
       prev.model.capabilities.internet === next.model.capabilities.internet &&
       prev.model.capabilities.reasoning === next.model.capabilities.reasoning &&
-      prev.testStatus === next.testStatus &&
-      prev.theme === next.theme
+      prev.testStatus === next.testStatus
     );
   },
 );
@@ -325,7 +320,7 @@ export function ModelSettingsModal({
   onUpdateModels,
 }: ModelSettingsModalProps) {
   const { t } = useI18n();
-  const { theme, isDark } = useTheme();
+  const { theme, isDark, colors } = useTheme();
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -346,7 +341,7 @@ export function ModelSettingsModal({
     visible: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     isDestructive: false,
   });
 
@@ -718,9 +713,6 @@ export function ModelSettingsModal({
         onUpdate={handleUpdateModel}
         onTest={handleTestModel}
         testStatus={testResults[item.uuid]}
-        theme={theme}
-        isDark={isDark}
-        t={t}
       />
     ),
     [
@@ -787,9 +779,9 @@ export function ModelSettingsModal({
               }}
             >
               {isFetching ? (
-                <ActivityIndicator size="small" color="#6366f1" />
+                <ActivityIndicator size="small" color={colors[500]} />
               ) : (
-                <RefreshCw size={16} color="#6366f1" />
+                <RefreshCw size={16} color={colors[500]} />
               )}
               <Text style={{ fontWeight: 'bold', color: isDark ? '#fff' : '#111', fontSize: 12 }}>
                 {t.settings.modelSettings.fetch || '拉取'}
@@ -912,7 +904,7 @@ export function ModelSettingsModal({
           <View
             style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100 }}
           >
-            <ActivityIndicator size="large" color="#6366f1" />
+            <ActivityIndicator size="large" color={colors[500]} />
           </View>
         )}
 
@@ -938,7 +930,7 @@ function TypeButton({
   active: boolean;
   onPress: () => void;
 }) {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -946,7 +938,7 @@ function TypeButton({
         paddingHorizontal: 8,
         paddingVertical: 3,
         borderRadius: 7,
-        backgroundColor: active ? '#6366f1' : isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
+        backgroundColor: active ? colors[500] : isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
       }}
     >
       <Typography
@@ -973,7 +965,7 @@ function CapabilityTag({
   active?: boolean;
   onToggle: () => void;
 }) {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   return (
     <TouchableOpacity
       onPress={onToggle}
@@ -984,28 +976,26 @@ function CapabilityTag({
         paddingVertical: 3,
         borderRadius: 6,
         backgroundColor: active
-          ? isDark
-            ? 'rgba(99, 102, 241, 0.15)'
-            : 'rgba(99, 102, 241, 0.08)'
+          ? colors.opacity20
           : isDark
             ? 'rgba(24, 24, 27, 0.5)'
             : '#f3f4f6',
         borderWidth: 1,
-        borderColor: active ? '#6366f1' : isDark ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+        borderColor: active ? colors[500] : isDark ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
         gap: 3,
       }}
     >
       <View style={{ opacity: active ? 1 : 0.5 }}>
         {React.isValidElement(icon) &&
           React.cloneElement(icon as React.ReactElement<any>, {
-            color: active ? '#6366f1' : isDark ? '#9ca3af' : '#6b7280',
+            color: active ? colors[500] : isDark ? '#9ca3af' : '#6b7280',
           })}
       </View>
       <Typography
         style={{
           fontSize: 9,
           fontWeight: 'bold',
-          color: active ? '#6366f1' : isDark ? '#9ca3af' : '#6b7280',
+          color: active ? colors[500] : isDark ? '#9ca3af' : '#6b7280',
         }}
       >
         {label}

@@ -29,7 +29,7 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({
   React.useEffect(() => {
     console.warn('[RagSettingsPanel] 警告: 您正在使用已弃用的 RAG 设置组件。请迁移到通用 Panel。');
   }, []);
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { t } = useI18n();
   const { globalRagConfig } = useSettingsStore();
 
@@ -73,7 +73,7 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({
         <View>
           <Text style={[styles.sectionTitle, { color: textColor }]}>{t.rag.title}</Text>
           {!config && !isGlobal && (
-            <Text style={{ fontSize: 10, color: '#6366f1', fontWeight: '600', marginTop: 2 }}>
+            <Text style={{ fontSize: 10, color: colors[500], fontWeight: '600', marginTop: 2 }}>
               (继自全局默认)
             </Text>
           )}
@@ -83,8 +83,8 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({
             onPress={onReset}
             style={[styles.resetButton, { backgroundColor: isDark ? '#312e81' : '#e0e7ff' }]}
           >
-            <RotateCcw size={12} color={isDark ? '#818cf8' : '#6366f1'} />
-            <Text style={[styles.resetText, { color: isDark ? '#818cf8' : '#6366f1' }]}>
+            <RotateCcw size={12} color={isDark ? colors[400] : colors[500]} />
+            <Text style={[styles.resetText, { color: isDark ? colors[400] : colors[500] }]}>
               {t.rag.resetToGlobal}
             </Text>
           </TouchableOpacity>
@@ -106,9 +106,9 @@ export const RagSettingsPanel: React.FC<RagSettingsPanelProps> = ({
           minimumValue={5}
           maximumValue={50}
           step={1}
-          minimumTrackTintColor="#6366f1"
-          maximumTrackTintColor={isDark ? '#334155' : '#cbd5e1'}
-          thumbTintColor="#6366f1"
+          minimumTrackTintColor={colors[500]}
+          maximumTrackTintColor={isDark ? '#334155' : '#e2e8f0'}
+          thumbTintColor={colors[500]}
         />
       </View>
 

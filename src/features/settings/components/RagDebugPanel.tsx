@@ -10,18 +10,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '../../../lib/i18n';
 
 // 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => (
-  <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-    <View className="w-1.5 h-4 bg-indigo-500 rounded-full mr-3" />
-    <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
-      {title}
-    </Typography>
-  </View>
-);
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
+  const { colors } = useTheme();
+  return (
+    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
+      <View style={{ backgroundColor: colors[500] }} className="w-1.5 h-4 rounded-full mr-3" />
+      <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
+        {title}
+      </Typography>
+    </View>
+  );
+};
 
 export const RagDebugPanel: React.FC = () => {
   const { t } = useI18n();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const [stats, setStats] = useState<VectorStats | null>(null);
@@ -70,7 +73,7 @@ export const RagDebugPanel: React.FC = () => {
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center">
-        <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color={colors[500]} />
       </View>
     );
   }
@@ -87,7 +90,7 @@ export const RagDebugPanel: React.FC = () => {
       {/* 标题和刷新 */}
       <View className="flex-row justify-between items-center mb-6">
         <View className="flex-row items-center">
-          <Database size={24} color={isDark ? '#a78bfa' : '#8b5cf6'} />
+          <Database size={24} color={colors[500]} />
           <Typography className="text-2xl font-bold ml-3 text-gray-900 dark:text-white">
             {t.settings.vectorStats.title}
           </Typography>
@@ -97,7 +100,7 @@ export const RagDebugPanel: React.FC = () => {
           disabled={loading}
           className="bg-gray-100 dark:bg-zinc-800 p-2 rounded-xl"
         >
-          <RefreshCw size={20} color="#6366f1" />
+          <RefreshCw size={20} color={colors[500]} />
         </TouchableOpacity>
       </View>
 
@@ -106,13 +109,13 @@ export const RagDebugPanel: React.FC = () => {
           {/* 总览卡片 */}
           <SectionHeader title={t.settings.vectorStats.overview} mt={0} />
           <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
-            <Typography className="text-sm font-bold text-purple-600 dark:text-purple-300 mb-2">
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold mb-2">
               {t.settings.vectorStats.totalVectors}
             </Typography>
-            <Typography className="text-4xl font-bold text-purple-900 dark:text-purple-100">
+            <Typography style={{ color: colors[900] }} className="text-4xl font-bold dark:text-white">
               {stats.total.toLocaleString()}
             </Typography>
-            <Typography className="text-xs text-purple-600 dark:text-purple-400 mt-2">
+            <Typography style={{ color: colors[600] }} className="text-xs mt-2">
               {t.settings.vectorStats.storageOccupied.replace(
                 '{size}',
                 stats.storageSize.toFixed(1),
@@ -211,8 +214,11 @@ export const RagDebugPanel: React.FC = () => {
                         {item.sessionId}
                       </Typography>
                     </View>
-                    <View className="bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-900/30">
-                      <Typography className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                    <View
+                      style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+                      className="px-3 py-1 rounded-full border"
+                    >
+                      <Typography style={{ color: colors[600] }} className="text-sm font-bold">
                         {item.count}
                       </Typography>
                     </View>

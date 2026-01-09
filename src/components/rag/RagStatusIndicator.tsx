@@ -17,7 +17,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 
 export function RagStatusIndicator() {
   const { currentTask, vectorizationQueue } = useRagStore();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const [visible, setVisible] = useState(false);
 
   // 延迟隐藏逻辑
@@ -47,9 +47,9 @@ export function RagStatusIndicator() {
     switch (currentTask.status) {
       case 'pending':
         return {
-          icon: <Loader2 size={14} color="#6366f1" className="animate-spin" />,
+          icon: <Loader2 size={14} color={colors[500]} className="animate-spin" />,
           text: '等待中...',
-          color: 'bg-indigo-50 dark:bg-indigo-900/20',
+          color: isDark ? 'bg-indigo-900/20' : colors.opacity10,
         };
       case 'reader':
       case 'chunking':

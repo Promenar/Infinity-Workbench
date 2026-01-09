@@ -55,7 +55,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
     onViewGraph,
     onExtractGraph,
   }) => {
-    const { isDark } = useTheme();
+    const { isDark, colors } = useTheme();
 
     const formatSize = (bytes: number) => {
       if (bytes < 1024) return `${bytes}B`;
@@ -66,7 +66,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
     const getStatusIcon = () => {
       if (isSelectionMode) {
         return isSelected ? (
-          <CheckCircle size={20} color="#6366f1" fill={isDark ? '#312e81' : '#e0e7ff'} />
+          <CheckCircle size={20} color={colors[500]} fill={isDark ? colors.opacity20 : colors.opacity10} />
         ) : (
           <Circle size={20} color="#94a3b8" />
         );
@@ -179,7 +179,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
         entering={FadeIn.duration(200)}
         exiting={FadeOut.duration(150)}
         className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-gray-100 dark:border-zinc-800 pr-1"
-        style={isSelected ? { borderColor: '#6366f1', backgroundColor: isDark ? 'rgba(49, 46, 129, 0.2)' : '#eef2ff' } : undefined}
+        style={isSelected ? { borderColor: colors[500], backgroundColor: isDark ? colors.opacity20 : colors.opacity10 } : undefined}
       >
         <TouchableOpacity
           onPress={onPress}
@@ -192,7 +192,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
             {thumbnailPath ? (
               <Image source={{ uri: thumbnailPath }} className="w-full h-full" resizeMode="cover" />
             ) : (
-              <FileText size={16} color="#6366f1" strokeWidth={2} />
+              <FileText size={16} color={colors[500]} strokeWidth={2} />
             )}
           </View>
 

@@ -20,7 +20,7 @@ interface SwipeableAgentItemProps {
 
 export const SwipeableAgentItem = ({ item, onPress, onPin, onDelete }: SwipeableAgentItemProps) => {
   const swipeableRef = React.useRef<Swipeable>(null);
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const themeColors = isDark ? Colors.dark : Colors.light;
 
   const isGenerating = useChatStore((state) => {
@@ -145,17 +145,17 @@ export const SwipeableAgentItem = ({ item, onPress, onPin, onDelete }: Swipeable
             {item.isPreset && (
               <View
                 style={{
-                  backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EFF6FF',
+                  backgroundColor: isDark ? colors.opacity10 : colors[50],
                   paddingHorizontal: 6,
                   paddingVertical: 2,
                   borderRadius: 6,
                   borderWidth: 1,
-                  borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : '#E0E7FF',
+                  borderColor: isDark ? colors.opacity30 : colors[200],
                 }}
               >
                 <Typography
                   style={{
-                    color: Colors.primary,
+                    color: colors[500],
                     fontWeight: 'bold',
                     fontSize: 8,
                     textTransform: 'uppercase',

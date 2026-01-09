@@ -1,18 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { BlurView } from 'expo-blur';
+
 import { X, Search, Check, Cpu, Server } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useI18n } from '../../lib/i18n';
 import { useApiStore, ModelConfig, ProviderConfig } from '../../store/api-store';
 import * as Haptics from '../../lib/haptics';
+import { GlassBottomSheet } from '../../components/ui/GlassBottomSheet';
 import Animated, {
   FadeIn,
-  FadeOut,
-  SlideInDown,
-  SlideOutDown,
-  Easing,
 } from 'react-native-reanimated';
 
 import { findModelSpec } from '../../lib/llm/model-utils';
@@ -40,7 +37,7 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
   title,
   filterType,
 }) => {
-  const { theme, isDark } = useTheme();
+  const { theme, isDark, colors } = useTheme();
   const { t } = useI18n();
   const { providers } = useApiStore();
   const insets = useSafeAreaInsets();
@@ -152,21 +149,21 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          padding: 12,
-          paddingHorizontal: 16,
+          padding: 10,
+          paddingHorizontal: 12,
           backgroundColor:
             theme === 'dark'
               ? isSelected
-                ? 'rgba(99, 102, 241, 0.15)'
+                ? colors.opacity20
                 : 'rgba(255, 255, 255, 0.03)'
               : isSelected
-                ? 'rgba(99, 102, 241, 0.08)'
+                ? colors.opacity10
                 : 'rgba(0, 0, 0, 0.02)',
-          borderRadius: 16,
-          marginBottom: 8,
+          borderRadius: 14,
+          marginBottom: 6,
           borderWidth: 1,
           borderColor: isSelected
-            ? 'rgba(99, 102, 241, 0.4)'
+            ? colors.opacity30
             : isDark
               ? 'rgba(255, 255, 255, 0.05)'
               : 'rgba(0, 0, 0, 0.03)',
@@ -182,13 +179,13 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
             justifyContent: 'center',
             marginRight: 12,
             borderWidth: isSelected ? 2 : 0,
-            borderColor: '#6366f1',
+            borderColor: colors[500],
           }}
         >
           <ModelIconRenderer
             icon={findModelSpec(item.id)?.icon}
             size={22}
-            color={isSelected ? '#6366f1' : '#6b7280'}
+            color={isSelected ? colors[500] : '#6b7280'}
           />
         </View>
 
@@ -246,7 +243,7 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
         </View>
         {isSelected && (
           <Animated.View entering={FadeIn}>
-            <Check size={18} color="#6366f1" />
+            <Check size={18} color={colors[500]} />
           </Animated.View>
         )}
       </TouchableOpacity>
@@ -254,141 +251,56 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="none" transparent={true} onRequestClose={onClose}>
-      <View
-        style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: Math.max(insets.bottom, 16) }}
-      >
-        <Animated.View
-          entering={FadeIn.duration(300)}
-          exiting={FadeOut.duration(200)}
+    <GlassBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={title}
+      subtitle={t.settings.modelPresets.select}
+    >
+      <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
+        <View
           style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.3)',
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.04)',
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            height: 48,
+            borderWidth: 0.5,
+            borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)',
           }}
         >
-          <TouchableOpacity activeOpacity={1} style={{ flex: 1 }} onPress={onClose} />
-        </Animated.View>
-
-        <Animated.View
-          entering={SlideInDown.duration(350).easing(Easing.out(Easing.quad))}
-          exiting={SlideOutDown.duration(250).easing(Easing.in(Easing.quad))}
-          style={{
-            marginHorizontal: 12,
-            height: '75%',
-            backgroundColor: isDark ? 'rgba(24, 24, 27, 0.92)' : 'rgba(255, 255, 255, 0.92)',
-            borderRadius: 32,
-            overflow: 'hidden',
-            borderWidth: 1,
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.2,
-            shadowRadius: 20,
-            elevation: 10,
-          }}
-        >
-          <BlurView
-            intensity={isDark ? 30 : 50}
-            style={{ flex: 1, paddingTop: 24 }}
-            tint={isDark ? 'dark' : 'light'}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingHorizontal: 24,
-                marginBottom: 20,
-              }}
-            >
-              <View>
-                <Text
-                  style={{
-                    fontSize: 22,
-                    fontWeight: '900',
-                    color: isDark ? '#fff' : '#111',
-                    letterSpacing: -0.8,
-                  }}
-                >
-                  {title}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 13,
-                    color: isDark ? '#a1a1aa' : '#71717a',
-                    marginTop: 2,
-                    fontWeight: '500',
-                  }}
-                >
-                  {t.settings.modelPresets.select}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={onClose}
-                style={{
-                  width: 36,
-                  height: 36,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                  borderRadius: 18,
-                }}
-              >
-                <X size={18} color={isDark ? '#fff' : '#4b5563'} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.04)',
-                  borderRadius: 20,
-                  paddingHorizontal: 16,
-                  height: 48,
-                  borderWidth: 0.5,
-                  borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)',
-                }}
-              >
-                <Search size={16} color="#9ca3af" />
-                <TextInput
-                  placeholder={t.settings.modelSettings.searchPlaceholder}
-                  placeholderTextColor="#9ca3af"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  style={{ flex: 1, marginLeft: 10, fontSize: 16, color: isDark ? '#fff' : '#111' }}
-                />
-              </View>
-            </View>
-
-            <View style={{ flex: 1 }}>
-              {allModels.length === 0 ? (
-                <View
-                  style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}
-                >
-                  <Cpu size={40} color="#9ca3af" style={{ opacity: 0.3, marginBottom: 16 }} />
-                  <Text style={{ fontSize: 14, color: '#9ca3af', textAlign: 'center' }}>
-                    暂无可用模型，请先配置服务商。
-                  </Text>
-                </View>
-              ) : (
-                <TypedFlashList
-                  data={filteredModels}
-                  renderItem={renderItem}
-                  estimatedItemSize={72}
-                  keyExtractor={(item: any) => item.uuid}
-                  contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 40 }}
-                />
-              )}
-            </View>
-          </BlurView>
-        </Animated.View>
+          <Search size={16} color="#9ca3af" />
+          <TextInput
+            placeholder={t.settings.modelSettings.searchPlaceholder}
+            placeholderTextColor="#9ca3af"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={{ flex: 1, marginLeft: 10, fontSize: 16, color: isDark ? '#fff' : '#111' }}
+          />
+        </View>
       </View>
-    </Modal>
+
+      <View style={{ flex: 1 }}>
+        {allModels.length === 0 ? (
+          <View
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}
+          >
+            <Cpu size={40} color="#9ca3af" style={{ opacity: 0.3, marginBottom: 16 }} />
+            <Text style={{ fontSize: 14, color: '#9ca3af', textAlign: 'center' }}>
+              暂无可用模型，请先配置服务商。
+            </Text>
+          </View>
+        ) : (
+          <TypedFlashList
+            data={filteredModels}
+            renderItem={renderItem}
+            estimatedItemSize={64}
+            keyExtractor={(item: any) => item.uuid}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 40 }}
+          />
+        )}
+      </View>
+    </GlassBottomSheet>
   );
 };

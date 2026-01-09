@@ -5,6 +5,7 @@ import { useRagStore } from '../../store/rag-store';
 import { X, Tag as TagIcon, Check } from 'lucide-react-native';
 import { TagCapsule } from './TagCapsule';
 import { Typography } from '../ui';
+import { clsx } from 'clsx';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 
 interface TagAssignmentSheetProps {
@@ -20,7 +21,7 @@ export const TagAssignmentSheet: React.FC<TagAssignmentSheetProps> = ({
   onClose,
   onManageTags,
 }) => {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { availableTags, documents, addTagToDocument, removeTagFromDocument } = useRagStore();
 
   // Find current doc and its tags
@@ -75,22 +76,27 @@ export const TagAssignmentSheet: React.FC<TagAssignmentSheetProps> = ({
                       <TouchableOpacity
                         key={tag.id}
                         onPress={() => toggleTag(tag.id)}
-                        className={`flex-row items-center px-3 py-2 rounded-full border ${
-                          isSelected
-                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
-                            : 'border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800'
-                        }`}
+                        style={isSelected ? { backgroundColor: isDark ? colors.opacity20 : colors.opacity10, borderColor: colors[500] } : {}}
+                        className={clsx(
+                          'flex-row items-center px-3 py-2 rounded-full border',
+                          !isSelected && 'border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800',
+                        )}
                       >
                         <View
                           className="w-2 h-2 rounded-full mr-2"
                           style={{ backgroundColor: tag.color }}
                         />
                         <Typography
-                          className={`mr-2 ${isSelected ? 'font-bold text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-300'}`}
+                          style={isSelected ? { color: isDark ? colors[100] : colors[900] } : {}}
+                          className={clsx(
+                            'mr-2',
+                            !isSelected && 'text-gray-700 dark:text-gray-300',
+                            isSelected && 'font-bold',
+                          )}
                         >
                           {tag.name}
                         </Typography>
-                        {isSelected && <Check size={14} color={isDark ? '#818cf8' : '#4338ca'} />}
+                        {isSelected && <Check size={14} color={colors[500]} />}
                       </TouchableOpacity>
                     );
                   })}

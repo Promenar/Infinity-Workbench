@@ -8,12 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Trash2, BarChart2, MessageSquare, Zap, Database } from 'lucide-react-native';
 import * as Haptics from '../../src/lib/haptics';
 import { BillingUsage, TokenMetric } from '../../src/types/chat';
+import { useI18n } from '../../src/lib/i18n';
 
 import { useApiStore } from '../../src/store/api-store';
 
 export default function TokenUsageScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const { globalTotal, byModel, resetGlobalStats, resetModelStats } = useTokenStatsStore();
   const { providers } = useApiStore();
@@ -29,12 +31,13 @@ export default function TokenUsageScreen() {
   const handleResetAll = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
-      'Reset All Statistics',
+      t.settings.tokenUsageDetails.resetConfirmTitle || 'Reset Statistics',
+      t.settings.tokenUsageDetails.resetConfirmMessage ||
       'Are you sure you want to clear all history? This action cannot be undone.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t.settings.tokenUsageDetails.resetCancel || 'Cancel', style: 'cancel' },
         {
-          text: 'Reset Everything',
+          text: t.settings.tokenUsageDetails.resetConfirm || 'Reset Everything',
           style: 'destructive',
           onPress: () => {
             resetGlobalStats();
@@ -55,27 +58,41 @@ export default function TokenUsageScreen() {
     metric: TokenMetric;
     color: string;
     icon: any;
-  }) => (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6',
-        padding: 16,
-        borderRadius: 20,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-        <Icon size={14} color={color} style={{ marginRight: 6 }} />
-        <Typography className="text-xs font-bold text-gray-500 uppercase">{label}</Typography>
+  }) => {
+    // Split "Title (Subtitle)" into two parts if parenthesis exists
+    const match = label.match(/^(.*?)\s*(\(.*\))$/);
+    const title = match ? match[1] : label;
+    const subtitle = match ? match[2] : null;
+
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6',
+          padding: 16,
+          borderRadius: 20,
+        }}
+      >
+        <View style={{ marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon size={14} color={color} style={{ marginRight: 6 }} />
+            <Typography className="text-xs font-bold text-gray-500 uppercase">{title}</Typography>
+          </View>
+          {subtitle && (
+            <Typography className="text-[10px] font-bold text-gray-400 uppercase ml-[20px] mt-0.5">
+              {subtitle}
+            </Typography>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+          {metric.isEstimated && <Typography className="text-xs text-amber-500 mr-1">≈</Typography>}
+          <Typography className="text-xl font-black text-black dark:text-white">
+            {metric.count.toLocaleString()}
+          </Typography>
+        </View>
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-        {metric.isEstimated && <Typography className="text-xs text-amber-500 mr-1">≈</Typography>}
-        <Typography className="text-xl font-black text-black dark:text-white">
-          {metric.count.toLocaleString()}
-        </Typography>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const ModelRow = ({ modelId, usage }: { modelId: string; usage: BillingUsage }) => (
     <View
@@ -145,12 +162,12 @@ export default function TokenUsageScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <GlassHeader
-        title="Token Usage"
-        subtitle="Global Statistics Breakdown"
+        title={t.settings.tokenUsageDetails.title || 'Token Usage'}
+        subtitle={t.settings.tokenUsageDetails.globalBreakdown || 'Global Statistics Breakdown'}
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
-          label: 'Back',
+          label: t.common.back,
         }}
       />
 
@@ -184,20 +201,25 @@ export default function TokenUsageScreen() {
               {(globalTotal.total / 1000).toFixed(1)}k
             </Typography>
             <Typography className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mt-2">
-              Total Tokens
+              {t.settings.tokenUsageDetails.totalTokens || 'Total Tokens'}
             </Typography>
           </View>
 
           <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
             <MetricCard
-              label="Input"
+              label={t.settings.tokenUsageDetails.input || 'Input'}
               metric={globalTotal.chatInput}
               color="#8b5cf6"
               icon={MessageSquare}
             />
-            <MetricCard label="Output" metric={globalTotal.chatOutput} color="#f59e0b" icon={Zap} />
             <MetricCard
-              label="System"
+              label={t.settings.tokenUsageDetails.output || 'Output'}
+              metric={globalTotal.chatOutput}
+              color="#f59e0b"
+              icon={Zap}
+            />
+            <MetricCard
+              label={t.settings.tokenUsageDetails.system || 'System'}
               metric={globalTotal.ragSystem}
               color="#10b981"
               icon={Database}
@@ -207,13 +229,15 @@ export default function TokenUsageScreen() {
 
         {/* By Model */}
         <View style={{ marginBottom: 40 }}>
-          <Typography className="text-lg font-bold mb-4 ml-1">Breakdown by Model</Typography>
+          <Typography className="text-lg font-bold mb-4 ml-1">
+            {t.settings.tokenUsageDetails.breakdownByModel || 'Breakdown by Model'}
+          </Typography>
           {Object.entries(byModel).map(([modelId, usage]) => (
             <ModelRow key={modelId} modelId={modelId} usage={usage} />
           ))}
           {Object.keys(byModel).length === 0 && (
             <Typography className="text-gray-400 text-center py-8">
-              No usage history found.
+              {t.settings.tokenUsageDetails.noHistory || 'No usage history found.'}
             </Typography>
           )}
         </View>
@@ -232,12 +256,13 @@ export default function TokenUsageScreen() {
         >
           <Trash2 size={18} color="#ef4444" style={{ marginRight: 8 }} />
           <Typography className="font-bold text-red-500 dark:text-red-400">
-            Reset All Statistics
+            {t.settings.tokenUsageDetails.reset || 'Reset All Statistics'}
           </Typography>
         </TouchableOpacity>
 
         <Typography className="text-[10px] text-gray-400 text-center mt-6">
-          Stats are stored locally on your device. Clearing data cannot be undone.
+          {t.settings.tokenUsageDetails.localDataWarning ||
+            'Stats are stored locally on your device. Clearing data cannot be undone.'}
         </Typography>
       </ScrollView>
     </PageLayout>
