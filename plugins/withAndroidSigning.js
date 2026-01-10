@@ -42,10 +42,15 @@ const withAndroidSigning = (config) => {
         }
 
         // 2. 更新 release buildType 引用
-        // 直接在全量内容中查找 release {} 块并替换，使用非贪婪匹配确保只替换 release 块内的
-        const releaseRegex = /(release\s*{[\s\S]*?signingConfig\s*)signingConfigs\.debug/;
-        if (releaseRegex.test(buildGradle)) {
-            buildGradle = buildGradle.replace(releaseRegex, '$1signingConfigs.release');
+        // 查找 buildTypes 里的 release { ... } 块，并替换其 signingConfig
+        const buildTypesMatch = buildGradle.match(/buildTypes\s*{([\s\S]+)}\s*packagingOptions/);
+        if (buildTypesMatch) {
+            const oldBuildTypes = buildTypesMatch[1];
+            const updatedBuildTypes = oldBuildTypes.replace(
+                /(release\s*{[\s\S]*?signingConfig\s*)signingConfigs\.debug/,
+                '$1signingConfigs.release'
+            );
+            buildGradle = buildGradle.replace(oldBuildTypes, updatedBuildTypes);
         }
 
         config.modResults.contents = buildGradle;
