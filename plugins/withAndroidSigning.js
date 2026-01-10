@@ -4,9 +4,7 @@ const path = require('path');
 
 /**
  * Expo Config Plugin to inject release signing configuration.
- * 修正逻辑：
- * 1. 显式区分 signingConfigs 和 buildTypes。
- * 2. 移除调试日志以保持整洁。
+ * 修正逻辑：使用更可靠的正则表达式替换 release buildType 的签名配置。
  */
 const withAndroidSigning = (config) => {
     return withAppBuildGradle(config, (config) => {
@@ -37,7 +35,6 @@ const withAndroidSigning = (config) => {
             }
         }`;
 
-            // 插入到 signingConfigs { 之后
             buildGradle = buildGradle.replace(
                 /signingConfigs\s*{/,
                 `signingConfigs {\n${signingConfigStr}`
@@ -45,18 +42,10 @@ const withAndroidSigning = (config) => {
         }
 
         // 2. 更新 release buildType 引用
-        // 提取 buildTypes 块
-        const buildTypesMatch = buildGradle.match(/buildTypes\s*{([\s\S]*?)\n\s*}/);
-        if (buildTypesMatch) {
-            let buildTypesContent = buildTypesMatch[1];
-            // 确保 release buildType 使用了 signingConfigs.release
-            if (buildTypesContent.includes('release {') && buildTypesContent.includes('signingConfigs.debug')) {
-                const updatedBuildTypes = buildTypesContent.replace(
-                    /release\s*{[\s\S]*?signingConfig\s*signingConfigs\.debug/,
-                    (match) => match.replace('signingConfigs.debug', 'signingConfigs.release')
-                );
-                buildGradle = buildGradle.replace(buildTypesContent, updatedBuildTypes);
-            }
+        // 直接在全量内容中查找 release {} 块并替换，使用非贪婪匹配确保只替换 release 块内的
+        const releaseRegex = /(release\s*{[\s\S]*?signingConfig\s*)signingConfigs\.debug/;
+        if (releaseRegex.test(buildGradle)) {
+            buildGradle = buildGradle.replace(releaseRegex, '$1signingConfigs.release');
         }
 
         config.modResults.contents = buildGradle;
