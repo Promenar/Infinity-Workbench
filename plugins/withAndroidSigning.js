@@ -9,12 +9,18 @@ const path = require('path');
 const withAndroidSigning = (config) => {
     return withAppBuildGradle(config, (config) => {
         let buildGradle = config.modResults.contents;
+        console.log('[withAndroidSigning] Processing build.gradle...');
 
         // 1. 注入 release signingConfigs
-        // 检查 signingConfigs 内部是否已经有了 release 块
-        const hasReleaseInSigning = /signingConfigs\s*{[\s\S]*?release\s*{/.test(buildGradle);
+        // 提取 signingConfigs 块的内容
+        const signingConfigsMatch = buildGradle.match(/signingConfigs\s*{([\s\S]*?)\n\s*}/);
+        const signingConfigsContent = signingConfigsMatch ? signingConfigsMatch[1] : '';
+        const hasReleaseInSigning = /\brelease\s*{/.test(signingConfigsContent);
+
+        console.log('[withAndroidSigning] hasReleaseInSigning:', hasReleaseInSigning);
 
         if (!hasReleaseInSigning) {
+            console.log('[withAndroidSigning] Injecting release signing config...');
             const signingConfigStr = `
         release {
             def secureEnv = file("../../../../secure_env/secure.properties")
@@ -26,8 +32,6 @@ const withAndroidSigning = (config) => {
                 keyAlias props.getProperty("KEY_ALIAS")
                 keyPassword props.getProperty("KEY_PASSWORD")
             } else {
-                // 如果是开发环境（如根目录），secure_env 可能不存在
-                // 为防止 Gradle 评估失败，必须定义一个占位符或回退到 debug
                 println "Secure env not found at $secureEnv, falling back to debug signing for release block."
                 storeFile file('debug.keystore')
                 storePassword 'android'
@@ -36,23 +40,28 @@ const withAndroidSigning = (config) => {
             }
         }`;
 
-            // 尝试插入到 signingConfigs 之后
-            if (buildGradle.includes('signingConfigs {')) {
+            if (signingConfigsMatch) {
+                // 插入到 signingConfigs { 之后
                 buildGradle = buildGradle.replace(
                     /signingConfigs\s*{/,
                     `signingConfigs {\n${signingConfigStr}`
                 );
+                console.log('[withAndroidSigning] Injection successful.');
+            } else {
+                console.log('[withAndroidSigning] Error: signingConfigs { block not found!');
             }
         }
 
         // 2. 更新 release buildType 引用
-        // 确保 buildTypes 里的 release 使用了 signingConfigs.release
         const releaseBuildTypePattern = /release\s*{[\s\S]*?signingConfig\s*signingConfigs\.debug/;
+        console.log('[withAndroidSigning] releaseBuildTypePattern match:', releaseBuildTypePattern.test(buildGradle));
+
         if (releaseBuildTypePattern.test(buildGradle)) {
             buildGradle = buildGradle.replace(
                 releaseBuildTypePattern,
                 (match) => match.replace('signingConfigs.debug', 'signingConfigs.release')
             );
+            console.log('[withAndroidSigning] Updated release buildType to use signingConfigs.release');
         }
 
         config.modResults.contents = buildGradle;
