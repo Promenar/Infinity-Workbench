@@ -25,6 +25,7 @@ export interface BackupData {
     kg_nodes: any[];
     kg_edges: any[];
   };
+  files?: Record<string, string>; // relativePath -> base64
 }
 
 const BACKUP_VERSION = 1;
@@ -92,25 +93,12 @@ export class BackupManager {
     });
 
     // 2. Export SQLite Tables
-    // Helper to get all rows
-    const getTableData = async (table: string) => {
-      const res = await db.execute(`SELECT * FROM ${table}`);
-      // @ts-ignore
-      return res.rows?._array || [];
-    };
-
-    // We need to handle op-sqlite result structure carefully.
-    // Assuming typical usage where `rows` is an array-like object or has _array.
-    // For safety, let's select and iterate if needed, but select * is fine for moderate size.
-    // For vectors, we explicitly need to handle BLOBs.
-
     const sessions = await this.safeQuery('SELECT * FROM sessions');
     const messages = await this.safeQuery('SELECT * FROM messages');
     const attachments = await this.safeQuery('SELECT * FROM attachments');
     const folders = await this.safeQuery('SELECT * FROM folders');
     const documents = await this.safeQuery('SELECT * FROM documents');
 
-    // For vectors, we need to convert BLOB embeddings to Base64
     const vectorsRaw = await this.safeQuery('SELECT * FROM vectors');
     const vectors = vectorsRaw.map((v: any) => ({
       ...v,
@@ -118,12 +106,81 @@ export class BackupManager {
     }));
 
     const context_summaries = await this.safeQuery('SELECT * FROM context_summaries');
-
-    // New tables
     const tags = await this.safeQuery('SELECT * FROM tags');
     const document_tags = await this.safeQuery('SELECT * FROM document_tags');
     const kg_nodes = await this.safeQuery('SELECT * FROM kg_nodes');
     const kg_edges = await this.safeQuery('SELECT * FROM kg_edges');
+
+    // 3. Collect Physical Files and transform paths
+    const physicalFiles: Record<string, string> = {};
+    const docDir = FileSystem.documentDirectory || '';
+
+    // Transform logic for AsyncStorage (mostly chat-storage images)
+    for (const key in asyncStorageData) {
+      if (key === 'chat-storage') {
+        try {
+          const chatData = JSON.parse(asyncStorageData[key]);
+          if (chatData.state?.sessions) {
+            for (const session of chatData.state.sessions) {
+              for (const msg of session.messages) {
+                if (msg.images) {
+                  for (const img of msg.images) {
+                    if (img.original) {
+                      const rel = this.getRelativePath(img.original, docDir);
+                      if (rel) {
+                        const base64 = await this.safeReadFile(img.original);
+                        if (base64) physicalFiles[rel] = base64;
+                        img.original = `__DOC_DIR__/${rel}`;
+                      }
+                    }
+                    if (img.thumbnail) {
+                      const rel = this.getRelativePath(img.thumbnail, docDir);
+                      if (rel) {
+                        const base64 = await this.safeReadFile(img.thumbnail);
+                        if (base64) physicalFiles[rel] = base64;
+                        img.thumbnail = `__DOC_DIR__/${rel}`;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          asyncStorageData[key] = JSON.stringify(chatData);
+        } catch (e) {
+          console.error('[BackupManager] Failed to process chat-storage paths', e);
+        }
+      }
+    }
+
+    // Transform logic for SQLite attachments and documents
+    const processedAttachments = [];
+    for (const a of attachments) {
+      if (a.local_uri) {
+        const rel = this.getRelativePath(a.local_uri, docDir);
+        if (rel) {
+          const b64 = await this.safeReadFile(a.local_uri);
+          if (b64) physicalFiles[rel] = b64;
+          processedAttachments.push({ ...a, local_uri: `__DOC_DIR__/${rel}` });
+          continue;
+        }
+      }
+      processedAttachments.push(a);
+    }
+
+    const processedDocuments = [];
+    for (const d of documents) {
+      if (d.thumbnail_path) {
+        const rel = this.getRelativePath(d.thumbnail_path, docDir);
+        if (rel) {
+          const b64 = await this.safeReadFile(d.thumbnail_path);
+          if (b64) physicalFiles[rel] = b64;
+          processedDocuments.push({ ...d, thumbnail_path: `__DOC_DIR__/${rel}` });
+          continue;
+        }
+      }
+      processedDocuments.push(d);
+    }
 
     return {
       meta: {
@@ -136,9 +193,9 @@ export class BackupManager {
       sqlite: {
         sessions,
         messages,
-        attachments,
+        attachments: processedAttachments,
         folders,
-        documents,
+        documents: processedDocuments,
         vectors,
         context_summaries,
         tags,
@@ -146,90 +203,114 @@ export class BackupManager {
         kg_nodes,
         kg_edges,
       },
+      files: physicalFiles,
     };
   }
 
   /**
    * Import data from a backup object
-   * WARNING: This overwrites existing data!
    */
   static async importData(backup: BackupData): Promise<void> {
     console.log('[BackupManager] Starting import...');
 
     if (backup.meta.version > BACKUP_VERSION) {
-      throw new Error(
-        `Backup version ${backup.meta.version} is newer than supported version ${BACKUP_VERSION}`,
-      );
+      throw new Error(`Backup version ${backup.meta.version} is newer than supported version ${BACKUP_VERSION}`);
     }
 
+    const docDir = FileSystem.documentDirectory || '';
+
+    // 1. Restore Physical Files first
+    if (backup.files) {
+      for (const [relPath, base64] of Object.entries(backup.files)) {
+        const fullPath = `${docDir}${relPath}`;
+        await this.ensureDir(fullPath);
+        await FileSystem.writeAsStringAsync(fullPath, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
+    }
+
+    // 2. Rewrite Paths in memory
+    for (const key in backup.asyncStorage) {
+      if (key === 'chat-storage') {
+        try {
+          const chatData = JSON.parse(backup.asyncStorage[key]);
+          if (chatData.state?.sessions) {
+            for (const session of chatData.state.sessions) {
+              for (const msg of session.messages) {
+                if (msg.images) {
+                  for (const img of msg.images) {
+                    if (img.original?.startsWith('__DOC_DIR__/')) {
+                      img.original = img.original.replace('__DOC_DIR__/', docDir);
+                    }
+                    if (img.thumbnail?.startsWith('__DOC_DIR__/')) {
+                      img.thumbnail = img.thumbnail.replace('__DOC_DIR__/', docDir);
+                    }
+                  }
+                }
+              }
+            }
+          }
+          backup.asyncStorage[key] = JSON.stringify(chatData);
+        } catch (e) {
+          console.error('[BackupManager] Failed to rewrite chat-storage paths', e);
+        }
+      }
+    }
+
+    const restoredAttachments = backup.sqlite.attachments.map((a: any) => ({
+      ...a,
+      local_uri: a.local_uri?.startsWith('__DOC_DIR__/')
+        ? a.local_uri.replace('__DOC_DIR__/', docDir)
+        : a.local_uri,
+    }));
+
+    const restoredDocuments = backup.sqlite.documents.map((d: any) => ({
+      ...d,
+      thumbnail_path: d.thumbnail_path?.startsWith('__DOC_DIR__/')
+        ? d.thumbnail_path.replace('__DOC_DIR__/', docDir)
+        : d.thumbnail_path,
+    }));
+
     try {
-      // 1. Restore AsyncStorage
-      // We accept whatever keys are in the backup
+      // 3. Restore AsyncStorage
       const pairs: [string, string][] = Object.entries(backup.asyncStorage);
       if (pairs.length > 0) {
         await AsyncStorage.multiSet(pairs);
       }
 
-      // 2. Restore SQLite
-      // Transactional restore
+      // 4. Restore SQLite
       await db.execute('BEGIN TRANSACTION');
 
-      // Clear existing tables (Order matters for foreign keys)
-      // vectors -> documents/sessions
-      // attachments -> messages
-      // messages -> sessions
-      // documents -> folders
-      // folders -> folders
+      // Clear tables
       await db.execute('DELETE FROM kg_edges');
       await db.execute('DELETE FROM kg_nodes');
       await db.execute('DELETE FROM document_tags');
       await db.execute('DELETE FROM tags');
-
       await db.execute('DELETE FROM vectors');
       await db.execute('DELETE FROM attachments');
       await db.execute('DELETE FROM messages');
       await db.execute('DELETE FROM documents');
       await db.execute('DELETE FROM context_summaries');
-      await db.execute('DELETE FROM sessions'); // Check circular deps? sessions usually root
+      await db.execute('DELETE FROM sessions');
       await db.execute('DELETE FROM folders');
 
       // Insert Data
-
-      // Sessions
       await this.bulkInsert('sessions', backup.sqlite.sessions);
-
-      // Folders
       await this.bulkInsert('folders', backup.sqlite.folders);
-
-      // Documents
-      await this.bulkInsert('documents', backup.sqlite.documents);
-
-      // Messages
+      await this.bulkInsert('documents', restoredDocuments);
       await this.bulkInsert('messages', backup.sqlite.messages);
-
-      // Attachments
-      await this.bulkInsert('attachments', backup.sqlite.attachments);
-
-      // Context Summaries
+      await this.bulkInsert('attachments', restoredAttachments);
       await this.bulkInsert('context_summaries', backup.sqlite.context_summaries);
-
-      // Tags System
       await this.bulkInsert('tags', backup.sqlite.tags);
       await this.bulkInsert('document_tags', backup.sqlite.document_tags);
-
-      // Knowledge Graph
       await this.bulkInsert('kg_nodes', backup.sqlite.kg_nodes);
       await this.bulkInsert('kg_edges', backup.sqlite.kg_edges);
 
-      // Vectors
-      // Convert Base64 back to Blob/Buffer
+      // Vectors BLOB handling
       if (backup.sqlite.vectors && backup.sqlite.vectors.length > 0) {
         for (const v of backup.sqlite.vectors) {
           const embeddingBlob = v.embedding ? Buffer.from(v.embedding, 'base64') : null;
-          // We need to construct the INSERT manually or use helper with pre-processed params
-
-          // Simple helper won't work easily with mixed Blob/Types for bulk insert in generic way
-          // Let's do a tailored loop for vectors to ensure BLOB correctness
           await db.execute(
             `INSERT INTO vectors (id, doc_id, session_id, content, embedding, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [v.id, v.doc_id, v.session_id, v.content, embeddingBlob, v.metadata, v.created_at],
@@ -248,13 +329,9 @@ export class BackupManager {
 
   private static async safeQuery(sql: string): Promise<any[]> {
     const res = await db.execute(sql);
-    // op-sqlite: res.rows is actually an array-like with .length and .item(i), OR _array depending on config
-    // New versions expose raw array directly mostly
     if (Array.isArray(res.rows)) return res.rows;
-    // @ts-ignore - _array is common in RN sqlite libs
+    // @ts-ignore
     if (res.rows?._array) return res.rows._array;
-
-    // Fallback iteration
     const results = [];
     // @ts-ignore
     const len = res.rows?.length || 0;
@@ -269,16 +346,10 @@ export class BackupManager {
 
   private static async bulkInsert(table: string, rows: any[]) {
     if (!rows || rows.length === 0) return;
-
-    // Note: Building a massive single INSERT statement is risky for limits.
-    // We'll do individual inserts for reliability, wrapped in the main transaction.
-    // Or chunks.
-
     const keys = Object.keys(rows[0]);
     const columns = keys.join(', ');
     const placeholders = keys.map(() => '?').join(', ');
     const sql = `INSERT INTO ${table} (${columns}) VALUES (${placeholders})`;
-
     for (const row of rows) {
       const values = keys.map((k) => row[k]);
       await db.execute(sql, values);
@@ -289,5 +360,33 @@ export class BackupManager {
     const json = JSON.stringify(backup);
     const bytes = new TextEncoder().encode(json).length;
     return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+  }
+
+  // --- Helpers ---
+  private static getRelativePath(uri: string, docDir: string): string | null {
+    if (!uri || !uri.startsWith('file://')) return null;
+    if (uri.startsWith(docDir)) {
+      return uri.substring(docDir.length);
+    }
+    return null;
+  }
+
+  private static async safeReadFile(uri: string): Promise<string | null> {
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists) return null;
+      return await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    } catch (e) {
+      console.warn(`[BackupManager] Failed to read file: ${uri}`, e);
+      return null;
+    }
+  }
+
+  private static async ensureDir(filePath: string) {
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    const info = await FileSystem.getInfoAsync(dir);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    }
   }
 }
