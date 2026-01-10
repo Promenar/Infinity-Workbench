@@ -1,7 +1,12 @@
-const { withAndroidManifest } = require('@expo/config-plugins');
+const { withAndroidManifest, withProjectBuildGradle } = require('@expo/config-plugins');
 
+/**
+ * 1. 在 AndroidManifest.xml 中注入 ForegroundService 声明
+ * 2. 在项目根 build.gradle 中注入 Notifee 本地 Maven 仓库地址
+ */
 const withForegroundService = (config) => {
-    return withAndroidManifest(config, async (config) => {
+    // 1. 修改 AndroidManifest.xml
+    config = withAndroidManifest(config, async (config) => {
         const androidManifest = config.modResults;
 
         if (!androidManifest.manifest['uses-permission']) {
@@ -10,7 +15,7 @@ const withForegroundService = (config) => {
 
         const permissions = [
             'android.permission.FOREGROUND_SERVICE',
-            'android.permission.FOREGROUND_SERVICE_DATA_SYNC', // For Android 14+
+            'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
         ];
 
         permissions.forEach((permission) => {
@@ -20,18 +25,12 @@ const withForegroundService = (config) => {
 
             if (!hasPermission) {
                 androidManifest.manifest['uses-permission'].push({
-                    $: {
-                        'android:name': permission,
-                    },
+                    $: { 'android:name': permission },
                 });
             }
         });
 
-        // Verify MainApplication exists, though we typically add to <application>
         const mainApplication = androidManifest.manifest.application[0];
-
-        // Define the Notifee Foreground Service override
-        // We must explicitly declare the service with the types we intend to use (dataSync)
         const serviceName = 'app.notifee.core.ForegroundService';
 
         let service = mainApplication.service?.find(
@@ -44,16 +43,30 @@ const withForegroundService = (config) => {
             mainApplication.service.push(service);
         }
 
-        // Add or merge foregroundServiceType
-        // Note: We use "dataSync" as required by Android 14 for our usage
         service.$['android:foregroundServiceType'] = 'dataSync';
-
-        // Ensure tools namespace is available for merging if needed, 
-        // but direct attribute setting usually works for Expo's xml parser.
-        // If Notifee already declares it, we are modifying the JS object which will overwrite/merge.
 
         return config;
     });
+
+    // 2. 修改根 build.gradle 注入 Notifee 仓库
+    config = withProjectBuildGradle(config, (config) => {
+        let buildGradle = config.modResults.contents;
+
+        const notifeeRepo = `maven { url "$rootDir/../node_modules/@notifee/react-native/android/libs" }`;
+
+        if (!buildGradle.includes('@notifee/react-native/android/libs')) {
+            // 在 allprojects { repositories { ... } } 中注入
+            buildGradle = buildGradle.replace(
+                /allprojects\s*{[\s\S]*?repositories\s*{/,
+                `$&\n        ${notifeeRepo}`
+            );
+        }
+
+        config.modResults.contents = buildGradle;
+        return config;
+    });
+
+    return config;
 };
 
 module.exports = withForegroundService;
