@@ -4,23 +4,20 @@ const path = require('path');
 
 /**
  * Expo Config Plugin to inject release signing configuration.
- * 修正逻辑：即使 signingConfigs 已存在，也要确保其中包含 release 块。
+ * 修正逻辑：
+ * 1. 显式区分 signingConfigs 和 buildTypes。
+ * 2. 移除调试日志以保持整洁。
  */
 const withAndroidSigning = (config) => {
     return withAppBuildGradle(config, (config) => {
         let buildGradle = config.modResults.contents;
-        console.log('[withAndroidSigning] Processing build.gradle...');
 
         // 1. 注入 release signingConfigs
-        // 提取 signingConfigs 块的内容
         const signingConfigsMatch = buildGradle.match(/signingConfigs\s*{([\s\S]*?)\n\s*}/);
         const signingConfigsContent = signingConfigsMatch ? signingConfigsMatch[1] : '';
         const hasReleaseInSigning = /\brelease\s*{/.test(signingConfigsContent);
 
-        console.log('[withAndroidSigning] hasReleaseInSigning:', hasReleaseInSigning);
-
-        if (!hasReleaseInSigning) {
-            console.log('[withAndroidSigning] Injecting release signing config...');
+        if (!hasReleaseInSigning && signingConfigsMatch) {
             const signingConfigStr = `
         release {
             def secureEnv = file("../../../../secure_env/secure.properties")
@@ -40,28 +37,26 @@ const withAndroidSigning = (config) => {
             }
         }`;
 
-            if (signingConfigsMatch) {
-                // 插入到 signingConfigs { 之后
-                buildGradle = buildGradle.replace(
-                    /signingConfigs\s*{/,
-                    `signingConfigs {\n${signingConfigStr}`
-                );
-                console.log('[withAndroidSigning] Injection successful.');
-            } else {
-                console.log('[withAndroidSigning] Error: signingConfigs { block not found!');
-            }
+            // 插入到 signingConfigs { 之后
+            buildGradle = buildGradle.replace(
+                /signingConfigs\s*{/,
+                `signingConfigs {\n${signingConfigStr}`
+            );
         }
 
         // 2. 更新 release buildType 引用
-        const releaseBuildTypePattern = /release\s*{[\s\S]*?signingConfig\s*signingConfigs\.debug/;
-        console.log('[withAndroidSigning] releaseBuildTypePattern match:', releaseBuildTypePattern.test(buildGradle));
-
-        if (releaseBuildTypePattern.test(buildGradle)) {
-            buildGradle = buildGradle.replace(
-                releaseBuildTypePattern,
-                (match) => match.replace('signingConfigs.debug', 'signingConfigs.release')
-            );
-            console.log('[withAndroidSigning] Updated release buildType to use signingConfigs.release');
+        // 提取 buildTypes 块
+        const buildTypesMatch = buildGradle.match(/buildTypes\s*{([\s\S]*?)\n\s*}/);
+        if (buildTypesMatch) {
+            let buildTypesContent = buildTypesMatch[1];
+            // 确保 release buildType 使用了 signingConfigs.release
+            if (buildTypesContent.includes('release {') && buildTypesContent.includes('signingConfigs.debug')) {
+                const updatedBuildTypes = buildTypesContent.replace(
+                    /release\s*{[\s\S]*?signingConfig\s*signingConfigs\.debug/,
+                    (match) => match.replace('signingConfigs.debug', 'signingConfigs.release')
+                );
+                buildGradle = buildGradle.replace(buildTypesContent, updatedBuildTypes);
+            }
         }
 
         config.modResults.contents = buildGradle;
