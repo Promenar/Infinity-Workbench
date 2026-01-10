@@ -19,7 +19,7 @@ interface ParticleEnergyGlowProps {
 
 const LAYERS = 6;
 const PARTICLES_PER_LAYER = 15;
-const HDR_MULTIPLIER = 8.0;
+const HDR_MULTIPLIER = 5.0;
 const HDR_BOOST_MATRIX = [
     HDR_MULTIPLIER, 0, 0, 0, 0,
     0, HDR_MULTIPLIER, 0, 0, 0,
@@ -83,19 +83,19 @@ export const ParticleEnergyGlow: React.FC<ParticleEnergyGlowProps> = ({ size, co
                     top: offset
                 }}
             >
-                <Canvas style={{ flex: 1 }} colorType="rgba16f">
+                <Canvas style={{ flex: 1 }} colorSpace="p3">
                     <Group>
                         <ColorMatrix matrix={HDR_BOOST_MATRIX} />
                         <Circle cx={canvasCenter} cy={canvasCenter} r={size * 0.24} opacity={coreGlowOpacity}>
                             <RadialGradient
                                 c={vec(canvasCenter, canvasCenter)}
                                 r={size * 0.24}
-                                colors={['white', color, color, 'transparent']}
-                                positions={[0, 0.4, 0.7, 1]}
+                                colors={[color, color, 'transparent']}
+                                positions={[0, 0.4, 1]}
                             />
                             <BlurMask blur={40} style="normal" />
                         </Circle>
-                        <Group blendMode="plus">
+                        <Group blendMode="screen">
                             <Group origin={vec(canvasCenter, canvasCenter)} transform={rotate1}>
                                 {particleGroups[0].map((p, i) => (
                                     <Circle key={`l1-${i}`} cx={p.cx} cy={p.cy} r={p.r} color={color} opacity={p.opacity} />
