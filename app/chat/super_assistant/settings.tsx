@@ -502,18 +502,6 @@ export default function SuperAssistantSettingsScreen() {
                 </Typography>
               </View>
 
-              <View className="flex-row items-center gap-2">
-                <TouchableOpacity
-                  onPress={() => { /* TODO: Implement AI Generate */ }}
-                  style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-                  className="px-3 py-1.5 rounded-full flex-row items-center border"
-                >
-                  <RotateCcw size={14} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
-                  <Typography className="font-bold text-gray-700 dark:text-zinc-300">
-                    {t.agent.superAssistant.aiGenerate}
-                  </Typography>
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   onPress={handlePruneGhostData}
                   style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
@@ -550,7 +538,7 @@ export default function SuperAssistantSettingsScreen() {
 
 
 
-          <SectionHeader title={t.common.color.title} />
+          <SectionHeader title={t.agent.basicInfo} />
           <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
             <TextInput
               className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 font-bold"
@@ -760,6 +748,6 @@ export default function SuperAssistantSettingsScreen() {
         onConfirm={confirmState.onConfirm}
         onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
       />
-    </PageLayout>
+    </PageLayout >
   );
 }

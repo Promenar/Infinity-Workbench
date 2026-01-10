@@ -83,15 +83,15 @@ export const ParticleEnergyGlow: React.FC<ParticleEnergyGlowProps> = ({ size, co
                     top: offset
                 }}
             >
-                <Canvas style={{ flex: 1 }}>
+                <Canvas style={{ flex: 1 }} colorType="rgba16f">
                     <Group>
                         <ColorMatrix matrix={HDR_BOOST_MATRIX} />
                         <Circle cx={canvasCenter} cy={canvasCenter} r={size * 0.24} opacity={coreGlowOpacity}>
                             <RadialGradient
                                 c={vec(canvasCenter, canvasCenter)}
                                 r={size * 0.24}
-                                colors={['white', color, 'transparent']}
-                                positions={[0, 0.5, 1]}
+                                colors={['white', color, color, 'transparent']}
+                                positions={[0, 0.4, 0.7, 1]}
                             />
                             <BlurMask blur={40} style="normal" />
                         </Circle>
