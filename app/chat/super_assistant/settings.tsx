@@ -502,17 +502,16 @@ export default function SuperAssistantSettingsScreen() {
                 </Typography>
               </View>
 
-                <TouchableOpacity
-                  onPress={handlePruneGhostData}
-                  style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-                  className="px-3 py-1.5 rounded-full flex-row items-center border"
-                >
-                  <Database size={12} color={colors[600]} className="mr-1.5" />
-                  <Typography style={{ color: colors[700] }} className="text-xs font-bold">
-                    {t.agent.superAssistant.pruneGhostData}
-                  </Typography>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                onPress={handlePruneGhostData}
+                style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+                className="px-3 py-1.5 rounded-full flex-row items-center border"
+              >
+                <Database size={12} color={colors[600]} className="mr-1.5" />
+                <Typography style={{ color: colors[700] }} className="text-xs font-bold">
+                  {t.agent.superAssistant.pruneGhostData}
+                </Typography>
+              </TouchableOpacity>
             </View>
           </View>
 
