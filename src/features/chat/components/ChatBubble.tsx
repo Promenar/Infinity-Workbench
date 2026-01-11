@@ -264,6 +264,16 @@ const SearchSourcesBlock: React.FC<{
   t: any;
 }> = ({ citations, isDark, expanded, onToggle, t }) => {
   const { colors } = useTheme();
+  const rotation = useSharedValue(expanded ? 180 : 0);
+
+  useEffect(() => {
+    rotation.value = withTiming(expanded ? 180 : 0, { duration: 250 });
+  }, [expanded]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
   return (
     <TouchableOpacity
       activeOpacity={0.7}
@@ -276,13 +286,10 @@ const SearchSourcesBlock: React.FC<{
         paddingVertical: 5,
         borderRadius: 20,
         borderWidth: 1,
-        borderColor: expanded
-          ? isDark
-            ? 'rgba(99, 102, 241, 0.4)'
-            : colors[500]
-          : isDark
-            ? 'rgba(255, 255, 255, 0.05)'
-            : 'rgba(0,0,0,0.05)',
+        borderColor:
+          isDark
+            ? (expanded ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.05)')
+            : (expanded ? colors[500] : 'rgba(0,0,0,0.05)'),
         gap: 6,
       }}
     >
@@ -299,7 +306,7 @@ const SearchSourcesBlock: React.FC<{
       >
         {t.agent.citations.replace('{count}', citations.length.toString())}
       </Typography>
-      <Animated.View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+      <Animated.View style={chevronStyle}>
         <ChevronDown size={11} color={isDark ? '#71717a' : '#94a3b8'} />
       </Animated.View>
     </TouchableOpacity>
@@ -314,6 +321,16 @@ const ReasoningBlock: React.FC<{
   onToggle: () => void;
   t: any;
 }> = ({ content, isDark, loading, expanded, onToggle, t }) => {
+  const rotation = useSharedValue(expanded ? 180 : 0);
+
+  useEffect(() => {
+    rotation.value = withTiming(expanded ? 180 : 0, { duration: 250 });
+  }, [expanded]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
   return (
     <View>
       <TouchableOpacity
@@ -369,7 +386,7 @@ const ReasoningBlock: React.FC<{
         >
           {loading ? t.agent.reasoning : expanded ? t.agent.reasoned : t.agent.viewReasoning}
         </Typography>
-        <Animated.View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+        <Animated.View style={chevronStyle}>
           <ChevronDown size={11} color={isDark ? '#71717a' : '#94a3b8'} />
         </Animated.View>
       </TouchableOpacity>

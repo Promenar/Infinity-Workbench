@@ -47,18 +47,18 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
   return (
     <View>
       {/* 状态标签 */}
-      <SectionHeader title="配置状态" mt={0} />
+      <SectionHeader title={t.rag.configStatus} mt={0} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         <View className="flex-row items-center justify-between">
           <View>
             <Typography className="text-base font-bold text-gray-900 dark:text-white mb-1">
-              配置模式
+              {t.rag.configMode}
             </Typography>
             <Typography
               className="text-sm font-medium"
               style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
             >
-              {isUsingGlobal ? '继承全局配置' : '自定义配置'}
+              {isUsingGlobal ? t.rag.modeInherit : t.rag.modeCustom}
             </Typography>
           </View>
           {!isUsingGlobal && (
@@ -75,7 +75,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             >
               <RefreshCw size={14} color={colors[600]} />
               <Typography style={{ color: colors[600] }} className="ml-2 text-sm font-bold">
-                重置
+                {t.rag.reset}
               </Typography>
             </TouchableOpacity>
           )}
@@ -189,16 +189,16 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
       </View>
 
       {/* Rerank配置 */}
-      <SectionHeader title="Rerank 二次精排" />
+      <SectionHeader title={t.rag.rerankSection} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 启用Rerank */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              启用Rerank
+              {t.rag.enableRerank}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              使用专门的重排序模型对检索结果进行二次精排
+              {t.rag.rerankEnabledDesc}
             </Typography>
           </View>
           <Switch
@@ -212,15 +212,15 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         {/* 初召回数量 */}
         <View className="mb-4">
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            初召回数量
+            {t.rag.rerankRecallCount}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Rerank前召回的文档数量（建议20-50）
+            {t.rag.rerankRecallCountDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
-              {currentConfig.rerankTopK ?? 30} 条
+              {t.rag.items.replace('{count}', (currentConfig.rerankTopK ?? 30).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
           </View>
@@ -236,15 +236,15 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         {/* 精排后返回数量 */}
         <View>
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            精排后返回
+            {t.rag.rerankResultCount}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Rerank后实际使用的文档数量（建议5-10）
+            {t.rag.rerankResultCountDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
-              {currentConfig.rerankFinalK ?? 8} 条
+              {t.rag.items.replace('{count}', (currentConfig.rerankFinalK ?? 8).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
           </View>
@@ -259,16 +259,16 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
       </View>
 
       {/* 查询重写配置 */}
-      <SectionHeader title="查询重写" />
+      <SectionHeader title={t.rag.queryRewrite} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 启用查询重写 */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              启用查询重写
+              {t.rag.queryRewriteEnabled}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              生成多个查询变体以提升召回率
+              {t.rag.queryRewriteEnabledDesc}
             </Typography>
           </View>
           <Switch
@@ -282,7 +282,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         {/* 重写策略 */}
         <View className="mb-4">
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-3">
-            重写策略
+            {t.rag.queryRewriteStrategy}
           </Typography>
           <View className="flex-row gap-2">
             {(['hyde', 'multi-query', 'expansion'] as const).map((strategy) => (
@@ -301,7 +301,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                   }}
                   className="text-xs font-bold text-center"
                 >
-                  {strategy === 'hyde' ? 'HyDE' : strategy === 'multi-query' ? '多查询' : '扩展'}
+                  {strategy === 'hyde'
+                    ? t.rag.strategyHyde
+                    : strategy === 'multi-query'
+                      ? t.rag.strategyMultiQuery
+                      : t.rag.strategyExpansion}
                 </Typography>
               </TouchableOpacity>
             ))}
@@ -311,15 +315,15 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         {/* 变体数量 */}
         <View>
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            变体数量
+            {t.rag.queryRewriteCount}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            生成的查询变体数量（2-5个）
+            {t.rag.queryRewriteCountDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">2</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
-              {currentConfig.queryRewriteCount ?? 3} 个
+              {t.rag.items.replace('{count}', (currentConfig.queryRewriteCount ?? 3).toString())}
             </Typography>
             <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
           </View>
@@ -334,16 +338,16 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
       </View>
 
       {/* 混合检索配置 */}
-      <SectionHeader title="混合检索" />
+      <SectionHeader title={t.rag.hybridSearch} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 启用混合检索 */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              启用混合检索
+              {t.rag.hybridSearchEnabled}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              结合向量检索和关键词检索（BM25）
+              {t.rag.hybridSearchEnabledDesc}
             </Typography>
           </View>
           <Switch
@@ -357,10 +361,10 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         {/* 向量权重 */}
         <View className="mb-4">
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            向量检索权重
+            {t.rag.vectorWeight}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            向量检索在混合检索中的权重（0.5为均衡）
+            {t.rag.vectorWeightDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
@@ -381,10 +385,10 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         {/* BM25权重增益 */}
         <View>
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            BM25权重增益
+            {t.rag.bm25Boost}
           </Typography>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            BM25分数的放大倍数（默认1.0）
+            {t.rag.bm25BoostDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
@@ -404,16 +408,16 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
       </View>
 
       {/* 可观测性配置 */}
-      <SectionHeader title="可观测性" />
+      <SectionHeader title={t.rag.observability} />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
         {/* 显示检索进度 */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              显示检索进度
+              {t.rag.showProgress}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              显示实时检索进度条
+              {t.rag.showProgressDesc}
             </Typography>
           </View>
           <Switch
@@ -428,10 +432,10 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         <View className="flex-row items-center justify-between">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              显示检索详情
+              {t.rag.showDetails}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              显示详细的检索统计面板
+              {t.rag.showDetailsDesc}
             </Typography>
           </View>
           <Switch
@@ -446,10 +450,10 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         <View className="flex-row items-center justify-between">
           <View className="flex-1 mr-4">
             <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              记录检索指标
+              {t.rag.trackMetrics}
             </Typography>
             <Typography className="text-xs text-gray-500 dark:text-gray-400">
-              记录耗时、召回率等指标用于后续分析
+              {t.rag.trackMetricsDesc}
             </Typography>
           </View>
           <Switch
@@ -462,10 +466,10 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
       {/* 重置确认对话框 */}
       <ConfirmDialog
         visible={showResetDialog}
-        title="重置配置"
-        message="重置后将继承全局配置,当前自定义配置将丢失。确认重置?"
-        confirmText="确认"
-        cancelText="取消"
+        title={t.rag.resetConfirmTitle}
+        message={t.rag.resetConfirmMessage}
+        confirmText={t.common.confirm}
+        cancelText={t.common.cancel}
         onConfirm={() => {
           setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

@@ -51,8 +51,22 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
     }
   }, [loading]);
 
+  const rotation = useSharedValue(expanded ? 180 : 0);
+
+  useEffect(() => {
+    rotation.value = withTiming(expanded ? 180 : 0, { duration: 250 });
+  }, [expanded]);
+
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
+  }));
+
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progress?.percentage || 0}%`,
+  }));
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
   // if (!loading && (!references || references.length === 0)) return null;
@@ -157,18 +171,20 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
               }}
             >
               <Animated.View
-                style={{
-                  height: '100%',
-                  backgroundColor: '#34d399',
-                  width: `${progress.percentage}%`,
-                }}
+                style={[
+                  {
+                    height: '100%',
+                    backgroundColor: '#34d399',
+                  },
+                  progressStyle
+                ]}
               />
             </View>
           )}
         </View>
 
         {!loading && (
-          <Animated.View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}>
+          <Animated.View style={chevronStyle}>
             <ChevronDown size={11} color={isDark ? '#71717a' : '#94a3b8'} />
           </Animated.View>
         )}

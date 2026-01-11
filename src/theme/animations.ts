@@ -16,10 +16,10 @@ import {
  * Standardizes animation durations and curves across the app.
  */
 export const ANIMATION_DURATION = {
-  FAST: 150, // Micro-interactions, exits
-  NORMAL: 250, // Standard transitions, modals, fades
-  SLOW: 350, // Complex layout changes, heavy elements
-  EXTRA_SLOW: 500, // Loading states, emphasis
+  FAST: 120, // Micro-interactions, exits (20% faster)
+  NORMAL: 200, // Standard transitions, modals, fades (20% faster)
+  SLOW: 300, // Complex layout changes, heavy elements
+  EXTRA_SLOW: 450, // Loading states, emphasis
   ROTATION_SLOW: 1500, // For loading spinners
 };
 
@@ -41,7 +41,7 @@ export const ANIMATION_CONFIG = {
 
   // Silk config (Fluid, non-spring timing for heavy UI changes)
   SILK: {
-    duration: ANIMATION_DURATION.NORMAL,
+    duration: 200, // Hardcoded to 200 for consistency with NORMAL
     easing: Easing.bezier(0.4, 0, 0.2, 1),
   } as WithTimingConfig,
 };

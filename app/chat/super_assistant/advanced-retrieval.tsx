@@ -8,6 +8,7 @@ import { useAgentStore } from '../../../src/store/agent-store';
 import { Agent } from '../../../src/types/chat';
 import { AgentAdvancedRetrievalPanel } from '../../../src/features/settings/components/AgentAdvancedRetrievalPanel';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useI18n } from '../../../src/lib/i18n';
 
 const SPA_AGENT_ID = 'super_assistant';
 
@@ -28,6 +29,7 @@ export default function SuperAssistantAdvancedRetrievalScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
   const { updateAgent } = useAgentStore();
 
   // Use selector with stable fallback reference
@@ -41,12 +43,12 @@ export default function SuperAssistantAdvancedRetrievalScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <GlassHeader
-        title="高级检索配置"
+        title={t.rag.advancedSettings}
         subtitle="Super Personal Assistant"
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
-          label: '返回',
+          label: t.common.back,
         }}
       />
 

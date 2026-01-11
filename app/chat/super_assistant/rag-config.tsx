@@ -8,6 +8,7 @@ import { useAgentStore } from '../../../src/store/agent-store';
 import { Agent } from '../../../src/types/chat';
 import { AgentRagConfigPanel } from '../../../src/features/settings/components/AgentRagConfigPanel';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useI18n } from '../../../src/lib/i18n';
 
 const SPA_AGENT_ID = 'super_assistant';
 
@@ -47,7 +48,7 @@ export default function SuperAssistantRagConfigScreen() {
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
-          label: '返回',
+          label: t.common.back,
         }}
       />
 
