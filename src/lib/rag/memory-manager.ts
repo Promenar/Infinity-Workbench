@@ -39,8 +39,8 @@ export class MemoryManager {
     const settings = useSettingsStore.getState();
     const startTime = Date.now();
 
-    // 🔑 优先级：选项传入 > 全局配置
-    const effectiveRagConfig = ragConfig || settings.globalRagConfig;
+    // 🔑 优先级：选项传入 > 全局配置 (并进行合并以确保基础字段存在)
+    const effectiveRagConfig = { ...settings.globalRagConfig, ...(ragConfig || {}) };
 
     // 0. 预先计算文档搜索范围 (Pre-calculate doc auth scope)
     // 这一步提前做，是为了判断是否有必要进行后续的重写和搜索

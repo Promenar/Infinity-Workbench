@@ -1,5 +1,7 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { ErrorNormalizer } from '../error-normalizer';
+import { Skill, ToolCall } from '../../../types/skills';
+import zodToJsonSchema from 'zod-to-json-schema';
 
 export class OpenAiClient implements LlmClient {
   private apiKey: string;
@@ -39,9 +41,10 @@ export class OpenAiClient implements LlmClient {
   async chatCompletion(
     messages: ChatMessage[],
     options?: any,
-  ): Promise<{ content: string; usage?: { input: number; output: number; total: number } }> {
+  ): Promise<{ content: string; toolCalls?: ToolCall[]; usage?: { input: number; output: number; total: number } }> {
     let result = '';
     let finalUsage: { input: number; output: number; total: number } | undefined;
+    let finalToolCalls: ToolCall[] | undefined;
 
     await this.fetchChatCompletion(
       messages,
@@ -50,6 +53,7 @@ export class OpenAiClient implements LlmClient {
         else {
           if (token.content) result += token.content;
           if (token.usage) finalUsage = token.usage;
+          if (token.toolCalls) finalToolCalls = token.toolCalls;
         }
       },
       (err) => {
@@ -57,7 +61,29 @@ export class OpenAiClient implements LlmClient {
       },
       { ...options, stream: false },
     );
-    return { content: result, usage: finalUsage };
+    return { content: result, toolCalls: finalToolCalls, usage: finalUsage };
+  }
+
+  private mapSkillsToOpenAITools(skills: Skill[]): any[] {
+    return skills.map((skill) => {
+      const schema = zodToJsonSchema(skill.schema as any) as any;
+      delete schema.$schema;
+      delete schema.additionalProperties; // Some providers strict mode
+
+      // Ensure 'type' is present for parameters
+      if (!schema.type) {
+        schema.type = 'object';
+      }
+
+      return {
+        type: 'function',
+        function: {
+          name: skill.id,
+          description: skill.description,
+          parameters: schema,
+        },
+      };
+    });
   }
 
   private async fetchChatCompletion(
@@ -75,71 +101,206 @@ export class OpenAiClient implements LlmClient {
         xhr.setRequestHeader('Authorization', `Bearer ${this.apiKey}`);
 
         let lastPosition = 0;
+        const currentToolCalls: Record<number, { id: string; name: string; arguments: string }> = {};
+        let isInsideThinkTag = false;
+
+        // Helper to try parsing partial JSON
+        const safeJsonParse = (str: string) => {
+          try {
+            return JSON.parse(str);
+          } catch (e) {
+            return {};
+          }
+        };
 
         xhr.onreadystatechange = () => {
-          if (xhr.readyState === 3 || xhr.readyState === 4) {
-            const newText = xhr.responseText.substring(lastPosition);
-            lastPosition = xhr.responseText.length;
+          const stream = options?.stream ?? true; // Consistent with send
 
-            const lines = newText.split('\n');
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || !trimmed.startsWith('data: ')) continue;
-              const data = trimmed.slice(6);
-              if (data === '[DONE]') {
+          if (stream) {
+            // Streaming Logic (SSE)
+            if (xhr.readyState === 3 || xhr.readyState === 4) {
+              const newText = xhr.responseText.substring(lastPosition);
+              lastPosition = xhr.responseText.length;
+
+              const lines = newText.split('\n');
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith('data: ')) continue;
+                const data = trimmed.slice(6);
+                if (data === '[DONE]') {
+                  resolve();
+                  return;
+                }
+                try {
+                  const json = JSON.parse(data);
+                  const delta = json.choices?.[0]?.delta;
+                  let content = delta?.content || '';
+                  let reasoning = delta?.reasoning_content || '';
+                  const usageRaw = json.usage;
+                  const deltaToolCalls = delta?.tool_calls;
+
+                  // 🧐 DeepSeek-Chat <think> tag support
+                  if (content.includes('<think>')) {
+                    isInsideThinkTag = true;
+                    const parts = content.split('<think>');
+                    // Everything before <think> stays as content
+                    content = parts[0];
+                    // Everything after <think> goes to reasoning
+                    reasoning += parts.slice(1).join('<think>');
+                  } else if (content.includes('</think>')) {
+                    isInsideThinkTag = false;
+                    const parts = content.split('</think>');
+                    // Everything before </think> goes to reasoning
+                    reasoning += parts[0];
+                    // Everything after </think> stays as content
+                    content = parts.slice(1).join('</think>');
+                  } else if (isInsideThinkTag) {
+                    // If we are deep inside the tag, move all content to reasoning
+                    reasoning += content;
+                    content = '';
+                  }
+
+                  // Debug Logic
+                  if (content && content.length > 0) {
+                    // console.log('[OpenAiClient] Received content chunk');
+                  }
+
+                  // Accumulate Tool Calls
+                  if (deltaToolCalls) {
+                    for (const tc of deltaToolCalls) {
+                      const index = tc.index;
+                      if (!currentToolCalls[index]) {
+                        currentToolCalls[index] = {
+                          id: tc.id || '',
+                          name: tc.function?.name || '',
+                          arguments: tc.function?.arguments || '',
+                        };
+                      } else {
+                        // Append arguments
+                        if (tc.function?.arguments) {
+                          currentToolCalls[index].arguments += tc.function.arguments;
+                        }
+                        // It's possible for id/name to be split but usually they come in the first chunk
+                        if (tc.id && !currentToolCalls[index].id) currentToolCalls[index].id = tc.id;
+                        if (tc.function?.name && !currentToolCalls[index].name) currentToolCalls[index].name = tc.function.name;
+                      }
+                    }
+                  }
+
+                  let usage: { input: number; output: number; total: number } | undefined;
+                  if (usageRaw) {
+                    usage = {
+                      input: usageRaw.prompt_tokens,
+                      output: usageRaw.completion_tokens,
+                      total: usageRaw.total_tokens,
+                    };
+                  }
+
+                  // Convert accumulated tool calls to array for the callback
+                  const toolCallsArray = Object.values(currentToolCalls).map(tc => ({
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: tc.arguments, // Keep as string for now, parse later
+                  })).filter(tc => tc.id && tc.name); // Only emit if we have at least id and name (though args might need completion)
+
+                  // Note: JSON.parse on streaming arguments is dangerous because they are incomplete.
+                  // However, chat-store expects 'toolCalls' to be the FINAL structure in each update?
+                  // Actually chat-store just assigns it.
+                  // If we parse incomplete JSON, it will crash.
+                  // We should only define toolCalls in onToken when we are "done" or if we want partials.
+                  // But chat-store uses it essentially at the END of the stream loop (when toolCalls is checked).
+                  // So we can just pass the raw Accumulated structure and let chat-store parse it?
+                  // Or, better: we only pass toolCalls when we have them, but keep them as raw string in a hidden field?
+                  // No, the interface says `toolCalls: ToolCall[]` where arguments is `any` (usually object).
+
+                  // Better Strategy:
+                  // Pass the toolCalls ONLY when they are valid or wait until stream end?
+                  // Streaming tool calls updates is useful for UI (e.g. showing args being typed).
+                  // But `safeJson` is needed.
+
+                  let safeToolCalls: ToolCall[] | undefined;
+                  if (toolCallsArray.length > 0) {
+                    safeToolCalls = toolCallsArray.map(tc => {
+                      // Attempt to parse arguments. If incomplete, safeJsonParse returns an empty object.
+                      return { ...tc, arguments: safeJsonParse(tc.arguments) };
+                    });
+                  }
+
+                  if (content || reasoning || usage || (safeToolCalls && safeToolCalls.length > 0)) {
+                    onToken({
+                      content,
+                      reasoning,
+                      usage,
+                      toolCalls: (safeToolCalls && safeToolCalls.length > 0) ? safeToolCalls : undefined
+                    });
+                  }
+                } catch (e) {
+                  // Partial JSON, ignore or wait
+                }
+              }
+            }
+            if (xhr.readyState === 4) {
+              if (xhr.status === 0) {
                 resolve();
                 return;
               }
-              try {
-                const json = JSON.parse(data);
-                const delta = json.choices?.[0]?.delta;
-                const content = delta?.content || '';
-                const reasoning = delta?.reasoning_content;
-                const usageRaw = json.usage;
-
-                let usage: { input: number; output: number; total: number } | undefined;
-                if (usageRaw) {
-                  usage = {
-                    input: usageRaw.prompt_tokens,
-                    output: usageRaw.completion_tokens,
-                    total: usageRaw.total_tokens,
-                  };
-                }
-
-                if (content || reasoning || usage) {
-                  onToken({ content, reasoning, usage });
-                }
-              } catch (e) {
-                // Partial JSON, ignore or wait
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+              } else {
+                this.handleError(xhr, onError, reject);
               }
             }
-          }
-          if (xhr.readyState === 4) {
-            // status === 0 means aborted, don't treat as error
-            if (xhr.status === 0) {
-              resolve();
-              return;
-            }
-            if (xhr.status >= 200 && xhr.status < 300) {
-              resolve();
-            } else {
-              // 使用错误标准化器处理API错误
-              const rawError = {
-                status: xhr.status,
-                statusText: xhr.statusText,
-                message: `API Error: ${xhr.status} ${xhr.statusText}\n${xhr.responseText}`,
-                response: xhr.responseText,
-              };
+          } else {
+            // Non-Streaming Logic (Full JSON)
+            if (xhr.readyState === 4) {
+              if (xhr.status === 0) {
+                resolve();
+                return;
+              }
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  const json = JSON.parse(xhr.responseText);
+                  const message = json.choices?.[0]?.message;
+                  const usageRaw = json.usage;
+                  let content = message?.content || '';
+                  let reasoning = message?.reasoning_content || '';
 
-              const normalized = ErrorNormalizer.normalize(rawError, 'openai');
-              const err = new Error(normalized.message);
-              (err as any).category = normalized.category;
-              (err as any).retryable = normalized.retryable;
-              (err as any).retryAfter = normalized.retryAfter;
-              (err as any).technicalMessage = normalized.technicalMessage;
+                  // Handle <think> tags in non-streaming response
+                  if (content.includes('<think>')) {
+                    const match = content.match(/<think>([\s\S]*?)<\/think>/);
+                    if (match) {
+                      reasoning = match[1];
+                      content = content.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+                    }
+                  }
 
-              onError(err);
-              reject(err);
+                  let toolCalls: ToolCall[] | undefined;
+                  if (message?.tool_calls) {
+                    toolCalls = message.tool_calls.map((tc: any) => ({
+                      id: tc.id,
+                      name: tc.function.name,
+                      arguments: JSON.parse(tc.function.arguments),
+                    }));
+                  }
+
+                  let usage: { input: number; output: number; total: number } | undefined;
+                  if (usageRaw) {
+                    usage = {
+                      input: usageRaw.prompt_tokens,
+                      output: usageRaw.completion_tokens,
+                      total: usageRaw.total_tokens,
+                    };
+                  }
+
+                  onToken({ content, toolCalls, usage, reasoning });
+                  resolve();
+                } catch (e) {
+                  onError(e as Error);
+                  reject(e);
+                }
+              } else {
+                this.handleError(xhr, onError, reject);
+              }
             }
           }
         };
@@ -155,19 +316,35 @@ export class OpenAiClient implements LlmClient {
           reject(err);
         };
 
-        xhr.send(
-          JSON.stringify({
-            model: this.model,
-            messages,
-            temperature: options?.inferenceParams?.temperature ?? this.temperature,
-            top_p: options?.inferenceParams?.topP,
-            max_tokens: options?.inferenceParams?.maxTokens,
-            frequency_penalty: options?.inferenceParams?.frequencyPenalty,
-            presence_penalty: options?.inferenceParams?.presencePenalty,
-            stream: true,
-            stream_options: { include_usage: true },
+        const stream = options?.stream ?? true;
+        const skills = options?.skills;
+
+        const payload = {
+          model: this.model,
+          messages: messages.map(m => {
+            const msg: any = { role: m.role, content: m.content };
+            if (m.reasoning) msg.reasoning_content = m.reasoning;
+            if (m.tool_calls) msg.tool_calls = m.tool_calls;
+            if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+            if (m.name) msg.name = m.name;
+            return msg;
           }),
-        );
+          temperature: options?.inferenceParams?.temperature ?? this.temperature,
+          top_p: options?.inferenceParams?.topP,
+          max_tokens: options?.inferenceParams?.maxTokens,
+          frequency_penalty: options?.inferenceParams?.frequencyPenalty,
+          presence_penalty: options?.inferenceParams?.presencePenalty,
+          tools: skills ? this.mapSkillsToOpenAITools(skills) : undefined,
+          tool_choice: skills ? 'auto' : undefined,
+          stream,
+          stream_options: stream ? { include_usage: true } : undefined,
+        };
+
+        if (skills) {
+          console.log('[OpenAiClient] Request Body Tools:', JSON.stringify(payload.tools, null, 2));
+        }
+
+        xhr.send(JSON.stringify(payload));
       } catch (e) {
         onError(e as Error);
         reject(e);
@@ -290,5 +467,61 @@ export class OpenAiClient implements LlmClient {
       const latency = Date.now() - start;
       return { success: false, latency, error: (e as Error).message };
     }
+  }
+  async generateImage(
+    prompt: string,
+    options?: { size?: string; style?: string; quality?: string },
+  ): Promise<{ url: string; revisedPrompt?: string }> {
+    const endpoint = `${this.baseUrl}/images/generations`;
+    const body = {
+      model: this.model,
+      prompt,
+      n: 1,
+      size: options?.size || '1024x1024',
+      quality: options?.quality,
+      style: options?.style,
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI Image Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (data.data && data.data.length > 0) {
+      return {
+        url: data.data[0].url,
+        revisedPrompt: data.data[0].revised_prompt,
+      };
+    }
+    throw new Error('Invalid response format from OpenAI Image API');
+  }
+
+  private handleError(xhr: XMLHttpRequest, onError: (err: Error) => void, reject: (reason?: any) => void) {
+    const rawError = {
+      status: xhr.status,
+      statusText: xhr.statusText,
+      message: `API Error: ${xhr.status} ${xhr.statusText}\n${xhr.responseText}`,
+      response: xhr.responseText,
+    };
+
+    const normalized = ErrorNormalizer.normalize(rawError, 'openai');
+    const err = new Error(normalized.message);
+    (err as any).category = normalized.category;
+    (err as any).retryable = normalized.retryable;
+    (err as any).retryAfter = normalized.retryAfter;
+    (err as any).technicalMessage = normalized.technicalMessage;
+
+    onError(err);
+    reject(err);
   }
 }

@@ -173,6 +173,7 @@ export const createTables = async () => {
         type TEXT DEFAULT 'concept', -- 'concept'|'person'|'org'|'location'...
         metadata TEXT, -- JSON
         created_at INTEGER NOT NULL,
+        updated_at INTEGER,
         UNIQUE(name)
       );
     `);

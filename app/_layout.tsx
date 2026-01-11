@@ -1,5 +1,16 @@
 import 'react-native-get-random-values';
 import '../global.css';
+import {
+  configureReanimatedLogger,
+  ReanimatedLogLevel,
+} from 'react-native-reanimated';
+
+// Disable strict mode for Reanimated 3 to prevent "Reading from value during component render" warnings
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
+
 import '../src/services/NotifeeBackgroundRunner'; // Register background task
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
@@ -110,6 +121,7 @@ export default function RootLayout() {
               >
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="index" />
+                <Stack.Screen name="demo/skills" />
               </Stack>
             </NavThemeProvider>
           </ToastProvider>

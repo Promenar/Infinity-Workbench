@@ -44,6 +44,7 @@ import { captureRef } from 'react-native-view-shot';
 import { AgentAvatar } from '../../../components/chat/AgentAvatar';
 import { RagReferencesChip, RagReferencesList } from './RagReferences';
 import { ProcessingIndicatorChip, ProcessingIndicatorDetails } from './ProcessingIndicator';
+import { ToolExecutionTimeline } from '../../../components/skills/ToolExecutionTimeline';
 
 import { findModelSpec } from '../../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
@@ -1266,6 +1267,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
       )}
 
+      {/* ✅ Agentic Loop Timeline */}
+      {message.executionSteps && message.executionSteps.length > 0 && (
+        <View style={{ marginLeft: 8, marginBottom: 8, maxWidth: '90%' }}>
+          <ToolExecutionTimeline steps={message.executionSteps} />
+        </View>
+      )}
+
       {/* Main Content (No indentation) */}
       <ContextMenu
         items={[
@@ -1314,7 +1322,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             <View className="items-start py-2">
               <LoadingDots isDark={isDark} color={agentColor} />
             </View>
-          ) : !message.content && !message.reasoning ? (
+          ) : (!isUser && !message.content && !message.reasoning && isGenerating) ? (
             <View className="py-2">
               <LoadingDots isDark={isDark} />
             </View>
@@ -1487,6 +1495,9 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
   // @ts-ignore
   const nextRagRefs = next.message.ragReferences || [];
   if (prevRagRefs.length !== nextRagRefs.length) return false;
+
+  // @ts-ignore
+  if (prev.message.executionSteps !== next.message.executionSteps) return false;
 
   return true;
 });

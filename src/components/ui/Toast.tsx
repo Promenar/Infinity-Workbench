@@ -45,6 +45,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }, 2500);
   }, []);
 
+  // Listen to global events
+  React.useEffect(() => {
+    const handler = ({ message, type }: { message: string; type: ToastType }) => {
+      showToast(message, type);
+    };
+    const { toastEmitter } = require('../../lib/utils/toast-emitter');
+    toastEmitter.on('toast', handler);
+    return () => {
+      toastEmitter.off('toast', handler);
+    };
+  }, [showToast]);
+
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}

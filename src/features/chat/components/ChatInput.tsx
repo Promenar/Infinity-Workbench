@@ -103,7 +103,7 @@ export function ChatInput({
   const updateSessionOptions = useChatStore((state) => state.updateSessionOptions);
   const updateSessionDraft = useChatStore((state) => state.updateSessionDraft);
 
-  const webSearchEnabled = session?.options?.webSearch ?? true; // Default to true
+  const webSearchEnabled = session?.options?.webSearch ?? false; // Default to false
   const reasoningEnabled = session?.options?.reasoning ?? true; // Default to true
 
   // Load draft on mount

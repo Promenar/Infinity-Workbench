@@ -23,14 +23,14 @@ export class VertexAiClient implements LlmClient {
     // Allow passing either the full config object OR a service account JSON (legacy/alternative param style)
     configOrJson:
       | {
-          apiKey: string;
-          model: string;
-          temperature: number;
-          baseUrl: string;
-          project?: string;
-          location?: string;
-          keyJson?: string;
-        }
+        apiKey: string;
+        model: string;
+        temperature: number;
+        baseUrl: string;
+        project?: string;
+        location?: string;
+        keyJson?: string;
+      }
       | any,
     model?: string,
     temperature?: number,
@@ -227,10 +227,10 @@ export class VertexAiClient implements LlmClient {
             maxOutputTokens: options?.inferenceParams?.maxTokens,
             ...(options?.reasoning && !this.model.includes('image')
               ? {
-                  thinkingConfig: {
-                    includeThoughts: true,
-                  },
-                }
+                thinkingConfig: {
+                  includeThoughts: true,
+                },
+              }
               : {}),
           },
         };
@@ -394,10 +394,10 @@ export class VertexAiClient implements LlmClient {
                             .map((chunk: any) =>
                               chunk.web
                                 ? {
-                                    title: chunk.web.title || 'Web Source',
-                                    url: chunk.web.uri,
-                                    source: 'Google',
-                                  }
+                                  title: chunk.web.title || 'Web Source',
+                                  url: chunk.web.uri,
+                                  source: 'Google',
+                                }
                                 : null,
                             )
                             .filter(Boolean);
@@ -535,6 +535,92 @@ export class VertexAiClient implements LlmClient {
     } catch (e) {
       const latency = Date.now() - start;
       return { success: false, latency, error: (e as Error).message };
+    }
+  }
+  async generateImage(
+    prompt: string,
+    options?: { size?: string },
+  ): Promise<{ url: string; revisedPrompt?: string }> {
+    const projectId = this.project || this.serviceAccountJson?.project_id;
+    if (!projectId) throw new Error('Project ID is required for Vertex AI Image Generation');
+
+    const token = await this.getAccessToken();
+    const region = this.location || 'us-central1';
+    const host =
+      region === 'global' ? 'aiplatform.googleapis.com' : `${region}-aiplatform.googleapis.com`;
+
+    const isGemini = this.model.startsWith('gemini-');
+
+    // Choose endpoint and version based on model type
+    // Gemini models on Vertex usually need v1beta1 and :generateContent
+    // Imagen models use v1/v2 and :predict
+    const version = isGemini ? 'v1beta1' : 'v1';
+    const method = isGemini ? 'generateContent' : 'predict';
+    const endpoint = `https://${host}/${version}/projects/${projectId}/locations/${region}/publishers/google/models/${this.model}:${method}`;
+
+    let body: any;
+    if (isGemini) {
+      body = {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          // Some Gemini models (like 3-pro-image) might have specific config needed for images
+          // but usually generateContent with direct prompt works if it's an image model.
+        }
+      };
+    } else {
+      body = {
+        instances: [{ prompt }],
+        parameters: {
+          sampleCount: 1,
+        },
+      };
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Vertex AI Image Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    let base64Data: string | undefined;
+    let mimeType = 'image/png';
+
+    if (isGemini) {
+      const candidate = data.candidates?.[0];
+      const part = candidate?.content?.parts?.find((p: any) => p.inlineData);
+      if (part?.inlineData) {
+        base64Data = part.inlineData.data;
+        mimeType = part.inlineData.mimeType || 'image/png';
+      }
+    } else {
+      if (data.predictions && data.predictions.length > 0) {
+        const prediction = data.predictions[0];
+        base64Data = prediction.bytesBase64Encoded;
+      }
+    }
+
+    if (!base64Data) {
+      throw new Error('Invalid response format or no image generated from Vertex AI');
+    }
+
+    // Persist to file to avoid lag
+    try {
+      const { saveBase64ToFile, generateThumbnail } = require('../../image-utils');
+      const originalUri = await saveBase64ToFile(base64Data, 'originals', mimeType);
+      const thumbnailUri = await generateThumbnail(originalUri, { maxWidth: 1024, compress: 0.8 });
+      return { url: thumbnailUri };
+    } catch (e) {
+      console.warn('[VertexAI] Failed to save image to file, falling back to data URI', e);
+      return { url: `data:${mimeType};base64,${base64Data}` };
     }
   }
 }

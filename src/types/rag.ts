@@ -35,3 +35,10 @@ export interface VectorizationTask {
   createdAt: number;
   kgStrategy?: 'full' | 'summary-first' | 'on-demand';
 }
+
+export interface RagMemory {
+  id: string; // vector_id in database
+  content: string;
+  sessionId: string;
+  createdAt: number;
+}

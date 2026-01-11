@@ -25,6 +25,11 @@ export class KeywordSearch {
     // 1. 尝试使用 FTS5 全文索引进行检索
     if (!query || query.trim().length === 0) return [];
 
+    // ⚡️ Performance Optimization: Truncate very long queries
+    // FTS5 MATCH / LIKE with huge strings (e.g. 1000+ chars) is extremely slow (100s+).
+    // We only take the first 60 chars as the "keywords" are likely at the start.
+    const effectiveQuery = query.length > 60 ? query.substring(0, 60) : query;
+
     try {
       // 使用 FTS5 MATCH 查询（比 LIKE 快得多）
       let sql = `
@@ -33,7 +38,7 @@ export class KeywordSearch {
                 INNER JOIN vectors_fts fts ON v.rowid = fts.rowid
                 WHERE fts.content MATCH ?
             `;
-      const params: any[] = [query]; // FTS5 自动分词和匹配
+      const params: any[] = [effectiveQuery]; // FTS5 自动分词和匹配
       const conditions: string[] = [];
 
       // 过滤条件
@@ -95,7 +100,7 @@ export class KeywordSearch {
       console.error('[KeywordSearch] FTS5 search failed, falling back to LIKE:', e);
 
       // 降级：使用原有的 LIKE 查询（如果 FTS5 不可用）
-      return this.fallbackLikeSearch(query, limit, options);
+      return this.fallbackLikeSearch(effectiveQuery, limit, options);
     }
   }
 

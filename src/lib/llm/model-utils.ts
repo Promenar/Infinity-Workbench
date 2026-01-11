@@ -39,9 +39,18 @@ export function isForcedReasoningModel(modelId: string): boolean {
  */
 export function supportsThinkingConfig(modelId: string): boolean {
   const lowerId = modelId.toLowerCase();
-  // 目前仅 Gemini 2.0 Flash Thinking 支持 thinkingConfig 参数
-  // 如果后续有更多，需扩展此处或 ModelSpec
-  return lowerId.includes('flash-thinking') || lowerId.includes('thinking');
+
+  // 1. Explicitly check for Flash Thinking or any Gemini 2.0+ models
+  // Gemini 2.0 Flash/Pro often have implicit reasoning or dedicated thinking modes
+  if (lowerId.includes('flash-thinking') || lowerId.includes('thinking') || lowerId.includes('gemini-2.0')) {
+    return true;
+  }
+
+  // 2. Check if the model spec has reasoning capability
+  const caps = getModelCapabilities(modelId);
+  if (caps.reasoning) return true;
+
+  return false;
 }
 
 /**

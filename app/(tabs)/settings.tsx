@@ -41,6 +41,7 @@ import {
   Calendar,
   Settings as SettingsIcon,
   Palette,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
@@ -63,7 +64,8 @@ export default function SettingsScreen() {
     | 'defaultSummaryModel'
     | 'defaultSpeechModel'
     | 'defaultEmbeddingModel'
-    | 'defaultRerankModel';
+    | 'defaultRerankModel'
+    | 'defaultImageModel';
     filterType?: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank';
   }>({ title: '', key: 'defaultSummaryModel' });
 
@@ -81,6 +83,7 @@ export default function SettingsScreen() {
     defaultSpeechModel,
     defaultEmbeddingModel,
     defaultRerankModel,
+    defaultImageModel,
     updateDefaultModel,
     hapticsEnabled,
     setHapticsEnabled, // New settings
@@ -382,6 +385,21 @@ export default function SettingsScreen() {
               /> */}
 
               <SettingsItem
+                icon={ImageIcon}
+                title={t.settings.modelPresets.image || 'Image Generation'}
+                subtitle={getModelName(defaultImageModel)}
+                showChevron
+                onPress={() => {
+                  setPickerConfig({
+                    title: t.settings.modelPresets.image || 'Image Generation',
+                    key: 'defaultImageModel',
+                    filterType: 'image',
+                  });
+                  setPickerVisible(true);
+                }}
+              />
+
+              <SettingsItem
                 icon={Layers}
                 title={t.settings.modelPresets.embedding}
                 subtitle={getModelName(defaultEmbeddingModel)}
@@ -440,6 +458,7 @@ export default function SettingsScreen() {
               />
             </SettingsSection>
 
+
             <SettingsSection title={t.settings.workbench.title}>
               <SettingsItem
                 icon={Monitor}
@@ -450,6 +469,18 @@ export default function SettingsScreen() {
                 onPress={() => router.push('/settings/workbench' as any)}
               />
             </SettingsSection>
+
+            <SettingsSection title="Intelligence">
+              <SettingsItem
+                icon={Sparkles}
+                title={t.settings.agentSkills.title}
+                subtitle={t.settings.agentSkills.subtitle}
+                showChevron
+                isLast
+                onPress={() => router.push('/settings/skills' as any)}
+              />
+            </SettingsSection>
+
 
             <BackupSettings />
 
@@ -704,7 +735,9 @@ export default function SettingsScreen() {
               ? defaultSpeechModel
               : pickerConfig.key === 'defaultRerankModel'
                 ? defaultRerankModel
-                : defaultEmbeddingModel
+                : pickerConfig.key === 'defaultImageModel'
+                  ? defaultImageModel
+                  : defaultEmbeddingModel
         }
         onSelect={(uuid) => {
           updateDefaultModel(pickerConfig.key, uuid);

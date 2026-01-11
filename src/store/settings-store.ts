@@ -24,6 +24,7 @@ interface SettingsState {
   defaultEmbeddingModel?: string; // 向量模型
   defaultSpeechModel?: string; // 语音模型
   defaultRerankModel?: string; // 重排序模型
+  defaultImageModel?: string; // 绘图模型
 
   updateDefaultModel: (
     key:
@@ -31,13 +32,20 @@ interface SettingsState {
       | 'defaultTempSessionModel'
       | 'defaultEmbeddingModel'
       | 'defaultSpeechModel'
-      | 'defaultRerankModel',
+      | 'defaultRerankModel'
+      | 'defaultImageModel',
     modelId: string,
   ) => void;
 
   // RAG Global Settings
   globalRagConfig: RagConfiguration;
   updateGlobalRagConfig: (updates: Partial<RagConfiguration>) => void;
+
+  // Agent/Skill Settings
+  maxLoopCount: number;
+  setMaxLoopCount: (count: number) => void;
+  skillsConfig: Record<string, boolean>; // skillId -> enabled
+  setSkillEnabled: (skillId: string, enabled: boolean) => void;
 
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
@@ -60,6 +68,7 @@ export const useSettingsStore = create<SettingsState>()(
       defaultEmbeddingModel: undefined,
       defaultSpeechModel: undefined,
       defaultRerankModel: undefined,
+      defaultImageModel: undefined,
 
       updateDefaultModel: (key, modelId) => set({ [key]: modelId }),
 
@@ -123,11 +132,24 @@ export const useSettingsStore = create<SettingsState>()(
         costStrategy: 'summary-first',
         enableIncrementalHash: true,
         enableLocalPreprocess: true,
+
+        // Global Scope Defaults
+        activeDocIds: [],
+        activeFolderIds: [],
+        isGlobal: false,
       },
 
       updateGlobalRagConfig: (updates) =>
         set((state) => ({
           globalRagConfig: { ...state.globalRagConfig, ...updates },
+        })),
+
+      maxLoopCount: 5,
+      setMaxLoopCount: (count) => set({ maxLoopCount: count }),
+      skillsConfig: {},
+      setSkillEnabled: (skillId, enabled) =>
+        set((state) => ({
+          skillsConfig: { ...state.skillsConfig, [skillId]: enabled },
         })),
 
       _hasHydrated: false,
@@ -144,8 +166,11 @@ export const useSettingsStore = create<SettingsState>()(
         defaultEmbeddingModel: state.defaultEmbeddingModel,
         defaultSpeechModel: state.defaultSpeechModel,
         defaultRerankModel: state.defaultRerankModel,
+        defaultImageModel: state.defaultImageModel,
         globalRagConfig: state.globalRagConfig,
         accentColor: state.accentColor,
+        maxLoopCount: state.maxLoopCount,
+        skillsConfig: state.skillsConfig,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

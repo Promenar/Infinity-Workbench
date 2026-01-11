@@ -19,6 +19,7 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { DragDropContentView } from 'expo-drag-drop-content-view';
 import { PdfExtractor, PdfExtractorRef } from '../../src/components/rag/PdfExtractor';
 import { RagStatusIndicator } from '../../src/components/rag/RagStatusIndicator';
+import { MemoryItem } from '../../src/components/rag/MemoryItem';
 
 export default function RagScreen() {
   const router = useRouter();
@@ -70,7 +71,6 @@ export default function RagScreen() {
     }
   }, [pdfExtractorRef.current]);
 
-  // RagStore
   const {
     documents,
     folders,
@@ -90,6 +90,9 @@ export default function RagScreen() {
     moveFolder,
     setSelectedFolder,
     selectedFolder,
+    memories,
+    loadMemories,
+    deleteMemory,
   } = useRagStore();
 
   // 当前路径逻辑
@@ -104,9 +107,9 @@ export default function RagScreen() {
     [setSelectedFolder],
   );
 
-  // 搜索状态
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [activeTab, setActiveTab] = useState<'docs' | 'memories'>('docs');
 
   // 搜索过滤
   const filteredDocuments = useMemo(() => {
@@ -229,6 +232,7 @@ export default function RagScreen() {
   useEffect(() => {
     loadDocuments();
     loadFolders();
+    loadMemories();
   }, []);
 
   // 动态控制 TabBar 显示/隐藏
@@ -654,8 +658,44 @@ export default function RagScreen() {
 
           {renderHeader()}
 
-          {/* 面包屑导航 (非搜索模式显示) */}
-          {!searchQuery && (
+          {/* Tab Switcher - Using inline styles for stability */}
+          <View style={{ flexDirection: 'row', paddingHorizontal: 24, marginBottom: 16, marginTop: 4 }}>
+            <TouchableOpacity
+              onPress={() => setActiveTab('docs')}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 16,
+                borderRadius: 20,
+                backgroundColor: activeTab === 'docs' ? colors[500] : (isDark ? '#18181b' : '#f3f4f6'),
+                marginRight: 8,
+                borderWidth: 1,
+                borderColor: activeTab === 'docs' ? colors[500] : (isDark ? '#27272a' : '#e5e7eb'),
+              }}
+            >
+              <Typography style={{ color: activeTab === 'docs' ? '#fff' : (isDark ? '#a1a1aa' : '#64748b'), fontSize: 13, fontWeight: '700' }}>
+                {t.library.tabDocuments}
+              </Typography>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setActiveTab('memories')}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 16,
+                borderRadius: 20,
+                backgroundColor: activeTab === 'memories' ? colors[500] : (isDark ? '#18181b' : '#f3f4f6'),
+                borderWidth: 1,
+                borderColor: activeTab === 'memories' ? colors[500] : (isDark ? '#27272a' : '#e5e7eb'),
+              }}
+            >
+              <Typography style={{ color: activeTab === 'memories' ? '#fff' : (isDark ? '#a1a1aa' : '#64748b'), fontSize: 13, fontWeight: '700' }}>
+                {t.library.tabMemories}
+              </Typography>
+            </TouchableOpacity>
+          </View>
+
+          {/* 面包屑导航 (非搜索模式 且 处于文档页 显示) */}
+          {!searchQuery && activeTab === 'docs' && (
             <View className="mb-1.5">
               <Breadcrumbs
                 currentFolderId={currentFolderId}
@@ -671,8 +711,8 @@ export default function RagScreen() {
             contentContainerStyle={{ paddingBottom: 100 }}
             showsVerticalScrollIndicator={false}
           >
-            {/* 文件夹 (搜索模式隐藏) */}
-            {!searchQuery &&
+            {/* 文件夹 (搜索模式隐藏 且 文档预览激活) */}
+            {!searchQuery && activeTab === 'docs' &&
               currentViewContent.folders.map((folder) => (
                 <FolderItem
                   key={folder.id}
@@ -692,8 +732,8 @@ export default function RagScreen() {
                 />
               ))}
 
-            {/* 文档 */}
-            {currentViewContent.docs.map((doc) => (
+            {/* 文档列表 */}
+            {activeTab === 'docs' && currentViewContent.docs.map((doc) => (
               <CompactDocItem
                 key={doc.id}
                 id={doc.id}
@@ -733,6 +773,32 @@ export default function RagScreen() {
               />
             ))}
 
+            {/* 会话记忆列表 */}
+            {activeTab === 'memories' && memories.map((memory) => (
+              <MemoryItem
+                key={memory.id}
+                id={memory.id}
+                content={memory.content}
+                createdAt={memory.createdAt}
+                onDelete={() => {
+                  setConfirmState({
+                    visible: true,
+                    title: t.library.deleteMemory,
+                    message: t.library.deleteMemoryConfirm,
+                    isDestructive: true,
+                    onConfirm: async () => {
+                      await deleteMemory(memory.id);
+                      showToast(t.common.delete + t.common.success, 'success');
+                      setConfirmState((prev) => ({ ...prev, visible: false }));
+                    }
+                  });
+                }}
+                onPress={() => {
+                  showToast(memory.content.substring(0, 30) + '...', 'info');
+                }}
+              />
+            ))}
+
             {/* Modals */}
             {assignmentDocId && TagAssignmentSheetComponent && (
               <TagAssignmentSheetComponent
@@ -762,13 +828,19 @@ export default function RagScreen() {
             )}
 
             {/* 空状态提示 */}
-            {!searchQuery &&
+            {activeTab === 'docs' && !searchQuery &&
               currentViewContent.folders.length === 0 &&
               currentViewContent.docs.length === 0 && (
                 <View className="items-center justify-center py-20 opacity-50">
                   <Typography className="text-gray-400 font-medium">{t.library.emptyState}</Typography>
                 </View>
               )}
+
+            {activeTab === 'memories' && memories.length === 0 && (
+              <View className="items-center justify-center py-20 opacity-50">
+                <Typography className="text-gray-400 font-medium">{t.library.memoryEmptyState}</Typography>
+              </View>
+            )}
           </ScrollView>
         </View>
       </DragDropContentView>

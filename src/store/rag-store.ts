@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { db } from '../lib/db';
 import { generateId } from '../lib/utils/id-generator';
 import { VectorizationQueue } from '../lib/rag/vectorization-queue';
-import { RagDocument, RagFolder, VectorizationTask } from '../types/rag';
+import { RagDocument, RagFolder, VectorizationTask, RagMemory } from '../types/rag';
 import { graphStore } from '../lib/rag/graph-store';
 
 // 创建全局队列实例
@@ -11,6 +11,7 @@ let queueInstance: VectorizationQueue | null = null;
 interface RagState {
   documents: RagDocument[];
   folders: RagFolder[];
+  memories: RagMemory[];
 
   // 向量化队列状态
   vectorizationQueue: VectorizationTask[];
@@ -36,6 +37,8 @@ interface RagState {
   vectorizeDocument: (docId: string) => Promise<void>;
   extractDocumentGraph: (docId: string, strategy: 'full' | 'summary-first') => Promise<void>;
   toggleDocumentGlobal: (docId: string) => Promise<void>;
+  loadMemories: () => Promise<void>;
+  deleteMemory: (id: string) => Promise<void>;
 
   // 文件夹操作
   loadFolders: () => Promise<void>;
@@ -123,6 +126,7 @@ export const useRagStore = create<RagState>((set, get) => {
   return {
     documents: [],
     folders: [],
+    memories: [],
     vectorizationQueue: [],
     currentTask: null,
     expandedFolders: new Set(),
@@ -304,6 +308,52 @@ export const useRagStore = create<RagState>((set, get) => {
         get().loadFolders();
       } catch (e) {
         console.error('Failed to delete document:', e);
+        throw e;
+      }
+    },
+
+    loadMemories: async () => {
+      set({ isLoading: true });
+      try {
+        const results = await db.execute(`
+          SELECT id, content, created_at, 
+                 json_extract(metadata, '$.sessionId') as sessionId
+          FROM vectors 
+          WHERE json_extract(metadata, '$.type') = 'memory'
+          ORDER BY created_at DESC
+        `);
+
+        if (!results.rows) {
+          set({ memories: [], isLoading: false });
+          return;
+        }
+
+        const memories: RagMemory[] = [];
+        for (let i = 0; i < results.rows.length; i++) {
+          const row = results.rows[i] as any;
+          memories.push({
+            id: row.id as string,
+            content: row.content as string,
+            sessionId: row.sessionId as string,
+            createdAt: row.created_at as number,
+          });
+        }
+
+        set({ memories, isLoading: false });
+      } catch (e) {
+        console.error('Failed to load memories:', e);
+        set({ isLoading: false });
+      }
+    },
+
+    deleteMemory: async (id) => {
+      try {
+        await db.execute('DELETE FROM vectors WHERE id = ?', [id]);
+        set((state) => ({
+          memories: state.memories.filter((m) => m.id !== id),
+        }));
+      } catch (e) {
+        console.error('Failed to delete memory:', e);
         throw e;
       }
     },

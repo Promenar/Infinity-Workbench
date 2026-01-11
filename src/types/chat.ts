@@ -1,6 +1,8 @@
 export type AgentId = string;
 export type SessionId = string;
 
+import { ExecutionStep } from './skills';
+
 export interface InferenceParams {
   temperature?: number; // 0.0 - 2.0
   topP?: number; // 0.0 - 1.0
@@ -108,6 +110,8 @@ export interface Message {
   isArchived?: boolean; // ✅ 新增：归档状态
   vectorizationStatus?: 'processing' | 'success' | 'error'; // ✅ 新增：向量化状态
   layoutHeight?: number; // ✅ 新增：缓存布局高度，优化滚动性能
+  executionSteps?: ExecutionStep[]; // ✅ 新增：Agentic Loop 执行步骤
+
 }
 
 export interface Session {
@@ -206,4 +210,9 @@ export interface RagConfiguration {
   costStrategy?: 'summary-first' | 'on-demand' | 'full'; // 抽取策略
   enableIncrementalHash?: boolean; // 启用增量Hash校验 (默认true)
   enableLocalPreprocess?: boolean; // 启用本地规则预处理 (默认true)
+
+  // Scope Configuration (Added for Global RAG Context)
+  activeDocIds?: string[]; // 全局默认授权文档
+  activeFolderIds?: string[]; // 全局默认授权文件夹
+  isGlobal?: boolean; // 全局搜索开关 (true=ignore ids, false=restrict to ids)
 }

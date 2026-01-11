@@ -1,5 +1,7 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { supportsThinkingConfig } from '../model-utils';
+import { Skill, ToolCall } from '../../../types/skills';
+import zodToJsonSchema from 'zod-to-json-schema';
 
 export class GeminiClient implements LlmClient {
   private apiKey: string;
@@ -18,9 +20,10 @@ export class GeminiClient implements LlmClient {
   async chatCompletion(
     messages: ChatMessage[],
     options?: any,
-  ): Promise<{ content: string; usage?: { input: number; output: number; total: number } }> {
+  ): Promise<{ content: string; toolCalls?: ToolCall[]; usage?: { input: number; output: number; total: number } }> {
     let result = '';
     let finalUsage: { input: number; output: number; total: number } | undefined;
+    let finalToolCalls: ToolCall[] | undefined;
 
     await this.streamChat(
       messages,
@@ -28,13 +31,50 @@ export class GeminiClient implements LlmClient {
         const content = typeof chunk === 'string' ? chunk : chunk.content;
         if (content) result += content;
         if (chunk.usage) finalUsage = chunk.usage;
+        if (chunk.toolCalls) finalToolCalls = chunk.toolCalls;
       },
       (err) => {
         throw err;
       },
       options,
     );
-    return { content: result, usage: finalUsage };
+    return { content: result, toolCalls: finalToolCalls, usage: finalUsage };
+  }
+
+  private mapSkillsToGeminiTools(skills: Skill[]): any[] {
+    // Helper to recursively uppercase types in schema for Gemini strictness
+    const fixSchema = (s: any): any => {
+      if (!s || typeof s !== 'object') return s;
+      const result = { ...s };
+      if (result.type && typeof result.type === 'string') {
+        result.type = result.type.toUpperCase();
+      }
+      if (result.properties) {
+        const newProps: any = {};
+        for (const key in result.properties) {
+          newProps[key] = fixSchema(result.properties[key]);
+        }
+        result.properties = newProps;
+      }
+      if (result.items) {
+        result.items = fixSchema(result.items);
+      }
+      return result;
+    };
+
+    return [{
+      functionDeclarations: skills.map((skill) => {
+        const schema = zodToJsonSchema(skill.schema as any) as any;
+        delete schema.$schema;
+        delete schema.additionalProperties;
+
+        return {
+          name: skill.id,
+          description: skill.description,
+          parameters: fixSchema(schema),
+        };
+      })
+    }];
   }
 
   async streamChat(
@@ -43,6 +83,7 @@ export class GeminiClient implements LlmClient {
       content: string;
       reasoning?: string;
       citations?: { title: string; url: string; source?: string }[];
+      toolCalls?: ToolCall[];
       usage?: { input: number; output: number; total: number };
     }) => void,
     onError: (err: Error) => void,
@@ -55,12 +96,56 @@ export class GeminiClient implements LlmClient {
 
         this.activeXhr = new XMLHttpRequest();
         const xhr = this.activeXhr;
+        console.log('[GeminiClient] Opening XHR to:', endpoint.substring(0, 100));
         xhr.open('POST', endpoint);
         xhr.setRequestHeader('Content-Type', 'application/json');
 
         const formatMessage = (m: ChatMessage) => {
+          // Handle Tool Results (Role: tool)
+          if (m.role === 'tool') {
+            return {
+              parts: [{
+                functionResponse: {
+                  name: m.name || 'unknown',
+                  response: {
+                    content: m.content
+                  }
+                }
+              }]
+            };
+          }
+
+          // Handle Assistant Messages with Tool Calls
+          if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+            const parts: any[] = [];
+            // Some models require text to be first or accompanying tool calls
+            const contentText = typeof m.content === 'string' ? m.content : '';
+            const reasoningText = m.reasoning || '';
+            const combinedText = [reasoningText, contentText].filter(Boolean).join('\n\n');
+
+            if (combinedText) {
+              parts.push({ text: combinedText });
+            }
+
+            m.tool_calls.forEach((tc: any) => {
+              parts.push({
+                functionCall: {
+                  name: tc.function?.name || tc.name,
+                  args: typeof tc.function?.arguments === 'string'
+                    ? JSON.parse(tc.function.arguments)
+                    : (tc.function?.arguments || tc.arguments || {})
+                }
+              });
+            });
+            return { parts };
+          }
+
+          // Normal Text/Image Messages
           if (typeof m.content === 'string') {
-            return { parts: [{ text: m.content }] };
+            const contentText = m.content;
+            const reasoningText = m.reasoning || '';
+            const combinedText = [reasoningText, contentText].filter(Boolean).join('\n\n');
+            return { parts: [{ text: combinedText }] };
           }
           if (Array.isArray(m.content)) {
             const parts = m.content
@@ -68,7 +153,7 @@ export class GeminiClient implements LlmClient {
                 if (c.type === 'text') return { text: c.text };
                 if (c.type === 'image_url') {
                   // Extract base64 from data URI
-                  const matches = c.image_url.url.match(/^data:(.+);base64,(.+)$/);
+                  const matches = (c.image_url.url as string).match(/^data:(.+);base64,(.+)$/);
                   if (matches) {
                     return {
                       inline_data: {
@@ -87,35 +172,84 @@ export class GeminiClient implements LlmClient {
         };
 
         // Safety: Only enable thinking config if model supports it and user enabled reasoning
-        const shouldEnableThinking = options?.reasoning && supportsThinkingConfig(this.model);
+        // CRITICAL: Gemini 2.0 Thinking models often fail when combined with tools in current API versions.
+        // If tools (skills) are present, we might want to disable thinkingConfig or at least be careful.
+        const hasTools = (options?.skills && options.skills.length > 0) || options?.webSearch;
+        const shouldEnableThinking = options?.reasoning && supportsThinkingConfig(this.model) && !hasTools;
+
+        // System Nudge for Voice/Tool consistency
+        const systemInstruction = hasTools
+          ? `You are a helpful assistant with access to tools. 
+You MUST use the native function calling mechanism to execute tools. 
+Available tools: ${options.skills?.map(s => s.id).join(', ') || 'N/A'}.
+Do not just explain what you will do. If you need information from the knowledge base, call 'query_vector_db' immediately. 
+If you need to generate an image, call 'generate_image' directly.`
+          : undefined;
 
         let body: any = {
-          contents: messages.map((m) => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            ...formatMessage(m),
-          })),
+          contents: messages.map((m) => {
+            let role = m.role === 'assistant' ? 'model' : 'user';
+            // According to Google API, role can be 'user', 'model', or 'function' for results
+            if (m.role === 'tool') role = 'function';
+
+            return {
+              role,
+              ...formatMessage(m),
+            };
+          }),
           generationConfig: {
             temperature: options?.inferenceParams?.temperature ?? (this.temperature || 0.7),
             topP: options?.inferenceParams?.topP,
             maxOutputTokens: options?.inferenceParams?.maxTokens,
             ...(shouldEnableThinking
               ? {
-                  thinkingConfig: {
-                    includeThoughts: true,
-                  },
-                }
+                thinkingConfig: {
+                  includeThoughts: true,
+                },
+              }
               : {}),
           },
         };
 
-        if (options?.webSearch) {
-          body.tools = [{ googleSearch: {} }];
+        if (systemInstruction) {
+          body.system_instruction = {
+            parts: [{ text: systemInstruction }]
+          };
         }
+
+        // Initialize tools array
+        const tools: any[] = [];
+
+        // Add Google Search if enabled
+        if (options?.webSearch) {
+          tools.push({ googleSearch: {} });
+        }
+
+        // Add Skills (Function Declarations) if present
+        if (hasTools && options?.skills && options.skills.length > 0) {
+          const geminiTools = this.mapSkillsToGeminiTools(options.skills);
+          tools.push(...geminiTools);
+
+          // Force tool usage if possible
+          body.tool_config = {
+            function_calling_config: {
+              mode: 'AUTO'
+            }
+          };
+        }
+
+        if (tools.length > 0) {
+          body.tools = tools;
+        }
+
+        console.log('[GeminiClient] Request Body Tools:', JSON.stringify(body.tools, null, 2));
+
 
         let lastPosition = 0;
         let buffer = '';
 
         xhr.onreadystatechange = () => {
+          console.log(`[GeminiClient] ReadyState: ${xhr.readyState}, Status: ${xhr.status}`);
           if (xhr.readyState === 3 || xhr.readyState === 4) {
             const newText = xhr.responseText.substring(lastPosition);
             lastPosition = xhr.responseText.length;
@@ -141,6 +275,7 @@ export class GeminiClient implements LlmClient {
                       const json = JSON.parse(objStr);
                       // Handling array wrapper if present
                       const item = Array.isArray(json) ? json[0] : json;
+                      console.log('[GeminiClient] Parsed JSON item:', JSON.stringify(item).substring(0, 500));
                       const candidates = item?.candidates;
                       const candidate = candidates?.[0];
                       let text = '';
@@ -157,29 +292,39 @@ export class GeminiClient implements LlmClient {
                         };
                       }
 
+                      let toolCalls: ToolCall[] | undefined;
+
                       if (candidate?.content?.parts) {
                         for (const part of candidate.content.parts) {
+                          // Extract Function Calls
+                          if (part.functionCall) {
+                            if (!toolCalls) toolCalls = [];
+                            toolCalls.push({
+                              id: Math.random().toString(36).substring(7),
+                              name: part.functionCall.name,
+                              arguments: part.functionCall.args,
+                            });
+                          }
+
+                          // 🧠 Precise Reasoning/Thought Extraction (Part-level)
+                          // Google models may use 'thought: true' (boolean) for thinking parts, 
+                          // or 'thought: "string"', or 'reasoning_content'.
                           const isThoughtPart =
-                            part.thought === true || typeof part.thought === 'string';
+                            part.thought === true ||
+                            typeof part.thought === 'string' ||
+                            !!part.reasoning_content;
 
                           if (isThoughtPart) {
-                            if (typeof part.thought === 'string') {
-                              reasoning += part.thought;
-                            }
+                            if (typeof part.thought === 'string') reasoning += part.thought;
+                            if (part.reasoning_content) reasoning += part.reasoning_content;
+                            // If it's a thinking part and has text, capture it as reasoning
                             if (part.text) {
                               reasoning += part.text;
                             }
                           } else if (part.text) {
-                            const chunkHasThought = candidate.content.parts.some(
-                              (p: any) => p.thought === true,
-                            );
-                            if (chunkHasThought) {
-                              reasoning += part.text;
-                            } else {
-                              text += part.text;
-                            }
+                            // Non-thinking part text is actual content
+                            text += part.text;
                           }
-                          if (part.reasoning_content) reasoning += part.reasoning_content;
                         }
                       }
 
@@ -192,24 +337,28 @@ export class GeminiClient implements LlmClient {
                           .map((chunk: any) =>
                             chunk.web
                               ? {
-                                  title: chunk.web.title || 'Web Source',
-                                  url: chunk.web.uri,
-                                  source: 'Google',
-                                }
+                                title: chunk.web.title || 'Web Source',
+                                url: chunk.web.uri,
+                                source: 'Google',
+                              }
                               : null,
                           )
                           .filter(Boolean);
                       }
 
-                      if (text || reasoning || (citations && citations.length > 0) || usage) {
+                      console.log('[GeminiClient] Extracted - Text:', text.length, 'Reasoning:', reasoning.length, 'ToolCalls:', toolCalls?.length || 0);
+                      if (text || reasoning || (citations && citations.length > 0) || usage || (toolCalls && toolCalls.length > 0)) {
                         onChunk({
                           content: text,
                           reasoning: reasoning || undefined,
                           citations: citations && citations.length > 0 ? citations : undefined,
+                          toolCalls,
                           usage,
                         });
+                      } else {
+                        console.warn('[GeminiClient] No content/reasoning/tools to emit in this chunk');
                       }
-                    } catch (e) {}
+                    } catch (e) { }
                     startIdx = i + 1;
                   }
                 }
@@ -240,12 +389,14 @@ export class GeminiClient implements LlmClient {
         };
 
         xhr.onerror = () => {
+          console.error('[GeminiClient] XHR network error');
           const err = new Error('Network request failed');
           onError(err);
           reject(err);
           this.activeXhr = null;
         };
 
+        console.log('[GeminiClient] Sending request with body length:', JSON.stringify(body).length);
         xhr.send(JSON.stringify(body));
       } catch (e) {
         onError(e as Error);
@@ -307,6 +458,75 @@ export class GeminiClient implements LlmClient {
     } catch (e) {
       const latency = Date.now() - start;
       return { success: false, latency, error: (e as Error).message };
+    }
+  }
+  async generateImage(
+    prompt: string,
+    options?: { size?: string },
+  ): Promise<{ url: string; revisedPrompt?: string }> {
+    // Gemini API Studio protocol for Image Generation (Imagen)
+    // Ref: https://ai.google.dev/gemini-api/docs/imagen
+
+    const isGemini = this.model.startsWith('gemini-');
+    const method = isGemini ? 'generateContent' : 'predict';
+    const endpoint = `${this.baseUrl}/v1beta/models/${this.model}:${method}?key=${this.apiKey}`;
+
+    let body: any;
+    if (isGemini) {
+      body = {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      };
+    } else {
+      body = {
+        instances: [{ prompt }],
+        parameters: {
+          sampleCount: 1,
+        },
+      };
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini Image Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    let base64Data: string | undefined;
+    let mimeType = 'image/png';
+
+    if (isGemini) {
+      const candidate = data.candidates?.[0];
+      const part = candidate?.content?.parts?.find((p: any) => p.inlineData);
+      if (part?.inlineData) {
+        base64Data = part.inlineData.data;
+        mimeType = part.inlineData.mimeType || 'image/png';
+      }
+    } else {
+      if (data.predictions && data.predictions.length > 0) {
+        const prediction = data.predictions[0];
+        base64Data = prediction.bytesBase64Encoded;
+      }
+    }
+
+    if (!base64Data) {
+      throw new Error('Invalid response format or no image generated from Gemini API');
+    }
+
+    // Persist to file to avoid lag
+    try {
+      const { saveBase64ToFile, generateThumbnail } = require('../../image-utils');
+      const originalUri = await saveBase64ToFile(base64Data, 'originals', mimeType);
+      const thumbnailUri = await generateThumbnail(originalUri, { maxWidth: 1024, compress: 0.8 });
+      return { url: thumbnailUri };
+    } catch (e) {
+      console.warn('[Gemini] Failed to save image to file, falling back to data URI', e);
+      return { url: `data:${mimeType};base64,${base64Data}` };
     }
   }
 }

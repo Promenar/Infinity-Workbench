@@ -16,6 +16,7 @@ import {
 import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
+import { useSettingsStore } from './settings-store';
 import { createLlmClient } from '../lib/llm/factory';
 import { estimateTokens } from '../features/chat/utils/token-counter';
 import { performWebSearch } from '../features/chat/utils/web-search';
@@ -25,6 +26,8 @@ import { MemoryManager } from '../lib/rag/memory-manager';
 import { graphExtractor } from '../lib/rag/graph-extractor'; // ✅ Import KG Extractor
 
 import { ContextManager } from '../features/chat/utils/ContextManager';
+import { skillRegistry } from '../lib/skills/registry';
+import { ToolCall, ToolResult, ExecutionStep, SkillContext } from '../types/skills';
 
 // ✅ 辅助函数：从数据库查询消息归档状态
 const enrichMessagesWithArchiveStatus = async (
@@ -754,14 +757,24 @@ export const useChatStore = create<ChatState>()(
           }
 
           // 4. 准备上下文 (Prepare Context)
-          // 将 RAG 上下文注入到系统提示词中
+          const availableSkills = skillRegistry.getEnabledSkills();
+
+          // Inject Tools into System Prompt (Belt and Suspenders for DeepSeek/Gemini)
           let finalSystemPrompt =
             agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
+
+          if (availableSkills.length > 0) {
+            const toolsDesc = availableSkills.map(s => `- ${s.name} (${s.id}): ${s.description}`).join('\n');
+            const toolInstruction = `\n\n[AVAILABLE TOOLS]\nYou have access to the following tools. USE THEM DIRECTLY via the native function calling mechanism. DO NOT output JSON in your response.\n${toolsDesc}\n\n[AUTO-EXECUTION RULES]\n1. ALWAYS explain your reasoning (in 1 short sentence) BEFORE calling a tool. This is crucial for the user to understand your plan.\n2. Do not ask the user for permission, just use the tool if needed.\n3. If the task requires multiple steps (e.g. search -> generate), YOU MUST CHAIN TOOL CALLS.\n4. After receiving a tool result, CHECK if it contains the necessary info. If YES, proceed immediately to the next step.\n5. DO NOT repeatedly search for the same information.`;
+            finalSystemPrompt += toolInstruction;
+          }
+
+          // 将 RAG 上下文注入到系统提示词中
           if (ragContext) {
             finalSystemPrompt += `\n\n${ragContext}`;
           }
 
-          let contextMsgs = [];
+          let contextMsgs: any[] = [];
           // 将搜索上下文 (Web) 注入到系统提示词或作为单独的系统消息
           if (searchContext) {
             contextMsgs.push({
@@ -776,14 +789,11 @@ export const useChatStore = create<ChatState>()(
           const formatContent = async (
             msgContent: string,
             images?: GeneratedImageData[],
-            isHistory?: boolean,
           ) => {
             // Priority 1: If model doesn't support vision, skip image processing entirely
             const hasVision = modelConfig?.capabilities.vision;
             if (!images || images.length === 0 || !hasVision) return msgContent;
 
-            // Priority 2: In history, we might want to skip or limit high-res images to save bandwidth/lag
-            // But for now, just skip if it's the current model is not vision-capable
             const parts: any[] = [{ type: 'text', text: msgContent }];
             for (const img of images) {
               try {
@@ -801,208 +811,449 @@ export const useChatStore = create<ChatState>()(
             return parts;
           };
 
-          // 🔑 动态上下文窗口大小
-          const activeWindowSize = agent.ragConfig?.contextWindow || 10;
+          // Add user message to context
+          contextMsgs.push({ role: 'user', content: await formatContent(apiMessage.content, apiMessage.images) });
 
-          const history = await Promise.all(
-            session.messages.slice(-activeWindowSize).map(async (m: Message) => ({
-              role: m.role,
-              content: await formatContent(m.content, m.images, true),
-            })),
-          );
+          // =====================================================================================
+          // Phase 4: Agentic Loop Implementation
+          // =====================================================================================
 
-          contextMsgs = [
-            ...contextMsgs,
-            ...history,
-            { role: 'user', content: await formatContent(content, normalizedImages) },
-          ] as any;
 
-          const context = ContextManager.trimContext(contextMsgs, activeWindowSize);
-          // For token estimation, we only count text parts
-          const contextText = context
-            .map((m: any) => {
-              if (typeof m.content === 'string') return m.content;
-              return (m.content as any[])
-                .map((p: any) => (p.type === 'text' ? p.text : ''))
-                .join('\n');
-            })
-            .join('\n');
-          const totalContextTokens = estimateTokens(contextText);
-
-          // 5. Stream Chat with optimized batching
-          let updateTimer: NodeJS.Timeout | null = null;
-          let lastTokenEstimateLength = 0;
+          // =====================================================================================
+          // Phase 4: Agentic Loop Implementation
+          // =====================================================================================
+          const MAX_LOOP_COUNT = useSettingsStore.getState().maxLoopCount || 5;
+          let loopCount = 0;
+          let currentAssistantMsgId = assistantMsgId; // Track current assistant message
           let accumulatedUsage: { input: number; output: number; total: number } | undefined;
 
-          const scheduleUpdate = () => {
-            if (updateTimer) return; // 防止重复调度
-            updateTimer = setTimeout(() => {
-              updateTimer = null;
+          // Loop Context
+          let currentMessages = [...contextMsgs];
+          let loopExecutionSteps: ExecutionStep[] = [];
 
-              let inputTokens = totalContextTokens;
-              let completionTokens = 0;
+          // Helper to update execution steps in store
+          const updateSteps = (newStep: ExecutionStep) => {
+            const index = loopExecutionSteps.findIndex(s => s.id === newStep.id);
+            if (index > -1) {
+              const updatedSteps = [...loopExecutionSteps];
+              updatedSteps[index] = newStep;
+              loopExecutionSteps = updatedSteps;
+            } else {
+              loopExecutionSteps = [...loopExecutionSteps, newStep];
+            }
 
-              if (accumulatedUsage) {
-                // Prefer API usage if available
-                inputTokens = accumulatedUsage.input;
-                completionTokens = accumulatedUsage.output;
-              } else {
-                // Fallback to estimation
-                const shouldEstimateTokens =
-                  accumulatedContent.length - lastTokenEstimateLength > 500;
-                completionTokens = shouldEstimateTokens
-                  ? estimateTokens(accumulatedContent)
-                  : Math.floor(accumulatedContent.length / 4);
+            get().updateMessageContent(
+              sessionId,
+              currentAssistantMsgId,
+              accumulatedContent,
+              undefined,
+              accumulatedReasoning,
+              accumulatedCitations,
+              ragReferences,
+              false,
+              undefined,
+            );
+            set(state => ({
+              sessions: state.sessions.map(s => s.id === sessionId ? {
+                ...s,
+                messages: s.messages.map(m => m.id === currentAssistantMsgId ? { ...m, executionSteps: loopExecutionSteps } : m)
+              } : s)
+            }));
+          };
 
-                if (shouldEstimateTokens) {
-                  lastTokenEstimateLength = accumulatedContent.length;
+          const runAgentLoop = async () => {
+            while (loopCount < MAX_LOOP_COUNT) {
+              loopCount++;
+              console.log(`[AgentLoop] Turn ${loopCount}/${MAX_LOOP_COUNT}`);
+
+              // 4. Get Enabled Skills
+              const availableSkills = skillRegistry.getEnabledSkills();
+              console.log('[AgentLoop] Available Skills:', availableSkills.map(s => s.id));
+
+
+              // 5. Stream Chat
+              let toolCalls: ToolCall[] | undefined;
+              let turnContent = '';
+              let reasoningFromThisTurn = '';
+
+              await client.streamChat(
+                currentMessages as any,
+                (token) => {
+                  // Check for abort
+                  const currentState = get();
+                  if (!currentState.activeRequests[sessionId]) return;
+
+                  // 5.0 Capture Usage
+                  if (token.usage) {
+                    accumulatedUsage = token.usage;
+                  }
+
+                  // 5.1 Handle Content
+                  if (token.content) {
+                    turnContent += token.content;
+                    accumulatedContent += token.content;
+                    get().updateMessageContent(
+                      sessionId,
+                      currentAssistantMsgId,
+                      accumulatedContent,
+                      token.usage
+                    );
+                  }
+
+                  // 5.2 Handle Reasoning
+                  if (token.reasoning) {
+                    reasoningFromThisTurn += token.reasoning;
+                    // Note: We don't add to accumulatedReasoning here to keep bubble clean
+                    // Instead, we stream directly to the timeline
+                    const stepId = `think_turn_${loopCount}`;
+                    updateSteps({
+                      id: stepId,
+                      type: 'thinking',
+                      content: reasoningFromThisTurn,
+                      timestamp: Date.now()
+                    });
+
+                    // 🧹 Keep bubble reasoning empty if it's in timeline
+                    get().updateMessageContent(
+                      sessionId,
+                      currentAssistantMsgId,
+                      accumulatedContent,
+                      token.usage,
+                      '' // Clear bubble reasoning
+                    );
+                  }
+
+                  // 5.3 Handle Tool Calls
+                  if (token.toolCalls) {
+                    toolCalls = token.toolCalls;
+                  }
+                },
+                (error) => { console.warn('Stream error', error); },
+                {
+                  skills: availableSkills,
+                  reasoning: true, // Enable reasoning/thinking mode
+                  inferenceParams: {
+                    temperature: agent.params?.temperature || 0.7,
+                    maxTokens: agent.params?.maxTokens,
+                    topP: agent.params?.topP,
+                    frequencyPenalty: agent.params?.frequencyPenalty,
+                    presencePenalty: agent.params?.presencePenalty,
+                  },
+                }
+              );
+
+              // 6. Output Processing
+
+              // Fallback: Check if model outputted tool calls as JSON in text (DeepSeek/Legacy/ReAct behavior)
+              if (!toolCalls || toolCalls.length === 0) {
+                console.log('[AgentLoop] No native tool calls. Checking content fallback. Content len:', turnContent.length);
+
+                // Strategy 1: Markdown Code Blocks
+                // Match ``` followed by any generic language tag (or none), content, then ```
+                const jsonBlockRegex = /```[\w-]*\s*([\s\S]*?)\s*```/yi;
+                const match = turnContent.match(jsonBlockRegex);
+
+                let potentialJson = '';
+                if (match && match[1]) {
+                  console.log('[AgentLoop] Regex matched code block.');
+                  potentialJson = match[1].trim();
+                } else if (turnContent.trim().startsWith('{') && turnContent.trim().endsWith('}')) {
+                  // Strategy 2: Raw JSON (no markdown)
+                  console.log('[AgentLoop] Content looks like raw JSON.');
+                  potentialJson = turnContent.trim();
+                }
+
+                if (potentialJson) {
+                  try {
+                    // Sanitize: sometimes models put comments // in JSON
+                    // We can't easily strip them without a library, but let's hope for standard JSON
+                    const jsonContent = JSON.parse(potentialJson);
+                    console.log('[AgentLoop] JSON Parsed successfully:', Object.keys(jsonContent));
+
+                    // ... (Existing parsing logic) ...
+
+                    // Avoid parsing non-object JSON (like simple code snippets)
+                    if (potentialJson.startsWith('{')) {
+                      const jsonContent = JSON.parse(potentialJson);
+
+                      // Case A: Standard tool_calls wrapper
+                      if (jsonContent.tool_calls) {
+                        console.log('[AgentLoop] Detected tool calls in content (Standard JSON)');
+                        toolCalls = jsonContent.tool_calls.map((tc: any) => ({
+                          id: tc.id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                          name: tc.function.name,
+                          arguments: typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments
+                        }));
+                      }
+                      // Case B: Single function/tool wrapper
+                      else if (jsonContent.function || jsonContent.tool) {
+                        const fn = jsonContent.function || jsonContent.tool;
+
+                        // Handle flat format: { function: "name", parameters: {...} }
+                        if (typeof fn === 'string') {
+                          console.log('[AgentLoop] Detected single function call in content (Flat Format)');
+                          toolCalls = [{
+                            id: `call_${Date.now()}`,
+                            name: fn,
+                            arguments: jsonContent.parameters || jsonContent.arguments || {}
+                          }];
+                          if (typeof toolCalls[0].arguments === 'string') {
+                            try { toolCalls[0].arguments = JSON.parse(toolCalls[0].arguments); } catch { }
+                          }
+                        }
+                        // Handle nested format: { function: { name: "..." } }
+                        else if (fn.name) {
+                          console.log('[AgentLoop] Detected single function call in content (Wrapper)');
+                          toolCalls = [{
+                            id: `call_${Date.now()}`,
+                            name: fn.name,
+                            arguments: typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : fn.arguments
+                          }];
+                        }
+                      }
+                      // Case C: ReAct / Action style (Gemini/LangChain style hallucinations)
+                      else if (jsonContent.action && jsonContent.action !== 'Final Answer') {
+                        console.log('[AgentLoop] Detected action/action_input in content (ReAct)');
+                        toolCalls = [{
+                          id: `call_${Date.now()}`,
+                          name: jsonContent.action,
+                          arguments: typeof jsonContent.action_input === 'string' ? JSON.parse(jsonContent.action_input) : jsonContent.action_input
+                        }];
+                      }
+
+                      // Success: Clean up turnContent
+                      if (toolCalls && toolCalls.length > 0) {
+                        // If we extracted tool calls, remove the JSON block from the visible content
+                        if (potentialJson === turnContent.trim()) {
+                          turnContent = ''; // It was just JSON
+                        } else if (match && match[0]) {
+                          // It was a code block, remove it
+                          turnContent = turnContent.replace(match[0], '').trim();
+                        } else {
+                          // Fallback: remove the raw string if we can find it
+                          turnContent = turnContent.replace(potentialJson, '').trim();
+                        }
+
+                        // IMPORTANT: Update the UI to remove the JSON script
+                        accumulatedContent = turnContent;
+                        get().updateMessageContent(
+                          sessionId,
+                          currentAssistantMsgId,
+                          accumulatedContent, // Cleaned content
+                          accumulatedUsage
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('[AgentLoop] Failed to parse fallback tool calls from content', e);
+                  }
+                }
+
+                // Strategy 3: Special text pattern "call:function_name(arg1=val1, ...)"
+                // Seen in Gemini hallucinations
+                if (!toolCalls || toolCalls.length === 0) {
+                  const callPattern = /call:([\w_]+)\(([\s\S]*?)\)/gi;
+                  let callMatch;
+                  const extractedCalls: ToolCall[] = [];
+
+                  while ((callMatch = callPattern.exec(turnContent)) !== null) {
+                    const funcName = callMatch[1];
+                    const argsStr = callMatch[2];
+                    console.log(`[AgentLoop] Detected text-based call: ${funcName}(${argsStr})`);
+
+                    // Try parsing simple key-value arguments: query="xxx", count=5
+                    const args: Record<string, any> = {};
+                    const argPattern = /([\w_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\d+(?:\.\d+)?)|(true|false|null))/gi;
+                    let argMatch;
+                    while ((argMatch = argPattern.exec(argsStr)) !== null) {
+                      const key = argMatch[1];
+                      const val = argMatch[2] || argMatch[3] || argMatch[4] || argMatch[5];
+                      let finalVal: any = val;
+                      if (argMatch[4]) finalVal = Number(val);
+                      if (argMatch[5]) {
+                        if (val === 'true') finalVal = true;
+                        if (val === 'false') finalVal = false;
+                        if (val === 'null') finalVal = null;
+                      }
+                      args[key] = finalVal;
+                    }
+
+                    // Fallback: If no structured args found, treat the whole string as "query"
+                    if (Object.keys(args).length === 0 && argsStr.trim()) {
+                      // Check if it looks like a single string literal
+                      const quoteMatch = argsStr.trim().match(/^["'](.*)["']$/);
+                      if (quoteMatch) {
+                        args['query'] = quoteMatch[1];
+                      } else {
+                        args['query'] = argsStr.trim();
+                      }
+                    }
+
+                    extractedCalls.push({
+                      id: `txt_call_${Date.now()}_${extractedCalls.length}`,
+                      name: funcName,
+                      arguments: args
+                    });
+
+                    // Success cleanup: remove the call string from content
+                    turnContent = turnContent.replace(callMatch[0], '').trim();
+                  }
+
+                  if (extractedCalls.length > 0) {
+                    toolCalls = extractedCalls;
+                    // IMPORTANT: Update UI to remove the text calls
+                    accumulatedContent = turnContent;
+                    get().updateMessageContent(
+                      sessionId,
+                      currentAssistantMsgId,
+                      accumulatedContent,
+                      accumulatedUsage
+                    );
+                  }
                 }
               }
 
-              get().updateMessageContent(
-                sessionId,
-                assistantMsgId,
-                accumulatedContent,
-                {
-                  input: inputTokens,
-                  output: completionTokens,
-                  total: inputTokens + completionTokens,
-                },
-                accumulatedReasoning,
-                accumulatedCitations,
-                ragReferences,
-              ); // ✅ 传入 ragReferences 确保 RAG 检测
-            }, 100); // 每 100ms 最多更新一次，减少渲染压力
+              // 🌟 Final Turn Reasoning Processing:
+              // Real-time logic in stream loop already moved reasoning to timeline.
+              // Just ensure we don't have residual reasoning in bubble metadata.
+              if (reasoningFromThisTurn) {
+                accumulatedReasoning = '';
+                get().updateMessageContent(
+                  sessionId,
+                  currentAssistantMsgId,
+                  accumulatedContent,
+                  accumulatedUsage,
+                  ''
+                );
+              }
+
+              if (toolCalls && toolCalls.length > 0) {
+                console.log(`[AgentLoop] Processing ${toolCalls.length} tool calls. Detailed:`, JSON.stringify(toolCalls));
+
+                // Final Turn Content Cleanup: If we have tool calls, the text accompanies the plan.
+                // We move the turn text to the timeline too if it looks like a plan.
+                if (turnContent && turnContent.length > 0) {
+                  updateSteps({
+                    id: `plan_${Date.now()}`,
+                    type: 'thinking',
+                    content: `Plan: ${turnContent}`,
+                    timestamp: Date.now()
+                  });
+
+                  // Clear turn content from main window if it's just a precursor to tool calls
+                  accumulatedContent = accumulatedContent.replace(turnContent, '').trim();
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    accumulatedContent,
+                    accumulatedUsage,
+                    ''
+                  );
+                }
+
+                // Add Assistant Message (with ToolCalls) to History
+                currentMessages.push({
+                  role: 'assistant',
+                  content: turnContent || '',
+                  reasoning: reasoningFromThisTurn, // 🧠 Critical: Persist thoughts for reasoning models
+                  tool_calls: toolCalls.map(tc => ({
+                    id: tc.id,
+                    type: 'function',
+                    function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
+                  }))
+                } as any);
+
+                // Execute Tools
+                for (const tc of toolCalls) {
+                  const skill = skillRegistry.getSkill(tc.name);
+                  const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+
+                  // 1. Add Timeline: Calling
+                  updateSteps({
+                    id: stepId,
+                    type: 'tool_call',
+                    toolName: tc.name,
+                    toolArgs: tc.arguments,
+                    timestamp: Date.now()
+                  });
+
+                  let result: ToolResult;
+                  try {
+                    if (skill) {
+                      const context: SkillContext = { sessionId, agentId: agent.id };
+                      result = await skill.execute(tc.arguments, context);
+                    } else {
+                      result = { id: tc.id, content: `Error: Skill ${tc.name} not found`, status: 'error' };
+                    }
+                  } catch (e: any) {
+                    result = { id: tc.id, content: `Error executing ${tc.name}: ${e.message}`, status: 'error' };
+                  }
+
+                  // 2. Add Timeline: Result
+                  updateSteps({
+                    id: `res_${stepId}`,
+                    type: result.status === 'success' ? 'tool_result' : 'error',
+                    toolName: tc.name,
+                    content: result.content,
+                    timestamp: Date.now()
+                  });
+
+                  // 3. Add Tool Message to History
+                  currentMessages.push({
+                    role: 'tool',
+                    tool_call_id: tc.id,
+                    content: result.content,
+                    name: tc.name
+                  } as any);
+                }
+                accumulatedContent += '\n\n';
+
+              } else {
+                console.log('[AgentLoop] Final answer received. Stopping.');
+                break;
+              }
+            }
           };
 
-          await client.streamChat(
-            context,
-            (chunk) => {
-              // Handle object chunk (new) or string chunk (legacy safety)
-              if (typeof chunk === 'string') {
-                accumulatedContent += chunk;
-              } else {
-                if (chunk.content) accumulatedContent += chunk.content;
-                if (chunk.reasoning) accumulatedReasoning += chunk.reasoning;
-                if (chunk.citations) accumulatedCitations = chunk.citations; // Native citations (replace/update)
-                if (chunk.usage) accumulatedUsage = chunk.usage;
-              }
-              scheduleUpdate();
-            },
-            (error) => {
-              console.warn('[ChatStore] Stream error:', error);
-            },
-            options, // Pass options including webSearch
-          );
+          await runAgentLoop();
 
-          // Final Update
-          let finalInputTokens = totalContextTokens;
-          let finalCompletionTokens = estimateTokens(accumulatedContent);
+          // =====================================================================================
+          // Phase 5: Post-Processing
+          // =====================================================================================
 
-          if (accumulatedUsage) {
-            finalInputTokens = accumulatedUsage.input;
-            finalCompletionTokens = accumulatedUsage.output;
-          }
+          // Re-calculate context tokens for stats fallback
+          const activeWindowSize = agent.ragConfig?.contextWindow || 10;
+          const contextText = contextMsgs.map((m: any) => {
+            if (typeof m.content === 'string') return m.content;
+            return (m.content as any[]).map((p: any) => (p.type === 'text' ? p.text : '')).join('\n');
+          }).join('\n');
+          const totalContextTokens = estimateTokens(contextText);
 
-          // 🔑 关键修复: 累加 RAG 检索成本（Query Rewrite + Embedding）
-          const ragSystemTokens = ragUsage?.ragSystem || 0;
-
-          get().updateMessageContent(
-            sessionId,
-            assistantMsgId,
-            accumulatedContent,
-            {
-              input: finalInputTokens + ragSystemTokens, // ✅ 将 RAG 成本计入输入
-              output: finalCompletionTokens,
-              total: finalInputTokens + finalCompletionTokens + ragSystemTokens,
-            },
-            accumulatedReasoning,
-            accumulatedCitations,
-            ragReferences,
-          );
-
-          // 🏁 立即结束生成状态，解耦后续的向量化操作
-          set((state) => {
-            const newRequests = { ...state.activeRequests };
-            delete newRequests[sessionId];
-            return { activeRequests: newRequests, currentGeneratingSessionId: null };
-          });
-
-          // 🔑 关键修复1: 归档本轮对话到向量记忆
-          // ✅ 仅当enableMemory开启时才归档
+          // 1. RAG Archiving
           if (finalRagOptions.enableMemory !== false) {
-            // 🎯 立即标记为处理中
             get().setVectorizationStatus(sessionId, [userMsg.id, assistantMsgId], 'processing');
-
             try {
               const archiveStartTime = Date.now();
-
-              // 🎯 启动归档状态 (RAG Store for internal details)
-              const { updateProcessingState } = await import('../store/rag-store').then((m) =>
-                m.useRagStore.getState(),
-              );
-              updateProcessingState(
-                {
-                  sessionId,
-                  status: 'chunking',
-                  startTime: archiveStartTime,
-                  chunks: [],
-                },
-                assistantMsgId,
-              );
-
-              // ✅ 关键修复：让React先渲染loading状态
+              const { updateProcessingState } = await import('../store/rag-store').then((m) => m.useRagStore.getState());
+              updateProcessingState({ sessionId, status: 'chunking', startTime: archiveStartTime, chunks: [] }, assistantMsgId);
               await new Promise((resolve) => setTimeout(resolve, 0));
 
-              await MemoryManager.addTurnToMemory(
-                sessionId,
-                content, // userMsg.content
-                accumulatedContent, // assistantMsg.content
-                userMsg.id,
-                assistantMsgId,
-              );
+              await MemoryManager.addTurnToMemory(sessionId, content, accumulatedContent, userMsg.id, assistantMsgId);
 
-              // ✅ 确保loading状态至少显示800ms
               const elapsed = Date.now() - archiveStartTime;
-              if (elapsed < 800) {
-                await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
-              }
+              if (elapsed < 800) await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
 
-              // 🎯 归档完成（添加切片数量信息）
-              updateProcessingState(
-                {
-                  sessionId,
-                  status: 'archived',
-                  chunks: [],
-                },
-                assistantMsgId,
-              );
-
-              // ✅ 关键修复3：更新Store中的消息状态，通知UI显示绿勾
+              updateProcessingState({ sessionId, status: 'archived', chunks: [] }, assistantMsgId);
               get().setVectorizationStatus(sessionId, [userMsg.id, assistantMsgId], 'success');
-
-              console.log('[RAG] 对话已归档到向量库');
             } catch (e) {
-              console.error('[RAG] 记忆归档失败:', e);
-              // ❌ 失败状态
+              console.error('[RAG] Archive failed:', e);
               get().setVectorizationStatus(sessionId, [userMsg.id, assistantMsgId], 'error');
-
-              // 错误状态
-              const { updateProcessingState } = await import('../store/rag-store').then((m) =>
-                m.useRagStore.getState(),
-              );
-              updateProcessingState(
-                {
-                  sessionId,
-                  status: 'error',
-                },
-                assistantMsgId,
-              );
+              const { updateProcessingState } = await import('../store/rag-store').then((m) => m.useRagStore.getState());
+              updateProcessingState({ sessionId, status: 'error' }, assistantMsgId);
             }
           }
 
-          // 🔑 关键修复: 触发 AI 回复的知识图谱实体提取 (KG Extraction)
-          // 逻辑修正：不再依赖 enableDocs，而是独立的 enableKnowledgeGraph 开关
+          // 2. KG Extraction
           if (accumulatedContent.trim()) {
             setTimeout(async () => {
               try {
@@ -1011,264 +1262,135 @@ export const useChatStore = create<ChatState>()(
                 const session = get().getSession(sessionId);
                 if (!session) return;
 
-                // 1. 计算是否启用
-                // 优先级: Session Override > Global Setting
-                // 特例: Super Assistant 总是启用 (视为全域知识维护者)
                 const isSuperAssistant = sessionId === 'super_assistant';
                 const sessionKgOption = session.ragOptions?.enableKnowledgeGraph;
-                const isKgEnabled =
-                  isSuperAssistant ||
-                  (sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph);
+                const isKgEnabled = isSuperAssistant || (sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph);
 
                 if (!isKgEnabled) return;
 
-                // 2. 检查提取策略 (Cost Strategy)
-                // 'on-demand': 仅手动触发 (MessageContextMenu)
-                // 'summary-first' / 'full': 自动触发 (对于会话流，summary-first等同于full，以免丢失细节)
-                const costStrategy =
-                  agent?.ragConfig?.costStrategy || globalConfig.costStrategy || 'summary-first';
+                const costStrategy = agent?.ragConfig?.costStrategy || globalConfig.costStrategy || 'summary-first';
+                if (costStrategy === 'on-demand' && !isSuperAssistant) return;
 
-                if (costStrategy === 'on-demand' && !isSuperAssistant) {
-                  // 超级助手即使在按需模式下，也建议自动提取以维持全域助手智商？
-                  // 或者尊重用户设置？用户说是“按需”，那可能真的想按需。
-                  // 但用户之前的反馈暗示希望能自动提取。
-                  // 为了安全起见，若显式设为 on-demand 则跳过，由用户手动点。
-                  return;
-                }
-
-                // Indicate start of extraction
                 get().setKGExtractionStatus(sessionId, true);
-
-                await graphExtractor.extractAndSave(accumulatedContent, undefined, {
-                  sessionId,
-                  agentId: session.agentId,
-                });
+                await graphExtractor.extractAndSave(accumulatedContent, undefined, { sessionId, agentId: session.agentId });
               } catch (e) {
                 console.warn('[ChatStore] AI Response KG extraction failed:', e);
               } finally {
-                // Indicate end of extraction
                 get().setKGExtractionStatus(sessionId, false);
               }
-            }, 500); // 延迟一点执行，避免与UI渲染抢占
+            }, 500);
           }
 
-          // 🔑 关键修复2: 检查并触发自动摘要
+          // 3. Summarization
           try {
             const currentMessages = get().getSession(sessionId)?.messages || [];
-
-            // ✅ 修复：只计算非system消息
             const contentMessages = currentMessages.filter((m) => m.role !== 'system');
-            const contentMessageCount = contentMessages.length;
-
-            // ✅ 关键修复：查询所有摘要覆盖的消息ID范围
-            const summariesResult = await db.execute(
-              'SELECT start_message_id, end_message_id FROM context_summaries WHERE session_id = ?',
-              [sessionId],
-            );
-
-            // 构建已被摘要覆盖的消息ID集合
+            const summariesResult = await db.execute('SELECT start_message_id, end_message_id FROM context_summaries WHERE session_id = ?', [sessionId]);
             const summarizedMessageIds = new Set<string>();
             if (summariesResult.rows) {
-              const rows =
-                (summariesResult.rows as any)._array || (summariesResult.rows as any) || [];
-
+              const rows = (summariesResult.rows as any)._array || (summariesResult.rows as any) || [];
               for (const row of rows) {
                 if (row.start_message_id && row.end_message_id) {
-                  // 找到起始和结束消息的索引
                   const startIdx = contentMessages.findIndex((m) => m.id === row.start_message_id);
                   const endIdx = contentMessages.findIndex((m) => m.id === row.end_message_id);
-
-                  // 将这个范围内的所有消息ID加入集合
                   if (startIdx !== -1 && endIdx !== -1) {
-                    for (let i = startIdx; i <= endIdx; i++) {
-                      summarizedMessageIds.add(contentMessages[i].id);
-                    }
+                    for (let i = startIdx; i <= endIdx; i++) summarizedMessageIds.add(contentMessages[i].id);
                   }
                 }
               }
             }
 
-            // 计算未被摘要的消息数
-            const newMessagesCount = contentMessages.filter(
-              (m) => !summarizedMessageIds.has(m.id),
-            ).length;
-
-            // 活跃窗口大小（对应ContextManager的finalConfig.maxMessages）
-            const activeWindowSize = agent.ragConfig?.contextWindow || 10;
+            const newMessagesCount = contentMessages.filter((m) => !summarizedMessageIds.has(m.id)).length;
             const summaryThreshold = agent.ragConfig?.summaryThreshold || 20;
-
-            // ✅ 关键修复：只有当new消息数 > (活跃窗口 + 阈值) 时才触发
-            // 因为ContextManager会保留最后activeWindowSize条消息，只摘要超出部分
-            const needsSummary = newMessagesCount > activeWindowSize + summaryThreshold;
-
-            console.log(
-              `[ChatStore] 摘要检查: total=${contentMessageCount}, summarized=${summarizedMessageIds.size}, new=${newMessagesCount}, activeWindow=${activeWindowSize}, threshold=${summaryThreshold}, needsSummary=${needsSummary}`,
-            );
-            if (needsSummary) {
+            if (newMessagesCount > activeWindowSize + summaryThreshold) {
               const summaryStartTime = Date.now();
-
-              // 🎯 启动摘要状态
-              const { updateProcessingState } = await import('../store/rag-store').then((m) =>
-                m.useRagStore.getState(),
-              );
-              updateProcessingState(
-                {
-                  sessionId,
-                  status: 'summarizing',
-                  startTime: summaryStartTime,
-                },
-                assistantMsgId,
-              );
-
-              // ✅ 关键修复：让React先渲染loading状态
+              const { updateProcessingState } = await import('../store/rag-store').then((m) => m.useRagStore.getState());
+              updateProcessingState({ sessionId, status: 'summarizing', startTime: summaryStartTime }, assistantMsgId);
               await new Promise((resolve) => setTimeout(resolve, 0));
-              // 查询摘要前的数量
-              const beforeCount = await db.execute(
-                'SELECT COUNT(*) as count FROM context_summaries WHERE session_id = ?',
-                [sessionId],
-              );
-              const beforeSummaryCount =
-                (beforeCount.rows as any)?._array?.[0]?.count ||
-                (beforeCount.rows as any)?.[0]?.count ||
-                ((beforeCount.rows as any)._array
-                  ? (beforeCount.rows as any)._array[0]?.count
-                  : (beforeCount.rows as any)[0]?.count) ||
-                0;
+
+              const beforeCount = await db.execute('SELECT COUNT(*) as count FROM context_summaries WHERE session_id = ?', [sessionId]);
+              const beforeSummaryCount = (beforeCount.rows as any)?._array?.[0]?.count || (beforeCount.rows as any)?.[0]?.count || 0;
 
               await ContextManager.checkAndSummarize(sessionId, currentMessages, agent);
 
-              // ✅ 关键修复：确保loading状态至少显示800ms
               const elapsed = Date.now() - summaryStartTime;
-              if (elapsed < 800) {
-                await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
-              }
+              if (elapsed < 800) await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
 
-              // 查询摘要后的数量
-              const afterCount = await db.execute(
-                'SELECT COUNT(*) as count FROM context_summaries WHERE session_id = ?',
-                [sessionId],
-              );
-              const afterSummaryCount =
-                (afterCount.rows as any)?._array?.[0]?.count ||
-                (afterCount.rows as any)?.[0]?.count ||
-                ((afterCount.rows as any)._array
-                  ? (afterCount.rows as any)._array[0]?.count
-                  : (afterCount.rows as any)[0]?.count) ||
-                0;
+              const afterCount = await db.execute('SELECT COUNT(*) as count FROM context_summaries WHERE session_id = ?', [sessionId]);
+              const afterSummaryCount = (afterCount.rows as any)?._array?.[0]?.count || (afterCount.rows as any)?.[0]?.count || 0;
 
-              console.log(
-                `[ChatStore] 摘要前后对比: before=${beforeSummaryCount}, after=${afterSummaryCount}`,
-              );
-
-              // 🎯 只有在真正生成了新摘要时才标记为summarized
               if (afterSummaryCount > beforeSummaryCount) {
-                updateProcessingState(
-                  {
-                    sessionId,
-                    status: 'summarized',
-                    summary: '',
-                  },
-                  assistantMsgId,
-                );
-                console.log('[ChatStore] ✅ 摘要已生成');
+                updateProcessingState({ sessionId, status: 'summarized', summary: '' }, assistantMsgId);
               } else {
-                updateProcessingState(
-                  {
-                    sessionId,
-                    status: 'idle',
-                  },
-                  assistantMsgId,
-                );
-                console.log('[ChatStore] ℹ️ 未达到摘要条件，跳过');
+                updateProcessingState({ sessionId, status: 'idle' }, assistantMsgId);
               }
             }
+          } catch (e) { console.error('[RAG] Summarization failed', e); }
 
-            console.log('[RAG] 摘要检查完成');
-          } catch (e) {
-            console.error('[RAG] 摘要生成失败:', e);
-          }
+          // 4. Stats & Title
+          const latestMsg = get().getSession(sessionId)?.messages.find(m => m.id === assistantMsgId);
+          let finalUsage = accumulatedUsage || latestMsg?.tokens;
 
-          // Update Session Stats & Title
-          const sessionAllText = (get().getSession(sessionId)?.messages || [])
-            .map((m) => m.content)
-            .join('\n');
-
-          // Prepare Billing Usage
           const billingUsage = {
-            chatInput: {
-              count: accumulatedUsage ? accumulatedUsage.input : totalContextTokens,
-              isEstimated: !accumulatedUsage,
-            },
-            chatOutput: {
-              count: accumulatedUsage
-                ? accumulatedUsage.output
-                : estimateTokens(accumulatedContent),
-              isEstimated: !accumulatedUsage,
-            },
-            ragSystem: ragUsage
-              ? { count: ragUsage.ragSystem, isEstimated: ragUsage.isEstimated }
-              : { count: 0, isEstimated: false },
-            total:
-              (accumulatedUsage
-                ? accumulatedUsage.total
-                : totalContextTokens + estimateTokens(accumulatedContent)) +
-              (ragUsage?.ragSystem || 0),
+            chatInput: { count: finalUsage ? finalUsage.input : totalContextTokens, isEstimated: !finalUsage },
+            chatOutput: { count: finalUsage ? finalUsage.output : estimateTokens(accumulatedContent), isEstimated: !finalUsage },
+            ragSystem: ragUsage ? { count: ragUsage.ragSystem, isEstimated: ragUsage.isEstimated } : { count: 0, isEstimated: false },
+            total: (finalUsage ? finalUsage.total : totalContextTokens + estimateTokens(accumulatedContent)) + (ragUsage?.ragSystem || 0)
           };
 
-          get().updateSession(sessionId, {
-            stats: {
-              totalTokens: billingUsage.total,
-              billing: billingUsage,
-            },
-          });
+          get().updateSession(sessionId, { stats: { totalTokens: billingUsage.total, billing: billingUsage } });
 
-          // Track Global Stats
           try {
             const { useTokenStatsStore } = await import('./token-stats-store');
-            useTokenStatsStore.getState().trackUsage({
-              modelId: modelId,
-              usage: {
-                chatInput: billingUsage.chatInput,
-                chatOutput: billingUsage.chatOutput,
-                ragSystem: billingUsage.ragSystem,
-              },
-            });
-          } catch (e) {
-            console.warn('[ChatStore] Failed to track global stats:', e);
+            useTokenStatsStore.getState().trackUsage({ modelId, usage: billingUsage });
+          } catch (e) { }
+
+          if (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation') {
+            get().updateSessionTitle(sessionId, content.substring(0, 30) + (content.length > 30 ? '...' : ''));
           }
 
-          if (
-            session.messages.length <= 1 ||
-            session.title === agent.name ||
-            session.title === 'New Conversation'
-          ) {
-            get().updateSessionTitle(
-              sessionId,
-              content.substring(0, 30) + (content.length > 30 ? '...' : ''),
-            );
-          }
-        } catch (error) {
-          if ((error as any).name === 'AbortError' || (error as Error).message.includes('abort')) {
-            console.log('Stream aborted');
-          } else {
-            console.warn('Chat error:', error);
-            // Friendly localized error message
-            const errorMsg =
-              '抱歉，遇到网络问题或认证失败。请检查您的网络连接、API Key是否正确，或稍后重试。';
-            get().updateMessageContent(
-              sessionId,
-              assistantMsgId,
-              accumulatedContent + `\n\n⚠️ ${errorMsg}\n\n(Error: ${(error as Error).message})`,
-            );
-          }
+        } catch (e: any) {
+          // ... error handling
+          console.error('Agent loop failed', e);
+          get().addMessage(sessionId, {
+            id: `sys_${Date.now()}`,
+            role: 'assistant',
+            content: `[System Error] ${e.message || 'Unknown error'}`,
+            createdAt: Date.now()
+          });
         } finally {
+          // Cleanup active request and ensure loading flags are cleared
           set((state) => {
             const newRequests = { ...state.activeRequests };
             delete newRequests[sessionId];
-            return { activeRequests: newRequests, currentGeneratingSessionId: null };
+
+            // Clear loading flags on the message to avoid stuck animations
+            const updatedSessions = state.sessions.map((s) => {
+              if (s.id === sessionId) {
+                return {
+                  ...s,
+                  messages: s.messages.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, ragReferencesLoading: false, status: m.status === 'streaming' ? 'sent' : m.status }
+                      : m
+                  ),
+                };
+              }
+              return s;
+            });
+
+            return {
+              activeRequests: newRequests,
+              sessions: updatedSessions,
+              currentGeneratingSessionId: state.currentGeneratingSessionId === sessionId ? null : state.currentGeneratingSessionId,
+            };
           });
         }
       },
+
+
+
+
 
       updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => {
         const session = get().sessions.find((s) => s.id === sessionId);
@@ -1422,6 +1544,7 @@ export const useChatStore = create<ChatState>()(
                 ragReferences: [],
                 status: 'streaming', // Set generic status
                 tokens: undefined, // Clear token stats
+                executionSteps: undefined, // ✅ Reset tool execution timeline
               };
               return { ...s, messages: truncatedMessages };
             }
@@ -1466,182 +1589,211 @@ export const useChatStore = create<ChatState>()(
 
         const client = createLlmClient(extendedConfig as any);
         set((state) => ({ activeRequests: { ...state.activeRequests, [sessionId]: client } }));
+        set({ currentGeneratingSessionId: sessionId });
 
-        // 5. RAG & Search Setup (Re-run)
-        const isNativeSearch = provider.type === 'gemini' || provider.type === 'google';
-        let searchContext = '';
-        let initialCitations: { title: string; url: string; source?: string }[] = [];
+        try {
+          // 5. RAG & Search Setup (Re-run)
+          const isNativeSearch = provider.type === 'gemini' || provider.type === 'google';
+          let searchContext = '';
+          let initialCitations: { title: string; url: string; source?: string }[] = [];
 
-        const options = session.options || {};
+          const options = session.options || {};
 
-        if (options.webSearch && !isNativeSearch) {
-          try {
-            const searchConfig = useApiStore.getState().googleSearchConfig;
-            const { context, sources } = await performWebSearch(
-              userMsg.content,
-              searchConfig?.apiKey,
-              searchConfig?.cx
-            );
-            searchContext = context;
-            initialCitations = sources;
-            // Initialize accumulatedCitations by pushing empty update with citations
-            get().updateMessageContent(sessionId, messageId, '', undefined, undefined, initialCitations);
-          } catch (e) {
-            console.error('Regenerate search failed', e);
-          }
-        }
-
-        // RAG Logic
-        let ragContext = '';
-        const sessionRagOptions = session.ragOptions || {};
-        const finalRagOptions = {
-          enableMemory: sessionRagOptions.enableMemory ?? true,
-          enableDocs: sessionRagOptions.enableDocs ?? false,
-          activeDocIds: sessionRagOptions.activeDocIds ?? [],
-          activeFolderIds: sessionRagOptions.activeFolderIds ?? [],
-          isGlobal: sessionRagOptions.isGlobal ?? false,
-        };
-
-        let ragReferences: RagReference[] = [];
-        let ragUsage: { ragSystem: number; isEstimated: boolean } | undefined;
-
-        if (finalRagOptions.enableMemory || finalRagOptions.enableDocs) {
-          try {
-            // Set loading state if needed
-            const isSuperAssistant = sessionId === 'super_assistant';
-            const effectiveRagOptions = {
-              ...finalRagOptions,
-              isGlobal: isSuperAssistant ? true : finalRagOptions.isGlobal,
-              enableDocs: isSuperAssistant ? true : finalRagOptions.enableDocs,
-              enableMemory: isSuperAssistant ? true : finalRagOptions.enableMemory,
-              ragConfig: agent.ragConfig,
-              onProgress: (stage: string, percentage: number) => {
-                // Since updateMessageProgress is not exposed, we just update generic status or skip
-                // get().updateMessageContent(sessionId, messageId, '', undefined, undefined, undefined, [], true);
-              },
-            };
-
-            const { MemoryManager } = require('../lib/rag/memory-manager');
-            const {
-              context: retrievedContext,
-              references,
-              metadata,
-              billingUsage,
-            } = await MemoryManager.retrieveContext(
-              userMsg.content,
-              sessionId,
-              effectiveRagOptions,
-            );
-
-            if (billingUsage) ragUsage = billingUsage;
-            ragContext = retrievedContext;
-            ragReferences = references;
-
-          } catch (e) {
-            console.error("RAG regenerate failed", e);
-          }
-        }
-
-
-        // 6. Context Construction
-        const activeWindowSize = agent.ragConfig?.contextWindow || 10;
-        let finalSystemPrompt = agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
-        if (ragContext) finalSystemPrompt += `\n\n${ragContext}`;
-
-        let contextMsgs: any[] = [];
-        if (searchContext) {
-          contextMsgs.push({ role: 'system', content: finalSystemPrompt + '\n\n' + searchContext });
-        } else {
-          contextMsgs.push({ role: 'system', content: finalSystemPrompt });
-        }
-
-        // History: messages before userMsg
-        const formatContent = async (mContent: string, mImages?: any[]) => {
-          const hasVision = modelConfig?.capabilities.vision;
-          if (!mImages || mImages.length === 0 || !hasVision) return mContent;
-          const parts: any[] = [{ type: 'text', text: mContent }];
-          const { FileSystem } = require('expo-file-system/legacy');
-          for (const img of mImages) {
+          if (options.webSearch && !isNativeSearch) {
             try {
-              const base64 = await FileSystem.readAsStringAsync(img.original, { encoding: 'base64' });
-              parts.push({ type: 'image_url', image_url: { url: `data:${img.mime || 'image/jpeg'};base64,${base64}` } });
-            } catch (e) { }
-          }
-          return parts;
-        };
-
-        const historyMsgs = session.messages.slice(0, msgIndex);
-        const history = await Promise.all(
-          historyMsgs.slice(-activeWindowSize).map(async (m) => ({
-            role: m.role,
-            content: await formatContent(m.content, m.images),
-          }))
-        );
-
-        contextMsgs = [...contextMsgs, ...history] as any;
-
-        // 7. Stream
-        let accumulatedContent = '';
-        let accumulatedReasoning = '';
-        let accumulatedCitations = initialCitations;
-        let accumulatedUsage: any;
-
-        let updateTimer: NodeJS.Timeout | null = null;
-        const scheduleUpdate = () => {
-          if (updateTimer) return;
-          updateTimer = setTimeout(() => {
-            updateTimer = null;
-            const inputTokens = accumulatedUsage?.input || 0;
-            const completionTokens = accumulatedUsage?.output || 0;
-            get().updateMessageContent(
-              sessionId,
-              messageId,
-              accumulatedContent,
-              { input: inputTokens, output: completionTokens, total: inputTokens + completionTokens },
-              accumulatedReasoning,
-              accumulatedCitations,
-              ragReferences
-            );
-          }, 100);
-        };
-
-        await client.streamChat(
-          ContextManager.trimContext(contextMsgs, activeWindowSize),
-          (chunk) => {
-            if (typeof chunk === 'string') {
-              accumulatedContent += chunk;
-            } else {
-              if (chunk.content) accumulatedContent += chunk.content;
-              if (chunk.reasoning) accumulatedReasoning += chunk.reasoning;
-              if (chunk.citations) accumulatedCitations = chunk.citations;
-              if (chunk.usage) accumulatedUsage = chunk.usage;
+              const searchConfig = useApiStore.getState().googleSearchConfig;
+              const { context, sources } = await performWebSearch(
+                userMsg.content,
+                searchConfig?.apiKey,
+                searchConfig?.cx
+              );
+              searchContext = context;
+              initialCitations = sources;
+              // Initialize accumulatedCitations by pushing empty update with citations
+              get().updateMessageContent(sessionId, messageId, '', undefined, undefined, initialCitations);
+            } catch (e) {
+              console.error('Regenerate search failed', e);
             }
-            scheduleUpdate();
-          },
-          (error) => console.warn('Regenerate error', error),
-          options
-        );
+          }
 
-        // Final update
-        const ragSystemTokens = ragUsage?.ragSystem || 0;
-        const finalInput = (accumulatedUsage?.input || 0) + ragSystemTokens;
-        const finalOutput = accumulatedUsage?.output || 0;
+          // RAG Logic
+          let ragContext = '';
+          const sessionRagOptions = session.ragOptions || {};
+          const finalRagOptions = {
+            enableMemory: sessionRagOptions.enableMemory ?? true,
+            enableDocs: sessionRagOptions.enableDocs ?? false,
+            activeDocIds: sessionRagOptions.activeDocIds ?? [],
+            activeFolderIds: sessionRagOptions.activeFolderIds ?? [],
+            isGlobal: sessionRagOptions.isGlobal ?? false,
+          };
 
-        get().updateMessageContent(
-          sessionId,
-          messageId,
-          accumulatedContent,
-          {
-            input: finalInput,
-            output: finalOutput,
-            total: finalInput + finalOutput,
-          },
-          accumulatedReasoning,
-          accumulatedCitations,
-          ragReferences,
-        );
+          let ragReferences: RagReference[] = [];
+          let ragUsage: { ragSystem: number; isEstimated: boolean } | undefined;
 
-        set({ currentGeneratingSessionId: null });
+          if (finalRagOptions.enableMemory || finalRagOptions.enableDocs) {
+            try {
+              // Set loading state if needed
+              const isSuperAssistant = sessionId === 'super_assistant';
+              const effectiveRagOptions = {
+                ...finalRagOptions,
+                isGlobal: isSuperAssistant ? true : finalRagOptions.isGlobal,
+                enableDocs: isSuperAssistant ? true : finalRagOptions.enableDocs,
+                enableMemory: isSuperAssistant ? true : finalRagOptions.enableMemory,
+                ragConfig: agent.ragConfig,
+                onProgress: (stage: string, percentage: number) => {
+                  // Since updateMessageProgress is not exposed, we just update generic status or skip
+                  // get().updateMessageContent(sessionId, messageId, '', undefined, undefined, undefined, [], true);
+                },
+              };
+
+              const { MemoryManager } = require('../lib/rag/memory-manager');
+              const {
+                context: retrievedContext,
+                references,
+                metadata,
+                billingUsage,
+              } = await MemoryManager.retrieveContext(
+                userMsg.content,
+                sessionId,
+                effectiveRagOptions,
+              );
+
+              if (billingUsage) ragUsage = billingUsage;
+              ragContext = retrievedContext;
+              ragReferences = references;
+
+            } catch (e) {
+              console.error("RAG regenerate failed", e);
+            }
+          }
+
+
+          // 6. Context Construction
+          const activeWindowSize = agent.ragConfig?.contextWindow || 10;
+          let finalSystemPrompt = agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
+          if (ragContext) finalSystemPrompt += `\n\n${ragContext}`;
+
+          let contextMsgs: any[] = [];
+          if (searchContext) {
+            contextMsgs.push({ role: 'system', content: finalSystemPrompt + '\n\n' + searchContext });
+          } else {
+            contextMsgs.push({ role: 'system', content: finalSystemPrompt });
+          }
+
+          // History: messages before userMsg
+          const formatContent = async (mContent: string, mImages?: any[]) => {
+            const hasVision = modelConfig?.capabilities.vision;
+            if (!mImages || mImages.length === 0 || !hasVision) return mContent;
+            const parts: any[] = [{ type: 'text', text: mContent }];
+            const { FileSystem } = require('expo-file-system/legacy');
+            for (const img of mImages) {
+              try {
+                const base64 = await FileSystem.readAsStringAsync(img.original, { encoding: 'base64' });
+                parts.push({ type: 'image_url', image_url: { url: `data:${img.mime || 'image/jpeg'};base64,${base64}` } });
+              } catch (e) { }
+            }
+            return parts;
+          };
+
+          const historyMsgs = session.messages.slice(0, msgIndex);
+          const history = await Promise.all(
+            historyMsgs.slice(-activeWindowSize).map(async (m) => ({
+              role: m.role,
+              content: await formatContent(m.content, m.images),
+            }))
+          );
+
+          contextMsgs = [...contextMsgs, ...history] as any;
+
+          // 7. Stream
+          let accumulatedContent = '';
+          let accumulatedReasoning = '';
+          let accumulatedCitations = initialCitations;
+          let accumulatedUsage: any;
+
+          let updateTimer: NodeJS.Timeout | null = null;
+          const scheduleUpdate = () => {
+            if (updateTimer) return;
+            updateTimer = setTimeout(() => {
+              updateTimer = null;
+              const inputTokens = accumulatedUsage?.input || 0;
+              const completionTokens = accumulatedUsage?.output || 0;
+              get().updateMessageContent(
+                sessionId,
+                messageId,
+                accumulatedContent,
+                { input: inputTokens, output: completionTokens, total: inputTokens + completionTokens },
+                accumulatedReasoning,
+                accumulatedCitations,
+                ragReferences
+              );
+            }, 100);
+          };
+
+          await client.streamChat(
+            ContextManager.trimContext(contextMsgs, activeWindowSize),
+            (chunk) => {
+              if (typeof chunk === 'string') {
+                accumulatedContent += chunk;
+              } else {
+                if (chunk.content) accumulatedContent += chunk.content;
+                if (chunk.reasoning) accumulatedReasoning += chunk.reasoning;
+                if (chunk.citations) accumulatedCitations = chunk.citations;
+                if (chunk.usage) accumulatedUsage = chunk.usage;
+              }
+              scheduleUpdate();
+            },
+            (error) => console.warn('Regenerate error', error),
+            options
+          );
+
+          // Final update
+          const ragSystemTokens = ragUsage?.ragSystem || 0;
+          const finalInput = (accumulatedUsage?.input || 0) + ragSystemTokens;
+          const finalOutput = accumulatedUsage?.output || 0;
+
+          get().updateMessageContent(
+            sessionId,
+            messageId,
+            accumulatedContent,
+            {
+              input: finalInput,
+              output: finalOutput,
+              total: finalInput + finalOutput,
+            },
+            accumulatedReasoning,
+            accumulatedCitations,
+            ragReferences,
+          );
+
+        } finally {
+          // Cleanup active request and ensure loading flags are cleared
+          set((state) => {
+            const newRequests = { ...state.activeRequests };
+            delete newRequests[sessionId];
+
+            // Clear loading flags on the message to avoid stuck animations
+            const updatedSessions = state.sessions.map((s) => {
+              if (s.id === sessionId) {
+                return {
+                  ...s,
+                  messages: s.messages.map((m) =>
+                    m.id === messageId
+                      ? { ...m, ragReferencesLoading: false, status: m.status === 'streaming' ? 'sent' : m.status }
+                      : m
+                  ),
+                };
+              }
+              return s;
+            });
+
+            return {
+              activeRequests: newRequests,
+              sessions: updatedSessions,
+              currentGeneratingSessionId: state.currentGeneratingSessionId === sessionId ? null : state.currentGeneratingSessionId,
+            };
+          });
+        }
       },
 
       summarizeSession: async (sessionId) => {
