@@ -28,6 +28,7 @@ export default function SuperAssistantRagConfigScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
   const { updateAgent } = useAgentStore();
 
   // Use selector with stable fallback reference
@@ -41,7 +42,7 @@ export default function SuperAssistantRagConfigScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <GlassHeader
-        title="向量库与RAG设置"
+        title={t.settings.ragSettings}
         subtitle="Super Personal Assistant"
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,

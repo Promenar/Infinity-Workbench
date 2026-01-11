@@ -154,8 +154,8 @@ export default function RagAdvancedSettings() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <GlassHeader
-        title={t.common.ragSection} // Or custom title if needed, utilizing standard keys
-        subtitle={t.rag.kg.title}
+        title={t.rag.kg.title}
+        subtitle="KNOWLEDGE GRAPH"
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
           onPress: () => router.back(),
@@ -432,62 +432,6 @@ export default function RagAdvancedSettings() {
             </Typography>
           </TouchableOpacity>
 
-          {/* 5. 向量库统计 (View Vector Stats) */}
-          <SectionHeader title={t.rag.vectorStats.title.toUpperCase()} mt={32} />
-          <View
-            className="bg-white dark:bg-zinc-900 rounded-[24px] p-5 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm"
-          >
-            <View className="flex-row items-center justify-between mb-4">
-              <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/20 items-center justify-center mr-3">
-                  <Database size={20} color={colors[500]} />
-                </View>
-                <View>
-                  <Typography className="font-bold text-gray-900 dark:text-white">
-                    {t.rag.vectorStats.title}
-                  </Typography>
-                  <Typography variant="caption" className="text-gray-500">
-                    {t.rag.vectorStats.localStore}
-                  </Typography>
-                </View>
-              </View>
-              <TouchableOpacity onPress={() => router.push('/settings/vector-stats')}>
-                <Typography style={{ color: colors[600] }} className="text-xs font-bold">
-                  {t.rag.vectorStats.viewDetails}
-                </Typography>
-              </TouchableOpacity>
-            </View>
-
-            <View className="flex-row gap-3 mb-4">
-              <View className="flex-1 bg-gray-50 dark:bg-black/20 p-4 rounded-2xl items-center">
-                <Typography className="text-xl font-bold text-gray-900 dark:text-white mb-1">5</Typography>
-                <Typography className="text-[10px] text-gray-500 uppercase tracking-wider">{t.rag.vectorStats.totalDocs}</Typography>
-              </View>
-              <View className="flex-1 bg-gray-50 dark:bg-black/20 p-4 rounded-2xl items-center">
-                <Typography style={{ color: colors[500] }} className="text-xl font-bold mb-1">1133</Typography>
-                <Typography className="text-[10px] text-gray-500 uppercase tracking-wider">{t.rag.vectorStats.totalChunks}</Typography>
-              </View>
-              <View className="flex-1 bg-gray-50 dark:bg-black/20 p-4 rounded-2xl items-center">
-                <Typography className="text-xl font-bold text-gray-900 dark:text-white mb-1">0.4</Typography>
-                <Typography className="text-[10px] text-gray-500 uppercase tracking-wider">{t.rag.vectorStats.storageUsage}</Typography>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => {
-                Alert.alert(t.common.dangerZone, t.rag.vectorStats.clearData + '?', [
-                  { text: t.common.cancel, style: 'cancel' },
-                  { text: t.common.confirm, style: 'destructive', onPress: () => { } }
-                ]);
-              }}
-              className="flex-row items-center justify-center p-4 rounded-2xl bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20"
-            >
-              <Trash2 size={18} color="#ef4444" className="mr-2" />
-              <Typography className="text-red-600 dark:text-red-400 font-bold">
-                {t.rag.vectorStats.clearData}
-              </Typography>
-            </TouchableOpacity>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 

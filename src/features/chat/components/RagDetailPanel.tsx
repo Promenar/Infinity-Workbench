@@ -76,13 +76,29 @@ export const RagDetailPanel: React.FC<RagDetailPanelProps> = ({
             <View style={styles.metricsGrid}>
               {renderMetricItem(
                 'Total Time',
-                `${(metadata.searchTimeMs + (metadata.rerankTimeMs || 0)).toFixed(0)}ms`,
+                `${(metadata.totalTimeMs || (metadata.searchTimeMs + (metadata.rerankTimeMs || 0))).toFixed(0)}ms`,
                 Clock,
               )}
-              {renderMetricItem('Recall', metadata.recallCount, Database)}
-              {renderMetricItem('Rerank', metadata.finalCount, ListOrdered)}
-              {renderMetricItem('Rerank Time', `${(metadata.rerankTimeMs || 0).toFixed(0)}ms`, Zap)}
+              {renderMetricItem(
+                'Max Similarity',
+                `${((metadata.maxSimilarity || 0) * 100).toFixed(1)}%`,
+                Zap,
+              )}
+              {renderMetricItem('Recall Count', metadata.recallCount, Database)}
+              {renderMetricItem('Final Count', metadata.finalCount, ListOrdered)}
             </View>
+
+            {metadata.rerankTimeMs !== undefined && (
+              <View style={[styles.section, { marginTop: spacing.md }]}>
+                <View style={[styles.metricItem, { backgroundColor: colors.surfaceVariant, minWidth: '100%' }]}>
+                  <Zap size={20} color={colors.secondary} />
+                  <View style={styles.metricContent}>
+                    <Text style={[styles.metricValue, { color: colors.text }]}>{metadata.rerankTimeMs.toFixed(0)}ms</Text>
+                    <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Rerank Time</Text>
+                  </View>
+                </View>
+              </View>
+            )}
 
             {/* Source Distribution */}
             {metadata.sourceDistribution && (

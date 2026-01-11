@@ -116,6 +116,7 @@ export default function RootLayout() {
                 screenOptions={{
                   headerShown: false,
                   animation: 'slide_from_right',
+                  animationDuration: 250, // 提速至 250ms
                   contentStyle: { backgroundColor: currentTheme.colors.background },
                 }}
               >

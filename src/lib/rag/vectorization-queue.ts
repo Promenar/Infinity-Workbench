@@ -79,22 +79,43 @@ export class VectorizationQueue {
       const content = docResult.rows[0].content as string;
       const isGlobal = !!docResult.rows[0].is_global;
 
-      // 文本分割
+      // 从配置获取文档切块参数
+      const settings = useSettingsStore.getState();
+      const ragConfig = settings.globalRagConfig;
+
+      // 0. 增量哈希检查 (Incremental Hash)
+      // 计算内容摘要，若内容未变且已向量化，则跳过
+      const contentHash = this.simpleHash(content);
+      const existingHashResult = await db.execute('SELECT content_hash, vectorized FROM documents WHERE id = ?', [task.docId]);
+      const existingHash = existingHashResult.rows?.[0]?.content_hash;
+      const existingVectorized = existingHashResult.rows?.[0]?.vectorized;
+
+      if (ragConfig.enableIncrementalHash && existingHash === contentHash && existingVectorized === 2) {
+        console.log(`[VectorizationQueue] Skip: Content hash matched for ${task.docTitle}`);
+        task.status = 'completed';
+        task.progress = 100;
+        this.notifyStateChange();
+        return;
+      }
+
+      // 0.1 本地预处理 (Local Preprocess)
+      let processedContent = content;
+      if (ragConfig.enableLocalPreprocess) {
+        processedContent = this.preprocessText(content);
+        console.log(`[VectorizationQueue] Preprocessed text length: ${content.length} -> ${processedContent.length}`);
+      }
+
       // 文本分割
       task.status = 'chunking';
       task.progress = 10;
       this.notifyStateChange();
-
-      // 从配置获取文档切块参数
-      const settings = useSettingsStore.getState();
-      const ragConfig = settings.globalRagConfig;
 
       // ✅ 使用 Trigram 分词器（中文友好）
       const splitter = new TrigramTextSplitter({
         chunkSize: ragConfig.docChunkSize,
         chunkOverlap: ragConfig.chunkOverlap,
       });
-      const chunks = await splitter.splitText(content);
+      const chunks = await splitter.splitText(processedContent);
 
       //获取embedding provider
       task.status = 'vectorizing';
@@ -171,9 +192,10 @@ export class VectorizationQueue {
 
       await vectorStore.addVectors(vectors);
 
-      // 更新文档状态
-      await db.execute('UPDATE documents SET vectorized = 2, vector_count = ? WHERE id = ?', [
+      // 更新文档状态（包括哈希）
+      await db.execute('UPDATE documents SET vectorized = 2, vector_count = ?, content_hash = ? WHERE id = ?', [
         vectors.length,
+        contentHash,
         task.docId,
       ]);
 
@@ -252,6 +274,29 @@ export class VectorizationQueue {
       // 处理下一个（小延迟避免资源占用）
       setTimeout(() => this.processNext(), 500);
     }
+  }
+
+  /**
+   * 简单的字符串哈希函数（用于增量对比）
+   */
+  private simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(36) + str.length.toString(36);
+  }
+
+  /**
+   * 本地预处理：清洗多余空白、HTML 标签等
+   */
+  private preprocessText(text: string): string {
+    return text
+      .replace(/<[^>]*>/g, '') // 移除 HTML 标签
+      .replace(/\s+/g, ' ') // 合并多个空格/换行
+      .trim();
   }
 
   /**

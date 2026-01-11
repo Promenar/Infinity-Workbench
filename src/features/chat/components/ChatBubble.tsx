@@ -243,11 +243,15 @@ const LoadingDots = ({ isDark, color }: { isDark: boolean; color?: string }) => 
     marginHorizontal: 2,
   };
 
+  const anim1 = useAnimatedStyle(() => ({ opacity: opacity1.value }));
+  const anim2 = useAnimatedStyle(() => ({ opacity: opacity2.value }));
+  const anim3 = useAnimatedStyle(() => ({ opacity: opacity3.value }));
+
   return (
     <View className="flex-row items-center justify-center p-2 mb-2" style={{ height: 24 }}>
-      <Animated.View style={[dotStyle, useAnimatedStyle(() => ({ opacity: opacity1.value }))]} />
-      <Animated.View style={[dotStyle, useAnimatedStyle(() => ({ opacity: opacity2.value }))]} />
-      <Animated.View style={[dotStyle, useAnimatedStyle(() => ({ opacity: opacity3.value }))]} />
+      <Animated.View style={[dotStyle, anim1]} />
+      <Animated.View style={[dotStyle, anim2]} />
+      <Animated.View style={[dotStyle, anim3]} />
     </View>
   );
 };

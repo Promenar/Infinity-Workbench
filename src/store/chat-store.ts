@@ -876,12 +876,19 @@ export const useChatStore = create<ChatState>()(
               let turnContent = '';
               let reasoningFromThisTurn = '';
 
+              // 🔑 限流策略：防止高频更新导致 UI 阻塞
+              let lastUpdateTime = 0;
+              const UI_UPDATE_INTERVAL = 100; // 100ms (10fps) for content
+              const REASONING_UPDATE_INTERVAL = 200; // 200ms for reasoning (Timeline is heavier)
+
               await client.streamChat(
                 currentMessages as any,
                 (token) => {
                   // Check for abort
                   const currentState = get();
                   if (!currentState.activeRequests[sessionId]) return;
+
+                  const now = Date.now();
 
                   // 5.0 Capture Usage
                   if (token.usage) {
@@ -892,35 +899,43 @@ export const useChatStore = create<ChatState>()(
                   if (token.content) {
                     turnContent += token.content;
                     accumulatedContent += token.content;
-                    get().updateMessageContent(
-                      sessionId,
-                      currentAssistantMsgId,
-                      accumulatedContent,
-                      token.usage
-                    );
+
+                    // 🔑 Throttled update
+                    if (now - lastUpdateTime > UI_UPDATE_INTERVAL) {
+                      get().updateMessageContent(
+                        sessionId,
+                        currentAssistantMsgId,
+                        accumulatedContent,
+                        token.usage
+                      );
+                      lastUpdateTime = now;
+                    }
                   }
 
                   // 5.2 Handle Reasoning
                   if (token.reasoning) {
                     reasoningFromThisTurn += token.reasoning;
-                    // Note: We don't add to accumulatedReasoning here to keep bubble clean
-                    // Instead, we stream directly to the timeline
-                    const stepId = `think_turn_${loopCount}`;
-                    updateSteps({
-                      id: stepId,
-                      type: 'thinking',
-                      content: reasoningFromThisTurn,
-                      timestamp: Date.now()
-                    });
 
-                    // 🧹 Keep bubble reasoning empty if it's in timeline
-                    get().updateMessageContent(
-                      sessionId,
-                      currentAssistantMsgId,
-                      accumulatedContent,
-                      token.usage,
-                      '' // Clear bubble reasoning
-                    );
+                    // 🔑 Throttled update for reasoning (Timeline)
+                    if (now - lastUpdateTime > REASONING_UPDATE_INTERVAL) {
+                      const stepId = `think_turn_${loopCount}`;
+                      updateSteps({
+                        id: stepId,
+                        type: 'thinking',
+                        content: reasoningFromThisTurn,
+                        timestamp: Date.now()
+                      });
+
+                      // 🧹 Keep bubble reasoning empty if it's in timeline
+                      get().updateMessageContent(
+                        sessionId,
+                        currentAssistantMsgId,
+                        accumulatedContent,
+                        token.usage,
+                        '' // Clear bubble reasoning
+                      );
+                      lastUpdateTime = now;
+                    }
                   }
 
                   // 5.3 Handle Tool Calls
@@ -941,6 +956,23 @@ export const useChatStore = create<ChatState>()(
                   },
                 }
               );
+
+              // 🏁 强制最后一次同步，确保内容完整性
+              get().updateMessageContent(
+                sessionId,
+                currentAssistantMsgId,
+                accumulatedContent,
+                accumulatedUsage
+              );
+
+              if (reasoningFromThisTurn) {
+                updateSteps({
+                  id: `think_turn_${loopCount}`,
+                  type: 'thinking',
+                  content: reasoningFromThisTurn,
+                  timestamp: Date.now()
+                });
+              }
 
               // 6. Output Processing
 

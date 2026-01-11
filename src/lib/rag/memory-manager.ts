@@ -261,8 +261,13 @@ export class MemoryManager {
       // 3.1 记忆搜索
       if (enableMemory) {
         try {
+          // 🔑 动态召回数量：如果开启重排序或混合搜索，则扩大初搜范围
+          const initialRecallLimit = effectiveRagConfig.enableRerank || effectiveRagConfig.enableHybridSearch
+            ? (effectiveRagConfig.rerankTopK || 30)
+            : (effectiveRagConfig.memoryLimit || 5) * 2;
+
           const memResults = await vectorStore.search(queryEmbedding, {
-            limit: (effectiveRagConfig.memoryLimit || 5) * 2, // Fetch more for later filtering/dedup
+            limit: initialRecallLimit,
             threshold: effectiveRagConfig.memoryThreshold,
             filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' },
           });
@@ -277,8 +282,12 @@ export class MemoryManager {
         const hasAuth = isGlobal || (authorizedDocIds && authorizedDocIds.size > 0);
         if (hasAuth) {
           try {
+            const initialRecallLimit = effectiveRagConfig.enableRerank || effectiveRagConfig.enableHybridSearch
+              ? (effectiveRagConfig.rerankTopK || 30)
+              : (effectiveRagConfig.docLimit || 8) * 2;
+
             const docResults = await vectorStore.search(queryEmbedding, {
-              limit: (effectiveRagConfig.docLimit || 5) * 2,
+              limit: initialRecallLimit,
               threshold: effectiveRagConfig.docThreshold,
               filter: { type: 'doc' },
             });
@@ -345,32 +354,41 @@ export class MemoryManager {
           keywordOptions.excludeDocs = true;
         }
 
-        const keywordResults = await keywordSearch.search(query, 20, keywordOptions); // Fetch more for fusion
+        const keywordResults = await keywordSearch.search(
+          query,
+          effectiveRagConfig.rerankTopK || 30, // 使用配置的初召回深度
+          keywordOptions
+        );
 
         if (keywordResults.length > 0 || allResults.length > 0) {
           const rrfK = 60;
           const scoreMap = new Map<string, number>();
           const nodeMap = new Map<string, SearchResult>();
 
-          // Helper to accumulate RRF score
-          const addScores = (items: SearchResult[]) => {
+          // 🔑 配置读取：权重与增益
+          const alpha = effectiveRagConfig.hybridAlpha ?? 0.6;
+          const bm25Boost = effectiveRagConfig.hybridBM25Boost ?? 1.0;
+
+          // Helper to accumulate Weighted RRF score
+          const addScores = (items: SearchResult[], weight: number) => {
             items.forEach((item, rank) => {
               const current = scoreMap.get(item.id) || 0;
-              scoreMap.set(item.id, current + 1 / (rrfK + rank + 1));
+              // 算法：FusedScore = current + weight * (1 / (rrfK + rank + 1))
+              scoreMap.set(item.id, current + weight * (1 / (rrfK + rank + 1)));
               if (!nodeMap.has(item.id)) nodeMap.set(item.id, item);
             });
           };
 
-          // 1. Vector Results
+          // 1. Vector Results (加权 Alpha)
           // Dedupe vector results first (within themselves)
           const uniqueVector = allResults.filter(
             (v, i, a) => a.findIndex((t) => t.id === v.id) === i,
           );
           uniqueVector.sort((a, b) => b.similarity - a.similarity);
-          addScores(uniqueVector);
+          addScores(uniqueVector, alpha);
 
-          // 2. Keyword Results
-          addScores(keywordResults);
+          // 2. Keyword Results (加权 1-Alpha 乘以增强系数)
+          addScores(keywordResults, (1 - alpha) * bm25Boost);
 
           // 3. Flatten back to array
           const fusedResults: SearchResult[] = [];
@@ -491,17 +509,27 @@ export class MemoryManager {
     const totalDuration = endTime - startTime;
     const searchTimeMs = totalDuration - rerankDuration;
 
+    // 获取指标：最大相似度
+    const maxSimilarity = finalResults.length > 0 ? Math.max(...finalResults.map(r => r.similarity)) : 0;
+
     const metadata = {
       searchTimeMs: searchTimeMs,
       rerankTimeMs: rerankDuration,
+      totalTimeMs: totalDuration,
       recallCount: uniqueResults.length,
       finalCount: finalResults.length,
+      maxSimilarity: parseFloat(maxSimilarity.toFixed(4)),
       queryVariants: queryVariants,
       sourceDistribution: {
         memory: finalResults.filter((r) => r.metadata?.type === 'memory').length,
         documents: finalResults.filter((r) => r.metadata?.type === 'doc').length,
       },
     };
+
+    // 如果开启了指标追踪，记录到控制台以便后续对接埋点服务
+    if (effectiveRagConfig.trackRetrievalMetrics) {
+      console.log('[MemoryManager] Retrieval Metrics:', JSON.stringify(metadata));
+    }
 
     const contextBlock = finalResults
       .map((r) => {

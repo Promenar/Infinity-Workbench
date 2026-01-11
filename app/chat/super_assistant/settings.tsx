@@ -611,6 +611,15 @@ export default function SuperAssistantSettingsScreen() {
             </View>
           </View>
 
+          {/* 模型配置区块 */}
+          <SectionHeader title={t.agent.modelConfig} />
+          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
+            <InferenceSettings
+              params={session.inferenceParams || {}}
+              onUpdate={(params) => updateSessionInferenceParams(SPA_SESSION_ID, params)}
+            />
+          </View>
+
           {/* Knowledge Graph Entry (Moved) */}
           <SectionHeader title={t.rag.knowledgeGraph} />
 

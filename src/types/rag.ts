@@ -23,6 +23,7 @@ export interface RagDocument {
   tags?: Array<{ id: string; name: string; color: string }>;
   thumbnailPath?: string;
   isGlobal?: boolean;
+  contentHash?: string;
 }
 
 export interface VectorizationTask {

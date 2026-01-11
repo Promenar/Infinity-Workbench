@@ -96,7 +96,7 @@ export const InferencePresets: React.FC<Props> = ({ currentTemperature, onSelect
                         <Typography
                             variant="caption"
                             className={clsx(
-                                "font-bold text-xs mt-1",
+                                "font-bold text-xs mt-1 text-center",
                                 isActive ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"
                             )}
                         >

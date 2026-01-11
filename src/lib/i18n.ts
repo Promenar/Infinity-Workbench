@@ -99,7 +99,7 @@ export const translations = {
       haptics: '触感反馈',
       hapticsDesc: '在交互时启用震动反馈',
       ragSection: '高级RAG配置',
-      ragSettings: '高级RAG配置',
+      ragSettings: '高级RAG设置',
       ragSettingsDesc: '配置切块、摘要、检索参数',
       google: {
         title: 'Google Custom Search',

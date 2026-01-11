@@ -82,6 +82,112 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         </View>
       </View>
 
+      {/* 检索配置 (从 RAG 设置页面移入) */}
+      <SectionHeader title={t.rag.retrievalSettings} />
+      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+        <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
+          {t.rag.memoryRetrieval}
+        </Typography>
+
+        <View className="mb-4">
+          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+            {t.rag.memoryLimit}
+          </Typography>
+          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {t.rag.memoryLimitDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-2">
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {t.rag.items.replace('{count}', (currentConfig.memoryLimit ?? 5).toString())}
+            </Typography>
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
+          </View>
+          <Slider
+            value={currentConfig.memoryLimit ?? 5}
+            onValueChange={(val) => handleChange({ memoryLimit: Math.round(val) })}
+            minimumValue={3}
+            maximumValue={10}
+            step={1}
+          />
+        </View>
+
+        <View className="mb-4">
+          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+            {t.rag.similarityThreshold}
+          </Typography>
+          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {t.rag.agentMemorySimilarityThresholdDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-2">
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">50%</Typography>
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {Math.round((currentConfig.memoryThreshold ?? 0.7) * 100)}%
+            </Typography>
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">95%</Typography>
+          </View>
+          <Slider
+            value={currentConfig.memoryThreshold ?? 0.7}
+            onValueChange={(val) => handleChange({ memoryThreshold: val })}
+            minimumValue={0.5}
+            maximumValue={0.95}
+            step={0.05}
+          />
+        </View>
+
+        <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
+
+        <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
+          {t.rag.docRetrieval}
+        </Typography>
+
+        <View className="mb-4">
+          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+            {t.rag.docLimit}
+          </Typography>
+          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {t.rag.docLimitDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-2">
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {t.rag.items.replace('{count}', (currentConfig.docLimit ?? 8).toString())}
+            </Typography>
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">15</Typography>
+          </View>
+          <Slider
+            value={currentConfig.docLimit ?? 8}
+            onValueChange={(val) => handleChange({ docLimit: Math.round(val) })}
+            minimumValue={5}
+            maximumValue={15}
+            step={1}
+          />
+        </View>
+
+        <View>
+          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+            {t.rag.similarityThreshold}
+          </Typography>
+          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {t.rag.agentDocSimilarityThresholdDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-2">
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">30%</Typography>
+            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+              {Math.round((currentConfig.docThreshold ?? 0.45) * 100)}%
+            </Typography>
+            <Typography className="text-sm text-gray-600 dark:text-gray-400">80%</Typography>
+          </View>
+          <Slider
+            value={currentConfig.docThreshold ?? 0.45}
+            onValueChange={(val) => handleChange({ docThreshold: val })}
+            minimumValue={0.3}
+            maximumValue={0.8}
+            step={0.05}
+          />
+        </View>
+      </View>
+
       {/* Rerank配置 */}
       <SectionHeader title="Rerank 二次精排" />
       <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">

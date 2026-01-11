@@ -156,6 +156,11 @@ export const migrateDatabase = async () => {
       await db.execute('ALTER TABLE documents ADD COLUMN kg_processed_hash TEXT');
     }
 
+    if (!columns.includes('content_hash')) {
+      console.log('[DB Migration] Adding content_hash column to documents...');
+      await db.execute('ALTER TABLE documents ADD COLUMN content_hash TEXT');
+    }
+
     if (!columns.includes('thumbnail_path')) {
       console.log('[DB Migration] Adding thumbnail_path column to documents...');
       await db.execute('ALTER TABLE documents ADD COLUMN thumbnail_path TEXT');

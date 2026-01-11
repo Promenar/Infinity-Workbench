@@ -68,6 +68,7 @@ export const createTables = async () => {
         updated_at INTEGER,
         metadata TEXT, -- JSON
         is_global INTEGER DEFAULT 0, -- 0=Session Scoped (if imported inside session) or Private, 1=Global Knowledge
+        content_hash TEXT, -- Content hash for incremental vectorization
         FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
       );
     `);

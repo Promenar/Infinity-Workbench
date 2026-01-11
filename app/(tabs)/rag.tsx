@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler } from 'react-native';
 import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader } from '../../src/components/ui';
-import { Search, X, FolderInput, Folder } from 'lucide-react-native';
+import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +20,11 @@ import { DragDropContentView } from 'expo-drag-drop-content-view';
 import { PdfExtractor, PdfExtractorRef } from '../../src/components/rag/PdfExtractor';
 import { RagStatusIndicator } from '../../src/components/rag/RagStatusIndicator';
 import { MemoryItem } from '../../src/components/rag/MemoryItem';
+
+// 使用 any 绕过 FlashList 的类型属性冲突问题
+const TypedFlashList = FlashList as any;
+
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 export default function RagScreen() {
   const router = useRouter();
@@ -109,7 +114,36 @@ export default function RagScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [activeTab, setActiveTab] = useState<'docs' | 'memories'>('docs');
+  // viewMode: portal (概览), docs (文档列表), memories (记忆列表)
+  const [viewMode, setViewMode] = useState<'portal' | 'docs' | 'memories'>('portal');
+
+  // 当进入搜索或点击某个分类时切换 mode
+  useEffect(() => {
+    if (searchQuery.trim() && viewMode === 'portal') {
+      setViewMode('docs');
+    }
+  }, [searchQuery]);
+
+  const handleBackToPortal = useCallback(() => {
+    setViewMode('portal');
+    setSelectedFolder(null);
+    setSearchQuery('');
+    return true; // 返回 true 表示已处理返回事件
+  }, [setSelectedFolder]);
+
+  // 处理系统返回键
+  useEffect(() => {
+    const onBackPress = () => {
+      if (viewMode !== 'portal') {
+        handleBackToPortal();
+        return true;
+      }
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [viewMode, handleBackToPortal]);
 
   // 搜索过滤
   const filteredDocuments = useMemo(() => {
@@ -117,6 +151,13 @@ export default function RagScreen() {
     const query = searchQuery.toLowerCase();
     return documents.filter((doc) => doc.title.toLowerCase().includes(query));
   }, [documents, searchQuery]);
+
+  // 记忆搜索过滤
+  const filteredMemories = useMemo(() => {
+    if (!searchQuery.trim()) return memories;
+    const query = searchQuery.toLowerCase();
+    return memories.filter((m) => m.content.toLowerCase().includes(query));
+  }, [memories, searchQuery]);
 
   // 获取当前视图内容
   const currentViewContent = useMemo(() => {
@@ -505,59 +546,192 @@ export default function RagScreen() {
     });
   }, [router]);
 
-  // 渲染标题栏
-  const renderHeader = () => (
-    <View className="mb-0">
-      {/* 搜索栏 */}
-      {/* 搜索栏 */}
-      <View className="px-6 pb-2">
-        <View
-          className="h-12 border rounded-2xl flex-row items-center px-4 transition-all"
+  // 门户卡片组件
+  const PortalCards = () => (
+    <View style={{ paddingHorizontal: 24, marginTop: 8 }}>
+      <View style={{ flexDirection: 'row', gap: 16, marginBottom: 20 }}>
+        {/* 文档中心卡片 */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setViewMode('docs')}
           style={{
-            backgroundColor: isSearchFocused
-              ? (isDark ? colors.opacity20 : colors[50])
-              : (isDark ? '#18181b' : '#f9fafb'),
-            borderColor: isSearchFocused
-              ? colors[500]
-              : (isDark ? '#27272a' : '#f3f4f6')
+            flex: 1,
+            backgroundColor: isDark ? '#18181b' : '#fff',
+            borderRadius: 24,
+            padding: 20,
+            borderWidth: 1.2,
+            borderColor: isDark ? '#27272a' : '#efefef',
+            overflow: 'hidden',
           }}
         >
-          <Search size={18} color={isSearchFocused ? colors[500] : '#94a3b8'} strokeWidth={2} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() => setIsSearchFocused(false)}
-            placeholder={t.library.searchPlaceholder}
-            placeholderTextColor="#94a3b8"
-            className="flex-1 ml-3 text-gray-900 dark:text-white font-semibold text-base"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={18} color="#94a3b8" />
-            </TouchableOpacity>
-          )}
-        </View>
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 16,
+              backgroundColor: colors.opacity10,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 16,
+            }}
+          >
+            <BookOpen size={24} color={colors[500]} />
+          </View>
+          <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
+            {t.library.tabDocuments}
+          </Typography>
+          <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+            {documents.length + folders.length} {t.library.itemsCount}
+          </Typography>
+        </TouchableOpacity>
+
+        {/* 记忆库卡片 */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setViewMode('memories')}
+          style={{
+            flex: 1,
+            backgroundColor: isDark ? '#18181b' : '#fff',
+            borderRadius: 24,
+            padding: 20,
+            borderWidth: 1.2,
+            borderColor: isDark ? '#27272a' : '#efefef',
+            overflow: 'hidden',
+          }}
+        >
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 16,
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 16,
+            }}
+          >
+            <Clock size={24} color="#10b981" />
+          </View>
+          <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
+            {t.library.tabMemories}
+          </Typography>
+          <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+            {memories.length} {t.library.itemsCount}
+          </Typography>
+        </TouchableOpacity>
       </View>
 
-      {/* 控制栏 */}
-      <ControlBar
-        onNewFolder={handleNewFolder}
-        onViewGraph={() => router.push('/knowledge-graph')}
-        currentTask={
-          currentTask
-            ? {
-              docTitle: currentTask.docTitle,
-              progress: currentTask.progress,
-            }
-            : null
-        }
-        queueLength={vectorizationQueue.length}
-      />
-
-
+      {/* 其它功能入口 */}
+      <View style={{ marginTop: 8 }}>
+        <Typography className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 ml-1">
+          其他功能
+        </Typography>
+        <TouchableOpacity
+          onPress={() => router.push('/knowledge-graph')}
+          className="flex-row items-center p-4 bg-gray-50 dark:bg-zinc-900/50 rounded-2xl border border-gray-100 dark:border-zinc-800 mb-3"
+        >
+          <View className="w-10 h-10 rounded-xl bg-indigo-500/10 items-center justify-center mr-4">
+            <Brain size={20} color={colors[500]} />
+          </View>
+          <View className="flex-1">
+            <Typography className="font-bold text-gray-900 dark:text-white">全局知识图谱</Typography>
+            <Typography className="text-xs text-gray-400 mt-0.5">查看所有文档的关联关系</Typography>
+          </View>
+          <ChevronRight size={18} color="#94a3b8" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
+
+  // 渲染标题栏
+  const renderHeader = () => {
+    const isPortal = viewMode === 'portal';
+    const isMemories = viewMode === 'memories';
+
+    return (
+      <View className="mb-0">
+        <Animated.View
+          key={`${viewMode}-${currentFolderId}`}
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}
+        >
+          <LargeTitleHeader
+            title={isPortal ? t.library.title : (isMemories ? t.library.tabMemories : t.library.tabDocuments)}
+            subtitle={isPortal ? t.library.subtitle : (isMemories ? t.library.memoriesSubtitle : (currentFolderId ? folders.find(f => f.id === currentFolderId)?.name : t.library.subtitle))}
+            leftAction={!isPortal ? {
+              icon: <ChevronLeft size={28} color={isDark ? '#fff' : '#000'} />,
+              onPress: handleBackToPortal,
+            } : undefined}
+            rightElement={!isMemories ? (
+              <TouchableOpacity
+                onPress={handleFileImport}
+                style={{
+                  width: 48,
+                  height: 48,
+                  backgroundColor: isDark ? '#18181b' : colors[50],
+                  borderWidth: 1,
+                  borderColor: isDark ? '#27272a' : colors[200],
+                  borderRadius: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <FolderInput size={24} color={colors[500]} strokeWidth={2.5} />
+              </TouchableOpacity>
+            ) : undefined}
+          />
+        </Animated.View>
+
+        {/* 搜索栏 */}
+        <View className="px-6 pb-2">
+          <View
+            className="h-12 border rounded-2xl flex-row items-center px-4 transition-all"
+            style={{
+              backgroundColor: isSearchFocused
+                ? (isDark ? colors.opacity20 : colors[50])
+                : (isDark ? '#18181b' : '#f9fafb'),
+              borderColor: isSearchFocused
+                ? colors[500]
+                : (isDark ? '#27272a' : '#f3f4f6')
+            }}
+          >
+            <Search size={18} color={isSearchFocused ? colors[500] : '#94a3b8'} strokeWidth={2} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+              placeholder={isMemories ? "搜索会话记忆..." : t.library.searchPlaceholder}
+              placeholderTextColor="#94a3b8"
+              className="flex-1 ml-3 text-gray-900 dark:text-white font-semibold text-base"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <X size={18} color="#94a3b8" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* 控制栏 (仅在文档列表或门户且有任务时显示) */}
+        {(viewMode === 'docs' || (isPortal && (vectorizationQueue.length > 0 || currentTask))) && (
+          <ControlBar
+            onNewFolder={handleNewFolder}
+            onViewGraph={() => router.push('/knowledge-graph')}
+            currentTask={
+              currentTask
+                ? {
+                  docTitle: currentTask.docTitle,
+                  progress: currentTask.progress,
+                }
+                : null
+            }
+            queueLength={vectorizationQueue.length}
+          />
+        )}
+      </View>
+    );
+  };
 
   // 拖拽处理
   const handleDrop = useCallback(
@@ -632,70 +806,10 @@ export default function RagScreen() {
 
       <DragDropContentView style={{ flex: 1 }} onDrop={handleDrop}>
         <View style={{ flex: 1 }}>
-          {/* 标题 */}
-          {/* 标题 */}
-          <LargeTitleHeader
-            title={t.library.title}
-            subtitle={t.library.subtitle}
-            rightElement={
-              <TouchableOpacity
-                onPress={handleFileImport}
-                style={{
-                  width: 48,
-                  height: 48,
-                  backgroundColor: isDark ? '#18181b' : colors[50], // Dynamic light bg
-                  borderWidth: 1,
-                  borderColor: isDark ? '#27272a' : colors[200], // Dynamic light border
-                  borderRadius: 16,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <FolderInput size={24} color={colors[500]} strokeWidth={2.5} />
-              </TouchableOpacity>
-            }
-          />
-
           {renderHeader()}
 
-          {/* Tab Switcher - Using inline styles for stability */}
-          <View style={{ flexDirection: 'row', paddingHorizontal: 24, marginBottom: 16, marginTop: 4 }}>
-            <TouchableOpacity
-              onPress={() => setActiveTab('docs')}
-              style={{
-                paddingVertical: 8,
-                paddingHorizontal: 16,
-                borderRadius: 20,
-                backgroundColor: activeTab === 'docs' ? colors[500] : (isDark ? '#18181b' : '#f3f4f6'),
-                marginRight: 8,
-                borderWidth: 1,
-                borderColor: activeTab === 'docs' ? colors[500] : (isDark ? '#27272a' : '#e5e7eb'),
-              }}
-            >
-              <Typography style={{ color: activeTab === 'docs' ? '#fff' : (isDark ? '#a1a1aa' : '#64748b'), fontSize: 13, fontWeight: '700' }}>
-                {t.library.tabDocuments}
-              </Typography>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setActiveTab('memories')}
-              style={{
-                paddingVertical: 8,
-                paddingHorizontal: 16,
-                borderRadius: 20,
-                backgroundColor: activeTab === 'memories' ? colors[500] : (isDark ? '#18181b' : '#f3f4f6'),
-                borderWidth: 1,
-                borderColor: activeTab === 'memories' ? colors[500] : (isDark ? '#27272a' : '#e5e7eb'),
-              }}
-            >
-              <Typography style={{ color: activeTab === 'memories' ? '#fff' : (isDark ? '#a1a1aa' : '#64748b'), fontSize: 13, fontWeight: '700' }}>
-                {t.library.tabMemories}
-              </Typography>
-            </TouchableOpacity>
-          </View>
-
-          {/* 面包屑导航 (非搜索模式 且 处于文档页 显示) */}
-          {!searchQuery && activeTab === 'docs' && (
+          {/* 面包屑导航 (仅在文档页显示) */}
+          {viewMode === 'docs' && !searchQuery && (
             <View className="mb-1.5">
               <Breadcrumbs
                 currentFolderId={currentFolderId}
@@ -705,101 +819,130 @@ export default function RagScreen() {
             </View>
           )}
 
-          {/* 内容列表 */}
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 100 }}
-            showsVerticalScrollIndicator={false}
+          {/* 内容展示区 */}
+          <Animated.View
+            key={viewMode}
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={{ flex: 1, minHeight: 200 }}
           >
-            {/* 文件夹 (搜索模式隐藏 且 文档预览激活) */}
-            {!searchQuery && activeTab === 'docs' &&
-              currentViewContent.folders.map((folder) => (
-                <FolderItem
-                  key={folder.id}
-                  id={folder.id}
-                  name={folder.name}
-                  childCount={folder.childCount}
-                  isExpanded={false}
-                  level={0}
-                  onToggle={() => handleNavigate(folder.id)}
-                  onPress={() => handleNavigate(folder.id)}
-                  onLongPress={() => { }}
-                  onDelete={() => handleDeleteFolder(folder.id, folder.name)}
-                  onRename={() => handleRenameFolder(folder.id, folder.name)}
-                  onMove={() => handleStartMoveFolder(folder.id)}
-                  onViewGraph={() => handleViewFolderGraph(folder.id)}
-                  onExtractGraph={(s) => handleExtractFolder(folder.id, s)}
-                />
-              ))}
+            {viewMode === 'portal' && <PortalCards />}
 
-            {/* 文档列表 */}
-            {activeTab === 'docs' && currentViewContent.docs.map((doc) => (
-              <CompactDocItem
-                key={doc.id}
-                id={doc.id}
-                title={doc.title}
-                vectorized={doc.vectorized}
-                vectorCount={doc.vectorCount}
-                fileSize={doc.fileSize}
-                onLongPress={() => {
-                  if (!isSelectionMode) {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    setIsSelectionMode(true);
-                    handleToggleDocSelection(doc.id);
-                  }
-                }}
-                onDelete={() => handleDeleteDocument(doc.id, doc.title)}
-                onVectorize={() => vectorizeDocument(doc.id)}
-                onMove={() => handleStartMoveDoc(doc.id)}
-                isSelectionMode={isSelectionMode}
-                isSelected={selectedDocIds.has(doc.id)}
-                tags={doc.tags}
-                thumbnailPath={doc.thumbnailPath}
-                onAssignTag={() => setAssignmentDocId(doc.id)}
-                onViewGraph={() =>
-                  router.push({ pathname: '/knowledge-graph', params: { docId: doc.id } })
-                }
-                onExtractGraph={(s) => handleExtractDoc(doc.id, s)}
-                onPress={() => {
-                  if (isSelectionMode) {
-                    handleToggleDocSelection(doc.id);
-                  } else if (doc.thumbnailPath) {
-                    setPreviewImage(doc.thumbnailPath);
+            {viewMode === 'docs' && (
+              <TypedFlashList
+                data={[
+                  ...currentViewContent.folders.map(f => ({ type: 'folder' as const, item: f })),
+                  ...currentViewContent.docs.map(d => ({ type: 'doc' as const, item: d }))
+                ]}
+                keyExtractor={(item: any) => item.item.id}
+                renderItem={({ item }: any) => {
+                  if (item.type === 'folder') {
+                    const folder = item.item;
+                    return (
+                      <FolderItem
+                        id={folder.id}
+                        name={folder.name}
+                        childCount={folder.childCount}
+                        isExpanded={false}
+                        level={0}
+                        onToggle={() => handleNavigate(folder.id)}
+                        onPress={() => handleNavigate(folder.id)}
+                        onDelete={() => handleDeleteFolder(folder.id, folder.name)}
+                        onRename={() => handleRenameFolder(folder.id, folder.name)}
+                        onMove={() => handleStartMoveFolder(folder.id)}
+                        onViewGraph={() => handleViewFolderGraph(folder.id)}
+                        onExtractGraph={(s) => handleExtractFolder(folder.id, s)}
+                      />
+                    );
                   } else {
-                    // TODO: Open text detail
-                    showToast('Open Doc: ' + doc.title, 'info');
+                    const doc = item.item;
+                    return (
+                      <CompactDocItem
+                        id={doc.id}
+                        title={doc.title}
+                        vectorized={doc.vectorized}
+                        vectorCount={doc.vectorCount}
+                        fileSize={doc.fileSize}
+                        onLongPress={() => {
+                          if (!isSelectionMode) {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            setIsSelectionMode(true);
+                            handleToggleDocSelection(doc.id);
+                          }
+                        }}
+                        onDelete={() => handleDeleteDocument(doc.id, doc.title)}
+                        onVectorize={() => vectorizeDocument(doc.id)}
+                        onMove={() => handleStartMoveDoc(doc.id)}
+                        isSelectionMode={isSelectionMode}
+                        isSelected={selectedDocIds.has(doc.id)}
+                        tags={doc.tags}
+                        thumbnailPath={doc.thumbnailPath}
+                        onAssignTag={() => setAssignmentDocId(doc.id)}
+                        onViewGraph={() =>
+                          router.push({ pathname: '/knowledge-graph', params: { docId: doc.id } })
+                        }
+                        onExtractGraph={(s) => handleExtractDoc(doc.id, s)}
+                        onPress={() => {
+                          if (isSelectionMode) {
+                            handleToggleDocSelection(doc.id);
+                          } else if (doc.thumbnailPath) {
+                            setPreviewImage(doc.thumbnailPath);
+                          } else {
+                            showToast('Open Doc: ' + doc.title, 'info');
+                          }
+                        }}
+                      />
+                    );
                   }
                 }}
+                estimatedItemSize={80}
+                contentContainerStyle={{ paddingBottom: 100 }}
+                ListEmptyComponent={() => (
+                  <View className="items-center justify-center py-20 opacity-50">
+                    <Typography className="text-gray-400 font-medium">{t.library.emptyState}</Typography>
+                  </View>
+                )}
               />
-            ))}
+            )}
 
-            {/* 会话记忆列表 */}
-            {activeTab === 'memories' && memories.map((memory) => (
-              <MemoryItem
-                key={memory.id}
-                id={memory.id}
-                content={memory.content}
-                createdAt={memory.createdAt}
-                onDelete={() => {
-                  setConfirmState({
-                    visible: true,
-                    title: t.library.deleteMemory,
-                    message: t.library.deleteMemoryConfirm,
-                    isDestructive: true,
-                    onConfirm: async () => {
-                      await deleteMemory(memory.id);
-                      showToast(t.common.delete + t.common.success, 'success');
-                      setConfirmState((prev) => ({ ...prev, visible: false }));
-                    }
-                  });
-                }}
-                onPress={() => {
-                  showToast(memory.content.substring(0, 30) + '...', 'info');
-                }}
+            {viewMode === 'memories' && (
+              <TypedFlashList
+                data={filteredMemories}
+                keyExtractor={(item: any) => item.id}
+                renderItem={({ item }: any) => (
+                  <MemoryItem
+                    id={item.id}
+                    content={item.content}
+                    createdAt={item.createdAt}
+                    onDelete={() => {
+                      setConfirmState({
+                        visible: true,
+                        title: t.library.deleteMemory,
+                        message: t.library.deleteMemoryConfirm,
+                        isDestructive: true,
+                        onConfirm: async () => {
+                          await deleteMemory(item.id);
+                          showToast(t.common.delete + t.common.success, 'success');
+                          setConfirmState((prev) => ({ ...prev, visible: false }));
+                        }
+                      });
+                    }}
+                    onPress={() => {
+                      showToast(item.content.substring(0, 30) + '...', 'info');
+                    }}
+                  />
+                )}
+                estimatedItemSize={120}
+                contentContainerStyle={{ paddingBottom: 100 }}
+                ListEmptyComponent={() => (
+                  <View className="items-center justify-center py-20 opacity-50">
+                    <Typography className="text-gray-400 font-medium">{t.library.memoryEmptyState}</Typography>
+                  </View>
+                )}
               />
-            ))}
+            )}
 
-            {/* Modals */}
+            {/* Modals - Keep them here so they work in all view modes if needed */}
             {assignmentDocId && TagAssignmentSheetComponent && (
               <TagAssignmentSheetComponent
                 visible={!!assignmentDocId}
@@ -811,14 +954,12 @@ export default function RagScreen() {
                 }}
               />
             )}
-
             {TagManagerSheetComponent && (
               <TagManagerSheetComponent
                 visible={showTagManager}
                 onClose={() => setShowTagManager(false)}
               />
             )}
-
             {ImagePreviewModalComponent && (
               <ImagePreviewModalComponent
                 visible={!!previewImage}
@@ -826,22 +967,7 @@ export default function RagScreen() {
                 onClose={() => setPreviewImage(null)}
               />
             )}
-
-            {/* 空状态提示 */}
-            {activeTab === 'docs' && !searchQuery &&
-              currentViewContent.folders.length === 0 &&
-              currentViewContent.docs.length === 0 && (
-                <View className="items-center justify-center py-20 opacity-50">
-                  <Typography className="text-gray-400 font-medium">{t.library.emptyState}</Typography>
-                </View>
-              )}
-
-            {activeTab === 'memories' && memories.length === 0 && (
-              <View className="items-center justify-center py-20 opacity-50">
-                <Typography className="text-gray-400 font-medium">{t.library.memoryEmptyState}</Typography>
-              </View>
-            )}
-          </ScrollView>
+          </Animated.View>
         </View>
       </DragDropContentView>
 

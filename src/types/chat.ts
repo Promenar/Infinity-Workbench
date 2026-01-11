@@ -83,8 +83,10 @@ export interface RagMetadata {
   queryVariants?: string[];
   searchTimeMs: number;
   rerankTimeMs?: number;
+  totalTimeMs?: number;
   recallCount: number;
   finalCount: number;
+  maxSimilarity?: number;
   sourceDistribution?: {
     memory: number;
     documents: number;

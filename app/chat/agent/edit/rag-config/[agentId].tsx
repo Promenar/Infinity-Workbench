@@ -7,11 +7,13 @@ import { useTheme } from '../../../../../src/theme/ThemeProvider';
 import { useAgentStore } from '../../../../../src/store/agent-store';
 import { AgentRagConfigPanel } from '../../../../../src/features/settings/components/AgentRagConfigPanel';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useI18n } from '../../../../../src/lib/i18n';
 
 export default function AgentRagConfigScreen() {
   const { agentId } = useLocalSearchParams<{ agentId: string }>();
   const router = useRouter();
   const { isDark } = useTheme();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const { getAgent, updateAgent } = useAgentStore();
   const agent = getAgent(agentId);
@@ -23,7 +25,7 @@ export default function AgentRagConfigScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <GlassHeader
-        title="向量库与RAG设置"
+        title={t.settings.ragSettings}
         subtitle={agent.name}
         leftAction={{
           icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
