@@ -813,6 +813,24 @@ DO NOT use the legacy <plan> XML format unless specifically requested. Use the \
 6. Trigger the tool immediately. Any leading text will be considered an error.`;
 
             finalSystemPrompt += toolInstruction;
+
+            // 🆕 Task State Injection: Provide current task status to the model
+            if (session.activeTask) {
+              const task = session.activeTask;
+              const formattedSteps = task.steps.map((s, idx) => 
+                `${idx + 1}. [${s.status.toUpperCase()}] ${s.title}${s.description ? ` (${s.description})` : ''}`
+              ).join('\n');
+              
+              const taskContext = `\n\n[CURRENT TASK STATUS]
+Title: ${task.title}
+Status: ${task.status}
+Progress: ${task.progress}%
+Steps:
+${formattedSteps}
+
+IMPORTANT: You are currently working on this task. Use 'manage_task' to update the status of steps as you complete them.`;
+              finalSystemPrompt += taskContext;
+            }
           }
 
           // 将 RAG 上下文注入到系统提示词中
