@@ -178,7 +178,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       <Animated.View
         entering={FadeIn.duration(200)}
         exiting={FadeOut.duration(150)}
-        className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-gray-100 dark:border-zinc-800 pr-1"
+        className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-indigo-50 dark:border-indigo-500/10 pr-1"
         style={isSelected ? { borderColor: colors[500], backgroundColor: isDark ? colors.opacity20 : colors.opacity10 } : undefined}
       >
         <TouchableOpacity

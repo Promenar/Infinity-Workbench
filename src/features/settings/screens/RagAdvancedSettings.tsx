@@ -178,7 +178,7 @@ export default function RagAdvancedSettings() {
           {/* 0. 知识图谱总开关 */}
           <SectionHeader title={t.rag.kg.title} mt={10} />
           <View
-            className="bg-white dark:bg-zinc-900 rounded-[24px] border border-gray-100 dark:border-zinc-800 mb-6 overflow-hidden shadow-sm"
+            className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] border border-indigo-50 dark:border-indigo-500/10 mb-6 overflow-hidden shadow-sm"
           >
             <View className="p-4 flex-row justify-between items-center">
               <View style={{ flex: 1 }}>
@@ -238,7 +238,7 @@ export default function RagAdvancedSettings() {
           {/* 1. 策略选择 (降本核心) */}
           <SectionHeader title={t.rag.kg.costStrategyTitle} mt={10} />
           <View
-            className="bg-white dark:bg-zinc-900 rounded-[24px] p-5 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm"
+            className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm"
           >
             <View className="flex-row items-center mb-4">
               <DollarSign size={20} color={colors[500]} style={{ marginRight: 8 }} />
@@ -314,7 +314,7 @@ export default function RagAdvancedSettings() {
 
           {/* 2. 本地优化开关 */}
           <SectionHeader title={t.rag.kg.localOptimization} />
-          <View className="bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden border border-gray-100 dark:border-zinc-800 mb-6">
+          <View className="rounded-2xl overflow-hidden border mb-6" style={{ backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb', borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#e5e7eb' }}>
             <View className="p-4 border-b border-gray-100 dark:border-gray-800 flex-row justify-between items-center">
               <View style={{ flex: 1 }}>
                 <View className="flex-row items-center mb-1">
@@ -353,7 +353,7 @@ export default function RagAdvancedSettings() {
 
           {/* 3. 提示词配置 (Playground) */}
           <SectionHeader title={t.rag.kg.extractionPrompt} />
-          <View className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800">
+          <View className="rounded-2xl p-4 border" style={{ backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb', borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#e5e7eb' }}>
             <View className="flex-row justify-between items-center mb-4">
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
                 {t.rag.kg.entityRelationPrompt}

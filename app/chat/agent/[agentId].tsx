@@ -106,7 +106,7 @@ export default function AgentSessionsScreen() {
         }}
         ListEmptyComponent={
           <View className="flex-1 items-center justify-center pt-20 px-10">
-            <View className="w-20 h-20 rounded-full bg-gray-50 dark:bg-zinc-900 items-center justify-center mb-6">
+            <View className="w-20 h-20 rounded-full bg-gray-50/80 dark:bg-zinc-900/60 items-center justify-center mb-6">
               <MessageSquare size={32} color="#cbd5e1" />
             </View>
             <Typography className="text-gray-900 dark:text-white font-bold text-center mb-2">

@@ -3,6 +3,7 @@ import { View, Modal, TouchableOpacity, StyleSheet, Dimensions } from 'react-nat
 import Animated, { FadeIn, FadeOut, FadeInUp } from 'react-native-reanimated';
 import { Typography } from './Typography';
 import { BlurView } from 'expo-blur';
+import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from '../../lib/haptics';
 import { LayoutAnimations } from '../../theme/animations';
 
@@ -29,6 +30,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  const { isDark } = useTheme();
   if (!visible) return null;
 
   const handleConfirm = () => {
@@ -61,7 +63,18 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           exiting={FadeOut.duration(150)}
           style={styles.modalContent}
         >
-          <View className="bg-white dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-2xl border border-gray-100 dark:border-zinc-800">
+          <View
+            style={{
+              backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
+              borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(0, 0, 0, 0.05)',
+            }}
+            className="rounded-2xl overflow-hidden shadow-2xl border"
+          >
+            <BlurView
+              intensity={isDark ? 30 : 60}
+              tint={isDark ? 'dark' : 'light'}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            />
             <View className="p-8">
               <Typography className="text-xl font-bold text-gray-900 dark:text-white mb-3 text-center">
                 {title}

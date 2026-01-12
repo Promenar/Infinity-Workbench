@@ -70,7 +70,7 @@ export default function TokenUsageScreen() {
           flex: 1,
           backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6',
           padding: 16,
-          borderRadius: 20,
+          borderRadius: 16,
         }}
       >
         <View style={{ marginBottom: 8 }}>
@@ -250,7 +250,7 @@ export default function TokenUsageScreen() {
             alignItems: 'center',
             justifyContent: 'center',
             padding: 16,
-            borderRadius: 20,
+            borderRadius: 16,
             backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#fee2e2',
           }}
         >

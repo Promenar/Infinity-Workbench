@@ -24,8 +24,8 @@ export function SettingsSection({ title, children, containerStyle }: SettingsSec
         style={[
           styles.card,
           {
-            backgroundColor: themeColors.surfaceSecondary,
-            borderColor: themeColors.borderDefault,
+            backgroundColor: isDark ? 'rgba(24, 24, 27, 0.8)' : themeColors.surfaceSecondary,
+            borderColor: isDark ? 'rgba(63, 63, 70, 0.5)' : themeColors.borderDefault,
           },
         ]}
       >

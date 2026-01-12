@@ -38,7 +38,7 @@ export default function ThemeSettingsScreen() {
                     />
                 </View>
 
-                <View className="bg-gray-50 dark:bg-zinc-900/50 p-6 rounded-3xl border border-gray-100 dark:border-zinc-800">
+                <View className="bg-gray-50 dark:bg-zinc-900/50 p-6 rounded-3xl border border-indigo-50 dark:border-indigo-500/10">
                     <Typography className="text-sm font-bold text-gray-900 dark:text-white mb-2 text-center">
                         {t.settings.livePreview}
                     </Typography>

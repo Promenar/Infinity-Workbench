@@ -108,7 +108,7 @@ export default function PortableWorkbenchScreen() {
                 {/* Status Card */}
                 <View style={{
                     backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#f3f4f6',
-                    borderRadius: 24,
+                    borderRadius: 16,
                     padding: 24,
                     marginBottom: 24,
                     alignItems: 'center',
@@ -177,7 +177,7 @@ export default function PortableWorkbenchScreen() {
                 {/* Background Stability Guide */}
                 <View style={{
                     backgroundColor: isDark ? 'rgba(234, 179, 8, 0.1)' : '#fefce8',
-                    borderRadius: 24,
+                    borderRadius: 16,
                     padding: 20,
                     marginBottom: 24,
                     borderWidth: 1,

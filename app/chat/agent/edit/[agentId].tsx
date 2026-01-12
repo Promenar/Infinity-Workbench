@@ -239,7 +239,7 @@ export default function AgentEditScreen() {
         >
           {/* Agent Avatar Group */}
           <SectionHeader title={t.agent.avatar || '助手头像'} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-6 border border-gray-100 dark:border-zinc-800 mb-8 items-center">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 items-center">
             <View className="relative mb-6">
               <AgentAvatar
                 id={agentId}
@@ -299,12 +299,12 @@ export default function AgentEditScreen() {
 
           {/* Basic Info Group */}
           <SectionHeader title={t.agent.basicInfo} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <Typography className="text-gray-900 dark:text-white font-bold mb-2">
               {t.agent.name}
             </Typography>
             <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-gray-100 dark:border-zinc-800 mb-4"
+              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-indigo-50 dark:border-indigo-500/10 mb-4"
               value={formData.name}
               onChangeText={(text) => setFormData({ ...formData, name: text })}
               placeholder={t.agent.namePlaceholder}
@@ -315,7 +315,7 @@ export default function AgentEditScreen() {
               {t.agent.description}
             </Typography>
             <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-gray-100 dark:border-zinc-800"
+              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-indigo-50 dark:border-indigo-500/10"
               multiline
               numberOfLines={2}
               value={formData.description}
@@ -339,7 +339,7 @@ export default function AgentEditScreen() {
 
           {/* Personality Group */}
           <SectionHeader title={t.agent.personality} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
               <View className="flex-row items-center justify-between mb-2">
                 <View className="flex-row items-center">
@@ -391,7 +391,7 @@ export default function AgentEditScreen() {
 
           {/* Model Configuration Group */}
           <SectionHeader title={t.agent.modelConfig} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {
@@ -411,7 +411,7 @@ export default function AgentEditScreen() {
               <ChevronRight size={20} color="#94a3b8" />
             </TouchableOpacity>
 
-            <View className="border-t border-gray-100 dark:border-zinc-800 p-5">
+            <View className="border-t border-indigo-50 dark:border-indigo-500/10 p-5">
               <Typography className="text-gray-900 dark:text-white font-bold mb-3">
                 {t.agent.creativity}
               </Typography>
@@ -433,7 +433,7 @@ export default function AgentEditScreen() {
 
           {/* RAG 配置入口 */}
           <SectionHeader title={t.agent.ragConfigTitle} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {
@@ -454,7 +454,7 @@ export default function AgentEditScreen() {
               <ChevronRight size={20} color="#9ca3af" />
             </TouchableOpacity>
 
-            <View className="border-t border-gray-100 dark:border-zinc-800" />
+            <View className="border-t border-indigo-50 dark:border-indigo-500/10" />
 
             <TouchableOpacity
               onPress={() => {

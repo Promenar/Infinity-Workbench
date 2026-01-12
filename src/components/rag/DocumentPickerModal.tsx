@@ -197,7 +197,7 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
                 onLongPress={() => handleToggleFolder(folder.id)}
                 className={`mb-2 rounded-xl p-4 flex-row items-center border ${isSelected
                   ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-500'
-                  : 'bg-gray-50 dark:bg-zinc-900/50 border-gray-100 dark:border-zinc-800'
+                  : 'bg-gray-50 dark:bg-zinc-900/50 border-indigo-50 dark:border-indigo-500/10'
                   }`}
               >
                 <View className="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 items-center justify-center mr-3">
@@ -235,7 +235,7 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
                 style={isSelected ? { backgroundColor: isDark ? colors.opacity20 : colors.opacity10, borderColor: colors.opacity30 } : {}}
                 className={clsx(
                   'mb-2 rounded-xl p-4 flex-row items-center border',
-                  !isSelected && 'bg-gray-50 dark:bg-zinc-900/50 border-gray-100 dark:border-zinc-800',
+                  !isSelected && 'bg-gray-50 dark:bg-zinc-900/50 border-indigo-50 dark:border-indigo-500/10',
                 )}
               >
                 <View

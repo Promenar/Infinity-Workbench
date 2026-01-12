@@ -104,7 +104,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
     <View>
       {/* 状态标签 */}
       <SectionHeader title={t.rag.configStatus} mt={0} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         <View className="flex-row items-center justify-between">
           <View>
             <Typography className="text-base font-bold text-gray-900 dark:text-white mb-1">
@@ -156,7 +156,11 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
               key={key}
               onPress={() => applyPreset(key)}
               activeOpacity={0.7}
-              className="flex-1 bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800 items-center shadow-sm"
+              className="flex-1 rounded-2xl p-4 border items-center shadow-sm"
+              style={{
+                backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb',
+                borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#e5e7eb'
+              }}
             >
               <Icon size={22} color={colors[500]} />
               <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
@@ -169,7 +173,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
 
       {/* 自动摘要设置 */}
       <SectionHeader title={t.rag.summarySettings} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         <View className="mb-4">
           <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
             {t.rag.activeWindow}
@@ -302,6 +306,6 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
         onCancel={() => setShowResetDialog(false)}
         isDestructive
       />
-    </View>
+    </View >
   );
 };

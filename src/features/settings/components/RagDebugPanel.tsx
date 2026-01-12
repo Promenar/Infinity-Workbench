@@ -108,7 +108,7 @@ export const RagDebugPanel: React.FC = () => {
         <>
           {/* 总览卡片 */}
           <SectionHeader title={t.settings.vectorStats.overview} mt={0} />
-          <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+          <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
             <Typography style={{ color: colors[600] }} className="text-sm font-bold mb-2">
               {t.settings.vectorStats.totalVectors}
             </Typography>
@@ -125,7 +125,7 @@ export const RagDebugPanel: React.FC = () => {
 
           {/* 类型分布 */}
           <SectionHeader title={t.settings.dimensionAnalysis} mt={0} />
-          <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+          <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
             <View className="flex-row items-center justify-around py-2">
               <View className="items-center">
                 <Typography className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -149,7 +149,7 @@ export const RagDebugPanel: React.FC = () => {
 
           {/* 存储健康度 */}
           <SectionHeader title={t.settings.storageHealth} />
-          <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+          <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
             <View className="flex-row items-center justify-between mb-4">
               <View>
                 <Typography className="text-sm font-bold text-gray-900 dark:text-white">
@@ -190,7 +190,7 @@ export const RagDebugPanel: React.FC = () => {
           {stats.bySession.length > 0 && (
             <>
               <SectionHeader title={t.settings.topSessions} />
-              <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+              <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
                 {stats.bySession.map((item, idx) => (
                   <View
                     key={idx}

@@ -436,22 +436,31 @@ export class MemoryManager {
     allResults.sort((a, b) => b.similarity - a.similarity);
     const uniqueResults = allResults.filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i);
 
-    // 优化合并策略
-    const topMemories = uniqueResults
-      .filter((r) => r.metadata?.type === 'memory')
-      .slice(0, effectiveRagConfig.memoryLimit || 3);
-    const topDocs = uniqueResults
-      .filter((r) => r.metadata?.type === 'doc')
-      .slice(0, effectiveRagConfig.docLimit || 5);
-    const combined = [...topMemories, ...topDocs];
+    let finalResults: SearchResult[];
 
-    const totalLimit = (effectiveRagConfig.memoryLimit || 5) + (effectiveRagConfig.docLimit || 8);
-    const existingIds = new Set(combined.map((r) => r.id));
-    const remaining = uniqueResults
-      .filter((r) => !existingIds.has(r.id))
-      .slice(0, Math.max(0, totalLimit - combined.length));
+    if (effectiveRagConfig.enableRerank) {
+      // 🔑 Rerank 优化：跳过由 memoryLimit/docLimit 引起的中途截断
+      // 保留所有去重后的结果（上限设为初筛 2 倍以防结果过载），将其提交给重排模型
+      const recallLimit = (effectiveRagConfig.rerankTopK || 30) * 2;
+      finalResults = uniqueResults.slice(0, recallLimit);
+    } else {
+      // 优化合并策略
+      const topMemories = uniqueResults
+        .filter((r) => r.metadata?.type === 'memory')
+        .slice(0, effectiveRagConfig.memoryLimit || 3);
+      const topDocs = uniqueResults
+        .filter((r) => r.metadata?.type === 'doc')
+        .slice(0, effectiveRagConfig.docLimit || 5);
+      const combined = [...topMemories, ...topDocs];
 
-    let finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
+      const totalLimit = (effectiveRagConfig.memoryLimit || 5) + (effectiveRagConfig.docLimit || 8);
+      const existingIds = new Set(combined.map((r) => r.id));
+      const remaining = uniqueResults
+        .filter((r) => !existingIds.has(r.id))
+        .slice(0, Math.max(0, totalLimit - combined.length));
+
+      finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
+    }
 
     // 🔑 在 Rerank 前备份原始相似度
     finalResults = finalResults.map(r => ({

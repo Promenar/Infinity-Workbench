@@ -228,7 +228,7 @@ export default function SessionSettingsScreen() {
         >
           {/* Parent Agent Reference */}
           <SectionHeader title={t.agent.basicInfo} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center flex-1">
                 <View
@@ -253,7 +253,7 @@ export default function SessionSettingsScreen() {
                     router.push(`/chat/agent/edit/${agent.id}`);
                   });
                 }}
-                className="p-2 rounded-full bg-white dark:bg-black border border-gray-100 dark:border-zinc-800"
+                className="p-2 rounded-full bg-white dark:bg-black border border-indigo-50 dark:border-indigo-500/10"
               >
                 <SettingsIcon size={18} color={isDark ? '#94a3b8' : '#64748b'} />
               </TouchableOpacity>
@@ -300,9 +300,9 @@ export default function SessionSettingsScreen() {
               )}
             </TouchableOpacity>
           </View>
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 font-bold"
+              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-indigo-50 dark:border-indigo-500/10 font-bold"
               value={formData.title}
               onChangeText={(text) => setFormData({ ...formData, title: text })}
               placeholder={t.agent.conversation.editTitle}
@@ -312,7 +312,7 @@ export default function SessionSettingsScreen() {
 
           {/* Inference Parameters */}
           <SectionHeader title={t.agent.conversation.inferenceSettings || 'Inference Parameters'} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <InferenceSettings
               params={session.inferenceParams || {}}
               onUpdate={(params) => updateSessionInferenceParams(id, params)}
@@ -322,7 +322,7 @@ export default function SessionSettingsScreen() {
 
           {/* RAG Settings */}
           <SectionHeader title={t.agent.conversation.ragSettings || 'Knowledge & Memory'} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
             {/* Toggle: Enable Memory */}
             <View className="flex-row items-center justify-between py-2 mb-2">
               <View className="flex-1 pr-4">
@@ -425,10 +425,10 @@ export default function SessionSettingsScreen() {
 
             {/* Document Picker (Only when enabled) */}
             {session.ragOptions?.enableDocs && (
-              <View className="mt-4 pt-4 border-t border-gray-100 dark:border-zinc-800">
+              <View className="mt-4 pt-4 border-t border-indigo-50 dark:border-indigo-500/10">
                 <TouchableOpacity
                   onPress={() => setShowDocPicker(true)}
-                  className="flex-row items-center justify-between bg-white dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800"
+                  className="flex-row items-center justify-between bg-white dark:bg-black p-4 rounded-2xl border border-indigo-50 dark:border-indigo-500/10"
                 >
                   <Typography style={{ color: colors[600] }} className="font-bold">
                     {t.library.selectDocs} (
@@ -540,7 +540,7 @@ export default function SessionSettingsScreen() {
 
           {/* Custom Prompt */}
           <SectionHeader title={t.agent.conversation.customPrompt} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
             <View style={{ backgroundColor: colors.opacity10 }} className="p-3.5 rounded-xl mb-4">
               <Typography style={{ color: colors[700] }} className="text-[12px] flex-1 leading-tight">
                 {t.agent.conversation.customPromptPlaceholder}

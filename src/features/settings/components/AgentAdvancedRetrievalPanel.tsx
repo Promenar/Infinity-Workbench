@@ -48,7 +48,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
     <View>
       {/* 状态标签 */}
       <SectionHeader title={t.rag.configStatus} mt={0} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         <View className="flex-row items-center justify-between">
           <View>
             <Typography className="text-base font-bold text-gray-900 dark:text-white mb-1">
@@ -84,7 +84,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
 
       {/* 检索配置 (从 RAG 设置页面移入) */}
       <SectionHeader title={t.rag.retrievalSettings} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
           {t.rag.memoryRetrieval}
         </Typography>
@@ -190,7 +190,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
 
       {/* Rerank配置 */}
       <SectionHeader title={t.rag.rerankSection} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         {/* 启用Rerank */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
@@ -260,7 +260,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
 
       {/* 查询重写配置 */}
       <SectionHeader title={t.rag.queryRewrite} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         {/* 启用查询重写 */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
@@ -339,7 +339,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
 
       {/* 混合检索配置 */}
       <SectionHeader title={t.rag.hybridSearch} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         {/* 启用混合检索 */}
         <View className="flex-row items-center justify-between mb-6">
           <View className="flex-1 mr-4">
@@ -409,7 +409,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
 
       {/* 可观测性配置 */}
       <SectionHeader title={t.rag.observability} />
-      <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
         {/* 显示检索进度 */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">

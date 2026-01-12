@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { View, TouchableOpacity, Text, TextInput } from 'react-native';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet } from 'react-native';
 import { PageLayout, Typography, LargeTitleHeader } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Search, Plus, ChevronRight } from 'lucide-react-native';
@@ -8,6 +8,7 @@ import { FlashList } from '@shopify/flash-list';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useI18n } from '../../src/lib/i18n';
 import { useTheme } from '../../src/theme/ThemeProvider';
+import { BlurView } from 'expo-blur';
 import { useAgentStore } from '../../src/store/agent-store';
 import { useChatStore } from '../../src/store/chat-store';
 import { Agent } from '../../src/types/chat';
@@ -104,9 +105,22 @@ export default function AgentExplorerScreen() {
   };
 
   const ListHeader = () => (
-    <View className="px-6 pb-6 bg-white dark:bg-black">
+    <View className="px-6 pb-6">
       {/* Flat Modern Search Bar */}
-      <View className="flex-row items-center bg-gray-50 dark:bg-zinc-900 px-4 h-12 rounded-2xl border border-gray-100 dark:border-zinc-800">
+      <View
+        className="flex-row items-center px-4 h-12 rounded-2xl border transition-all overflow-hidden"
+        style={{
+          backgroundColor: isDark ? 'rgba(15, 17, 26, 0.4)' : '#f9fafb',
+          borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6'
+        }}
+      >
+        {isDark && (
+          <BlurView
+            intensity={20}
+            tint="dark"
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+        )}
         <Search size={18} color="#94a3b8" />
         <TextInput
           className="flex-1 ml-3 text-gray-900 dark:text-gray-100 font-medium text-[14px] p-0"
@@ -135,9 +149,9 @@ export default function AgentExplorerScreen() {
             style={{
               width: 48,
               height: 48,
-              backgroundColor: isDark ? '#18181b' : colors[50], // Dynamic light bg
+              backgroundColor: isDark ? 'rgba(15, 17, 26, 0.4)' : colors[50],
               borderWidth: 1,
-              borderColor: isDark ? '#27272a' : colors[200], // Dynamic light border
+              borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : colors[200],
               borderRadius: 16,
               alignItems: 'center',
               justifyContent: 'center',

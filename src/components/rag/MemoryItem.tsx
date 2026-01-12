@@ -45,7 +45,7 @@ export const MemoryItem = memo<MemoryItemProps>(({ id, content, createdAt, onDel
         <Animated.View
             entering={FadeIn.duration(200)}
             exiting={FadeOut.duration(150)}
-            className="mx-6 mb-3 bg-gray-50 dark:bg-zinc-900/50 rounded-2xl border border-gray-100 dark:border-zinc-800 overflow-hidden"
+            className="mx-6 mb-3 bg-gray-50 dark:bg-zinc-900/50 rounded-2xl border border-indigo-50 dark:border-indigo-500/10 overflow-hidden"
         >
             <TouchableOpacity
                 onPress={onPress}

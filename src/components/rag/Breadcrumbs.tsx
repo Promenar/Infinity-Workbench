@@ -45,7 +45,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, [currentFolderId, allFolders]);
 
   return (
-    <View className="h-12 border-b border-gray-100 dark:border-zinc-800 bg-white dark:bg-black w-full">
+    <View className="h-12 border-b border-indigo-50 dark:border-indigo-500/10 bg-white dark:bg-black w-full">
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}

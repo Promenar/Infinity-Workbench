@@ -154,7 +154,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
     <View className="mb-8">
       <SectionHeader title={t.rag.contextManagement} />
 
-      <View className="bg-gray-50 dark:bg-zinc-900 rounded-[32px] p-5 border border-gray-100 dark:border-zinc-800">
+      <View className="bg-gray-50 dark:bg-zinc-900 rounded-[32px] p-5 border border-indigo-50 dark:border-indigo-500/10">
         {lastError && (
           <View className="flex-row items-center bg-red-50 dark:bg-red-900/10 rounded-2xl p-3 mb-4 border border-red-100 dark:border-red-900/20">
             <AlertCircle size={16} color="#ef4444" className="mr-2" />
@@ -165,7 +165,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
         )}
 
         {/* Card 1: Token Stats */}
-        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm">
+        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-indigo-50 dark:border-indigo-500/10 shadow-sm">
           <View className="flex-row justify-between items-center mb-4">
             <View className="flex-row items-center">
               <Typography className="text-sm font-bold text-gray-900 dark:text-white mr-2">
@@ -229,7 +229,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
         </View>
 
         {/* Card 2: Memory Archives */}
-        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm mt-4">
+        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-indigo-50 dark:border-indigo-500/10 shadow-sm mt-4">
           <View className="flex-row justify-between items-center mb-4">
             <Typography className="text-sm font-bold text-gray-900 dark:text-white">
               {t.rag.memoryArchives}

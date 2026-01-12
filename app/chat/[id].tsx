@@ -594,7 +594,7 @@ export default function ChatDetailScreen() {
           <TouchableOpacity
             activeOpacity={1}
             onPress={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-gray-100 dark:border-zinc-800"
+            className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-indigo-50 dark:border-indigo-500/10"
           >
             <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">
               {t.agent.conversation.editTitle}

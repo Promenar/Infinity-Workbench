@@ -20,19 +20,19 @@
     }
 
     .dark {
-        --surface-primary: #09090b;
-        /* Zinc 950 */
-        --surface-secondary: #18181b;
-        /* Zinc 900 */
-        --surface-tertiary: #27272a;
-        /* Zinc 800 */
-        --text-primary: #f4f4f5;
-        /* Zinc 100 */
-        --text-secondary: #a1a1aa;
-        /* Zinc 400 */
-        --text-tertiary: #71717a;
-        /* Zinc 500 */
-        --border-default: #27272a;
-        /* Zinc 800 */
+        --surface-primary: #050508;
+        /* Midnight Black */
+        --surface-secondary: #0f111a;
+        /* Midnight Indigo */
+        --surface-tertiary: #1a1c2e;
+        /* Elevated Indigo */
+        --text-primary: #f8fafc;
+        /* Slate 50 */
+        --text-secondary: #94a3b8;
+        /* Slate 400 */
+        --text-tertiary: #64748b;
+        /* Slate 500 */
+        --border-default: #1e293b;
+        /* Slate 800 */
     }
 }

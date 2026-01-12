@@ -388,7 +388,7 @@ export const translations = {
       retrievalSettings: '检索配置',
       memoryRetrieval: '记忆检索',
       similarityThreshold: '相似度阈值',
-      docRetrieval: '指定文件夹',
+      docRetrieval: '文档检索',
       developerOptions: '开发者选项',
       viewVectorStats: '查看向量库统计',
       configStatus: '配置状态',
@@ -444,6 +444,7 @@ export const translations = {
       rerankTopKDesc: '送入重排模型的初筛片段数量。',
       rerankFinalK: 'Rerank 最终数量',
       rerankFinalKDesc: '重排后保留的最佳片段数量。',
+      rerankOverride: 'Rerank 配置覆盖',
 
       // Query Rewrite
       queryRewrite: '查询重写',
@@ -1233,6 +1234,7 @@ export const translations = {
       rerankTopKDesc: 'Number of documents retrieved before Rerank (Recommended 20-50)',
       rerankFinalK: 'Final Recall Count',
       rerankFinalKDesc: 'Number of documents used after Rerank (Recommended 5-10)',
+      rerankOverride: 'Rerank Config Override',
 
       // Query Rewrite
       queryRewrite: 'Query Rewrite',

@@ -73,7 +73,7 @@ export const InferencePresets: React.FC<Props> = ({ currentTemperature, onSelect
                             'flex-1 items-center rounded-2xl p-4 border shadow-sm',
                             isActive
                                 ? 'bg-white dark:bg-zinc-800'
-                                : 'bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800',
+                                : 'bg-white dark:bg-zinc-900 border-indigo-50 dark:border-indigo-500/10',
                         )}
                         style={
                             isActive

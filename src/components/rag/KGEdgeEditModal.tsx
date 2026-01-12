@@ -54,7 +54,7 @@ export const KGEdgeEditModal: React.FC<KGEdgeEditModalProps> = ({
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
             <View className="flex-1 bg-black/50 justify-center items-center px-6">
-                <View className="bg-white dark:bg-zinc-900 w-full rounded-3xl p-6 shadow-xl border border-gray-100 dark:border-zinc-800">
+                <View className="bg-white/80 dark:bg-zinc-900/60 w-full rounded-3xl p-6 shadow-xl border border-indigo-50 dark:border-indigo-500/10">
 
                     {/* Header */}
                     <View className="flex-row justify-between items-center mb-6">

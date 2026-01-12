@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler } from 'react-native';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet } from 'react-native';
 import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader } from '../../src/components/ui';
 import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
+import { BlurView } from 'expo-blur';
+import { SilkyGlow } from '../../src/components/ui/SilkyGlow';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { useI18n } from '../../src/lib/i18n';
@@ -547,101 +549,131 @@ export default function RagScreen() {
   }, [router]);
 
   // 门户卡片组件
-  const PortalCards = () => (
-    <View style={{ paddingHorizontal: 24, marginTop: 8 }}>
-      <View style={{ flexDirection: 'row', gap: 16, marginBottom: 20 }}>
-        {/* 文档中心卡片 */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => setViewMode('docs')}
-          style={{
-            flex: 1,
-            backgroundColor: isDark ? '#18181b' : '#fff',
-            borderRadius: 24,
-            padding: 20,
-            borderWidth: 1.2,
-            borderColor: isDark ? '#27272a' : '#efefef',
-            overflow: 'hidden',
-          }}
-        >
-          <View
+  const PortalCards = () => {
+    const { isDark, colors } = useTheme();
+    const { documents, folders, memories } = useRagStore();
+
+    return (
+      <View style={{ paddingHorizontal: 24, marginTop: 0 }}>
+        <View style={{ flexDirection: 'row', gap: 16, marginBottom: 20 }}>
+          {/* 文档中心卡片 */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setViewMode('docs')}
+            className="flex-1 overflow-hidden rounded-2xl border"
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: 16,
-              backgroundColor: colors.opacity10,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 16,
+              borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(0, 0, 0, 0.05)',
             }}
           >
-            <BookOpen size={24} color={colors[500]} />
-          </View>
-          <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
-            {t.library.tabDocuments}
-          </Typography>
-          <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
-            {documents.length + folders.length} {t.library.itemsCount}
-          </Typography>
-        </TouchableOpacity>
+            <BlurView
+              intensity={isDark ? 30 : 60}
+              tint={isDark ? 'dark' : 'light'}
+              style={{
+                padding: 20,
+                backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
+              }}
+            >
+              <View className="relative">
+                {/* 底部装饰光晕 */}
+                <View style={{ position: 'absolute', top: -10, left: -10 }}>
+                  <SilkyGlow color={colors[500]} size={60} />
+                </View>
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 14,
+                    backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : colors.opacity10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                  }}
+                >
+                  <BookOpen size={24} color={colors[500]} />
+                </View>
+              </View>
+              <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
+                {t.library.tabDocuments}
+              </Typography>
+              <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                {documents.length + folders.length} {t.library.itemsCount}
+              </Typography>
+            </BlurView>
+          </TouchableOpacity>
 
-        {/* 记忆库卡片 */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => setViewMode('memories')}
-          style={{
-            flex: 1,
-            backgroundColor: isDark ? '#18181b' : '#fff',
-            borderRadius: 24,
-            padding: 20,
-            borderWidth: 1.2,
-            borderColor: isDark ? '#27272a' : '#efefef',
-            overflow: 'hidden',
-          }}
-        >
-          <View
+          {/* 记忆库卡片 */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setViewMode('memories')}
+            className="flex-1 overflow-hidden rounded-2xl border"
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: 16,
-              backgroundColor: 'rgba(16, 185, 129, 0.1)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 16,
+              borderColor: isDark ? 'rgba(16, 185, 129, 0.2)' : 'rgba(0, 0, 0, 0.05)',
             }}
           >
-            <Clock size={24} color="#10b981" />
-          </View>
-          <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
-            {t.library.tabMemories}
-          </Typography>
-          <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
-            {memories.length} {t.library.itemsCount}
-          </Typography>
-        </TouchableOpacity>
-      </View>
+            <BlurView
+              intensity={isDark ? 30 : 60}
+              tint={isDark ? 'dark' : 'light'}
+              style={{
+                padding: 20,
+                backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
+              }}
+            >
+              <View className="relative">
+                {/* 底部装饰光晕 */}
+                <View style={{ position: 'absolute', top: -10, left: -10 }}>
+                  <SilkyGlow color="#10b981" size={60} />
+                </View>
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 14,
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                  }}
+                >
+                  <Clock size={24} color="#10b981" />
+                </View>
+              </View>
+              <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
+                {t.library.tabMemories}
+              </Typography>
+              <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                {memories.length} {t.library.itemsCount}
+              </Typography>
+            </BlurView>
+          </TouchableOpacity>
+        </View>
 
-      {/* 其它功能入口 */}
-      <View style={{ marginTop: 8 }}>
-        <Typography className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 ml-1">
-          其他功能
-        </Typography>
-        <TouchableOpacity
-          onPress={() => router.push('/knowledge-graph')}
-          className="flex-row items-center p-4 bg-gray-50 dark:bg-zinc-900/50 rounded-2xl border border-gray-100 dark:border-zinc-800 mb-3"
-        >
-          <View className="w-10 h-10 rounded-xl bg-indigo-500/10 items-center justify-center mr-4">
-            <Brain size={20} color={colors[500]} />
-          </View>
-          <View className="flex-1">
-            <Typography className="font-bold text-gray-900 dark:text-white">全局知识图谱</Typography>
-            <Typography className="text-xs text-gray-400 mt-0.5">查看所有文档的关联关系</Typography>
-          </View>
-          <ChevronRight size={18} color="#94a3b8" />
-        </TouchableOpacity>
+        {/* 其它功能入口 */}
+        <View style={{ marginTop: 8 }}>
+          <Typography className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 ml-1">
+            其他功能
+          </Typography>
+          <TouchableOpacity
+            onPress={() => router.push('/knowledge-graph')}
+            activeOpacity={0.7}
+            className="flex-row items-center p-4 rounded-2xl border overflow-hidden"
+            style={{
+              backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb',
+              borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(0, 0, 0, 0.03)',
+            }}
+          >
+            <View className="w-10 h-10 rounded-xl bg-indigo-500/10 items-center justify-center mr-4">
+              <Brain size={20} color={colors[500]} />
+            </View>
+            <View className="flex-1">
+              <Typography className="font-bold text-gray-900 dark:text-white">全局知识图谱</Typography>
+              <Typography className="text-xs text-gray-400 mt-0.5">查看所有文档的关联关系</Typography>
+            </View>
+            <ChevronRight size={18} color="#94a3b8" />
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   // 渲染标题栏
   const renderHeader = () => {
@@ -668,9 +700,9 @@ export default function RagScreen() {
                 style={{
                   width: 48,
                   height: 48,
-                  backgroundColor: isDark ? '#18181b' : colors[50],
+                  backgroundColor: isDark ? 'rgba(15, 17, 26, 0.4)' : colors[50],
                   borderWidth: 1,
-                  borderColor: isDark ? '#27272a' : colors[200],
+                  borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : colors[200],
                   borderRadius: 16,
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -683,18 +715,25 @@ export default function RagScreen() {
         </Animated.View>
 
         {/* 搜索栏 */}
-        <View className="px-6 pb-2">
+        <View className="px-6 pb-4">
           <View
-            className="h-12 border rounded-2xl flex-row items-center px-4 transition-all"
+            className="h-12 border rounded-2xl flex-row items-center px-4 transition-all overflow-hidden"
             style={{
               backgroundColor: isSearchFocused
-                ? (isDark ? colors.opacity20 : colors[50])
-                : (isDark ? '#18181b' : '#f9fafb'),
+                ? (isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50])
+                : (isDark ? 'rgba(15, 17, 26, 0.4)' : '#f9fafb'),
               borderColor: isSearchFocused
                 ? colors[500]
-                : (isDark ? '#27272a' : '#f3f4f6')
+                : (isDark ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6')
             }}
           >
+            {isDark && (
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+              />
+            )}
             <Search size={18} color={isSearchFocused ? colors[500] : '#94a3b8'} strokeWidth={2} />
             <TextInput
               value={searchQuery}

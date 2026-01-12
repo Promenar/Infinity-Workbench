@@ -538,9 +538,9 @@ export default function SuperAssistantSettingsScreen() {
 
 
           <SectionHeader title={t.agent.basicInfo} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6">
             <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-gray-100 dark:border-zinc-800 font-bold"
+              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-indigo-50 dark:border-indigo-500/10 font-bold"
               value={formData.title}
               onChangeText={(text) => setFormData({ ...formData, title: text })}
               placeholder={t.agent.superAssistant.enterTitle}
@@ -550,7 +550,7 @@ export default function SuperAssistantSettingsScreen() {
 
           {/* FAB 外观设置 */}
           <SectionHeader title={t.agent.superAssistant.fabAppearance} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6 pb-4">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6 pb-4">
             {/* 图标样式 Grid (4列 对齐) */}
             <SubHeader title={t.agent.superAssistant.iconStyle} />
             <FABIconGrid
@@ -613,7 +613,7 @@ export default function SuperAssistantSettingsScreen() {
 
           {/* 模型配置区块 */}
           <SectionHeader title={t.agent.modelConfig} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6">
             <InferenceSettings
               params={session.inferenceParams || {}}
               onUpdate={(params) => updateSessionInferenceParams(SPA_SESSION_ID, params)}
@@ -624,7 +624,7 @@ export default function SuperAssistantSettingsScreen() {
           <SectionHeader title={t.rag.knowledgeGraph} />
 
           <View
-            className="bg-gray-50 dark:bg-zinc-900 rounded-3xl p-5 border border-gray-100 dark:border-zinc-800 mb-6 overflow-hidden"
+            className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6 overflow-hidden"
           >
             {/* Enable Toggle */}
             <View
@@ -674,7 +674,7 @@ export default function SuperAssistantSettingsScreen() {
 
           {/* RAG 配置入口 */}
           <SectionHeader title={t.settings.ragSection} />
-          <View className="bg-gray-50 dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 mb-6 overflow-hidden">
+          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl border border-indigo-50 dark:border-indigo-500/10 mb-6 overflow-hidden">
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {

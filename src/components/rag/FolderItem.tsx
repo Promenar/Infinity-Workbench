@@ -105,7 +105,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({
   ];
 
   return (
-    <View className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-gray-100 dark:border-zinc-800 pr-1">
+    <View className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-indigo-50 dark:border-indigo-500/10 pr-1">
       <TouchableOpacity
         onPress={handlePress}
         onLongPress={onLongPress}

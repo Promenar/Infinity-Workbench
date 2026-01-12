@@ -50,7 +50,7 @@ export const TagAssignmentSheet: React.FC<TagAssignmentSheetProps> = ({
               className={`bg-white dark:bg-zinc-900 rounded-t-3xl h-[60%] w-full overflow-hidden`}
             >
               {/* Header */}
-              <View className="flex-row items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-zinc-800">
+              <View className="flex-row items-center justify-between px-6 py-4 border-b border-indigo-50 dark:border-indigo-500/10">
                 <View>
                   <Typography className="text-lg font-bold text-gray-900 dark:text-white">
                     添加标签

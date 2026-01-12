@@ -27,14 +27,14 @@ export const Colors = {
     borderSubtle: '#f4f4f5', // Zinc-100
   },
   dark: {
-    background: '#09090b', // Zinc-950
-    surfaceSecondary: '#18181b', // Zinc-900
-    surfaceTertiary: '#27272a', // Zinc-800
-    textPrimary: '#f4f4f5', // Zinc-100
-    textSecondary: '#a1a1aa', // Zinc-400
-    textTertiary: '#71717a', // Zinc-500
-    borderDefault: '#27272a', // Zinc-800
-    borderSubtle: '#18181b', // Zinc-900
+    background: '#050508',
+    surfaceSecondary: '#0f111a',
+    surfaceTertiary: '#1a1c2e',
+    textPrimary: '#f8fafc',
+    textSecondary: '#94a3b8',
+    textTertiary: '#64748b',
+    borderDefault: '#1e293b',
+    borderSubtle: '#0f111a',
   },
 };
 

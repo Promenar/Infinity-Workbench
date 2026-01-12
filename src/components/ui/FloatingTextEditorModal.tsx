@@ -16,6 +16,8 @@ import Animated, {
     interpolate,
     Extrapolate,
 } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import { StyleSheet } from 'react-native';
 import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -116,22 +118,28 @@ export const FloatingTextEditorModal: React.FC<FloatingTextEditorModalProps> = (
                         <Animated.View
                             style={[
                                 {
-                                    backgroundColor: isDark ? '#18181b' : '#ffffff',
-                                    borderRadius: 24,
+                                    backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
+                                    borderRadius: 16,
                                     padding: 24,
                                     width: MODAL_WIDTH,
-                                    shadowColor: '#000',
+                                    shadowColor: isDark ? '#6366f1' : '#000',
                                     shadowOffset: { width: 0, height: 4 },
-                                    shadowOpacity: 0.3,
+                                    shadowOpacity: 0.1,
                                     shadowRadius: 15,
-                                    elevation: 20,
+                                    elevation: isDark ? 0 : 20,
                                     overflow: 'hidden',
-                                    // Set initial top position to effectively "center" the modal
                                     marginTop: (SCREEN_HEIGHT - COLLAPSED_HEIGHT) / 2,
+                                    borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(0,0,0,0.05)',
+                                    borderWidth: 1,
                                 },
                                 animatedStyle
                             ]}
                         >
+                            <BlurView
+                                intensity={isDark ? 30 : 60}
+                                tint={isDark ? 'dark' : 'light'}
+                                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                            />
 
                             {/* Header */}
                             <View className="flex-row items-center justify-between mb-4">

@@ -72,7 +72,7 @@ export const TagManagerSheet: React.FC<TagManagerSheetProps> = ({ visible, onClo
               className={`bg-white dark:bg-zinc-900 rounded-t-3xl h-[70%] w-full overflow-hidden`}
             >
               {/* Header */}
-              <View className="flex-row items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-zinc-800">
+              <View className="flex-row items-center justify-between px-6 py-4 border-b border-indigo-50 dark:border-indigo-500/10">
                 <View className="flex-row items-center gap-2">
                   <TagIcon size={20} color={isDark ? '#e5e5e5' : '#1f2937'} />
                   <Typography className="text-lg font-bold text-gray-900 dark:text-white">

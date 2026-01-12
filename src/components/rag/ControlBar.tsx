@@ -34,8 +34,11 @@ export const ControlBar: React.FC<ControlBarProps> = ({
 
   return (
     <View
-      className="mx-6 mb-0.5 bg-white dark:bg-zinc-900 
-                    rounded-2xl border border-gray-100 dark:border-zinc-800 p-3"
+      style={{
+        backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : 'rgba(255, 255, 255, 0.9)',
+        borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(0, 0, 0, 0.05)',
+      }}
+      className="mx-6 mb-0.5 rounded-2xl border p-3"
     >
       <View className="flex-row items-center gap-2">
         {/* 操作按钮 - 使用 flex-1 平分空间 */}
@@ -63,7 +66,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
 
         {/* 任务状态 - 自适应宽度 */}
         {currentTask && (
-          <View className="flex-row items-center gap-2 pl-1 border-l border-gray-100 dark:border-zinc-800">
+          <View className="flex-row items-center gap-2 pl-1 border-l border-indigo-50 dark:border-indigo-500/10">
             <ActivityIndicator size="small" color={colors[500]} />
             <View>
               <Typography className="text-xs font-bold text-gray-900 dark:text-white">

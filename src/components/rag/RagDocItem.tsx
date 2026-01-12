@@ -44,7 +44,7 @@ export const RagDocItem = memo(
           style={isSelected ? { backgroundColor: isDark ? colors.opacity20 : colors.opacity10, borderColor: colors.opacity30 } : {}}
           className={clsx(
             'flex-row items-center p-4 mb-3 rounded-2xl border transition-all duration-300',
-            !isSelected && 'bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800',
+            !isSelected && 'bg-white dark:bg-zinc-900 border-indigo-50 dark:border-indigo-500/10',
           )}
         >
           <TouchableOpacity
