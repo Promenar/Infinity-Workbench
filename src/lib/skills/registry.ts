@@ -1,7 +1,8 @@
 import { Skill } from '../../types/skills';
 import { useSettingsStore } from '../../store/settings-store';
 import { coreSkills } from './definitions';
-import { ShowDebugToastSkill } from './core/debug'; // Correct import
+import { ShowDebugToastSkill } from './core/debug';
+import { TaskManagementSkill } from './core/task'; // ✅ New Import
 
 class SkillRegistry {
     private skills: Map<string, Skill> = new Map();
@@ -13,6 +14,9 @@ class SkillRegistry {
 
         // Register Debug Skill
         this.register(ShowDebugToastSkill);
+
+        // Register Task Management Skill
+        this.register(TaskManagementSkill);
     }
 
     public static getInstance(): SkillRegistry {

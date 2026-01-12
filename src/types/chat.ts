@@ -150,6 +150,21 @@ export interface Session {
   };
   scrollOffset?: number; // 记录滚动位置
   draft?: string; // 未发送的草稿内容
+  activeTask?: {
+    title: string;
+    status: 'pending' | 'in-progress' | 'completed' | 'failed';
+    progress: number; // 0-100
+    steps: TaskStep[];
+    createdAt: number;
+    updatedAt: number;
+  };
+}
+
+export interface TaskStep {
+  id: string; // unique step id
+  title: string;
+  status: 'pending' | 'in-progress' | 'completed' | 'failed' | 'skipped';
+  description?: string;
 }
 
 // RAG配置（会话级或全局）

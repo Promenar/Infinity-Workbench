@@ -796,19 +796,20 @@ You have access to the following skills:
 
 ${toolsDesc}
 
-[PLANNING]
-If the user's request requires multiple steps or complex reasoning, you MUST first output a plan in this format:
-<plan>
-1. Step 1
-2. Step 2
-</plan>
+[PLANNING & TASK MANAGEMENT]
+If the user's request is complex, multi-step, or requires maintaining state across multiple messages (e.g. "Research Node.js history"), you MUST use the \`manage_task\` tool.
+- CREATE a task for new requests: \`manage_task({ action: 'create', title: '...', steps: [...] })\`
+- UPDATE the task as you progress: \`manage_task({ action: 'update', steps: [{ id: '...', status: 'in-progress' }] })\`
+- COMPLETE the task when done: \`manage_task({ action: 'complete' })\`
+
+DO NOT use the legacy <plan> XML format unless specifically requested. Use the \`manage_task\` tool for all planning.
 
 [EXECUTION RULES]
-1. Output the <plan> block FIRST if needed.
+1. Use \`manage_task\` to create/update the plan BEFORE executing other tools if applicable.
 2. Use NATIVE tool calls. DO NOT describe intent in text.
 3. PROVIDE ALL REQUIRED PARAMETERS.
 4. For 'query_vector_db', use 'scope: "global"' for global requests.
-5. 🛑 CRITICAL (DEEPSEEK/KIMI): DO NOT include any introductory text, apologies, or descriptions like "I will now search..." before or after the tool call. Your response should ONLY contain the <plan> (if needed) and the NATIVE tool call. NO CHATTY EXPLANATIONS.
+5. 🛑 CRITICAL (DEEPSEEK/KIMI): DO NOT include any introductory text, apologies, or descriptions like "I will now search..." before or after the tool call. Your response should ONLY contain the tool calls. NO CHATTY EXPLANATIONS.
 6. Trigger the tool immediately. Any leading text will be considered an error.`;
 
             finalSystemPrompt += toolInstruction;
@@ -1090,6 +1091,28 @@ If the user's request requires multiple steps or complex reasoning, you MUST fir
                       const lines = planText.split('\n')
                         .map(l => l.trim())
                         .filter(l => l.length > 0);
+
+                      // 🆕 Legacy Compatibility: Convert <plan> to Active Task if none exists
+                      const session = get().getSession(sessionId);
+                      if (session && !session.activeTask) {
+                        const steps = lines.map((line, idx) => ({
+                          id: `legacy_step_${Date.now()}_${idx}`,
+                          title: line.replace(/^\d+[\.\)]\s*/, ''),
+                          status: 'pending' as const
+                        }));
+
+                        get().updateSession(sessionId, {
+                          activeTask: {
+                            title: 'Plan (Auto-Generated)',
+                            status: 'in-progress',
+                            progress: 0,
+                            steps: steps,
+                            createdAt: Date.now(),
+                            updatedAt: Date.now()
+                          }
+                        });
+                        console.log('[AgentLoop] Converted legacy <plan> to Active Task structure');
+                      }
 
                       lines.forEach((line, index) => {
                         // Clean "1. " prefix if present

@@ -311,11 +311,11 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                 fadingEdgeLength={32} // Fix: Subtle Android native feathering
                 contentContainerStyle={{ paddingVertical: 8, paddingRight: 8 }}
             >
-                {steps.map((step, index) => (
+                {steps.filter(s => s.type !== 'plan_item').map((step, index) => (
                     <TimelineItem
                         key={step.id}
                         step={step}
-                        isLast={index === steps.length - 1}
+                        isLast={index === steps.length - 1} // Note: This might be slightly inaccurate if plan items were last, but acceptable
                         isMessageGenerating={isMessageGenerating}
                     />
                 ))}

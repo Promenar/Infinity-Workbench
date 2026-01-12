@@ -40,6 +40,7 @@ import { KGExtractionIndicator } from '../../src/components/rag/KGExtractionIndi
 import { graphExtractor } from '../../src/lib/rag/graph-extractor'; // ✅
 import * as Clipboard from 'expo-clipboard'; // ✅
 import { Platform as RNPlatform, ToastAndroid, Alert } from 'react-native'; // ✅
+import { TaskMonitor } from '../../src/features/chat/components/TaskMonitor'; // ✅ Import TaskMonitor
 
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
@@ -450,7 +451,7 @@ export default function ChatDetailScreen() {
           removeClippedSubviews={Platform.OS === 'android'}
           getItemType={(item: any) => item.role}
           contentContainerStyle={{
-            paddingTop: insets.top + 70,
+            paddingTop: insets.top + 70 + 40, // Increased padding: 70 -> 110 (Approx +40 for generic task monitor height)
             paddingBottom: insets.bottom + 80,
           }}
           onLayout={() => setIsListReady(true)}
@@ -644,7 +645,15 @@ export default function ChatDetailScreen() {
           },
           label: t.common.settings,
         }}
+        height={60} // Reduce slightly to make room? Default is 64. Let's stick to default or slight adjustment
       />
+
+      {/* Persistent Task Monitor */}
+      <TaskMonitor
+        sessionId={id}
+        headerHeight={insets.top + 64} // Standard header height match
+      />
+
     </PageLayout>
   );
 }
