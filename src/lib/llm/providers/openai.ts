@@ -1,6 +1,7 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { ErrorNormalizer } from '../error-normalizer';
 import { Skill, ToolCall } from '../../../types/skills';
+import { apiLogger } from '../api-logger';
 import zodToJsonSchema from 'zod-to-json-schema';
 
 export class OpenAiClient implements LlmClient {
@@ -66,9 +67,18 @@ export class OpenAiClient implements LlmClient {
 
   private mapSkillsToOpenAITools(skills: Skill[]): any[] {
     return skills.map((skill) => {
-      const schema = zodToJsonSchema(skill.schema as any) as any;
+      // 🧐 Force OpenAI/JSON Schema 7 compatibility
+      let schema = zodToJsonSchema(skill.schema as any, {
+        target: 'openApi3',
+        $refStrategy: 'none'
+      }) as any;
+
+      // Deep clone to avoid mutation
+      schema = JSON.parse(JSON.stringify(schema));
+
       delete schema.$schema;
-      delete schema.additionalProperties; // Some providers strict mode
+      delete schema.additionalProperties;
+      if (schema.definitions) delete schema.definitions;
 
       // Ensure 'type' is present for parameters
       if (!schema.type) {
@@ -245,8 +255,10 @@ export class OpenAiClient implements LlmClient {
                 return;
               }
               if (xhr.status >= 200 && xhr.status < 300) {
-                resolve();
+                // For streaming, the resolve is called when [DONE] is hit.
+                // We could log chunks here but it might be overkill.
               } else {
+                apiLogger.logResponse('openai', xhr.status, xhr.responseText);
                 this.handleError(xhr, onError, reject);
               }
             }
@@ -293,6 +305,7 @@ export class OpenAiClient implements LlmClient {
                   }
 
                   onToken({ content, toolCalls, usage, reasoning });
+                  apiLogger.logResponse('openai', xhr.status, xhr.responseText);
                   resolve();
                 } catch (e) {
                   onError(e as Error);
@@ -319,14 +332,46 @@ export class OpenAiClient implements LlmClient {
         const stream = options?.stream ?? true;
         const skills = options?.skills;
 
-        const payload = {
+        const payload: any = {
           model: this.model,
-          messages: messages.map(m => {
-            const msg: any = { role: m.role, content: m.content };
+          messages: messages.map((m, idx) => {
+            const msg: any = { role: m.role };
+
+            // OpenAI treats 'content' as mandatory string/null. 
+            // Handle array content (multimodal) only for 'user'
+            if (m.role === 'user') {
+              msg.content = m.content;
+            } else {
+              // For assistant/tool/system, content MUST be string or null
+              msg.content = typeof m.content === 'string' ? m.content : null;
+            }
+
             if (m.reasoning) msg.reasoning_content = m.reasoning;
-            if (m.tool_calls) msg.tool_calls = m.tool_calls;
-            if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
-            if (m.name) msg.name = m.name;
+
+            // 🧐 CRITICAL: Format tool_calls ONLY for assistant specification
+            if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+              msg.tool_calls = m.tool_calls.map((tc: any) => ({
+                id: tc.id || (tc.function?.id) || `call_legacy_${idx}`, // Preserve or manufacture
+                type: 'function',
+                function: {
+                  name: tc.name || tc.function?.name,
+                  arguments: typeof tc.arguments === 'string'
+                    ? tc.arguments
+                    : JSON.stringify(tc.arguments || tc.function?.arguments)
+                }
+              }));
+              // For assistant with tools, content is allowed to be null/empty
+            }
+
+            // 🧐 CRITICAL: Format tool_call_id ONLY for tool role
+            if (m.role === 'tool') {
+              msg.tool_call_id = m.tool_call_id || (m as any).id || (m as any).name;
+              // Ensure we don't have an empty ID if possible
+              if (!msg.tool_call_id) msg.tool_call_id = `call_legacy_${idx - 1}`; // Very dangerous fallback
+            }
+
+            if (m.name && m.role !== 'tool') msg.name = m.name;
+
             return msg;
           }),
           temperature: options?.inferenceParams?.temperature ?? this.temperature,
@@ -334,15 +379,17 @@ export class OpenAiClient implements LlmClient {
           max_tokens: options?.inferenceParams?.maxTokens,
           frequency_penalty: options?.inferenceParams?.frequencyPenalty,
           presence_penalty: options?.inferenceParams?.presencePenalty,
-          tools: skills ? this.mapSkillsToOpenAITools(skills) : undefined,
-          tool_choice: skills ? 'auto' : undefined,
+          tools: (skills && skills.length > 0) ? this.mapSkillsToOpenAITools(skills) : undefined,
+          tool_choice: (skills && skills.length > 0) ? 'auto' : undefined,
           stream,
-          stream_options: stream ? { include_usage: true } : undefined,
+          stream_options: (stream && this.baseUrl.includes('openai.com')) ? { include_usage: true } : undefined,
         };
 
-        if (skills) {
-          console.log('[OpenAiClient] Request Body Tools:', JSON.stringify(payload.tools, null, 2));
+        if (skills && skills.length > 0) {
+          // console.log('[OpenAiClient] Request Body Tools:', JSON.stringify(payload.tools, null, 2));
         }
+
+        apiLogger.logRequest('openai', `${this.baseUrl}/chat/completions`, payload);
 
         xhr.send(JSON.stringify(payload));
       } catch (e) {
@@ -504,6 +551,55 @@ export class OpenAiClient implements LlmClient {
       };
     }
     throw new Error('Invalid response format from OpenAI Image API');
+  }
+
+  async complete(
+    options: {
+      prompt: string;
+      suffix?: string;
+      maxTokens?: number;
+      temperature?: number;
+      stop?: string[];
+    },
+  ): Promise<{ content: string; usage?: { input: number; output: number; total: number } }> {
+    const isDeepSeek = this.baseUrl.includes('deepseek');
+    // DeepSeek FIM is currently in beta endpoint
+    const endpoint = isDeepSeek
+      ? `${this.baseUrl.replace(/\/v1$/, '')}/beta/completions`
+      : `${this.baseUrl}/completions`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        prompt: options.prompt,
+        suffix: options.suffix,
+        max_tokens: options.maxTokens || 1024,
+        temperature: options.temperature ?? 0,
+        stop: options.stop,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Completion Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices?.[0]?.text || '',
+      usage: data.usage
+        ? {
+          input: data.usage.prompt_tokens,
+          output: data.usage.completion_tokens,
+          total: data.usage.total_tokens,
+        }
+        : undefined,
+    };
   }
 
   private handleError(xhr: XMLHttpRequest, onError: (err: Error) => void, reject: (reason?: any) => void) {

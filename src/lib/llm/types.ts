@@ -9,6 +9,7 @@ export interface ChatMessage {
   name?: string; // For tool/function responses (Gemini style)
   tool_call_id?: string; // For tool responses (OpenAI style)
   tool_calls?: any[]; // For assistant messages containing tool calls
+  thought_signature?: string; // For Gemini 2.0 Thinking models
 }
 
 export interface StreamChunk {
@@ -31,12 +32,21 @@ export interface ChatMessageOptions {
   };
 }
 
+export interface CompletionOptions {
+  prompt: string;
+  suffix?: string;
+  maxTokens?: number;
+  temperature?: number;
+  stop?: string[];
+}
+
 export interface LlmClient {
   streamChat(
     messages: ChatMessage[],
     onChunk: (chunk: {
       content: string;
       reasoning?: string;
+      thought_signature?: string;
       citations?: { title: string; url: string; source?: string }[];
       toolCalls?: any[]; // ToolCall[]
       usage?: { input: number; output: number; total: number };
@@ -60,6 +70,10 @@ export interface LlmClient {
     prompt: string,
     options?: { size?: string; style?: string; quality?: string },
   ): Promise<{ url: string; revisedPrompt?: string }>;
+
+  complete?(
+    options: CompletionOptions,
+  ): Promise<{ content: string; usage?: { input: number; output: number; total: number } }>;
 
   testConnection(): Promise<{ success: boolean; latency: number; error?: string }>;
   testRerankConnection?(): Promise<{ success: boolean; latency: number; error?: string }>;

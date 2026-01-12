@@ -11,12 +11,12 @@ import { MemoryManager } from '../../rag/memory-manager';
 export const QueryVectorDbSkill: Skill = {
     id: 'query_vector_db',
     name: 'Search Knowledge Base',
-    description: 'Search for relevant information in the user\'s personal knowledge base and memories. Use this when the user asks specific questions about their documents, history, or saved context.',
+    description: 'Search for relevant information in the user\'s personal knowledge base and memories. IMPORTANT: If the user mentions "global", "all documents", or "across all sessions", you MUST set scope to "global".',
     schema: z.object({
-        query: z.string().min(1).describe('REQUIRED: The search query string. MUST NOT BE EMPTY. If you do not have a specific keyword, ask the user for clarification instead of searching with empty string.'),
-        topK: z.number().optional().describe('Number of results to return (default: 5)'),
-        type: z.enum(['memory', 'document', 'all']).optional().describe('Filter by source type'),
-        scope: z.enum(['session', 'global']).optional().describe('Search scope. "session" restricts to currently authorized documents and history of this chat (recommended for better relevance). "global" searches the entire knowledge base. Default: "session" unless the query implies a need for all documents.'),
+        query: z.string().min(1).describe('REQUIRED: The search query string. MUST NOT BE EMPTY.'),
+        topK: z.number().optional().describe('Number of results (default: 5)'),
+        type: z.enum(['memory', 'document', 'all']).optional().describe('Source filter'),
+        scope: z.enum(['session', 'global']).optional().describe('Search scope. "session" for current chat/authorized context (default). "global" for the entire knowledge base. Use "global" ONLY when explicitly requested or searching across all possible history.'),
     }),
     execute: async (params, context) => {
         if (!context.sessionId) {

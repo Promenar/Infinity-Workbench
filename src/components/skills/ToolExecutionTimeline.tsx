@@ -13,7 +13,7 @@ import { ExecutionStep } from '../../types/skills';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
 import { RagReferencesList } from '../../features/chat/components/RagReferences';
-import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+
 
 interface Props {
     steps: ExecutionStep[];
@@ -274,47 +274,11 @@ const TimelineItem = React.memo(TimelineItemComponent, (prev, next) => {
     return true;
 });
 
-// Gradient Overlay for "Feathered" Look without expo-linear-gradient
-const GradientOverlay = ({ isTop, isDark, height = 24 }: { isTop: boolean, isDark: boolean, height?: number }) => {
-    // Determine background color based on theme
-    // We assume standard dark/light backgrounds from ChatBubble context
-    // dark: #27272a (zinc-800) or similar. using generic helps.
-    // light: #ffffff or #f4f4f5
-    const color = isDark ? '#27272a' : '#ffffff';
-
-    return (
-        <View
-            pointerEvents="none"
-            style={{
-                position: 'absolute',
-                [isTop ? 'top' : 'bottom']: 0,
-                left: 0,
-                right: 0,
-                height,
-                zIndex: 10
-            }}
-        >
-            <Svg height="100%" width="100%">
-                <Defs>
-                    <LinearGradient id="grad" x1="0" y1={isTop ? "0" : "1"} x2="0" y2={isTop ? "1" : "0"}>
-                        <Stop offset="0" stopColor={color} stopOpacity="1" />
-                        <Stop offset="1" stopColor={color} stopOpacity="0" />
-                    </LinearGradient>
-                </Defs>
-                <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
-            </Svg>
-        </View>
-    );
-};
 
 // Create Animated component from Gesture Handler's ScrollView for better nesting support
 const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating }) => {
-    const { isDark } = useTheme();
-    const [containerHeight, setContainerHeight] = useState(0);
-    const [contentHeight, setContentHeight] = useState(0);
-
     const scrollViewRef = React.useRef<ScrollView>(null);
     // Throttle scroll timestamp
     const lastScrollTime = React.useRef(0);
@@ -338,7 +302,7 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
     if (!steps || steps.length === 0) return null;
 
     return (
-        <View className="py-2 my-1 relative" onLayout={(e) => setContainerHeight(e.nativeEvent.layout.height)} style={{ maxHeight: 260 }}>
+        <View className="py-2 my-1 relative" style={{ maxHeight: 260 }}>
             {/* Main Scroll Content */}
             <GHScrollView
                 ref={scrollViewRef as any}
@@ -346,7 +310,6 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                 showsVerticalScrollIndicator={false}
                 fadingEdgeLength={32} // Fix: Subtle Android native feathering
                 contentContainerStyle={{ paddingVertical: 8, paddingRight: 8 }}
-                onContentSizeChange={(_, h) => setContentHeight(h)}
             >
                 {steps.map((step, index) => (
                     <TimelineItem

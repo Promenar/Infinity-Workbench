@@ -128,6 +128,7 @@ interface ChatState {
     ragReferences?: RagReference[],
     ragReferencesLoading?: boolean,
     ragMetadata?: RagMetadata,
+    thought_signature?: string, // 🧠 Added for Gemini 2.0
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
@@ -284,6 +285,7 @@ export const useChatStore = create<ChatState>()(
         ragReferences?: RagReference[],
         ragReferencesLoading?: boolean,
         ragMetadata?: any,
+        thought_signature?: string, // 🧠 Added for Gemini 2.0
       ) =>
         set((state) => {
           const session = state.sessions.find((s) => s.id === sessionId);
@@ -364,6 +366,7 @@ export const useChatStore = create<ChatState>()(
                             ? ragReferencesLoading
                             : m.ragReferencesLoading,
                         ragMetadata: ragMetadata !== undefined ? ragMetadata : m.ragMetadata,
+                        thought_signature: thought_signature !== undefined ? thought_signature : m.thought_signature,
                       }
                       : m,
                   ),
@@ -764,20 +767,22 @@ export const useChatStore = create<ChatState>()(
             agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
 
           if (availableSkills.length > 0) {
-            // 🧠 Fix: Inject FULL Schema to prevent hallucinated/empty args
+            // 🧠 Generate Detailed Tool Descriptions for ALL models
             const toolsDesc = availableSkills.map(s => {
-              const schemaStr = JSON.stringify(s.schema ? (s.schema as any)._def ? require('zod-to-json-schema').zodToJsonSchema(s.schema) : s.schema : {}, null, 2);
-              // Fallback if zod-to-json-schema is too heavy/unavailable? 
-              // Actually, let's just use a simpler description format since we don't have zod-to-json-schema installed universally perhaps.
-              // We can manually iterate the Zod shape if needed, but let's try a descriptive format first.
-
-              // Simple Schema Description
               let argsDesc = 'No arguments';
               if (s.schema && (s.schema as any).shape) {
                 argsDesc = Object.entries((s.schema as any).shape).map(([key, val]: [string, any]) => {
-                  const isOptional = val.isOptional && val.isOptional();
-                  const desc = val.description ? ` - ${val.description}` : '';
-                  return `  - ${key}${isOptional ? ' (optional)' : ' (REQUIRED)'}: ${desc}`;
+                  // Handle Zod optionality and descriptions
+                  const isOptional = val._def?.typeName === 'ZodOptional' || (val.isOptional && typeof val.isOptional === 'function' && val.isOptional());
+                  const desc = val.description || (val._def?.description) || '';
+
+                  // Special Handling for Knowledge Base Scope
+                  let extraGuidance = '';
+                  if (s.id === 'query_vector_db' && key === 'scope') {
+                    extraGuidance = ' (CRITICAL: Use "global" ONLY when the user explicitly asks for all documents or global search; use "session" for current context)';
+                  }
+
+                  return `  - ${key}${isOptional ? ' (optional)' : ' (REQUIRED)'}: ${desc}${extraGuidance}`;
                 }).join('\n');
               }
 
@@ -785,47 +790,26 @@ export const useChatStore = create<ChatState>()(
             }).join('\n\n');
 
 
-            // 🧠 Conditional System Prompt Injection
-            // Gemini/Vertex often fails to trigger native tools without explicit encouragement/description in the prompt.
-            // OpenAI/DeepSeek/Kimi usually work better without this noise (they use the API 'tools' param effectively).
-            const isGemini = modelId.toLowerCase().includes('gemini') || modelId.toLowerCase().includes('flash') || modelId.toLowerCase().includes('pro');
-
-            let toolInstruction = '';
-
-            if (isGemini) {
-              toolInstruction = `\n\n[AVAILABLE TOOLS]
-You have access to the following tools. 
-CRITICAL: You MUST use the Native Function Calling mechanism. 
-DO NOT simply write "I will call..." or "Calling tool...". THAT IS FAKE EXECUTION.
-DO NOT invent tool names. USE ONLY THE IDs LISTED BELOW.
+            // 🧠 Unified System Prompt Injection for ALL models
+            const toolInstruction = `\n\n[AVAILABLE TOOLS]
+You have access to the following skills:
 
 ${toolsDesc}
 
-[MANDATORY PLANNING]
-For any complex request (e.g. generating content, research), you MUST first output a plan in this EXACT format:
-<plan>
-1. [Describe step 1]
-2. [Describe step 2]
-</plan>
-
-[EXECUTION RULES]
-1. Output the <plan> block FIRST.
-2. IMMEDIATELY after the plan, call the necessary tool(s) using NATIVE FUNCTION CALLING.
-3. IF A PARAMETER IS MARKED "(REQUIRED)", YOU MUST PROVIDE IT.
-4. DO NOT ask for permission, just proceed.`;
-            } else {
-              // Ultra-light prompt for DeepSeek/OpenAI/Kimi
-              // We REMOVE explicit tool descriptions and strict rules to avoid "jailbreak" detection or confusion.
-              // We ONLY ask for the plan if it helps, otherwise we trust their native capability.
-              toolInstruction = `\n\n[PLANNING]
-If the user's request requires multiple steps or complex reasoning, please output a plan first in this format:
+[PLANNING]
+If the user's request requires multiple steps or complex reasoning, you MUST first output a plan in this format:
 <plan>
 1. Step 1
 2. Step 2
 </plan>
 
-Then proceed to use the provided tools naturally.`;
-            }
+[EXECUTION RULES]
+1. Output the <plan> block FIRST if needed.
+2. Use NATIVE tool calls. DO NOT describe intent in text.
+3. PROVIDE ALL REQUIRED PARAMETERS.
+4. For 'query_vector_db', use 'scope: "global"' for global requests.
+5. 🛑 CRITICAL (DEEPSEEK/KIMI): DO NOT include any introductory text, apologies, or descriptions like "I will now search..." before or after the tool call. Your response should ONLY contain the <plan> (if needed) and the NATIVE tool call. NO CHATTY EXPLANATIONS.
+6. Trigger the tool immediately. Any leading text will be considered an error.`;
 
             finalSystemPrompt += toolInstruction;
           }
@@ -879,23 +863,73 @@ Then proceed to use the provided tools naturally.`;
           const contextWindowSize = useSettingsStore.getState().globalRagConfig.contextWindow || 15;
           const historyMsgs = session.messages.slice(-contextWindowSize);
 
-          for (const msg of historyMsgs) {
-            // Skip system messages locally if any, though usually not stored in session
+          for (let i = 0; i < historyMsgs.length; i++) {
+            const msg = historyMsgs[i];
             if (msg.role === 'system') continue;
 
-            // Format content (handle images if any, checking model capabilities)
-            const formattedContent = await formatContent(msg.content, msg.images);
-
-            // 如果是 Tool Result 的历史记录，需要特殊处理 (TODO)，目前仅处理文本对话
-            // 简单起见，我们暂不重建复杂的 Tool/Function History，以避免 Token 爆炸
-            // 对于 DeepSeek/Reasoning 模型，纯文本对话历史通常足够
-            contextMsgs.push({
+            const apiMsg: any = {
               role: msg.role,
-              content: formattedContent
-            });
+              content: await formatContent(msg.content, msg.images)
+            };
+
+            if (msg.reasoning) apiMsg.reasoning = msg.reasoning;
+            if (msg.thought_signature) apiMsg.thought_signature = msg.thought_signature;
+
+            // 🛠️ CRITICAL FIX: Ensure Tool Call / Response Integrity for DeepSeek/Strict APIs
+            if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+              // Only include tool_calls if they are followed by tool messages in this session
+              // This prevents "hanging tool calls" which DeepSeek rejects with 400
+              const toolCallIds = new Set(msg.tool_calls.map(tc => tc.id));
+              const answeredIds = new Set<string>();
+
+              // Look ahead in historyMsgs to see if these calls are answered
+              for (let j = i + 1; j < historyMsgs.length; j++) {
+                const aheadMsg = historyMsgs[j];
+                if (aheadMsg.role === 'tool' && aheadMsg.tool_call_id && toolCallIds.has(aheadMsg.tool_call_id)) {
+                  answeredIds.add(aheadMsg.tool_call_id);
+                }
+                // If we hit another user or assistant message, stop searching for this group? 
+                // Actually OpenAI allows interleaved if the sequence is correct, but let's be strict.
+                if (aheadMsg.role === 'user' || (aheadMsg.role === 'assistant' && aheadMsg.tool_calls)) break;
+              }
+
+              if (answeredIds.size > 0) {
+                // Filter only answered ones (or include all if at least one answered? No, must all be answered for DeepSeek)
+                // Actually, if we truncate, we might only have PART of the results. 
+                // DeepSeek rule: "An assistant message with 'tool_calls' must be followed by tool messages responding to EACH..."
+                if (answeredIds.size === toolCallIds.size) {
+                  apiMsg.tool_calls = msg.tool_calls;
+                } else {
+                  console.warn('[AgentLoop] Stripping incomplete/hanging tool calls from history to prevent 400 error.');
+                  apiMsg.tool_calls = undefined;
+                }
+              } else {
+                // No answers found in our current historyMsgs slice
+                apiMsg.tool_calls = undefined;
+              }
+            }
+
+            if (msg.role === 'tool') {
+              // Only include tool result if its assistant caller is also in this slice?
+              // Actually, according to OpenAI, a tool message MUST be preceded by the assistant message.
+              // If we truncated the assistant message but kept the tool, it's also a 400.
+              const hasAssistant = contextMsgs.some(m => m.role === 'assistant' && m.tool_calls?.some((tc: any) => tc.id === msg.tool_call_id));
+              if (hasAssistant) {
+                apiMsg.tool_call_id = msg.tool_call_id;
+                apiMsg.name = msg.name;
+              } else {
+                continue; // Skip orphan tool results
+              }
+            }
+
+            contextMsgs.push(apiMsg);
           }
 
           // Add user message to context
+          console.log('[AgentLoop] Finalizing User Message Content:', {
+            length: apiMessage.content.length,
+            isMerged: apiMessage.content.includes('You are NeuralFlow')
+          });
           contextMsgs.push({ role: 'user', content: await formatContent(apiMessage.content, apiMessage.images) });
 
           // =====================================================================================
@@ -995,6 +1029,7 @@ Then proceed to use the provided tools naturally.`;
             let toolCalls: ToolCall[] | undefined;
             let reasoningFromThisTurn = '';
             let turnContent = '';
+            let turnThoughtSignature = '';
 
             let planParsed = false; // 🧠 Planner State
             let shouldBreakLoop = false;
@@ -1019,15 +1054,30 @@ Then proceed to use the provided tools naturally.`;
 
                 const now = Date.now();
 
-                // 5.0 Capture Usage
+                // 5.0 Capture Metadata
                 if (token.usage) {
                   accumulatedUsage = token.usage;
+                }
+                if (token.thought_signature) {
+                  console.log('[AgentLoop] Captured thought_signature from provider:', token.thought_signature);
+                  turnThoughtSignature = token.thought_signature;
                 }
 
                 // 5.1 Handle Content
                 if (token.content) {
                   turnContent += token.content;
                   accumulatedContent += token.content;
+
+                  if (!toolCalls) {
+                    // Heuristic: Extract thinking from content if model supports it but didn't use separate field (e.g. GLM-4)
+                    const thinkMatch = turnContent.match(/<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/i) ||
+                      turnContent.match(/Thought:([\s\S]*?)(?:\n\n|\n|$)/i);
+                    if (thinkMatch) {
+                      reasoningFromThisTurn = thinkMatch[1].trim();
+                      turnContent = turnContent.replace(thinkMatch[0], '').trim();
+                      accumulatedContent = accumulatedContent.replace(thinkMatch[0], '').trim(); // Also remove from accumulated
+                    }
+                  }
 
                   // 🧠 Planner: Detect <plan> blocks
                   // Only parse once per turn to avoid redundant processing
@@ -1128,13 +1178,19 @@ Then proceed to use the provided tools naturally.`;
               accumulatedUsage
             );
 
-            if (reasoningFromThisTurn) {
-              updateSteps({
-                id: `think_turn_${loopCount}`,
-                type: 'thinking',
-                content: reasoningFromThisTurn,
-                timestamp: Date.now()
-              });
+            if (reasoningFromThisTurn || turnThoughtSignature) {
+              get().updateMessageContent(
+                sessionId,
+                currentAssistantMsgId,
+                finalDisplayContent,
+                accumulatedUsage,
+                reasoningFromThisTurn,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                turnThoughtSignature
+              );
             }
 
             // 6. Output Processing
@@ -1382,6 +1438,9 @@ Then proceed to use the provided tools naturally.`;
                 }
 
                 if (toolCalls && toolCalls.length > 0) {
+                  // Final sanity check: filter out null or invalid names
+                  toolCalls = toolCalls.filter((tc: any) => tc.name && tc.name !== 'null' && tc.name !== 'undefined');
+
                   if (potentialJson === turnContent.trim()) {
                     turnContent = '';
                   } else {
@@ -1455,15 +1514,13 @@ Then proceed to use the provided tools naturally.`;
               }
 
               // 2. Add to History
+              console.log(`[AgentLoop] End of Turn ${loopCount} - turnThoughtSignature:`, turnThoughtSignature);
               currentMessages.push({
                 role: 'assistant',
                 content: turnContent || '',
                 reasoning: reasoningFromThisTurn,
-                tool_calls: toolCalls.map(tc => ({
-                  id: tc.id,
-                  type: 'function',
-                  function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
-                }))
+                thought_signature: turnThoughtSignature,
+                tool_calls: toolCalls // 🧐 FIXED: Push RAW ToolCall[] here, OpenAI client will handle formatting
               } as any);
 
               // Execute
@@ -1496,9 +1553,23 @@ Then proceed to use the provided tools naturally.`;
                   role: 'tool',
                   tool_call_id: tc.id,
                   content: result.content,
-                  name: tc.name
+                  name: tc.name,
+                  thought_signature: turnThoughtSignature // 🧠 Added: Link tool result back to the signature
                 } as any);
               }
+
+              // 🔑 CRITICAL: Save tool_calls and thought_signature to the assistant message in store
+              set(state => ({
+                sessions: state.sessions.map(s => s.id === sessionId ? {
+                  ...s,
+                  messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
+                    ...m,
+                    tool_calls: toolCalls, // Save as ToolCall[] format
+                    thought_signature: turnThoughtSignature || m.thought_signature
+                  } : m)
+                } : s)
+              }));
+
               accumulatedContent += '\n\n';
             } else {
               console.log('[AgentLoop] Final answer received. Stopping.');

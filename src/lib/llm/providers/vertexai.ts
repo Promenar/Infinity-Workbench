@@ -1,6 +1,7 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { KJUR } from 'jsrsasign';
-import { Skill, ToolCall } from '../../../types/skills';
+import { Skill, ToolCall, ToolResult } from '../../../types/skills';
+import { apiLogger } from '../api-logger';
 import zodToJsonSchema from 'zod-to-json-schema';
 
 // Add global polyfill for TextEncoder if missing (RN environment)
@@ -158,7 +159,7 @@ export class VertexAiClient implements LlmClient {
     };
 
     return [{
-      functionDeclarations: skills.map((skill) => {
+      function_declarations: skills.map((skill) => {
         let schema = zodToJsonSchema(skill.schema as any) as any;
         schema = JSON.parse(JSON.stringify(schema)); // Deep clone to avoid mutation issues
 
@@ -213,7 +214,10 @@ export class VertexAiClient implements LlmClient {
     onChunk: (chunk: {
       content: string;
       reasoning?: string;
+      thought_signature?: string;
       citations?: { title: string; url: string; source?: string }[];
+      toolCalls?: ToolCall[];
+      usage?: { input: number; output: number; total: number };
     }) => void,
     onError: (err: Error) => void,
     options?: ChatMessageOptions,
@@ -244,88 +248,186 @@ export class VertexAiClient implements LlmClient {
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
         // 3. Prepare Payload
-        const formatMessage = (m: ChatMessage) => {
-          if (typeof m.content === 'string') {
-            return { parts: [{ text: m.content }] };
-          }
-          if (Array.isArray(m.content)) {
-            const parts = m.content
-              .map((c: any) => {
-                if (c.type === 'text') return { text: c.text };
-                if (c.type === 'image_url') {
-                  // Extract base64 from data URI
-                  const matches = c.image_url.url.match(/^data:(.+);base64,(.+)$/);
-                  if (matches) {
-                    return {
-                      inline_data: {
-                        mime_type: matches[1],
-                        data: matches[2],
-                      },
-                    };
-                  }
+        const formatContentPart = (m: ChatMessage) => {
+          // 1. 处理工具执行结果 (Role: tool)
+          if (m.role === 'tool') {
+            const part: any = {
+              functionResponse: {
+                name: m.name || 'unknown',
+                response: {
+                  content: m.content
                 }
-                return null;
-              })
-              .filter(Boolean);
-            return { parts };
+              }
+            };
+            // 🧐 CRITICAL: thought_signature is a PART-level field, not nested in functionResponse
+            if (m.thought_signature) {
+              part.thought_signature = m.thought_signature;
+            }
+            return [part];
           }
-          return { parts: [] };
+
+          // 2. 处理包含工具调用的助手消息 或 包含思考的消息
+          if (m.role === 'assistant') {
+            const parts: any[] = [];
+            // 🧐 CRITICAL: Gemini 2.0 Thinking models match thoughts by signature.
+            if (m.reasoning) {
+              parts.push({
+                thought: true,
+                text: m.reasoning,
+                ...(m.thought_signature ? { thought_signature: m.thought_signature } : {})
+              });
+            }
+            if (m.content && typeof m.content === 'string') {
+              parts.push({ text: m.content });
+            }
+
+            if (m.tool_calls && m.tool_calls.length > 0) {
+              m.tool_calls.forEach((tc: any) => {
+                // 🧐 CRITICAL: Support both native tc.name and OpenAI-style tc.function.name
+                const name = tc.name || tc.function?.name;
+                if (!name) return;
+
+                const part: any = {
+                  functionCall: {
+                    name: name,
+                    args: typeof tc.arguments === 'string'
+                      ? JSON.parse(tc.arguments)
+                      : (tc.function?.arguments
+                        ? (typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments)
+                        : (tc.arguments || {}))
+                  }
+                };
+                if (m.thought_signature) {
+                  part.thought_signature = m.thought_signature;
+                }
+                parts.push(part);
+              });
+            }
+            return parts;
+          }
+
+          // 3. 处理普通用户文本或多模态消息
+          const parts: any[] = [];
+          if (typeof m.content === 'string') {
+            parts.push({ text: m.content });
+          } else if (Array.isArray(m.content)) {
+            m.content.forEach((c: any) => {
+              if (c.type === 'text') parts.push({ text: c.text });
+              if (c.type === 'image_url') {
+                const matches = c.image_url.url.match(/^data:(.+);base64,(.+)$/);
+                if (matches) {
+                  parts.push({
+                    inlineData: {
+                      mimeType: matches[1],
+                      data: matches[2],
+                    },
+                  });
+                }
+              }
+            });
+          }
+
+          return parts;
         };
+
+        // 🛡️ Pre-calculate System Instruction
+        let combinedSystemTitle = '';
+        messages.forEach(m => {
+          if (m.role === 'system') {
+            combinedSystemTitle += (combinedSystemTitle ? '\n' : '') + m.content;
+          }
+        });
 
         // System Nudge for Voice/Tool consistency
         const hasTools = (options?.skills && options.skills.length > 0) || options?.webSearch;
-        const systemInstruction = hasTools
-          ? `You are a helpful assistant with access to tools. 
+        const toolGuidance = hasTools
+          ? `\nYou are a helpful assistant with access to tools. 
 CRITICAL RULES:
 1. You MUST use the native function calling mechanism to execute tools. DO NOT just write code blocks or descriptions of tool calls.
 2. If you need information, call 'query_vector_db' or 'search_internet' IMMEDIATELY.
 3. If you need to generate an image, call 'generate_image' IMMEDIATELY.
 4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION.
 5. You can call multiple tools if needed.
-Available tools: ${options.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
-          : undefined;
+Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
+          : '';
+
+        const finalSystemInstruction = combinedSystemTitle + toolGuidance;
+
+        // 🔍 Debug: Log thought_signature status for all messages
+        console.log('[VertexAI] Formatting messages for API:');
+        messages.forEach((m, idx) => {
+          console.log(`  [${idx}] role=${m.role}, has_signature=${!!m.thought_signature}, has_tool_calls=${!!(m as any).tool_calls}`);
+        });
+
+        // 🔑 CRITICAL: Vertex AI requiring strict alternating user/model turns.
+        const normalizedTurns: { role: 'user' | 'model', parts: any[] }[] = [];
+
+        messages.forEach((m) => {
+          if (m.role === 'system') return; // Skip, already handled in systemInstruction
+
+          const currentParts = formatContentPart(m);
+          if (currentParts.length === 0) return;
+
+          if (m.role === 'user' || m.role === 'tool') {
+            const lastTurn = normalizedTurns[normalizedTurns.length - 1];
+            if (lastTurn && lastTurn.role === 'user') {
+              lastTurn.parts.push(...currentParts);
+            } else {
+              normalizedTurns.push({ role: 'user', parts: currentParts });
+            }
+          } else if (m.role === 'assistant') {
+            const lastTurn = normalizedTurns[normalizedTurns.length - 1];
+            if (lastTurn && lastTurn.role === 'model') {
+              lastTurn.parts.push(...currentParts);
+            } else {
+              normalizedTurns.push({ role: 'model', parts: currentParts });
+            }
+          }
+        });
+
+        // 🛡️ Ensure contents starts with 'user'
+        if (normalizedTurns.length > 0 && normalizedTurns[0].role === 'model') {
+          normalizedTurns.unshift({ role: 'user', parts: [{ text: 'Please proceed.' }] });
+        }
+
+        console.log('[VertexAI] Normalized Turns:', normalizedTurns.length);
+        normalizedTurns.forEach((t, i) => {
+          console.log(`  Turn ${i}: ${t.role} (${t.parts.length} parts)`);
+        });
 
         const body: any = {
-          contents: messages.map((m) => {
-            let role = m.role === 'assistant' ? 'model' : 'user';
-            if (m.role === 'tool') role = 'function';
-            return {
-              role,
-              ...formatMessage(m),
-            };
-          }),
-          generationConfig: {
+          contents: normalizedTurns,
+          generation_config: {
             temperature: options?.inferenceParams?.temperature ?? (this.temperature || 0.7),
-            topP: options?.inferenceParams?.topP,
-            maxOutputTokens: options?.inferenceParams?.maxTokens,
+            top_p: options?.inferenceParams?.topP,
+            max_output_tokens: options?.inferenceParams?.maxTokens,
             ...(options?.reasoning && !this.model.includes('image')
               ? {
-                thinkingConfig: {
-                  includeThoughts: true,
+                thinking_config: {
+                  include_thoughts: true,
                 },
               }
               : {}),
           },
         };
 
-        if (systemInstruction) {
-          body.systemInstruction = {
-            parts: [{ text: systemInstruction }]
+        if (finalSystemInstruction) {
+          body.system_instruction = {
+            parts: [{ text: finalSystemInstruction }]
           };
         }
 
         const tools: any[] = [];
-
         if (options?.webSearch) {
-          tools.push({ googleSearch: {} });
+          tools.push({ google_search_retrieval: {} });
         }
 
         if (hasTools && options?.skills && options.skills.length > 0) {
           const geminiTools = this.mapSkillsToGeminiTools(options.skills);
           tools.push(...geminiTools);
 
-          body.toolConfig = {
-            functionCallingConfig: {
+          body.tool_config = {
+            function_calling_config: {
               mode: 'AUTO'
             }
           };
@@ -334,6 +436,20 @@ Available tools: ${options.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
         if (tools.length > 0) {
           body.tools = tools;
         }
+
+        // 📝 Debug Logging
+        console.log('[VertexAI] Request Body (Partial):', JSON.stringify({
+          has_system: !!body.system_instruction,
+          has_tools: !!body.tools,
+          tool_count: body.tools?.[0]?.function_declarations?.length || 0,
+          turns: body.contents.length
+        }));
+
+        // 📝 Debug Logging
+        // 🔍 Debug: Log final contents structure (Increased for full history visibility)
+        console.log('[VertexAI] Final contents:', JSON.stringify(body.contents, null, 2).substring(0, 10000));
+
+        apiLogger.logRequest('vertexai', endpoint, body);
 
         let lastPosition = 0;
         let buffer = '';
@@ -397,114 +513,150 @@ Available tools: ${options.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
                   enqueue(async () => {
                     try {
                       const json = JSON.parse(objStr);
-                      const responseObj = Array.isArray(json) ? json[0] : json;
-                      const candidate = responseObj.candidates?.[0];
+                      // 🧐 Vertex AI often sends an array of objects in one stream chunk, or single objects.
+                      // We must handle both.
+                      const responses = Array.isArray(json) ? json : [json];
 
-                      if (candidate) {
-                        let text = '';
-                        let reasoning = '';
-                        let images: { mime: string; uri: string }[] = [];
+                      for (const responseObj of responses) {
+                        const candidate = responseObj.candidates?.[0];
 
-                        if (candidate.content?.parts) {
-                          for (const part of candidate.content.parts) {
-                            const isThoughtPart =
-                              part.thought === true || typeof part.thought === 'string';
+                        if (candidate) {
+                          // 🧐 Capture thought_signature from candidate top-level or parts
+                          // Some versions use snake_case, some use camelCase (Vertex vs Gemini API)
+                          const candidateSignature = candidate.thought_signature || candidate.thoughtSignature;
+                          if (candidateSignature) {
+                            console.log('[VertexAI] Found signature in candidate root:', candidateSignature);
+                            onChunk({ content: '', thought_signature: candidateSignature });
+                          }
 
-                            // 1. Thinking
-                            if (isThoughtPart) {
-                              if (typeof part.thought === 'string') reasoning += part.thought;
-                              if (part.text) reasoning += part.text;
-                            }
-                            // 2. Text
-                            else if (part.text) {
-                              const chunkHasThought = candidate.content.parts.some(
-                                (p: any) => p.thought === true,
-                              );
-                              if (chunkHasThought) {
-                                reasoning += part.text;
-                              } else {
-                                text += part.text;
+                          let text = '';
+                          let reasoning = '';
+                          let images: { mime: string; uri: string }[] = [];
+                          let toolCalls: ToolCall[] = [];
+                          if (candidate.content?.parts) {
+
+                            for (const part of candidate.content.parts) {
+                              // 🔍 Debug: Log full part structure to find missing signature
+                              console.log('[VertexAI] Raw Part:', JSON.stringify(part));
+
+                              // 🧐 核心修复：更鲁棒的捕捉方式
+                              const signature = part.thought_signature || part.thoughtSignature;
+                              if (signature) {
+                                console.log('[VertexAI] FOUND SIGNATURE:', signature);
+                                onChunk({ content: '', thought_signature: signature });
                               }
-                            }
-                            // 3. Images (inlineData)
-                            else if (part.inlineData) {
-                              // Extract Base64 image data
-                              const { mimeType, data } = part.inlineData;
 
-                              // IMPORTANT: Save to filesystem to avoid performance issues
-                              // Large Base64 data URIs (several MB) cause severe lag
-                              try {
-                                // Lazy import to avoid circular dependency
-                                const {
-                                  saveBase64ToFile,
-                                  generateThumbnail,
-                                } = require('../../image-utils');
+                              const isThoughtPart =
+                                part.thought === true || typeof part.thought === 'string';
 
-                                // Save original
-                                const originalUri = await saveBase64ToFile(
-                                  data,
-                                  'originals',
-                                  mimeType,
+                              // 1. Thinking
+                              if (isThoughtPart) {
+                                if (typeof part.thought === 'string') reasoning += part.thought;
+                                if (part.text) reasoning += part.text;
+                              }
+                              // 2. Text
+                              else if (part.text) {
+                                const chunkHasThought = candidate.content.parts.some(
+                                  (p: any) => p.thought === true,
                                 );
-
-                                // Generate thumbnail for faster display
-                                const thumbnailUri = await generateThumbnail(originalUri, {
-                                  maxWidth: 512,
-                                  compress: 0.75,
+                                if (chunkHasThought) {
+                                  reasoning += part.text;
+                                } else {
+                                  text += part.text;
+                                }
+                              }
+                              // 3. Function Call (Native Gemini)
+                              else if (part.functionCall) {
+                                const tcId = `vcall_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                                toolCalls.push({
+                                  id: tcId,
+                                  name: part.functionCall.name,
+                                  arguments: part.functionCall.args || {}
                                 });
 
-                                // Use thumbnail for chat (much smaller)
-                                images.push({
-                                  mime: mimeType,
-                                  uri: thumbnailUri,
-                                });
+                                // Signature capture moved to top of loop for robustness
+                              }
+                              // 4. Images (inlineData)
+                              else if (part.inlineData) {
+                                // Extract Base64 image data
+                                const { mimeType, data } = part.inlineData;
 
-                                console.log(
-                                  '[VertexAI] Saved to file:',
-                                  thumbnailUri.substring(0, 80),
-                                );
-                              } catch (error) {
-                                console.error('[VertexAI] File save failed:', error);
-                                // Fallback: data URI (will lag)
-                                const dataUri = `data:${mimeType};base64,${data}`;
-                                images.push({ mime: mimeType, uri: dataUri });
+                                // IMPORTANT: Save to filesystem to avoid performance issues
+                                // Large Base64 data URIs (several MB) cause severe lag
+                                try {
+                                  // Lazy import to avoid circular dependency
+                                  const {
+                                    saveBase64ToFile,
+                                    generateThumbnail,
+                                  } = require('../../image-utils');
+
+                                  // Save original
+                                  const originalUri = await saveBase64ToFile(
+                                    data,
+                                    'originals',
+                                    mimeType,
+                                  );
+
+                                  // Generate thumbnail for faster display
+                                  const thumbnailUri = await generateThumbnail(originalUri, {
+                                    maxWidth: 512,
+                                    compress: 0.75,
+                                  });
+
+                                  // Use thumbnail for chat (much smaller)
+                                  images.push({
+                                    mime: mimeType,
+                                    uri: thumbnailUri,
+                                  });
+
+                                  console.log(
+                                    '[VertexAI] Saved to file:',
+                                    thumbnailUri.substring(0, 80),
+                                  );
+                                } catch (error) {
+                                  console.error('[VertexAI] File save failed:', error);
+                                  // Fallback: data URI (will lag)
+                                  const dataUri = `data:${mimeType};base64,${data}`;
+                                  images.push({ mime: mimeType, uri: dataUri });
+                                }
                               }
                             }
                           }
-                        }
 
-                        // Append images to text as local file links
-                        for (const img of images) {
-                          // Use file:// URI directly in markdown
-                          text += `\n\n![Generated Image](${img.uri})\n\n`;
-                        }
+                          // Append images to text as local file links
+                          for (const img of images) {
+                            // Use file:// URI directly in markdown
+                            text += `\n\n![Generated Image](${img.uri})\n\n`;
+                          }
 
-                        let citations:
-                          | { title: string; url: string; source?: string }[]
-                          | undefined;
-                        const groundingMetadata =
-                          candidate.groundingMetadata || responseObj.groundingMetadata;
+                          let citations:
+                            | { title: string; url: string; source?: string }[]
+                            | undefined;
+                          const groundingMetadata =
+                            candidate.groundingMetadata || responseObj.groundingMetadata;
 
-                        if (groundingMetadata?.groundingChunks) {
-                          citations = groundingMetadata.groundingChunks
-                            .map((chunk: any) =>
-                              chunk.web
-                                ? {
-                                  title: chunk.web.title || 'Web Source',
-                                  url: chunk.web.uri,
-                                  source: 'Google',
-                                }
-                                : null,
-                            )
-                            .filter(Boolean);
-                        }
+                          if (groundingMetadata?.groundingChunks) {
+                            citations = groundingMetadata.groundingChunks
+                              .map((chunk: any) =>
+                                chunk.web
+                                  ? {
+                                    title: chunk.web.title || 'Web Source',
+                                    url: chunk.web.uri,
+                                    source: 'Google',
+                                  }
+                                  : null,
+                              )
+                              .filter(Boolean);
+                          }
 
-                        if (text || reasoning || (citations && citations.length > 0)) {
-                          onChunk({
-                            content: text,
-                            reasoning: reasoning || undefined,
-                            citations: citations && citations.length > 0 ? citations : undefined,
-                          });
+                          if (text || reasoning || (citations && citations.length > 0) || (toolCalls && toolCalls.length > 0)) {
+                            onChunk({
+                              content: text,
+                              reasoning: reasoning || undefined,
+                              citations: citations && citations.length > 0 ? citations : undefined,
+                              toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+                            });
+                          }
                         }
                       }
                     } catch (e) {
@@ -526,8 +678,12 @@ Available tools: ${options.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
               if (xhr.status === 0) {
                 resolve(); // Aborted
               } else if (xhr.status >= 200 && xhr.status < 300) {
+                // Log full response if available (usually stream chunks are caught in logic below)
+                // but for completion non-stream it helps
+                apiLogger.logResponse('vertexai', xhr.status, xhr.responseText);
                 resolve();
               } else {
+                apiLogger.logResponse('vertexai', xhr.status, xhr.responseText);
                 const err = new Error(
                   `Vertex API Error (${xhr.status}): ${xhr.responseText.substring(0, 200)}`,
                 );

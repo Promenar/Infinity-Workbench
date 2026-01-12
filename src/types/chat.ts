@@ -1,7 +1,7 @@
 export type AgentId = string;
 export type SessionId = string;
 
-import { ExecutionStep } from './skills';
+import { ExecutionStep, ToolCall } from './skills';
 
 export interface InferenceParams {
   temperature?: number; // 0.0 - 2.0
@@ -96,7 +96,7 @@ export interface RagMetadata {
 
 export interface Message {
   id: string; // uuid
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string; // markdown content
   createdAt: number;
   modelId?: string; // ✅ 恢复：模型ID
@@ -114,7 +114,10 @@ export interface Message {
   vectorizationStatus?: 'processing' | 'success' | 'error'; // ✅ 新增：向量化状态
   layoutHeight?: number; // ✅ 新增：缓存布局高度，优化滚动性能
   executionSteps?: ExecutionStep[]; // ✅ 新增：Agentic Loop 执行步骤
-
+  tool_calls?: ToolCall[]; // ✅ 新增：工具调用列表
+  tool_call_id?: string; // ✅ 新增：工具调用关联 ID (用于 role: tool)
+  name?: string; // ✅ 新增：工具名称 (用于 role: tool)
+  thought_signature?: string; // ✅ 新增：思维签名 (仅限 Gemini 2.0 Thinking 模型)
 }
 
 export interface Session {
