@@ -54,9 +54,10 @@ export interface ToolCall {
  */
 export interface ExecutionStep {
     id: string;
-    type: 'thinking' | 'tool_call' | 'tool_result' | 'error';
+    type: 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'plan_item';
     content?: string; // Markdown content or JSON string
     toolName?: string;
     toolArgs?: any;
+    data?: any; // Structured data from SkillResult
     timestamp: number;
 }

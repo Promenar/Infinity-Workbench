@@ -15,6 +15,7 @@ export interface VectorRecord {
 
 export interface SearchResult extends VectorRecord {
   similarity: number;
+  originalSimilarity?: number; // 🚨 新增：原始相似度分数
 }
 
 export class VectorStore {
@@ -79,7 +80,7 @@ export class VectorStore {
     options: {
       limit?: number;
       threshold?: number;
-      filter?: { docId?: string; sessionId?: string; type?: string };
+      filter?: { docId?: string; docIds?: string[]; sessionId?: string; type?: string };
     } = {},
   ): Promise<SearchResult[]> {
     const Limit = options.limit || 5;
@@ -90,10 +91,16 @@ export class VectorStore {
     const params: any[] = [];
     const conditions: string[] = [];
 
-    if (options.filter?.docId) {
+    // 🔑 核心改进：支持多文档 ID 过滤 (SQL 下沉)
+    if (options.filter?.docIds && options.filter.docIds.length > 0) {
+      const placeholders = options.filter.docIds.map(() => '?').join(',');
+      conditions.push(`doc_id IN (${placeholders})`);
+      params.push(...options.filter.docIds);
+    } else if (options.filter?.docId) {
       conditions.push('doc_id = ?');
       params.push(options.filter.docId);
     }
+
     if (options.filter?.sessionId) {
       conditions.push('session_id = ?');
       params.push(options.filter.sessionId);

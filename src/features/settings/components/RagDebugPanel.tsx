@@ -39,7 +39,7 @@ export const RagDebugPanel: React.FC = () => {
       setStats(data);
     } catch (error) {
       console.error('Failed to load vector stats:', error);
-      showToast(t.settings.vectorStats.loadError, 'error');
+      showToast(t.settings.loadError, 'error');
     } finally {
       setLoading(false);
     }
@@ -51,12 +51,12 @@ export const RagDebugPanel: React.FC = () => {
     try {
       const result = await vectorStore.cleanupRedundantMemoryVectors();
       showToast(
-        t.settings.vectorStats.cleanupSuccess.replace('{count}', result.deleted.toString()),
+        t.settings.cleanupSuccess.replace('{count}', result.deleted.toString()),
         'success',
       );
       loadStats();
     } catch (error) {
-      showToast(`${t.settings.vectorStats.cleanupError}: ${(error as Error).message}`, 'error');
+      showToast(`${t.settings.cleanupError}: ${(error as Error).message}`, 'error');
     } finally {
       setIsCleaning(false);
     }
@@ -124,7 +124,7 @@ export const RagDebugPanel: React.FC = () => {
           </View>
 
           {/* 类型分布 */}
-          <SectionHeader title={t.settings.vectorStats.dimensionAnalysis} mt={0} />
+          <SectionHeader title={t.settings.dimensionAnalysis} mt={0} />
           <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
             <View className="flex-row items-center justify-around py-2">
               <View className="items-center">
@@ -132,7 +132,7 @@ export const RagDebugPanel: React.FC = () => {
                   {stats.byType.doc || 0}
                 </Typography>
                 <Typography className="text-xs text-gray-400 mt-1">
-                  {t.settings.vectorStats.docVectors}
+                  {t.settings.docVectors}
                 </Typography>
               </View>
               <View className="w-[1px] h-10 bg-gray-100 dark:bg-zinc-800" />
@@ -140,23 +140,23 @@ export const RagDebugPanel: React.FC = () => {
                 <Typography className="text-2xl font-bold text-gray-900 dark:text-white">
                   {(stats.byType.memory || 0) + (stats.byType.summary || 0)}
                 </Typography>
-                <Typography className="text-xs text-gray-400 mt-1">
-                  {t.settings.vectorStats.memoryVectors}
+                <Typography className="text-xs text-gray-500 dark:text-zinc-500 mt-1">
+                  {t.settings.memoryVectors}
                 </Typography>
               </View>
             </View>
           </View>
 
           {/* 存储健康度 */}
-          <SectionHeader title={t.settings.vectorStats.storageHealth} />
+          <SectionHeader title={t.settings.storageHealth} />
           <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
             <View className="flex-row items-center justify-between mb-4">
               <View>
                 <Typography className="text-sm font-bold text-gray-900 dark:text-white">
-                  {t.settings.vectorStats.redundancyRate}
+                  {t.settings.redundancyRate}
                 </Typography>
                 <Typography className="text-xs text-gray-500 mt-0.5">
-                  {t.settings.vectorStats.redundancyDesc}
+                  {t.settings.redundancyDesc}
                 </Typography>
               </View>
               <Typography
@@ -178,7 +178,7 @@ export const RagDebugPanel: React.FC = () => {
                   <>
                     <Trash2 size={16} color="#ef4444" className="mr-2" />
                     <Typography className="text-red-600 dark:text-red-400 font-bold">
-                      {t.settings.vectorStats.cleanupNow}
+                      {t.settings.cleanupNow}
                     </Typography>
                   </>
                 )}
@@ -189,7 +189,7 @@ export const RagDebugPanel: React.FC = () => {
           {/* 按会话统计 */}
           {stats.bySession.length > 0 && (
             <>
-              <SectionHeader title={t.settings.vectorStats.topSessions} />
+              <SectionHeader title={t.settings.topSessions} />
               <View className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-gray-100 dark:border-zinc-800 mb-8 shadow-sm">
                 {stats.bySession.map((item, idx) => (
                   <View
@@ -202,13 +202,13 @@ export const RagDebugPanel: React.FC = () => {
                   >
                     <View className="flex-1 mr-3">
                       <Typography
-                        className="font-mono text-[10px] text-gray-500 dark:text-gray-400"
+                        className="font-mono text-[10px] text-gray-500 dark:text-zinc-500"
                         numberOfLines={1}
                       >
                         Session ID
                       </Typography>
                       <Typography
-                        className="font-mono text-xs text-gray-800 dark:text-gray-200"
+                        className="font-mono text-xs text-gray-800 dark:text-zinc-300"
                         numberOfLines={1}
                       >
                         {item.sessionId}
@@ -232,10 +232,10 @@ export const RagDebugPanel: React.FC = () => {
 
       <ConfirmDialog
         visible={showCleanupConfirm}
-        title={t.settings.vectorStats.cleanupConfirmTitle}
-        message={t.settings.vectorStats.cleanupConfirmDesc}
-        confirmText={t.settings.vectorStats.cleanupConfirmBtn}
-        cancelText={t.settings.vectorStats.cleanupCancelBtn}
+        title={t.settings.cleanupConfirmTitle}
+        message={t.settings.cleanupConfirmDesc}
+        confirmText={t.settings.cleanupConfirmBtn}
+        cancelText={t.settings.cleanupCancelBtn}
         onConfirm={handleCleanup}
         onCancel={() => setShowCleanupConfirm(false)}
         isDestructive

@@ -759,6 +759,8 @@ export const translations = {
     skills: {
       timeline: {
         thinking: '思考中...',
+        thought: '已思考',
+        plan: '任务规划',
         using: '正在使用 {name}',
         result: '已获取执行结果',
         error: '执行出错',
@@ -1542,7 +1544,9 @@ export const translations = {
     },
     skills: {
       timeline: {
-        thinking: 'Thinking Process',
+        thinking: 'Thinking...',
+        thought: 'Thought',
+        plan: 'Planning Step',
         using: 'Using {name}',
         result: 'Result from {name}',
         error: 'Error',

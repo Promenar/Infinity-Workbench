@@ -240,23 +240,45 @@ export const RagReferencesList: React.FC<RagReferencesListProps> = ({ references
               {ref.source || '未命名文档'}
             </Typography>
             {ref.similarity && (
-              <View
-                style={{
-                  paddingHorizontal: 6,
-                  paddingVertical: 2,
-                  borderRadius: 8,
-                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5',
-                }}
-              >
-                <Typography
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {ref.originalSimilarity !== undefined && (
+                  <View
+                    style={{
+                      paddingHorizontal: 6,
+                      paddingVertical: 2,
+                      borderRadius: 8,
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
+                    }}
+                  >
+                    <Typography
+                      style={{
+                        fontSize: 9,
+                        fontWeight: '500',
+                        color: isDark ? '#71717a' : '#94a3b8',
+                      }}
+                    >
+                      {(ref.originalSimilarity * 100).toFixed(0)}%
+                    </Typography>
+                  </View>
+                )}
+                <View
                   style={{
-                    fontSize: 9,
-                    fontWeight: '700',
-                    color: isDark ? '#34d399' : '#059669',
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 8,
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5',
                   }}
                 >
-                  {(ref.similarity * 100).toFixed(0)}%
-                </Typography>
+                  <Typography
+                    style={{
+                      fontSize: 9,
+                      fontWeight: '700',
+                      color: isDark ? '#34d399' : '#059669',
+                    }}
+                  >
+                    {(ref.similarity * 100).toFixed(0)}%
+                  </Typography>
+                </View>
               </View>
             )}
           </View>

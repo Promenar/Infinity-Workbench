@@ -180,10 +180,13 @@ export class GeminiClient implements LlmClient {
         // System Nudge for Voice/Tool consistency
         const systemInstruction = hasTools
           ? `You are a helpful assistant with access to tools. 
-You MUST use the native function calling mechanism to execute tools. 
-Available tools: ${options.skills?.map(s => s.id).join(', ') || 'N/A'}.
-Do not just explain what you will do. If you need information from the knowledge base, call 'query_vector_db' immediately. 
-If you need to generate an image, call 'generate_image' directly.`
+CRITICAL RULES:
+1. You MUST use the native function calling mechanism to execute tools. DO NOT just write code blocks or descriptions of tool calls.
+2. If you need information, call 'query_vector_db' or 'search_internet' IMMEDIATELY.
+3. If you need to generate an image, call 'generate_image' IMMEDIATELY.
+4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION.
+5. You can call multiple tools if needed.
+Available tools: ${options.skills?.map(s => s.id).join(', ') || 'N/A'}.`
           : undefined;
 
         let body: any = {
@@ -212,7 +215,7 @@ If you need to generate an image, call 'generate_image' directly.`
         };
 
         if (systemInstruction) {
-          body.system_instruction = {
+          body.systemInstruction = {
             parts: [{ text: systemInstruction }]
           };
         }
@@ -231,8 +234,8 @@ If you need to generate an image, call 'generate_image' directly.`
           tools.push(...geminiTools);
 
           // Force tool usage if possible
-          body.tool_config = {
-            function_calling_config: {
+          body.toolConfig = {
+            functionCallingConfig: {
               mode: 'AUTO'
             }
           };

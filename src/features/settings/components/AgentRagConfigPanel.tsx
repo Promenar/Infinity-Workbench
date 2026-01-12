@@ -178,14 +178,14 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             {t.rag.activeWindowDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.messageCount.replace(
                 '{count}',
                 (currentConfig.contextWindow ?? 20).toString(),
               )}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">50</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">50</Typography>
           </View>
           <Slider
             value={currentConfig.contextWindow ?? 20}
@@ -206,14 +206,14 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             {t.rag.triggerThresholdDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.messageCount.replace(
                 '{count}',
                 (currentConfig.summaryThreshold ?? 10).toString(),
               )}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">30</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">30</Typography>
           </View>
           <Slider
             value={currentConfig.summaryThreshold ?? 10}

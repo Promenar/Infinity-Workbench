@@ -256,143 +256,9 @@ const LoadingDots = ({ isDark, color }: { isDark: boolean; color?: string }) => 
   );
 };
 
-const SearchSourcesBlock: React.FC<{
-  citations: { title: string; url: string; source?: string }[];
-  isDark: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-  t: any;
-}> = ({ citations, isDark, expanded, onToggle, t }) => {
-  const { colors } = useTheme();
-  const rotation = useSharedValue(expanded ? 180 : 0);
 
-  useEffect(() => {
-    rotation.value = withTiming(expanded ? 180 : 0, { duration: 250 });
-  }, [expanded]);
 
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
 
-  return (
-    <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={onToggle}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor:
-          isDark
-            ? (expanded ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.05)')
-            : (expanded ? colors[500] : 'rgba(0,0,0,0.05)'),
-        gap: 6,
-      }}
-    >
-      <Globe
-        size={12}
-        color={isDark ? (expanded ? '#818cf8' : '#a1a1aa') : expanded ? colors[500] : '#64748b'}
-      />
-      <Typography
-        style={{
-          fontSize: 11,
-          fontWeight: '600',
-          color: isDark ? (expanded ? '#818cf8' : '#a1a1aa') : expanded ? colors[600] : '#4b5563',
-        }}
-      >
-        {t.agent.citations.replace('{count}', citations.length.toString())}
-      </Typography>
-      <Animated.View style={chevronStyle}>
-        <ChevronDown size={11} color={isDark ? '#71717a' : '#94a3b8'} />
-      </Animated.View>
-    </TouchableOpacity>
-  );
-};
-
-const ReasoningBlock: React.FC<{
-  content: string;
-  isDark: boolean;
-  loading?: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-  t: any;
-}> = ({ content, isDark, loading, expanded, onToggle, t }) => {
-  const rotation = useSharedValue(expanded ? 180 : 0);
-
-  useEffect(() => {
-    rotation.value = withTiming(expanded ? 180 : 0, { duration: 250 });
-  }, [expanded]);
-
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  return (
-    <View>
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={onToggle}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-          paddingHorizontal: 10,
-          paddingVertical: 5,
-          borderRadius: 20,
-          borderWidth: 1,
-          borderColor:
-            loading || expanded
-              ? isDark
-                ? 'rgba(139, 92, 246, 0.4)'
-                : '#8b5cf6'
-              : isDark
-                ? 'rgba(255, 255, 255, 0.05)'
-                : 'rgba(0,0,0,0.05)',
-          gap: 6,
-        }}
-      >
-        <Sparkles
-          size={12}
-          color={
-            loading
-              ? '#8b5cf6'
-              : isDark
-                ? expanded
-                  ? '#a78bfa'
-                  : '#a1a1aa'
-                : expanded
-                  ? '#8b5cf6'
-                  : '#64748b'
-          }
-        />
-        <Typography
-          style={{
-            fontSize: 11,
-            fontWeight: '600',
-            color: loading
-              ? '#8b5cf6'
-              : isDark
-                ? expanded
-                  ? '#a78bfa'
-                  : '#a1a1aa'
-                : expanded
-                  ? '#7c3aed'
-                  : '#4b5563',
-          }}
-        >
-          {loading ? t.agent.reasoning : expanded ? t.agent.reasoned : t.agent.viewReasoning}
-        </Typography>
-        <Animated.View style={chevronStyle}>
-          <ChevronDown size={11} color={isDark ? '#71717a' : '#94a3b8'} />
-        </Animated.View>
-      </TouchableOpacity>
-    </View>
-  );
-};
 
 const SelectTextModal: React.FC<{
   isVisible: boolean;
@@ -658,13 +524,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   const isRecent = React.useMemo(() => {
     return Date.now() - message.createdAt < 1000;
   }, [message.createdAt]);
-  const [isSourcesExpanded, setSourcesExpanded] = useState(false);
+
   const [viewImageUri, setViewImageUri] = useState<string | null>(null);
   const [bubbleWidth, setBubbleWidth] = useState(0);
   const bubbleRef = React.useRef<View>(null);
 
   // Moved from below to fix Hooks order error
-  const [isReasoningExpanded, setReasoningExpanded] = useState(!!isGenerating);
+
   const [isRagExpanded, setRagExpanded] = useState(false);
   const [isProcessingExpanded, setProcessingExpanded] = useState(false); // ✅ 新增：ProcessingIndicator展开状态
   const [isArchived, setIsArchived] = useState(message.isArchived || false); // ✅ 归档状态
@@ -723,14 +589,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   }, [message.id, sessionId, message.isArchived, message.vectorizationStatus, isGenerating, isProcessing]);
 
   // Auto-collapse reasoning when done
-  useEffect(() => {
-    if (!isGenerating && message.reasoning) {
-      const timer = setTimeout(() => setReasoningExpanded(false), 800);
-      return () => clearTimeout(timer);
-    } else if (isGenerating) {
-      setReasoningExpanded(true);
-    }
-  }, [isGenerating]);
+
 
   const handleShare = async () => {
     if (!bubbleRef.current) return;
@@ -1163,23 +1022,6 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 16 }}
             style={{ flexGrow: 0 }}
           >
-            {message.reasoning && (
-              <ReasoningBlock
-                content={message.reasoning}
-                isDark={isDark}
-                loading={isGenerating && !message.content}
-                expanded={isReasoningExpanded}
-                t={t}
-                onToggle={() => {
-                  const newState = !isReasoningExpanded;
-                  setReasoningExpanded(newState);
-                  if (newState) {
-                    setSourcesExpanded(false);
-                    setRagExpanded(false);
-                  }
-                }}
-              />
-            )}
             {(message.ragReferencesLoading || message.ragReferences) && (
               <RagReferencesChip
                 references={message.ragReferences || []}
@@ -1191,26 +1033,6 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 onToggle={() => {
                   const newState = !isRagExpanded;
                   setRagExpanded(newState);
-                  if (newState) {
-                    setReasoningExpanded(false);
-                    setSourcesExpanded(false);
-                  }
-                }}
-              />
-            )}
-            {message.citations && message.citations.length > 0 && (
-              <SearchSourcesBlock
-                citations={message.citations}
-                isDark={isDark}
-                expanded={isSourcesExpanded}
-                t={t}
-                onToggle={() => {
-                  const newState = !isSourcesExpanded;
-                  setSourcesExpanded(newState);
-                  if (newState) {
-                    setReasoningExpanded(false);
-                    setRagExpanded(false);
-                  }
                 }}
               />
             )}
@@ -1218,61 +1040,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
       </View>
 
-      {/* AI Reasoning Expanded Content (Below Header) */}
-      {isReasoningExpanded && message.reasoning && (
-        <Animated.View
-          entering={FadeInUp.duration(300)}
-          exiting={FadeOutUp.duration(200)}
-          className={`pl-4 border-l-2 ml-[58px] mb-4 my-1 ${isDark ? 'border-zinc-800' : 'border-gray-100'}`} // Adjusted margin-left
-        >
-          <Typography
-            variant="caption"
-            selectable={true}
-            style={{
-              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              color: isDark ? '#a1a1aa' : '#64748b',
-              fontSize: 12,
-              lineHeight: 20,
-            }}
-          >
-            {message.reasoning}
-          </Typography>
-        </Animated.View>
-      )}
 
-      {/* Citations List (Below Header) */}
-      {isSourcesExpanded && message.citations && (
-        <Animated.View
-          entering={FadeInUp.duration(300)}
-          exiting={FadeOutUp.duration(200)}
-          className="ml-[38px] mb-4 space-y-2"
-        >
-          {message.citations.map((citation, index) => (
-            <TouchableOpacity
-              key={index}
-              className={`flex-row items-start p-3 rounded-xl mb-2 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-gray-50 border border-gray-100'}`}
-              onPress={() => Linking.openURL(citation.url)}
-            >
-              <View style={{ flex: 1 }}>
-                <Typography
-                  className="text-xs font-bold text-gray-900 dark:text-white mb-0.5"
-                  numberOfLines={1}
-                >
-                  {citation.title}
-                </Typography>
-                <Typography className="text-[10px] text-gray-500" numberOfLines={1}>
-                  {citation.url}
-                </Typography>
-              </View>
-              <ExternalLink
-                size={12}
-                color={isDark ? '#9ca3af' : '#6b7280'}
-                style={{ marginTop: 2 }}
-              />
-            </TouchableOpacity>
-          ))}
-        </Animated.View>
-      )}
 
       {/* RAG References List (New Vertical Style) */}
       {isRagExpanded && message.ragReferences && (
@@ -1290,8 +1058,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
       {/* ✅ Agentic Loop Timeline */}
       {message.executionSteps && message.executionSteps.length > 0 && (
-        <View style={{ marginLeft: 8, marginBottom: 8, maxWidth: '90%' }}>
-          <ToolExecutionTimeline steps={message.executionSteps} />
+        <View style={{ marginLeft: 5, marginBottom: 8, flex: 1, width: '100%' }}>
+          <ToolExecutionTimeline steps={message.executionSteps} isMessageGenerating={isGenerating} />
         </View>
       )}
 

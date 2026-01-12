@@ -46,10 +46,22 @@ export async function generateThumbnail(
       },
     );
 
-    return result.uri;
+    // 3. Move result to persistent storage immediately to avoid cache cleanup race conditions
+    const persistentDir = `${FileSystem.documentDirectory}images/processed/`;
+    await FileSystem.makeDirectoryAsync(persistentDir, { intermediates: true });
+
+    const filename = `thumb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const persistentUri = `${persistentDir}${filename}`;
+
+    await FileSystem.copyAsync({
+      from: result.uri,
+      to: persistentUri
+    });
+
+    return persistentUri;
   } catch (error) {
     console.error('[ImageUtils] Thumbnail generation failed:', error);
-    // 降级：返回原图
+    // 降级：返回原图 (Original URI might also be temporary, but less likely to vanish instantly if it's from picking)
     return uri;
   }
 }

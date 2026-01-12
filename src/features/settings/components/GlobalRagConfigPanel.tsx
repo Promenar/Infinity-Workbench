@@ -184,11 +184,11 @@ export const GlobalRagConfigPanel: React.FC = () => {
             {t.rag.chunkSizeDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">200</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">200</Typography>
             <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
               {t.rag.chars.replace('{count}', (globalRagConfig.docChunkSize ?? 800).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">2000</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">2000</Typography>
           </View>
           <Slider
             value={globalRagConfig.docChunkSize ?? 800}
@@ -209,11 +209,11 @@ export const GlobalRagConfigPanel: React.FC = () => {
             {t.rag.chunkOverlapDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">0</Typography>
             <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
               {t.rag.chars.replace('{count}', (globalRagConfig.chunkOverlap ?? 100).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">500</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">500</Typography>
           </View>
           <Slider
             value={globalRagConfig.chunkOverlap ?? 100}
@@ -238,11 +238,11 @@ export const GlobalRagConfigPanel: React.FC = () => {
             {t.rag.memoryChunkSizeDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">500</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">500</Typography>
             <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
               {t.rag.chars.replace('{count}', (globalRagConfig.memoryChunkSize ?? 1000).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">2000</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">2000</Typography>
           </View>
           <Slider
             value={globalRagConfig.memoryChunkSize ?? 1000}
@@ -267,14 +267,14 @@ export const GlobalRagConfigPanel: React.FC = () => {
             {t.rag.activeWindowDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
             <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
               {t.rag.messageCount.replace(
                 '{count}',
                 (globalRagConfig.contextWindow ?? 20).toString(),
               )}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">50</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">50</Typography>
           </View>
           <Slider
             value={globalRagConfig.contextWindow ?? 20}
@@ -295,14 +295,14 @@ export const GlobalRagConfigPanel: React.FC = () => {
             {t.rag.triggerThresholdDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
             <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
               {t.rag.messageCount.replace(
                 '{count}',
                 (globalRagConfig.summaryThreshold ?? 10).toString(),
               )}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">30</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">30</Typography>
           </View>
           <Slider
             value={globalRagConfig.summaryThreshold ?? 10}
@@ -435,7 +435,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
             <Typography className="text-2xl font-black text-gray-900 dark:text-white mb-1">
               {vectorStats.totalDocs}
             </Typography>
-            <Typography className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+            <Typography className="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider">
               {t.rag.vectorStats.totalDocs}
             </Typography>
           </View>
@@ -448,7 +448,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
             >
               {vectorStats.totalVectors}
             </Typography>
-            <Typography className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+            <Typography className="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider">
               {t.rag.vectorStats.totalChunks}
             </Typography>
           </View>
@@ -458,7 +458,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
             <Typography className="text-2xl font-black text-gray-900 dark:text-white mb-1">
               {(vectorStats.totalSize / 1024 / 1024).toFixed(1)}
             </Typography>
-            <Typography className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+            <Typography className="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider">
               {t.rag.vectorStats.storageUsage}
             </Typography>
           </View>

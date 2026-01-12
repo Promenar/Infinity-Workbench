@@ -13,13 +13,18 @@ export const QueryVectorDbSkill: Skill = {
     name: 'Search Knowledge Base',
     description: 'Search for relevant information in the user\'s personal knowledge base and memories. Use this when the user asks specific questions about their documents, history, or saved context.',
     schema: z.object({
-        query: z.string().describe('The search query string'),
+        query: z.string().min(1).describe('REQUIRED: The search query string. MUST NOT BE EMPTY. If you do not have a specific keyword, ask the user for clarification instead of searching with empty string.'),
         topK: z.number().optional().describe('Number of results to return (default: 5)'),
         type: z.enum(['memory', 'document', 'all']).optional().describe('Filter by source type'),
+        scope: z.enum(['session', 'global']).optional().describe('Search scope. "session" restricts to currently authorized documents and history of this chat (recommended for better relevance). "global" searches the entire knowledge base. Default: "session" unless the query implies a need for all documents.'),
     }),
     execute: async (params, context) => {
         if (!context.sessionId) {
             throw new Error('Session ID is required for vector database queries');
+        }
+
+        if (!params.query || params.query.trim().length === 0) {
+            throw new Error('Search query was empty. You MUST provide a valid "query" string parameter to search. Please analyze the user request to extract a keyword and TRY AGAIN.');
         }
 
         const type = params.type || 'all';
@@ -39,9 +44,14 @@ export const QueryVectorDbSkill: Skill = {
         const activeDocIds = sessionRagOptions.activeDocIds ?? globalRagConfig.activeDocIds ?? [];
         const activeFolderIds = sessionRagOptions.activeFolderIds ?? globalRagConfig.activeFolderIds ?? [];
 
-        // Logical OR for isGlobal: if either session or global says true, then true.
-        // Default to false if both undefined.
-        const isGlobal = sessionRagOptions.isGlobal ?? globalRagConfig.isGlobal ?? false;
+        // 🔑 核心逻辑优化：智能范围决策
+        const isSuperAssistant = context.sessionId === 'super_assistant';
+        let isGlobal = params.scope === 'global' || sessionRagOptions.isGlobal || globalRagConfig.isGlobal || false;
+
+        // 特权对齐：超级助手默认为全库模式，除非显式指定 session
+        if (isSuperAssistant && params.scope !== 'session') {
+            isGlobal = true;
+        }
 
         try {
             const { context: contextText, references, metadata } = await MemoryManager.retrieveContext(
@@ -52,7 +62,7 @@ export const QueryVectorDbSkill: Skill = {
                     enableDocs,
                     activeDocIds,
                     activeFolderIds,
-                    isGlobal, // ✅ Dynamic isGlobal
+                    isGlobal,
                     ragConfig: {
                         memoryLimit: params.topK || 5,
                         docLimit: params.topK || 5,

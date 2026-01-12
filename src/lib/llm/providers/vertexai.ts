@@ -1,5 +1,7 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { KJUR } from 'jsrsasign';
+import { Skill, ToolCall } from '../../../types/skills';
+import zodToJsonSchema from 'zod-to-json-schema';
 
 // Add global polyfill for TextEncoder if missing (RN environment)
 if (typeof TextEncoder === 'undefined') {
@@ -8,6 +10,12 @@ if (typeof TextEncoder === 'undefined') {
 
 export class VertexAiClient implements LlmClient {
   private apiKey: string;
+  // ... (lines 11-154 preserved implicitly by replace logic? No, this is replace_file_content, I must be precise with range)
+
+  // Let's use a multi-replace to minimize context management or do a precise insertion.
+  // The file is huge. It's safer to use smaller chunks.
+  // I will cancel this tool call and use multi_replace_file_content to insert imports and the method.
+
   private baseUrl: string;
   private model: string;
   private temperature: number;
@@ -128,6 +136,54 @@ export class VertexAiClient implements LlmClient {
     }
   }
 
+  private mapSkillsToGeminiTools(skills: Skill[]): any[] {
+    // Helper to recursively uppercase types in schema for Gemini strictness
+    const fixSchema = (s: any): any => {
+      if (!s || typeof s !== 'object') return s;
+      const result = { ...s };
+      if (result.type && typeof result.type === 'string') {
+        result.type = result.type.toUpperCase();
+      }
+      if (result.properties) {
+        const newProps: any = {};
+        for (const key in result.properties) {
+          newProps[key] = fixSchema(result.properties[key]);
+        }
+        result.properties = newProps;
+      }
+      if (result.items) {
+        result.items = fixSchema(result.items);
+      }
+      return result;
+    };
+
+    return [{
+      functionDeclarations: skills.map((skill) => {
+        let schema = zodToJsonSchema(skill.schema as any) as any;
+        schema = JSON.parse(JSON.stringify(schema)); // Deep clone to avoid mutation issues
+
+        delete schema.$schema;
+        delete schema.additionalProperties;
+
+        // CRITICAL FIX: Vertex AI strictly requires 'type' to be 'OBJECT' for parameters
+        if (!schema.type) {
+          schema.type = 'OBJECT';
+        } else {
+          schema.type = schema.type.toUpperCase();
+        }
+
+        // Apply recursive fix to properties
+        schema = fixSchema(schema);
+
+        return {
+          name: skill.id,
+          description: skill.description,
+          parameters: schema,
+        };
+      })
+    }];
+  }
+
   async chatCompletion(
     messages: ChatMessage[],
     options?: any,
@@ -216,11 +272,28 @@ export class VertexAiClient implements LlmClient {
           return { parts: [] };
         };
 
+        // System Nudge for Voice/Tool consistency
+        const hasTools = (options?.skills && options.skills.length > 0) || options?.webSearch;
+        const systemInstruction = hasTools
+          ? `You are a helpful assistant with access to tools. 
+CRITICAL RULES:
+1. You MUST use the native function calling mechanism to execute tools. DO NOT just write code blocks or descriptions of tool calls.
+2. If you need information, call 'query_vector_db' or 'search_internet' IMMEDIATELY.
+3. If you need to generate an image, call 'generate_image' IMMEDIATELY.
+4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION.
+5. You can call multiple tools if needed.
+Available tools: ${options.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
+          : undefined;
+
         const body: any = {
-          contents: messages.map((m) => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            ...formatMessage(m),
-          })),
+          contents: messages.map((m) => {
+            let role = m.role === 'assistant' ? 'model' : 'user';
+            if (m.role === 'tool') role = 'function';
+            return {
+              role,
+              ...formatMessage(m),
+            };
+          }),
           generationConfig: {
             temperature: options?.inferenceParams?.temperature ?? (this.temperature || 0.7),
             topP: options?.inferenceParams?.topP,
@@ -235,8 +308,31 @@ export class VertexAiClient implements LlmClient {
           },
         };
 
+        if (systemInstruction) {
+          body.systemInstruction = {
+            parts: [{ text: systemInstruction }]
+          };
+        }
+
+        const tools: any[] = [];
+
         if (options?.webSearch) {
-          body.tools = [{ googleSearch: {} }];
+          tools.push({ googleSearch: {} });
+        }
+
+        if (hasTools && options?.skills && options.skills.length > 0) {
+          const geminiTools = this.mapSkillsToGeminiTools(options.skills);
+          tools.push(...geminiTools);
+
+          body.toolConfig = {
+            functionCallingConfig: {
+              mode: 'AUTO'
+            }
+          };
+        }
+
+        if (tools.length > 0) {
+          body.tools = tools;
         }
 
         let lastPosition = 0;

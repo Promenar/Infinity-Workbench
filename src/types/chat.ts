@@ -69,7 +69,8 @@ export interface RagReference {
   source: string; // 来源（文档名或会话标题）
   type: 'doc' | 'memory'; // 类型
   docId?: string; // 文档 ID（用于跳转）
-  similarity?: number; // 相似度分数
+  similarity?: number; // 相似度分数 (精排后)
+  originalSimilarity?: number; // 🚨 新增：原始相似度分数 (初召回)
 }
 // 检索进度
 export interface RagProgress {

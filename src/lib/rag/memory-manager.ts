@@ -289,15 +289,12 @@ export class MemoryManager {
             const docResults = await vectorStore.search(queryEmbedding, {
               limit: initialRecallLimit,
               threshold: effectiveRagConfig.docThreshold,
-              filter: { type: 'doc' },
+              filter: isGlobal
+                ? { type: 'doc' }
+                : { type: 'doc', docIds: Array.from(authorizedDocIds!) }, // 🔑 下沉过滤
             });
 
-            // Apply docId filtering if not global
-            const filteredDocs = isGlobal
-              ? docResults
-              : docResults.filter((r) => authorizedDocIds!.has(r.docId || ''));
-
-            results.push(...filteredDocs);
+            results.push(...docResults);
           } catch (e) {
             console.error(e);
           }
@@ -456,6 +453,12 @@ export class MemoryManager {
 
     let finalResults = [...combined, ...remaining].sort((a, b) => b.similarity - a.similarity);
 
+    // 🔑 在 Rerank 前备份原始相似度
+    finalResults = finalResults.map(r => ({
+      ...r,
+      originalSimilarity: r.similarity
+    }));
+
     // ===== 阶段 3: Rerank 精排 =====
     let rerankStartTime = 0;
     let rerankEndTime = 0;
@@ -548,6 +551,7 @@ export class MemoryManager {
       type: r.metadata?.type === 'memory' ? 'memory' : 'doc',
       docId: r.docId,
       similarity: r.similarity,
+      originalSimilarity: r.originalSimilarity, // 🚨 新增：传递原始分数给 UI
     }));
 
     onProgress?.('done', 100);

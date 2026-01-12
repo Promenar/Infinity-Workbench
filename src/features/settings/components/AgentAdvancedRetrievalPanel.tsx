@@ -97,11 +97,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.memoryLimitDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">3</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.items.replace('{count}', (currentConfig.memoryLimit ?? 5).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
           </View>
           <Slider
             value={currentConfig.memoryLimit ?? 5}
@@ -120,11 +120,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.agentMemorySimilarityThresholdDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">50%</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">50%</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {Math.round((currentConfig.memoryThreshold ?? 0.7) * 100)}%
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">95%</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">95%</Typography>
           </View>
           <Slider
             value={currentConfig.memoryThreshold ?? 0.7}
@@ -149,11 +149,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.docLimitDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.items.replace('{count}', (currentConfig.docLimit ?? 8).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">15</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">15</Typography>
           </View>
           <Slider
             value={currentConfig.docLimit ?? 8}
@@ -172,11 +172,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.agentDocSimilarityThresholdDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">30%</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">30%</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {Math.round((currentConfig.docThreshold ?? 0.45) * 100)}%
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">80%</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">80%</Typography>
           </View>
           <Slider
             value={currentConfig.docThreshold ?? 0.45}
@@ -218,11 +218,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.rerankRecallCountDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">10</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.items.replace('{count}', (currentConfig.rerankTopK ?? 30).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">100</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">100</Typography>
           </View>
           <Slider
             value={currentConfig.rerankTopK ?? 30}
@@ -242,11 +242,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.rerankResultCountDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">3</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">3</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.items.replace('{count}', (currentConfig.rerankFinalK ?? 8).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">20</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">20</Typography>
           </View>
           <Slider
             value={currentConfig.rerankFinalK ?? 8}
@@ -291,7 +291,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
                 onPress={() => handleChange({ queryRewriteStrategy: strategy })}
                 style={{
                   backgroundColor: (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors.opacity10 : 'transparent',
-                  borderColor: (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors[500] : 'rgba(156, 163, 175, 0.2)'
+                  borderColor: (currentConfig.queryRewriteStrategy ?? 'multi-query') === strategy ? colors[500] : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(156, 163, 175, 0.2)')
                 }}
                 className="flex-1 py-3 px-3 rounded-xl border"
               >
@@ -321,11 +321,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.queryRewriteCountDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">2</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">2</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {t.rag.items.replace('{count}', (currentConfig.queryRewriteCount ?? 3).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">5</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
           </View>
           <Slider
             value={currentConfig.queryRewriteCount ?? 3}
@@ -367,11 +367,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.vectorWeightDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">0</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">0</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {((currentConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">100%</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">100%</Typography>
           </View>
           <Slider
             value={currentConfig.hybridAlpha ?? 0.6}
@@ -391,11 +391,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             {t.rag.bm25BoostDesc}
           </Typography>
           <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">0.5x</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">0.5x</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
               {(currentConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
             </Typography>
-            <Typography className="text-sm text-gray-600 dark:text-gray-400">2.0x</Typography>
+            <Typography className="text-sm text-gray-400 dark:text-zinc-500">2.0x</Typography>
           </View>
           <Slider
             value={currentConfig.hybridBM25Boost ?? 1.0}

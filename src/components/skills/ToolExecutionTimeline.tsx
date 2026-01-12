@@ -1,24 +1,29 @@
 
 import React, { useState } from 'react';
-import { View, TouchableOpacity, ScrollView, Image, ActivityIndicator } from 'react-native';
-import Animated, { FadeInUp, FadeOutUp, Layout } from 'react-native-reanimated';
+import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler'; // Correct import for nesting
+import Animated, { FadeInUp, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { Typography } from '../ui/Typography';
-import { ChevronDown, ChevronRight, Brain, Globe, Database, Image as ImageIcon, Terminal, Share2, X } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Brain, Globe, Database, Image as ImageIcon, Terminal, Share2, X, AlertCircle, ListTodo } from 'lucide-react-native';
 import clsx from 'clsx';
 import * as Sharing from 'expo-sharing';
 import ImageView from 'react-native-image-viewing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ToolCall, ExecutionStep } from '../../types/skills';
+import { ExecutionStep } from '../../types/skills';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
+import { RagReferencesList } from '../../features/chat/components/RagReferences';
+import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 
 interface Props {
     steps: ExecutionStep[];
+    isMessageGenerating?: boolean;
 }
 
 const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
     if (type === 'thinking') return <Brain size={16} color="#A0A0A0" />;
-    if (type === 'error') return <Typography variant="caption" color="danger">!</Typography>;
+    if (type === 'error') return <AlertCircle size={16} color="#FF6B6B" />;
+    if (type === 'plan_item') return <ListTodo size={16} color="#A0A0A0" />;
 
     // Tool Icons
     if (toolName === 'search_internet') return <Globe size={16} color="#4F8EF7" />;
@@ -28,7 +33,30 @@ const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
     return <Terminal size={16} color="#A0A0A0" />; // Default tool icon
 };
 
-const TimelineItem = ({ step, isLast }: { step: ExecutionStep, isLast: boolean }) => {
+// Helper component for Search Internet Results
+const SearchResultsList = ({ sources, isDark }: { sources: any[], isDark: boolean }) => {
+    if (!sources || sources.length === 0) return null;
+    return (
+        <View className="mt-2 space-y-2">
+            {sources.map((source: any, idx: number) => (
+                <View key={idx} className="p-3 rounded-xl border" style={{
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f8f9fa',
+                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                }}>
+                    <View className="flex-row items-center mb-1">
+                        <Globe size={12} color="#4F8EF7" className="mr-2" />
+                        <Typography className="text-xs font-bold text-blue-500" numberOfLines={1}>{source.title || 'Source'}</Typography>
+                    </View>
+                    <Typography className="text-[10px] opacity-70 mb-1" numberOfLines={1}>{source.url}</Typography>
+                    <Typography className="text-xs opacity-90" numberOfLines={2}>{source.snippet || source.content}</Typography>
+                </View>
+            ))}
+        </View>
+    );
+};
+
+// Memoize TimelineItem to prevent unnecessary re-renders during streaming
+const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: ExecutionStep, isLast: boolean, isMessageGenerating?: boolean }) => {
     const [expanded, setExpanded] = useState(false);
     const [viewerVisible, setViewerVisible] = useState(false);
     const [sharing, setSharing] = useState(false);
@@ -40,16 +68,20 @@ const TimelineItem = ({ step, isLast }: { step: ExecutionStep, isLast: boolean }
         const skillName = step.toolName ? (t.skills.names[step.toolName as keyof typeof t.skills.names] || step.toolName) : '';
 
         switch (step.type) {
-            case 'thinking': return t.skills.timeline.thinking || 'Thinking Process';
+            case 'thinking': {
+                const isStillThinking = isLast && isMessageGenerating;
+                return isStillThinking ? (t.skills.timeline.thinking || 'Thinking...') : (t.skills.timeline.thought || 'Thought');
+            }
+            case 'plan_item': return t.skills.timeline.plan || 'Plan';
             case 'tool_call': return t.skills.timeline.using.replace('{name}', skillName);
             case 'tool_result': return t.skills.timeline.result.replace('{name}', skillName);
             case 'error': return t.skills.timeline.error;
         }
     };
 
-    // Auto-collapse thinking steps by default
+    // Auto-collapse thinking steps and results (unless it's an error)
     React.useEffect(() => {
-        if (step.type === 'thinking') {
+        if (step.type === 'thinking' || step.type === 'tool_result') {
             setExpanded(false);
         }
     }, [step.type]);
@@ -58,6 +90,21 @@ const TimelineItem = ({ step, isLast }: { step: ExecutionStep, isLast: boolean }
         if (step.type === 'tool_call') {
             return JSON.stringify(step.toolArgs).substring(0, 50) + '...';
         }
+
+        if (step.type === 'plan_item') {
+            return step.content || '';
+        }
+
+        // Custom preview for tool results
+        if (step.type === 'tool_result') {
+            if (step.toolName === 'query_vector_db' && step.data?.references) {
+                return `${step.data.references.length} result(s)`;
+            }
+            if (step.toolName === 'search_internet' && step.data?.sources) {
+                return `${step.data.sources.length} source(s)`;
+            }
+        }
+
         return (step.content || '').substring(0, 60) + '...';
     };
 
@@ -91,6 +138,10 @@ const TimelineItem = ({ step, isLast }: { step: ExecutionStep, isLast: boolean }
         }
     };
 
+    // Determine if we have rich content to show
+    const isRagResult = step.toolName === 'query_vector_db' && step.type === 'tool_result' && step.data?.references;
+    const isSearchResult = step.toolName === 'search_internet' && step.type === 'tool_result' && step.data?.sources;
+
     return (
         <Animated.View layout={Layout.springify()} className="flex-row">
             {/* ImageViewer Modal */}
@@ -119,7 +170,7 @@ const TimelineItem = ({ step, isLast }: { step: ExecutionStep, isLast: boolean }
             )}
 
             {/* Visual Line */}
-            <Animated.View layout={Layout.springify()} className="items-center mr-3 w-4">
+            <Animated.View layout={Layout.springify()} className="items-center mr-3 w-6">
                 <View className={clsx(
                     "w-6 h-6 rounded-full items-center justify-center border",
                     step.type === 'error' ? "border-red-500 bg-red-500/20" : "border-white/10 bg-white/5"
@@ -160,13 +211,17 @@ const TimelineItem = ({ step, isLast }: { step: ExecutionStep, isLast: boolean }
                         style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
                     >
                         {step.type === 'tool_call' && step.toolArgs && (
-                            <Typography variant="caption" className="font-mono text-xs text-blue-300">
+                            <Typography variant="caption" className="font-mono text-xs text-blue-300 mb-2">
                                 {JSON.stringify(step.toolArgs, null, 2)}
                             </Typography>
                         )}
 
-                        {/* Image Rendering */}
-                        {imageUri ? (
+                        {/* Rich Result Rendering */}
+                        {isRagResult ? (
+                            <RagReferencesList references={step.data.references} isDark={isDark} />
+                        ) : isSearchResult ? (
+                            <SearchResultsList sources={step.data.sources} isDark={isDark} />
+                        ) : imageUri ? (
                             <View className="mt-2 rounded-lg overflow-hidden border border-white/10 bg-white/5">
                                 <TouchableOpacity
                                     activeOpacity={0.9}
@@ -205,18 +260,103 @@ const TimelineItem = ({ step, isLast }: { step: ExecutionStep, isLast: boolean }
     );
 };
 
-export const ToolExecutionTimeline: React.FC<Props> = ({ steps }) => {
+// Optimization: Memoize TimelineItem to only re-render when its specific props change
+const TimelineItem = React.memo(TimelineItemComponent, (prev, next) => {
+    // Re-render if index changes (isLast) or generating status changes
+    if (prev.isLast !== next.isLast) return false;
+    if (prev.isMessageGenerating !== next.isMessageGenerating) return false;
+
+    // Check step deep equality for crucial fields
+    if (prev.step.id !== next.step.id) return false;
+    if (prev.step.content !== next.step.content) return false;
+    if (prev.step.timestamp !== next.step.timestamp) return false;
+
+    return true;
+});
+
+// Gradient Overlay for "Feathered" Look without expo-linear-gradient
+const GradientOverlay = ({ isTop, isDark, height = 24 }: { isTop: boolean, isDark: boolean, height?: number }) => {
+    // Determine background color based on theme
+    // We assume standard dark/light backgrounds from ChatBubble context
+    // dark: #27272a (zinc-800) or similar. using generic helps.
+    // light: #ffffff or #f4f4f5
+    const color = isDark ? '#27272a' : '#ffffff';
+
+    return (
+        <View
+            pointerEvents="none"
+            style={{
+                position: 'absolute',
+                [isTop ? 'top' : 'bottom']: 0,
+                left: 0,
+                right: 0,
+                height,
+                zIndex: 10
+            }}
+        >
+            <Svg height="100%" width="100%">
+                <Defs>
+                    <LinearGradient id="grad" x1="0" y1={isTop ? "0" : "1"} x2="0" y2={isTop ? "1" : "0"}>
+                        <Stop offset="0" stopColor={color} stopOpacity="1" />
+                        <Stop offset="1" stopColor={color} stopOpacity="0" />
+                    </LinearGradient>
+                </Defs>
+                <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
+            </Svg>
+        </View>
+    );
+};
+
+// Create Animated component from Gesture Handler's ScrollView for better nesting support
+const GHScrollView = Animated.createAnimatedComponent(ScrollView);
+
+export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating }) => {
+    const { isDark } = useTheme();
+    const [containerHeight, setContainerHeight] = useState(0);
+    const [contentHeight, setContentHeight] = useState(0);
+
+    const scrollViewRef = React.useRef<ScrollView>(null);
+    // Throttle scroll timestamp
+    const lastScrollTime = React.useRef(0);
+
+    // Auto-scroll logic with throttling (max once per 500ms)
+    // We check steps.length to ensure we scroll on new items
+    // But we also want to avoid hammering the UI thread
+    React.useEffect(() => {
+        if (isMessageGenerating && steps.length > 0) {
+            const now = Date.now();
+            if (now - lastScrollTime.current > 500) {
+                const timer = setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                    lastScrollTime.current = Date.now();
+                }, 100);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [steps.length, isMessageGenerating]);
+
     if (!steps || steps.length === 0) return null;
 
     return (
-        <View className="py-2 my-1">
-            {steps.map((step, index) => (
-                <TimelineItem
-                    key={step.id}
-                    step={step}
-                    isLast={index === steps.length - 1}
-                />
-            ))}
+        <View className="py-2 my-1 relative" onLayout={(e) => setContainerHeight(e.nativeEvent.layout.height)} style={{ maxHeight: 260 }}>
+            {/* Main Scroll Content */}
+            <GHScrollView
+                ref={scrollViewRef as any}
+                nestedScrollEnabled={false} // Fix: Prevent outer scroll when hitting boundary
+                showsVerticalScrollIndicator={false}
+                fadingEdgeLength={32} // Fix: Subtle Android native feathering
+                contentContainerStyle={{ paddingVertical: 8, paddingRight: 8 }}
+                onContentSizeChange={(_, h) => setContentHeight(h)}
+            >
+                {steps.map((step, index) => (
+                    <TimelineItem
+                        key={step.id}
+                        step={step}
+                        isLast={index === steps.length - 1}
+                        isMessageGenerating={isMessageGenerating}
+                    />
+                ))}
+            </GHScrollView>
         </View>
     );
 };
