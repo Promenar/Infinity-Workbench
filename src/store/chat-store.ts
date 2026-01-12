@@ -1230,7 +1230,73 @@ Then proceed to use the provided tools naturally.`;
               }
 
               // Strategy 2: Markdown Code Blocks (Legacy)
-              if (extractedCalls.length === 0) {
+              // Fallback Phase 1: Robust XML Parser (DeepSeek/Kimi style)
+              const xmlCallRegex = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+              let currentXmlMatch;
+
+              while ((currentXmlMatch = xmlCallRegex.exec(turnContent)) !== null) {
+                const xmlBlock = currentXmlMatch[1];
+                const nameMatch = /<tool_name>([\s\S]*?)<\/tool_name>/i.exec(xmlBlock);
+
+                if (nameMatch) {
+                  const funcName = nameMatch[1].trim();
+                  const args: Record<string, any> = {};
+
+                  // Parse key-value parameters: <parameter><key>x</key><value>y</value></parameter>
+                  const paramRegex = /<parameter>\s*<key>([\s\S]*?)<\/key>\s*<value>([\s\S]*?)<\/value>\s*<\/parameter>/gi;
+                  let paramMatch;
+                  while ((paramMatch = paramRegex.exec(xmlBlock)) !== null) {
+                    const key = paramMatch[1].trim();
+                    const val = paramMatch[2].trim();
+                    try {
+                      // Try parsing as JSON if it looks like it, else treat as string
+                      args[key] = (val.startsWith('{') || val.startsWith('[')) ? JSON.parse(val) : val;
+                    } catch (e) {
+                      args[key] = val;
+                    }
+                  }
+
+                  // Also support simple key=value or JSON inside the block if no explicit parameters found
+                  if (Object.keys(args).length === 0) {
+                    const jsonMatch = /\{[\s\S]*\}/.exec(xmlBlock);
+                    if (jsonMatch) {
+                      try {
+                        Object.assign(args, JSON.parse(jsonMatch[0]));
+                      } catch (e) { }
+                    }
+                  }
+
+                  extractedCalls.push({
+                    id: `xml_call_${Date.now()}_${extractedCalls.length}`,
+                    name: funcName,
+                    arguments: args
+                  });
+
+                  // Strip this block from content
+                  turnContent = turnContent.replace(currentXmlMatch[0], '').trim();
+                }
+              }
+
+              // Also search for <call tool="...">...</call> style (DeepSeek 2nd style)
+              const altXmlRegex = /<call\s+tool=["'](.*?)["']\s*>([\s\S]*?)<\/call>/gi;
+              let altXmlMatch;
+              while ((altXmlMatch = altXmlRegex.exec(turnContent)) !== null) {
+                const funcName = altXmlMatch[1];
+                try {
+                  const args = JSON.parse(altXmlMatch[2].trim());
+                  extractedCalls.push({
+                    id: `xml_alt_${Date.now()}_${extractedCalls.length}`,
+                    name: funcName,
+                    arguments: args
+                  });
+                  turnContent = turnContent.replace(altXmlMatch[0], '').trim();
+                } catch (e) { }
+              }
+
+              if (extractedCalls.length > 0) {
+                toolCalls = extractedCalls;
+              } else {
+                // Backward compatibility for simple JSON in code blocks
                 const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/yi;
                 const match = turnContent.match(jsonBlockRegex);
                 if (match && match[1]) {
@@ -1242,20 +1308,19 @@ Then proceed to use the provided tools naturally.`;
                     else if (Array.isArray(parsed)) parsed.forEach(p => addCall(p.tool || p.name, p.args || p.arguments));
                   } catch (e) { }
                 }
-              }
-
-              // Strategy 3: Naked JSON Search (Last Resort)
-              // Only if no calls found yet, verify content has {"action":...} or similar keywords to capture embedded JSON
-              if (extractedCalls.length === 0 && (turnContent.includes('"action"') || turnContent.includes('"tool"'))) {
-                // Re-use smart JSON extractor logic or simplified regex
-                const jsonRegex = /\{(?:[^{}]|{[^{}]*})*\}/g; // Simple nested brace matcher
-                let match;
-                while ((match = jsonRegex.exec(turnContent)) !== null) {
-                  try {
-                    const parsed = JSON.parse(match[0]);
-                    if (parsed.tool && parsed.args) addCall(parsed.tool, parsed.args);
-                    else if (parsed.action && parsed.action_input) addCall(parsed.action, parsed.action_input);
-                  } catch (e) { }
+                // Strategy 3: Naked JSON Search (Last Resort)
+                // Only if no calls found yet, verify content has {"action":...} or similar keywords to capture embedded JSON
+                if (extractedCalls.length === 0 && (turnContent.includes('"action"') || turnContent.includes('"tool"'))) {
+                  // Re-use smart JSON extractor logic or simplified regex
+                  const jsonRegex = /\{(?:[^{}]|{[^{}]*})*\}/g; // Simple nested brace matcher
+                  let match;
+                  while ((match = jsonRegex.exec(turnContent)) !== null) {
+                    try {
+                      const parsed = JSON.parse(match[0]);
+                      if (parsed.tool && parsed.args) addCall(parsed.tool, parsed.args);
+                      else if (parsed.action && parsed.action_input) addCall(parsed.action, parsed.action_input);
+                    } catch (e) { }
+                  }
                 }
               }
 
@@ -1371,19 +1436,25 @@ Then proceed to use the provided tools naturally.`;
             }
 
             if (toolCalls && toolCalls.length > 0) {
-              // Plan Detection
-              if (turnContent && turnContent.length > 0) {
-                updateSteps({
-                  id: `plan_${Date.now()}`,
-                  type: 'thinking',
-                  content: `Plan: ${turnContent}`,
-                  timestamp: Date.now()
-                });
-                accumulatedContent = accumulatedContent.replace(turnContent, '').trim();
-                get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage, '');
+              // 1. Plan/Task Detection & Extraction
+              const planRegex = /<(?:plan|task)>([\s\S]*?)<\/(?:plan|task)>/gi;
+              let planMatch;
+              while ((planMatch = planRegex.exec(turnContent)) !== null) {
+                const planText = planMatch[1].trim();
+                if (planText) {
+                  updateSteps({
+                    id: `plan_${Date.now()}`,
+                    type: 'thinking',
+                    content: planText,
+                    timestamp: Date.now()
+                  });
+                }
+                // Strip from content
+                turnContent = turnContent.replace(planMatch[0], '').trim();
+                accumulatedContent = accumulatedContent.replace(planMatch[0], '').trim();
               }
 
-              // Add to History
+              // 2. Add to History
               currentMessages.push({
                 role: 'assistant',
                 content: turnContent || '',
