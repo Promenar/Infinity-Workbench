@@ -27,14 +27,14 @@ export const Colors = {
     borderSubtle: '#f4f4f5', // Zinc-100
   },
   dark: {
-    background: '#050508',
-    surfaceSecondary: '#0f111a',
-    surfaceTertiary: '#1a1c2e',
-    textPrimary: '#f8fafc',
-    textSecondary: '#94a3b8',
-    textTertiary: '#64748b',
-    borderDefault: '#1e293b',
-    borderSubtle: '#0f111a',
+    background: '#0a0a0c',
+    surfaceSecondary: '#161618',
+    surfaceTertiary: '#222224',
+    textPrimary: '#ffffff',
+    textSecondary: '#a1a1aa',
+    textTertiary: '#71717a',
+    borderDefault: '#272729',
+    borderSubtle: '#161618',
   },
 };
 

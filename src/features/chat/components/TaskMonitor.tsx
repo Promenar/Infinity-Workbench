@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useChatStore } from '../../../store/chat-store';
 import { TaskStep } from '../../../types/chat';
+import { Colors } from '../../../theme/colors';
 
 // Enable layout animation on Android
 if (Platform.OS === 'android') {
@@ -95,8 +96,8 @@ export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
                 tint={isDark ? 'dark' : 'light'}
                 className="overflow-hidden border-b-[0.5px]"
                 style={{
-                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                    backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(255, 255, 255, 0.7)'
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                    backgroundColor: isDark ? 'rgba(21, 23, 38, 0.7)' : 'rgba(255, 255, 255, 0.7)'
                 }}
             >
                 <TouchableOpacity

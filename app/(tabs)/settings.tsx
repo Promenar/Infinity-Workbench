@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { PageLayout, Switch, LargeTitleHeader } from '../../src/components/ui';
+import { PageLayout, Switch } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 // import * as Haptics from '../../src/lib/haptics';
 // Removed in favor of wrapper
@@ -45,11 +45,13 @@ import {
   Image as ImageIcon,
 } from 'lucide-react-native';
 
+import { LargeTitleHeader } from '../../src/components/ui/LargeTitleHeader';
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
+import { Card } from '../../src/components/ui/Card';
 import { ModelSettingsModal } from '../../src/features/settings/ModelSettingsModal';
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
 import { GlobalRagConfigPanel } from '../../src/features/settings/components/GlobalRagConfigPanel';
-import * as Haptics from '../../src/lib/haptics'; // Import wrapper
+import * as Haptics from '../../src/lib/haptics';
 import Constants from 'expo-constants';
 
 export default function SettingsScreen() {
@@ -119,7 +121,7 @@ export default function SettingsScreen() {
             flexDirection: 'row',
             backgroundColor: isDark ? 'rgba(24, 24, 27, 0.8)' : '#f3f4f6',
             padding: 4,
-            borderRadius: 16,
+            borderRadius: 24,
             marginBottom: 32,
           }}
         >
@@ -133,7 +135,7 @@ export default function SettingsScreen() {
             style={{
               flex: 1,
               paddingVertical: 12,
-              borderRadius: 12,
+              borderRadius: 20,
               alignItems: 'center',
               backgroundColor:
                 activeTab === 'app'
@@ -170,7 +172,7 @@ export default function SettingsScreen() {
             style={{
               flex: 1,
               paddingVertical: 12,
-              borderRadius: 12,
+              borderRadius: 20,
               alignItems: 'center',
               backgroundColor:
                 activeTab === 'providers'
@@ -214,7 +216,7 @@ export default function SettingsScreen() {
                       style={{
                         flexDirection: 'row',
                         backgroundColor: isDark ? '#27272a' : '#e5e7eb',
-                        borderRadius: 16,
+                        borderRadius: 24,
                         padding: 4,
                       }}
                     >
@@ -228,7 +230,7 @@ export default function SettingsScreen() {
                         style={{
                           paddingHorizontal: 12,
                           paddingVertical: 4,
-                          borderRadius: 16,
+                          borderRadius: 20,
                           backgroundColor:
                             language === 'zh' ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent',
                         }}
@@ -253,7 +255,7 @@ export default function SettingsScreen() {
                         style={{
                           paddingHorizontal: 12,
                           paddingVertical: 4,
-                          borderRadius: 16,
+                          borderRadius: 20,
                           backgroundColor:
                             language === 'en' ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent',
                         }}
@@ -287,7 +289,7 @@ export default function SettingsScreen() {
                       style={{
                         flexDirection: 'row',
                         backgroundColor: isDark ? '#27272a' : '#e5e7eb',
-                        borderRadius: 16,
+                        borderRadius: 24,
                         padding: 2,
                       }}
                     >
@@ -310,7 +312,7 @@ export default function SettingsScreen() {
                             style={{
                               paddingHorizontal: 12,
                               paddingVertical: 8,
-                              borderRadius: 16,
+                              borderRadius: 20,
                               backgroundColor:
                                 theme === m ? (isDark ? '#3f3f46' : '#ffffff') : 'transparent',
                               alignItems: 'center',
@@ -558,7 +560,7 @@ export default function SettingsScreen() {
                   justifyContent: 'center',
                   backgroundColor: colors[500],
                   paddingVertical: 14,
-                  borderRadius: 16,
+                  borderRadius: 24,
                   marginBottom: 24,
                 }}
               >
@@ -588,110 +590,107 @@ export default function SettingsScreen() {
               ) : (
                 <View style={{ gap: 16 }}>
                   {providers.map((provider) => (
-                    <View
+                    <Card
                       key={provider.id}
-                      style={{
-                        backgroundColor: isDark ? 'rgba(24, 24, 27, 0.8)' : '#f9fafb',
-                        borderRadius: 16,
-                        padding: 16,
-                        borderWidth: 1,
-                        borderColor: isDark ? 'rgba(63, 63, 70, 0.5)' : '#e5e7eb',
-                      }}
+                      variant="glass"
+                      className="mb-4"
                     >
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          marginBottom: 16,
-                        }}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                          <View
-                            style={{
-                              width: 40,
-                              height: 40,
-                              borderRadius: 12,
-                              backgroundColor: isDark ? 'rgba(39, 39, 42, 0.9)' : '#f0f3ff',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <Server size={20} color={colors[500]} />
-                          </View>
-                          <View style={{ marginLeft: 12 }}>
-                            <Text
+                      <View className="p-4">
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: 16,
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            <View
                               style={{
-                                fontSize: 16,
-                                fontWeight: '700',
-                                color: isDark ? Colors.dark.textPrimary : '#111',
+                                width: 40,
+                                height: 40,
+                                borderRadius: 14,
+                                backgroundColor: isDark ? 'rgba(39, 39, 42, 0.6)' : 'rgba(0, 0, 0, 0.05)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                               }}
                             >
-                              {provider.name}
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: 12,
-                                color: isDark ? Colors.dark.textSecondary : '#666',
-                                marginTop: 2,
+                              <Server size={20} color={colors[500]} />
+                            </View>
+                            <View style={{ marginLeft: 12 }}>
+                              <Text
+                                style={{
+                                  fontSize: 16,
+                                  fontWeight: '700',
+                                  color: isDark ? Colors.dark.textPrimary : '#111',
+                                }}
+                              >
+                                {provider.name}
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  color: isDark ? Colors.dark.textSecondary : '#666',
+                                  marginTop: 2,
+                                }}
+                              >
+                                {provider.baseUrl}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setTimeout(() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                  setEditingProvider(provider);
+                                  setModalVisible(true);
+                                }, 10);
                               }}
+                              style={{ padding: 8 }}
                             >
-                              {provider.baseUrl}
-                            </Text>
+                              <Edit2 size={18} color={colors[500]} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setTimeout(() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                  deleteProvider(provider.id);
+                                  showToast(t.settings.providerDeleted, 'success');
+                                }, 10);
+                              }}
+                              style={{ padding: 8 }}
+                            >
+                              <Trash2 size={18} color="#ef4444" />
+                            </TouchableOpacity>
                           </View>
                         </View>
-                        <View style={{ flexDirection: 'row', gap: 8 }}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setTimeout(() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                setEditingProvider(provider);
-                                setModalVisible(true);
-                              }, 10);
-                            }}
-                            style={{ padding: 8 }}
-                          >
-                            <Edit2 size={18} color={colors[500]} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setTimeout(() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                deleteProvider(provider.id);
-                                showToast(t.settings.providerDeleted, 'success');
-                              }, 10);
-                            }}
-                            style={{ padding: 8 }}
-                          >
-                            <Trash2 size={18} color="#ef4444" />
-                          </TouchableOpacity>
-                        </View>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setTimeout(() => {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              setActiveProviderForModels(provider);
+                              setModelModalVisible(true);
+                            }, 10);
+                          }}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            alignSelf: 'flex-start',
+                            marginTop: 4,
+                            paddingVertical: 8,
+                            paddingHorizontal: 16,
+                            backgroundColor: isDark ? 'rgba(39, 39, 42, 0.6)' : 'rgba(0, 0, 0, 0.05)',
+                            borderRadius: 14,
+                          }}
+                        >
+                          <Cpu size={14} color={colors[500]} style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors[500] }}>
+                            {t.settings.modelSettings.title}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setTimeout(() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            setActiveProviderForModels(provider);
-                            setModelModalVisible(true);
-                          }, 10);
-                        }}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          alignSelf: 'flex-start',
-                          marginTop: 4,
-                          paddingVertical: 8,
-                          paddingHorizontal: 16,
-                          backgroundColor: isDark ? 'rgba(39, 39, 42, 0.9)' : '#f3f4f6',
-                          borderRadius: 16,
-                        }}
-                      >
-                        <Cpu size={14} color={colors[500]} style={{ marginRight: 6 }} />
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: colors[500] }}>
-                          {t.settings.modelSettings.title}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
+                    </Card>
                   ))}
                 </View>
               )}

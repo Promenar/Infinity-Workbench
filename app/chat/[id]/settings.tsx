@@ -44,6 +44,8 @@ import { InferenceSettings } from '../../../src/components/chat/InferenceSetting
 import { ContextManagementPanel } from '../../../src/features/chat/settings/ContextManagementPanel';
 import { preventDoubleTap } from '../../../src/lib/navigation-utils';
 import { useDebounce } from '../../../src/hooks/useDebounce';
+import { SettingsSection } from '../../../src/features/settings/components/SettingsSection';
+import { SettingsItem } from '../../../src/features/settings/components/SettingsItem';
 
 export default function SessionSettingsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -227,38 +229,39 @@ export default function SessionSettingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Parent Agent Reference */}
-          <SectionHeader title={t.agent.basicInfo} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center flex-1">
-                <View
-                  className="w-10 h-10 rounded-full items-center justify-center mr-3"
-                  style={{ backgroundColor: `${agent.color}20` }}
+          <SettingsSection title={t.agent.basicInfo}>
+            <View className="p-4">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center flex-1">
+                  <View
+                    className="w-10 h-10 rounded-full items-center justify-center mr-3"
+                    style={{ backgroundColor: `${agent.color}20` }}
+                  >
+                    <MessageSquare size={20} color={agent.color} />
+                  </View>
+                  <View className="flex-1">
+                    <Typography className="text-gray-900 dark:text-white font-bold">
+                      {agent.name}
+                    </Typography>
+                    <Typography variant="caption" className="text-gray-500">
+                      {t.agent.conversation.inheritFrom.replace('{agentName}', '')}
+                    </Typography>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    preventDoubleTap(() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      router.push(`/chat/agent/edit/${agent.id}`);
+                    });
+                  }}
+                  className="p-2 rounded-full bg-white dark:bg-black border border-indigo-50 dark:border-indigo-400/20"
                 >
-                  <MessageSquare size={20} color={agent.color} />
-                </View>
-                <View className="flex-1">
-                  <Typography className="text-gray-900 dark:text-white font-bold">
-                    {agent.name}
-                  </Typography>
-                  <Typography variant="caption" className="text-gray-500">
-                    {t.agent.conversation.inheritFrom.replace('{agentName}', '')}
-                  </Typography>
-                </View>
+                  <SettingsIcon size={18} color={isDark ? '#94a3b8' : '#64748b'} />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                onPress={() => {
-                  preventDoubleTap(() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push(`/chat/agent/edit/${agent.id}`);
-                  });
-                }}
-                className="p-2 rounded-full bg-white dark:bg-black border border-indigo-50 dark:border-indigo-500/10"
-              >
-                <SettingsIcon size={18} color={isDark ? '#94a3b8' : '#64748b'} />
-              </TouchableOpacity>
             </View>
-          </View>
+          </SettingsSection>
 
           {/* Export Current Activity */}
           <SectionHeader title={t.agent.superAssistant.exportHistory} />
@@ -281,299 +284,305 @@ export default function SessionSettingsScreen() {
           </TouchableOpacity>
 
           {/* Session Title */}
-          <View className="flex-row items-center justify-between mb-2">
-            <SectionHeader title={t.agent.conversation.editTitle} />
-            <TouchableOpacity
-              onPress={handleGenerateTitle}
-              disabled={isGeneratingTitle}
-              className="flex-row items-center mt-2"
-            >
-              {isGeneratingTitle ? (
-                <ActivityIndicator size="small" color={colors[500]} />
-              ) : (
-                <>
-                  <Sparkles size={12} color={colors[500]} className="mr-1" />
-                  <Typography style={{ color: colors[600] }} className="text-[10px] font-bold">
-                    {t.agent.conversation.aiGenerated}
-                  </Typography>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
-            <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-indigo-50 dark:border-indigo-500/10 font-bold"
-              value={formData.title}
-              onChangeText={(text) => setFormData({ ...formData, title: text })}
-              placeholder={t.agent.conversation.editTitle}
-              placeholderTextColor="#94a3b8"
-            />
-          </View>
+          <SettingsSection title={t.agent.conversation.editTitle}>
+            <View className="p-4">
+              <View className="flex-row items-center justify-between mb-4">
+                <Typography className="text-xs text-gray-500 dark:text-gray-400">
+                  {t.agent.conversation.sessionTitleDesc || '修改此会话的显示名称'}
+                </Typography>
+                <TouchableOpacity
+                  onPress={handleGenerateTitle}
+                  disabled={isGeneratingTitle}
+                  className="flex-row items-center"
+                >
+                  {isGeneratingTitle ? (
+                    <ActivityIndicator size="small" color={colors[500]} />
+                  ) : (
+                    <>
+                      <Sparkles size={12} color={colors[500]} className="mr-1" />
+                      <Typography style={{ color: colors[600] }} className="text-[10px] font-bold">
+                        {t.agent.conversation.aiGenerated}
+                      </Typography>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                className="text-gray-600 dark:text-gray-200 bg-white/50 dark:bg-black/50 p-4 rounded-xl border border-indigo-50 dark:border-indigo-400/10 font-bold"
+                value={formData.title}
+                onChangeText={(text) => setFormData({ ...formData, title: text })}
+                placeholder={t.agent.conversation.editTitle}
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
+          </SettingsSection>
 
           {/* Inference Parameters */}
-          <SectionHeader title={t.agent.conversation.inferenceSettings || 'Inference Parameters'} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
-            <InferenceSettings
-              params={session.inferenceParams || {}}
-              onUpdate={(params) => updateSessionInferenceParams(id, params)}
-              agentDefaultParams={agent.params}
-            />
-          </View>
+          <SettingsSection title={t.agent.conversation.inferenceSettings || 'Inference Parameters'}>
+            <View className="p-4">
+              <InferenceSettings
+                params={session.inferenceParams || {}}
+                onUpdate={(params) => updateSessionInferenceParams(id, params)}
+                agentDefaultParams={agent.params}
+              />
+            </View>
+          </SettingsSection>
 
           {/* RAG Settings */}
-          <SectionHeader title={t.agent.conversation.ragSettings || 'Knowledge & Memory'} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
-            {/* Toggle: Enable Memory */}
-            <View className="flex-row items-center justify-between py-2 mb-2">
-              <View className="flex-1 pr-4">
-                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.agent.conversation.longTermMemory}
-                </Typography>
-                <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.agent.conversation.longTermMemoryDesc}
-                </Typography>
-              </View>
-              <Switch
-                value={session.ragOptions?.enableMemory !== false}
-                onValueChange={() => {
-                  const current = session.ragOptions?.enableMemory !== false;
-                  useChatStore.getState().updateSessionOptions(id, {
-                    ragOptions: { ...session.ragOptions, enableMemory: !current },
-                  });
-                }}
-              />
-            </View>
-
-            {/* Divider */}
-            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-2" />
-
-            {/* Toggle: Enable Knowledge Graph Extraction */}
-            <View className="flex-row items-center justify-between py-2 mb-2">
-              <View className="flex-1 pr-4">
-                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.agent.conversation.kgExtraction || '对话图谱提取'}
-                </Typography>
-                <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.agent.conversation.kgExtractionDesc || '自动提取对话中的实体关系，构建动态知识图谱'}
-                </Typography>
-              </View>
-              <Switch
-                value={
-                  session.ragOptions?.enableKnowledgeGraph !== undefined
-                    ? session.ragOptions.enableKnowledgeGraph
-                    : (useSettingsStore.getState().globalRagConfig.enableKnowledgeGraph ?? false)
-                }
-                onValueChange={() => {
-                  const globalEnabled = useSettingsStore.getState().globalRagConfig.enableKnowledgeGraph ?? false;
-                  const current =
-                    session.ragOptions?.enableKnowledgeGraph !== undefined
-                      ? session.ragOptions.enableKnowledgeGraph
-                      : globalEnabled;
-
-                  // @ts-ignore: Dynamic property update
-                  useChatStore.getState().updateSessionOptions(id, {
-                    ragOptions: { ...session.ragOptions, enableKnowledgeGraph: !current } as any,
-                  });
-                }}
-              />
-            </View>
-
-            {/* KG Visualization Button - Always visible regardless of doc state */}
-            <TouchableOpacity
-              onPress={() => router.push({ pathname: '/knowledge-graph', params: { sessionId: id } })}
-              style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)' }}
-              className="mt-3 flex-row items-center justify-between p-4 rounded-2xl border border-indigo-100/50 dark:border-indigo-400/10"
-            >
-              <View className="flex-row items-center gap-3">
-                <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
-                  <Network size={20} color={colors[600]} />
-                </View>
-                <View>
-                  <Typography style={{ color: colors[900] }} className="text-sm font-bold">
-                    查看当前会话图谱
+          <SettingsSection title={t.agent.conversation.ragSettings || 'Knowledge & Memory'}>
+            <View className="p-4">
+              {/* Toggle: Enable Memory */}
+              <View className="flex-row items-center justify-between py-2 mb-2">
+                <View className="flex-1 pr-4">
+                  <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    {t.agent.conversation.longTermMemory}
                   </Typography>
-                  <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
-                    可视化查看上下文中提取的实体关系
+                  <Typography variant="caption" className="text-gray-500 mt-1">
+                    {t.agent.conversation.longTermMemoryDesc}
                   </Typography>
                 </View>
-              </View>
-              <ChevronRight size={18} color={colors[600]} />
-            </TouchableOpacity>
-
-            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
-
-            {/* Toggle: Enable Knowledge Base */}
-            <View className="flex-row items-center justify-between py-2">
-              <View className="flex-1 pr-4">
-                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.agent.conversation.knowledgeBase}
-                </Typography>
-                <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.agent.conversation.knowledgeBaseDesc}
-                </Typography>
-              </View>
-              <Switch
-                value={session.ragOptions?.enableDocs === true}
-                onValueChange={() => {
-                  const current = session.ragOptions?.enableDocs === true;
-                  useChatStore.getState().updateSessionOptions(id, {
-                    ragOptions: { ...session.ragOptions, enableDocs: !current },
-                  });
-                }}
-              />
-            </View>
-
-            {/* Document Picker (Only when enabled) */}
-            {session.ragOptions?.enableDocs && (
-              <View className="mt-4 pt-4 border-t border-indigo-50 dark:border-indigo-500/10">
-                <TouchableOpacity
-                  onPress={() => setShowDocPicker(true)}
-                  className="flex-row items-center justify-between bg-white dark:bg-black p-4 rounded-2xl border border-indigo-50 dark:border-indigo-500/10"
-                >
-                  <Typography style={{ color: colors[600] }} className="font-bold">
-                    {t.library.selectDocs} (
-                    {(session.ragOptions?.activeDocIds?.length || 0) +
-                      (session.ragOptions?.activeFolderIds?.length || 0)}
-                    )
-                  </Typography>
-                  <ChevronRight size={20} color={colors[600]} />
-                </TouchableOpacity>
-
-                {/* Selected items preview */}
-                {((session.ragOptions?.activeDocIds?.length || 0) > 0 ||
-                  (session.ragOptions?.activeFolderIds?.length || 0) > 0) && (
-                    <View className="flex-row flex-wrap gap-2 mt-3">
-                      {session.ragOptions?.activeDocIds?.map((docId) => {
-                        const doc = documents.find((d) => d.id === docId);
-                        if (!doc) return null;
-                        return (
-                          <View
-                            key={docId}
-                            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-                            className="flex-row items-center px-2 py-1 rounded-lg border"
-                          >
-                            <Typography
-                              style={{ color: colors[600] }}
-                              className="text-[10px] mr-1"
-                              numberOfLines={1}
-                            >
-                              {doc.title}
-                            </Typography>
-                            <TouchableOpacity
-                              onPress={() => {
-                                const newIds = session.ragOptions?.activeDocIds?.filter(
-                                  (id) => id !== docId,
-                                );
-                                useChatStore.getState().updateSessionOptions(id, {
-                                  ragOptions: {
-                                    ...session.ragOptions,
-                                    activeDocIds: newIds?.length ? newIds : undefined,
-                                  },
-                                });
-                              }}
-                            >
-                              <X size={12} color={colors[600]} />
-                            </TouchableOpacity>
-                          </View>
-                        );
-                      })}
-                      {session.ragOptions?.activeFolderIds?.map((folderId) => {
-                        const folder = folders.find((f) => f.id === folderId);
-                        if (!folder) return null;
-                        return (
-                          <View
-                            key={folderId}
-                            className="flex-row items-center bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-500/20"
-                          >
-                            <Folder size={10} color="#f59e0b" className="mr-1" />
-                            <Typography
-                              className="text-[10px] text-amber-600 dark:text-amber-400 mr-1"
-                              numberOfLines={1}
-                            >
-                              {folder.name}
-                            </Typography>
-                            <TouchableOpacity
-                              onPress={() => {
-                                const newIds = session.ragOptions?.activeFolderIds?.filter(
-                                  (id) => id !== folderId,
-                                );
-                                useChatStore.getState().updateSessionOptions(id, {
-                                  ragOptions: {
-                                    ...session.ragOptions,
-                                    activeFolderIds: newIds?.length ? newIds : undefined,
-                                  },
-                                });
-                              }}
-                            >
-                              <X size={12} color="#f59e0b" />
-                            </TouchableOpacity>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-
-                {/* Modal */}
-                <DocumentPickerModal
-                  visible={showDocPicker}
-                  onClose={() => setShowDocPicker(false)}
-                  folders={folders}
-                  documents={documents}
-                  selectedDocIds={session.ragOptions?.activeDocIds || []}
-                  selectedFolderIds={session.ragOptions?.activeFolderIds || []}
-                  onConfirm={(docIds, folderIds) => {
+                <Switch
+                  value={session.ragOptions?.enableMemory !== false}
+                  onValueChange={() => {
+                    const current = session.ragOptions?.enableMemory !== false;
                     useChatStore.getState().updateSessionOptions(id, {
-                      ragOptions: {
-                        ...session.ragOptions,
-                        activeDocIds: docIds.length > 0 ? docIds : undefined,
-                        activeFolderIds: folderIds.length > 0 ? folderIds : undefined,
-                      },
+                      ragOptions: { ...session.ragOptions, enableMemory: !current },
                     });
                   }}
                 />
               </View>
-            )}
-          </View>
+
+              {/* Divider */}
+              <View className="h-[1px] bg-indigo-500/10 dark:bg-indigo-400/10 my-2" />
+
+              {/* Toggle: Enable Knowledge Graph Extraction */}
+              <View className="flex-row items-center justify-between py-2 mb-2">
+                <View className="flex-1 pr-4">
+                  <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    {t.agent.conversation.kgExtraction || '对话图谱提取'}
+                  </Typography>
+                  <Typography variant="caption" className="text-gray-500 mt-1">
+                    {t.agent.conversation.kgExtractionDesc || '自动提取对话中的实体关系，构建动态知识图谱'}
+                  </Typography>
+                </View>
+                <Switch
+                  value={
+                    session.ragOptions?.enableKnowledgeGraph !== undefined
+                      ? session.ragOptions.enableKnowledgeGraph
+                      : (useSettingsStore.getState().globalRagConfig.enableKnowledgeGraph ?? false)
+                  }
+                  onValueChange={() => {
+                    const globalEnabled = useSettingsStore.getState().globalRagConfig.enableKnowledgeGraph ?? false;
+                    const current =
+                      session.ragOptions?.enableKnowledgeGraph !== undefined
+                        ? session.ragOptions.enableKnowledgeGraph
+                        : globalEnabled;
+
+                    // @ts-ignore
+                    useChatStore.getState().updateSessionOptions(id, {
+                      ragOptions: { ...session.ragOptions, enableKnowledgeGraph: !current } as any,
+                    });
+                  }}
+                />
+              </View>
+
+              {/* KG Visualization Button */}
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/knowledge-graph', params: { sessionId: id } })}
+                style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.4)' }}
+                className="mt-2 flex-row items-center justify-between p-4 rounded-2xl border border-indigo-100/50 dark:border-indigo-400/10"
+              >
+                <View className="flex-row items-center gap-3">
+                  <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
+                    <Network size={20} color={colors[600]} />
+                  </View>
+                  <View>
+                    <Typography style={{ color: colors[900] }} className="text-sm font-bold">
+                      {t.agent.conversation.viewKg || '查看当前会话图谱'}
+                    </Typography>
+                    <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
+                      可视化查看上下文中提取的实体关系
+                    </Typography>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={colors[600]} />
+              </TouchableOpacity>
+
+              <View className="h-[1px] bg-indigo-500/10 dark:bg-indigo-400/10 my-4" />
+
+              {/* Toggle: Enable Knowledge Base */}
+              <View className="flex-row items-center justify-between py-2">
+                <View className="flex-1 pr-4">
+                  <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    {t.agent.conversation.knowledgeBase}
+                  </Typography>
+                  <Typography variant="caption" className="text-gray-500 mt-1">
+                    {t.agent.conversation.knowledgeBaseDesc}
+                  </Typography>
+                </View>
+                <Switch
+                  value={session.ragOptions?.enableDocs === true}
+                  onValueChange={() => {
+                    const current = session.ragOptions?.enableDocs === true;
+                    useChatStore.getState().updateSessionOptions(id, {
+                      ragOptions: { ...session.ragOptions, enableDocs: !current },
+                    });
+                  }}
+                />
+              </View>
+
+              {/* Document Picker (Only when enabled) */}
+              {session.ragOptions?.enableDocs && (
+                <View className="mt-3 pt-3 border-t border-indigo-500/10 dark:border-indigo-400/10">
+                  <TouchableOpacity
+                    onPress={() => setShowDocPicker(true)}
+                    className="flex-row items-center justify-between bg-white/40 dark:bg-black/40 p-3 rounded-xl border border-indigo-50 dark:border-indigo-400/10"
+                  >
+                    <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+                      {t.library.selectDocs} (
+                      {(session.ragOptions?.activeDocIds?.length || 0) +
+                        (session.ragOptions?.activeFolderIds?.length || 0)}
+                      )
+                    </Typography>
+                    <ChevronRight size={20} color={colors[600]} />
+                  </TouchableOpacity>
+
+                  {/* Selected items preview */}
+                  {((session.ragOptions?.activeDocIds?.length || 0) > 0 ||
+                    (session.ragOptions?.activeFolderIds?.length || 0) > 0) && (
+                      <View className="flex-row flex-wrap gap-2 mt-3">
+                        {session.ragOptions?.activeDocIds?.map((docId) => {
+                          const doc = documents.find((d) => d.id === docId);
+                          if (!doc) return null;
+                          return (
+                            <View
+                              key={docId}
+                              style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+                              className="flex-row items-center px-2 py-1 rounded-lg border"
+                            >
+                              <Typography
+                                style={{ color: colors[600] }}
+                                className="text-[10px] mr-1"
+                                numberOfLines={1}
+                              >
+                                {doc.title}
+                              </Typography>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  const newIds = session.ragOptions?.activeDocIds?.filter(
+                                    (id) => id !== docId,
+                                  );
+                                  useChatStore.getState().updateSessionOptions(id, {
+                                    ragOptions: {
+                                      ...session.ragOptions,
+                                      activeDocIds: newIds?.length ? newIds : undefined,
+                                    },
+                                  });
+                                }}
+                              >
+                                <X size={12} color={colors[600]} />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                        {session.ragOptions?.activeFolderIds?.map((folderId) => {
+                          const folder = folders.find((f) => f.id === folderId);
+                          if (!folder) return null;
+                          return (
+                            <View
+                              key={folderId}
+                              className="flex-row items-center bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-500/20"
+                            >
+                              <Folder size={10} color="#f59e0b" className="mr-1" />
+                              <Typography
+                                className="text-[10px] text-amber-600 dark:text-amber-400 mr-1"
+                                numberOfLines={1}
+                              >
+                                {folder.name}
+                              </Typography>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  const newIds = session.ragOptions?.activeFolderIds?.filter(
+                                    (id) => id !== folderId,
+                                  );
+                                  useChatStore.getState().updateSessionOptions(id, {
+                                    ragOptions: {
+                                      ...session.ragOptions,
+                                      activeFolderIds: newIds?.length ? newIds : undefined,
+                                    },
+                                  });
+                                }}
+                              >
+                                <X size={12} color="#f59e0b" />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                  {/* Modal */}
+                  <DocumentPickerModal
+                    visible={showDocPicker}
+                    onClose={() => setShowDocPicker(false)}
+                    folders={folders}
+                    documents={documents}
+                    selectedDocIds={session.ragOptions?.activeDocIds || []}
+                    selectedFolderIds={session.ragOptions?.activeFolderIds || []}
+                    onConfirm={(docIds, folderIds) => {
+                      useChatStore.getState().updateSessionOptions(id, {
+                        ragOptions: {
+                          ...session.ragOptions,
+                          activeDocIds: docIds.length > 0 ? docIds : undefined,
+                          activeFolderIds: folderIds.length > 0 ? folderIds : undefined,
+                        },
+                      });
+                    }}
+                  />
+                </View>
+              )}
+            </View>
+          </SettingsSection>
 
           {/* Context Management */}
           <ContextManagementPanel sessionId={id} />
 
           {/* Custom Prompt */}
-          <SectionHeader title={t.agent.conversation.customPrompt} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
-            <View style={{ backgroundColor: colors.opacity10 }} className="p-3.5 rounded-xl mb-4">
-              <Typography style={{ color: colors[700] }} className="text-[12px] flex-1 leading-tight">
-                {t.agent.conversation.customPromptPlaceholder}
-              </Typography>
-            </View>
-
-            <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
-              <View className="flex-row items-center justify-between mb-2">
-                <View className="flex-row items-center">
-                  <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
-                  <Typography className="font-bold text-gray-700 dark:text-gray-300">
-                    {t.agent.conversation.customPrompt || '额外 Prompt 指令'}
-                  </Typography>
-                </View>
-                {formData.customPrompt ? (
-                  <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
-                    <Typography className="text-[10px] text-green-700 dark:text-green-400">
-                      {t.rag.configured || '已配置'}
-                    </Typography>
-                  </View>
-                ) : (
-                  <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
-                    <Typography className="text-[10px] text-gray-500">
-                      {t.rag.usingDefault || '未设置'}
-                    </Typography>
-                  </View>
-                )}
+          <SettingsSection title={t.agent.conversation.customPrompt}>
+            <View className="p-4">
+              <View style={{ backgroundColor: colors.opacity10 }} className="p-3.5 rounded-xl mb-4">
+                <Typography style={{ color: colors[700] }} className="text-[12px] flex-1 leading-tight">
+                  {t.agent.conversation.customPromptPlaceholder}
+                </Typography>
               </View>
 
               <TouchableOpacity
                 onPress={() => setIsPromptEditorVisible(true)}
                 activeOpacity={0.7}
+                className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}
               >
+                <View className="flex-row items-center justify-between mb-2">
+                  <View className="flex-row items-center">
+                    <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
+                    <Typography className="font-bold text-gray-700 dark:text-gray-300">
+                      {t.agent.conversation.customPrompt || '额外 Prompt 指令'}
+                    </Typography>
+                  </View>
+                  {formData.customPrompt ? (
+                    <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                      <Typography className="text-[10px] text-green-700 dark:text-green-400">
+                        {t.rag.configured || '已配置'}
+                      </Typography>
+                    </View>
+                  ) : (
+                    <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
+                      <Typography className="text-[10px] text-gray-500">
+                        {t.rag.usingDefault || '未设置'}
+                      </Typography>
+                    </View>
+                  )}
+                </View>
+
                 <Typography
                   numberOfLines={4}
                   className="text-xs text-gray-500 dark:text-gray-400 leading-5"
@@ -582,7 +591,7 @@ export default function SessionSettingsScreen() {
                 </Typography>
               </TouchableOpacity>
             </View>
-          </View>
+          </SettingsSection>
 
           <FloatingTextEditorModal
             visible={isPromptEditorVisible}
@@ -597,30 +606,29 @@ export default function SessionSettingsScreen() {
           />
 
           {/* Danger Zone */}
-          <SectionHeader title={t.common.dangerZone} />
-
-          {/* Danger Zone */}
-          <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
-            <TouchableOpacity
-              onPress={handleDeleteSession}
-              className="flex-row items-center justify-between"
-            >
-              <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 items-center justify-center mr-3">
-                  <Trash2 size={20} color="#ef4444" />
+          <SettingsSection title={t.common.dangerZone}>
+            <View className="p-4">
+              <TouchableOpacity
+                onPress={handleDeleteSession}
+                className="flex-row items-center justify-between"
+              >
+                <View className="flex-row items-center">
+                  <View className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-500/10 items-center justify-center mr-3">
+                    <Trash2 size={20} color="#ef4444" />
+                  </View>
+                  <View>
+                    <Typography className="text-red-600 dark:text-red-400 font-bold">
+                      {t.agent.conversation.deleteSession}
+                    </Typography>
+                    <Typography variant="caption" className="text-red-400/80">
+                      {t.agent.conversation.deleteSessionDesc}
+                    </Typography>
+                  </View>
                 </View>
-                <View>
-                  <Typography className="text-red-600 dark:text-red-400 font-bold">
-                    {t.agent.conversation.deleteSession}
-                  </Typography>
-                  <Typography variant="caption" className="text-red-400/80">
-                    {t.agent.conversation.deleteSessionDesc}
-                  </Typography>
-                </View>
-              </View>
-              <ChevronRight size={20} color="#ef4444" />
-            </TouchableOpacity>
-          </View>
+                <ChevronRight size={20} color="#ef4444" />
+              </TouchableOpacity>
+            </View>
+          </SettingsSection>
         </ScrollView>
       </KeyboardAvoidingView>
 

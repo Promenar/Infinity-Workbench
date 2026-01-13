@@ -297,12 +297,12 @@ export function ChatInput({
       ]}
     >
       <BlurView
-        intensity={120}
+        intensity={isDark ? 80 : 120}
         tint={isDark ? 'dark' : 'light'}
         style={[
           styles.blurContainer,
           {
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
             borderWidth: 1.5,
           },
         ]}
@@ -311,7 +311,7 @@ export function ChatInput({
           style={[
             styles.overlay,
             {
-              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(255, 255, 255, 0.3)',
+              backgroundColor: isDark ? 'rgba(10, 10, 12, 0.8)' : 'rgba(255, 255, 255, 0.3)',
             },
           ]}
         />

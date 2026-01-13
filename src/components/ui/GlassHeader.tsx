@@ -194,7 +194,7 @@ export function GlassHeader({
                         left: 0,
                         right: 0,
                         height: 0.5,
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.15)',
                     }}
                 />
             )}

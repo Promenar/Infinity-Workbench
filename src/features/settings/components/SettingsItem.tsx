@@ -43,11 +43,14 @@ export function SettingsItem({
       activeOpacity={0.7}
       style={[
         styles.container,
-        !isLast && { borderBottomWidth: 1, borderBottomColor: themeColors.borderDefault },
+        !isLast && {
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+        },
       ]}
     >
       <View style={styles.iconContainer}>
-        <Icon size={20} color={colors[500]} />
+        <Icon size={18} color={colors[500]} />
       </View>
 
       <View style={styles.content}>
@@ -63,7 +66,7 @@ export function SettingsItem({
 
       {showChevron && (
         <View style={styles.chevron}>
-          <ChevronRight size={20} color={themeColors.textTertiary} />
+          <ChevronRight size={18} color={themeColors.textTertiary} />
         </View>
       )}
     </TouchableOpacity>
@@ -75,10 +78,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 13, // Reduced 16 -> 13
+    paddingVertical: 12, // Reduced -> 12
   },
   iconContainer: {
-    width: 24,
+    width: 22, // Reduced 24 -> 22
     alignItems: 'center',
   },
   content: {

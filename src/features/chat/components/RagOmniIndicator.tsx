@@ -15,6 +15,7 @@ import {
     Brain,
     Loader2
 } from 'lucide-react-native';
+import { Colors } from '../../../theme/colors';
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -176,7 +177,7 @@ export const RagOmniIndicator: React.FC<RagOmniIndicatorProps> = ({
             return {
                 label: statusLabel,
                 icon: leftIcon,
-                color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                color: isDark ? Colors.dark.textSecondary : 'rgba(0,0,0,0.6)',
                 showCaret: referencesCount > 0,
                 // 只在真正归档后显示右侧绿勾
                 showCheck: !isRetrieved,

@@ -12,7 +12,7 @@ interface CardProps extends ViewProps {
 export function Card({ variant = 'default', onPress, className, children, style, ...props }: CardProps) {
   const { isDark } = useTheme();
 
-  const baseStyle = 'bg-surface-primary border border-border-default rounded-2xl overflow-hidden';
+  const baseStyle = 'bg-surface-primary border border-border-default rounded-[24px] overflow-hidden';
 
   const variants = {
     default: '',
@@ -24,7 +24,7 @@ export function Card({ variant = 'default', onPress, className, children, style,
     baseStyle,
     variants[variant],
     onPress && 'active:scale-[0.98] active:border-primary-500/50 transition-all',
-    variant === 'glass' && 'bg-transparent border-indigo-500/10 dark:border-indigo-400/10',
+    variant === 'glass' && 'bg-transparent border-indigo-500/10 dark:border-indigo-400/20',
     className,
   );
 
@@ -37,7 +37,7 @@ export function Card({ variant = 'default', onPress, className, children, style,
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         />
       )}
-      <View style={variant === 'glass' ? { backgroundColor: isDark ? 'rgba(15, 17, 26, 0.6)' : 'rgba(255, 255, 255, 0.7)' } : null} className="flex-1">
+      <View style={variant === 'glass' ? { backgroundColor: isDark ? 'rgba(28, 28, 40, 0.7)' : 'rgba(255, 255, 255, 0.8)' } : null}>
         {children}
       </View>
     </>

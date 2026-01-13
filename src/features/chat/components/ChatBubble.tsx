@@ -89,6 +89,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react-native';
 import { ActivityIndicator } from 'react-native';
+import { Colors } from '../../../theme/colors';
 
 interface ChatBubbleProps {
   message: Message;
@@ -496,9 +497,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   onLayout, // ✅ 新增：传递布局回调
 }) => {
   const { t } = useI18n();
-  const { theme, colors: themeColors } = useTheme(); // ✅ 重命名 colors 以免冲突
+  const { isDark, colors } = useTheme();
   const { processingState, updateProcessingState } = useRagStore();
-  const isDark = theme === 'dark';
   const isUser = message.role === 'user';
   // const { isDark } = useTheme(); // REMOVED to avoid context crash during unmount
 
@@ -736,9 +736,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 alignItems: 'center',
                 paddingHorizontal: 12,
                 paddingVertical: 8,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
                 borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)',
               }}
             >
               <Typography
@@ -760,7 +760,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 style={{
                   fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                   fontSize: 13,
-                  color: isDark ? '#e4e4e7' : '#27272a',
+                  color: isDark ? '#ffffff' : '#27272a',
                 }}
               >
                 {content}
@@ -884,7 +884,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     textAlign: 'left',
                   },
                   text: {
-                    color: isDark ? '#fafafa' : '#18181b',
+                    color: isDark ? '#ffffff' : '#18181b',
                     fontSize: 15,
                     lineHeight: 24,
                     fontWeight: '600',
@@ -893,7 +893,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                   blockquote: {
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                     borderLeftWidth: 3,
-                    borderLeftColor: themeColors[500],
+                    borderLeftColor: colors[500],
                     paddingHorizontal: 12,
                     paddingVertical: 8,
                     borderRadius: 8,
@@ -986,11 +986,11 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
         <View
           style={{
-            backgroundColor: isDark ? '#18181b' : '#ffffff',
+            backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#ffffff',
             borderRadius: 9999,
             padding: 2,
             borderWidth: 1,
-            borderColor: isDark ? '#27272a' : '#f3f4f6',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6',
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 1 },
             shadowOpacity: 0.05,
@@ -1108,12 +1108,12 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
               <Markdown
                 style={{
                   body: {
-                    color: isDark ? '#E4E4E7' : '#27272A',
+                    color: isDark ? Colors.dark.textPrimary : '#27272A',
                     fontSize: 15, // Reduced 16 -> 15
                     lineHeight: 26, // Reduced 28 -> 26
                   },
                   text: {
-                    color: isDark ? '#E4E4E7' : '#27272A',
+                    color: isDark ? Colors.dark.textPrimary : '#27272A',
                     fontSize: 15,
                     lineHeight: 26,
                   },
@@ -1126,8 +1126,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     fontWeight: '500',
                   },
                   fence: {
-                    backgroundColor: isDark ? '#111' : '#f8fafc',
-                    borderColor: isDark ? '#27272a' : '#e2e8f0',
+                    backgroundColor: isDark ? '#080911' : '#f8fafc',
+                    borderColor: isDark ? Colors.dark.borderDefault : '#e2e8f0',
                     borderWidth: 1,
                     borderRadius: 12, // Reduced 16 -> 12
                     marginVertical: 8, // Reduced 12 -> 8
@@ -1209,7 +1209,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         style={{
           marginTop: 8,
           borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: isDark ? 'rgba(39, 39, 42, 0.5)' : '#f3f4f6',
+          borderTopColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
           paddingTop: 4,
         }}
       >

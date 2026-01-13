@@ -668,6 +668,8 @@ export const translations = {
         exportFailedTitle: '导出失败',
         deleteConfirm: '确定要删除此会话吗？此操作不可撤销。',
         sessionDeleted: '会话已删除',
+        sessionTitleDesc: '修改此会话的显示名称',
+        viewKg: '查看当前会话图谱',
       },
       inference: {
         precise: '精确 (Logic)',
@@ -1459,6 +1461,8 @@ export const translations = {
         exportFailedTitle: 'Export Failed',
         deleteConfirm: 'Are you sure you want to delete this session? This action cannot be undone.',
         sessionDeleted: 'Session deleted',
+        sessionTitleDesc: 'Edit the display name of this session',
+        viewKg: 'View session knowledge graph',
       },
       inference: {
         precise: 'Precise (Logic)',

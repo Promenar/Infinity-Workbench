@@ -9,6 +9,7 @@ import { Agent, RagConfiguration } from '../../../types/chat';
 import { RefreshCw, Zap, BookOpen, Code, Edit3 } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 import { FloatingTextEditorModal } from '../../../components/ui/FloatingTextEditorModal';
+import { Card } from '../../../components/ui/Card';
 
 interface Props {
   agent: Agent;
@@ -104,14 +105,14 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
     <View>
       {/* 状态标签 */}
       <SectionHeader title={t.rag.configStatus} mt={0} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
-        <View className="flex-row items-center justify-between">
+      <Card variant="glass" className="mb-6">
+        <View className="p-5 flex-row items-center justify-between">
           <View>
-            <Typography className="text-base font-bold text-gray-900 dark:text-white mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-white mb-1">
               {t.rag.configMode}
             </Typography>
             <Typography
-              className="text-sm font-medium"
+              className="text-xs font-medium"
               style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
             >
               {isUsingGlobal ? t.rag.modeInherit : t.rag.modeCustom}
@@ -136,11 +137,11 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </Card>
 
       {/* 预设快捷选择 */}
       <SectionHeader title={t.rag.quickPresets} />
-      <View className="flex-row mb-8 gap-3">
+      <View className="flex-row mb-6 gap-3">
         {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((key) => {
           const preset = PRESETS[key];
           const Icon = preset.icon;
@@ -152,128 +153,128 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
                 ? t.rag.presetWriting
                 : t.rag.presetCode;
           return (
-            <TouchableOpacity
+            <Card
               key={key}
+              variant="glass"
               onPress={() => applyPreset(key)}
-              activeOpacity={0.7}
-              className="flex-1 rounded-2xl p-4 border items-center shadow-sm"
-              style={{
-                backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb',
-                borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#e5e7eb'
-              }}
+              className="flex-1 items-center"
             >
-              <Icon size={22} color={colors[500]} />
-              <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
-                {presetName}
-              </Typography>
-            </TouchableOpacity>
+              <View className="p-4 items-center">
+                <Icon size={20} color={colors[500]} />
+                <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
+                  {presetName}
+                </Typography>
+              </View>
+            </Card>
           );
         })}
       </View>
 
       {/* 自动摘要设置 */}
       <SectionHeader title={t.rag.summarySettings} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.activeWindow}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.activeWindowDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
-              {t.rag.messageCount.replace(
-                '{count}',
-                (currentConfig.contextWindow ?? 20).toString(),
-              )}
+      <Card variant="glass" className="mb-6">
+        <View className="p-5">
+          <View className="mb-4">
+            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+              {t.rag.activeWindow}
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">50</Typography>
-          </View>
-          <Slider
-            value={currentConfig.contextWindow ?? 20}
-            onValueChange={(val) => handleChange({ contextWindow: Math.round(val) })}
-            minimumValue={10}
-            maximumValue={50}
-            step={5}
-          />
-        </View>
-
-        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-2" />
-
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.triggerThreshold}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.triggerThresholdDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
-              {t.rag.messageCount.replace(
-                '{count}',
-                (currentConfig.summaryThreshold ?? 10).toString(),
-              )}
+            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              {t.rag.activeWindowDesc}
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">30</Typography>
-          </View>
-          <Slider
-            value={currentConfig.summaryThreshold ?? 10}
-            onValueChange={(val) => handleChange({ summaryThreshold: Math.round(val) })}
-            minimumValue={5}
-            maximumValue={30}
-            step={5}
-          />
-        </View>
-
-        <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-2" />
-
-        <View>
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.summaryTemplate}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.agentSummaryTemplateDesc}
-          </Typography>
-          <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
-            <View className="flex-row items-center justify-between mb-2">
-              <View className="flex-row items-center">
-                <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
-                <Typography className="font-bold text-gray-700 dark:text-gray-300">
-                  {t.rag.clickToEditPrompt}
-                </Typography>
-              </View>
-              {currentConfig.summaryPrompt ? (
-                <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
-                  <Typography className="text-[10px] text-green-700 dark:text-green-400">
-                    {t.rag.configured}
-                  </Typography>
-                </View>
-              ) : (
-                <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
-                  <Typography className="text-[10px] text-gray-500">
-                    {t.rag.usingDefault}
-                  </Typography>
-                </View>
-              )}
-            </View>
-
-            <TouchableOpacity
-              onPress={() => setIsEditorVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Typography
-                numberOfLines={3}
-                className="text-xs text-gray-500 dark:text-gray-400 leading-5"
-              >
-                {currentConfig.summaryPrompt || t.rag.promptPlaceholder}
+            <View className="flex-row justify-between mb-2">
+              <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
+              <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+                {t.rag.messageCount.replace(
+                  '{count}',
+                  (currentConfig.contextWindow ?? 20).toString(),
+                )}
               </Typography>
-            </TouchableOpacity>
+              <Typography className="text-sm text-gray-400 dark:text-zinc-500">50</Typography>
+            </View>
+            <Slider
+              value={currentConfig.contextWindow ?? 20}
+              onValueChange={(val) => handleChange({ contextWindow: Math.round(val) })}
+              minimumValue={10}
+              maximumValue={50}
+              step={5}
+            />
+          </View>
+
+          <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-2" />
+
+          <View className="mb-4">
+            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+              {t.rag.triggerThreshold}
+            </Typography>
+            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              {t.rag.triggerThresholdDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-2">
+              <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
+              <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+                {t.rag.messageCount.replace(
+                  '{count}',
+                  (currentConfig.summaryThreshold ?? 10).toString(),
+                )}
+              </Typography>
+              <Typography className="text-sm text-gray-400 dark:text-zinc-500">30</Typography>
+            </View>
+            <Slider
+              value={currentConfig.summaryThreshold ?? 10}
+              onValueChange={(val) => handleChange({ summaryThreshold: Math.round(val) })}
+              minimumValue={5}
+              maximumValue={30}
+              step={5}
+            />
+          </View>
+
+          <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-2" />
+
+          <View>
+            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+              {t.rag.summaryTemplate}
+            </Typography>
+            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              {t.rag.agentSummaryTemplateDesc}
+            </Typography>
+            <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
+              <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center">
+                  <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
+                  <Typography className="font-bold text-gray-700 dark:text-gray-300">
+                    {t.rag.clickToEditPrompt}
+                  </Typography>
+                </View>
+                {currentConfig.summaryPrompt ? (
+                  <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-green-700 dark:text-green-400">
+                      {t.rag.configured}
+                    </Typography>
+                  </View>
+                ) : (
+                  <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
+                    <Typography className="text-[10px] text-gray-500">
+                      {t.rag.usingDefault}
+                    </Typography>
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setIsEditorVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Typography
+                  numberOfLines={3}
+                  className="text-xs text-gray-500 dark:text-gray-400 leading-5"
+                >
+                  {currentConfig.summaryPrompt || t.rag.promptPlaceholder}
+                </Typography>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      </Card>
 
       <FloatingTextEditorModal
         visible={isEditorVisible}

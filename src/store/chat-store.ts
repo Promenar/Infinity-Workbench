@@ -778,20 +778,19 @@ You have access to the following skills:
 ${toolsDesc}
 
 [PLANNING & TASK MANAGEMENT]
-If the user's request is complex, multi-step, or requires maintaining state across multiple messages (e.g. "Research Node.js history"), you MUST use the \`manage_task\` tool.
-- CREATE a task for new requests: \`manage_task({ action: 'create', title: '...', steps: [...] })\`
-- UPDATE the task as you progress: \`manage_task({ action: 'update', steps: [{ id: '...', status: 'in-progress' }] })\`
-- COMPLETE the task when done: \`manage_task({ action: 'complete' })\`
+If the user's request is complex, multi-step, or requires maintaining state (e.g. "Research and generate a summary"), you MUST use the \`manage_task\` tool.
+- CREATE a plan BEFORE execution: \`manage_task({ action: 'create', title: '...', steps: [...] })\`
+- UPDATE steps as you finish them: \`manage_task({ action: 'update', steps: [{ id: '...', status: 'completed' }] })\`
+- COMPLETE the task when fully done: \`manage_task({ action: 'complete' })\`
 
-DO NOT use the legacy <plan> XML format unless specifically requested. Use the \`manage_task\` tool for all planning.
+🛑 CRITICAL: DO NOT use plain text to list your plan. ALWAYS use \`manage_task\` to keep the user informed.
 
 [EXECUTION RULES]
-1. Use \`manage_task\` to create/update the plan BEFORE executing other tools if applicable.
-2. Use NATIVE tool calls. DO NOT describe intent in text.
-3. PROVIDE ALL REQUIRED PARAMETERS.
-4. For 'query_vector_db', use 'scope: "global"' for global requests.
-5. 🛑 CRITICAL (DEEPSEEK/KIMI): DO NOT include any introductory text, apologies, or descriptions like "I will now search..." before or after the tool call. Your response should ONLY contain the tool calls. NO CHATTY EXPLANATIONS.
-6. Trigger the tool immediately. Any leading text will be considered an error.`;
+1. NATIVE TOOL CALLS ONLY. Use the JSON schema provided.
+2. 🚫 NO PARAMETER WRAPPING: DO NOT wrap arguments in a "parameters" or "arguments" key. Example: Use \`manage_task({ "action": "create", ... })\`, NOT \`manage_task({ "parameters": { "action": "create", ... } })\`.
+3. 🚫 NO INTRODUCTORY TEXT: DO NOT say "I will now search..." or "Here is the plan...". Your response must ONLY contain tool calls.
+4. PROVIDE ALL REQUIRED PARAMETERS. For 'query_vector_db', ensures 'query' is NOT empty.
+5. Trigger tools immediately. Any leading/trailing conversational text is an ERROR.`;
 
             finalSystemPrompt += toolInstruction;
 
@@ -1594,12 +1593,27 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 const tcArgs = (tc as any).arguments || (tc as any).function?.arguments || {};
                 const parsedArgs = typeof tcArgs === 'string' ? JSON.parse(tcArgs) : tcArgs;
 
-                updateSteps({ id: stepId, type: 'tool_call', toolName: tcName, toolArgs: parsedArgs, timestamp: Date.now() });
+                // 🛡️ 应用全局参数展平 (Auto-Flattening)
+                let finalArgs = parsedArgs;
+                if (parsedArgs && (parsedArgs.parameters || parsedArgs.arguments)) {
+                  const target = parsedArgs.parameters || parsedArgs.arguments;
+                  if (typeof target === 'string') {
+                    try {
+                      finalArgs = JSON.parse(target);
+                    } catch (e) {
+                      console.warn('[ChatStore] Failed to unwrap nested string params:', e);
+                    }
+                  } else if (typeof target === 'object') {
+                    finalArgs = target;
+                  }
+                }
+
+                updateSteps({ id: stepId, type: 'tool_call', toolName: tcName, toolArgs: finalArgs, timestamp: Date.now() });
 
                 let result: ToolResult;
                 try {
                   if (skill) {
-                    result = await skill.execute(parsedArgs, { sessionId, agentId: agent.id });
+                    result = await skill.execute(finalArgs, { sessionId, agentId: agent.id });
                   } else {
                     result = { id: (tc as any).id, content: `Error: Skill ${tcName} not found`, status: 'error' };
                   }
@@ -2261,16 +2275,28 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             for (const tool of toolCalls) {
               if (!tool) continue; // 🛡️ CRITICAL: Prevent crash if GLM outputs a null tool item
 
-              // 🛡️ 安全解析：兼容 Native OpenAI 和扁平化格式
+              // 🛡️ 安全解析参数：兼容 Native OpenAI 和扁平化格式
               const tcName = tool.name || tool.function?.name;
               let tcArgs: any = {};
 
               try {
-                tcArgs = typeof tool.arguments === 'string'
-                  ? JSON.parse(tool.arguments)
-                  : (tool.function?.arguments
-                    ? (typeof tool.function.arguments === 'string' ? JSON.parse(tool.function.arguments) : tool.function.arguments)
-                    : (tool.arguments || {}));
+                const rawArgs = tool.arguments || tool.function?.arguments || {};
+                const parsed = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+
+                // 🛡️ 应用全局参数展平 (Auto-Flattening)
+                tcArgs = parsed;
+                if (parsed && (parsed.parameters || parsed.arguments)) {
+                  const target = parsed.parameters || parsed.arguments;
+                  if (typeof target === 'string') {
+                    try {
+                      tcArgs = JSON.parse(target);
+                    } catch (pe) {
+                      console.warn('[Regenerate] Failed to unwrap nested string params:', pe);
+                    }
+                  } else if (typeof target === 'object') {
+                    tcArgs = target;
+                  }
+                }
               } catch (parseErr) {
                 console.warn('[Regenerate] Failed to parse tool arguments:', parseErr);
               }

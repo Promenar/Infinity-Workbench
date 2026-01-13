@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Colors } from '../../../theme/colors';
+import { Card } from '../../../components/ui/Card';
 
 interface SettingsSectionProps {
   title?: string;
@@ -20,17 +21,9 @@ export function SettingsSection({ title, children, containerStyle }: SettingsSec
           {title.toUpperCase()}
         </Text>
       )}
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: isDark ? 'rgba(24, 24, 27, 0.8)' : themeColors.surfaceSecondary,
-            borderColor: isDark ? 'rgba(63, 63, 70, 0.5)' : themeColors.borderDefault,
-          },
-        ]}
-      >
+      <Card variant="glass">
         {children}
-      </View>
+      </Card>
     </View>
   );
 }

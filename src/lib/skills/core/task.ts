@@ -31,28 +31,45 @@ export const TaskManagementSkill: Skill = {
 
         let activeTask = session.activeTask;
 
-        try {
-            // 🛡️ 防御性解析：如果模型（如 GLM）因为逻辑混乱将 steps 传成了 JSON 字符串
-            if (typeof args.steps === 'string') {
+        let taskArgs = args;
+
+        // 🛡️ GLM 专项加固：自动解包嵌套在 'parameters' 或 'arguments' 里的参数
+        if (args.parameters || args.arguments) {
+            const rawTarget = args.parameters || args.arguments;
+            if (typeof rawTarget === 'string') {
                 try {
-                    console.log('[TaskSkill] Raw steps string detected, attempting auto-fix...');
-                    const sanitized = args.steps.trim().replace(/^```json\s*|\s*```$/g, '');
-                    args.steps = JSON.parse(sanitized);
+                    taskArgs = JSON.parse(rawTarget);
+                    console.log('[TaskSkill] Auto-unwrapped string parameters from GLM');
+                } catch (e) {
+                    console.warn('[TaskSkill] Failed to unwrap parameters string:', e);
+                }
+            } else if (typeof rawTarget === 'object') {
+                taskArgs = rawTarget;
+                console.log('[TaskSkill] Auto-flattened nested parameters object from GLM');
+            }
+        }
+
+        try {
+            // 🛡️ 防御性解析：兼容 steps 被传为 JSON 字符串的情况
+            if (typeof taskArgs.steps === 'string') {
+                try {
+                    const sanitized = taskArgs.steps.trim().replace(/^```json\s*|\s*```$/g, '');
+                    taskArgs.steps = JSON.parse(sanitized);
                 } catch (pe) {
-                    console.error('[TaskSkill] Failed to pre-parse steps string:', pe);
+                    console.error('[TaskSkill] Failed to parse steps string:', pe);
                 }
             }
 
-            if (args.action === 'create') {
-                if (!args.title || !args.steps || args.steps.length === 0) {
-                    return { id: 'error', content: 'Title and steps are required for creating a task.', status: 'error' };
+            if (taskArgs.action === 'create') {
+                if (!taskArgs.title || !taskArgs.steps || taskArgs.steps.length === 0) {
+                    return { id: 'error', content: 'Title and steps are required for creating a task. You MUST specify { "action": "create", "title": "...", "steps": [...] }.', status: 'error' };
                 }
 
                 activeTask = {
-                    title: args.title,
+                    title: taskArgs.title,
                     status: 'in-progress',
                     progress: 0,
-                    steps: args.steps.map((s: any, idx: number) => {
+                    steps: taskArgs.steps.map((s: any, idx: number) => {
                         const derivedTitle = s.title || (s.description ?
                             (s.description.length > 20 ? s.description.substring(0, 20) + '...' : s.description) :
                             `动作 ${idx + 1}`);
@@ -67,15 +84,15 @@ export const TaskManagementSkill: Skill = {
                     updatedAt: Date.now()
                 };
             }
-            else if (args.action === 'update') {
+            else if (taskArgs.action === 'update') {
                 if (!activeTask) {
                     return { id: 'error', content: 'No active task found to update. Use "create" first.', status: 'error' };
                 }
 
                 const updatedSteps = [...activeTask.steps];
 
-                if (args.steps) {
-                    args.steps.forEach((newStep: any) => {
+                if (taskArgs.steps) {
+                    taskArgs.steps.forEach((newStep: any) => {
                         const index = updatedSteps.findIndex(s => s.id === newStep.id);
                         if (index !== -1) {
                             updatedSteps[index] = {
@@ -97,7 +114,7 @@ export const TaskManagementSkill: Skill = {
                 }
 
                 // Auto-calculate progress if not provided
-                let newProgress = args.progress;
+                let newProgress = taskArgs.progress;
                 if (newProgress === undefined) {
                     const completed = updatedSteps.filter(s => s.status === 'completed' || s.status === 'skipped').length;
                     newProgress = Math.round((completed / updatedSteps.length) * 100);
@@ -110,23 +127,34 @@ export const TaskManagementSkill: Skill = {
                     updatedAt: Date.now()
                 };
             }
-            else if (args.action === 'complete') {
-                if (!activeTask) return { id: 'error', content: 'No active task.', status: 'error' };
+            else if (taskArgs.action === 'complete') {
+                if (!activeTask) return { id: 'error', content: 'No active task found to complete.', status: 'error' };
                 activeTask = { ...activeTask, status: 'completed', progress: 100, updatedAt: Date.now() };
-                // Also mark all pending steps as completed? 
-                // Optional, but let's leave steps as is to reflect reality
             }
-            else if (args.action === 'fail') {
-                if (!activeTask) return { id: 'error', content: 'No active task.', status: 'error' };
+            else if (taskArgs.action === 'fail') {
+                if (!activeTask) return { id: 'error', content: 'No active task found to fail.', status: 'error' };
                 activeTask = { ...activeTask, status: 'failed', updatedAt: Date.now() };
+            }
+            else {
+                return {
+                    id: 'error',
+                    content: `Missing or invalid "action" parameter: "${taskArgs.action}". You MUST provide "action": "create" | "update" | "complete" | "fail".`,
+                    status: 'error'
+                };
             }
 
             // Update Store
-            store.updateSession(sessionId, { activeTask });
+            if (activeTask) {
+                store.updateSession(sessionId, { activeTask });
+            }
+
+            const finalStatus = activeTask ? activeTask.status : 'unknown';
+            const finalProgress = activeTask ? activeTask.progress : 0;
+            const finalTitle = activeTask ? activeTask.title : 'Untitled';
 
             return {
                 id: 'success',
-                content: `Task "${activeTask!.title}" updated. Status: ${activeTask!.status}, Progress: ${activeTask!.progress}%`,
+                content: `Task "${finalTitle}" handled. Status: ${finalStatus}, Progress: ${finalProgress}%`,
                 status: 'success',
                 data: activeTask
             };
