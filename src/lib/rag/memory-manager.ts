@@ -17,8 +17,8 @@ export class MemoryManager {
       activeDocIds?: string[];
       activeFolderIds?: string[];
       isGlobal?: boolean;
-      ragConfig?: RagConfiguration; // ✅ 新增：允许传入特定 RAG 配置
-      onProgress?: (stage: string, percentage: number) => void; // ✅ 新增：进度回调
+      ragConfig?: RagConfiguration;
+      onProgress?: (stage: string, percentage: number, subStage?: string, networkStats?: any) => void; // ✅ 升级回调支持子阶段和网络统计
     } = {},
   ): Promise<{
     context: string;
@@ -127,7 +127,7 @@ export class MemoryManager {
       (isGlobal || enableMemory || (authorizedDocIds && authorizedDocIds.size > 0));
 
     if (shouldRewrite) {
-      onProgress?.('rewriting', 5);
+      onProgress?.('rewriting', 5, 'INTENT'); // 子阶段：意图分析
       try {
         // 🔑 模型选择优先级：
         // 1. RAG配置的 queryRewriteModel（如需单独指定）
@@ -164,10 +164,12 @@ export class MemoryManager {
             setTimeout(() => reject(new Error('Query rewrite timeout')), 15000);
           });
 
+          onProgress?.('rewriting', 10, 'API_TX'); // 子阶段：发送请求
           const rewritePromise = rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
 
           try {
             const { variants, usage } = await Promise.race([rewritePromise, timeoutPromise]);
+            onProgress?.('rewriting', 15, 'API_RX'); // 子阶段：接收响应
 
             // Accumulate usage for billing
             if (usage) {
@@ -196,7 +198,7 @@ export class MemoryManager {
     // Loop checks
     const searchPromises = queryVariants.map(async (currentQuery) => {
       // 2. 获取查询向量 (Get Embedding)
-      onProgress?.('embedding', 10);
+      onProgress?.('embedding', 20, 'EMBEDDING');
 
       // 🔑 关键修复: 读取用户配置的 defaultEmbeddingModel
       const settings = useSettingsStore.getState();
@@ -260,6 +262,7 @@ export class MemoryManager {
 
       // 3.1 记忆搜索
       if (enableMemory) {
+        onProgress?.('searching', 45, 'LOCAL_SCAN');
         try {
           // 🔑 动态召回数量：如果开启重排序或混合搜索，则扩大初搜范围
           const initialRecallLimit = effectiveRagConfig.enableRerank || effectiveRagConfig.enableHybridSearch
@@ -307,7 +310,7 @@ export class MemoryManager {
     const resultsArrays = await Promise.all(searchPromises);
     let allResults = resultsArrays.flat();
 
-    onProgress?.('searching', 40);
+    onProgress?.('searching', 55, 'REF_FOUND');
 
     // ===== 阶段 2: Hybrid Search (关键词混合检索) =====
     // RRF Fusion (Reciprocal Rank Fusion)
@@ -473,7 +476,7 @@ export class MemoryManager {
     let rerankEndTime = 0;
 
     if (effectiveRagConfig.enableRerank) {
-      onProgress?.('reranking', 70);
+      onProgress?.('reranking', 70, 'PAYLOAD_PREP');
       rerankStartTime = Date.now();
       const rerankModelId = settings.defaultRerankModel;
       let rerankProvider = undefined;
@@ -502,11 +505,17 @@ export class MemoryManager {
           const reranker = new RerankClient(rerankProvider, finalRerankModelId);
 
           try {
+            onProgress?.('reranking', 75, 'API_TX');
             const reranked = await reranker.rerank(
               query,
               finalResults,
               effectiveRagConfig.rerankFinalK || 5,
+              (stats) => {
+                const subStage = stats.rxBytes ? 'API_RX' : (stats.txBytes ? 'API_TX' : 'API_WAIT');
+                onProgress?.('reranking', 80, subStage, stats);
+              }
             );
+            onProgress?.('reranking', 90, 'RE-SCORING');
             finalResults = reranked;
             rerankEndTime = Date.now();
           } catch (err) {
@@ -563,10 +572,59 @@ export class MemoryManager {
       originalSimilarity: r.originalSimilarity, // 🚨 新增：传递原始分数给 UI
     }));
 
+    // ===== 阶段 4: Knowledge Graph Retrieval (知识图谱检索) =====
+    let kgContext = '';
+    const enableKG = effectiveRagConfig.enableKnowledgeGraph;
+
+    if (enableKG && finalResults.length > 0) {
+      onProgress?.('kg_searching', 85, 'KG_SCAN');
+      const kgStartTime = Date.now();
+      try {
+        // 🔑 策略：基于召回的文本块进行实体挖掘与一跳扩展
+        // 这是一个“读时增强”策略，通过已召回的向量结果反查 KG
+        const allReferenceText = finalResults.map(r => r.content).join('\n');
+
+        // 1. 获取所有已知节点（简单起见，目前基于子串匹配或精确匹配）
+        const nodesRes = await db.execute('SELECT id, name, type FROM kg_nodes');
+        const allNodes = (nodesRes.rows as any)._array || (nodesRes.rows as any) || [];
+
+        // 找出文本中提到的实体
+        const mentionedNodeIds = allNodes
+          .filter((n: any) => allReferenceText.includes(n.name))
+          .map((n: any) => n.id);
+
+        if (mentionedNodeIds.length > 0) {
+          // 2. 拉取关联的边 (一跳关系)
+          const placeholders = mentionedNodeIds.map(() => '?').join(',');
+          const edgesRes = await db.execute(
+            `SELECT e.*, n1.name as source_name, n2.name as target_name 
+             FROM kg_edges e
+             JOIN kg_nodes n1 ON e.source_id = n1.id
+             JOIN kg_nodes n2 ON e.target_id = n2.id
+             WHERE source_id IN (${placeholders}) OR target_id IN (${placeholders})
+             LIMIT 20`,
+            mentionedNodeIds
+          );
+
+          const edges = (edgesRes.rows as any)._array || (edgesRes.rows as any) || [];
+
+          if (edges.length > 0) {
+            const kgLines = edges.map((e: any) =>
+              `- ${e.source_name} --[${e.relation}]--> ${e.target_name}`
+            );
+            kgContext = `\nKnowledge Graph Insight (知识图谱关联):\n${kgLines.join('\n')}\n`;
+            console.log(`[MemoryManager] KG Retrieval found ${edges.length} relations in ${Date.now() - kgStartTime}ms`);
+          }
+        }
+      } catch (e) {
+        console.warn('[MemoryManager] KG Retrieval failed:', e);
+      }
+    }
+
     onProgress?.('done', 100);
 
     return {
-      context: `relevant_context_block (参考上下文):\n${contextBlock}`,
+      context: `relevant_context_block (参考上下文):\n${contextBlock}\n${kgContext}`,
       references,
       metadata,
       billingUsage: {

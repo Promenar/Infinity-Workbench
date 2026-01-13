@@ -13,13 +13,18 @@ export class RerankClient {
   constructor(
     private provider: ProviderConfig,
     private modelId?: string,
-  ) {}
+  ) { }
 
   /**
    * Rerank a list of documents based on the query.
    * Compatible with Jina, Cohere, and SiliconFlow (BGE) formats.
    */
-  async rerank(query: string, documents: SearchResult[], topK: number): Promise<SearchResult[]> {
+  async rerank(
+    query: string,
+    documents: SearchResult[],
+    topK: number,
+    onProgress?: (stats: { txBytes?: number; rxBytes?: number; latency?: number }) => void,
+  ): Promise<SearchResult[]> {
     if (!this.provider || !documents.length) {
       return documents;
     }
@@ -43,24 +48,50 @@ export class RerankClient {
         `[RerankClient] Reranking ${documents.length} docs with model ${this.modelId} at ${endpoint}`,
       );
 
+      const bodyString = JSON.stringify(requestBody);
+      const startTime = Date.now();
+
+      // Report TX (Upload)
+      onProgress?.({ txBytes: bodyString.length });
+
+      // 进入等待阶段 (解耦 TX 与 WAIT)
+      onProgress?.({});
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.provider.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+        body: bodyString,
+      }).catch(err => {
+        // 🛡️ 核心修复：捕获 fetch 级别的原始错误 (TypeError: Network request failed)
+        // 防止其作为未捕获异常触发 React Native 红屏
+        console.warn('[RerankClient] Fetch failed (silently falling back):', err.message);
+        return null;
       });
 
-      if (!response.ok) {
+      if (!response) return documents;
+
+      // 🛡️ 准则 8.4: 校验内容类型并处理非 JSON 响应
+      const contentType = response.headers.get('Content-Type') || '';
+      if (!response.ok || !contentType.includes('application/json')) {
         const errorText = await response.text();
-        console.error(`[RerankClient] API Error: ${response.status} - ${errorText}`);
+        console.error(
+          `[RerankClient] API Error or Non-JSON Response: ${response.status} (${contentType}) - ${errorText.substring(0, 200)}`,
+        );
         // Fallback: return original results
         return documents;
       }
 
       // 3. Parse result and reorder
-      const data = await response.json();
+      const rawText = await response.text();
+      const latency = Date.now() - startTime;
+
+      // Report RX (Download)
+      onProgress?.({ rxBytes: rawText.length, latency });
+
+      const data = JSON.parse(rawText);
 
       // Validate response format
       if (!data.results || !Array.isArray(data.results)) {

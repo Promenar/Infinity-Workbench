@@ -132,8 +132,11 @@ export class VertexAiClient implements LlmClient {
       this.tokenExpiry = Date.now() + data.expires_in * 1000;
       return this.accessToken!;
     } catch (e) {
-      console.warn('Vertex AI Auth Error:', e);
-      throw new Error(`Authentication failed: ${(e as Error).message}`);
+      console.warn('Vertex AI Auth Error (Network/Auth):', e);
+      // 🔥 CRITICAL: Do NOT throw here if we are in a background process like KG extraction.
+      // Returning null or empty string will bubble up to getAccessToken which will use the existing (possibly expired) token or fallback.
+      // But more importantly, it avoids RED BOX in React Native.
+      return '';
     }
   }
 
@@ -614,7 +617,7 @@ Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
                                     thumbnailUri.substring(0, 80),
                                   );
                                 } catch (error) {
-                                  console.error('[VertexAI] File save failed:', error);
+                                  console.warn('[VertexAI] File save failed (Silenced):', error);
                                   // Fallback: data URI (will lag)
                                   const dataUri = `data:${mimeType};base64,${data}`;
                                   images.push({ mime: mimeType, uri: dataUri });

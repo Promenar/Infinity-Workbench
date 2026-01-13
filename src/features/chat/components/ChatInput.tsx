@@ -8,6 +8,7 @@ import {
   Image,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowUp,
   Plus,
@@ -43,7 +44,6 @@ import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
 import { useApiStore } from '../../../store/api-store';
 import { ANIMATION_DURATION } from '../../../theme/animations';
 import { SummaryIndicator } from './SummaryIndicator'; // ✅ 导入摘要指示器
-import { KGExtractionIndicator } from '../../../components/rag/KGExtractionIndicator'; // ✅ Import KG Indicator
 
 interface ChatInputProps {
   onSendMessage: (
@@ -278,6 +278,7 @@ export function ChatInput({
     <View
       style={[
         styles.outerContainer,
+        { marginBottom: 12 + (useSafeAreaInsets().bottom || 0) }, // 🔑 适配安全区底部高度
         Platform.select({
           ios: {
             shadowColor: '#000',
@@ -345,7 +346,7 @@ export function ChatInput({
           {/* Indicators Stack */}
           <View className="flex-col items-start gap-1">
             <SummaryIndicator sessionId={sessionId} isDark={isDark} />
-            <KGExtractionIndicator isExtracting={!!useChatStore((s) => s.activeKGExtractions[sessionId])} />
+            {/* 状态指示器已移至消息气泡内集成 */}
           </View>
 
           <View style={{ flex: 1 }} />

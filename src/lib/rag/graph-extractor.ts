@@ -3,6 +3,7 @@ import { useSettingsStore } from '../../store/settings-store';
 import { createLlmClient, ExtendedModelConfig } from '../llm/factory';
 import { graphStore } from './graph-store';
 import { DEFAULT_KG_PROMPT } from './defaults';
+import { useRagStore } from '../../store/rag-store';
 
 interface ExtractionResult {
   nodes: Array<{
@@ -104,8 +105,9 @@ export class GraphExtractor {
   async extractAndSave(
     text: string,
     docId?: string,
-    scope?: { sessionId?: string; agentId?: string },
+    scope?: { sessionId?: string; agentId?: string; messageId?: string },
   ): Promise<ExtractionResult> {
+    const targetId = scope?.messageId || scope?.sessionId; // 🔑 优先使用消息 ID 以关联 UI 指示器
     try {
       console.log(
         '[GraphExtractor] Starting extraction:',
@@ -113,6 +115,15 @@ export class GraphExtractor {
         'Length:',
         text.length,
       );
+
+      // 上报状态到 RagStore
+      const ragStore = useRagStore.getState();
+
+      ragStore.updateProcessingState({
+        kgStatus: 'extracting',
+        kgProgress: 10,
+        subStage: 'ENTITY_PARSE'
+      }, targetId);
 
       // 1. Prepare Client
       const client = this.getClient();
@@ -161,11 +172,17 @@ export class GraphExtractor {
       try {
         result = JSON.parse(jsonString);
       } catch (parseError) {
+        useRagStore.getState().updateProcessingState({ kgStatus: 'error' }, targetId);
         // Use warn instead of error to prevent RedBox
         console.warn('[GraphExtractor] JSON Parse Error:', parseError);
         console.log('Raw output preview:', content.slice(0, 200) + '...');
         return { nodes: [], edges: [] };
       }
+
+      useRagStore.getState().updateProcessingState({
+        kgProgress: 60,
+        subStage: 'GRAPH_WALK'
+      }, targetId);
 
       if (!result.nodes || !result.edges) {
         console.warn('[GraphExtractor] Invalid JSON structure');
@@ -192,13 +209,13 @@ export class GraphExtractor {
       // Save Edges
       for (const edge of result.edges) {
         const sourceId = nameToIdMap.get(edge.source);
-        const targetId = nameToIdMap.get(edge.target);
+        const targetIdEdge = nameToIdMap.get(edge.target);
 
-        if (sourceId && targetId) {
+        if (sourceId && targetIdEdge) {
           try {
             await graphStore.createEdge(
               sourceId,
-              targetId,
+              targetIdEdge,
               edge.relation,
               docId,
               edge.weight || 1.0,
@@ -214,10 +231,23 @@ export class GraphExtractor {
         }
       }
 
+      useRagStore.getState().updateProcessingState({
+        kgStatus: 'completed',
+        kgProgress: 100
+      }, targetId);
+
+      // 10秒后重置状态
+      setTimeout(() => {
+        useRagStore.getState().updateProcessingState({ kgStatus: 'idle' }, targetId);
+      }, 10000);
+
       return result;
     } catch (error) {
-      console.error('[GraphExtractor] Extraction failed:', error);
-      throw error;
+      useRagStore.getState().updateProcessingState({ kgStatus: 'error' }, targetId);
+      console.warn('[GraphExtractor] Extraction failed (Silenced):', error);
+      // 🔥 CRITICAL: NEVER throw in a background background background task in React Native.
+      // Doing so triggers a global unhandled exception and a red screen.
+      return { nodes: [], edges: [] };
     }
   }
 }

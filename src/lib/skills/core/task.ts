@@ -2,24 +2,22 @@ import { z } from 'zod';
 import { Skill, SkillContext, ToolResult } from '../../../types/skills';
 import { useChatStore } from '../../../store/chat-store';
 
-const schema = z.object({
-    action: z.enum(['create', 'update', 'complete', 'fail']).describe('The action to perform on the task.'),
-    title: z.string().optional().describe('Title of the task (required for "create").'),
-    steps: z.array(z.object({
-        id: z.string().describe('Unique ID for the step (e.g., "step-1")'),
-        title: z.string().describe('Short title of the step'),
-        status: z.enum(['pending', 'in-progress', 'completed', 'failed', 'skipped']).optional().describe('Status of the step'),
-        description: z.string().optional().describe('Optional detailed description')
-    })).optional().describe('List of steps to create or update.'),
-    progress: z.number().min(0).max(100).optional().describe('Override overall progress percentage (0-100). If omitted, auto-calculated.')
-});
-
 export const TaskManagementSkill: Skill = {
     id: 'manage_task',
     name: 'Task Manager',
-    description: 'Manage a persistent, multi-step task or plan. Use this to create a plan for complex user requests and update its status as you progress.',
-    schema,
-    execute: async (args: z.infer<typeof schema>, context: SkillContext): Promise<ToolResult> => {
+    description: 'Manage a persistent, multi-step task or plan. IMPORTANT: You should ALWAYS call this tool to "create" a plan BEFORE starting a complex task sequence to let the user know your roadmap.',
+    schema: z.object({
+        action: z.enum(['create', 'update', 'complete', 'fail']).describe('The action to perform on the task.'),
+        title: z.string().optional().describe('Title of the entire task (required for "create").'),
+        steps: z.array(z.object({
+            id: z.string().describe('Unique ID for the step (e.g., "step-1")'),
+            title: z.string().optional().describe('Short title of the step. If omitted, it will be derived from description.'),
+            status: z.enum(['pending', 'in-progress', 'completed', 'failed', 'skipped']).optional().describe('Status of the step'),
+            description: z.string().optional().describe('Optional detailed description')
+        })).optional().describe('List of steps to create or update.'),
+        progress: z.number().min(0).max(100).optional().describe('Override overall progress percentage (0-100). If omitted, auto-calculated.')
+    }),
+    execute: async (args: any, context: SkillContext): Promise<ToolResult> => {
         const { sessionId } = context;
         if (!sessionId) {
             return { id: 'error', content: 'Session ID is required', status: 'error' };
@@ -34,6 +32,17 @@ export const TaskManagementSkill: Skill = {
         let activeTask = session.activeTask;
 
         try {
+            // 🛡️ 防御性解析：如果模型（如 GLM）因为逻辑混乱将 steps 传成了 JSON 字符串
+            if (typeof args.steps === 'string') {
+                try {
+                    console.log('[TaskSkill] Raw steps string detected, attempting auto-fix...');
+                    const sanitized = args.steps.trim().replace(/^```json\s*|\s*```$/g, '');
+                    args.steps = JSON.parse(sanitized);
+                } catch (pe) {
+                    console.error('[TaskSkill] Failed to pre-parse steps string:', pe);
+                }
+            }
+
             if (args.action === 'create') {
                 if (!args.title || !args.steps || args.steps.length === 0) {
                     return { id: 'error', content: 'Title and steps are required for creating a task.', status: 'error' };
@@ -43,12 +52,17 @@ export const TaskManagementSkill: Skill = {
                     title: args.title,
                     status: 'in-progress',
                     progress: 0,
-                    steps: args.steps.map(s => ({
-                        id: s.id,
-                        title: s.title,
-                        status: s.status || 'pending',
-                        description: s.description
-                    })),
+                    steps: args.steps.map((s: any, idx: number) => {
+                        const derivedTitle = s.title || (s.description ?
+                            (s.description.length > 20 ? s.description.substring(0, 20) + '...' : s.description) :
+                            `动作 ${idx + 1}`);
+                        return {
+                            id: s.id || `step-${idx}`,
+                            title: derivedTitle,
+                            status: s.status || 'pending',
+                            description: s.description
+                        };
+                    }),
                     createdAt: Date.now(),
                     updatedAt: Date.now()
                 };
@@ -61,16 +75,20 @@ export const TaskManagementSkill: Skill = {
                 const updatedSteps = [...activeTask.steps];
 
                 if (args.steps) {
-                    args.steps.forEach(newStep => {
+                    args.steps.forEach((newStep: any) => {
                         const index = updatedSteps.findIndex(s => s.id === newStep.id);
                         if (index !== -1) {
-                            updatedSteps[index] = { ...updatedSteps[index], ...newStep };
+                            updatedSteps[index] = {
+                                ...updatedSteps[index],
+                                ...newStep,
+                                title: newStep.title || updatedSteps[index].title // Keep old title if new one missing
+                            };
                         } else {
-                            // Append new step if not found? Or strictly update?
-                            // Let's allow append for flexibility
                             updatedSteps.push({
-                                id: newStep.id,
-                                title: newStep.title,
+                                id: newStep.id || `step-${updatedSteps.length}`,
+                                title: newStep.title || (newStep.description ?
+                                    (newStep.description.length > 20 ? newStep.description.substring(0, 20) + '...' : newStep.description) :
+                                    `动作 ${updatedSteps.length + 1}`),
                                 status: newStep.status || 'pending',
                                 description: newStep.description
                             });

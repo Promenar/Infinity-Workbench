@@ -17,6 +17,7 @@ import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
 import { useSettingsStore } from './settings-store';
+import { useRagStore } from './rag-store'; // ✅ 导入 RagStore
 import { createLlmClient } from '../lib/llm/factory';
 import { estimateTokens } from '../features/chat/utils/token-counter';
 import { performWebSearch } from '../features/chat/utils/web-search';
@@ -143,6 +144,7 @@ interface ChatState {
   vectorizeMessage: (sessionId: string, messageId: string) => Promise<void>;
   summarizeSession: (sessionId: string) => Promise<void>;
   regenerateMessage: (sessionId: string, messageId: string) => Promise<void>; // ✅ New Action
+  dismissActiveTask: (sessionId: string) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -183,50 +185,6 @@ export const useChatStore = create<ChatState>()(
           }),
         }));
 
-        // 2. Trigger KG Extraction (Async/Background)
-        // Extract both USER and ASSISTANT messages to build full context graph.
-        // Optimization: Skip short messages to save tokens (e.g., "Hello", "Thanks", "Continue").
-        const isWorthExtracting =
-          (message.role === 'assistant' && (message.content?.length ?? 0) > 30) ||
-          (message.role === 'user' && (message.content?.length ?? 0) > 15);
-
-        if (isWorthExtracting && message.content?.trim()) {
-          setTimeout(async () => {
-            try {
-              const session = get().getSession(sessionId);
-              if (!session) return;
-
-              // Indicate start of extraction
-              get().setKGExtractionStatus(sessionId, true);
-
-              // 1. Get Global Setting
-              const { useSettingsStore } = require('../store/settings-store'); // Lazy import to avoid cycle if any
-              const globalConfig = useSettingsStore.getState().globalRagConfig;
-
-              // 2. Get Session Setting
-              const sessionKgOption = session.ragOptions?.enableKnowledgeGraph;
-
-              // 3. Determine Effective Status (Session Override > Global)
-              const isKgEnabled = sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph;
-
-              if (!isKgEnabled) {
-                console.log('[ChatStore] KG Extraction disabled for this session/globally.');
-                get().setKGExtractionStatus(sessionId, false);
-                return;
-              }
-
-              await graphExtractor.extractAndSave(message.content, undefined, {
-                sessionId,
-                agentId: session.agentId,
-              });
-            } catch (e) {
-              console.warn('[ChatStore] Background KG extraction failed:', e);
-            } finally {
-              // Indicate end of extraction
-              get().setKGExtractionStatus(sessionId, false);
-            }
-          }, 100);
-        }
       },
       getSessionsByAgent: (agentId) => {
         const sessions = get().sessions.filter((s) => s.agentId === agentId);
@@ -486,6 +444,14 @@ export const useChatStore = create<ChatState>()(
         }
       },
 
+      dismissActiveTask: (sessionId) => {
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, activeTask: undefined } : s
+          ),
+        }));
+      },
+
       generateMessage: async (sessionId, content, options) => {
         const session = get().getSession(sessionId);
         if (!session) return;
@@ -675,16 +641,8 @@ export const useChatStore = create<ChatState>()(
               });
 
               // Set loading state
-              get().updateMessageContent(
-                sessionId,
-                assistantMsgId,
-                '',
-                undefined,
-                undefined,
-                undefined,
-                [],
-                true,
-              );
+              // ✅ 由 RagStore 统一接管进度展示，移除旧的 updateMessageContent 进度初始化
+              // get().updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, { stage: 'rewriting', percentage: 0 }, [], true);
 
               // For Super Assistant, force global search AND enable docs/memory
               const isSuperAssistant = sessionId === 'super_assistant';
@@ -694,13 +652,27 @@ export const useChatStore = create<ChatState>()(
                 enableDocs: isSuperAssistant ? true : finalRagOptions.enableDocs, // 🔑 强制开启文档
                 enableMemory: isSuperAssistant ? true : finalRagOptions.enableMemory, // 🔑 强制开启记忆
                 ragConfig: agent.ragConfig, // ✅ 关键：传入特定助手的 RAG 配置
-                onProgress: (stage: string, percentage: number) => {
-                  get().updateMessageProgress(sessionId, assistantMsgId, {
+                onProgress: (stage: string, percentage: number, subStage?: string, networkStats?: any) => {
+                  // ✅ 更新详细进度（包含原子步骤和流量）
+                  const { updateProcessingState } = useRagStore.getState();
+                  updateProcessingState({
+                    sessionId,
                     stage: stage as any,
-                    percentage,
-                  });
+                    progress: percentage,
+                    subStage,
+                    networkStats
+                  }, assistantMsgId);
                 },
               };
+
+              // ✅ 1.1 预触发：意图分析子阶段
+              useRagStore.getState().updateProcessingState({
+                sessionId,
+                status: 'retrieving',
+                stage: 'rewriting',
+                subStage: 'INTENT',
+                progress: 2
+              }, assistantMsgId);
 
               const {
                 context: retrievedContext,
@@ -742,6 +714,13 @@ export const useChatStore = create<ChatState>()(
                 false,
                 metadata,
               );
+
+              // ✅ 后置同步：将检索到的引用数存入 ProcessingHistory 以供指示器显示
+              // 使用 'retrieved' 状态而不是 'completed'，以避免在生成期间显示“已归档”
+              useRagStore.getState().updateProcessingState({
+                status: 'retrieved',
+                chunks: ragReferences.map(r => r.content || '')
+              }, assistantMsgId);
             } catch (e) {
               console.error('RAG Retrieval failed:', e);
               get().updateMessageContent(
@@ -754,6 +733,8 @@ export const useChatStore = create<ChatState>()(
                 [],
                 false,
               );
+              // ✅ 故障容错：确保检索失败后清理处理状态，防止指示器卡死在检索中
+              useRagStore.getState().updateProcessingState({ status: 'idle' }, assistantMsgId);
             }
           } else {
             console.log('[RAG DEBUG] RAG已禁用，跳过检索');
@@ -817,10 +798,10 @@ DO NOT use the legacy <plan> XML format unless specifically requested. Use the \
             // 🆕 Task State Injection: Provide current task status to the model
             if (session.activeTask) {
               const task = session.activeTask;
-              const formattedSteps = task.steps.map((s, idx) => 
+              const formattedSteps = task.steps.map((s, idx) =>
                 `${idx + 1}. [${s.status.toUpperCase()}] ${s.title}${s.description ? ` (${s.description})` : ''}`
               ).join('\n');
-              
+
               const taskContext = `\n\n[CURRENT TASK STATUS]
 Title: ${task.title}
 Status: ${task.status}
@@ -1104,45 +1085,81 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                     const planMatch = accumulatedContent.match(/<plan>\s*([\s\S]*?)\s*<\/plan>/i);
                     if (planMatch) {
                       const planText = planMatch[1];
-                      console.log('[AgentLoop] Plan detected:', planText);
+                      console.log('[AgentLoop] Plan detected, parsing...');
 
-                      const lines = planText.split('\n')
-                        .map(l => l.trim())
-                        .filter(l => l.length > 0);
+                      let steps: Array<{ id: string; title: string; status: 'pending' | 'in-progress' | 'completed'; description?: string }> = [];
 
-                      // 🆕 Legacy Compatibility: Convert <plan> to Active Task if none exists
-                      const session = get().getSession(sessionId);
-                      if (session && !session.activeTask) {
-                        const steps = lines.map((line, idx) => ({
+                      // 1. Try parsing as JSON first (DeepSeek/Kimi often output JSON or array)
+                      try {
+                        const sanitizedJson = planText.trim().replace(/^```json\s*|\s*```$/g, '');
+                        const parsed = JSON.parse(sanitizedJson);
+                        if (Array.isArray(parsed)) {
+                          steps = parsed.map((item: any, idx) => {
+                            const desc = item.description || item.content || '';
+                            const fallbackTitle = desc ? (desc.substring(0, 24) + '...') : `Step ${idx + 1}`;
+                            return {
+                              id: item.id || `plan_step_${Date.now()}_${idx}`,
+                              title: item.title || fallbackTitle,
+                              status: item.status || 'pending',
+                              description: desc
+                            };
+                          });
+                        } else if (typeof parsed === 'object' && parsed.steps && Array.isArray(parsed.steps)) {
+                          // Handle wrapper object { steps: [...] }
+                          steps = parsed.steps.map((item: any, idx: number) => {
+                            const desc = item.description || item.content || '';
+                            const fallbackTitle = desc ? (desc.substring(0, 24) + '...') : `Step ${idx + 1}`;
+                            return {
+                              id: item.id || `plan_step_${Date.now()}_${idx}`,
+                              title: item.title || fallbackTitle,
+                              status: item.status || 'pending',
+                              description: desc
+                            };
+                          });
+                        }
+                      } catch (e) {
+                        // 2. Fallback to line-by-line parsing
+                        const lines = planText.split('\n')
+                          .map(l => l.trim())
+                          .filter(l => l.length > 0);
+
+                        steps = lines.map((line, idx) => ({
                           id: `legacy_step_${Date.now()}_${idx}`,
                           title: line.replace(/^\d+[\.\)]\s*/, ''),
                           status: 'pending' as const
                         }));
-
-                        get().updateSession(sessionId, {
-                          activeTask: {
-                            title: 'Plan (Auto-Generated)',
-                            status: 'in-progress',
-                            progress: 0,
-                            steps: steps,
-                            createdAt: Date.now(),
-                            updatedAt: Date.now()
-                          }
-                        });
-                        console.log('[AgentLoop] Converted legacy <plan> to Active Task structure');
                       }
 
-                      lines.forEach((line, index) => {
-                        // Clean "1. " prefix if present
-                        const content = line.replace(/^\d+[\.\)]\s*/, '');
-                        updateSteps({
-                          id: `plan_step_${loopCount}_${index}`,
-                          type: 'plan_item',
-                          content: content,
-                          timestamp: Date.now()
+                      if (steps.length > 0) {
+                        // 🆕 Legacy Compatibility: Convert <plan> to Active Task if none exists
+                        const session = get().getSession(sessionId);
+                        if (session && !session.activeTask) {
+                          get().updateSession(sessionId, {
+                            activeTask: {
+                              title: 'Plan (Auto-Generated)',
+                              status: 'in-progress',
+                              progress: 0,
+                              steps: steps,
+                              createdAt: Date.now(),
+                              updatedAt: Date.now()
+                            }
+                          });
+                          console.log('[AgentLoop] Converted legacy <plan> or JSON plan to Active Task structure');
+                        }
+
+                        // Also update execution steps for the timeline list
+                        steps.forEach((step, index) => {
+                          updateSteps({
+                            id: step.id || `plan_step_exec_${index}`,
+                            type: 'plan_item',
+                            content: step.title || (step.description ?
+                              (step.description.length > 20 ? step.description.substring(0, 20) + '...' : step.description) :
+                              `动作 ${index + 1}`),
+                            timestamp: Date.now()
+                          });
                         });
-                      });
-                      planParsed = true;
+                        planParsed = true;
+                      }
                       // Note: We don't remove it from accumulatedContent here (for memory consistency), 
                       // but we strip it from UI display below.
                     }
@@ -1566,19 +1583,28 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
               // Execute
               for (const tc of toolCalls) {
-                const skill = skillRegistry.getSkill(tc.name);
+                if (!tc) continue; // 🛡️ CRITICAL: Robust check for generateMessage loop
+                const tcName = (tc as any).name || (tc as any).function?.name;
+                if (!tcName) continue;
+
+                const skill = skillRegistry.getSkill(tcName);
                 const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-                updateSteps({ id: stepId, type: 'tool_call', toolName: tc.name, toolArgs: tc.arguments, timestamp: Date.now() });
+
+                // 🛡️ 安全解析参数：兼容 OpenAI 与 扁平模式
+                const tcArgs = (tc as any).arguments || (tc as any).function?.arguments || {};
+                const parsedArgs = typeof tcArgs === 'string' ? JSON.parse(tcArgs) : tcArgs;
+
+                updateSteps({ id: stepId, type: 'tool_call', toolName: tcName, toolArgs: parsedArgs, timestamp: Date.now() });
 
                 let result: ToolResult;
                 try {
                   if (skill) {
-                    result = await skill.execute(tc.arguments, { sessionId, agentId: agent.id });
+                    result = await skill.execute(parsedArgs, { sessionId, agentId: agent.id });
                   } else {
-                    result = { id: tc.id, content: `Error: Skill ${tc.name} not found`, status: 'error' };
+                    result = { id: (tc as any).id, content: `Error: Skill ${tcName} not found`, status: 'error' };
                   }
                 } catch (e: any) {
-                  result = { id: tc.id, content: `Error: ${e.message}`, status: 'error' };
+                  result = { id: (tc as any).id, content: `Error: ${e.message}`, status: 'error' };
                 }
 
                 updateSteps({
@@ -1640,7 +1666,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             try {
               const archiveStartTime = Date.now();
               const { updateProcessingState } = await import('../store/rag-store').then((m) => m.useRagStore.getState());
-              updateProcessingState({ sessionId, status: 'chunking', startTime: archiveStartTime, chunks: [] }, assistantMsgId);
+              updateProcessingState({
+                sessionId,
+                status: 'chunking',
+                subStage: 'EMBEDDING', // 归档阶段主要也是在计算向量
+                progress: 50,
+                pulseActive: true,
+                startTime: archiveStartTime,
+                chunks: []
+              }, assistantMsgId);
               await new Promise((resolve) => setTimeout(resolve, 0));
 
               await MemoryManager.addTurnToMemory(sessionId, content, accumulatedContent, userMsg.id, assistantMsgId);
@@ -1648,7 +1682,14 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               const elapsed = Date.now() - archiveStartTime;
               if (elapsed < 800) await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
 
-              updateProcessingState({ sessionId, status: 'archived', chunks: [] }, assistantMsgId);
+              updateProcessingState({
+                sessionId,
+                status: 'archived',
+                subStage: undefined,
+                progress: 100,
+                pulseActive: false,
+                chunks: []
+              }, assistantMsgId);
               get().setVectorizationStatus(sessionId, [userMsg.id, assistantMsgId], 'success');
             } catch (e) {
               console.error('[RAG] Archive failed:', e);
@@ -1658,7 +1699,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             }
           }
 
-          // 2. KG Extraction
+          // 2. KG Extraction (Bi-directional learning after final settle)
           if (accumulatedContent.trim()) {
             setTimeout(async () => {
               try {
@@ -1669,7 +1710,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                 const isSuperAssistant = sessionId === 'super_assistant';
                 const sessionKgOption = session.ragOptions?.enableKnowledgeGraph;
-                const isKgEnabled = isSuperAssistant || (sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph);
+                const isKgEnabled = sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph;
 
                 if (!isKgEnabled) return;
 
@@ -1677,13 +1718,35 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 if (costStrategy === 'on-demand' && !isSuperAssistant) return;
 
                 get().setKGExtractionStatus(sessionId, true);
-                await graphExtractor.extractAndSave(accumulatedContent, undefined, { sessionId, agentId: session.agentId });
+
+                // 🔑 核心修正：同步到消息持久化字段，防止流程结束后消失
+                get().updateMessageProgress(sessionId, assistantMsgId, {
+                  stage: 'searching',
+                  percentage: 10,
+                  message: '全域知识同步：实体识别...'
+                });
+
+                // 🔑 Combined Extraction: Include both User question and Assistant answer for relationship context
+                const combinedText = `User: ${content}\nAssistant: ${accumulatedContent}`;
+
+                await graphExtractor.extractAndSave(combinedText, undefined, {
+                  sessionId,
+                  agentId: session.agentId,
+                  messageId: assistantMsgId
+                });
+
+                // 🔑 最终收尾：同步“完成”状态到消息持久化字段
+                get().updateMessageProgress(sessionId, assistantMsgId, {
+                  stage: 'done',
+                  percentage: 100,
+                  message: '知识同步完成'
+                });
               } catch (e) {
                 console.warn('[ChatStore] AI Response KG extraction failed:', e);
               } finally {
                 get().setKGExtractionStatus(sessionId, false);
               }
-            }, 500);
+            }, 800); // 🚨 Increased delay slightly to ensure UI settles from any tool execution
           }
 
           // 3. Summarization
@@ -2045,9 +2108,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 enableDocs: isSuperAssistant ? true : finalRagOptions.enableDocs,
                 enableMemory: isSuperAssistant ? true : finalRagOptions.enableMemory,
                 ragConfig: agent.ragConfig,
-                onProgress: (stage: string, percentage: number) => {
-                  // Since updateMessageProgress is not exposed, we just update generic status or skip
-                  // get().updateMessageContent(sessionId, messageId, '', undefined, undefined, undefined, [], true);
+                onProgress: (stage: string, percentage: number, subStage?: string, networkStats?: any) => {
+                  const { updateProcessingState } = require('../store/rag-store').useRagStore.getState();
+                  updateProcessingState({
+                    sessionId,
+                    stage: stage as any,
+                    progress: percentage,
+                    subStage,
+                    networkStats
+                  }, messageId);
                 },
               };
 
@@ -2110,47 +2179,157 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
           contextMsgs = [...contextMsgs, ...history] as any;
 
-          // 7. Stream
+          // 7. Loop Setup
+          let loopCount = 0;
+          const MAX_LOOP_COUNT = 5;
+          let currentMessages = [...contextMsgs];
+          let loopExecutionSteps: ExecutionStep[] = [];
+
           let accumulatedContent = '';
           let accumulatedReasoning = '';
           let accumulatedCitations = initialCitations;
           let accumulatedUsage: any;
 
-          let updateTimer: NodeJS.Timeout | null = null;
-          const scheduleUpdate = () => {
-            if (updateTimer) return;
-            updateTimer = setTimeout(() => {
-              updateTimer = null;
-              const inputTokens = accumulatedUsage?.input || 0;
-              const completionTokens = accumulatedUsage?.output || 0;
-              get().updateMessageContent(
-                sessionId,
-                messageId,
-                accumulatedContent,
-                { input: inputTokens, output: completionTokens, total: inputTokens + completionTokens },
-                accumulatedReasoning,
-                accumulatedCitations,
-                ragReferences
-              );
-            }, 100);
-          };
+          // 🔑 关键修复: 显示指示活跃重生成消息
+          const { updateProcessingState } = require('../store/rag-store').useRagStore.getState();
+          updateProcessingState({ sessionId, pulseActive: true }, messageId);
 
-          await client.streamChat(
-            ContextManager.trimContext(contextMsgs, activeWindowSize),
-            (chunk) => {
-              if (typeof chunk === 'string') {
-                accumulatedContent += chunk;
-              } else {
-                if (chunk.content) accumulatedContent += chunk.content;
-                if (chunk.reasoning) accumulatedReasoning += chunk.reasoning;
-                if (chunk.citations) accumulatedCitations = chunk.citations;
-                if (chunk.usage) accumulatedUsage = chunk.usage;
+          while (loopCount < MAX_LOOP_COUNT) {
+            loopCount++;
+            console.log(`[AgentLoop] Regenerate Turn ${loopCount}/${MAX_LOOP_COUNT}`);
+
+            const availableSkills = skillRegistry.getEnabledSkills();
+
+            let turnContent = '';
+            let toolCalls: any[] | undefined;
+            let reasoningFromThisTurn = '';
+
+            await client.streamChat(
+              ContextManager.trimContext(currentMessages as any, activeWindowSize),
+              (token) => {
+                const currentState = get();
+                if (!currentState.activeRequests[sessionId]) return;
+
+                if (token.usage) accumulatedUsage = token.usage;
+
+                if (token.content) {
+                  turnContent += token.content;
+                  accumulatedContent += token.content;
+
+                  // Capture thinking if interleaved
+                  const thinkMatch = turnContent.match(/<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/i) ||
+                    turnContent.match(/Thought:([\s\S]*?)(?:\n\n|\n|$)/i);
+                  if (thinkMatch) {
+                    reasoningFromThisTurn = thinkMatch[1].trim();
+                    turnContent = turnContent.replace(thinkMatch[0], '').trim();
+                    accumulatedContent = accumulatedContent.replace(thinkMatch[0], '').trim();
+                  }
+                }
+
+                if (token.reasoning) {
+                  accumulatedReasoning += token.reasoning;
+                  reasoningFromThisTurn += token.reasoning;
+                }
+
+                if (token.citations) accumulatedCitations = token.citations;
+
+                if (token.toolCalls) {
+                  toolCalls = token.toolCalls;
+                }
+
+                get().updateMessageContent(
+                  sessionId,
+                  messageId,
+                  accumulatedContent,
+                  undefined,
+                  accumulatedReasoning,
+                  accumulatedCitations,
+                  ragReferences,
+                  false,
+                  undefined
+                );
+              },
+              (error) => console.warn('Regenerate error', error),
+              { ...options, skills: availableSkills }
+            );
+
+            if (!toolCalls || toolCalls.length === 0) break;
+
+            // Handle Tool Calls
+            currentMessages.push({ role: 'assistant', content: turnContent, tool_calls: toolCalls } as any);
+
+            for (const tool of toolCalls) {
+              if (!tool) continue; // 🛡️ CRITICAL: Prevent crash if GLM outputs a null tool item
+
+              // 🛡️ 安全解析：兼容 Native OpenAI 和扁平化格式
+              const tcName = tool.name || tool.function?.name;
+              let tcArgs: any = {};
+
+              try {
+                tcArgs = typeof tool.arguments === 'string'
+                  ? JSON.parse(tool.arguments)
+                  : (tool.function?.arguments
+                    ? (typeof tool.function.arguments === 'string' ? JSON.parse(tool.function.arguments) : tool.function.arguments)
+                    : (tool.arguments || {}));
+              } catch (parseErr) {
+                console.warn('[Regenerate] Failed to parse tool arguments:', parseErr);
               }
-              scheduleUpdate();
-            },
-            (error) => console.warn('Regenerate error', error),
-            options
-          );
+
+              if (!tcName) continue;
+
+              const skill = skillRegistry.getSkill(tcName);
+              let result: ToolResult;
+
+              const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+              loopExecutionSteps.push({
+                id: stepId,
+                type: 'tool_call',
+                toolName: tcName,
+                toolArgs: tcArgs,
+                timestamp: Date.now()
+              });
+
+              set(state => ({
+                sessions: state.sessions.map(s => s.id === sessionId ? {
+                  ...s,
+                  messages: s.messages.map(m => m.id === messageId ? { ...m, executionSteps: [...loopExecutionSteps] } : m)
+                } : s)
+              }));
+
+              if (skill) {
+                try {
+                  result = await skill.execute(tcArgs, { sessionId, agentId: agent.id });
+                } catch (e: any) {
+                  result = { id: 'error', content: e.message, status: 'error' };
+                }
+              } else {
+                result = { id: 'error', content: `Skill ${tcName} not found`, status: 'error' };
+              }
+
+              const resultStep = {
+                id: `res_${stepId}`,
+                type: 'tool_result' as const,
+                toolName: tcName,
+                content: typeof result.content === 'string' ? result.content : JSON.stringify(result.content),
+                data: result.data,
+                timestamp: Date.now()
+              };
+              loopExecutionSteps.push(resultStep);
+
+              set(state => ({
+                sessions: state.sessions.map(s => s.id === sessionId ? {
+                  ...s,
+                  messages: s.messages.map(m => m.id === messageId ? { ...m, executionSteps: [...loopExecutionSteps] } : m)
+                } : s)
+              }));
+
+              currentMessages.push({
+                role: 'tool',
+                tool_call_id: tool.id,
+                content: typeof result.content === 'string' ? result.content : JSON.stringify(result.content)
+              } as any);
+            }
+          }
 
           // Final update
           const ragSystemTokens = ragUsage?.ragSystem || 0;
@@ -2170,6 +2349,48 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             accumulatedCitations,
             ragReferences,
           );
+
+          // 2. Post-Processing (Archiving & KG)
+          // Archiving
+          if (session.ragOptions?.enableMemory !== false) {
+            const { MemoryManager } = await import('../lib/rag/memory-manager');
+            const userMsg = session.messages[msgIndex - 1];
+            if (userMsg) {
+              await MemoryManager.addTurnToMemory(sessionId, userMsg.content, accumulatedContent, userMsg.id, messageId);
+            }
+          }
+
+          // KG Extraction
+          if (accumulatedContent.trim()) {
+            setTimeout(async () => {
+              try {
+                const { useSettingsStore } = require('../store/settings-store');
+                const globalConfig = useSettingsStore.getState().globalRagConfig;
+                const activeSession = get().getSession(sessionId);
+                if (!activeSession) return;
+
+                const sessionKgOption = activeSession.ragOptions?.enableKnowledgeGraph;
+                const isKgEnabled = sessionKgOption !== undefined ? sessionKgOption : globalConfig.enableKnowledgeGraph;
+
+                if (!isKgEnabled) return;
+
+                const userMsg = activeSession.messages[msgIndex - 1];
+                const combinedText = userMsg ? `User: ${userMsg.content}\nAssistant: ${accumulatedContent}` : accumulatedContent;
+
+                const { graphExtractor } = await import('../lib/rag/graph-extractor');
+                get().setKGExtractionStatus(sessionId, true);
+                await graphExtractor.extractAndSave(combinedText, undefined, {
+                  sessionId,
+                  agentId: activeSession.agentId,
+                  messageId: messageId
+                });
+              } catch (e) {
+                console.warn('[ChatStore] Regenerate KG extraction failed:', e);
+              } finally {
+                get().setKGExtractionStatus(sessionId, false);
+              }
+            }, 500);
+          }
 
         } finally {
           // Cleanup active request and ensure loading flags are cleared

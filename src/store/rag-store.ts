@@ -73,36 +73,36 @@ interface RagState {
   processingState: {
     sessionId?: string;
     activeMessageId?: string;
-    status: 'idle' | 'chunking' | 'summarizing' | 'archived' | 'summarized' | 'completed' | 'error';
+    status: 'idle' | 'chunking' | 'summarizing' | 'vectorizing' | 'archived' | 'summarized' | 'completed' | 'retrieved' | 'error' | 'retrieving';
+    stage?: 'rewriting' | 'embedding' | 'searching' | 'kg_searching' | 'reranking' | 'done';
+    subStage?: string; // 原子化步骤: INTENT, API_TX, LOCAL_SCAN, etc.
+    progress?: number;
+    networkStats?: {
+      txBytes?: number;
+      rxBytes?: number;
+      latency?: number;
+    };
     startTime?: number;
     summary?: string;
     chunks: string[];
+    pulseActive?: boolean; // 用于全局摘要脉冲
+    kgStatus?: 'idle' | 'extracting' | 'completed' | 'error'; // 知识图谱抽取状态
+    kgProgress?: number;
   };
   processingHistory: {
     [messageId: string]: {
-      type: 'archived' | 'summarized';
+      type: 'archived' | 'summarized' | 'retrieved';
       summary?: string;
       timestamp: number;
       chunkCount?: number;
+      ragMetadata?: any;
     };
   };
   updateProcessingState: (
-    state: {
-      sessionId?: string;
-      status:
-      | 'idle'
-      | 'chunking'
-      | 'summarizing'
-      | 'archived'
-      | 'summarized'
-      | 'completed'
-      | 'error';
-      startTime?: number;
-      summary?: string;
-      chunks?: string[];
-    },
+    state: Partial<RagState['processingState']>,
     messageId?: string,
   ) => void;
+  setGlobalPulse: (active: boolean) => void;
 
   // 队列控制
   cancelVectorization: (docId: string) => void;
@@ -701,65 +701,86 @@ export const useRagStore = create<RagState>((set, get) => {
       const prevQueueLength = get().vectorizationQueue.length;
       set({ vectorizationQueue: queue, currentTask: current });
 
+      // ✅ 深度集成：将队列状态同步到 RAG 指示器
+      if (current) {
+        get().updateProcessingState({
+          status: current.status as any,
+          progress: current.progress,
+          subStage: current.status === 'chunking' ? 'CHUNKING' :
+            current.status === 'vectorizing' ? 'EMBEDDING' :
+              current.status === 'saving' ? 'SAVING' : undefined,
+          pulseActive: true
+        }, current.docId); // 这里 docId 通常对应消息 ID (如果是背景归档任务)
+      }
+
       // 如果队列长度减少（任务完成），重新加载文档列表
       if (queue.length < prevQueueLength || (current === null && prevQueueLength > 0)) {
         setTimeout(() => get().loadDocuments(), 200);
       }
     },
 
-    processingState: { status: 'idle', chunks: [] },
+    processingState: { status: 'idle', chunks: [], pulseActive: false },
     processingHistory: {},
     updateProcessingState: (stateUpdate, messageId) => {
-      const { sessionId, status, startTime, summary, chunks } = stateUpdate;
-
       set((state) => {
         const newState = { ...state };
+        const combinedStatus = stateUpdate.status || state.processingState.status;
 
-        // 1. Update active state (overwrite current task)
+        // 1. Update active state
         newState.processingState = {
           ...state.processingState,
-          status,
-          sessionId: sessionId || state.processingState.sessionId,
-          activeMessageId: messageId || state.processingState.activeMessageId,
-          startTime: startTime || state.processingState.startTime,
-          summary: summary || state.processingState.summary,
-          chunks: chunks || state.processingState.chunks || [],
+          ...stateUpdate,
+          activeMessageId: messageId || stateUpdate.activeMessageId || state.processingState.activeMessageId,
+          chunks: stateUpdate.chunks || state.processingState.chunks || [],
         };
 
         // 2. If it's a permanent result, save to history
+        const isKgCompleted = stateUpdate.kgStatus === 'completed' || state.processingState.kgStatus === 'completed';
         if (
           messageId &&
-          (status === 'archived' || status === 'summarized' || status === 'completed')
+          (combinedStatus === 'archived' || combinedStatus === 'summarized' || combinedStatus === 'completed' || combinedStatus === 'retrieved' || isKgCompleted)
         ) {
-          const type =
-            status === 'archived' || status === 'summarized'
-              ? status
-              : summary
-                ? 'summarized'
-                : 'archived';
-          const chunkCount = chunks?.length || state.processingState.chunks?.length || 0;
+          // 确定历史类型
+          let type: 'archived' | 'summarized' | 'retrieved';
+          if (combinedStatus === 'retrieved' || isKgCompleted) {
+            type = 'retrieved';
+          } else if (combinedStatus === 'completed') {
+            type = 'retrieved';
+          } else {
+            type = combinedStatus as any;
+          }
+
+          const chunkCount = stateUpdate.chunks?.length || state.processingState.chunks?.length || 0;
 
           newState.processingHistory = {
             ...state.processingHistory,
             [messageId]: {
               type,
-              summary: summary || state.processingState.summary,
+              summary: stateUpdate.summary || state.processingState.summary,
               chunkCount: chunkCount || undefined,
               timestamp: Date.now(),
             },
           };
 
-          // After completion, reset status to idle but keep activeMessageId for a moment to allow UI transition
-          // Actually, often we just set to idle.
-          newState.processingState = {
-            ...newState.processingState,
-            status: 'idle',
-            // Keep other fields if needed for closing animations, or clear them
-          };
+          // Reset active status to idle for terminal states
+          if (combinedStatus === 'completed' || combinedStatus === 'archived' || combinedStatus === 'summarized' || combinedStatus === 'retrieved') {
+            newState.processingState = {
+              ...newState.processingState,
+              status: 'idle',
+              subStage: undefined,
+              networkStats: undefined,
+            };
+          }
         }
 
         return newState;
       });
+    },
+
+    setGlobalPulse: (active) => {
+      set((state) => ({
+        processingState: { ...state.processingState, pulseActive: active }
+      }));
     },
 
     cancelVectorization: (docId) => {

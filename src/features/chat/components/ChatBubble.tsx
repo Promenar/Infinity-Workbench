@@ -14,7 +14,12 @@ import {
   Dimensions,
   Pressable, // ✅ Import Pressable
 } from 'react-native';
-import { Typography, ContextMenu } from '../../../components/ui'; // ✅ Import ContextMenu
+import { MemoryManager } from '../../../lib/rag/memory-manager';
+import { graphExtractor } from '../../../lib/rag/graph-extractor';
+import { RagOmniIndicator } from './RagOmniIndicator';
+import { ContextManager } from '../utils/ContextManager';
+import { useRagStore } from '../../../store/rag-store'; // ✅ 显式导入
+import { Typography, ContextMenu } from '../../../components/ui';
 import { useChatStore } from '../../../store/chat-store';
 import { Message } from '../../../types/chat';
 import { db } from '../../../lib/db'; // ✅ 导入db
@@ -42,8 +47,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
 import { AgentAvatar } from '../../../components/chat/AgentAvatar';
-import { RagReferencesChip, RagReferencesList } from './RagReferences';
-import { ProcessingIndicatorChip, ProcessingIndicatorDetails } from './ProcessingIndicator';
+import { RagReferencesList } from './RagReferences';
+import { ProcessingIndicatorDetails } from './ProcessingIndicator';
 import { ToolExecutionTimeline } from '../../../components/skills/ToolExecutionTimeline';
 
 import { findModelSpec } from '../../../lib/llm/model-utils';
@@ -100,7 +105,6 @@ interface ChatBubbleProps {
   onSummarize?: () => void;
   modelId?: string;
   sessionId: string;
-  isDark?: boolean;
   onLayout?: (event: any) => void;
 }
 
@@ -433,19 +437,7 @@ const ActionBar: React.FC<{
         </TouchableOpacity>
       )}
 
-      {/* ✅ 处理中状态 (黄色 Loading) */}
-      {isProcessing && (
-        <View className={btnStyle}>
-          <ActivityIndicator size="small" color="#f59e0b" />
-        </View>
-      )}
-
-      {/* ✅ 归档状态绿勾 */}
-      {isArchived && !isProcessing && (
-        <View className={btnStyle}>
-          <Check size={16} color="#10b981" />
-        </View>
-      )}
+      {/* 状态指示器已统一集成到消息上方的 RagOmniIndicator 中 */}
     </View>
   );
 };
@@ -500,13 +492,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   onSummarize, // ✅ 新增
   isGenerating,
   modelId,
-  sessionId, // ✅ 新增：会话ID
+  sessionId,
   onLayout, // ✅ 新增：传递布局回调
-  // @ts-ignore
-  isDark = false, // Default fallback
 }) => {
   const { t } = useI18n();
-  const { colors, isDark: themeIsDark } = useTheme();
+  const { theme, colors: themeColors } = useTheme(); // ✅ 重命名 colors 以免冲突
+  const { processingState, updateProcessingState } = useRagStore();
+  const isDark = theme === 'dark';
   const isUser = message.role === 'user';
   // const { isDark } = useTheme(); // REMOVED to avoid context crash during unmount
 
@@ -901,7 +893,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                   blockquote: {
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                     borderLeftWidth: 3,
-                    borderLeftColor: colors[500],
+                    borderLeftColor: themeColors[500],
                     paddingHorizontal: 12,
                     paddingVertical: 8,
                     borderRadius: 8,
@@ -1016,27 +1008,23 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
 
         <View className="flex-1 ml-3">
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 16 }}
-            style={{ flexGrow: 0 }}
-          >
-            {(message.ragReferencesLoading || message.ragReferences) && (
-              <RagReferencesChip
-                references={message.ragReferences || []}
-                loading={message.ragReferencesLoading}
-                progress={message.ragProgress}
-                metadata={message.ragMetadata}
-                isDark={isDark}
-                expanded={isRagExpanded}
-                onToggle={() => {
-                  const newState = !isRagExpanded;
-                  setRagExpanded(newState);
-                }}
-              />
+          {(!!message.ragReferencesLoading ||
+            (Array.isArray(message.ragReferences) && message.ragReferences.length > 0) ||
+            (processingState.activeMessageId === message.id && (processingState.status !== 'idle' || processingState.kgStatus !== 'idle')) ||
+            (processingState.activeMessageId === message.id && processingState.pulseActive) ||
+            (isGenerating && processingState.activeMessageId === message.id) || // 🔑 即使结果为 0，生成期间也要保活
+            (!!message.ragProgress) // 🔑 长效存留：只要 RAG 曾经运行过，就保留指示器以显示历史结果
+          ) && (
+              <View style={{ width: '100%', marginBottom: 4 }}>
+                <RagOmniIndicator
+                  messageId={message.id}
+                  isGenerating={isGenerating}
+                  referencesCount={message.ragReferences?.length || 0}
+                  isExpanded={isRagExpanded}
+                  onToggle={() => setRagExpanded(!isRagExpanded)}
+                />
+              </View>
             )}
-          </ScrollView>
         </View>
       </View>
 

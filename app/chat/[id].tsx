@@ -384,7 +384,7 @@ export default function ChatDetailScreen() {
   const agentColor = agent.color || '#6366f1';
 
   return (
-    <PageLayout>
+    <PageLayout safeArea={false}>
       <Stack.Screen
         options={{
           headerShown: false,
@@ -430,7 +430,6 @@ export default function ChatDetailScreen() {
                   }
               }
               modelId={session?.modelId}
-              isDark={isDark}
               onLayout={(event) => {
                 const { height } = event.nativeEvent.layout;
                 if (height > 0) {
@@ -451,7 +450,7 @@ export default function ChatDetailScreen() {
           removeClippedSubviews={Platform.OS === 'android'}
           getItemType={(item: any) => item.role}
           contentContainerStyle={{
-            paddingTop: insets.top + 70 + 40, // Increased padding: 70 -> 110 (Approx +40 for generic task monitor height)
+            paddingTop: insets.top + 64 + 12, // 🔑 固定内边距：Header(64) + 基础间距(12)。任务监测器将作为 Overlay 覆盖在此区域。
             paddingBottom: insets.bottom + 80,
           }}
           onLayout={() => setIsListReady(true)}
@@ -645,7 +644,6 @@ export default function ChatDetailScreen() {
           },
           label: t.common.settings,
         }}
-        height={60} // Reduce slightly to make room? Default is 64. Let's stick to default or slight adjustment
       />
 
       {/* Persistent Task Monitor */}

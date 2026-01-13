@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent } from 'react-native';
+import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler'; // Correct import for nesting
 import Animated, { FadeInUp, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { Typography } from '../ui/Typography';
@@ -43,11 +43,22 @@ const SearchResultsList = ({ sources, isDark }: { sources: any[], isDark: boolea
                     backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f8f9fa',
                     borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
                 }}>
-                    <View className="flex-row items-center mb-1">
+                    <TouchableOpacity
+                        activeOpacity={0.6}
+                        onPress={() => source.url && Linking.openURL(source.url)}
+                        className="flex-row items-center mb-1"
+                    >
                         <Globe size={12} color="#4F8EF7" className="mr-2" />
-                        <Typography className="text-xs font-bold text-blue-500" numberOfLines={1}>{source.title || 'Source'}</Typography>
-                    </View>
-                    <Typography className="text-[10px] opacity-70 mb-1" numberOfLines={1}>{source.url}</Typography>
+                        <Typography className="text-xs font-bold text-blue-500 underline" numberOfLines={1}>
+                            {source.title || 'Source'}
+                        </Typography>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => source.url && Linking.openURL(source.url)}
+                        activeOpacity={0.6}
+                    >
+                        <Typography className="text-[10px] opacity-70 mb-1 text-blue-400" numberOfLines={1}>{source.url}</Typography>
+                    </TouchableOpacity>
                     <Typography className="text-xs opacity-90" numberOfLines={2}>{source.snippet || source.content}</Typography>
                 </View>
             ))}
