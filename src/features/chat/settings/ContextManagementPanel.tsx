@@ -13,22 +13,13 @@ import { useI18n } from '../../../lib/i18n';
 import { Typography } from '../../../components/ui/Typography';
 import { clsx } from 'clsx';
 import * as Haptics from '../../../lib/haptics';
+import { Card } from '../../../components/ui/Card';
 
 interface ContextManagementPanelProps {
   sessionId: string;
 }
 
-const SectionHeader = ({ title }: { title: string }) => {
-  const { colors } = useTheme();
-  return (
-    <View className="flex-row items-center mb-4 mt-2">
-      <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
-      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-        {title}
-      </Typography>
-    </View>
-  );
-};
+// SectionHeader removed as it will be provided by parent SettingsSection
 
 export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ sessionId }) => {
   const { t } = useI18n();
@@ -151,165 +142,161 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
   const displayedSummaries = summaries.slice(0, visibleCount);
 
   return (
-    <View className="mb-8">
-      <SectionHeader title={t.rag.contextManagement} />
+    <View>
+      {lastError && (
+        <View className="flex-row items-center bg-red-50 dark:bg-red-900/10 rounded-2xl p-3 mb-4 border border-red-100 dark:border-red-900/20">
+          <AlertCircle size={16} color="#ef4444" className="mr-2" />
+          <Typography className="text-red-600 dark:text-red-400 text-xs flex-1">
+            {lastError}
+          </Typography>
+        </View>
+      )}
 
-      <View className="bg-gray-50 dark:bg-zinc-900 rounded-[32px] p-5 border border-indigo-50 dark:border-indigo-500/10">
-        {lastError && (
-          <View className="flex-row items-center bg-red-50 dark:bg-red-900/10 rounded-2xl p-3 mb-4 border border-red-100 dark:border-red-900/20">
-            <AlertCircle size={16} color="#ef4444" className="mr-2" />
-            <Typography className="text-red-600 dark:text-red-400 text-xs flex-1">
-              {lastError}
+      {/* Card 1: Token Stats */}
+      <Card variant="glass" className="p-4 shadow-sm mb-4" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+        <View className="flex-row justify-between items-center mb-4">
+          <View className="flex-row items-center">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-white mr-2">
+              {t.rag.tokenStats}
             </Typography>
-          </View>
-        )}
-
-        {/* Card 1: Token Stats */}
-        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-indigo-50 dark:border-indigo-500/10 shadow-sm">
-          <View className="flex-row justify-between items-center mb-4">
-            <View className="flex-row items-center">
-              <Typography className="text-sm font-bold text-gray-900 dark:text-white mr-2">
-                {t.rag.tokenStats}
-              </Typography>
-              <TouchableOpacity
-                onPress={() => {
-                  setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-                  loadData();
-                }}
-                disabled={loading}
-              >
-                <RefreshCw size={12} color="#94a3b8" className={clsx(loading && "animate-spin")} />
-              </TouchableOpacity>
-            </View>
             <TouchableOpacity
-              onPress={handleManualSummarize}
+              onPress={() => {
+                setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                loadData();
+              }}
               disabled={loading}
-              style={loading ? { opacity: 0.5 } : { backgroundColor: colors[600] }}
-              className="flex-row items-center px-3 py-1.5 rounded-full"
             >
-              {loading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Brain size={12} color="#fff" className="mr-1.5" />
-              )}
-              <Typography className="text-[11px] font-bold text-white">
-                {t.rag.summarizeNow}
-              </Typography>
+              <RefreshCw size={12} color="#94a3b8" className={clsx(loading && "animate-spin")} />
             </TouchableOpacity>
           </View>
-
-          <View className="flex-row justify-between items-center mb-5">
-            <View className="items-center flex-1">
-              <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
-                {stats.activeMessages}
-              </Typography>
-              <Typography className="text-[10px] text-gray-400">{t.rag.activeMsg}</Typography>
-            </View>
-            <View className="w-[1px] h-5 bg-gray-100 dark:bg-zinc-800" />
-            <View className="items-center flex-1">
-              <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
-                {stats.summarizedCount}
-              </Typography>
-              <Typography className="text-[10px] text-gray-400">{t.rag.archived}</Typography>
-            </View>
-            <View className="w-[1px] h-5 bg-gray-100 dark:bg-zinc-800" />
-            <View className="items-center flex-1">
-              <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
-                {(stats.totalTokens / 1000).toFixed(1)}k
-              </Typography>
-              <Typography className="text-[10px] text-gray-400">Token</Typography>
-            </View>
-          </View>
-
-          <View className="h-1.5 flex-row rounded-full overflow-hidden bg-gray-100 dark:bg-zinc-800">
-            <View className="flex-[2] bg-blue-500" />
-            <View className="flex-[1] bg-emerald-500" />
-            <View className="flex-[1] bg-amber-500" />
-          </View>
-        </View>
-
-        {/* Card 2: Memory Archives */}
-        <View className="bg-white dark:bg-black p-4 rounded-2xl border border-indigo-50 dark:border-indigo-500/10 shadow-sm mt-4">
-          <View className="flex-row justify-between items-center mb-4">
-            <Typography className="text-sm font-bold text-gray-900 dark:text-white">
-              {t.rag.memoryArchives}
+          <TouchableOpacity
+            onPress={handleManualSummarize}
+            disabled={loading}
+            style={loading ? { opacity: 0.5 } : { backgroundColor: colors[600] }}
+            className="flex-row items-center px-3 py-1.5 rounded-full"
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Brain size={12} color="#fff" className="mr-1.5" />
+            )}
+            <Typography className="text-[11px] font-bold text-white">
+              {t.rag.summarizeNow}
             </Typography>
-            <View className="bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-              <Typography className="text-[10px] font-bold text-gray-500 dark:text-gray-400">
-                {summaries.length}
-              </Typography>
-            </View>
-          </View>
-
-          {summaries.length === 0 ? (
-            <View className="items-center py-6">
-              <Archive size={24} color={isDark ? '#3f3f46' : '#cbd5e1'} />
-              <Typography className="text-gray-400 text-xs mt-2">{t.rag.noArchives}</Typography>
-            </View>
-          ) : (
-            <View>
-              {displayedSummaries.map((summary, index) => (
-                <View
-                  key={summary.id}
-                  className={clsx(
-                    "py-3",
-                    index !== displayedSummaries.length - 1 && "border-b border-gray-50 dark:border-zinc-800/50"
-                  )}
-                >
-                  <View className="flex-row items-center mb-2">
-                    <View
-                      style={{ backgroundColor: colors.opacity10 }}
-                      className="px-2 py-0.5 rounded-full mr-2"
-                    >
-                      <Typography style={{ color: colors[600] }} className="text-[9px] font-bold">
-                        SUMMARY
-                      </Typography>
-                    </View>
-                    <Typography className="text-[11px] text-gray-400 flex-1">
-                      {new Date(summary.createdAt).toLocaleString('zh-CN', {
-                        month: 'numeric',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </Typography>
-                    <TouchableOpacity
-                      onPress={() => handleDeleteSummary(summary.id)}
-                      className="p-1.5 bg-gray-50 dark:bg-zinc-800/50 rounded-full"
-                    >
-                      <X size={12} color="#94a3b8" />
-                    </TouchableOpacity>
-                  </View>
-                  <Typography
-                    className="text-xs text-gray-600 dark:text-gray-300 leading-5"
-                    numberOfLines={3}
-                  >
-                    {summary.summaryContent}
-                  </Typography>
-                </View>
-              ))}
-
-              {summaries.length > 3 && (
-                <View className="items-center pt-3 border-t border-gray-50 dark:border-zinc-800/50 mt-1">
-                  {visibleCount < summaries.length ? (
-                    <TouchableOpacity onPress={handleLoadMore}>
-                      <Typography style={{ color: colors[600] }} className="text-xs font-bold">
-                        展开更多 ({summaries.length - visibleCount})
-                      </Typography>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity onPress={handleShowLess}>
-                      <Typography style={{ color: colors[600] }} className="text-xs font-bold">
-                        收起列表
-                      </Typography>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
+          </TouchableOpacity>
         </View>
-      </View>
+
+        <View className="flex-row justify-between items-center mb-5">
+          <View className="items-center flex-1">
+            <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
+              {stats.activeMessages}
+            </Typography>
+            <Typography className="text-[10px] text-gray-400">{t.rag.activeMsg}</Typography>
+          </View>
+          <View className="w-[1px] h-5 bg-gray-100 dark:bg-zinc-800" />
+          <View className="items-center flex-1">
+            <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
+              {stats.summarizedCount}
+            </Typography>
+            <Typography className="text-[10px] text-gray-400">{t.rag.archived}</Typography>
+          </View>
+          <View className="w-[1px] h-5 bg-gray-100 dark:bg-zinc-800" />
+          <View className="items-center flex-1">
+            <Typography className="text-xl font-extrabold text-gray-900 dark:text-white">
+              {(stats.totalTokens / 1000).toFixed(1)}k
+            </Typography>
+            <Typography className="text-[10px] text-gray-400">Token</Typography>
+          </View>
+        </View>
+
+        <View className="h-1.5 flex-row rounded-full overflow-hidden bg-gray-100 dark:bg-zinc-800">
+          <View className="flex-[2] bg-blue-500" />
+          <View className="flex-[1] bg-emerald-500" />
+          <View className="flex-[1] bg-amber-500" />
+        </View>
+      </Card>
+
+      {/* Card 2: Memory Archives */}
+      <Card variant="glass" className="p-4 shadow-sm" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+        <View className="flex-row justify-between items-center mb-4">
+          <Typography className="text-sm font-bold text-gray-900 dark:text-white">
+            {t.rag.memoryArchives}
+          </Typography>
+          <View className="bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+            <Typography className="text-[10px] font-bold text-gray-500 dark:text-gray-400">
+              {summaries.length}
+            </Typography>
+          </View>
+        </View>
+
+        {summaries.length === 0 ? (
+          <View className="items-center py-6">
+            <Archive size={24} color={isDark ? '#3f3f46' : '#cbd5e1'} />
+            <Typography className="text-gray-400 text-xs mt-2">{t.rag.noArchives}</Typography>
+          </View>
+        ) : (
+          <View>
+            {displayedSummaries.map((summary, index) => (
+              <View
+                key={summary.id}
+                className={clsx(
+                  "py-3",
+                  index !== displayedSummaries.length - 1 && "border-b border-gray-50 dark:border-zinc-800/50"
+                )}
+              >
+                <View className="flex-row items-center mb-2">
+                  <View
+                    style={{ backgroundColor: colors.opacity10 }}
+                    className="px-2 py-0.5 rounded-full mr-2"
+                  >
+                    <Typography style={{ color: colors[600] }} className="text-[9px] font-bold">
+                      SUMMARY
+                    </Typography>
+                  </View>
+                  <Typography className="text-[11px] text-gray-400 flex-1">
+                    {new Date(summary.createdAt).toLocaleString('zh-CN', {
+                      month: 'numeric',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Typography>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteSummary(summary.id)}
+                    className="p-1.5 bg-gray-50 dark:bg-zinc-800/50 rounded-full"
+                  >
+                    <X size={12} color="#94a3b8" />
+                  </TouchableOpacity>
+                </View>
+                <Typography
+                  className="text-xs text-gray-600 dark:text-gray-300 leading-5"
+                  numberOfLines={3}
+                >
+                  {summary.summaryContent}
+                </Typography>
+              </View>
+            ))}
+
+            {summaries.length > 3 && (
+              <View className="items-center pt-3 border-t border-gray-50 dark:border-zinc-800/50 mt-1">
+                {visibleCount < summaries.length ? (
+                  <TouchableOpacity onPress={handleLoadMore}>
+                    <Typography style={{ color: colors[600] }} className="text-xs font-bold">
+                      展开更多 ({summaries.length - visibleCount})
+                    </Typography>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={handleShowLess}>
+                    <Typography style={{ color: colors[600] }} className="text-xs font-bold">
+                      收起列表
+                    </Typography>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+      </Card>
     </View>
   );
 };

@@ -545,7 +545,11 @@ export default function SessionSettingsScreen() {
           </SettingsSection>
 
           {/* Context Management */}
-          <ContextManagementPanel sessionId={id} />
+          <SettingsSection title={t.rag.contextManagement}>
+            <View className="p-4 pt-2">
+              <ContextManagementPanel sessionId={id} />
+            </View>
+          </SettingsSection>
 
           {/* Custom Prompt */}
           <SettingsSection title={t.agent.conversation.customPrompt}>

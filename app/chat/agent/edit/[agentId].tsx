@@ -261,7 +261,7 @@ export default function AgentEditScreen() {
               </TouchableOpacity>
             </View>
 
-            <View className="flex-row flex-wrap justify-center gap-3">
+            <View className="flex-row flex-wrap justify-center gap-2">
               {PRESET_ICONS.map((iconName) => (
                 <TouchableOpacity
                   key={iconName}
@@ -270,9 +270,9 @@ export default function AgentEditScreen() {
                     setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
                   }}
                   className={clsx(
-                    'w-12 h-12 rounded-2xl items-center justify-center border-2',
+                    'w-10 h-10 rounded-xl items-center justify-center border-2',
                     formData.avatar === iconName
-                      ? 'border-transparent' // We use inline style for border-color below to avoid class conflict
+                      ? 'border-transparent'
                       : 'bg-white dark:bg-black border-transparent',
                   )}
                   style={formData.avatar === iconName ? {
@@ -285,11 +285,11 @@ export default function AgentEditScreen() {
                     name={formData.name}
                     avatar={iconName}
                     color={formData.color}
-                    size={32}
+                    size={24}
                   />
                   {formData.avatar === iconName && (
                     <View style={{ backgroundColor: colors[500] }} className="absolute -top-1 -right-1 rounded-full p-0.5">
-                      <Check size={8} color="white" />
+                      <Check size={6} color="white" />
                     </View>
                   )}
                 </TouchableOpacity>

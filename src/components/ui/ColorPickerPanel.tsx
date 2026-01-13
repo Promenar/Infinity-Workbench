@@ -41,25 +41,22 @@ export const ColorPickerPanel: React.FC<ColorPickerPanelProps> = ({ color: selec
             </View>
 
             {/* Presets */}
-            <View className="bg-gray-50 dark:bg-zinc-900 rounded-2xl p-5 border border-gray-100 dark:border-zinc-800 mb-8">
-                <View className="flex-row flex-wrap justify-between">
+            <View className="bg-gray-50 dark:bg-zinc-900 rounded-2xl p-4 border border-gray-100 dark:border-zinc-800 mb-6">
+                <View className="flex-row flex-wrap">
                     {PRESET_COLORS.map((preset) => {
                         const isSelected = selectedColor === preset.value;
                         return (
                             <TouchableOpacity
                                 key={preset.value}
                                 onPress={() => onColorChange(preset.value)}
-                                className="w-[22%] mb-4 items-center"
+                                className="w-[16.6%] mb-3 items-center"
                             >
                                 <View
-                                    className={`w-14 h-14 rounded-full items-center justify-center border-2 ${isSelected ? 'border-gray-900 dark:border-white' : 'border-transparent'}`}
+                                    className={`w-10 h-10 rounded-full items-center justify-center border-2 ${isSelected ? 'border-gray-900 dark:border-white shadow-sm' : 'border-transparent'}`}
                                     style={{ backgroundColor: preset.value }}
                                 >
-                                    {isSelected && <Check size={24} color={preset.value === '#18181b' ? '#fff' : '#fff'} />}
+                                    {isSelected && <Check size={18} color="#fff" />}
                                 </View>
-                                <Typography className="text-[10px] mt-2 text-gray-500 dark:text-gray-400 font-medium">
-                                    {(t.common.color.presets as any)[preset.key]}
-                                </Typography>
                             </TouchableOpacity>
                         );
                     })}

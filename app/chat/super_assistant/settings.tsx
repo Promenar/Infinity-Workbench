@@ -16,6 +16,7 @@ import {
   useToast,
   ConfirmDialog,
   Switch,
+  SettingsSection,
 } from '../../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import {
@@ -55,29 +56,7 @@ import { ColorPickerPanel } from '../../../src/components/ui/ColorPickerPanel';
 
 const SPA_SESSION_ID = 'super_assistant';
 
-const SectionHeader = ({ title }: { title: string }) => {
-  const { colors } = useTheme();
-  return (
-    <View className="flex-row items-center mb-4 mt-2">
-      <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
-      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-        {title}
-      </Typography>
-    </View>
-  );
-};
-
-const SubHeader = ({ title }: { title: string }) => {
-  const { colors } = useTheme();
-  return (
-    <View className="flex-row items-center mb-3 mt-1">
-      <View style={{ backgroundColor: colors[500] }} className="w-1 h-3 rounded-full mr-2" />
-      <Typography className="font-bold text-gray-700 dark:text-gray-300 text-sm">
-        {title}
-      </Typography>
-    </View>
-  );
-};
+// SectionHeader and SubHeader removed to use standard SettingsSection
 
 interface FABIconProps {
   type: FABIconType;
@@ -136,7 +115,7 @@ const FABIconGrid = React.memo(({
           return (
             <View
               key={preset.type}
-              style={{ width: '25%', paddingRight: gap, marginBottom: gap }}
+              style={{ width: '16.66%', paddingRight: gap, marginBottom: gap }}
             >
               <TouchableOpacity
                 onPress={() => onSelect(preset.type)}
@@ -145,7 +124,7 @@ const FABIconGrid = React.memo(({
                   aspectRatio: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  borderRadius: 16,
+                  borderRadius: 12,
                   backgroundColor: isSelected
                     ? (isDark ? themeColors.opacity20 : themeColors.opacity10)
                     : (isDark ? '#000000' : '#ffffff'),
@@ -158,13 +137,13 @@ const FABIconGrid = React.memo(({
               >
                 <FABIconRenderer
                   type={preset.type}
-                  size={24}
+                  size={20}
                   color={isSelected ? themeColors[600] : isDark ? '#9ca3af' : '#6b7280'}
                   customIconUri={preferences.fab.customIconUri}
                 />
                 {isSelected && (
-                  <View style={{ position: 'absolute', top: 6, right: 6 }}>
-                    <Check size={10} color={themeColors[600]} />
+                  <View style={{ position: 'absolute', top: 4, right: 4 }}>
+                    <Check size={8} color={themeColors[600]} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -229,7 +208,7 @@ const FABColorGrid = React.memo(({
         return (
           <View
             key={color.value}
-            style={{ width: '25%', paddingRight: gap, marginBottom: gap }}
+            style={{ width: '16.66%', paddingRight: gap, marginBottom: gap }}
           >
             <TouchableOpacity
               onPress={() => onSelect(color.value)}
@@ -238,7 +217,7 @@ const FABColorGrid = React.memo(({
                 aspectRatio: 1,
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderRadius: 16,
+                borderRadius: 12,
                 borderWidth: 2,
                 backgroundColor: color.value + '10',
                 borderColor: isSelected ? color.value : isDark ? '#18181b' : '#f4f4f5',
@@ -246,16 +225,16 @@ const FABColorGrid = React.memo(({
             >
               <View
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 12,
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
                   backgroundColor: color.value,
                   ...(!isDark ? { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } : {})
                 }}
               />
               {isSelected && (
-                <View style={{ position: 'absolute', top: 6, right: 6 }}>
-                  <Check size={10} color={color.value} />
+                <View style={{ position: 'absolute', top: 4, right: 4 }}>
+                  <Check size={8} color={color.value} />
                 </View>
               )}
             </TouchableOpacity>
@@ -448,233 +427,229 @@ export default function SuperAssistantSettingsScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          <SectionHeader title={t.agent.superAssistant.globalKnowledge} />
-          <View
-            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-            className="rounded-3xl p-5 border mb-6"
-          >
-            <View className="flex-row items-center mb-4">
-              <View style={{ backgroundColor: colors[500] }} className="w-10 h-10 rounded-full items-center justify-center mr-3">
-                <Sparkles size={20} color="#fff" />
-              </View>
-              <View className="flex-1">
-                <Typography style={{ color: colors[900] }} className="text-lg font-bold dark:text-indigo-100">
-                  {t.agent.superAssistant.globalRagEnabled}
-                </Typography>
-                <Typography variant="caption" style={{ color: colors[600] }} className="dark:text-indigo-300">
-                  {t.agent.superAssistant.accessAllData}
-                </Typography>
-              </View>
-            </View>
-
-            <View className="bg-white/50 dark:bg-black/20 rounded-2xl p-4 space-y-2 mb-4">
-              <View className="flex-row items-center justify-between">
-                <Typography className="text-sm text-gray-700 dark:text-gray-300">
-                  📄 {t.agent.superAssistant.docCount}
-                </Typography>
-                <Typography className="text-sm font-bold text-gray-900 dark:text-white">
-                  {stats?.totalDocuments || 0}
-                </Typography>
-              </View>
-              <View className="flex-row items-center justify-between">
-                <Typography className="text-sm text-gray-700 dark:text-gray-300">
-                  💬 {t.agent.superAssistant.sessionMemory}
-                </Typography>
-                <Typography className="text-sm font-bold text-gray-900 dark:text-white">
-                  {stats?.totalSessions || 0}
-                </Typography>
-              </View>
-              <View className="flex-row items-center justify-between">
-                <Typography className="text-sm text-gray-700 dark:text-gray-300">
-                  🔢 {t.agent.superAssistant.totalVectors}
-                </Typography>
-                <Typography className="text-sm font-bold text-gray-900 dark:text-white">
-                  {stats?.totalVectors?.toLocaleString() || 0}
-                </Typography>
-              </View>
-            </View>
-
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <View className="w-2 h-2 rounded-full bg-green-500 mr-2" />
-                <Typography className="text-xs text-gray-600 dark:text-gray-400">
-                  {t.agent.superAssistant.statusOperational}
-                </Typography>
+          <SettingsSection title={t.agent.superAssistant.globalKnowledge}>
+            <View className="p-5">
+              <View className="flex-row items-center mb-4">
+                <View style={{ backgroundColor: colors[500] }} className="w-10 h-10 rounded-full items-center justify-center mr-3">
+                  <Sparkles size={20} color="#fff" />
+                </View>
+                <View className="flex-1">
+                  <Typography style={{ color: colors[900] }} className="text-lg font-bold dark:text-indigo-100">
+                    {t.agent.superAssistant.globalRagEnabled}
+                  </Typography>
+                  <Typography variant="caption" style={{ color: colors[600] }} className="dark:text-indigo-300">
+                    {t.agent.superAssistant.accessAllData}
+                  </Typography>
+                </View>
               </View>
 
-              <TouchableOpacity
-                onPress={handlePruneGhostData}
-                style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-                className="px-3 py-1.5 rounded-full flex-row items-center border"
-              >
-                <Database size={12} color={colors[600]} className="mr-1.5" />
-                <Typography style={{ color: colors[700] }} className="text-xs font-bold">
-                  {t.agent.superAssistant.pruneGhostData}
-                </Typography>
-              </TouchableOpacity>
+              <View className="bg-white/50 dark:bg-black/20 rounded-2xl p-4 space-y-2 mb-4">
+                <View className="flex-row items-center justify-between">
+                  <Typography className="text-sm text-gray-700 dark:text-gray-300">
+                    📄 {t.agent.superAssistant.docCount}
+                  </Typography>
+                  <Typography className="text-sm font-bold text-gray-900 dark:text-white">
+                    {stats?.totalDocuments || 0}
+                  </Typography>
+                </View>
+                <View className="flex-row items-center justify-between">
+                  <Typography className="text-sm text-gray-700 dark:text-gray-300">
+                    💬 {t.agent.superAssistant.sessionMemory}
+                  </Typography>
+                  <Typography className="text-sm font-bold text-gray-900 dark:text-white">
+                    {stats?.totalSessions || 0}
+                  </Typography>
+                </View>
+                <View className="flex-row items-center justify-between">
+                  <Typography className="text-sm text-gray-700 dark:text-gray-300">
+                    🔢 {t.agent.superAssistant.totalVectors}
+                  </Typography>
+                  <Typography className="text-sm font-bold text-gray-900 dark:text-white">
+                    {stats?.totalVectors?.toLocaleString() || 0}
+                  </Typography>
+                </View>
+              </View>
+
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center">
+                  <View className="w-2 h-2 rounded-full bg-green-500 mr-2" />
+                  <Typography className="text-xs text-gray-600 dark:text-gray-400">
+                    {t.agent.superAssistant.statusOperational}
+                  </Typography>
+                </View>
+
+                <TouchableOpacity
+                  onPress={handlePruneGhostData}
+                  style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+                  className="px-3 py-1.5 rounded-full flex-row items-center border"
+                >
+                  <Database size={12} color={colors[600]} className="mr-1.5" />
+                  <Typography style={{ color: colors[700] }} className="text-xs font-bold">
+                    {t.agent.superAssistant.pruneGhostData}
+                  </Typography>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </SettingsSection>
 
           {/* 导出历史记录 */}
-          <SectionHeader title={t.agent.superAssistant.exportHistory} />
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={handleExportCurrent}
-            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-            className="flex-row items-center justify-center py-4 rounded-2xl mb-6 border"
-          >
-            {isExporting ? (
-              <ActivityIndicator size="small" color={colors[500]} />
-            ) : (
-              <>
-                <Download size={18} color={colors[600]} className="mr-2" />
-                <Typography style={{ color: colors[600] }} className="font-bold">
-                  {t.agent.superAssistant.exportHistory}
-                </Typography>
-              </>
-            )}
-          </TouchableOpacity>
+          <SettingsSection title={t.agent.superAssistant.exportHistory}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleExportCurrent}
+              className="flex-row items-center justify-center py-4"
+            >
+              {isExporting ? (
+                <ActivityIndicator size="small" color={colors[500]} />
+              ) : (
+                <>
+                  <Download size={18} color={colors[600]} className="mr-2" />
+                  <Typography style={{ color: colors[600] }} className="font-bold">
+                    {t.agent.superAssistant.exportHistory}
+                  </Typography>
+                </>
+              )}
+            </TouchableOpacity>
+          </SettingsSection>
 
 
 
-          <SectionHeader title={t.agent.basicInfo} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6">
-            <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-4 rounded-xl border border-indigo-50 dark:border-indigo-500/10 font-bold"
-              value={formData.title}
-              onChangeText={(text) => setFormData({ ...formData, title: text })}
-              placeholder={t.agent.superAssistant.enterTitle}
-              placeholderTextColor="#94a3b8"
-            />
-          </View>
+          <SettingsSection title={t.agent.basicInfo}>
+            <View className="p-4">
+              <TextInput
+                className="text-gray-600 dark:text-gray-300 bg-white/50 dark:bg-black/20 p-4 rounded-xl border border-indigo-50 dark:border-indigo-500/10 font-bold"
+                value={formData.title}
+                onChangeText={(text) => setFormData({ ...formData, title: text })}
+                placeholder={t.agent.superAssistant.enterTitle}
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
+          </SettingsSection>
 
           {/* FAB 外观设置 */}
-          <SectionHeader title={t.agent.superAssistant.fabAppearance} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6 pb-4">
-            {/* 图标样式 Grid (4列 对齐) */}
-            <SubHeader title={t.agent.superAssistant.iconStyle} />
-            <FABIconGrid
-              preferences={preferences}
-              isDark={isDark}
-              onSelect={handleIconSelect}
-              onCustomSelect={handlePickCustomIcon}
-              customLabel={t.agent.superAssistant.custom}
-              themeColors={colors}
-            />
-
-            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
-
-            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
-
-            {/* 图标颜色 Panel */}
-            <View className="mb-2">
-              <ColorPickerPanel
-                color={preferences.fab.iconColor}
-                onColorChange={handleColorSelect}
-                title={t.agent.superAssistant.iconColor}
+          <SettingsSection title={t.agent.superAssistant.fabAppearance}>
+            <View className="px-5 py-4">
+              {/* 图标样式 Grid (4列 对齐) */}
+              <Typography style={{ color: colors[500] }} className="font-bold text-xs mb-3 uppercase tracking-wider">
+                {t.agent.superAssistant.iconStyle}
+              </Typography>
+              <FABIconGrid
+                preferences={preferences}
+                isDark={isDark}
+                onSelect={handleIconSelect}
+                onCustomSelect={handlePickCustomIcon}
+                customLabel={t.agent.superAssistant.custom}
+                themeColors={colors}
               />
-            </View>
 
-            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-4" />
+              <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-6" />
 
-            {/* 动画开关 */}
-            <View className="flex-row items-center justify-between py-2 mb-2">
-              <View className="flex-1 pr-4">
-                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.agent.superAssistant.rotationAnim}
-                </Typography>
-                <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.agent.superAssistant.rotationAnimDesc}
-                </Typography>
+              {/* 图标颜色 Panel */}
+              <View className="mb-2">
+                <ColorPickerPanel
+                  color={preferences.fab.iconColor}
+                  onColorChange={handleColorSelect}
+                  title={t.agent.superAssistant.iconColor}
+                />
               </View>
-              <Switch
-                value={preferences.fab.enableRotation}
-                onValueChange={(val) => updateFABConfig({ enableRotation: val })}
-              />
-            </View>
 
-            <View className="h-[1px] bg-gray-200 dark:bg-zinc-800 my-2" />
+              <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-6" />
 
-            <View className="flex-row items-center justify-between py-2">
-              <View className="flex-1 pr-4">
-                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.agent.superAssistant.glowEffect}
-                </Typography>
-                <Typography variant="caption" className="text-gray-500 mt-1">
-                  {t.agent.superAssistant.glowEffectDesc}
-                </Typography>
+              {/* 动画开关 */}
+              <View className="flex-row items-center justify-between py-2 mb-2">
+                <View className="flex-1 pr-4">
+                  <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    {t.agent.superAssistant.rotationAnim}
+                  </Typography>
+                  <Typography variant="caption" className="text-gray-500 mt-1">
+                    {t.agent.superAssistant.rotationAnimDesc}
+                  </Typography>
+                </View>
+                <Switch
+                  value={preferences.fab.enableRotation}
+                  onValueChange={(val) => updateFABConfig({ enableRotation: val })}
+                />
               </View>
-              <Switch
-                value={preferences.fab.enableGlow}
-                onValueChange={(val) => updateFABConfig({ enableGlow: val })}
-              />
+
+              <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-2" />
+
+              <View className="flex-row items-center justify-between py-2">
+                <View className="flex-1 pr-4">
+                  <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    {t.agent.superAssistant.glowEffect}
+                  </Typography>
+                  <Typography variant="caption" className="text-gray-500 mt-1">
+                    {t.agent.superAssistant.glowEffectDesc}
+                  </Typography>
+                </View>
+                <Switch
+                  value={preferences.fab.enableGlow}
+                  onValueChange={(val) => updateFABConfig({ enableGlow: val })}
+                />
+              </View>
             </View>
-          </View>
+          </SettingsSection>
 
           {/* 模型配置区块 */}
-          <SectionHeader title={t.agent.modelConfig} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6">
-            <InferenceSettings
-              params={session.inferenceParams || {}}
-              onUpdate={(params) => updateSessionInferenceParams(SPA_SESSION_ID, params)}
-            />
-          </View>
-
-          {/* Knowledge Graph Entry (Moved) */}
-          <SectionHeader title={t.rag.knowledgeGraph} />
-
-          <View
-            className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-6 overflow-hidden"
-          >
-            {/* Enable Toggle */}
-            <View
-              className="flex-row items-center justify-between pb-2"
-            >
-              <View className="flex-1 mr-4">
-                <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-                  {t.agent.superAssistant.kgEnableTitle}
-                </Typography>
-                <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-0.5">
-                  {t.agent.superAssistant.kgEnableDesc}
-                </Typography>
-              </View>
-              <Switch
-                value={!!session.ragOptions?.enableKnowledgeGraph}
-                onValueChange={(val) => {
-                  setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-                  updateSessionOptions(SPA_SESSION_ID, {
-                    ragOptions: { ...session.ragOptions, enableKnowledgeGraph: val } as any
-                  });
-                }}
+          <SettingsSection title={t.agent.modelConfig}>
+            <View className="p-4">
+              <InferenceSettings
+                params={session.inferenceParams || {}}
+                onUpdate={(params) => updateSessionInferenceParams(SPA_SESSION_ID, params)}
               />
             </View>
+          </SettingsSection>
 
-            {/* View Link */}
-            <TouchableOpacity
-              onPress={() => router.push({ pathname: '/knowledge-graph', params: { sessionId: 'super_assistant' } })}
-              style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)' }}
-              className="mt-2 flex-row items-center justify-between p-4 rounded-2xl border border-indigo-100/50 dark:border-indigo-400/10"
-            >
-              <View className="flex-row items-center gap-3">
-                <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
-                  <Network size={20} color={colors[600]} />
-                </View>
-                <View>
-                  <Typography style={{ color: colors[900] }} className="text-sm font-bold">
-                    {t.agent.superAssistant.kgViewTitle}
+          {/* Knowledge Graph Entry (Moved) */}
+          <SettingsSection title={t.rag.knowledgeGraph}>
+            <View className="p-5">
+              {/* Enable Toggle */}
+              <View className="flex-row items-center justify-between pb-2">
+                <View className="flex-1 mr-4">
+                  <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    {t.agent.superAssistant.kgEnableTitle}
                   </Typography>
-                  <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
-                    {t.agent.superAssistant.kgViewDesc}
+                  <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-0.5">
+                    {t.agent.superAssistant.kgEnableDesc}
                   </Typography>
                 </View>
+                <Switch
+                  value={!!session.ragOptions?.enableKnowledgeGraph}
+                  onValueChange={(val) => {
+                    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                    updateSessionOptions(SPA_SESSION_ID, {
+                      ragOptions: { ...session.ragOptions, enableKnowledgeGraph: val } as any
+                    });
+                  }}
+                />
               </View>
-              <ChevronRight size={18} color={colors[600]} />
-            </TouchableOpacity>
-          </View>
+
+              {/* View Link */}
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/knowledge-graph', params: { sessionId: 'super_assistant' } })}
+                style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)' }}
+                className="mt-4 flex-row items-center justify-between p-4 rounded-2xl border border-indigo-100/50 dark:border-indigo-400/10"
+              >
+                <View className="flex-row items-center gap-3">
+                  <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
+                    <Network size={20} color={colors[600]} />
+                  </View>
+                  <View>
+                    <Typography style={{ color: colors[900] }} className="text-sm font-bold">
+                      {t.agent.superAssistant.kgViewTitle}
+                    </Typography>
+                    <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
+                      {t.agent.superAssistant.kgViewDesc}
+                    </Typography>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={colors[600]} />
+              </TouchableOpacity>
+            </View>
+          </SettingsSection>
 
           {/* RAG 配置入口 */}
-          <SectionHeader title={t.settings.ragSection} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl border border-indigo-50 dark:border-indigo-500/10 mb-6 overflow-hidden">
+          <SettingsSection title={t.settings.ragSection}>
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {
@@ -682,7 +657,7 @@ export default function SuperAssistantSettingsScreen() {
                   router.push('/chat/super_assistant/rag-config' as any);
                 }, 10);
               }}
-              className="flex-row items-center justify-between p-5 bg-white dark:bg-black/20"
+              className="flex-row items-center justify-between p-5"
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
@@ -695,7 +670,7 @@ export default function SuperAssistantSettingsScreen() {
               <ChevronRight size={18} color="#9ca3af" />
             </TouchableOpacity>
 
-            <View className="h-[1px] bg-gray-100 dark:bg-zinc-800" />
+            <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 mx-5" />
 
             <TouchableOpacity
               onPress={() => {
@@ -704,7 +679,7 @@ export default function SuperAssistantSettingsScreen() {
                   router.push('/chat/super_assistant/advanced-retrieval' as any);
                 }, 10);
               }}
-              className="flex-row items-center justify-between p-5 bg-white dark:bg-black/20"
+              className="flex-row items-center justify-between p-5"
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
@@ -716,19 +691,22 @@ export default function SuperAssistantSettingsScreen() {
               </View>
               <ChevronRight size={18} color="#9ca3af" />
             </TouchableOpacity>
-          </View>
+          </SettingsSection>
 
           {/* 上下文管理 */}
-          <ContextManagementPanel sessionId={SPA_SESSION_ID} />
+          <SettingsSection title={t.rag.contextManagement}>
+            <View className="p-4 pt-2">
+              <ContextManagementPanel sessionId={SPA_SESSION_ID} />
+            </View>
+          </SettingsSection>
 
 
 
           {/* 危险区域 */}
-          <SectionHeader title={t.common.dangerZone} />
-          <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-8">
+          <SettingsSection title={t.common.dangerZone}>
             <TouchableOpacity
               onPress={handleDeleteSession}
-              className="flex-row items-center justify-between"
+              className="flex-row items-center justify-between p-5"
             >
               <View className="flex-row items-center">
                 <View className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 items-center justify-center mr-3">
@@ -744,7 +722,7 @@ export default function SuperAssistantSettingsScreen() {
                 </View>
               </View>
             </TouchableOpacity>
-          </View>
+          </SettingsSection>
         </ScrollView>
       </KeyboardAvoidingView>
 
