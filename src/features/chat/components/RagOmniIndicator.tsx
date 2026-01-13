@@ -61,7 +61,8 @@ export const RagOmniIndicator: React.FC<RagOmniIndicatorProps> = ({
     );
 
     const history = messageId ? processingHistory[messageId] : undefined;
-    const isCompleted = history !== undefined;
+    // 🔑 增强判定：即使 history 丢失（如由于持久化清理或旧消息），只要有引用数就视为已完成
+    const isCompleted = history !== undefined || referencesCount > 0;
 
     // 动画状态
     const progressWidth = useSharedValue(0);
@@ -150,8 +151,8 @@ export const RagOmniIndicator: React.FC<RagOmniIndicatorProps> = ({
 
         // 4. 完成状态 (History/Completed)
         if (isCompleted) {
-            const isSummarized = history.type === 'summarized';
-            const isRetrieved = history.type === 'retrieved';
+            const isSummarized = history?.type === 'summarized';
+            const isRetrieved = history?.type === 'retrieved';
 
             const kpLabel = `已关联 ${referencesCount} 个知识点`;
 
@@ -160,19 +161,22 @@ export const RagOmniIndicator: React.FC<RagOmniIndicatorProps> = ({
             let statusLabel = referencesCount > 0 ? kpLabel : '未匹配相关知识';
             if (isRetrieved) {
                 statusLabel = referencesCount > 0 ? `${kpLabel} (就绪)` : '检索完成 (无匹配)';
-            } else {
+            } else if (history) {
                 const typeLabel = history?.type === 'summarized' ? '已摘要' : '已归档';
                 statusLabel = referencesCount > 0 ? `${kpLabel} (${typeLabel})` : `处理完成 (${typeLabel})`;
+            } else {
+                // 兜底方案：只有引用数但无历史记录（旧消息或持久化丢失）
+                statusLabel = kpLabel;
             }
 
             // 修正 Chunks 计数获取逻辑
-            const chunkCount = history.chunkCount || (processingState.activeMessageId === messageId ? processingState.chunks.length : 0);
+            const chunkCount = history?.chunkCount || (processingState.activeMessageId === messageId ? processingState.chunks.length : 0);
 
             // 🔑 修正 2: 移除左侧图标的 Check 模式，统一显示功能类别图标
             // 归档状态左侧显示 Database/Brain，检索状态显示 Library/Zap
             const leftIcon = isRetrieved ?
                 <Library size={13} color={colors[500]} /> :
-                (isSummarized ? <Brain size={13} color="#34d399" /> : <Database size={13} color="#34d399" />);
+                (history ? (history.type === 'summarized' ? <Brain size={13} color="#34d399" /> : <Database size={13} color="#34d399" />) : <Library size={13} color={colors[500]} />);
 
             return {
                 label: statusLabel,

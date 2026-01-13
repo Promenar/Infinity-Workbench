@@ -47,6 +47,7 @@ export class BackupManager {
       if (now - lastBackup > AUTO_BACKUP_INTERVAL) {
         console.log('[BackupManager] Triggering auto backup...');
         const { WebDavClient } = require('./WebDavClient'); // Lazy import to avoid cycle if any
+        const { emitToast } = require('../utils/toast-emitter');
 
         const client = new WebDavClient({
           url: config.url,
@@ -61,9 +62,12 @@ export class BackupManager {
         await client.uploadFile(filename, json);
         await AsyncStorage.setItem('last_auto_backup_time', now.toString());
         console.log('[BackupManager] Auto backup success:', filename);
+        emitToast('自动备份已成功同步至云端', 'success');
       }
-    } catch (e) {
-      console.error('[BackupManager] Auto backup failed:', e);
+    } catch (e: any) {
+      console.warn('[BackupManager] Auto backup failed:', e.message);
+      const { emitToast } = require('../utils/toast-emitter');
+      emitToast(`自动备份失败: ${e.message}`, 'warning');
     }
   }
 

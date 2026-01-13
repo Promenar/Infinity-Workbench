@@ -78,9 +78,15 @@ export default function RootLayout() {
         await initDb();
         await createTables();
         await migrateDatabase(); // Run migrations
-        const { BackupManager } = require('../src/lib/backup/BackupManager');
-        BackupManager.checkAndTriggerAutoBackup(); // Fire and forget
         console.log('[App] DB Initialized');
+
+        // Fire and forget auto backup in next tick
+        setTimeout(() => {
+          const { BackupManager } = require('../src/lib/backup/BackupManager');
+          BackupManager.checkAndTriggerAutoBackup().catch((err: any) => {
+            console.warn('[App] Auto backup initial trigger failed:', err.message);
+          });
+        }, 1000);
       } catch (e) {
         console.error('[App] DB Init Failed', e);
       } finally {
