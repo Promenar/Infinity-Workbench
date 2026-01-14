@@ -1301,10 +1301,14 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                       tool_calls: [tc], // 只包含当前tool_call
                     };
 
-                    // 只有第一个assistant包含reasoning和thought_signature
+                    // 🔑 CRITICAL: DeepSeek Reasoner要求所有assistant消息都必须有reasoning_content字段
+                    // 只有第一个包含实际内容，其他为空字符串
                     if (isFirstAssistant && tcIdx === 0) {
-                      if ((m as any).reasoning) virtualAssistant.reasoning_content = (m as any).reasoning;
+                      virtualAssistant.reasoning_content = (m as any).reasoning || '';
                       if ((m as any).thought_signature) virtualAssistant.thought_signature = (m as any).thought_signature;
+                    } else {
+                      // 其他assistant也必须有reasoning_content字段（空字符串）
+                      virtualAssistant.reasoning_content = '';
                     }
 
                     virtualSegment.push(virtualAssistant);
