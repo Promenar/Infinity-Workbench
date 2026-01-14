@@ -116,7 +116,40 @@ export class DeepSeekFormatter extends BaseMessageFormatter {
 - 调用 query_vector_db 时，输出："正在查询知识库..."
 - 调用 toast 时，输出："正在弹出通知"
 
-这样可以确保每次响应都包含有效内容，提高用户体验。
+## ⚡ 任务执行流程（重要）
+
+当用户要求"规划任务"时，正确的流程是：
+
+1. 首先调用 manage_task({ action: "create", steps: [...] }) 创建任务
+2. **然后立即执行第一个步骤的实际工具**（如 web_search、query_vector_db 等）
+3. 执行完毕后，调用 manage_task({ action: "update", steps: [{"id": "...", "status": "completed"}] })
+4. 继续执行下一个步骤，重复步骤2-3
+5. 全部完成后，调用 manage_task({ action: "complete" })
+
+**关键规则**：
+- ❌ 错误：创建任务后等待，或在下一轮重复创建任务
+- ✅ 正确：创建任务后，立即调用第一个步骤对应的工具（如search/query等）
+
+**示例（完整流程）**：
+用户："规划任务：查询玄鸟号，总结，弹出toast"
+
+第1轮：create任务
+  → manage_task(action="create", steps=[...])
+
+第2轮：执行第一步
+  → query_vector_db(query="玄鸟号")
+  → manage_task(action="update", steps=[{"id":"search", "status":"completed"}])
+
+第3轮：执行第二步
+  → (总结内容)
+  → manage_task(action="update", steps=[{"id":"summarize", "status":"completed"}])
+
+第4轮：执行第三步
+  → toast(message="...")
+  → manage_task(action="update", steps=[{"id":"toast", "status":"completed"}])
+
+第5轮：完成
+  → manage_task(action="complete")
 `;
 
         return enhanced;
