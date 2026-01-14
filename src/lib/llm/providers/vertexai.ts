@@ -2,7 +2,7 @@ import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { KJUR } from 'jsrsasign';
 import { Skill, ToolCall, ToolResult } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
-import zodToJsonSchema from 'zod-to-json-schema';
+import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
 
 // Add global polyfill for TextEncoder if missing (RN environment)
 if (typeof TextEncoder === 'undefined') {
@@ -550,7 +550,8 @@ Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
                               }
 
                               const isThoughtPart =
-                                part.thought === true || typeof part.thought === 'string';
+                                !!part.thought || // Handles true, "true", or non-empty string
+                                typeof part.thought === 'string';
 
                               // 1. Thinking
                               if (isThoughtPart) {

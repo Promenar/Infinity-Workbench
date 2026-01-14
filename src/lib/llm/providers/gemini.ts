@@ -1,7 +1,7 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { supportsThinkingConfig } from '../model-utils';
 import { Skill, ToolCall } from '../../../types/skills';
-import zodToJsonSchema from 'zod-to-json-schema';
+import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
 
 export class GeminiClient implements LlmClient {
   private apiKey: string;
@@ -310,10 +310,9 @@ Available tools: ${options.skills?.map(s => s.id).join(', ') || 'N/A'}.`
                           }
 
                           // 🧠 Precise Reasoning/Thought Extraction (Part-level)
-                          // Google models may use 'thought: true' (boolean) for thinking parts, 
-                          // or 'thought: "string"', or 'reasoning_content'.
+                          // Relaxed check: Accept truthy 'thought' property to handle variations
                           const isThoughtPart =
-                            part.thought === true ||
+                            !!part.thought || // Handles true, "true", or non-empty string
                             typeof part.thought === 'string' ||
                             !!part.reasoning_content;
 

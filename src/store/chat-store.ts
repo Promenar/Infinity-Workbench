@@ -29,6 +29,7 @@ import { graphExtractor } from '../lib/rag/graph-extractor'; // ✅ Import KG Ex
 import { ContextManager } from '../features/chat/utils/ContextManager';
 import { skillRegistry } from '../lib/skills/registry';
 import { ToolCall, ToolResult, ExecutionStep, SkillContext } from '../types/skills';
+import { StreamParser } from '../lib/llm/stream-parser'; // ✅ StreamParser
 
 // ✅ 辅助函数：从数据库查询消息归档状态
 const enrichMessagesWithArchiveStatus = async (
@@ -1027,13 +1028,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             // 5. Stream Chat
             let toolCalls: ToolCall[] | undefined;
             let reasoningFromThisTurn = '';
-            let turnContent = '';
+
+            // 🧠 Optimization: Use Array Buffer for Content to reduce GC pressure
+            let contentBuffer: string[] = [];
+            let turnContent = ''; // RE-ADDED: Sync with contentBuffer for history persistence
             let turnThoughtSignature = '';
 
-            let planParsed = false; // 🧠 Planner State
-            let shouldBreakLoop = false;
-            let potentialJson = '';
-            let match: RegExpMatchArray | null = null;
+            // 🧠 StreamParser for incremental parsing
+            const parser = new StreamParser();
+            let planParsed = false;
 
             // 🔑 关键修复 2: 分离并增加限流间隔 (Fix UI Freeze)
             // 避免高频 Zustand 更新阻塞 JS 线程 (特别是 React Native)
@@ -1062,160 +1065,118 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   turnThoughtSignature = token.thought_signature;
                 }
 
-                // 5.1 Handle Content
-                if (token.content) {
-                  turnContent += token.content;
-                  accumulatedContent += token.content;
+                // 5.1 Process via StreamParser
+                const parseResult = parser.process(token.content || '');
 
-                  if (!toolCalls) {
-                    // Heuristic: Extract thinking from content if model supports it but didn't use separate field (e.g. GLM-4)
-                    const thinkMatch = turnContent.match(/<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/i) ||
-                      turnContent.match(/Thought:([\s\S]*?)(?:\n\n|\n|$)/i);
-                    if (thinkMatch) {
-                      reasoningFromThisTurn = thinkMatch[1].trim();
-                      turnContent = turnContent.replace(thinkMatch[0], '').trim();
-                      accumulatedContent = accumulatedContent.replace(thinkMatch[0], '').trim(); // Also remove from accumulated
-                    }
-                  }
-
-                  // 🧠 Planner: Detect <plan> blocks
-                  // Only parse once per turn to avoid redundant processing
-                  if (!planParsed) {
-                    const planMatch = accumulatedContent.match(/<plan>\s*([\s\S]*?)\s*<\/plan>/i);
-                    if (planMatch) {
-                      const planText = planMatch[1];
-                      console.log('[AgentLoop] Plan detected, parsing...');
-
-                      let steps: Array<{ id: string; title: string; status: 'pending' | 'in-progress' | 'completed'; description?: string }> = [];
-
-                      // 1. Try parsing as JSON first (DeepSeek/Kimi often output JSON or array)
-                      try {
-                        const sanitizedJson = planText.trim().replace(/^```json\s*|\s*```$/g, '');
-                        const parsed = JSON.parse(sanitizedJson);
-                        if (Array.isArray(parsed)) {
-                          steps = parsed.map((item: any, idx) => {
-                            const desc = item.description || item.content || '';
-                            const fallbackTitle = desc ? (desc.substring(0, 24) + '...') : `Step ${idx + 1}`;
-                            return {
-                              id: item.id || `plan_step_${Date.now()}_${idx}`,
-                              title: item.title || fallbackTitle,
-                              status: item.status || 'pending',
-                              description: desc
-                            };
-                          });
-                        } else if (typeof parsed === 'object' && parsed.steps && Array.isArray(parsed.steps)) {
-                          // Handle wrapper object { steps: [...] }
-                          steps = parsed.steps.map((item: any, idx: number) => {
-                            const desc = item.description || item.content || '';
-                            const fallbackTitle = desc ? (desc.substring(0, 24) + '...') : `Step ${idx + 1}`;
-                            return {
-                              id: item.id || `plan_step_${Date.now()}_${idx}`,
-                              title: item.title || fallbackTitle,
-                              status: item.status || 'pending',
-                              description: desc
-                            };
-                          });
-                        }
-                      } catch (e) {
-                        // 2. Fallback to line-by-line parsing
-                        const lines = planText.split('\n')
-                          .map(l => l.trim())
-                          .filter(l => l.length > 0);
-
-                        steps = lines.map((line, idx) => ({
-                          id: `legacy_step_${Date.now()}_${idx}`,
-                          title: line.replace(/^\d+[\.\)]\s*/, ''),
-                          status: 'pending' as const
-                        }));
-                      }
-
-                      if (steps.length > 0) {
-                        // 🆕 Legacy Compatibility: Convert <plan> to Active Task if none exists
-                        const session = get().getSession(sessionId);
-                        if (session && !session.activeTask) {
-                          get().updateSession(sessionId, {
-                            activeTask: {
-                              title: 'Plan (Auto-Generated)',
-                              status: 'in-progress',
-                              progress: 0,
-                              steps: steps,
-                              createdAt: Date.now(),
-                              updatedAt: Date.now()
-                            }
-                          });
-                          console.log('[AgentLoop] Converted legacy <plan> or JSON plan to Active Task structure');
-                        }
-
-                        // Also update execution steps for the timeline list
-                        steps.forEach((step, index) => {
-                          updateSteps({
-                            id: step.id || `plan_step_exec_${index}`,
-                            type: 'plan_item',
-                            content: step.title || (step.description ?
-                              (step.description.length > 20 ? step.description.substring(0, 20) + '...' : step.description) :
-                              `动作 ${index + 1}`),
-                            timestamp: Date.now()
-                          });
-                        });
-                        planParsed = true;
-                      }
-                      // Note: We don't remove it from accumulatedContent here (for memory consistency), 
-                      // but we strip it from UI display below.
-                    }
-                  }
-
-                  // 🔑 Throttled Content Update
-                  if (now - lastContentUpdateTime > CONTENT_UPDATE_INTERVAL) {
-                    // 🧠 Planner: Hide <plan> block from bubble
-                    const displayContent = accumulatedContent.replace(/<plan>[\s\S]*?<\/plan>/gi, '').trim();
-
-                    get().updateMessageContent(
-                      sessionId,
-                      currentAssistantMsgId,
-                      displayContent,
-                      token.usage
-                    );
-                    lastContentUpdateTime = now;
-                  }
+                if (parseResult.content) {
+                  // Buffer content instead of string concat
+                  contentBuffer.push(parseResult.content);
                 }
 
-                // 5.2 Handle Reasoning
+                if (parseResult.reasoning) {
+                  reasoningFromThisTurn += parseResult.reasoning;
+                }
                 if (token.reasoning) {
                   reasoningFromThisTurn += token.reasoning;
-
-                  // 🔑 Throttled Timeline Update
-                  if (now - lastTimelineUpdateTime > TIMELINE_UPDATE_INTERVAL) {
-                    const stepId = `think_turn_${loopCount}`;
-                    updateSteps({
-                      id: stepId,
-                      type: 'thinking',
-                      content: reasoningFromThisTurn,
-                      timestamp: Date.now()
-                    });
-
-                    // 🧹 Keep bubble reasoning empty if it's in timeline
-                    // We don't force update content here, just the steps logic inside updateSteps triggers set
-                    const displayContent = accumulatedContent.replace(/<plan>[\s\S]*?<\/plan>/gi, '').trim();
-                    get().updateMessageContent(
-                      sessionId,
-                      currentAssistantMsgId,
-                      displayContent,
-                      token.usage,
-                      '' // Clear bubble reasoning
-                    );
-                    lastTimelineUpdateTime = now;
-                  }
                 }
 
-                // 5.3 Handle Tool Calls
+                if (parseResult.toolCalls) {
+                  if (!toolCalls) toolCalls = [];
+                  // Dedup logic (simple id check)
+                  parseResult.toolCalls.forEach(tc => {
+                    if (!toolCalls!.find(existing => existing.id === tc.id)) {
+                      toolCalls!.push(tc);
+                    }
+                  });
+                }
                 if (token.toolCalls) {
-                  toolCalls = token.toolCalls;
+                  if (!toolCalls) toolCalls = [];
+                  toolCalls.push(...token.toolCalls);
+                }
+
+                // 5.2 Handle Plan (Once)
+                if (parseResult.plan && !planParsed) {
+                  console.log('[AgentLoop] Plan detected by StreamParser');
+                  const steps = parseResult.plan.map((item: any, idx: number) => ({
+                    id: item.id || `plan_step_${Date.now()}_${idx}`,
+                    title: item.title || `Step ${idx + 1}`,
+                    status: item.status || 'pending',
+                    description: item.description
+                  }));
+
+                  if (steps.length > 0) {
+                    // Create Active Task
+                    const session = get().getSession(sessionId);
+                    if (session && !session.activeTask) {
+                      get().updateSession(sessionId, {
+                        activeTask: {
+                          title: 'Plan (Auto-Generated)',
+                          status: 'in-progress',
+                          progress: 0,
+                          steps: steps as any,
+                          createdAt: Date.now(),
+                          updatedAt: Date.now()
+                        }
+                      });
+                    }
+
+                    // Update Timeline
+                    steps.forEach((step: any, index: number) => {
+                      updateSteps({
+                        id: step.id || `plan_step_exec_${index}`,
+                        type: 'plan_item',
+                        content: step.title,
+                        timestamp: Date.now()
+                      });
+                    });
+                  }
+                  planParsed = true;
+                }
+
+                // 5.3 Throttled UI Updates
+
+                // Update Content Bubble
+                if (contentBuffer.length > 0 && (now - lastContentUpdateTime > CONTENT_UPDATE_INTERVAL)) {
+                  const newContent = contentBuffer.join('');
+                  accumulatedContent += newContent;
+                  turnContent += newContent; // SYNC: Update history buffer
+                  // Clear buffer after flush
+                  contentBuffer = [];
+
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    accumulatedContent,
+                    token.usage
+                  );
+                  lastContentUpdateTime = now;
+                }
+
+                // Update Timeline (Reasoning)
+                if ((parseResult.reasoning || token.reasoning) && (now - lastTimelineUpdateTime > TIMELINE_UPDATE_INTERVAL)) {
+                  const stepId = `think_turn_${loopCount}`;
+                  updateSteps({
+                    id: stepId,
+                    type: 'thinking',
+                    content: reasoningFromThisTurn,
+                    timestamp: Date.now()
+                  });
+
+                  // Clear bubble reasoning if we show it in timeline
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    accumulatedContent,
+                    token.usage,
+                    ''
+                  );
+                  lastTimelineUpdateTime = now;
                 }
               },
               (error) => { console.warn('Stream error', error); },
               {
                 skills: availableSkills,
-                reasoning: true, // Enable reasoning/thinking mode
+                reasoning: true,
                 inferenceParams: {
                   temperature: agent.params?.temperature || 0.7,
                   maxTokens: agent.params?.maxTokens,
@@ -1234,6 +1195,31 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               finalDisplayContent,
               accumulatedUsage
             );
+
+            // Flush remaining content buffer if any
+            if (contentBuffer.length > 0) {
+              const tailContent = contentBuffer.join('');
+              accumulatedContent += tailContent;
+              turnContent += tailContent;
+              contentBuffer = [];
+              get().updateMessageContent(
+                sessionId,
+                currentAssistantMsgId,
+                accumulatedContent,
+                accumulatedUsage
+              );
+            }
+
+            // Flush final reasoning to timeline
+            if (reasoningFromThisTurn) {
+              const stepId = `think_turn_${loopCount}`;
+              updateSteps({
+                id: stepId,
+                type: 'thinking',
+                content: reasoningFromThisTurn,
+                timestamp: Date.now()
+              });
+            }
 
             if (reasoningFromThisTurn || turnThoughtSignature) {
               get().updateMessageContent(
@@ -1444,145 +1430,36 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             }
 
             // Fallback Phase 2: Embedded JSON check (Waterfall if XML failed)
-            if (!toolCalls || toolCalls.length === 0) {
-              const firstBrace = turnContent.indexOf('{');
-              const lastBrace = turnContent.lastIndexOf('}');
-
-              if (firstBrace !== -1 && lastBrace > firstBrace) {
-                const candidate = turnContent.substring(firstBrace, lastBrace + 1);
-                if (candidate.includes('"action"') || candidate.includes('"tool"') || candidate.includes('"function"')) {
-                  potentialJson = candidate;
-                }
-              }
-            }
-
-            if (potentialJson) {
-              try {
-                const jsonContent = JSON.parse(potentialJson);
-
-                // Case A: Standard tool_calls wrapper
-                if (jsonContent.tool_calls) {
-                  toolCalls = jsonContent.tool_calls.map((tc: any) => ({
-                    id: tc.id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    name: tc.function.name,
-                    arguments: typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments
-                  }));
-                }
-                // Case B: Single function/tool wrapper
-                else if (jsonContent.function || jsonContent.tool) {
-                  const fn = jsonContent.function || jsonContent.tool;
-                  if (typeof fn === 'string') {
-                    toolCalls = [{
-                      id: `call_${Date.now()}`,
-                      name: fn,
-                      arguments: jsonContent.parameters || jsonContent.arguments || {}
-                    }];
-                  } else if (fn.name) {
-                    toolCalls = [{
-                      id: `call_${Date.now()}`,
-                      name: fn.name,
-                      arguments: typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : fn.arguments
-                    }];
-                  }
-                }
-                // Case C: ReAct
-                else if (jsonContent.action && jsonContent.action !== 'Final Answer') {
-                  toolCalls = [{
-                    id: `call_${Date.now()}`,
-                    name: jsonContent.action,
-                    arguments: typeof jsonContent.action_input === 'string' ? JSON.parse(jsonContent.action_input) : jsonContent.action_input
-                  }];
-                }
-
-                if (toolCalls && toolCalls.length > 0) {
-                  // Final sanity check: filter out null or invalid names
-                  toolCalls = toolCalls.filter((tc: any) => tc.name && tc.name !== 'null' && tc.name !== 'undefined');
-
-                  if (potentialJson === turnContent.trim()) {
-                    turnContent = '';
-                  } else {
-                    turnContent = turnContent.replace(potentialJson, '').trim();
-                  }
-                  accumulatedContent = turnContent;
-                  get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage);
-                }
-              } catch (e) { }
-            }
-
-            // Strategy 3: Text Patterns
-            if (!toolCalls || toolCalls.length === 0) {
-              const callPattern = /call:([\w_]+)\(([\s\S]*?)\)/gi;
-              let callMatch;
-              const extractedCalls: ToolCall[] = [];
-
-              while ((callMatch = callPattern.exec(turnContent)) !== null) {
-                const funcName = callMatch[1];
-                const argsStr = callMatch[2];
-                const args: Record<string, any> = {};
-
-                // Simple arg parsing logic [OMITTED DETAILS FOR BREVITY, RESTORING KEY LOGIC]
-                const argPattern = /([\w_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\d+(?:\.\d+)?)|(true|false|null))/gi;
-                let argMatch;
-                while ((argMatch = argPattern.exec(argsStr)) !== null) {
-                  const key = argMatch[1];
-                  const val = argMatch[2] || argMatch[3] || argMatch[4] || argMatch[5];
-                  args[key] = val; // simplified for restoration
-                }
-                if (Object.keys(args).length === 0 && argsStr.trim()) args['query'] = argsStr.trim();
-
-                extractedCalls.push({
-                  id: `txt_call_${Date.now()}_${extractedCalls.length}`,
-                  name: funcName,
-                  arguments: args
-                });
-                turnContent = turnContent.replace(callMatch[0], '').trim();
-              }
-
-              if (extractedCalls.length > 0) {
-                toolCalls = extractedCalls;
-                accumulatedContent = turnContent;
-                get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage, '');
-              }
-            }
+            // 5.4 No Fallback required - StreamParser handles it all.
 
             // Final Processing & Execution
             if (reasoningFromThisTurn) {
               accumulatedReasoning = '';
+              // Force clear bubble reasoning one last time
               get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage, '');
             }
 
             if (toolCalls && toolCalls.length > 0) {
-              // 1. Plan/Task Detection & Extraction
-              const planRegex = /<(?:plan|task)>([\s\S]*?)<\/(?:plan|task)>/gi;
-              let planMatch;
-              while ((planMatch = planRegex.exec(turnContent)) !== null) {
-                const planText = planMatch[1].trim();
-                if (planText) {
-                  updateSteps({
-                    id: `plan_${Date.now()}`,
-                    type: 'thinking',
-                    content: planText,
-                    timestamp: Date.now()
-                  });
-                }
-                // Strip from content
-                turnContent = turnContent.replace(planMatch[0], '').trim();
-                accumulatedContent = accumulatedContent.replace(planMatch[0], '').trim();
-              }
+              // 1. Plan/Task Detection & Extraction (Legacy support provided by Parser, checking content strip only)
+              // Parser already detected logic, but maybe we need to strip legacy <plan> tags if they remain?
+              // The parser strips them from 'content' but accumulatedContent might differ? 
+              // My parser returns CLEAN content. So detecting <plan> in turnContent is redundant if using parser output.
+              // BUT: AccumulatedContent logic in onToken: accumulatedContent += parseResult.content (which IS parsed/clean).
+              // So we don't need to strip <plan> here.
 
               // 2. Add to History
               console.log(`[AgentLoop] End of Turn ${loopCount} - turnThoughtSignature:`, turnThoughtSignature);
               currentMessages.push({
                 role: 'assistant',
-                content: turnContent || '',
+                content: turnContent || '', // parser content is clean
                 reasoning: reasoningFromThisTurn,
                 thought_signature: turnThoughtSignature,
-                tool_calls: toolCalls // 🧐 FIXED: Push RAW ToolCall[] here, OpenAI client will handle formatting
+                tool_calls: toolCalls
               } as any);
 
               // Execute
               for (const tc of toolCalls) {
-                if (!tc) continue; // 🛡️ CRITICAL: Robust check for generateMessage loop
+                if (!tc) continue;
                 const tcName = (tc as any).name || (tc as any).function?.name;
                 if (!tcName) continue;
 
@@ -1635,7 +1512,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   tool_call_id: tc.id,
                   content: result.content,
                   name: tc.name,
-                  thought_signature: turnThoughtSignature // 🧠 Added: Link tool result back to the signature
+                  thought_signature: turnThoughtSignature
                 } as any);
               }
 
@@ -1645,7 +1522,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   ...s,
                   messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
                     ...m,
-                    tool_calls: toolCalls, // Save as ToolCall[] format
+                    tool_calls: toolCalls,
                     thought_signature: turnThoughtSignature || m.thought_signature
                   } : m)
                 } : s)
@@ -1654,12 +1531,10 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               accumulatedContent += '\n\n';
             } else {
               console.log('[AgentLoop] Final answer received. Stopping.');
-              shouldBreakLoop = true;
+              break; // Stop loop directly
             }
 
 
-
-            if (shouldBreakLoop) break;
           }
 
           // =====================================================================================
