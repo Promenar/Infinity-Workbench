@@ -1998,10 +1998,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               if (latestSession) {
                 // 1. 保留最初的 System Prompt 和 RAG Context
                 const baseHistory = [...contextMsgs];
-                // 2. 找到当前处理的 Assistant 消息及其之后的所有新消息（即 Assistant + Tool 结果）
-                const assIdx = latestSession.messages.findIndex(m => m.id === currentAssistantMsgId);
-                if (assIdx > -1) {
-                  const newSegment = latestSession.messages.slice(assIdx).map((m, idx) => {
+
+                // 🔑 关键修复：从user消息开始提取，包含所有assistant+tool序列
+                // 与isTaskCreate分支保持一致
+                const userMsgIdx = latestSession.messages.findIndex(m =>
+                  m.role === 'user' && m.content === content
+                );
+
+                if (userMsgIdx > -1) {
+                  const newSegment = latestSession.messages.slice(userMsgIdx + 1).map((m, idx) => {
                     let cleanedContent = m.content;
 
                     // 🔑 使用StreamParser清理Provider特定的XML/标签
@@ -2009,17 +2014,32 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                       cleanedContent = parser.getCleanContent(accumulatedContent);
                     }
 
-                    return {
+                    const msg: any = {
                       role: m.role,
                       content: cleanedContent,
-                      tool_calls: (m as any).tool_calls,
-                      tool_call_id: (m as any).tool_call_id,
-                      name: (m as any).name || (m as any).tool_name,
-                      reasoning: (m as any).reasoning || (m as any).reasoning_content,
-                      thought_signature: (m as any).thought_signature
                     };
+
+                    // Assistant消息的特殊字段
+                    if (m.role === 'assistant') {
+                      if ((m as any).tool_calls) msg.tool_calls = (m as any).tool_calls;
+                      if ((m as any).reasoning) msg.reasoning_content = (m as any).reasoning;
+                      if ((m as any).thought_signature) msg.thought_signature = (m as any).thought_signature;
+                    }
+
+                    // Tool消息的特殊字段
+                    if (m.role === 'tool') {
+                      if ((m as any).tool_call_id) msg.tool_call_id = (m as any).tool_call_id;
+                      if ((m as any).name) msg.name = (m as any).name;
+                    }
+
+                    return msg;
                   });
                   currentMessages = [...baseHistory, ...newSegment];
+                  console.log('[AgentLoop] Rebuilt messages after tool execution:', {
+                    total: currentMessages.length,
+                    assistantCount: newSegment.filter(m => m.role === 'assistant').length,
+                    toolCount: newSegment.filter(m => m.role === 'tool').length
+                  });
                 }
               }
 
