@@ -14,19 +14,24 @@ import {
  * 根据Provider类型创建对应的MessageFormatter
  */
 export class FormatterFactory {
-    private static formatters: Map<ProviderType, MessageFormatter> = new Map();
+    private static formatters: Map<string, MessageFormatter> = new Map();
 
     /**
-     * 获取Provider对应的Formatter（单例模式）
+     * 获取Provider对应的Formatter（缓存策略）
+     * @param provider Provider类型
+     * @param modelName 模型名称（可选，用于模型特定优化）
      */
-    static getFormatter(provider: ProviderType): MessageFormatter {
-        if (!this.formatters.has(provider)) {
-            this.formatters.set(provider, this.createFormatter(provider));
+    static getFormatter(provider: ProviderType, modelName?: string): MessageFormatter {
+        // 🔑 为支持modelName，使用组合键缓存
+        const cacheKey = modelName ? `${provider}:${modelName}` : provider;
+
+        if (!this.formatters.has(cacheKey)) {
+            this.formatters.set(cacheKey, this.createFormatter(provider, modelName));
         }
-        return this.formatters.get(provider)!;
+        return this.formatters.get(cacheKey)!;
     }
 
-    private static createFormatter(provider: ProviderType): MessageFormatter {
+    private static createFormatter(provider: ProviderType, modelName?: string): MessageFormatter {
         switch (provider) {
             case 'openai':
             case 'siliconflow':
@@ -44,7 +49,7 @@ export class FormatterFactory {
 
             case 'gemini':
             case 'vertex':
-                return new GeminiFormatter();
+                return new GeminiFormatter(modelName);  // 🔑 传递modelName
 
             default:
                 // 降级：使用OpenAI格式

@@ -31,6 +31,7 @@ import { ContextManager } from '../features/chat/utils/ContextManager';
 import { skillRegistry } from '../lib/skills/registry';
 import { ToolCall, ToolResult, ExecutionStep, SkillContext } from '../types/skills';
 import { StreamParser } from '../lib/llm/stream-parser'; // ✅ StreamParser
+import { FormatterFactory } from '../lib/llm/formatter-factory';
 
 // ✅ 辅助函数：从数据库查询消息归档状态
 const enrichMessagesWithArchiveStatus = async (
@@ -1225,6 +1226,27 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             isMerged: apiMessage.content.includes('You are NeuralFlow')
           });
           contextMsgs.push({ role: 'user', content: await formatContent(apiMessage.content, apiMessage.images) });
+
+          // 🔑 Phase 3.5: Apply Model-Specific System Prompt Enhancements
+          // 使用FormatterFactory对消息历史进行模型特定优化
+          // 特别是为Gemini Pro注入manage_task详细格式规范
+          try {
+            const formatter = FormatterFactory.getFormatter(
+              provider.type as any,  // ApiProviderType -> ProviderType (兼容处理)
+              provider.name          // 使用provider.name作为模型名称
+            );
+            // formatHistory会处理system消息的增强
+            const formattedMsgs = formatter.formatHistory(contextMsgs as any[]);
+            contextMsgs = formattedMsgs as any[];
+            console.log('[FormatterFactory] Applied model-specific enhancements:', {
+              provider: provider.type,
+              modelName: provider.name,
+              messageCount: contextMsgs.length
+            });
+          } catch (error) {
+            console.warn('[FormatterFactory] Failed to apply enhancements, using original messages:', error);
+            // 降级：继续使用原始消息
+          }
 
           // =====================================================================================
           // Phase 4: Agentic Loop Implementation
