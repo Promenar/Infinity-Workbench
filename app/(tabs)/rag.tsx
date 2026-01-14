@@ -1,14 +1,15 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet } from 'react-native';
-import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader } from '../../src/components/ui';
-import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft } from 'lucide-react-native';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl } from 'react-native';
+import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, GlassHeader } from '../../src/components/ui';
+import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
 import { SilkyGlow } from '../../src/components/ui/SilkyGlow';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useI18n } from '../../src/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRagStore } from '../../src/store/rag-store';
@@ -78,29 +79,30 @@ export default function RagScreen() {
     }
   }, [pdfExtractorRef.current]);
 
-  const {
-    documents,
-    folders,
-    loadDocuments,
-    loadFolders,
-    addDocument,
-    deleteDocument,
-    vectorizeDocument,
-    vectorizationQueue,
-    currentTask,
-    addFolder,
-    deleteFolder,
-    renameFolder,
-    moveDocument,
-    expandedFolders,
-    toggleFolder,
-    moveFolder,
-    setSelectedFolder,
-    selectedFolder,
-    memories,
-    loadMemories,
-    deleteMemory,
-  } = useRagStore();
+  const documents = useRagStore(state => state.documents);
+  const folders = useRagStore(state => state.folders);
+  const loadDocuments = useRagStore(state => state.loadDocuments);
+  const loadFolders = useRagStore(state => state.loadFolders);
+  const addDocument = useRagStore(state => state.addDocument);
+  const deleteDocument = useRagStore(state => state.deleteDocument);
+  const vectorizeDocument = useRagStore(state => state.vectorizeDocument);
+  const vectorizationQueue = useRagStore(state => state.vectorizationQueue);
+  const currentTask = useRagStore(state => state.currentTask);
+  const addFolder = useRagStore(state => state.addFolder);
+  const deleteFolder = useRagStore(state => state.deleteFolder);
+  const renameFolder = useRagStore(state => state.renameFolder);
+  const moveDocument = useRagStore(state => state.moveDocument);
+  const expandedFolders = useRagStore(state => state.expandedFolders);
+  const toggleFolder = useRagStore(state => state.toggleFolder);
+  const moveFolder = useRagStore(state => state.moveFolder);
+  const setSelectedFolder = useRagStore(state => state.setSelectedFolder);
+  const selectedFolder = useRagStore(state => state.selectedFolder);
+  const memories = useRagStore(state => state.memories);
+  const deleteMemory = useRagStore(state => state.deleteMemory);
+  const loadMemories = useRagStore(state => state.loadMemories);
+  const getDocumentContent = useRagStore(state => state.getDocumentContent);
+  const updateDocumentContent = useRagStore(state => state.updateDocumentContent);
+  const _getPhysicalPath = useRagStore(state => state._getPhysicalPath);
 
   // 当前路径逻辑
   const currentFolderId = selectedFolder;
@@ -113,6 +115,17 @@ export default function RagScreen() {
     },
     [setSelectedFolder],
   );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([loadDocuments(), loadFolders(), loadMemories()]);
+    } catch (e) {
+      console.error('Refresh failed:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadDocuments, loadFolders, loadMemories]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -161,23 +174,31 @@ export default function RagScreen() {
     return memories.filter((m) => m.content.toLowerCase().includes(query));
   }, [memories, searchQuery]);
 
-  // 获取当前视图内容
   const currentViewContent = useMemo(() => {
     if (searchQuery) return { folders: [], docs: filteredDocuments };
 
+    const filteredFolders = folders.filter(
+      (f) =>
+        f.parentId === (currentFolderId || undefined) ||
+        (currentFolderId === null && !f.parentId),
+    );
+    const filteredDocs = documents.filter(
+      (d) =>
+        d.folderId === (currentFolderId || undefined) ||
+        (currentFolderId === null && !d.folderId),
+    );
+
     return {
-      folders: folders.filter(
-        (f) =>
-          f.parentId === (currentFolderId || undefined) ||
-          (currentFolderId === null && !f.parentId),
-      ),
-      docs: documents.filter(
-        (d) =>
-          d.folderId === (currentFolderId || undefined) ||
-          (currentFolderId === null && !d.folderId),
-      ),
+      folders: filteredFolders,
+      docs: filteredDocs,
     };
   }, [folders, documents, currentFolderId, searchQuery, filteredDocuments]);
+
+  // 关键：构建列表数据并进行 memoization，防止 FlashList 重复渲染
+  const listData = useMemo(() => [
+    ...currentViewContent.folders.map(f => ({ type: 'folder' as const, item: f })),
+    ...currentViewContent.docs.map(d => ({ type: 'doc' as const, item: d }))
+  ], [currentViewContent]);
 
   // 文件夹Modal状态
   const [showFolderModal, setShowFolderModal] = useState(false);
@@ -194,6 +215,12 @@ export default function RagScreen() {
   const [showTagManager, setShowTagManager] = useState(false);
   const [assignmentDocId, setAssignmentDocId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Editor State
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingDocId, setEditingDocId] = useState<string>('');
+  const [editingDocTitle, setEditingDocTitle] = useState<string>('');
+  const [refreshing, setRefreshing] = useState(false);
 
   // 确认弹窗状态
   const [confirmState, setConfirmState] = useState<{
@@ -548,6 +575,37 @@ export default function RagScreen() {
     });
   }, [router]);
 
+  // 分享/导出文档
+  const handleExportDoc = useCallback(async (docId: string) => {
+    try {
+      const doc = documents.find(d => d.id === docId);
+      if (!doc) return;
+
+      const physicalPath = await _getPhysicalPath(doc.folderId) + doc.title;
+      const info = await FileSystem.getInfoAsync(physicalPath);
+
+      if (!info.exists) {
+        // If physical file missing, try to restore from DB if content exists there
+        const content = await getDocumentContent(docId);
+        if (content) {
+          await FileSystem.writeAsStringAsync(physicalPath, content, { encoding: (FileSystem as any).EncodingType.UTF8 });
+        } else {
+          showToast(t.library.fileMissing, 'error');
+          return;
+        }
+      }
+
+      if (!(await Sharing.isAvailableAsync())) {
+        showToast(t.common.sharingUnavailable, 'error');
+        return;
+      }
+
+      await Sharing.shareAsync(physicalPath);
+    } catch (e) {
+      showToast(t.library.exportFail.replace('{error}', (e as Error).message), 'error');
+    }
+  }, [documents, _getPhysicalPath, getDocumentContent, showToast]);
+
   // 门户卡片组件
   const PortalCards = () => {
     const { isDark, colors } = useTheme();
@@ -670,6 +728,7 @@ export default function RagScreen() {
             </View>
             <ChevronRight size={18} color="#94a3b8" />
           </TouchableOpacity>
+
         </View>
       </View>
     );
@@ -869,10 +928,7 @@ export default function RagScreen() {
 
             {viewMode === 'docs' && (
               <TypedFlashList
-                data={[
-                  ...currentViewContent.folders.map(f => ({ type: 'folder' as const, item: f })),
-                  ...currentViewContent.docs.map(d => ({ type: 'doc' as const, item: d }))
-                ]}
+                data={listData}
                 keyExtractor={(item: any) => item.item.id}
                 renderItem={({ item }: any) => {
                   if (item.type === 'folder') {
@@ -880,7 +936,7 @@ export default function RagScreen() {
                     return (
                       <FolderItem
                         id={folder.id}
-                        name={folder.name}
+                        name={folder.name === 'workspace' ? t.library.workspace : folder.name}
                         childCount={folder.childCount}
                         isExpanded={false}
                         level={0}
@@ -921,13 +977,22 @@ export default function RagScreen() {
                           router.push({ pathname: '/knowledge-graph', params: { docId: doc.id } })
                         }
                         onExtractGraph={(s) => handleExtractDoc(doc.id, s)}
+                        onEdit={() => {
+                          setEditingDocId(doc.id);
+                          setEditingDocTitle(doc.title);
+                          setShowEditor(true);
+                        }}
+                        onShare={() => handleExportDoc(doc.id)}
                         onPress={() => {
                           if (isSelectionMode) {
                             handleToggleDocSelection(doc.id);
-                          } else if (doc.thumbnailPath) {
+                          } else if (doc.type === 'image' && doc.thumbnailPath) {
                             setPreviewImage(doc.thumbnailPath);
                           } else {
-                            showToast('Open Doc: ' + doc.title, 'info');
+                            // Default action for docs: Open Editor
+                            setEditingDocId(doc.id);
+                            setEditingDocTitle(doc.title);
+                            setShowEditor(true);
                           }
                         }}
                       />
@@ -936,6 +1001,14 @@ export default function RagScreen() {
                 }}
                 estimatedItemSize={80}
                 contentContainerStyle={{ paddingBottom: 100 }}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    tintColor={colors[500]}
+                    colors={[colors[500]]}
+                  />
+                }
                 ListEmptyComponent={() => (
                   <View className="items-center justify-center py-20 opacity-50">
                     <Typography className="text-gray-400 font-medium">{t.library.emptyState}</Typography>
@@ -1004,6 +1077,25 @@ export default function RagScreen() {
                 visible={!!previewImage}
                 imageUri={previewImage}
                 onClose={() => setPreviewImage(null)}
+              />
+            )}
+
+            {showEditor && (
+              <FileEditorModal
+                visible={showEditor}
+                docId={editingDocId}
+                docTitle={editingDocTitle}
+                onClose={() => setShowEditor(false)}
+                onSave={async (content) => {
+                  try {
+                    await updateDocumentContent(editingDocId, content);
+                    showToast(t.common.save + t.common.success, 'success');
+                    setShowEditor(false);
+                    loadDocuments(); // Refresh to show potential status change (if re-vectorized)
+                  } catch (e) {
+                    showToast(t.common.save + t.common.error, 'error');
+                  }
+                }}
               />
             )}
           </Animated.View>
@@ -1169,3 +1261,80 @@ export default function RagScreen() {
     </PageLayout>
   );
 }
+
+// 文档编辑器分量
+interface FileEditorModalProps {
+  visible: boolean;
+  docId: string;
+  docTitle: string;
+  onClose: () => void;
+  onSave: (content: string) => Promise<void>;
+}
+
+const FileEditorModal = ({ visible, docId, docTitle, onClose, onSave }: FileEditorModalProps) => {
+  const { isDark, colors } = useTheme();
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
+  const { t } = useI18n();
+
+  const { getDocumentContent } = useRagStore.getState();
+
+  useEffect(() => {
+    if (visible && docId) {
+      loadFile();
+    }
+  }, [visible, docId]);
+
+  const loadFile = async () => {
+    setLoading(true);
+    try {
+      const text = await getDocumentContent(docId);
+      setContent(text);
+    } catch (e) {
+      console.error('Failed to load doc content:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide">
+      <View className="flex-1 bg-white dark:bg-black">
+        <GlassHeader
+          title={docTitle}
+          subtitle="编辑文档内容"
+          leftAction={{
+            icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
+            onPress: onClose
+          }}
+          rightAction={{
+            icon: loading ? <ActivityIndicator size="small" /> : <Typography className="font-bold" style={{ color: colors[500] }}>保存</Typography>,
+            onPress: () => onSave(content)
+          }}
+        />
+        <View style={{ paddingTop: 100 + insets.top, paddingHorizontal: 20 }} className="flex-1">
+          {loading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="large" color={colors[500]} />
+            </View>
+          ) : (
+            <TextInput
+              value={content}
+              onChangeText={setContent}
+              multiline
+              textAlignVertical="top"
+              autoFocus
+              className="flex-1 text-gray-900 dark:text-gray-100 text-base"
+              placeholder="开始输入内容..."
+              placeholderTextColor="#94a3b8"
+              style={{ lineHeight: 24 }}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+};

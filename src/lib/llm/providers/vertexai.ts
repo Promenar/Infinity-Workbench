@@ -272,16 +272,21 @@ export class VertexAiClient implements LlmClient {
           // 2. 处理包含工具调用的助手消息 或 包含思考的消息
           if (m.role === 'assistant') {
             const parts: any[] = [];
+            const sig = m.thought_signature;
+
             // 🧐 CRITICAL: Gemini 2.0 Thinking models match thoughts by signature.
             if (m.reasoning) {
               parts.push({
                 thought: true,
                 text: m.reasoning,
-                ...(m.thought_signature ? { thought_signature: m.thought_signature } : {})
+                ...(sig ? { thought_signature: sig } : {})
               });
             }
             if (m.content && typeof m.content === 'string') {
-              parts.push({ text: m.content });
+              parts.push({
+                text: m.content,
+                ...(sig ? { thought_signature: sig } : {}) // 🔥 Add signature to text parts too
+              });
             }
 
             if (m.tool_calls && m.tool_calls.length > 0) {
@@ -300,8 +305,10 @@ export class VertexAiClient implements LlmClient {
                         : (tc.arguments || {}))
                   }
                 };
-                if (m.thought_signature) {
-                  part.thought_signature = m.thought_signature;
+
+                // 🔥 CRITICAL FIX: Ensure thought_signature is attached to the functionCall part.
+                if (sig) {
+                  part.thought_signature = sig;
                 }
                 parts.push(part);
               });

@@ -10,6 +10,8 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      key={language}
+
       screenOptions={{
         headerShown: false,
         lazy: false, // 预加载所有页面，避免首次切换延迟

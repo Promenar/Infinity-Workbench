@@ -82,6 +82,9 @@ export const translations = {
       documentsTitle: '文档',
       itemsCount: '份项目',
       selectDocs: '选择文档',
+      workspace: '助手工作区',
+      fileMissing: '物理文件缺失，已尝试恢复，请重试',
+      exportFail: '导出失败: {error}',
     },
     settings: {
       title: '设置',
@@ -263,6 +266,18 @@ export const translations = {
         description: '启用或禁用特定的 AI 能力。禁用后，Agent 将无法感知或调用该工具。',
         loopLimit: '最大思考轮数',
         loopLimitDesc: '限制 Agent 在单次回复中进行推理和行动循环的最大次数 (默认 5)。',
+        executionMode: 'Agent 执行模式',
+        executionModeDesc: '控制工具执行前的审核逻辑。',
+        modes: {
+          auto: '🚀 全自动',
+          semi: '🧠 半自动',
+          manual: '🛡️ 全手动',
+        },
+        modeDescriptions: {
+          auto: '完全自动化，无需干预。支持中途动态干预。',
+          semi: '读操作自动，写/命令等风险操作需人工审核。',
+          manual: '每一步工具调用均需人工审核，适合极高风险任务。',
+        },
         id: '技能 ID',
       },
       agentSkills: {
@@ -579,6 +594,11 @@ export const translations = {
       dangerZone: '危险区域',
       copied: '已复制',
       notSet: '未设置',
+      sharingUnavailable: '分享功能在此设备上不可用',
+      fileMissing: '文件缺失',
+      exportFail: '导出失败',
+      approve: '同意执行',
+      reject: '拒绝执行',
       color: {
         title: '主题色 (Color)',
         custom: '自定义色彩 (Custom HEX)',
@@ -640,6 +660,10 @@ export const translations = {
       imageLoadError: '图片加载失败',
       imageTooLarge: '图片数据过大',
       imagePathError: '无法访问图片路径',
+      waitingForApproval: '等待您的决策',
+      manualInterventionHint: '通过文字指令干预...',
+      interventionRequired: '需要人工介入审批',
+      interventionTaken: '已执行人工干预',
       viewAndSelectText: '查看并选择文本',
       textSelectionHint: '您可以长按下方文本进行选择性复制，或点击右上角按钮全量复制。',
       conversation: {
@@ -872,6 +896,9 @@ export const translations = {
       documentsTitle: 'Documents',
       itemsCount: 'items',
       selectDocs: 'Select Documents',
+      workspace: 'Agent Workspace',
+      fileMissing: 'Physical file missing, attempted recovery, please retry',
+      exportFail: 'Export failed: {error}',
     },
     settings: {
       title: 'Settings',
@@ -1055,6 +1082,18 @@ export const translations = {
         loopLimit: 'Max Reasoning Loops',
         loopLimitDesc:
           'Limit the maximum number of reasoning and action cycles the Agent can perform in a single reply (default 5).',
+        executionMode: 'Execution Mode',
+        executionModeDesc: 'Control the approval logic before tool execution.',
+        modes: {
+          auto: '🚀 Auto',
+          semi: '🧠 Semi',
+          manual: '🛡️ Manual',
+        },
+        modeDescriptions: {
+          auto: 'Fully automated, no intervention required.',
+          semi: 'Automatic for safe actions, requires approval for risky actions (write/shell).',
+          manual: 'Requires approval for every single tool call.',
+        },
         id: 'Skill ID',
       },
       agentSkills: {
@@ -1372,6 +1411,9 @@ export const translations = {
       settings: 'Settings',
       dangerZone: 'Danger Zone',
       notSet: 'Not Set',
+      sharingUnavailable: 'Sharing is not available on this device',
+      approve: 'Approve',
+      reject: 'Reject',
       color: {
         title: 'Theme Color',
         custom: 'Custom HEX',
@@ -1433,6 +1475,10 @@ export const translations = {
       imageLoadError: 'Image load failed',
       imageTooLarge: 'Image data too large',
       imagePathError: 'Cannot access image path',
+      waitingForApproval: 'Waiting for your decision',
+      manualInterventionHint: 'Direct agent with text...',
+      interventionRequired: 'Approval Required',
+      interventionTaken: 'Intervention Taken',
       viewAndSelectText: 'View and Select Text',
       textSelectionHint: 'You can long-press the text below to select and copy parts, or click the button at the top right to copy all.',
       conversation: {

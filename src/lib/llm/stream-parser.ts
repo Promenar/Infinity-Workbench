@@ -1,4 +1,5 @@
 import { ToolCall } from '../../types/skills';
+import { ProviderType } from './response-normalizer';
 
 export interface ParseResult {
     content: string;
@@ -15,14 +16,21 @@ type ParserState = 'IDLE' | 'IN_THINK' | 'IN_TOOL_XML' | 'IN_PLAN';
  * A stateful, incremental parser for LLM output streams.
  * Optimized to handle mixed content (text, reasoning, tool calls) 
  * without O(N^2) regex matching on the entire history.
+ * 
+ * 增强：Provider感知，支持不同模型的特定清理逻辑
  */
 export class StreamParser {
     private buffer: string = '';
     private state: ParserState = 'IDLE';
+    private provider: ProviderType;
 
     // Buffers for specific blocks
     private startTag: string = ''; // Stores which tag started the block
     private bracketCount: number = 0; // 🧠 Bracket Counting for JSON optimization
+
+    constructor(provider: ProviderType = 'openai') {
+        this.provider = provider;
+    }
 
     process(chunk: string): ParseResult {
         let outputContent = '';
@@ -260,5 +268,47 @@ export class StreamParser {
         }
 
         return calls;
+    }
+
+    /**
+     * 获取清理后的内容（移除Provider特定的XML/标签）
+     * 
+     * @param rawContent 原始内容
+     * @returns 清理后的纯文本内容
+     */
+    getCleanContent(rawContent: string): string {
+        let cleaned = rawContent;
+
+        // Provider特定清理逻辑
+        switch (this.provider) {
+            case 'zhipu':    // GLM
+            case 'deepseek':
+                // 移除完整的tool_call XML块
+                cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
+                // 移除可能泄露的HTML/XML代码块
+                cleaned = cleaned.replace(/```html[\s\S]*?```/gi, '');
+                cleaned = cleaned.replace(/```xml[\s\S]*?```/gi, '');
+                // 移除孤立的tool_calls/tools标签对
+                cleaned = cleaned.replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '');
+                cleaned = cleaned.replace(/<tools>[\s\S]*?<\/tools>/gi, '');
+                break;
+
+            case 'moonshot':  // KIMI
+                // KIMI目前基本兼容，暂无特殊清理需求
+                break;
+
+            default:
+                // OpenAI等其他模型通常不会输出XML
+                break;
+        }
+
+        return cleaned.trim();
+    }
+
+    /**
+     * 获取原始未清理的内容（用于调试或特殊用途）
+     */
+    getRawContent(content: string): string {
+        return content;
     }
 }

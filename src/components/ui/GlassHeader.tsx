@@ -32,6 +32,8 @@ export interface GlassHeaderProps {
     height?: number;
     /** 自定义样式 */
     style?: ViewStyle;
+    /** 自定义右侧组件（渲染在 rightAction 左侧） */
+    headerRight?: React.ReactNode;
 }
 
 /**
@@ -70,6 +72,7 @@ export function GlassHeader({
     showBorder = true,
     height = 64,
     style,
+    headerRight,
 }: GlassHeaderProps) {
     const insets = useSafeAreaInsets();
     const { isDark } = useTheme();
@@ -163,26 +166,29 @@ export function GlassHeader({
                     )}
                 </View>
 
-                {/* 右侧按钮 */}
-                {rightAction ? (
-                    <TouchableOpacity
-                        onPress={() => handleAction(rightAction)}
-                        accessible={true}
-                        accessibilityLabel={rightAction.label || '操作'}
-                        style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 20,
-                            backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.10)',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                        }}
-                    >
-                        {rightAction.icon}
-                    </TouchableOpacity>
-                ) : (
-                    <View style={{ width: 40 }} />
-                )}
+                {/* 右侧区域 (Custom + Action) */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {headerRight}
+                    {rightAction ? (
+                        <TouchableOpacity
+                            onPress={() => handleAction(rightAction)}
+                            accessible={true}
+                            accessibilityLabel={rightAction.label || '操作'}
+                            style={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: 20,
+                                backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.10)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
+                        >
+                            {rightAction.icon}
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={{ width: 40 }} />
+                    )}
+                </View>
             </View>
 
             {/* 底部分隔线 */}

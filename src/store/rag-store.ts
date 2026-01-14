@@ -6,6 +6,16 @@ import { generateId } from '../lib/utils/id-generator';
 import { VectorizationQueue } from '../lib/rag/vectorization-queue';
 import { RagDocument, RagFolder, VectorizationTask, RagMemory } from '../types/rag';
 import { graphStore } from '../lib/rag/graph-store';
+import * as FileSystem from 'expo-file-system/legacy';
+
+// 🛡️ 物理沙箱根路径
+const RAW_SANDBOX_ROOT = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory;
+const SANDBOX_ROOT = RAW_SANDBOX_ROOT + 'agent_sandbox/';
+const WORKSPACE_NAME = 'workspace';
+const WORKSPACE_TAG = 'workspace'; // 内部标识符
+const LEGACY_WORKSPACE_NAME = '工作区';
+
+let isEnsuringWorkspace = false;
 
 // 创建全局队列实例
 let queueInstance: VectorizationQueue | null = null;
@@ -36,6 +46,8 @@ interface RagState {
     thumbnailPath?: string,
   ) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
+  getDocumentContent: (id: string) => Promise<string>;
+  updateDocumentContent: (id: string, content: string) => Promise<void>;
   vectorizeDocument: (docId: string) => Promise<void>;
   extractDocumentGraph: (docId: string, strategy: 'full' | 'summary-first') => Promise<void>;
   toggleDocumentGlobal: (docId: string) => Promise<void>;
@@ -112,6 +124,10 @@ interface RagState {
 
   // 统计信息
   getVectorStats: () => { totalDocs: number; totalVectors: number; totalSize: number };
+
+  // 🛡️ 内部物理同步支持
+  _getPhysicalPath: (folderId?: string | null) => Promise<string>;
+  _ensureWorkspace: () => Promise<void>;
 }
 
 export const useRagStore = create<RagState>()(
@@ -136,6 +152,78 @@ export const useRagStore = create<RagState>()(
         expandedFolders: new Set(),
         selectedFolder: null,
         isLoading: false,
+
+        // 🛡️ 物理路径助手函数
+        _getPhysicalPath: async (folderId?: string | null): Promise<string> => {
+          if (!folderId) return SANDBOX_ROOT;
+
+          const pathParts: string[] = [];
+          let currentId: string | undefined = folderId || undefined;
+          const allFolders = get().folders;
+
+          let safetyCount = 0;
+          while (currentId && safetyCount < 20) {
+            const folder = allFolders.find(f => f.id === currentId);
+            if (folder) {
+              pathParts.unshift(folder.name);
+              currentId = folder.parentId;
+              safetyCount++;
+            } else {
+              break;
+            }
+          }
+
+          return SANDBOX_ROOT + pathParts.join('/') + '/';
+        },
+
+        // 🛡️ 确保工作区目录存在
+        _ensureWorkspace: async () => {
+          if (isEnsuringWorkspace) return;
+          isEnsuringWorkspace = true;
+          try {
+            // 1. 检查是否存在旧版中文名称的文件夹记录 (SSOT: 直接查询数据库避免状态滞后)
+            const legacyResult = await db.execute('SELECT * FROM folders WHERE name = ? LIMIT 1', [LEGACY_WORKSPACE_NAME]);
+            const legacyWorkspace = legacyResult.rows && legacyResult.rows.length > 0 ? (legacyResult.rows[0] as any) : null;
+
+            if (legacyWorkspace) {
+              console.log('[RAG] Migrating legacy workspace folder to English...');
+              await db.execute('UPDATE folders SET name = ? WHERE id = ?', [WORKSPACE_NAME, legacyWorkspace.id]);
+
+              const oldPath = SANDBOX_ROOT + LEGACY_WORKSPACE_NAME;
+              const newPath = SANDBOX_ROOT + WORKSPACE_NAME;
+              const oldInfo = await FileSystem.getInfoAsync(oldPath);
+              if (oldInfo.exists) {
+                await FileSystem.moveAsync({ from: oldPath, to: newPath });
+              }
+              // 不需要 return，继续检查并确保物理目录存在
+            }
+
+            // 2. 检查新版工作区是否存在
+            const wsResult = await db.execute('SELECT * FROM folders WHERE name = ? AND parent_id IS NULL LIMIT 1', [WORKSPACE_NAME]);
+            let workspace = wsResult.rows && wsResult.rows.length > 0 ? (wsResult.rows[0] as any) : null;
+
+            if (!workspace) {
+              console.log('[RAG] Initializing workspace folder...');
+              const id = generateId();
+              const createdAt = Date.now();
+              await db.execute(
+                'INSERT INTO folders (id, name, parent_id, created_at) VALUES (?, ?, ?, ?)',
+                [id, WORKSPACE_NAME, null, createdAt]
+              );
+            }
+
+            // 无论如何确保目录存在
+            const workspacePath = SANDBOX_ROOT + WORKSPACE_NAME;
+            const wsInfo = await FileSystem.getInfoAsync(workspacePath);
+            if (!wsInfo.exists) {
+              await FileSystem.makeDirectoryAsync(workspacePath, { intermediates: true });
+            }
+          } catch (e) {
+            console.error('[RAG] Workspace check failed:', e);
+          } finally {
+            isEnsuringWorkspace = false;
+          }
+        },
 
         loadDocuments: async () => {
           set({ isLoading: true });
@@ -245,6 +333,13 @@ export const useRagStore = create<RagState>()(
 
             set((state: RagState) => ({ documents: [newDoc, ...state.documents] }));
 
+            // 🛡️ 同步物理文件
+            const physicalDir = await get()._getPhysicalPath(folderId);
+            await FileSystem.makeDirectoryAsync(physicalDir, { intermediates: true });
+            await FileSystem.writeAsStringAsync(physicalDir + title, content, {
+              encoding: (FileSystem as any).EncodingType.UTF8
+            });
+
             // 2. 加入向量化队列（后台异步处理）
             const queue = getQueue();
             await queue.enqueue(docId, title, content);
@@ -253,6 +348,39 @@ export const useRagStore = create<RagState>()(
             get().loadFolders();
           } catch (e) {
             console.error('Failed to add document:', e);
+            throw e;
+          }
+        },
+
+        getDocumentContent: async (docId: string): Promise<string> => {
+          // Fetch content from database for viewing/editing
+          const result = await db.execute('SELECT content FROM documents WHERE id = ?', [docId]);
+          if (result.rows && result.rows.length > 0) {
+            return (result.rows[0] as any).content;
+          }
+          return '';
+        },
+
+        updateDocumentContent: async (docId: string, content: string): Promise<void> => {
+          try {
+            const doc = get().documents.find(d => d.id === docId);
+            if (!doc) throw new Error('Document not found');
+
+            // 1. Update DB
+            await db.execute('UPDATE documents SET content = ?, updated_at = ? WHERE id = ?', [content, Date.now(), docId]);
+
+            // 2. Update physical file
+            const physicalDir = await get()._getPhysicalPath(doc.folderId);
+            await FileSystem.writeAsStringAsync(physicalDir + doc.title, content, {
+              encoding: (FileSystem as any).EncodingType.UTF8
+            });
+
+            // 3. Re-vectorize if already vectorized or failed (automatic re-queue)
+            if (doc.vectorized === 2 || doc.vectorized === -1) {
+              await get().vectorizeDocument(docId);
+            }
+          } catch (e) {
+            console.error('Failed to update document content:', e);
             throw e;
           }
         },
@@ -321,6 +449,14 @@ export const useRagStore = create<RagState>()(
             set((state: RagState) => ({
               documents: state.documents.filter((d: RagDocument) => d.id !== id),
             }));
+
+            // 🛡️ 删除物理文件
+            const doc = get().documents.find(d => d.id === id); // Use current snapshot
+            if (doc) {
+              const physicalDir = await get()._getPhysicalPath(doc.folderId);
+              await FileSystem.deleteAsync(physicalDir + doc.title, { idempotent: true });
+            }
+
             get().loadFolders();
           } catch (e) {
             console.error('Failed to delete document:', e);
@@ -376,8 +512,9 @@ export const useRagStore = create<RagState>()(
 
         loadFolders: async () => {
           try {
+            await get()._ensureWorkspace();
             // 1. Load all folders
-            const results = await db.execute('SELECT * FROM folders ORDER BY created_at ASC');
+            const results = await db.execute('SELECT * FROM folders ORDER BY created_at DESC');
             if (!results.rows) {
               set({ folders: [] });
               return;
@@ -461,18 +598,13 @@ export const useRagStore = create<RagState>()(
             const roots = Array.from(folderMap.values()).filter((f) => !f.parentId);
             const computed = new Set<string>();
 
-            const compute = (folder: {
-              id: string;
-              parentId?: string;
-              directCount: number;
-              totalCount: number;
-              children: string[];
-            }): number => {
+            const compute = (folder: any, depth = 0): number => {
+              if (depth > 20) return folder.directCount; // 防止死循环
               let sum = folder.directCount;
               for (const childId of folder.children) {
                 const child = folderMap.get(childId);
                 if (child) {
-                  sum += compute(child);
+                  sum += compute(child, depth + 1);
                 }
               }
               folder.totalCount = sum;
@@ -520,6 +652,10 @@ export const useRagStore = create<RagState>()(
             };
 
             set((state: RagState) => ({ folders: [...state.folders, newFolder] }));
+
+            // 🛡️ 创建物理目录
+            const physicalPath = await get()._getPhysicalPath(folderId);
+            await FileSystem.makeDirectoryAsync(physicalPath, { intermediates: true });
           } catch (e) {
             console.error('Failed to add folder:', e);
             throw e;
@@ -534,6 +670,13 @@ export const useRagStore = create<RagState>()(
               folders: state.folders.filter((f: RagFolder) => f.id !== id),
             }));
 
+            // 🛡️ 删除物理目录
+            const folder = get().folders.find(f => f.id === id);
+            if (folder) {
+              const physicalPath = await get()._getPhysicalPath(id);
+              await FileSystem.deleteAsync(physicalPath, { idempotent: true });
+            }
+
             // 重新加载文档以更新folder_id
             get().loadDocuments();
           } catch (e) {
@@ -544,10 +687,23 @@ export const useRagStore = create<RagState>()(
 
         renameFolder: async (id: string, name: string) => {
           try {
+            const oldFolder = get().folders.find(f => f.id === id);
             await db.execute('UPDATE folders SET name = ? WHERE id = ?', [name, id]);
-            set((state: RagState) => ({
-              folders: state.folders.map((f: RagFolder) => (f.id === id ? { ...f, name } : f)),
-            }));
+
+            // 🛡️ 重命名物理目录
+            if (oldFolder) {
+              const oldPath = await get()._getPhysicalPath(id);
+              // Temporarily update state for name resolution in path helper
+              set((state: RagState) => ({
+                folders: state.folders.map((f: RagFolder) => (f.id === id ? { ...f, name } : f)),
+              }));
+              const newPath = await get()._getPhysicalPath(id);
+              await FileSystem.moveAsync({ from: oldPath, to: newPath });
+            } else {
+              set((state: RagState) => ({
+                folders: state.folders.map((f: RagFolder) => (f.id === id ? { ...f, name } : f)),
+              }));
+            }
           } catch (e) {
             console.error('Failed to rename folder:', e);
             throw e;
@@ -585,7 +741,18 @@ export const useRagStore = create<RagState>()(
 
         moveDocument: async (docId: string, folderId: string | null) => {
           try {
+            const doc = get().documents.find(d => d.id === docId);
+            const oldFolderId = doc?.folderId;
+
             await db.execute('UPDATE documents SET folder_id = ? WHERE id = ?', [folderId, docId]);
+
+            // 🛡️ 移动物理文件
+            if (doc) {
+              const oldPath = await get()._getPhysicalPath(oldFolderId) + doc.title;
+              const newPath = await get()._getPhysicalPath(folderId) + doc.title;
+              await FileSystem.makeDirectoryAsync(await get()._getPhysicalPath(folderId), { intermediates: true });
+              await FileSystem.moveAsync({ from: oldPath, to: newPath });
+            }
 
             // 更新本地状态
             set((state: RagState) => ({
@@ -629,10 +796,10 @@ export const useRagStore = create<RagState>()(
 
             // Cleanup orphaned nodes once for the batch
             await db.execute(`
-                    DELETE FROM kg_nodes 
-                    WHERE id NOT IN (SELECT source_id FROM kg_edges) 
-                    AND id NOT IN (SELECT target_id FROM kg_edges)
-                `);
+                        DELETE FROM kg_nodes 
+                        WHERE id NOT IN (SELECT source_id FROM kg_edges) 
+                        AND id NOT IN (SELECT target_id FROM kg_edges)
+                    `);
 
             set((state: RagState) => ({
               documents: state.documents.filter((d: RagDocument) => !docIds.includes(d.id)),

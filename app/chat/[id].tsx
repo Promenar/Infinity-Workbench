@@ -19,6 +19,7 @@ import { useAgentStore } from '../../src/store/agent-store';
 import { useApiStore } from '../../src/store/api-store';
 import { ChatBubble } from '../../src/features/chat/components/ChatBubble';
 import { ChatInput } from '../../src/features/chat/components/ChatInput';
+import { ExecutionModeSelector } from '../../src/features/chat/components/ExecutionModeSelector';
 import { useChat } from '../../src/features/chat/hooks/useChat';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -40,7 +41,6 @@ import { KGExtractionIndicator } from '../../src/components/rag/KGExtractionIndi
 import { graphExtractor } from '../../src/lib/rag/graph-extractor'; // ✅
 import * as Clipboard from 'expo-clipboard'; // ✅
 import { Platform as RNPlatform, ToastAndroid, Alert } from 'react-native'; // ✅
-import { TaskMonitor } from '../../src/features/chat/components/TaskMonitor'; // ✅ Import TaskMonitor
 
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
@@ -495,7 +495,9 @@ export default function ChatDetailScreen() {
           right: 0,
         }}
       >
+
         <ChatInput
+          isInterventionMode={session.loopStatus === 'running' || session.loopStatus === 'waiting_for_approval'}
           onSendMessage={(content, options) => {
             sendMessage(content, options);
             userScrolledAway.value = false;
@@ -644,13 +646,9 @@ export default function ChatDetailScreen() {
           },
           label: t.common.settings,
         }}
+        headerRight={<ExecutionModeSelector sessionId={id} />}
       />
 
-      {/* Persistent Task Monitor */}
-      <TaskMonitor
-        sessionId={id}
-        headerHeight={insets.top + 64} // Standard header height match
-      />
 
     </PageLayout>
   );

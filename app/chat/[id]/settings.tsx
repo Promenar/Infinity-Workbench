@@ -609,6 +609,43 @@ export default function SessionSettingsScreen() {
             }}
           />
 
+          {/* Agent Loop Control */}
+          <SettingsSection title="Agent Loop Control">
+            <View className="p-4">
+              <View className="flex-row items-center justify-between mb-4">
+                <Typography className="text-gray-500 text-xs dark:text-gray-400">
+                  Control how the agent executes tools and tasks.
+                </Typography>
+              </View>
+              <View className="flex-row bg-gray-100 dark:bg-zinc-900 p-1 rounded-xl">
+                {(['auto', 'semi', 'manual'] as const).map(mode => {
+                  const isActive = (session.executionMode || 'auto') === mode;
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        useChatStore.getState().setExecutionMode(id, mode);
+                      }}
+                      className={`flex-1 py-2 items-center rounded-lg ${isActive ? 'bg-white dark:bg-zinc-800 shadow-sm' : ''}`}
+                    >
+                      <Typography className={`font-bold capitalize ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-zinc-500'}`}>
+                        {mode}
+                      </Typography>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <View className="mt-2">
+                <Typography className="text-[10px] text-gray-400 text-center">
+                  {session.executionMode === 'manual' ? 'Require approval for every tool.' :
+                    session.executionMode === 'semi' ? 'Require approval for risky tools (File/Terminal).' :
+                      'Execute all tools automatically.'}
+                </Typography>
+              </View>
+            </View>
+          </SettingsSection>
+
           {/* Danger Zone */}
           <SettingsSection title={t.common.dangerZone}>
             <View className="p-4">

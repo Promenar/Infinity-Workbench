@@ -5,11 +5,11 @@
     "scheme": "nexara",
     "version": "1.1.32",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/logo3.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/logo3.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
+        "foregroundImage": "./assets/logo3.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,

@@ -118,6 +118,7 @@ export interface Message {
   tool_call_id?: string; // ✅ 新增：工具调用关联 ID (用于 role: tool)
   name?: string; // ✅ 新增：工具名称 (用于 role: tool)
   thought_signature?: string; // ✅ 新增：思维签名 (仅限 Gemini 2.0 Thinking 模型)
+  planningTask?: TaskState; // ✅ 新增：Message-Scoped Task Snapshot
 }
 
 export interface Session {
@@ -150,13 +151,16 @@ export interface Session {
   };
   scrollOffset?: number; // 记录滚动位置
   draft?: string; // 未发送的草稿内容
-  activeTask?: {
-    title: string;
-    status: 'pending' | 'in-progress' | 'completed' | 'failed';
-    progress: number; // 0-100
-    steps: TaskStep[];
-    createdAt: number;
-    updatedAt: number;
+  activeTask?: TaskState;
+
+  // Steerable Agent Loop Fields
+  executionMode: 'auto' | 'semi' | 'manual';
+  loopStatus: 'running' | 'paused' | 'waiting_for_approval' | 'completed';
+  pendingIntervention?: string; // 待注入的用户指令
+  approvalRequest?: {          // 待批准的操作详情
+    toolName: string;
+    args: any;
+    reason: string;
   };
 }
 
@@ -165,6 +169,15 @@ export interface TaskStep {
   title: string;
   status: 'pending' | 'in-progress' | 'completed' | 'failed' | 'skipped';
   description?: string;
+}
+
+export interface TaskState {
+  title: string;
+  status: 'pending' | 'in-progress' | 'completed' | 'failed';
+  progress: number; // 0-100
+  steps: TaskStep[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 // RAG配置（会话级或全局）

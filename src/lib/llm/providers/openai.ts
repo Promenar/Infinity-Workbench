@@ -231,8 +231,23 @@ export class OpenAiClient implements LlmClient {
                   let safeToolCalls: ToolCall[] | undefined;
                   if (toolCallsArray.length > 0) {
                     safeToolCalls = toolCallsArray.map(tc => {
-                      // Attempt to parse arguments. If incomplete, safeJsonParse returns an empty object.
-                      return { ...tc, arguments: safeJsonParse(tc.arguments) };
+                      const argsStr = tc.arguments.trim();
+                      // 🛡️ 成熟度检查：如果 JSON 还没开始（只有 { ）或者明显不完整，
+                      // 我们只返回 id 和 name，但在 arguments 中通过标记或空对象保留。
+                      // 关键：不要让 chat-store 误以为这是一个已经“完成”的空指令。
+
+                      let parsedArgs = {};
+                      // 只有当字符串看起来像一个包含内容的 JSON 对象时才尝试解析
+                      if (argsStr.length > 2 && argsStr.includes(':')) {
+                        parsedArgs = safeJsonParse(argsStr);
+                      }
+
+                      return { ...tc, arguments: parsedArgs };
+                    }).filter(tc => {
+                      // 只有当参数包含实际内容，或者我们确定这不是一个误发时才发送
+                      // DeepSeek 早期会发一个 id 但没 args，这会导致 chat-store 立即触发 tool 执行
+                      const argsStr = tc.arguments ? JSON.stringify(tc.arguments) : '{}';
+                      return argsStr !== '{}';
                     });
                   }
 
@@ -346,7 +361,9 @@ export class OpenAiClient implements LlmClient {
               msg.content = typeof m.content === 'string' ? m.content : null;
             }
 
-            if (m.reasoning) msg.reasoning_content = m.reasoning;
+            // 🧐 CRITICAL: DO NOT include reasoning_content in history for OpenAI-compatible providers.
+            // Many (like DeepSeek) reject requests containing this field as it is output-only.
+            // if (m.reasoning) msg.reasoning_content = m.reasoning; // ❌ Removed
 
             // 🧐 CRITICAL: Format tool_calls ONLY for assistant specification
             if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
@@ -360,7 +377,12 @@ export class OpenAiClient implements LlmClient {
                     : JSON.stringify(tc.arguments || tc.function?.arguments)
                 }
               }));
-              // For assistant with tools, content is allowed to be null/empty
+              // 🧐 Optimization: For assistant messages with tool_calls, some gateways (SiliconFlow/DeepSeek)
+              // might reject content: null if they expect the preceding text to match.
+              // We use empty string which is widely accepted.
+              if (typeof msg.content === 'string' && msg.content.trim() === '') {
+                msg.content = '';
+              }
             }
 
             // 🧐 CRITICAL: Format tool_call_id ONLY for tool role

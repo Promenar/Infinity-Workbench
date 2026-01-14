@@ -66,6 +66,8 @@ const CustomLightTheme = {
   },
 };
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
   const { colorScheme } = useColorScheme();
@@ -112,27 +114,30 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: currentTheme.colors.background }}>
-      <ThemeProvider>
-        <KeyboardProvider>
-          <ToastProvider>
-            <NavThemeProvider value={currentTheme}>
-              <StatusBar style="auto" />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  animation: 'slide_from_right',
-                  animationDuration: 200, // 提速至 200ms，增强跟手感
-                  contentStyle: { backgroundColor: currentTheme.colors.background },
-                }}
-              >
-                <Stack.Screen name="(tabs)" />
-                <Stack.Screen name="index" />
-                <Stack.Screen name="demo/skills" />
-              </Stack>
-            </NavThemeProvider>
-          </ToastProvider>
-        </KeyboardProvider>
-      </ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <KeyboardProvider>
+            <ToastProvider>
+              <NavThemeProvider value={currentTheme}>
+                <StatusBar style="auto" />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    animation: 'slide_from_right',
+                    animationDuration: 200, // 提速至 200ms，增强跟手感
+                    contentStyle: { backgroundColor: currentTheme.colors.background },
+                  }}
+                >
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="settings/skills" />
+                  <Stack.Screen name="demo/skills" />
+                </Stack>
+              </NavThemeProvider>
+            </ToastProvider>
+          </KeyboardProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

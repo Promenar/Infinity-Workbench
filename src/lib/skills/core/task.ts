@@ -33,19 +33,23 @@ export const TaskManagementSkill: Skill = {
 
         let taskArgs = args;
 
-        // 🛡️ GLM 专项加固：自动解包嵌套在 'parameters' 或 'arguments' 里的参数
-        if (args.parameters || args.arguments) {
-            const rawTarget = args.parameters || args.arguments;
-            if (typeof rawTarget === 'string') {
-                try {
-                    taskArgs = JSON.parse(rawTarget);
-                    console.log('[TaskSkill] Auto-unwrapped string parameters from GLM');
-                } catch (e) {
-                    console.warn('[TaskSkill] Failed to unwrap parameters string:', e);
+        // 🛡️ 智能参数展平 (Universal Parameter Flattening)
+        // 兼容 GLM/DeepSeek 等模型可能将参数嵌套在 'parameters' 或 'arguments' 字段的情况
+        if (args && typeof args === 'object') {
+            const nestedTarget = args.parameters || args.arguments;
+            if (nestedTarget) {
+                if (typeof nestedTarget === 'string') {
+                    try {
+                        const parsed = JSON.parse(nestedTarget);
+                        taskArgs = { ...args, ...parsed }; // 合并而非覆盖，增强鲁棒性
+                        console.log('[TaskSkill] Auto-unwrapped string parameters');
+                    } catch (e) {
+                        console.warn('[TaskSkill] Failed to parse nested parameters string:', e);
+                    }
+                } else if (typeof nestedTarget === 'object') {
+                    taskArgs = { ...args, ...nestedTarget };
+                    console.log('[TaskSkill] Auto-flattened nested parameters object');
                 }
-            } else if (typeof rawTarget === 'object') {
-                taskArgs = rawTarget;
-                console.log('[TaskSkill] Auto-flattened nested parameters object from GLM');
             }
         }
 
@@ -93,19 +97,35 @@ export const TaskManagementSkill: Skill = {
 
                 if (taskArgs.steps) {
                     taskArgs.steps.forEach((newStep: any) => {
-                        const index = updatedSteps.findIndex(s => s.id === newStep.id);
+                        // 1. Try match by ID
+                        let index = -1;
+                        if (newStep.id) {
+                            index = updatedSteps.findIndex(s => s.id === newStep.id);
+                        }
+
+                        // 2. If ID not found or not provided, try match by Title (fuzzy)
+                        if (index === -1 && newStep.title) {
+                            // Find unmatched step with same title (case-insensitive)
+                            index = updatedSteps.findIndex(s =>
+                                s.title?.trim().toLowerCase() === newStep.title.trim().toLowerCase()
+                            );
+                        }
+
                         if (index !== -1) {
+                            // Update existing
                             updatedSteps[index] = {
                                 ...updatedSteps[index],
                                 ...newStep,
-                                title: newStep.title || updatedSteps[index].title // Keep old title if new one missing
+                                id: updatedSteps[index].id, // Keep original ID
+                                title: newStep.title || updatedSteps[index].title
                             };
                         } else {
+                            // Create new
                             updatedSteps.push({
-                                id: newStep.id || `step-${updatedSteps.length}`,
+                                id: newStep.id || `step-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                                 title: newStep.title || (newStep.description ?
                                     (newStep.description.length > 20 ? newStep.description.substring(0, 20) + '...' : newStep.description) :
-                                    `动作 ${updatedSteps.length + 1}`),
+                                    `Action ${updatedSteps.length + 1}`),
                                 status: newStep.status || 'pending',
                                 description: newStep.description
                             });

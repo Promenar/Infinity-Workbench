@@ -32,6 +32,8 @@ interface CompactDocItemProps {
   onAssignTag?: () => void;
   onViewGraph?: () => void;
   onExtractGraph?: (strategy: 'full' | 'summary-first') => void;
+  onEdit?: () => void;
+  onShare?: () => void;
 }
 
 export const CompactDocItem = memo<CompactDocItemProps>(
@@ -54,6 +56,8 @@ export const CompactDocItem = memo<CompactDocItemProps>(
     onAssignTag,
     onViewGraph,
     onExtractGraph,
+    onEdit,
+    onShare,
   }) => {
     const { isDark, colors } = useTheme();
 
@@ -113,7 +117,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       vectorized === 2
         ? {
           key: 'view-graph',
-          label: '查看知识图谱',
+          label: '查看图谱',
           onPress: () => {
             setTimeout(() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -124,7 +128,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
         : null,
       {
         key: 'move',
-        label: '移动到文件夹',
+        label: '移动到',
         onPress: () => {
           setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -134,7 +138,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       },
       {
         key: 'tag',
-        label: '添加标签',
+        label: '打标签',
         onPress: () => {
           setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -142,10 +146,30 @@ export const CompactDocItem = memo<CompactDocItemProps>(
           }, 10);
         },
       },
+      {
+        key: 'edit',
+        label: '编辑内容',
+        onPress: () => {
+          setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            onEdit?.();
+          }, 10);
+        },
+      },
+      {
+        key: 'share',
+        label: '分享导出',
+        onPress: () => {
+          setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            onShare?.();
+          }, 10);
+        },
+      },
       // 知识图谱提取
       {
         key: 'extract-full',
-        label: '提取知识图谱 (全量)',
+        label: '全量提取',
         onPress: () => {
           setTimeout(() => {
             onExtractGraph?.('full');
@@ -154,7 +178,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       },
       {
         key: 'extract-summary',
-        label: '提取知识图谱 (摘要)',
+        label: '摘要提取',
         onPress: () => {
           setTimeout(() => {
             onExtractGraph?.('summary-first');

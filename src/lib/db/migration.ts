@@ -184,6 +184,55 @@ export const migrateDatabase = async () => {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_kg_edges_session ON kg_edges(session_id)');
     }
 
+    // Migration 9: Deduplicate workspace folders and cleanup explosion (High Efficiency)
+    const WORKSPACE_NAME = 'workspace';
+
+    // 1. Ensure indexes exist for fast lookup and deletion
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_folders_name_parent ON folders(name, parent_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder_id)');
+
+    const workspaceCountResult = await db.execute(
+      'SELECT COUNT(*) as count FROM folders WHERE name = ? AND parent_id IS NULL',
+      [WORKSPACE_NAME]
+    );
+    const workspaceCount = (workspaceCountResult.rows?.[0] as any)?.count || 0;
+
+    if (workspaceCount > 1) {
+      console.log(`[DB Migration] Detected ${workspaceCount} workspace folders. Starting optimized deduplication...`);
+
+      // 2. 获取要保留的 ID (最早创建的一个)
+      const primaryResult = await db.execute(
+        'SELECT id FROM folders WHERE name = ? AND parent_id IS NULL ORDER BY created_at ASC LIMIT 1',
+        [WORKSPACE_NAME]
+      );
+      const primaryId = (primaryResult.rows?.[0] as any)?.id;
+
+      if (primaryId) {
+        // 3. 将重复节点下的文档指回 Primary
+        // 由于已建立索引，只需处理 folder_id 不等于 primaryId 的情形
+        await db.execute(`
+          UPDATE documents 
+          SET folder_id = ? 
+          WHERE folder_id IS NOT NULL 
+          AND folder_id != ?
+          AND folder_id IN (
+            SELECT id FROM folders 
+            WHERE name = ? AND parent_id IS NULL
+          )
+        `, [primaryId, primaryId, WORKSPACE_NAME]);
+
+        // 4. 大规模删除冗余文件夹 (利用索引直接删除)
+        await db.execute(`
+          DELETE FROM folders 
+          WHERE name = ? 
+          AND parent_id IS NULL 
+          AND id != ?
+        `, [WORKSPACE_NAME, primaryId]);
+
+        console.log(`[DB Migration] Cleanup finished. Records reduced by ${workspaceCount - 1}.`);
+      }
+    }
+
     console.log('[DB Migration] Migration completed successfully!');
   } catch (error) {
     console.error('[DB Migration] Migration failed:', error);

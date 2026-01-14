@@ -6,7 +6,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { clsx } from 'clsx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RagDocument, RagFolder } from '../../types/rag';
-import * as Haptics from 'expo-haptics';
+import { impactAsync, notificationAsync, ImpactFeedbackStyle, NotificationFeedbackType } from '../../lib/haptics';
 
 interface DocumentPickerModalProps {
   visible: boolean;
@@ -70,47 +70,39 @@ export const DocumentPickerModal: React.FC<DocumentPickerModalProps> = ({
   }, [currentFolderId, folders, documents]);
 
   const handleToggleDoc = (docId: string) => {
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const newSet = new Set(tempSelectedDocIds);
-      if (newSet.has(docId)) {
-        newSet.delete(docId);
-      } else {
-        newSet.add(docId);
-      }
-      setTempSelectedDocIds(newSet);
-    }, 10);
+    impactAsync(ImpactFeedbackStyle.Light);
+    const newSet = new Set(tempSelectedDocIds);
+    if (newSet.has(docId)) {
+      newSet.delete(docId);
+    } else {
+      newSet.add(docId);
+    }
+    setTempSelectedDocIds(newSet);
   };
 
   const handleToggleFolder = (folderId: string) => {
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const newSet = new Set(tempSelectedFolderIds);
-      if (newSet.has(folderId)) {
-        newSet.delete(folderId);
-      } else {
-        newSet.add(folderId);
-      }
-      setTempSelectedFolderIds(newSet);
-    }, 10);
+    impactAsync(ImpactFeedbackStyle.Medium);
+    const newSet = new Set(tempSelectedFolderIds);
+    if (newSet.has(folderId)) {
+      newSet.delete(folderId);
+    } else {
+      newSet.add(folderId);
+    }
+    setTempSelectedFolderIds(newSet);
   };
 
   const handleConfirm = () => {
-    setTimeout(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onConfirm(Array.from(tempSelectedDocIds), Array.from(tempSelectedFolderIds));
-      onClose();
-    }, 10);
+    notificationAsync(NotificationFeedbackType.Success);
+    onConfirm(Array.from(tempSelectedDocIds), Array.from(tempSelectedFolderIds));
+    onClose();
   };
 
   const handleClose = () => {
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setTempSelectedDocIds(new Set(selectedDocIds));
-      setTempSelectedFolderIds(new Set(selectedFolderIds));
-      setCurrentFolderId(undefined);
-      onClose();
-    }, 10);
+    impactAsync(ImpactFeedbackStyle.Medium);
+    setTempSelectedDocIds(new Set(selectedDocIds));
+    setTempSelectedFolderIds(new Set(selectedFolderIds));
+    setCurrentFolderId(undefined);
+    onClose();
   };
 
   // Android返回键支持

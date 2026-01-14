@@ -42,6 +42,16 @@ export function useChat(sessionId: string) {
         ragOptions: session.ragOptions,
       };
 
+      // Steerable Loop Intervention
+      if (session.loopStatus === 'running' || session.loopStatus === 'waiting_for_approval') {
+        useChatStore.getState().setPendingIntervention(sessionId, content);
+        // If waiting, resume immediately with rejection of current tools (user wants to intervene instead)
+        if (session.loopStatus === 'waiting_for_approval') {
+          await useChatStore.getState().resumeGeneration(sessionId, false, content);
+        }
+        return;
+      }
+
       await generateMessage(sessionId, content, mergedOptions);
     },
     [sessionId, session, generateMessage],

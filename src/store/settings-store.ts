@@ -44,6 +44,8 @@ interface SettingsState {
   // Agent/Skill Settings
   maxLoopCount: number;
   setMaxLoopCount: (count: number) => void;
+  executionMode: 'auto' | 'semi' | 'manual';
+  setExecutionMode: (mode: 'auto' | 'semi' | 'manual') => void;
   skillsConfig: Record<string, boolean>; // skillId -> enabled
   setSkillEnabled: (skillId: string, enabled: boolean) => void;
 
@@ -146,6 +148,8 @@ export const useSettingsStore = create<SettingsState>()(
 
       maxLoopCount: 5,
       setMaxLoopCount: (count) => set({ maxLoopCount: count }),
+      executionMode: 'auto',
+      setExecutionMode: (mode) => set({ executionMode: mode }),
       skillsConfig: {},
       setSkillEnabled: (skillId, enabled) =>
         set((state) => ({
@@ -170,6 +174,7 @@ export const useSettingsStore = create<SettingsState>()(
         globalRagConfig: state.globalRagConfig,
         accentColor: state.accentColor,
         maxLoopCount: state.maxLoopCount,
+        executionMode: state.executionMode,
         skillsConfig: state.skillsConfig,
       }),
       onRehydrateStorage: () => (state) => {

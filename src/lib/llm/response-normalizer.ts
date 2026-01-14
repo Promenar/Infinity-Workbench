@@ -55,12 +55,14 @@ export class ResponseNormalizer {
         return this.normalizeVertex(rawResponse);
       case 'openai':
       case 'siliconflow':
-      case 'moonshot':
-      case 'deepseek':
       case 'github':
         return this.normalizeOpenAI(rawResponse);
+      case 'deepseek':
+        return this.normalizeDeepSeek(rawResponse);
       case 'zhipu':
         return this.normalizeZhipu(rawResponse);
+      case 'moonshot':
+        return this.normalizeMoonshot(rawResponse);
       default:
         return this.normalizeGeneric(rawResponse);
     }
@@ -134,8 +136,8 @@ export class ResponseNormalizer {
   }
 
   /**
-   * 标准化 OpenAI 兼容响应
-   * 适用于：OpenAI, SiliconFlow, Kimi, DeepSeek, GitHub Models
+   * 标准化纯 OpenAI 响应
+   * 适用于：OpenAI、SiliconFlow、GitHub Models
    */
   private static async normalizeOpenAI(raw: any): Promise<NormalizedChunk> {
     const delta = raw.choices?.[0]?.delta;
@@ -145,17 +147,62 @@ export class ResponseNormalizer {
 
     return {
       content: delta.content || '',
+      // 注意：原生OpenAI不支持reasoning_content回传（仅o1系列输出）
       reasoning: delta.reasoning_content || undefined,
-      // OpenAI 系列通常不返回 citations（除非使用特殊功能）
     };
   }
 
   /**
-   * 标准化智谱 AI 响应
+   * 标准化 DeepSeek 响应
+   * 特性：支持 reasoning_content、<think> 标签
+   */
+  private static async normalizeDeepSeek(raw: any): Promise<NormalizedChunk> {
+    const delta = raw.choices?.[0]?.delta;
+    if (!delta) {
+      return { content: '' };
+    }
+
+    // DeepSeek 支持 reasoning_content 输出
+    // 注意：<think> 标签的处理在 openai.ts 的网络层已完成
+    return {
+      content: delta.content || '',
+      reasoning: delta.reasoning_content || undefined,
+    };
+  }
+
+  /**
+   * 标准化月之暗面(KIMI) 响应
+   * 特性：基本兼容OpenAI，部分模型支持思维链
+   */
+  private static async normalizeMoonshot(raw: any): Promise<NormalizedChunk> {
+    const delta = raw.choices?.[0]?.delta;
+    if (!delta) {
+      return { content: '' };
+    }
+
+    return {
+      content: delta.content || '',
+      // KIMI部分模型支持reasoning输出
+      reasoning: delta.reasoning_content || undefined,
+    };
+  }
+
+  /**
+   * 标准化智谱AI(GLM) 响应
+   * 特性：支持 XML 工具调用、兼容 OpenAI 流式格式
    */
   private static async normalizeZhipu(raw: any): Promise<NormalizedChunk> {
-    // 智谱 API 基本兼容 OpenAI
-    return this.normalizeOpenAI(raw);
+    const delta = raw.choices?.[0]?.delta;
+    if (!delta) {
+      return { content: '' };
+    }
+
+    // GLM 基本兼容 OpenAI，但可能在content中混入XML工具调用
+    // XML清理由 StreamParser 负责
+    return {
+      content: delta.content || '',
+      reasoning: delta.reasoning_content || undefined,
+    };
   }
 
   /**

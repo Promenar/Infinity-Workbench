@@ -50,7 +50,9 @@ export const ChatController = {
             messages: [],
             createdAt: Date.now(),
             updatedAt: Date.now(),
-            modelId: agent.defaultModel
+            modelId: agent.defaultModel,
+            executionMode: 'auto' as const,
+            loopStatus: 'completed' as const
         };
 
         addSession(newSession as any);

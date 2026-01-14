@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, memo } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Typography, ContextMenu } from '../ui';
 import { Folder, FolderOpen, ChevronRight, MoreVertical } from 'lucide-react-native';
@@ -8,7 +8,6 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   useSharedValue,
-  withTiming,
 } from 'react-native-reanimated';
 import type { ContextMenuItem } from '../ui/ContextMenu';
 
@@ -28,7 +27,7 @@ interface FolderItemProps {
   onExtractGraph?: (strategy: 'full' | 'summary-first') => void;
 }
 
-export const FolderItem: React.FC<FolderItemProps> = ({
+export const FolderItem = memo<FolderItemProps>(({
   id,
   name,
   childCount,
@@ -73,7 +72,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({
 
   const menuItems: ContextMenuItem[] = [
     {
-      label: '查看知识图谱',
+      label: '查看图谱',
       onPress: () => {
         setTimeout(() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -82,11 +81,11 @@ export const FolderItem: React.FC<FolderItemProps> = ({
       },
     },
     {
-      label: '生成全量图谱 (批量)',
+      label: '全量提取图谱',
       onPress: () => onExtractGraph?.('full'),
     },
     {
-      label: '生成摘要图谱 (批量)',
+      label: '摘要提取图谱',
       onPress: () => onExtractGraph?.('summary-first'),
     },
     {
@@ -94,11 +93,11 @@ export const FolderItem: React.FC<FolderItemProps> = ({
       onPress: () => onRename?.(),
     },
     {
-      label: '移动到文件夹',
+      label: '移动到',
       onPress: () => onMove?.(),
     },
     {
-      label: '删除文件夹',
+      label: '删除',
       destructive: true,
       onPress: () => onDelete?.(),
     },
@@ -141,4 +140,6 @@ export const FolderItem: React.FC<FolderItemProps> = ({
       </ContextMenu>
     </View>
   );
-};
+});
+
+FolderItem.displayName = 'FolderItem';

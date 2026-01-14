@@ -6,7 +6,7 @@ import { skillRegistry } from '../../lib/skills/registry';
 import { Skill } from '../../types/skills';
 import { useSettingsStore } from '../../store/settings-store';
 import { useI18n } from '../../lib/i18n';
-import { Minus, Plus } from 'lucide-react-native';
+import { Minus, Plus, Check } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from '../../lib/haptics';
 import { SettingsSection } from '../../features/settings/components/SettingsSection';
@@ -22,7 +22,9 @@ export const SkillsSettingsPanel: React.FC = () => {
         skillsConfig,
         setSkillEnabled,
         maxLoopCount,
-        setMaxLoopCount
+        setMaxLoopCount,
+        executionMode,
+        setExecutionMode
     } = useSettingsStore();
 
     const [skills, setSkills] = useState<Skill[]>([]);
@@ -50,7 +52,8 @@ export const SkillsSettingsPanel: React.FC = () => {
         <View className="flex-1">
             {/* Logic Control Group */}
             <SettingsSection title={t.settings.skillsSettings.title}>
-                <View className="flex-row justify-between items-center px-4 py-4">
+                {/* Loop Limit */}
+                <View className="flex-row justify-between items-center px-4 py-4 border-b border-gray-100 dark:border-zinc-800">
                     <View className="flex-1 mr-4">
                         <Typography variant="h3" className="text-gray-900 dark:text-white text-base">
                             {t.settings.skillsSettings.loopLimit}
@@ -92,6 +95,51 @@ export const SkillsSettingsPanel: React.FC = () => {
                         >
                             <Plus size={18} color={isDark ? '#fff' : '#000'} />
                         </TouchableOpacity>
+                    </View>
+                </View>
+
+                <View className="px-4 py-2">
+                    <View className="mb-3">
+                        <Typography variant="h3" className="text-gray-900 dark:text-white text-base">
+                            {t.settings.skillsSettings.executionMode}
+                        </Typography>
+                        <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-1">
+                            {t.settings.skillsSettings.executionModeDesc}
+                        </Typography>
+                    </View>
+
+                    <View className="space-y-2">
+                        {(['auto', 'semi', 'manual'] as const).map((mode) => {
+                            const isActive = executionMode === mode;
+                            return (
+                                <TouchableOpacity
+                                    key={`exec-mode-${mode}`}
+                                    onPress={() => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        setExecutionMode(mode);
+                                    }}
+                                    className={`flex-row items-center justify-between p-4 rounded-2xl border ${isActive ? 'bg-indigo-50/50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30' : 'bg-gray-50 dark:bg-zinc-800/50 border-transparent'}`}
+                                >
+                                    <View className="flex-1 mr-4">
+                                        <Text style={{
+                                            fontSize: 15,
+                                            fontWeight: '700',
+                                            color: isActive ? (isDark ? '#818cf8' : '#4f46e5') : (isDark ? '#e4e4e7' : '#3f3f46')
+                                        }}>
+                                            {(t.settings.skillsSettings.modes as any)[mode]}
+                                        </Text>
+                                        <Typography variant="caption" className="mt-0.5" color={isActive ? 'primary' : 'secondary'}>
+                                            {(t.settings.skillsSettings.modeDescriptions as any)[mode]}
+                                        </Typography>
+                                    </View>
+                                    {isActive && (
+                                        <View className="bg-indigo-500 dark:bg-indigo-600 rounded-full p-1">
+                                            <Check size={14} color="#fff" strokeWidth={4} />
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            );
+                        })}
                     </View>
                 </View>
             </SettingsSection>

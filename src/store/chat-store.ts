@@ -12,6 +12,7 @@ import {
   RagReference,
   RagProgress,
   RagMetadata,
+  TaskState, // ✅ Added
 } from '../types/chat';
 import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
@@ -96,6 +97,7 @@ interface ChatState {
         activeFolderIds?: string[]; // ✅ 添加缺失的字段
         isGlobal?: boolean;
       };
+      isResumption?: boolean; // ✅ Added for Steerable Loop
     },
   ) => Promise<void>;
   generateSessionTitle: (sessionId: SessionId) => Promise<string | undefined>;
@@ -131,6 +133,7 @@ interface ChatState {
     ragReferencesLoading?: boolean,
     ragMetadata?: RagMetadata,
     thought_signature?: string, // 🧠 Added for Gemini 2.0
+    planningTask?: TaskState, // ✅ Added for Message-Scoped Tasks
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
@@ -146,6 +149,15 @@ interface ChatState {
   summarizeSession: (sessionId: string) => Promise<void>;
   regenerateMessage: (sessionId: string, messageId: string) => Promise<void>; // ✅ New Action
   dismissActiveTask: (sessionId: string) => void;
+
+  // Steerable Agent Loop Actions
+  setExecutionMode: (sessionId: string, mode: 'auto' | 'semi' | 'manual') => void;
+  setLoopStatus: (sessionId: string, status: 'running' | 'paused' | 'waiting_for_approval' | 'completed') => void;
+  setPendingIntervention: (sessionId: string, intervention: string | undefined) => void;
+  setApprovalRequest: (sessionId: string, request: { toolName: string; args: any; reason: string } | undefined) => void;
+  // Internal Helper (exposed for loop and resume)
+  executeTools: (sessionId: string, toolCalls: ToolCall[], targetMessageId?: string) => Promise<void>;
+  resumeGeneration: (sessionId: string, approved?: boolean, intervention?: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -156,7 +168,13 @@ export const useChatStore = create<ChatState>()(
       activeKGExtractions: {},
       currentGeneratingSessionId: null,
 
-      addSession: (session) => set((state) => ({ sessions: [session, ...state.sessions] })),
+      addSession: (session) => set((state) => ({
+        sessions: [{
+          ...session,
+          executionMode: session.executionMode || 'auto',
+          loopStatus: session.loopStatus || 'completed',
+        }, ...state.sessions]
+      })),
       setKGExtractionStatus: (sessionId, isExtracting) =>
         set((state) => ({
           activeKGExtractions: { ...state.activeKGExtractions, [sessionId]: isExtracting },
@@ -245,6 +263,7 @@ export const useChatStore = create<ChatState>()(
         ragReferencesLoading?: boolean,
         ragMetadata?: any,
         thought_signature?: string, // 🧠 Added for Gemini 2.0
+        planningTask?: TaskState, // ✅ Added for Message-Scoped Tasks
       ) =>
         set((state) => {
           const session = state.sessions.find((s) => s.id === sessionId);
@@ -326,6 +345,7 @@ export const useChatStore = create<ChatState>()(
                             : m.ragReferencesLoading,
                         ragMetadata: ragMetadata !== undefined ? ragMetadata : m.ragMetadata,
                         thought_signature: thought_signature !== undefined ? thought_signature : m.thought_signature,
+                        planningTask: planningTask || m.planningTask, // ✅ Update planningTask
                       }
                       : m,
                   ),
@@ -453,6 +473,229 @@ export const useChatStore = create<ChatState>()(
         }));
       },
 
+      setExecutionMode: (sessionId, mode) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, executionMode: mode } : s)),
+        })),
+
+      setLoopStatus: (sessionId, status) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, loopStatus: status } : s)),
+        })),
+
+      setPendingIntervention: (sessionId, intervention) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, pendingIntervention: intervention } : s)),
+        })),
+
+      setApprovalRequest: (sessionId, request) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, approvalRequest: request } : s)),
+        })),
+
+      executeTools: async (sessionId: string, toolCalls: ToolCall[], targetMessageId?: string) => {
+        const state = get();
+        const session = state.getSession(sessionId);
+        if (!session) return;
+        const agentStore = useAgentStore.getState();
+        const agent = agentStore.getAgent(session.agentId);
+        if (!agent) return;
+
+        // Verify target message or find last assistant message
+        let targetMsgId = targetMessageId;
+        if (!targetMsgId) {
+          const lastAssistant = [...session.messages].reverse().find(m => m.role === 'assistant');
+          if (lastAssistant) targetMsgId = lastAssistant.id;
+        }
+
+        if (!targetMsgId) return;
+
+        const targetMsg = session.messages.find(m => m.id === targetMsgId);
+        if (!targetMsg) return;
+
+        // 🛡️ 应用级调度防护：防止 OpenAI 兼容模型在流式初期发送空参数导致的崩溃循环
+        const hasIncompleteCall = toolCalls.some(tc => {
+          const name = (tc as any).name || (tc as any).function?.name;
+          if (name === 'manage_task') {
+            const args = tc.arguments || (tc as any).function?.arguments || {};
+            // 只有当消息处于流式状态且 action 缺失时才拦截
+            // 如果已经是最终执行（targetMsg.status 理论上会在 streamChat 结束后由外部判定或此处显式传参）
+            // 我们通过检测是否处于流式环境来决定
+            return targetMsg.status === 'streaming' && (!args || !args.action);
+          }
+          return false;
+        });
+
+        if (hasIncompleteCall) return;
+
+        // Helper to update execution steps (Restored to fix lint error)
+        const updateSteps = (newStep: ExecutionStep) => {
+          set(state => {
+            const session = state.sessions.find(s => s.id === sessionId);
+            if (!session) return {};
+            const currentMsg = session.messages.find(m => m.id === targetMsgId);
+            if (!currentMsg) return {};
+
+            const currentSteps = currentMsg.executionSteps || [];
+            const index = currentSteps.findIndex(s => s.id === newStep.id);
+            let updatedSteps = [...currentSteps];
+
+            if (index > -1) {
+              updatedSteps[index] = newStep;
+            } else {
+              updatedSteps.push(newStep);
+            }
+
+            return {
+              sessions: state.sessions.map(s => s.id === sessionId ? {
+                ...s,
+                messages: s.messages.map(m => m.id === targetMsgId ? { ...m, executionSteps: updatedSteps } : m)
+              } : s)
+            };
+          });
+        };
+
+        for (const tc of toolCalls) {
+          if (!tc) continue;
+          const tcName = (tc as any).name || (tc as any).function?.name;
+          if (!tcName) continue;
+
+          const skill = skillRegistry.getSkill(tcName);
+          const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+
+          const tcArgs = (tc as any).arguments || (tc as any).function?.arguments || {};
+          let finalArgs = typeof tcArgs === 'string' ? JSON.parse(tcArgs) : tcArgs;
+
+          // 🛡️ 智能参数解包
+          if (finalArgs && (finalArgs.parameters || finalArgs.arguments)) {
+            const target = finalArgs.parameters || finalArgs.arguments;
+            if (typeof target === 'string') {
+              try { finalArgs = JSON.parse(target); } catch (e) { console.warn('Param unwrap failed', e); }
+            } else if (typeof target === 'object') {
+              finalArgs = target;
+            }
+          }
+
+          updateSteps({
+            id: stepId,
+            type: 'tool_call',
+            toolName: tcName,
+            toolArgs: finalArgs,
+            toolCallId: tc.id,
+            timestamp: Date.now()
+          });
+
+          let result: ToolResult;
+          try {
+            if (skill) {
+              result = await skill.execute(finalArgs, { sessionId, agentId: agent.id });
+            } else {
+              result = { id: (tc as any).id, content: `Error: Skill ${tcName} not found`, status: 'error' };
+            }
+          } catch (e: any) {
+            result = { id: (tc as any).id, content: `Error: ${e.message}`, status: 'error' };
+          }
+
+          updateSteps({
+            id: `res_${stepId}`,
+            type: result.status === 'success' ? 'tool_result' : 'error',
+            toolName: tcName,
+            toolCallId: tc.id,
+            content: result.content,
+            data: result.data,
+            timestamp: Date.now()
+          });
+
+          // 🧐 UI 优化：所有工具执行结果都必须加入历史记录
+          get().addMessage(sessionId, {
+            id: `tool_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: result.content,
+            name: tcName,
+            createdAt: Date.now(),
+            thought_signature: targetMsg.thought_signature // 🔑 Inherit signature from parent assistant msg
+          });
+
+          // ✅ 任务状态持久化：如果工具返回了 TaskState 数据 (特别是 manage_task)，
+          // 则将其同步回写至触发它的 Assistant 消息中。
+          if (result.data && result.status === 'success') {
+            const isTaskState = (data: any): data is TaskState =>
+              data && typeof data === 'object' && 'steps' in data && 'progress' in data;
+
+            if (isTaskState(result.data)) {
+              get().updateMessageContent(
+                sessionId,
+                targetMsgId,
+                targetMsg.content,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                false,
+                undefined,
+                undefined,
+                result.data // Sync task state to message level
+              );
+            }
+          }
+        }
+      },
+
+      resumeGeneration: async (sessionId, approved = true, intervention) => {
+        const session = get().getSession(sessionId);
+        if (!session || !session.approvalRequest) return;
+
+        // 0. Update Timeline with Decision
+        const lastMsg = session.messages[session.messages.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant') {
+          const decisionStep: any = {
+            id: `dec_${Date.now()}`,
+            type: 'intervention_result',
+            content: intervention ? `Human Instruction: ${intervention}` : (approved ? 'User Approved' : 'User Rejected'),
+            timestamp: Date.now()
+          };
+
+          set(state => ({
+            sessions: state.sessions.map(s => s.id === sessionId ? {
+              ...s,
+              messages: s.messages.map(m => m.id === lastMsg.id ? {
+                ...m,
+                executionSteps: [...(m.executionSteps || []).filter(st => st.type !== 'intervention_required'), decisionStep]
+              } : m)
+            } : s)
+          }));
+        }
+
+        if (intervention) {
+          get().setPendingIntervention(sessionId, intervention);
+        }
+
+        if (!approved && !intervention) {
+          // If rejected without instruction, stop loop
+          get().setLoopStatus(sessionId, 'paused');
+          get().setApprovalRequest(sessionId, undefined);
+          return;
+        }
+
+        // 1. Execute Tools if approved
+        if (approved && !intervention) {
+          if (lastMsg && lastMsg.tool_calls) {
+            await get().executeTools(sessionId, lastMsg.tool_calls, lastMsg.id);
+          }
+        }
+
+        // 2. Clear Request & Update Status
+        get().setApprovalRequest(sessionId, undefined);
+        get().setLoopStatus(sessionId, 'running');
+
+        // 3. Continue Generation (Next Turn)
+        await get().generateMessage(sessionId, '', {
+          // @ts-ignore
+          isResumption: true
+        });
+      },
+
       generateMessage: async (sessionId, content, options) => {
         const session = get().getSession(sessionId);
         if (!session) return;
@@ -503,8 +746,6 @@ export const useChatStore = create<ChatState>()(
 
         // 2. Add User Message
         const promptTokens = estimateTokens(content);
-
-        // Normalize images
         const normalizedImages: GeneratedImageData[] | undefined = options?.images?.map((img) => {
           if (typeof img === 'string') {
             return { thumbnail: img, original: img, mime: 'image/jpeg' };
@@ -520,23 +761,51 @@ export const useChatStore = create<ChatState>()(
           tokens: { input: promptTokens, output: 0, total: promptTokens },
           images: normalizedImages,
         };
-        get().addMessage(sessionId, userMsg);
+
+        if (!options?.isResumption) {
+          get().addMessage(sessionId, userMsg);
+        } else {
+          console.log('[ChatStore] Resumption: Skipping User Message creation');
+        }
 
         set({ currentGeneratingSessionId: sessionId });
 
-        // 3. Add Assistant Placeholder
-        const assistantMsgId = `msg_ai_${Date.now()}`;
-        const assistantMsg: Message = {
-          id: assistantMsgId,
-          role: 'assistant',
-          content: '',
-          createdAt: Date.now(),
-          modelId: modelId,
-          ragReferences: [], // Initialize RAG references
-        };
-        get().addMessage(sessionId, assistantMsg);
-
+        // 3. Assistant Message Handling
+        let assistantMsgId: string;
         let accumulatedContent = '';
+
+        if (options?.isResumption) {
+          // Reuse last assistant message
+          const lastMsg = session.messages[session.messages.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            assistantMsgId = lastMsg.id;
+            accumulatedContent = lastMsg.content || '';
+            console.log(`[ChatStore] Resumed assistant message ${assistantMsgId}, initial content length: ${accumulatedContent.length}`);
+          } else {
+            assistantMsgId = `msg_ai_${Date.now()}`;
+            get().addMessage(sessionId, {
+              id: assistantMsgId,
+              role: 'assistant',
+              content: '',
+              createdAt: Date.now(),
+              modelId: modelId,
+              ragReferences: [],
+            });
+          }
+        } else {
+          assistantMsgId = `msg_ai_${Date.now()}`;
+          const assistantMsg: Message = {
+            id: assistantMsgId,
+            role: 'assistant',
+            content: '',
+            createdAt: Date.now(),
+            modelId: modelId,
+            ragReferences: [], // Initialize RAG references
+          };
+          get().addMessage(sessionId, assistantMsg);
+        }
+
+        const currentAssistantMsgId = assistantMsgId; // Keep closure ref
         let accumulatedReasoning = '';
         let accumulatedCitations: { title: string; url: string; source?: string }[] | undefined =
           undefined; // Initialize correctly
@@ -796,8 +1065,9 @@ If the user's request is complex, multi-step, or requires maintaining state (e.g
             finalSystemPrompt += toolInstruction;
 
             // 🆕 Task State Injection: Provide current task status to the model
-            if (session.activeTask) {
-              const task = session.activeTask;
+            const currentSession = get().getSession(sessionId);
+            if (currentSession?.activeTask) {
+              const task = currentSession.activeTask;
               const formattedSteps = task.steps.map((s, idx) =>
                 `${idx + 1}. [${s.status.toUpperCase()}] ${s.title}${s.description ? ` (${s.description})` : ''}`
               ).join('\n');
@@ -808,7 +1078,7 @@ Status: ${task.status}
 Progress: ${task.progress}%
 Steps:
 ${formattedSteps}
-
+ 
 IMPORTANT: You are currently working on this task. Use 'manage_task' to update the status of steps as you complete them.`;
               finalSystemPrompt += taskContext;
             }
@@ -923,6 +1193,30 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             }
 
             contextMsgs.push(apiMsg);
+
+            // 🛠️ CRITICAL: If this assistant message has nested tool results in its executionSteps,
+            // we MUST inject them into the context even if they aren't in historyMsgs.
+            if (msg.role === 'assistant' && msg.executionSteps && msg.tool_calls) {
+              const nestedResults = msg.executionSteps.filter(s => s.type === 'tool_result' || s.type === 'error');
+
+              msg.tool_calls.forEach(tc => {
+                // Check if this tool_call ID is already answered in contextMsgs (next messages)
+                const isAlreadyAnswered = historyMsgs.slice(i + 1).some(m => m.role === 'tool' && m.tool_call_id === tc.id);
+
+                if (!isAlreadyAnswered) {
+                  // 🧐 Use toolCallId for precise matching
+                  const result = nestedResults.find(r => r.toolCallId === tc.id);
+                  if (result) {
+                    contextMsgs.push({
+                      role: 'tool',
+                      tool_call_id: tc.id,
+                      name: tc.name,
+                      content: result.content || 'Action successful.'
+                    });
+                  }
+                }
+              });
+            }
           }
 
           // Add user message to context
@@ -987,14 +1281,21 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
           // Helper to update execution steps in store
           const updateSteps = (newStep: ExecutionStep) => {
-            const index = loopExecutionSteps.findIndex(s => s.id === newStep.id);
+            // 🛡️ Critical: Sync from store first to avoid discarding tool results added by executeTools
+            const sessionRef = get().getSession(sessionId);
+            const msgRef = sessionRef?.messages.find(m => m.id === currentAssistantMsgId);
+            const baseSteps = msgRef?.executionSteps || loopExecutionSteps;
+
+            const index = baseSteps.findIndex(s => s.id === newStep.id);
+            let updatedSteps = [...baseSteps];
+
             if (index > -1) {
-              const updatedSteps = [...loopExecutionSteps];
               updatedSteps[index] = newStep;
-              loopExecutionSteps = updatedSteps;
             } else {
-              loopExecutionSteps = [...loopExecutionSteps, newStep];
+              updatedSteps.push(newStep);
             }
+
+            loopExecutionSteps = updatedSteps; // Sync local tracker
 
             get().updateMessageContent(
               sessionId,
@@ -1010,7 +1311,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             set(state => ({
               sessions: state.sessions.map(s => s.id === sessionId ? {
                 ...s,
-                messages: s.messages.map(m => m.id === currentAssistantMsgId ? { ...m, executionSteps: loopExecutionSteps } : m)
+                messages: s.messages.map(m => m.id === currentAssistantMsgId ? { ...m, executionSteps: updatedSteps } : m)
               } : s)
             }));
           };
@@ -1019,6 +1320,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
           while (loopCount < MAX_LOOP_COUNT) {
             loopCount++;
             console.log(`[AgentLoop] Turn ${loopCount}/${MAX_LOOP_COUNT}`);
+
+            // Steerable Agent Loop: Intervention
+            const pending = get().getSession(sessionId)?.pendingIntervention;
+            if (pending) {
+              console.log('[AgentLoop] Injecting User Intervention:', pending);
+              currentMessages.push({ role: 'system' as any, content: `[IMMEDIATE USER INTERVENTION]: ${pending}` });
+              get().setPendingIntervention(sessionId, undefined);
+            }
+
 
             // 4. Get Enabled Skills
             const availableSkills = skillRegistry.getEnabledSkills();
@@ -1035,7 +1345,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             let turnThoughtSignature = '';
 
             // 🧠 StreamParser for incremental parsing
-            const parser = new StreamParser();
+            const parser = new StreamParser(provider.type as any);
             let planParsed = false;
 
             // 🔑 关键修复 2: 分离并增加限流间隔 (Fix UI Freeze)
@@ -1082,16 +1392,26 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                 if (parseResult.toolCalls) {
                   if (!toolCalls) toolCalls = [];
-                  // Dedup logic (simple id check)
+                  // 🛡️ 幂等性更新：确保相同 ID 的工具调用仅保留最新版本，不重复累加
                   parseResult.toolCalls.forEach(tc => {
-                    if (!toolCalls!.find(existing => existing.id === tc.id)) {
+                    const idx = toolCalls!.findIndex(existing => existing.id === tc.id);
+                    if (idx > -1) {
+                      toolCalls![idx] = tc;
+                    } else {
                       toolCalls!.push(tc);
                     }
                   });
                 }
                 if (token.toolCalls) {
                   if (!toolCalls) toolCalls = [];
-                  toolCalls.push(...token.toolCalls);
+                  token.toolCalls.forEach(tc => {
+                    const idx = toolCalls!.findIndex(existing => existing.id === tc.id);
+                    if (idx > -1) {
+                      toolCalls![idx] = tc;
+                    } else {
+                      toolCalls!.push(tc);
+                    }
+                  });
                 }
 
                 // 5.2 Handle Plan (Once)
@@ -1105,20 +1425,52 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   }));
 
                   if (steps.length > 0) {
-                    // Create Active Task
+                    // Create Active Task (Session Level - Keep for compatibility)
                     const session = get().getSession(sessionId);
+                    const newActiveTask: TaskState = {
+                      title: 'Plan (Auto-Generated)',
+                      status: 'in-progress',
+                      progress: 0,
+                      steps: steps as any,
+                      createdAt: Date.now(),
+                      updatedAt: Date.now()
+                    };
+
                     if (session && !session.activeTask) {
                       get().updateSession(sessionId, {
-                        activeTask: {
-                          title: 'Plan (Auto-Generated)',
-                          status: 'in-progress',
-                          progress: 0,
-                          steps: steps as any,
-                          createdAt: Date.now(),
-                          updatedAt: Date.now()
-                        }
+                        activeTask: newActiveTask
                       });
                     }
+
+                    // ✅ Sync to Message Level immediately
+                    get().updateMessageContent(
+                      sessionId,
+                      currentAssistantMsgId,
+                      accumulatedContent,
+                      undefined,
+                      undefined,
+                      undefined,
+                      undefined,
+                      false,
+                      undefined,
+                      undefined,
+                      newActiveTask // Pass planning task
+                    );
+
+                    // ✅ Sync to Message Level immediately
+                    get().updateMessageContent(
+                      sessionId,
+                      currentAssistantMsgId,
+                      accumulatedContent,
+                      undefined,
+                      undefined,
+                      undefined,
+                      undefined,
+                      false,
+                      undefined,
+                      undefined,
+                      newActiveTask // Pass planning task
+                    );
 
                     // Update Timeline
                     steps.forEach((step: any, index: number) => {
@@ -1447,76 +1799,82 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               // BUT: AccumulatedContent logic in onToken: accumulatedContent += parseResult.content (which IS parsed/clean).
               // So we don't need to strip <plan> here.
 
-              // 2. Add to History
-              console.log(`[AgentLoop] End of Turn ${loopCount} - turnThoughtSignature:`, turnThoughtSignature);
-              currentMessages.push({
-                role: 'assistant',
-                content: turnContent || '', // parser content is clean
-                reasoning: reasoningFromThisTurn,
-                thought_signature: turnThoughtSignature,
-                tool_calls: toolCalls
-              } as any);
+              // 2. 历史上下文同步已由后续的动态重组逻辑（1872-1890行）处理
+              // 不再在此处 push，以防止重复消息导致 API 错误
+              console.log(`[AgentLoop] End of Turn ${loopCount} - Tools detected:`, toolCalls.length);
 
-              // Execute
-              for (const tc of toolCalls) {
-                if (!tc) continue;
-                const tcName = (tc as any).name || (tc as any).function?.name;
-                if (!tcName) continue;
+              // 🔑 改进终止条件：检测manage_task complete作为任务完成信号
+              const isOnlyCompleteTask = toolCalls.length === 1 &&
+                toolCalls[0].name === 'manage_task' &&
+                (toolCalls[0].arguments as any)?.action === 'complete';
 
-                const skill = skillRegistry.getSkill(tcName);
-                const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-
-                // 🛡️ 安全解析参数：兼容 OpenAI 与 扁平模式
-                const tcArgs = (tc as any).arguments || (tc as any).function?.arguments || {};
-                const parsedArgs = typeof tcArgs === 'string' ? JSON.parse(tcArgs) : tcArgs;
-
-                // 🛡️ 应用全局参数展平 (Auto-Flattening)
-                let finalArgs = parsedArgs;
-                if (parsedArgs && (parsedArgs.parameters || parsedArgs.arguments)) {
-                  const target = parsedArgs.parameters || parsedArgs.arguments;
-                  if (typeof target === 'string') {
-                    try {
-                      finalArgs = JSON.parse(target);
-                    } catch (e) {
-                      console.warn('[ChatStore] Failed to unwrap nested string params:', e);
-                    }
-                  } else if (typeof target === 'object') {
-                    finalArgs = target;
-                  }
-                }
-
-                updateSteps({ id: stepId, type: 'tool_call', toolName: tcName, toolArgs: finalArgs, timestamp: Date.now() });
-
-                let result: ToolResult;
-                try {
-                  if (skill) {
-                    result = await skill.execute(finalArgs, { sessionId, agentId: agent.id });
-                  } else {
-                    result = { id: (tc as any).id, content: `Error: Skill ${tcName} not found`, status: 'error' };
-                  }
-                } catch (e: any) {
-                  result = { id: (tc as any).id, content: `Error: ${e.message}`, status: 'error' };
-                }
-
-                updateSteps({
-                  id: `res_${stepId}`,
-                  type: result.status === 'success' ? 'tool_result' : 'error',
-                  toolName: tc.name,
-                  content: result.content,
-                  data: result.data,
-                  timestamp: Date.now()
-                });
-
-                currentMessages.push({
-                  role: 'tool',
-                  tool_call_id: tc.id,
-                  content: result.content,
-                  name: tc.name,
-                  thought_signature: turnThoughtSignature
-                } as any);
+              if (isOnlyCompleteTask) {
+                console.log('[AgentLoop] Task completed (manage_task complete detected). Executing and stopping.');
+                // 执行complete调用以更新任务状态，然后立即退出
+                await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
+                break; // 任务完成，退出循环
               }
 
-              // 🔑 CRITICAL: Save tool_calls and thought_signature to the assistant message in store
+              // Execute
+              // Steerable Agent Loop: Check Approval
+              const executionMode = session.executionMode || 'auto';
+              let shouldPause = false;
+              if (executionMode === 'manual') shouldPause = true;
+              else if (executionMode === 'semi') {
+                // Check high risk
+                if (toolCalls.some(tc => {
+                  const name = (tc as any).name || (tc as any).function?.name || '';
+                  return ['write_to_file', 'run_command', 'replace_file_content', 'multi_replace_file_content'].some(risk => name.includes(risk));
+                })) shouldPause = true;
+              }
+
+              if (shouldPause) {
+                console.log('[AgentLoop] Pausing for approval in mode:', executionMode);
+                const currentSession = get().getSession(sessionId);
+
+                // 🔑 协作反馈优化：如果 content 为空（模型只调用了工具），注入占位提示语
+                // 以便在 ChatBubble 中看起来更连贯
+                if (!accumulatedContent.trim()) {
+                  accumulatedContent = "I've planned some actions that require your approval before I proceed.";
+                  get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent);
+                }
+
+                // Save request
+                get().setApprovalRequest(sessionId, {
+                  toolName: toolCalls.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
+                  args: toolCalls.map(tc => (tc as any).arguments || (tc as any).function?.arguments),
+                  reason: `Action requires approval in ${executionMode} mode.`
+                });
+                get().setLoopStatus(sessionId, 'waiting_for_approval');
+                // Add intervention required step to timeline
+                const interventionStep: any = {
+                  id: `int_${Date.now()}`,
+                  type: 'intervention_required',
+                  toolName: toolCalls.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
+                  timestamp: Date.now()
+                };
+
+                // Save results to store but DO NOT execute
+                set(state => ({
+                  sessions: state.sessions.map(s => s.id === sessionId ? {
+                    ...s,
+                    messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
+                      ...m,
+                      content: accumulatedContent,
+                      tool_calls: toolCalls,
+                      thought_signature: turnThoughtSignature || m.thought_signature,
+                      executionSteps: [...(m.executionSteps || []), interventionStep]
+                    } : m)
+                  } : s)
+                }));
+                return; // Break loop and function
+              }
+
+              //  Proceed to Execute
+              await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
+
+              // 🔑 时序修复：先保存 tool_calls 到 Session，再重新拼装历史
+              // 这样拼装时就能获取到完整的数据
               set(state => ({
                 sessions: state.sessions.map(s => s.id === sessionId ? {
                   ...s,
@@ -1528,7 +1886,39 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 } : s)
               }));
 
+              // 🔑 核心修复：重构历史上下文同步，防止重复追加导致 400 错误
+              // 基于已保存 tool_calls 的 Session 状态重新生成 currentMessages
+              const latestSession = get().getSession(sessionId);
+              if (latestSession) {
+                // 1. 保留最初的 System Prompt 和 RAG Context
+                const baseHistory = [...contextMsgs];
+                // 2. 找到当前处理的 Assistant 消息及其之后的所有新消息（即 Assistant + Tool 结果）
+                const assIdx = latestSession.messages.findIndex(m => m.id === currentAssistantMsgId);
+                if (assIdx > -1) {
+                  const newSegment = latestSession.messages.slice(assIdx).map((m, idx) => {
+                    let cleanedContent = m.content;
+
+                    // 🔑 使用StreamParser清理Provider特定的XML/标签
+                    if (idx === 0 && m.role === 'assistant') {
+                      cleanedContent = parser.getCleanContent(accumulatedContent);
+                    }
+
+                    return {
+                      role: m.role,
+                      content: cleanedContent,
+                      tool_calls: (m as any).tool_calls,
+                      tool_call_id: (m as any).tool_call_id,
+                      name: (m as any).name || (m as any).tool_name,
+                      reasoning: (m as any).reasoning || (m as any).reasoning_content,
+                      thought_signature: (m as any).thought_signature
+                    };
+                  });
+                  currentMessages = [...baseHistory, ...newSegment];
+                }
+              }
+
               accumulatedContent += '\n\n';
+
             } else {
               console.log('[AgentLoop] Final answer received. Stopping.');
               break; // Stop loop directly
@@ -1902,6 +2292,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 status: 'streaming', // Set generic status
                 tokens: undefined, // Clear token stats
                 executionSteps: undefined, // ✅ Reset tool execution timeline
+                planningTask: undefined, // ✅ Reset task state
               };
               return { ...s, messages: truncatedMessages };
             }
@@ -2034,6 +2425,26 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
           // 6. Context Construction
           const activeWindowSize = agent.ragConfig?.contextWindow || 10;
           let finalSystemPrompt = agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
+
+          // 🆕 Task State Injection: Provide current task status to the model
+          const currentSessionForTask = get().getSession(sessionId);
+          if (currentSessionForTask?.activeTask) {
+            const task = currentSessionForTask.activeTask;
+            const formattedSteps = task.steps.map((s, idx) =>
+              `${idx + 1}. [${s.status.toUpperCase()}] ${s.title}${s.description ? ` (${s.description})` : ''}`
+            ).join('\n');
+
+            const taskContext = `\n\n[CURRENT TASK STATUS]
+Title: ${task.title}
+Status: ${task.status}
+Progress: ${task.progress}%
+Steps:
+${formattedSteps}
+
+IMPORTANT: You are currently working on this task. Use 'manage_task' to update the status of steps as you complete them.`;
+            finalSystemPrompt += taskContext;
+          }
+
           if (ragContext) finalSystemPrompt += `\n\n${ragContext}`;
 
           let contextMsgs: any[] = [];
@@ -2058,13 +2469,65 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             return parts;
           };
 
-          const historyMsgs = session.messages.slice(0, msgIndex);
-          const history = await Promise.all(
-            historyMsgs.slice(-activeWindowSize).map(async (m) => ({
-              role: m.role,
-              content: await formatContent(m.content, m.images),
-            }))
-          );
+          // Sanitized History Generation matches generateMessage logic
+          const history = await (async () => {
+            const historyMsgs = session.messages.slice(0, msgIndex).slice(-activeWindowSize);
+            const sanitized: any[] = [];
+
+            for (let i = 0; i < historyMsgs.length; i++) {
+              const msg = historyMsgs[i];
+              if (msg.role === 'system') continue;
+
+              const apiMsg: any = {
+                role: msg.role,
+                content: await formatContent(msg.content, msg.images),
+                name: msg.name,
+                reasoning: msg.reasoning,
+                thought_signature: msg.thought_signature,
+              };
+
+              // Sanitize Tool Calls
+              if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+                // Rule 1: Missing thought_signature on Thinking Model -> Strip Tool Calls (Legacy Fallback)
+                // (Pragmatic fix: if we don't have it, we can't send it, so convert to text-only)
+                if (!msg.thought_signature && ((modelConfig as any)?.capabilities?.thinking || (get().activeRequests[sessionId] as any)?.model?.includes('thinking'))) {
+                  console.warn('[Regenerate] Stripping legacy tool calls due to missing thought_signature');
+                  apiMsg.tool_calls = undefined;
+                } else {
+                  // Rule 2: Hanging Tool Calls (DeepSeek/Strict)
+                  const toolCallIds = new Set(msg.tool_calls.map((tc: any) => tc.id));
+                  const answeredIds = new Set<string>();
+                  for (let j = i + 1; j < historyMsgs.length; j++) {
+                    const ahead = historyMsgs[j];
+                    if (ahead.role === 'tool' && ahead.tool_call_id && toolCallIds.has(ahead.tool_call_id)) {
+                      answeredIds.add(ahead.tool_call_id);
+                    }
+                    if (ahead.role === 'user' || (ahead.role === 'assistant' && ahead.tool_calls)) break;
+                  }
+
+                  if (answeredIds.size > 0 && answeredIds.size === toolCallIds.size) {
+                    apiMsg.tool_calls = msg.tool_calls;
+                  } else {
+                    apiMsg.tool_calls = undefined; // Strip incomplete
+                  }
+                }
+              }
+
+              // Sanitize Tool Results
+              if (msg.role === 'tool') {
+                const hasAssistant = sanitized.some(m => m.role === 'assistant' && m.tool_calls?.some((tc: any) => tc.id === msg.tool_call_id));
+                if (hasAssistant) {
+                  apiMsg.tool_call_id = msg.tool_call_id;
+                  apiMsg.name = msg.name;
+                } else {
+                  continue; // Skip orphan
+                }
+              }
+
+              sanitized.push(apiMsg);
+            }
+            return sanitized;
+          })();
 
           contextMsgs = [...contextMsgs, ...history] as any;
 
@@ -2092,6 +2555,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             let turnContent = '';
             let toolCalls: any[] | undefined;
             let reasoningFromThisTurn = '';
+            let turnThoughtSignature: string | undefined;
 
             await client.streamChat(
               ContextManager.trimContext(currentMessages as any, activeWindowSize),
@@ -2100,6 +2564,10 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 if (!currentState.activeRequests[sessionId]) return;
 
                 if (token.usage) accumulatedUsage = token.usage;
+
+                if (token.thought_signature) {
+                  turnThoughtSignature = token.thought_signature;
+                }
 
                 if (token.content) {
                   turnContent += token.content;
@@ -2135,7 +2603,8 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   accumulatedCitations,
                   ragReferences,
                   false,
-                  undefined
+                  undefined,
+                  turnThoughtSignature
                 );
               },
               (error) => console.warn('Regenerate error', error),
@@ -2145,7 +2614,65 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             if (!toolCalls || toolCalls.length === 0) break;
 
             // Handle Tool Calls
-            currentMessages.push({ role: 'assistant', content: turnContent, tool_calls: toolCalls } as any);
+            // Steerable Agent Loop: Check Approval
+            const executionMode = session.executionMode || 'auto';
+            let shouldPause = false;
+            if (executionMode === 'manual') shouldPause = true;
+            else if (executionMode === 'semi') {
+              // Check high risk
+              if (toolCalls.some(tc => {
+                const name = (tc as any).name || (tc as any).function?.name || '';
+                return ['write_to_file', 'run_command', 'replace_file_content', 'multi_replace_file_content'].some(risk => name.includes(risk));
+              })) shouldPause = true;
+            }
+
+            if (shouldPause) {
+              console.log('[AgentLoop] Regenerate: Pausing for approval in mode:', executionMode);
+
+              // 🔑 Feedback Injection: If content is empty while pausing, inject a friendly message
+              if (!accumulatedContent.trim()) {
+                accumulatedContent = "I've planned some actions that require your approval before I proceed.";
+                get().updateMessageContent(sessionId, messageId, accumulatedContent);
+              }
+
+              // Save request
+              get().setApprovalRequest(sessionId, {
+                toolName: toolCalls.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
+                args: toolCalls.map(tc => (tc as any).arguments || (tc as any).function?.arguments),
+                reason: `Action requires approval in ${executionMode} mode.`
+              });
+              get().setLoopStatus(sessionId, 'waiting_for_approval');
+
+              // Add intervention required step to timeline
+              const interventionStep: any = {
+                id: `int_${Date.now()}`,
+                type: 'intervention_required',
+                toolName: toolCalls.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
+                timestamp: Date.now()
+              };
+
+              // Save results to message but break loop
+              set(state => ({
+                sessions: state.sessions.map(s => s.id === sessionId ? {
+                  ...s,
+                  messages: s.messages.map(m => m.id === messageId ? {
+                    ...m,
+                    content: accumulatedContent,
+                    tool_calls: toolCalls,
+                    executionSteps: [...(m.executionSteps || []), interventionStep]
+                  } : m)
+                } : s)
+              }));
+              return;
+            }
+
+            currentMessages.push({
+              role: 'assistant',
+              content: turnContent, // Keep raw content (StreamParser handles cleaning for display, but here we might need consistent behavior)
+              tool_calls: toolCalls,
+              reasoning: reasoningFromThisTurn,
+              thought_signature: turnThoughtSignature
+            } as any);
 
             for (const tool of toolCalls) {
               if (!tool) continue; // 🛡️ CRITICAL: Prevent crash if GLM outputs a null tool item

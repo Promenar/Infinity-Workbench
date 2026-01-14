@@ -62,6 +62,7 @@ interface ChatInputProps {
     last?: TokenUsage;
   };
   onTokenPress?: () => void;
+  isInterventionMode?: boolean;
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -77,6 +78,7 @@ export function ChatInput({
   onModelPress,
   tokenUsage,
   onTokenPress,
+  isInterventionMode,
 }: ChatInputProps) {
   const { t } = useI18n();
   const { isDark, colors } = useTheme();
@@ -438,12 +440,19 @@ export function ChatInput({
               </ScrollView>
             )}
             <View style={styles.inputWrapper}>
+              {/* The line `onSendMessage={(content, options) => {` was removed as it was syntactically incorrect here. */}
               <TextInput
                 style={[
                   styles.input,
                   { color: isDark ? '#fff' : '#000', backgroundColor: 'transparent' },
                 ]}
-                placeholder={selectedImages.length > 0 ? 'Add a caption...' : 'Message...'}
+                placeholder={
+                  selectedImages.length > 0
+                    ? 'Add a caption...'
+                    : isInterventionMode
+                      ? 'Steer the agent...'
+                      : 'Message...'
+                }
                 placeholderTextColor="#94a3b8"
                 underlineColorAndroid="transparent"
                 multiline
@@ -486,7 +495,15 @@ export function ChatInput({
                 styles.sendButton,
                 {
                   backgroundColor:
-                    text.trim() || selectedImages.length > 0 || loading ? (agentColor === '#6366f1' ? colors[500] : agentColor) : (isDark ? '#3f3f46' : '#cbd5e1'),
+                    text.trim() || selectedImages.length > 0 || loading
+                      ? isInterventionMode
+                        ? '#f59e0b' // Amber for intervention
+                        : agentColor === '#6366f1'
+                          ? colors[500]
+                          : agentColor
+                      : isDark
+                        ? '#3f3f46'
+                        : '#cbd5e1',
                   opacity: text.trim() || selectedImages.length > 0 || loading ? 1 : 0.4,
                 },
               ]}

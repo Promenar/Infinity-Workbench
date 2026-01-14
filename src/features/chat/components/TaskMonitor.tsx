@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Text, TouchableOpacity, LayoutAnimation, Platform, UIManager, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ChevronDown, ChevronUp, Circle, CheckCircle2, Loader2, XCircle, SkipForward, X } from 'lucide-react-native';
 import Animated, { FadeInDown, Layout, FadeIn } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useChatStore } from '../../../store/chat-store';
-import { TaskStep } from '../../../types/chat';
-import { Colors } from '../../../theme/colors';
+import { TaskStep, TaskState } from '../../../types/chat';
 
 // Enable layout animation on Android
 if (Platform.OS === 'android') {
@@ -18,20 +17,18 @@ if (Platform.OS === 'android') {
 
 interface RequestProps {
     sessionId: string;
-    headerHeight: number;
+    containerStyle?: ViewStyle;
+    task?: TaskState; // ✅ Added optional task prop
 }
 
-export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
+export const TaskMonitor = ({ sessionId, containerStyle, task }: RequestProps) => {
     const { isDark, colors } = useTheme();
     const dismissActiveTask = useChatStore(s => s.dismissActiveTask);
     const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
-    const activeTask = session?.activeTask;
+    const activeTask = task || session?.activeTask; // ✅ Prioritize passed task
 
     const [expanded, setExpanded] = useState(false);
 
-    // If no active task or task is completed for a long time (?) - actually, persistent means always show if exists
-    // But maybe hide if status is 'completed' and user collapses it?
-    // For now, simple logic: show if activeTask exists.
     if (!activeTask) return null;
 
     const toggleExpand = () => {
@@ -48,33 +45,36 @@ export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
 
     const getStatusIcon = (status: TaskStep['status']) => {
         switch (status) {
-            case 'completed': return <CheckCircle2 size={15} color="#22c55e" />; // green-500
+            case 'completed': return <CheckCircle2 size={15} color="#22c55e" />;
             case 'in-progress': return <Loader2 size={15} color={colors[500]} strokeWidth={3} className="animate-spin" />;
-            case 'failed': return <XCircle size={15} color="#ef4444" />; // red-500
-            case 'skipped': return <SkipForward size={15} color="#fbbf24" />; // amber-400
-            default: return <Circle size={15} color={isDark ? '#52525b' : '#d4d4d8'} />; // zinc-600/300
+            case 'failed': return <XCircle size={15} color="#ef4444" />;
+            case 'skipped': return <SkipForward size={15} color="#fbbf24" />;
+            default: return <Circle size={15} color={isDark ? '#52525b' : '#d4d4d8'} />;
         }
     };
 
-    const completedSteps = activeTask.steps.filter(s => s.status === 'completed').length;
+    const getStatusTextClasses = (status: TaskStep['status']) => {
+        switch (status) {
+            case 'completed': return 'text-zinc-500 dark:text-zinc-400 font-medium';
+            case 'in-progress': return 'text-primary-500 font-medium';
+            default: return 'text-zinc-700 dark:text-zinc-300';
+        }
+    };
+
     const currentStepIndex = activeTask.steps.findIndex(s => s.status === 'in-progress');
 
-    // 🔑 修正显示索引逻辑
     let displayStepIndex = 0;
     if (activeTask.status === 'completed') {
-        displayStepIndex = activeTask.steps.length - 1; // 已完成：锁定最后一个
+        displayStepIndex = activeTask.steps.length - 1;
     } else if (currentStepIndex !== -1) {
-        displayStepIndex = currentStepIndex; // 进行中：指向当前
+        displayStepIndex = currentStepIndex;
     } else {
-        // 尚未开始或已结算，找到第一个未完成的或回退到已完成最后一个
         displayStepIndex = activeTask.steps.findIndex(s => s.status !== 'completed');
         if (displayStepIndex === -1) displayStepIndex = activeTask.steps.length - 1;
     }
 
     const currentStep = activeTask.steps[displayStepIndex] || activeTask.steps[0];
 
-    // Progress Ring Logic (simplified as text for now, maybe ring later)
-    // 🔑 修正进度百分比显示：如果是 completed 则强制 100%
     const progressText = activeTask.status === 'completed' ? '100%' : `${Math.round(activeTask.progress)}%`;
     const stepCountText = activeTask.status === 'completed'
         ? `${activeTask.steps.length}/${activeTask.steps.length}`
@@ -82,42 +82,41 @@ export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
 
     return (
         <View
-            style={{
-                position: 'absolute',
-                top: headerHeight,
-                left: 0,
-                right: 0,
-                zIndex: 100,
-            }}
-            className="shadow-sm"
+            style={[
+                {
+                    marginVertical: 4,
+                },
+                containerStyle
+            ]}
         >
             <BlurView
-                intensity={isDark ? 80 : 95}
+                intensity={isDark ? 30 : 50}
                 tint={isDark ? 'dark' : 'light'}
-                className="overflow-hidden border-b-[0.5px]"
+                className="overflow-hidden"
                 style={{
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-                    backgroundColor: isDark ? 'rgba(21, 23, 38, 0.7)' : 'rgba(255, 255, 255, 0.7)'
+                    backgroundColor: isDark ? 'rgba(21, 23, 38, 0.4)' : 'rgba(255, 255, 255, 0.4)',
+                    borderTopWidth: 0.5,
+                    borderBottomWidth: 0.5,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                 }}
             >
                 <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={toggleExpand}
-                    className="px-4 py-3"
+                    className="pl-8 pr-4 py-4"
                 >
                     {/* Header Row: Title + Progress + Chevron */}
                     <View className="flex-row items-center justify-between">
                         <View className="flex-1 flex-row items-center">
                             {/* Mini Status Indicator */}
-                            <View className={`w-1.5 h-1.5 rounded-full mr-2 ${activeTask.status === 'in-progress' ? 'bg-primary-500 animate-pulse' :
+                            <View className={`w-1.5 h-1.5 rounded-full mr-3 ${activeTask.status === 'in-progress' ? 'bg-primary-500 animate-pulse' :
                                 activeTask.status === 'completed' ? 'bg-green-500' : 'bg-zinc-400'
                                 }`} />
 
-                            <Text numberOfLines={1} className="font-semibold text-[13px] text-zinc-900 dark:text-zinc-100 flex-1 mr-1">
+                            <Text numberOfLines={1} className="font-bold text-[12px] text-zinc-900 dark:text-zinc-100 flex-1 mr-1 uppercase tracking-tight">
                                 {activeTask.title}
                             </Text>
 
-                            {/* 🆕 Completion Checkmark */}
                             {activeTask.status === 'completed' && (
                                 <View className="mr-1">
                                     <CheckCircle2 size={13} color="#22c55e" strokeWidth={3} />
@@ -125,8 +124,8 @@ export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
                             )}
 
                             {/* Micro Progress Pill */}
-                            <View className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded flex-row items-center ml-1">
-                                <Text className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+                            <View className="bg-zinc-200/50 dark:bg-white/10 px-2 py-0.5 rounded flex-row items-center ml-1">
+                                <Text className="text-[9px] font-bold text-zinc-600 dark:text-zinc-400">
                                     {stepCountText} • {progressText}
                                 </Text>
                             </View>
@@ -136,13 +135,13 @@ export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
                             <TouchableOpacity
                                 onPress={handleDismiss}
                                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                className="opacity-40 active:opacity-100"
+                                className="opacity-30 active:opacity-100"
                             >
-                                <X size={16} color={isDark ? '#a1a1aa' : '#71717a'} />
+                                <X size={14} color={isDark ? '#fff' : '#000'} />
                             </TouchableOpacity>
-                            <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                            <View style={{ width: 1, height: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
                             <View>
-                                {expanded ? <ChevronUp size={16} color={isDark ? '#a1a1aa' : '#71717a'} /> : <ChevronDown size={16} color={isDark ? '#a1a1aa' : '#71717a'} />}
+                                {expanded ? <ChevronUp size={14} color={isDark ? '#aaa' : '#666'} /> : <ChevronDown size={14} color={isDark ? '#aaa' : '#666'} />}
                             </View>
                         </View>
                     </View>
@@ -160,10 +159,7 @@ export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
                                         {getStatusIcon(step.status)}
                                     </View>
                                     <View className="flex-1">
-                                        <Text className={`text-[13px] leading-5 ${step.status === 'completed' ? 'text-zinc-500 dark:text-zinc-400 font-medium' :
-                                            step.status === 'in-progress' ? 'text-primary-500 font-medium' :
-                                                'text-zinc-700 dark:text-zinc-300'
-                                            }`}>
+                                        <Text className={`text-[13px] leading-5 ${getStatusTextClasses(step.status)}`}>
                                             {step.title}
                                         </Text>
                                         {step.description && (
@@ -189,6 +185,6 @@ export const TaskMonitor = ({ sessionId, headerHeight }: RequestProps) => {
 
                 </TouchableOpacity>
             </BlurView>
-        </View>
+        </View >
     );
 };

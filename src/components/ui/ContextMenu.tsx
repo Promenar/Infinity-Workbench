@@ -75,7 +75,7 @@ export function ContextMenu({ children, items, triggerOnPress = false }: Context
     if (posX + menuWidth > SCREEN_WIDTH - 20) posX = SCREEN_WIDTH - menuWidth - 20;
 
     // 如果底部放不下，则在上方弹出
-    if (posY + menuHeight > SCREEN_HEIGHT - 60) {
+    if (posY + menuHeight > SCREEN_HEIGHT - 80) { // 留出底部 TabBar 的安全距离
       if (targetHeight === 0) {
         // 触摸点触发：显示在手指上方
         posY = pageY - menuHeight - 20;
@@ -83,6 +83,11 @@ export function ContextMenu({ children, items, triggerOnPress = false }: Context
         // 组件触发：显示在组件上方
         posY = pageY - menuHeight;
       }
+    }
+
+    // 🛡️ 顶部边界检查：防止在系统状态栏上方溢出
+    if (posY < 60) {
+      posY = 60;
     }
 
     setMenuPos({ x: posX, y: posY, width: menuWidth, height: menuHeight });

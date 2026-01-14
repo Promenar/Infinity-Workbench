@@ -1,10 +1,25 @@
-
 import React, { useState } from 'react';
-import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking } from 'react-native';
-import { ScrollView } from 'react-native-gesture-handler'; // Correct import for nesting
-import Animated, { FadeInUp, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
+import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
+import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { Typography } from '../ui/Typography';
-import { ChevronDown, ChevronRight, Brain, Globe, Database, Image as ImageIcon, Terminal, Share2, X, AlertCircle, ListTodo } from 'lucide-react-native';
+import {
+    ChevronDown,
+    ChevronRight,
+    Brain,
+    Globe,
+    Database,
+    Image as ImageIcon,
+    Terminal,
+    Share2,
+    X,
+    AlertCircle,
+    ListTodo,
+    Check,
+    Send,
+    User,
+    Hand
+} from 'lucide-react-native';
 import clsx from 'clsx';
 import * as Sharing from 'expo-sharing';
 import ImageView from 'react-native-image-viewing';
@@ -13,17 +28,21 @@ import { ExecutionStep } from '../../types/skills';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
 import { RagReferencesList } from '../../features/chat/components/RagReferences';
-
+import { useChatStore } from '../../store/chat-store';
+import * as Haptics from '../../lib/haptics';
 
 interface Props {
     steps: ExecutionStep[];
     isMessageGenerating?: boolean;
+    sessionId?: string;
 }
 
 const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
     if (type === 'thinking') return <Brain size={16} color="#A0A0A0" />;
     if (type === 'error') return <AlertCircle size={16} color="#FF6B6B" />;
     if (type === 'plan_item') return <ListTodo size={16} color="#A0A0A0" />;
+    if (type === 'intervention_required') return <Hand size={16} color="#f59e0b" />;
+    if (type === 'intervention_result') return <User size={16} color="#10b981" />;
 
     // Tool Icons
     if (toolName === 'search_internet') return <Globe size={16} color="#4F8EF7" />;
@@ -33,7 +52,7 @@ const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
     return <Terminal size={16} color="#A0A0A0" />; // Default tool icon
 };
 
-// Helper component for Search Internet Results
+// ... (SearchResultsList stays the same)
 const SearchResultsList = ({ sources, isDark }: { sources: any[], isDark: boolean }) => {
     if (!sources || sources.length === 0) return null;
     return (
@@ -66,8 +85,85 @@ const SearchResultsList = ({ sources, isDark }: { sources: any[], isDark: boolea
     );
 };
 
-// Memoize TimelineItem to prevent unnecessary re-renders during streaming
-const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: ExecutionStep, isLast: boolean, isMessageGenerating?: boolean }) => {
+const InterventionUI = ({ sessionId, toolName }: { sessionId: string, toolName?: string }) => {
+    const [inputValue, setInputValue] = useState('');
+    const { isDark } = useTheme();
+    const { t } = useI18n();
+
+    const handleApprove = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        useChatStore.getState().resumeGeneration(sessionId, true);
+    };
+
+    const handleReject = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (inputValue.trim()) {
+            useChatStore.getState().resumeGeneration(sessionId, false, inputValue.trim());
+        } else {
+            useChatStore.getState().resumeGeneration(sessionId, false);
+        }
+    };
+
+    const handleIntervene = () => {
+        if (!inputValue.trim()) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        useChatStore.getState().resumeGeneration(sessionId, true, inputValue.trim());
+    };
+
+    return (
+        <Animated.View
+            entering={FadeIn.duration(400)}
+            className="mt-3 p-4 rounded-3xl border border-white/10 overflow-hidden"
+            style={{
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+            }}
+        >
+            <Typography variant="caption" className="mb-3 font-bold opacity-60 uppercase tracking-widest text-[10px]">
+                {t.agent.waitingForApproval}
+            </Typography>
+
+            <View className="flex-row items-center justify-between mb-4">
+                <TouchableOpacity
+                    onPress={handleApprove}
+                    className="flex-1 flex-row items-center justify-center py-2.5 bg-indigo-500/90 rounded-2xl mr-2 shadow-sm"
+                >
+                    <Check size={16} color="#fff" strokeWidth={3} />
+                    <Typography className="ml-2 text-white font-bold text-xs">{t.common.approve}</Typography>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    onPress={handleReject}
+                    className="flex-1 flex-row items-center justify-center py-2.5 bg-zinc-800/80 rounded-2xl border border-white/5"
+                >
+                    <X size={16} color="#fff" />
+                    <Typography className="ml-2 text-white font-bold text-xs">{t.common.reject}</Typography>
+                </TouchableOpacity>
+            </View>
+
+            <View className="flex-row items-center bg-white/5 rounded-2xl border border-white/5 px-3 py-1.5">
+                <TextInput
+                    placeholder={t.agent.manualInterventionHint || "Direct agent..."}
+                    placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
+                    className="flex-1 text-xs py-1"
+                    style={{ color: isDark ? '#fff' : '#000' }}
+                    value={inputValue}
+                    onChangeText={setInputValue}
+                    onSubmitEditing={handleIntervene}
+                    returnKeyType="send"
+                />
+                <TouchableOpacity
+                    onPress={handleIntervene}
+                    disabled={!inputValue.trim()}
+                    className={clsx("p-2 rounded-xl", inputValue.trim() ? "bg-indigo-500" : "bg-white/5")}
+                >
+                    <Send size={14} color="#fff" />
+                </TouchableOpacity>
+            </View>
+        </Animated.View>
+    );
+};
+
+const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }: { step: ExecutionStep, isLast: boolean, isMessageGenerating?: boolean, sessionId?: string }) => {
     const [expanded, setExpanded] = useState(false);
     const [viewerVisible, setViewerVisible] = useState(false);
     const [sharing, setSharing] = useState(false);
@@ -87,10 +183,11 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
             case 'tool_call': return t.skills.timeline.using.replace('{name}', skillName);
             case 'tool_result': return t.skills.timeline.result.replace('{name}', skillName);
             case 'error': return t.skills.timeline.error;
+            case 'intervention_required': return t.agent.interventionRequired || 'Approval Required';
+            case 'intervention_result': return t.agent.interventionTaken || 'Intervention Taken';
         }
     };
 
-    // Auto-collapse thinking steps and results (unless it's an error)
     React.useEffect(() => {
         if (step.type === 'thinking' || step.type === 'tool_result') {
             setExpanded(false);
@@ -102,11 +199,14 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
             return JSON.stringify(step.toolArgs).substring(0, 50) + '...';
         }
 
-        if (step.type === 'plan_item') {
+        if (step.type === 'plan_item' || step.type === 'intervention_result') {
             return step.content || '';
         }
 
-        // Custom preview for tool results
+        if (step.type === 'intervention_required') {
+            return step.toolName ? `Approve ${step.toolName}?` : 'Pending your decision';
+        }
+
         if (step.type === 'tool_result') {
             if (step.toolName === 'query_vector_db' && step.data?.references) {
                 return `${step.data.references.length} result(s)`;
@@ -119,10 +219,8 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
         return (step.content || '').substring(0, 60) + '...';
     };
 
-    // Helper to extract URI from generate_image result
     const getImageUri = () => {
         if (step.toolName === 'generate_image' && step.type === 'tool_result' && step.content) {
-            // Match file:// or data: URIs
             const match = step.content.match(/(file:\/\/\S+|data:image\/\S+;base64,\S+)/);
             return match ? match[1] : null;
         }
@@ -135,8 +233,7 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
         if (!imageUri) return;
         try {
             setSharing(true);
-            const isAvailable = await Sharing.isAvailableAsync();
-            if (isAvailable) {
+            if (await Sharing.isAvailableAsync()) {
                 await Sharing.shareAsync(imageUri, {
                     mimeType: 'image/png',
                     dialogTitle: 'Share or Save generated image',
@@ -149,13 +246,11 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
         }
     };
 
-    // Determine if we have rich content to show
     const isRagResult = step.toolName === 'query_vector_db' && step.type === 'tool_result' && step.data?.references;
     const isSearchResult = step.toolName === 'search_internet' && step.type === 'tool_result' && step.data?.sources;
 
     return (
         <Animated.View layout={Layout.springify()} className="flex-row">
-            {/* ImageViewer Modal */}
             {imageUri && (
                 <ImageView
                     images={[{ uri: imageUri }]}
@@ -165,14 +260,8 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
                     swipeToCloseEnabled={true}
                     doubleTapToZoomEnabled={true}
                     HeaderComponent={({ imageIndex }) => (
-                        <View
-                            className="flex-row justify-end px-4"
-                            style={{ paddingTop: insets.top + 10 }}
-                        >
-                            <TouchableOpacity
-                                onPress={() => setViewerVisible(false)}
-                                className="w-10 h-10 rounded-full bg-black/40 items-center justify-center border border-white/10"
-                            >
+                        <View className="flex-row justify-end px-4" style={{ paddingTop: insets.top + 10 }}>
+                            <TouchableOpacity onPress={() => setViewerVisible(false)} className="w-10 h-10 rounded-full bg-black/40 items-center justify-center border border-white/10">
                                 <X size={20} color="white" />
                             </TouchableOpacity>
                         </View>
@@ -180,26 +269,39 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
                 />
             )}
 
-            {/* Visual Line */}
             <Animated.View layout={Layout.springify()} className="items-center mr-3 w-6">
                 <View className={clsx(
                     "w-6 h-6 rounded-full items-center justify-center border",
-                    step.type === 'error' ? "border-red-500 bg-red-500/20" : "border-white/10 bg-white/5"
+                    step.type === 'error' ? "border-red-500 bg-red-500/20" :
+                        step.type === 'intervention_required' ? "border-amber-500 bg-amber-500/20" :
+                            "border-white/10 bg-white/5"
                 )}>
                     <StepIcon type={step.type} toolName={step.toolName} />
                 </View>
                 {!isLast && <Animated.View layout={Layout.springify()} className="w-[1px] flex-1 my-1" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />}
             </Animated.View>
 
-            {/* Content */}
             <Animated.View layout={Layout.springify()} className="flex-1 pb-4">
                 <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => setExpanded(!expanded)}
-                    className="flex-row items-center justify-between bg-white/5 rounded-lg p-2 border border-white/5"
+                    className={clsx(
+                        "flex-row items-center justify-between rounded-2xl p-2 border",
+                        step.type === 'intervention_required'
+                            ? "bg-amber-500/10 border-amber-500/20"
+                            : "bg-white/5 border-white/5"
+                    )}
                 >
-                    <View className="flex-1 mr-2">
-                        <Typography variant="caption" className="font-bold" style={{ color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)' }}>
+                    <View className="flex-1 mr-2 px-1">
+                        <Typography
+                            variant="caption"
+                            className="font-bold"
+                            style={{
+                                color: step.type === 'intervention_required'
+                                    ? (isDark ? '#fbbf24' : '#d97706')
+                                    : (isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)')
+                            }}
+                        >
                             {getTitle()}
                         </Typography>
                         {!expanded && (
@@ -227,34 +329,19 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
                             </Typography>
                         )}
 
-                        {/* Rich Result Rendering */}
                         {isRagResult ? (
                             <RagReferencesList references={step.data.references} isDark={isDark} />
                         ) : isSearchResult ? (
                             <SearchResultsList sources={step.data.sources} isDark={isDark} />
                         ) : imageUri ? (
                             <View className="mt-2 rounded-lg overflow-hidden border border-white/10 bg-white/5">
-                                <TouchableOpacity
-                                    activeOpacity={0.9}
-                                    onPress={() => setViewerVisible(true)}
-                                >
-                                    <Image
-                                        source={{ uri: imageUri }}
-                                        className="w-full aspect-square"
-                                        resizeMode="cover"
-                                    />
+                                <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerVisible(true)}>
+                                    <Image source={{ uri: imageUri }} className="w-full aspect-square" resizeMode="cover" />
                                 </TouchableOpacity>
                                 <View className="bg-black/50 p-2 flex-row items-center justify-between">
-                                    <Typography variant="caption" className="text-[10px] text-white/50 flex-1 mr-4" numberOfLines={1}>
-                                        {imageUri.split('/').pop()}
-                                    </Typography>
-                                    <View className="flex-row items-center gap-x-3">
+                                    <View className="flex-row items-center gap-x-3 ml-auto">
                                         <TouchableOpacity onPress={handleShare} disabled={sharing}>
-                                            {sharing ? (
-                                                <ActivityIndicator size="small" color="#AAA" />
-                                            ) : (
-                                                <Share2 size={16} color="#AAA" />
-                                            )}
+                                            {sharing ? <ActivityIndicator size="small" color="#AAA" /> : <Share2 size={16} color="#AAA" />}
                                         </TouchableOpacity>
                                     </View>
                                 </View>
@@ -266,39 +353,34 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating }: { step: Ex
                         )}
                     </Animated.View>
                 )}
+
+                {/* Render Intervention UI if this is the active intervention required step */}
+                {step.type === 'intervention_required' && isLast && sessionId && (
+                    <InterventionUI sessionId={sessionId} toolName={step.toolName} />
+                )}
             </Animated.View>
         </Animated.View>
     );
 };
 
-// Optimization: Memoize TimelineItem to only re-render when its specific props change
 const TimelineItem = React.memo(TimelineItemComponent, (prev, next) => {
-    // Re-render if index changes (isLast) or generating status changes
     if (prev.isLast !== next.isLast) return false;
     if (prev.isMessageGenerating !== next.isMessageGenerating) return false;
-
-    // Check step deep equality for crucial fields
     if (prev.step.id !== next.step.id) return false;
     if (prev.step.content !== next.step.content) return false;
     if (prev.step.timestamp !== next.step.timestamp) return false;
-
+    if (prev.sessionId !== next.sessionId) return false;
     return true;
 });
 
-
-// Create Animated component from Gesture Handler's ScrollView for better nesting support
 const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 
-export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating }) => {
+export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
     const scrollViewRef = React.useRef<ScrollView>(null);
-    // Throttle scroll timestamp
     const lastScrollTime = React.useRef(0);
 
-    // Auto-scroll logic with throttling (max once per 500ms)
-    // We check steps.length to ensure we scroll on new items
-    // But we also want to avoid hammering the UI thread
     React.useEffect(() => {
-        if (isMessageGenerating && steps.length > 0) {
+        if ((isMessageGenerating || steps.some(s => s.type === 'intervention_required')) && steps.length > 0) {
             const now = Date.now();
             if (now - lastScrollTime.current > 500) {
                 const timer = setTimeout(() => {
@@ -313,24 +395,79 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
     if (!steps || steps.length === 0) return null;
 
     return (
-        <View className="py-2 my-1 relative" style={{ maxHeight: 260 }}>
-            {/* Main Scroll Content */}
+        <View className="py-2 my-1 relative">
             <GHScrollView
                 ref={scrollViewRef as any}
-                nestedScrollEnabled={false} // Fix: Prevent outer scroll when hitting boundary
+                nestedScrollEnabled={false}
                 showsVerticalScrollIndicator={false}
-                fadingEdgeLength={32} // Fix: Subtle Android native feathering
+                fadingEdgeLength={32}
+                style={{ maxHeight: 280 }}
                 contentContainerStyle={{ paddingVertical: 8, paddingRight: 8 }}
             >
-                {steps.filter(s => s.type !== 'plan_item').map((step, index) => (
+                {steps.filter(s => s.type !== 'plan_item').map((step, index, arr) => (
                     <TimelineItem
                         key={step.id}
                         step={step}
-                        isLast={index === steps.length - 1} // Note: This might be slightly inaccurate if plan items were last, but acceptable
+                        isLast={index === arr.length - 1}
                         isMessageGenerating={isMessageGenerating}
+                        sessionId={sessionId}
                     />
                 ))}
             </GHScrollView>
+
+            {/* 常态化干预输入框：当 Loop 处于活跃状态且这是最后一个消息时渲染 */}
+            <LoopActiveIntervention sessionId={sessionId} />
         </View>
+    );
+};
+
+const LoopActiveIntervention = ({ sessionId }: { sessionId?: string }) => {
+    const { isDark } = useTheme();
+    const { t } = useI18n();
+    const session = useChatStore(s => sessionId ? s.sessions.find(sk => sk.id === sessionId) : null);
+    const loopStatus = session?.loopStatus;
+    const isWaiting = loopStatus === 'waiting_for_approval';
+    const isRunning = loopStatus === 'running';
+
+    // 如果已经在 TimelineItem 中渲染了完整的 InterventionUI (waiting_for_approval 且有 intervention_required step)，
+    // 或者进程已结束，则不在此处重复渲染简单输入框。
+    // 但是用户要求“常态保持”，我们可以始终在底部提供一个简洁的输入区。
+
+    if (!sessionId || (!isRunning && !isWaiting)) return null;
+
+    // 如果是 waiting 状态，TimelineItem 已经处理了带按钮的 UI，所以这里可以返回 null 避免重复
+    // 除非我们想把输入框从 TimelineItem 剥离到全局底部。
+    // 基于目前的视觉结构，保留 TimelineItem 中的审批按钮，但在底部常驻一个输入框。
+
+    // 用户反馈：干预输入框不可见。
+    // 我们进一步放宽显示条件，只要会话存在且状态不是 'success'，就优先显示。
+    // 甚至在 'error' 状态下也保留，以便用户可以尝试通过指令“抢救”或重新触发。
+    if (!sessionId) return null;
+
+    return (
+        <Animated.View
+            entering={FadeIn.duration(400)}
+            className="mt-2 px-1"
+        >
+            <View className="flex-row items-center bg-zinc-100 dark:bg-white/5 rounded-2xl border border-black/5 dark:border-white/5 px-3 py-1.5">
+                <TextInput
+                    placeholder={t.agent.manualInterventionHint || "Direct agent..."}
+                    placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
+                    className="flex-1 text-xs py-1"
+                    style={{ color: isDark ? '#fff' : '#000' }}
+                    onSubmitEditing={(e) => {
+                        const val = e.nativeEvent.text;
+                        if (val.trim()) {
+                            useChatStore.getState().setPendingIntervention(sessionId, val.trim());
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        }
+                    }}
+                    returnKeyType="send"
+                />
+                <View className="p-2 opacity-30">
+                    <Send size={14} color={isDark ? "#fff" : "#000"} />
+                </View>
+            </View>
+        </Animated.View>
     );
 };

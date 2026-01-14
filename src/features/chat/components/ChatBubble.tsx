@@ -58,6 +58,7 @@ import {
   LazySVGRenderer,
 } from '../../../components/chat/MathRenderer';
 import { extractImagesFromMarkdown } from '../utils/markdown-utils';
+import { TaskMonitor } from './TaskMonitor';
 
 import { parseMarkdownContent } from '../../../lib/markdown-parser';
 import { SafeUserImage } from './SafeUserImage';
@@ -90,6 +91,7 @@ import {
 } from 'lucide-react-native';
 import { ActivityIndicator } from 'react-native';
 import { Colors } from '../../../theme/colors';
+import { ApprovalCard } from './ApprovalCard';
 
 interface ChatBubbleProps {
   message: Message;
@@ -497,8 +499,16 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   onLayout, // ✅ 新增：传递布局回调
 }) => {
   const { t } = useI18n();
+
   const { isDark, colors } = useTheme();
   const { processingState, updateProcessingState } = useRagStore();
+  const sessionData = useChatStore(
+    React.useCallback((state) => state.sessions.find((s) => s.id === sessionId), [sessionId]),
+  );
+  const approvalRequest = sessionData?.approvalRequest;
+  const isWaitingForApproval = sessionData?.loopStatus === 'waiting_for_approval';
+  const isIntervened = !!sessionData?.pendingIntervention;
+
   const isUser = message.role === 'user';
   // const { isDark } = useTheme(); // REMOVED to avoid context crash during unmount
 
@@ -820,6 +830,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     [isDark],
   );
 
+  // 🧐 UI 优化：隐藏并彻底不渲染工具消息
+  // 🔑 必须放在所有 Hook 之后以满足 React 渲染准则
+  if (message.role === 'tool') return null;
+
   /**
    * User Message: "Pill" Bubble
    */
@@ -1044,10 +1058,31 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
       )}
 
-      {/* ✅ Agentic Loop Timeline */}
+      {!isUser && (message.planningTask || (isGenerating && sessionData?.activeTask)) && (
+        <TaskMonitor
+          sessionId={sessionId}
+          task={message.planningTask || sessionData?.activeTask}
+          containerStyle={{
+            marginLeft: -15,
+            marginRight: -12, // Exact match with Timeline (-12)
+            marginTop: 2,
+            marginBottom: 4
+          }}
+        />
+      )}
+
+      {/* ✅ Approval Card (Steerable Agent Loop) */}
+      {!isUser && (
+        <ApprovalCard
+          sessionId={sessionId}
+          containerStyle={{ marginTop: 8 }}
+        />
+      )}
+
+      {/* ✅ Agentic Loop Timeline (Aligned with Avatar Center) */}
       {message.executionSteps && message.executionSteps.length > 0 && (
-        <View style={{ marginLeft: 5, marginBottom: 8, flex: 1, width: '100%' }}>
-          <ToolExecutionTimeline steps={message.executionSteps} isMessageGenerating={isGenerating} />
+        <View style={{ marginLeft: 5, marginRight: -12, marginBottom: 4 }}>
+          <ToolExecutionTimeline steps={message.executionSteps} isMessageGenerating={isGenerating} sessionId={sessionId} />
         </View>
       )}
 
@@ -1225,6 +1260,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         />
       </View>
 
+
       <SelectTextModal
         isVisible={isModalVisible}
         content={message.content || ''}
@@ -1275,6 +1311,8 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
 
   // @ts-ignore
   if (prev.message.executionSteps !== next.message.executionSteps) return false;
+  // @ts-ignore
+  if (prev.message.planningTask !== next.message.planningTask) return false;
 
   return true;
 });
