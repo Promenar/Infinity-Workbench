@@ -1301,14 +1301,22 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                       tool_calls: [tc], // 只包含当前tool_call
                     };
 
-                    // 🔑 CRITICAL: DeepSeek Reasoner要求所有assistant消息都必须有reasoning_content字段
-                    // 只有第一个包含实际内容，其他为空字符串
+                    // 🔑 CRITICAL: 字段继承规则
+                    // - thought_signature: 所有assistant都必须继承（VertexAI要求）
+                    // - reasoning_content: 所有assistant都必须有（DeepSeek要求，第一个有内容，其他为空）
+
                     if (isFirstAssistant && tcIdx === 0) {
+                      // 第一个assistant：包含实际reasoning和thought_signature
                       virtualAssistant.reasoning_content = (m as any).reasoning || '';
-                      if ((m as any).thought_signature) virtualAssistant.thought_signature = (m as any).thought_signature;
+                      if ((m as any).thought_signature) {
+                        virtualAssistant.thought_signature = (m as any).thought_signature;
+                      }
                     } else {
-                      // 其他assistant也必须有reasoning_content字段（空字符串）
+                      // 后续assistant：空reasoning，但仍需继承thought_signature
                       virtualAssistant.reasoning_content = '';
+                      if ((m as any).thought_signature) {
+                        virtualAssistant.thought_signature = (m as any).thought_signature;
+                      }
                     }
 
                     virtualSegment.push(virtualAssistant);
