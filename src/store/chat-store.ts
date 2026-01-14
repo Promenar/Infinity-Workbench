@@ -1251,6 +1251,88 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
           // =====================================================================================
           // Phase 4: Agentic Loop Implementation
           // =====================================================================================
+
+          /**
+           * 虚拟拆分Assistant+Tool序列
+           * 
+           * OpenAI API规范要求：每个assistant with tool_calls必须紧接对应的tool messages
+           * UI设计要求：一个assistant气泡包含所有tool_calls
+           * 
+           * 解决方案：存储层保持单assistant（UI友好），API层动态拆分成多个assistant+tool对
+           * 
+           * @param rawSegment - session.messages提取的原始消息（1个assistant + N个tool）
+           * @param parser - StreamParser实例
+           * @param accumulatedContent - 累积的content，用于第一个assistant
+           * @returns 虚拟拆分后的消息数组
+           */
+          const virtualSplitAssistantToolPairs = (
+            rawSegment: any[],
+            parser: any,
+            accumulatedContent: string
+          ): any[] => {
+            const virtualSegment: any[] = [];
+            let isFirstAssistant = true;
+
+            for (const m of rawSegment) {
+              if (m.role === 'assistant') {
+                const toolCalls = (m as any).tool_calls || [];
+
+                if (toolCalls.length === 0) {
+                  // 没有tool_calls，直接添加
+                  const msg: any = {
+                    role: 'assistant',
+                    content: isFirstAssistant ? parser.getCleanContent(accumulatedContent) : m.content,
+                  };
+                  if ((m as any).reasoning) msg.reasoning_content = (m as any).reasoning;
+                  if ((m as any).thought_signature) msg.thought_signature = (m as any).thought_signature;
+                  virtualSegment.push(msg);
+                  isFirstAssistant = false;
+                } else {
+                  // 有tool_calls，拆分成多个assistant+tool对
+                  for (let tcIdx = 0; tcIdx < toolCalls.length; tcIdx++) {
+                    const tc = toolCalls[tcIdx];
+
+                    // ✅ 创建虚拟assistant（只包含单个tool_call）
+                    const virtualAssistant: any = {
+                      role: 'assistant',
+                      content: isFirstAssistant && tcIdx === 0
+                        ? parser.getCleanContent(accumulatedContent)
+                        : '',
+                      tool_calls: [tc], // 只包含当前tool_call
+                    };
+
+                    // 只有第一个assistant包含reasoning和thought_signature
+                    if (isFirstAssistant && tcIdx === 0) {
+                      if ((m as any).reasoning) virtualAssistant.reasoning_content = (m as any).reasoning;
+                      if ((m as any).thought_signature) virtualAssistant.thought_signature = (m as any).thought_signature;
+                    }
+
+                    virtualSegment.push(virtualAssistant);
+
+                    // ✅ 查找对应的tool消息
+                    const toolMsg = rawSegment.find(tm =>
+                      tm.role === 'tool' && (tm as any).tool_call_id === tc.id
+                    );
+
+                    if (toolMsg) {
+                      virtualSegment.push({
+                        role: 'tool',
+                        content: toolMsg.content,
+                        tool_call_id: (toolMsg as any).tool_call_id,
+                        name: (toolMsg as any).name,
+                      });
+                    }
+
+                    if (tcIdx === 0) isFirstAssistant = false;
+                  }
+                }
+              }
+              // tool消息已在上面处理，跳过
+            }
+
+            return virtualSegment;
+          };
+
           const MAX_LOOP_COUNT = useSettingsStore.getState().maxLoopCount || 5;
           let loopCount = 0;
           let currentAssistantMsgId = assistantMsgId; // Track current assistant message
@@ -1342,23 +1424,6 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
           while (loopCount < MAX_LOOP_COUNT) {
             loopCount++;
             console.log(`[AgentLoop] Turn ${loopCount}/${MAX_LOOP_COUNT}`);
-
-            // 🔑 关键修复：为Turn 2+创建新的assistant消息
-            // DeepSeek要求：每个assistant with tool_calls必须紧接对应的tool messages
-            // 不能所有Turn共用一个assistant消息
-            if (loopCount > 1) {
-              const newAssistantMsg: Message = {
-                id: `assistant_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                role: 'assistant',
-                content: '',
-                tokens: { input: 0, output: 0, total: 0 },
-                executionSteps: [],
-                createdAt: Date.now(),
-              };
-              get().addMessage(sessionId, newAssistantMsg);
-              currentAssistantMsgId = newAssistantMsg.id; // 更新当前assistant ID
-              console.log(`[AgentLoop] Created new assistant message for Turn ${loopCount}:`, currentAssistantMsgId);
-            }
 
             // Steerable Agent Loop: Intervention
             const pending = get().getSession(sessionId)?.pendingIntervention;
@@ -1879,53 +1944,31 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   } : s)
                 }));
 
-                // 重新构建currentMessages（包含tool results）
+                // 🔑 关键修复：虚拟拆分assistant+tool序列（符合OpenAI API规范）
                 const latestSession = get().getSession(sessionId);
                 if (latestSession) {
                   const baseHistory = [...contextMsgs];
 
-                  // 🔑 关键修复：找到user消息的位置，而不是第一个assistant消息
-                  // 因为后续可能有多个assistant+tool序列（比如Turn 3的query_vector_db）
-                  // 我们需要包含所有这些消息
                   const userMsgIdx = latestSession.messages.findIndex(m =>
                     m.role === 'user' && m.content === content
                   );
 
                   if (userMsgIdx > -1) {
-                    // 从user消息之后开始提取所有消息（包括多轮assistant+tool）
-                    const newSegment = latestSession.messages.slice(userMsgIdx + 1).map((m, idx) => {
-                      let cleanedContent = m.content;
+                    // 提取user消息之后的所有消息
+                    const rawSegment = latestSession.messages.slice(userMsgIdx + 1);
 
-                      // 只对第一个assistant消息使用parser清理
-                      if (idx === 0 && m.role === 'assistant') {
-                        cleanedContent = parser.getCleanContent(accumulatedContent);
-                      }
+                    // ✅ 应用虚拟拆分逻辑
+                    const virtualSegment = virtualSplitAssistantToolPairs(
+                      rawSegment,
+                      parser,
+                      accumulatedContent
+                    );
 
-                      // 🔑 必须包含所有字段，特别是reasoning（Reasoner要求）
-                      const msg: any = {
-                        role: m.role,
-                        content: cleanedContent,
-                      };
-
-                      // Assistant消息的特殊字段
-                      if (m.role === 'assistant') {
-                        if ((m as any).tool_calls) msg.tool_calls = (m as any).tool_calls;
-                        if ((m as any).reasoning) msg.reasoning_content = (m as any).reasoning; // 🔑 Reasoner要求
-                      }
-
-                      // Tool消息的特殊字段
-                      if (m.role === 'tool') {
-                        if ((m as any).tool_call_id) msg.tool_call_id = (m as any).tool_call_id;
-                        if ((m as any).name) msg.name = (m as any).name;
-                      }
-
-                      return msg;
-                    });
-                    currentMessages = [...baseHistory, ...newSegment];
-                    console.log('[AgentLoop] Rebuilt messages after task create:', {
+                    currentMessages = [...baseHistory, ...virtualSegment];
+                    console.log('[AgentLoop] Rebuilt messages after task create (virtual split):', {
                       total: currentMessages.length,
-                      assistantCount: newSegment.filter(m => m.role === 'assistant').length,
-                      toolCount: newSegment.filter(m => m.role === 'tool').length
+                      virtualAssistantCount: virtualSegment.filter(m => m.role === 'assistant').length,
+                      toolCount: virtualSegment.filter(m => m.role === 'tool').length
                     });
                   }
                 }
@@ -2009,53 +2052,31 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 } : s)
               }));
 
-              // 🔑 核心修复：重构历史上下文同步，防止重复追加导致 400 错误
-              // 基于已保存 tool_calls 的 Session 状态重新生成 currentMessages
+              // 🔑 关键修复：虚拟拆分assistant+tool序列（符合OpenAI API规范）
               const latestSession = get().getSession(sessionId);
               if (latestSession) {
-                // 1. 保留最初的 System Prompt 和 RAG Context
                 const baseHistory = [...contextMsgs];
 
-                // 🔑 关键修复：从user消息开始提取，包含所有assistant+tool序列
-                // 与isTaskCreate分支保持一致
                 const userMsgIdx = latestSession.messages.findIndex(m =>
                   m.role === 'user' && m.content === content
                 );
 
                 if (userMsgIdx > -1) {
-                  const newSegment = latestSession.messages.slice(userMsgIdx + 1).map((m, idx) => {
-                    let cleanedContent = m.content;
+                  // 提取user消息之后的所有消息
+                  const rawSegment = latestSession.messages.slice(userMsgIdx + 1);
 
-                    // 🔑 使用StreamParser清理Provider特定的XML/标签
-                    if (idx === 0 && m.role === 'assistant') {
-                      cleanedContent = parser.getCleanContent(accumulatedContent);
-                    }
+                  // ✅ 应用虚拟拆分逻辑
+                  const virtualSegment = virtualSplitAssistantToolPairs(
+                    rawSegment,
+                    parser,
+                    accumulatedContent
+                  );
 
-                    const msg: any = {
-                      role: m.role,
-                      content: cleanedContent,
-                    };
-
-                    // Assistant消息的特殊字段
-                    if (m.role === 'assistant') {
-                      if ((m as any).tool_calls) msg.tool_calls = (m as any).tool_calls;
-                      if ((m as any).reasoning) msg.reasoning_content = (m as any).reasoning;
-                      if ((m as any).thought_signature) msg.thought_signature = (m as any).thought_signature;
-                    }
-
-                    // Tool消息的特殊字段
-                    if (m.role === 'tool') {
-                      if ((m as any).tool_call_id) msg.tool_call_id = (m as any).tool_call_id;
-                      if ((m as any).name) msg.name = (m as any).name;
-                    }
-
-                    return msg;
-                  });
-                  currentMessages = [...baseHistory, ...newSegment];
-                  console.log('[AgentLoop] Rebuilt messages after tool execution:', {
+                  currentMessages = [...baseHistory, ...virtualSegment];
+                  console.log('[AgentLoop] Rebuilt messages after tool execution (virtual split):', {
                     total: currentMessages.length,
-                    assistantCount: newSegment.filter(m => m.role === 'assistant').length,
-                    toolCount: newSegment.filter(m => m.role === 'tool').length
+                    virtualAssistantCount: virtualSegment.filter(m => m.role === 'assistant').length,
+                    toolCount: virtualSegment.filter(m => m.role === 'tool').length
                   });
                 }
               }
