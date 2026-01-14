@@ -1964,7 +1964,9 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                     messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
                       ...m,
                       tool_calls: toolCalls,
-                      thought_signature: turnThoughtSignature || m.thought_signature
+                      thought_signature: turnThoughtSignature || m.thought_signature,
+                      // 🔑 CRITICAL: 保留reasoning字段，不要覆盖（Turn 1已通过updateMessageContent保存）
+                      reasoning: m.reasoning  // 保留原有reasoning
                     } : m)
                   } : s)
                 }));
