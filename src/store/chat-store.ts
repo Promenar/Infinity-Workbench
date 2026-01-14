@@ -1343,6 +1343,23 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             loopCount++;
             console.log(`[AgentLoop] Turn ${loopCount}/${MAX_LOOP_COUNT}`);
 
+            // 🔑 关键修复：为Turn 2+创建新的assistant消息
+            // DeepSeek要求：每个assistant with tool_calls必须紧接对应的tool messages
+            // 不能所有Turn共用一个assistant消息
+            if (loopCount > 1) {
+              const newAssistantMsg: Message = {
+                id: `assistant_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                role: 'assistant',
+                content: '',
+                tokens: { input: 0, output: 0, total: 0 },
+                executionSteps: [],
+                createdAt: Date.now(),
+              };
+              get().addMessage(sessionId, newAssistantMsg);
+              currentAssistantMsgId = newAssistantMsg.id; // 更新当前assistant ID
+              console.log(`[AgentLoop] Created new assistant message for Turn ${loopCount}:`, currentAssistantMsgId);
+            }
+
             // Steerable Agent Loop: Intervention
             const pending = get().getSession(sessionId)?.pendingIntervention;
             if (pending) {
