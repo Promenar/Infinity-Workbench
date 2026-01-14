@@ -1,5 +1,6 @@
 import { LlmClient } from './types';
 import { OpenAiClient } from './providers/openai';
+import { DeepSeekClient } from './providers/deepseek'; // 🔑 DeepSeek专用Client
 import { VertexAiClient } from './providers/vertexai';
 import { GeminiClient } from './providers/gemini';
 import { ModelConfig } from '../../store/api-store';
@@ -19,7 +20,6 @@ export interface ExtendedModelConfig extends ModelConfig {
 export const createLlmClient = (config: ExtendedModelConfig): LlmClient => {
   switch (config.provider) {
     case 'openai':
-    case 'deepseek':
     case 'moonshot':
     case 'zhipu':
     case 'siliconflow':
@@ -34,6 +34,20 @@ export const createLlmClient = (config: ExtendedModelConfig): LlmClient => {
         config.baseUrl || 'https://api.openai.com/v1',
         { isEmbedding: config.type === 'embedding' },
       );
+
+    // 🔑 DeepSeek专用Provider
+    // DeepSeek Reasoner要求在多轮对话中保留reasoning_content字段
+    // OpenAI Client为兼容其他Provider故意移除该字段，导致Reasoner报错
+    // 因此需要单独的DeepSeekClient以保持API兼容性
+    case 'deepseek':
+      return new DeepSeekClient(
+        config.apiKey,
+        config.id,
+        config.temperature || 0.7,
+        config.baseUrl || 'https://api.deepseek.com/v1',
+        { isEmbedding: config.type === 'embedding' },
+      );
+
     case 'gemini':
       return new GeminiClient(
         config.apiKey,
