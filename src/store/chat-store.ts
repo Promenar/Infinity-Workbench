@@ -1872,13 +1872,26 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                       if (idx === 0 && m.role === 'assistant') {
                         cleanedContent = parser.getCleanContent(accumulatedContent);
                       }
-                      return {
+
+                      // 🔑 必须包含所有字段，特别是reasoning（Reasoner要求）
+                      const msg: any = {
                         role: m.role,
                         content: cleanedContent,
-                        tool_calls: (m as any).tool_calls,
-                        tool_call_id: (m as any).tool_call_id,
-                        name: (m as any).name
                       };
+
+                      // Assistant消息的特殊字段
+                      if (m.role === 'assistant') {
+                        if ((m as any).tool_calls) msg.tool_calls = (m as any).tool_calls;
+                        if ((m as any).reasoning) msg.reasoning_content = (m as any).reasoning; // 🔑 Reasoner要求
+                      }
+
+                      // Tool消息的特殊字段
+                      if (m.role === 'tool') {
+                        if ((m as any).tool_call_id) msg.tool_call_id = (m as any).tool_call_id;
+                        if ((m as any).name) msg.name = (m as any).name;
+                      }
+
+                      return msg;
                     });
                     currentMessages = [...baseHistory, ...newSegment];
                     console.log('[AgentLoop] Rebuilt messages with tool results, count:', currentMessages.length);
