@@ -2005,6 +2005,17 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   console.log('[AgentLoop] Max loop count reached after task create');
                   break;
                 }
+                console.log(`[AgentLoop] Continuing to Turn ${loopCount + 1} after task create, currentMessages count:`, currentMessages.length);
+                // 🔍 调试：打印currentMessages中的assistant消息
+                const currentAssistants = currentMessages.filter((m: any) => m.role === 'assistant');
+                console.log('[AgentLoop] Current assistants in messages:', currentAssistants.length);
+                currentAssistants.forEach((msg: any, idx: number) => {
+                  console.log(`[AgentLoop] Assistant ${idx}:`, {
+                    hasReasoningContent: msg.reasoning_content !== undefined,
+                    reasoningLength: msg.reasoning_content?.length || 0,
+                    hasToolCalls: msg.tool_calls !== undefined
+                  });
+                });
                 continue; // 现在可以安全continue了
               }
 
