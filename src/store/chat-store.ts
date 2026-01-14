@@ -1845,14 +1845,52 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               );
 
               if (isTaskCreate) {
-                console.log('[AgentLoop] Task created, will continue loop after execution');
+                console.log('[AgentLoop] Task created, will execute and rebuild messages before continuing');
                 await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
+
+                // 🔑 关键修复：重构消息历史（包含tool results）再continue
+                // DeepSeek是无状态API，必须传递完整历史
+                set(state => ({
+                  sessions: state.sessions.map(s => s.id === sessionId ? {
+                    ...s,
+                    messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
+                      ...m,
+                      tool_calls: toolCalls,
+                      thought_signature: turnThoughtSignature || m.thought_signature
+                    } : m)
+                  } : s)
+                }));
+
+                // 重新构建currentMessages（包含tool results）
+                const latestSession = get().getSession(sessionId);
+                if (latestSession) {
+                  const baseHistory = [...contextMsgs];
+                  const assIdx = latestSession.messages.findIndex(m => m.id === currentAssistantMsgId);
+                  if (assIdx > -1) {
+                    const newSegment = latestSession.messages.slice(assIdx).map((m, idx) => {
+                      let cleanedContent = m.content;
+                      if (idx === 0 && m.role === 'assistant') {
+                        cleanedContent = parser.getCleanContent(accumulatedContent);
+                      }
+                      return {
+                        role: m.role,
+                        content: cleanedContent,
+                        tool_calls: (m as any).tool_calls,
+                        tool_call_id: (m as any).tool_call_id,
+                        name: (m as any).name
+                      };
+                    });
+                    currentMessages = [...baseHistory, ...newSegment];
+                    console.log('[AgentLoop] Rebuilt messages with tool results, count:', currentMessages.length);
+                  }
+                }
+
                 loopCount++;
                 if (loopCount >= MAX_LOOP_COUNT) {
                   console.log('[AgentLoop] Max loop count reached after task create');
                   break;
                 }
-                continue; // 强制继续下一轮循环
+                continue; // 现在可以安全continue了
               }
 
               // Execute
