@@ -1866,10 +1866,20 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 const latestSession = get().getSession(sessionId);
                 if (latestSession) {
                   const baseHistory = [...contextMsgs];
-                  const assIdx = latestSession.messages.findIndex(m => m.id === currentAssistantMsgId);
-                  if (assIdx > -1) {
-                    const newSegment = latestSession.messages.slice(assIdx).map((m, idx) => {
+
+                  // 🔑 关键修复：找到user消息的位置，而不是第一个assistant消息
+                  // 因为后续可能有多个assistant+tool序列（比如Turn 3的query_vector_db）
+                  // 我们需要包含所有这些消息
+                  const userMsgIdx = latestSession.messages.findIndex(m =>
+                    m.role === 'user' && m.content === content
+                  );
+
+                  if (userMsgIdx > -1) {
+                    // 从user消息之后开始提取所有消息（包括多轮assistant+tool）
+                    const newSegment = latestSession.messages.slice(userMsgIdx + 1).map((m, idx) => {
                       let cleanedContent = m.content;
+
+                      // 只对第一个assistant消息使用parser清理
                       if (idx === 0 && m.role === 'assistant') {
                         cleanedContent = parser.getCleanContent(accumulatedContent);
                       }
@@ -1895,7 +1905,11 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                       return msg;
                     });
                     currentMessages = [...baseHistory, ...newSegment];
-                    console.log('[AgentLoop] Rebuilt messages with tool results, count:', currentMessages.length);
+                    console.log('[AgentLoop] Rebuilt messages after task create:', {
+                      total: currentMessages.length,
+                      assistantCount: newSegment.filter(m => m.role === 'assistant').length,
+                      toolCount: newSegment.filter(m => m.role === 'tool').length
+                    });
                   }
                 }
 
