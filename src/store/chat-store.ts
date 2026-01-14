@@ -1342,6 +1342,19 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               // tool消息已在上面处理，跳过
             }
 
+            // 🔍 调试日志：打印所有虚拟assistant消息
+            const debugAssistants = virtualSegment.filter(m => m.role === 'assistant');
+            console.log('[VirtualSplit] Created assistants:', debugAssistants.length);
+            debugAssistants.forEach((msg, idx) => {
+              console.log(`[VirtualSplit] Assistant ${idx}:`, {
+                hasReasoningContent: msg.reasoning_content !== undefined,
+                reasoningLength: msg.reasoning_content?.length || 0,
+                hasThoughtSignature: msg.thought_signature !== undefined,
+                hasToolCalls: msg.tool_calls !== undefined,
+                toolCallsCount: msg.tool_calls?.length || 0
+              });
+            });
+
             return virtualSegment;
           };
 
