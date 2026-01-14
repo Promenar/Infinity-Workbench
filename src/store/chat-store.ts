@@ -1809,8 +1809,9 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             // Final Processing & Execution
             if (reasoningFromThisTurn) {
               accumulatedReasoning = '';
-              // Force clear bubble reasoning one last time
-              get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage, '');
+              // 🔑 关键修复：保存reasoning到assistant消息
+              // 必须传递reasoningFromThisTurn而非空字符串，否则会覆盖原有reasoning
+              get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage, reasoningFromThisTurn);
             }
 
             if (toolCalls && toolCalls.length > 0) {
