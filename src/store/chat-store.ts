@@ -1825,16 +1825,34 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               // 不再在此处 push，以防止重复消息导致 API 错误
               console.log(`[AgentLoop] End of Turn ${loopCount} - Tools detected:`, toolCalls.length);
 
-              // 🔑 改进终止条件：检测manage_task complete作为任务完成信号
-              const isOnlyCompleteTask = toolCalls.length === 1 &&
-                toolCalls[0].name === 'manage_task' &&
-                (toolCalls[0].arguments as any)?.action === 'complete';
+              // 🔑 检测 manage_task complete（任务完成，退出循环）
+              const isTaskComplete = toolCalls.some(tc =>
+                tc.name === 'manage_task' && tc.arguments?.action === 'complete'
+              );
 
-              if (isOnlyCompleteTask) {
-                console.log('[AgentLoop] Task completed (manage_task complete detected). Executing and stopping.');
+              if (isTaskComplete) {
+                console.log('[AgentLoop] Task marked as complete, executing final update and stopping');
                 // 执行complete调用以更新任务状态，然后立即退出
                 await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
                 break; // 任务完成，退出循环
+              }
+
+              // 🔑 检测 manage_task create（任务创建，必须继续执行）
+              // DeepSeek已知问题：工具调用时content可能为空，导致循环误判为final answer
+              // 解决方案：检测到任务创建后，强制继续循环
+              const isTaskCreate = toolCalls.some(tc =>
+                tc.name === 'manage_task' && tc.arguments?.action === 'create'
+              );
+
+              if (isTaskCreate) {
+                console.log('[AgentLoop] Task created, will continue loop after execution');
+                await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
+                loopCount++;
+                if (loopCount >= MAX_LOOP_COUNT) {
+                  console.log('[AgentLoop] Max loop count reached after task create');
+                  break;
+                }
+                continue; // 强制继续下一轮循环
               }
 
               // Execute

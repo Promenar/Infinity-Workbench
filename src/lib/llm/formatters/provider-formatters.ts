@@ -47,7 +47,22 @@ export class OpenAIFormatter extends BaseMessageFormatter {
  * - 支持<think>标签（已在网络层处理）
  * - 兼容OpenAI格式但更宽容
  */
+/**
+ * DeepSeek Formatter
+ * 
+ * 特性：
+ * - 支持reasoning_content回传
+ * - 支持模型特定的System Prompt增强
+ * - 缓解DeepSeek API content为空的已知问题
+ */
 export class DeepSeekFormatter extends BaseMessageFormatter {
+    private modelName: string;
+
+    constructor(modelName?: string) {
+        super();
+        this.modelName = modelName || '';
+    }
+
     formatHistory(messages: Message[], contextWindow?: number): ChatMessage[] {
         const formatted: ChatMessage[] = [];
 
@@ -60,6 +75,12 @@ export class DeepSeekFormatter extends BaseMessageFormatter {
             formatted.push(chatMsg);
         }
 
+        // 🔑 为system消息注入模型特定指引
+        const systemMsg = formatted.find(m => m.role === 'system');
+        if (systemMsg && typeof systemMsg.content === 'string') {
+            systemMsg.content = this.enhanceSystemPrompt(systemMsg.content);
+        }
+
         return formatted;
     }
 
@@ -70,6 +91,35 @@ export class DeepSeekFormatter extends BaseMessageFormatter {
 
     supportsReasoningInHistory(): boolean {
         return true;
+    }
+
+    /**
+     * 增强System Prompt：缓解DeepSeek content为空的问题
+     * 
+     * 参考：DeepSeek官方文档
+     * "在使用 JSON Output 功能时，API 有概率会返回空的 content，
+     *  我们正在积极优化该问题，您可以尝试修改 prompt 以缓解此类问题。"
+     */
+    private enhanceSystemPrompt(originalPrompt: string): string {
+        let enhanced = originalPrompt;
+
+        // 🔑 通用增强：引导模型在工具调用时输出简短说明
+        enhanced += `
+
+## 🔧 工具调用规范
+
+在调用工具时，请务必提供简短的文本说明您正在执行的操作。
+
+示例：
+- 调用 manage_task 创建任务时，输出："已创建任务计划，准备执行"
+- 调用 web_search 时，输出："正在搜索相关信息..."
+- 调用 query_vector_db 时，输出："正在查询知识库..."
+- 调用 toast 时，输出："正在弹出通知"
+
+这样可以确保每次响应都包含有效内容，提高用户体验。
+`;
+
+        return enhanced;
     }
 }
 

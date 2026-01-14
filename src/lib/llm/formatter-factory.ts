@@ -39,7 +39,7 @@ export class FormatterFactory {
                 return new OpenAIFormatter();
 
             case 'deepseek':
-                return new DeepSeekFormatter();
+                return new DeepSeekFormatter(modelName);  // 🔑 传递modelName
 
             case 'zhipu':
                 return new GLMFormatter();
