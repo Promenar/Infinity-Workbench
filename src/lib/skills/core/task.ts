@@ -172,9 +172,18 @@ export const TaskManagementSkill: Skill = {
             const finalProgress = activeTask ? activeTask.progress : 0;
             const finalTitle = activeTask ? activeTask.title : 'Untitled';
 
+            // 🔑 针对DeepSeek等模型的特殊处理：
+            // 创建任务后明确指示下一步执行，防止反复创建
+            let resultContent = `Task \"${finalTitle}\" handled. Status: ${finalStatus}, Progress: ${finalProgress}%`;
+
+            if (taskArgs.action === 'create' && activeTask && activeTask.steps.length > 0) {
+                const firstStep = activeTask.steps[0];
+                resultContent = `✅ Task \"${finalTitle}\" created successfully with ${activeTask.steps.length} steps.\n\n🚀 NEXT ACTION: Immediately execute the first step: \"${firstStep.title || firstStep.description || 'first task'}\"\n\nDo NOT create the task again. Execute the corresponding tool now (e.g., web_search, query_vector_db, etc.).`;
+            }
+
             return {
                 id: 'success',
-                content: `Task "${finalTitle}" handled. Status: ${finalStatus}, Progress: ${finalProgress}%`,
+                content: resultContent,
                 status: 'success',
                 data: activeTask
             };
