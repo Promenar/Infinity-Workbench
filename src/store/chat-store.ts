@@ -2116,38 +2116,38 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 } : s)
               }));
 
-              // 🔑 关键修复：虚拟拆分assistant+tool序列（符合OpenAI API规范）
+              // 🔑 关键修复：虚拟拆分新增的assistant+tool（不重新提取整个session）
               const latestSession = get().getSession(sessionId);
               if (latestSession) {
-                const baseHistory = [...contextMsgs];  // system + RAG context
-
-                const userMsgIdx = latestSession.messages.findIndex(m =>
-                  m.role === 'user' && m.content === content
+                // 🔥 只提取当前Turn新增的assistant+tool
+                // 因为currentMessages已经包含了之前的历史
+                const currentAssistantIdx = latestSession.messages.findIndex(m =>
+                  m.id === currentAssistantMsgId
                 );
 
-                if (userMsgIdx > -1) {
-                  // ✅ 从user消息开始提取（不是user+1），包含完整对话历史
-                  const rawSegment = latestSession.messages.slice(userMsgIdx);
+                if (currentAssistantIdx > -1) {
+                  // 提取当前assistant及其后的tool消息
+                  const newSegment = latestSession.messages.slice(currentAssistantIdx);
 
-                  // 🔍 调试：打印提取的消息数量  
-                  console.log('[AgentLoop] Extracting messages from session (normal branch):', {
-                    userMsgIdx,
-                    rawSegmentLength: rawSegment.length,
-                    roles: rawSegment.map(m => m.role).join(' -> ')
+                  console.log('[AgentLoop] Extracting new segment (normal branch):', {
+                    currentAssistantIdx,
+                    newSegmentLength: newSegment.length,
+                    roles: newSegment.map(m => m.role).join(' -> ')
                   });
 
-                  // ✅ 应用虚拟拆分逻辑
-                  const virtualSegment = virtualSplitAssistantToolPairs(
-                    rawSegment,
+                  // ✅ 虚拟拆分新增的segment
+                  const virtualNewSegment = virtualSplitAssistantToolPairs(
+                    newSegment,
                     parser,
                     accumulatedContent
                   );
 
-                  currentMessages = [...baseHistory, ...virtualSegment];
-                  console.log('[AgentLoop] Rebuilt messages after tool execution (virtual split):', {
+                  // ✅ 追加到currentMessages（不是替换）
+                  currentMessages = [...currentMessages, ...virtualNewSegment];
+                  console.log('[AgentLoop] Appended new segment after tool execution:', {
                     total: currentMessages.length,
-                    virtualAssistantCount: virtualSegment.filter(m => m.role === 'assistant').length,
-                    toolCount: virtualSegment.filter(m => m.role === 'tool').length
+                    newAssistantCount: virtualNewSegment.filter(m => m.role === 'assistant').length,
+                    newToolCount: virtualNewSegment.filter(m => m.role === 'tool').length
                   });
                 }
               }
