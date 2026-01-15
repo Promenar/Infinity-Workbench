@@ -1274,6 +1274,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             let isFirstAssistant = true;
 
             for (const m of rawSegment) {
+              // ✅ 处理user消息（直接保留）
+              if (m.role === 'user') {
+                virtualSegment.push({
+                  role: 'user',
+                  content: m.content
+                });
+                continue;
+              }
+
               if (m.role === 'assistant') {
                 const toolCalls = (m as any).tool_calls || [];
 
@@ -1975,15 +1984,22 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 // 🔑 关键修复：虚拟拆分assistant+tool序列（符合OpenAI API规范）
                 const latestSession = get().getSession(sessionId);
                 if (latestSession) {
-                  const baseHistory = [...contextMsgs];
+                  const baseHistory = [...contextMsgs];  // system + RAG context
 
                   const userMsgIdx = latestSession.messages.findIndex(m =>
                     m.role === 'user' && m.content === content
                   );
 
                   if (userMsgIdx > -1) {
-                    // 提取user消息之后的所有消息
-                    const rawSegment = latestSession.messages.slice(userMsgIdx + 1);
+                    // ✅ 从user消息开始提取（不是user+1），包含完整对话历史
+                    const rawSegment = latestSession.messages.slice(userMsgIdx);
+
+                    // 🔍 调试：打印提取的消息数量
+                    console.log('[AgentLoop] Extracting messages from session:', {
+                      userMsgIdx,
+                      rawSegmentLength: rawSegment.length,
+                      roles: rawSegment.map(m => m.role).join(' -> ')
+                    });
 
                     // ✅ 应用虚拟拆分逻辑
                     const virtualSegment = virtualSplitAssistantToolPairs(
