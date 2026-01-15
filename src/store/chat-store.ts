@@ -1895,14 +1895,20 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             }
 
           } catch (e: any) {
-            // ... error handling
-            console.error('Agent loop failed', e);
-            get().addMessage(sessionId, {
-              id: `sys_${Date.now()}`,
-              role: 'assistant',
-              content: `[System Error] ${e.message || 'Unknown error'}`,
-              createdAt: Date.now()
-            });
+            // ✅ 错误处理优化：
+            // 1. 不创建新的错误气泡，而是更新当前 assistant 消息
+            // 2. 只打印警告日志，不触发红屏崩溃
+            console.warn('[ChatStore] Agent loop failed:', e.message || e);
+
+            // 更新当前 assistant 消息显示错误（而非创建新气泡）
+            const errorText = e.message || 'Unknown error';
+            get().updateMessageContent(
+              sessionId,
+              assistantMsgId,
+              accumulatedContent
+                ? `${accumulatedContent}\n\n⚠️ 网络异常: ${errorText}`
+                : `⚠️ 网络异常: ${errorText}`
+            );
           } finally {
             // Cleanup active request and ensure loading flags are cleared
             set((state: ChatState) => {
