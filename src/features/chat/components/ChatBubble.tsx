@@ -399,19 +399,37 @@ const MessageMeta: React.FC<{
   timestamp?: number;
   isDark: boolean;
 }> = ({ modelName, timestamp, isDark }) => {
-  const timeStr = timestamp
-    ? new Date(timestamp).toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-    : '';
+  // 智能时间显示：同天只显示时间，跨天显示日期+时间
+  const getTimeStr = (ts: number) => {
+    const date = new Date(ts);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+
+    if (isToday) {
+      return date.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } else {
+      // 跨天：显示 MM/DD HH:mm
+      return date.toLocaleDateString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+      }) + ' ' + date.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+  };
+
+  const timeStr = timestamp ? getTimeStr(timestamp) : '';
 
   return (
     <View style={{
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 8,
-      gap: 8,
+      marginTop: 4, // 减少间距：8 -> 4
+      gap: 6, // 减少间距：8 -> 6
       opacity: 0.6, // 隐式设计
     }}>
       {modelName && (
@@ -419,6 +437,8 @@ const MessageMeta: React.FC<{
           fontSize: 11,
           color: isDark ? '#71717a' : '#a1a1aa',
           fontWeight: '400',
+          textTransform: 'uppercase', // 大写字母
+          letterSpacing: 0.5, // 增加字间距提升可读性
         }}>
           {modelName}
         </Text>
@@ -957,10 +977,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
           <View
             style={{
-              marginTop: 8,
+              marginTop: 4, // 减少间距：8 -> 4
               borderTopWidth: StyleSheet.hairlineWidth,
               borderTopColor: isDark ? 'rgba(39, 39, 42, 0.5)' : '#f3f4f6',
-              paddingTop: 4,
+              paddingTop: 2, // 减少间距：4 -> 2
               alignItems: 'flex-end',
               width: '100%',
             }}
@@ -1265,10 +1285,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       {/* Message Meta (模型名称 + 时间戳) */}
       <View
         style={{
-          marginTop: 8,
+          marginTop: 4, // 减少间距：8 -> 4
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
-          paddingTop: 4,
+          paddingTop: 2, // 减少间距：4 -> 2
         }}
       >
         <MessageMeta
