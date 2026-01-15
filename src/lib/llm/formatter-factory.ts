@@ -49,6 +49,7 @@ export class FormatterFactory {
 
             case 'gemini':
             case 'vertex':
+            case 'google':  // VertexAI uses 'google' as provider type
                 return new GeminiFormatter(modelName);  // 🔑 传递modelName
 
             default:

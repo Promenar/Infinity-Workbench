@@ -290,28 +290,35 @@ export class VertexAiClient implements LlmClient {
             }
 
             if (m.tool_calls && m.tool_calls.length > 0) {
-              m.tool_calls.forEach((tc: any) => {
-                // 🧐 CRITICAL: Support both native tc.name and OpenAI-style tc.function.name
-                const name = tc.name || tc.function?.name;
-                if (!name) return;
+              // 🔥 CRITICAL FIX (Gemini 3): If no thought_signature exists for this message,
+              // we MUST skip sending the tool_calls entirely, as Gemini 3 API rejects
+              // functionCalls without valid Base64 thought_signature.
+              // This handles legacy history that was saved before signature capture was implemented.
+              if (!sig) {
+                console.warn(`[VertexAI] Skipping ${m.tool_calls.length} tool_calls due to missing thought_signature (legacy history)`);
+                // Don't add functionCall parts - just use the text content already added above
+              } else {
+                m.tool_calls.forEach((tc: any) => {
+                  // 🧐 CRITICAL: Support both native tc.name and OpenAI-style tc.function.name
+                  const name = tc.name || tc.function?.name;
+                  if (!name) return;
 
-                const part: any = {
-                  functionCall: {
-                    name: name,
-                    args: typeof tc.arguments === 'string'
-                      ? JSON.parse(tc.arguments)
-                      : (tc.function?.arguments
-                        ? (typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments)
-                        : (tc.arguments || {}))
-                  }
-                };
+                  const part: any = {
+                    functionCall: {
+                      name: name,
+                      args: typeof tc.arguments === 'string'
+                        ? JSON.parse(tc.arguments)
+                        : (tc.function?.arguments
+                          ? (typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments)
+                          : (tc.arguments || {}))
+                    }
+                  };
 
-                // 🔥 CRITICAL FIX: Ensure thought_signature is attached to the functionCall part.
-                if (sig) {
+                  // Attach the valid original signature
                   part.thought_signature = sig;
-                }
-                parts.push(part);
-              });
+                  parts.push(part);
+                });
+              }
             }
             return parts;
           }
@@ -365,9 +372,19 @@ Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
 
         // 🔍 Debug: Log thought_signature status for all messages
         console.log('[VertexAI] Formatting messages for API:');
+        let hasMissingSignatures = false;
         messages.forEach((m, idx) => {
-          console.log(`  [${idx}] role=${m.role}, has_signature=${!!m.thought_signature}, has_tool_calls=${!!(m as any).tool_calls}`);
+          const hasToolCalls = !!(m as any).tool_calls && (m as any).tool_calls.length > 0;
+          const hasSig = !!m.thought_signature;
+          console.log(`  [${idx}] role=${m.role}, has_signature=${hasSig}, has_tool_calls=${hasToolCalls}`);
+          // 🔥 Detect if any assistant with tool_calls is missing signature
+          if (m.role === 'assistant' && hasToolCalls && !hasSig) {
+            hasMissingSignatures = true;
+          }
         });
+        if (hasMissingSignatures) {
+          console.warn('[VertexAI] ⚠️ Detected history with missing thought_signatures. Disabling thinking mode.');
+        }
 
         // 🔑 CRITICAL: Vertex AI requiring strict alternating user/model turns.
         const normalizedTurns: { role: 'user' | 'model', parts: any[] }[] = [];
@@ -429,7 +446,8 @@ Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
 
         const tools: any[] = [];
         if (options?.webSearch) {
-          tools.push({ google_search_retrieval: {} });
+          // 🔥 CRITICAL FIX (Gemini 3): Use google_search instead of deprecated google_search_retrieval
+          tools.push({ google_search: {} });
         }
 
         if (hasTools && options?.skills && options.skills.length > 0) {

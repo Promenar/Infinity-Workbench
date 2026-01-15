@@ -1,20 +1,165 @@
 /**
  * 工具执行模块
  * 负责执行工具调用并更新执行步骤
- * 注意：此模块复用chat-store中的executeTools实现，仅作为接口包装
+ * Phase 3: 从 chat-store.ts 迁移完整逻辑
  */
 
 import type { ManagerContext, ToolExecutor } from './types';
-import type { ToolCall } from '../../types/skills';
+import type { ToolCall, ToolResult, ExecutionStep } from '../../types/skills';
+import type { TaskState } from '../../types/chat';
+import { skillRegistry } from '../../lib/skills/registry';
+import { useAgentStore } from '../agent-store';
 
 export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
-    const { get } = context;
+    const { get, set } = context;
 
     return {
         executeTools: async (sessionId: string, toolCalls: ToolCall[], targetMessageId?: string) => {
-            // 直接调用chat-store中的executeTools实现
-            // 这避免了重复大量代码，保持向后兼容
-            await get().executeTools(sessionId, toolCalls, targetMessageId);
+            const state = get();
+            const session = state.getSession(sessionId);
+            if (!session) return;
+
+            const agentStore = useAgentStore.getState();
+            const agent = agentStore.getAgent(session.agentId);
+            if (!agent) return;
+
+            // 验证目标消息或查找最后一个 assistant 消息
+            let targetMsgId = targetMessageId;
+            if (!targetMsgId) {
+                const lastAssistant = [...session.messages].reverse().find(m => m.role === 'assistant');
+                if (lastAssistant) targetMsgId = lastAssistant.id;
+            }
+
+            if (!targetMsgId) return;
+
+            const targetMsg = session.messages.find(m => m.id === targetMsgId);
+            if (!targetMsg) return;
+
+            // 🛡️ 应用级调度防护：防止 OpenAI 兼容模型在流式初期发送空参数导致的崩溃循环
+            const hasIncompleteCall = toolCalls.some(tc => {
+                const name = (tc as any).name || (tc as any).function?.name;
+                if (name === 'manage_task') {
+                    const args = tc.arguments || (tc as any).function?.arguments || {};
+                    // 只有当消息处于流式状态且 action 缺失时才拦截
+                    return targetMsg.status === 'streaming' && (!args || !args.action);
+                }
+                return false;
+            });
+
+            if (hasIncompleteCall) return;
+
+            // 辅助函数：更新执行步骤
+            const updateSteps = (newStep: ExecutionStep) => {
+                set(state => {
+                    const session = state.sessions.find(s => s.id === sessionId);
+                    if (!session) return {};
+                    const currentMsg = session.messages.find(m => m.id === targetMsgId);
+                    if (!currentMsg) return {};
+
+                    const currentSteps = currentMsg.executionSteps || [];
+                    const index = currentSteps.findIndex(s => s.id === newStep.id);
+                    let updatedSteps = [...currentSteps];
+
+                    if (index > -1) {
+                        updatedSteps[index] = newStep;
+                    } else {
+                        updatedSteps.push(newStep);
+                    }
+
+                    return {
+                        sessions: state.sessions.map(s => s.id === sessionId ? {
+                            ...s,
+                            messages: s.messages.map(m => m.id === targetMsgId ? { ...m, executionSteps: updatedSteps } : m)
+                        } : s)
+                    };
+                });
+            };
+
+            for (const tc of toolCalls) {
+                if (!tc) continue;
+                const tcName = (tc as any).name || (tc as any).function?.name;
+                if (!tcName) continue;
+
+                const skill = skillRegistry.getSkill(tcName);
+                const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+
+                const tcArgs = (tc as any).arguments || (tc as any).function?.arguments || {};
+                let finalArgs = typeof tcArgs === 'string' ? JSON.parse(tcArgs) : tcArgs;
+
+                // 🛡️ 智能参数解包
+                if (finalArgs && (finalArgs.parameters || finalArgs.arguments)) {
+                    const target = finalArgs.parameters || finalArgs.arguments;
+                    if (typeof target === 'string') {
+                        try { finalArgs = JSON.parse(target); } catch (e) { console.warn('Param unwrap failed', e); }
+                    } else if (typeof target === 'object') {
+                        finalArgs = target;
+                    }
+                }
+
+                updateSteps({
+                    id: stepId,
+                    type: 'tool_call',
+                    toolName: tcName,
+                    toolArgs: finalArgs,
+                    toolCallId: tc.id,
+                    timestamp: Date.now()
+                });
+
+                let result: ToolResult;
+                try {
+                    if (skill) {
+                        result = await skill.execute(finalArgs, { sessionId, agentId: agent.id });
+                    } else {
+                        result = { id: (tc as any).id, content: `Error: Skill ${tcName} not found`, status: 'error' };
+                    }
+                } catch (e: any) {
+                    result = { id: (tc as any).id, content: `Error: ${e.message}`, status: 'error' };
+                }
+
+                updateSteps({
+                    id: `res_${stepId}`,
+                    type: result.status === 'success' ? 'tool_result' : 'error',
+                    toolName: tcName,
+                    toolCallId: tc.id,
+                    content: result.content,
+                    data: result.data,
+                    timestamp: Date.now()
+                });
+
+                // 🧐 UI 优化：所有工具执行结果都必须加入历史记录
+                get().addMessage(sessionId, {
+                    id: `tool_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                    role: 'tool',
+                    tool_call_id: tc.id,
+                    content: result.content,
+                    name: tcName,
+                    createdAt: Date.now(),
+                    thought_signature: targetMsg.thought_signature // 🔑 继承父 assistant 消息的签名
+                });
+
+                // ✅ 任务状态持久化：如果工具返回了 TaskState 数据 (特别是 manage_task)，
+                // 则将其同步回写至触发它的 Assistant 消息中。
+                if (result.data && result.status === 'success') {
+                    const isTaskState = (data: any): data is TaskState =>
+                        data && typeof data === 'object' && 'steps' in data && 'progress' in data;
+
+                    if (isTaskState(result.data)) {
+                        get().updateMessageContent(
+                            sessionId,
+                            targetMsgId,
+                            targetMsg.content,
+                            undefined,
+                            undefined,
+                            undefined,
+                            undefined,
+                            false,
+                            undefined,
+                            undefined,
+                            result.data // 同步任务状态至消息级别
+                        );
+                    }
+                }
+            }
         },
     };
 };

@@ -41,9 +41,9 @@ export interface MessageManager {
         reasoning?: string,
         citations?: any[],
         ragReferences?: RagReference[],
-        streaming?: boolean,
-        ragProgress?: RagProgress,
+        ragReferencesLoading?: boolean,
         ragMetadata?: RagMetadata,
+        thought_signature?: string,
         taskState?: TaskState
     ) => void;
 
@@ -62,6 +62,9 @@ export interface MessageManager {
         messageId: string,
         height: number
     ) => void;
+
+    // Phase 4a: 新增方法
+    setVectorizationStatus: (sessionId: string, messageIds: string[], status: 'processing' | 'success' | 'error') => void;
 }
 
 // ===== 会话管理接口 =====
@@ -80,6 +83,16 @@ export interface SessionManager {
     toggleSessionPin: (sessionId: SessionId) => void;
 
     updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
+
+    // Phase 4a: 新增辅助方法
+    updateSessionTitle: (id: SessionId, title: string) => void;
+    updateSessionPrompt: (id: SessionId, prompt: string | undefined) => void;
+    updateSessionModel: (id: SessionId, modelId: string | undefined) => void;
+    updateSessionOptions: (id: SessionId, options: any) => void;
+    updateSessionScrollOffset: (id: SessionId, offset: number) => void;
+    getSessionsByAgent: (agentId: string) => Session[];
+    dismissActiveTask: (sessionId: SessionId) => void;
+    setKGExtractionStatus: (sessionId: SessionId, isExtracting: boolean) => void;
 }
 
 // ===== 工具执行接口 =====

@@ -2,6 +2,7 @@
  * AgentLoop管理模块
  * 负责消息生成和重新生成的核心逻辑
  * 注意：此模块复用chat-store中的generateMessage/regenerateMessage实现
+ * Phase 3: 保持透明代理模式，未来将逐步迁移核心逻辑
  */
 
 import type { ManagerContext, AgentLoopManager, GenerateMessageOptions } from './types';

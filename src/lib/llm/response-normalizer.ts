@@ -28,6 +28,7 @@ export type ProviderType =
   | 'vertex'
   | 'openai'
   | 'gemini'
+  | 'google'  // VertexAI uses 'google' as provider type
   | 'siliconflow'
   | 'zhipu'
   | 'moonshot'
@@ -52,6 +53,7 @@ export class ResponseNormalizer {
     switch (providerType) {
       case 'vertex':
       case 'gemini':
+      case 'google':
         return this.normalizeVertex(rawResponse);
       case 'openai':
       case 'siliconflow':
