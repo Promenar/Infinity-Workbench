@@ -138,6 +138,10 @@ export class OpenAiClient implements LlmClient {
                 if (!trimmed || !trimmed.startsWith('data: ')) continue;
                 const data = trimmed.slice(6);
                 if (data === '[DONE]') {
+                  // 🔑 显式关闭XHR以防止并发连接残留（GLM等严格限额3的供应商需要）
+                  if (xhr.readyState !== 4) {
+                    xhr.abort();
+                  }
                   resolve();
                   return;
                 }
