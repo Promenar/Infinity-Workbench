@@ -62,7 +62,8 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                     exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.quad))}
                     style={{
                         marginHorizontal: 12,
-                        height: height,
+                        height: height === 'auto' ? undefined : height,
+                        minHeight: height === 'auto' ? 100 : undefined,
                         backgroundColor: isDark ? 'rgba(24, 24, 27, 0.92)' : 'rgba(255, 255, 255, 0.92)',
                         borderRadius: 32,
                         overflow: 'hidden',
@@ -77,7 +78,7 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                 >
                     <BlurView
                         intensity={isDark ? 30 : 50}
-                        style={{ flex: 1, paddingTop: 24 }}
+                        style={{ flex: height === 'auto' ? undefined : 1, paddingTop: 24 }}
                         tint={isDark ? 'dark' : 'light'}
                     >
                         <View
@@ -128,7 +129,7 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                             </TouchableOpacity>
                         </View>
 
-                        <View style={{ flex: 1 }}>{children}</View>
+                        <View style={{ flex: height === 'auto' ? undefined : 1 }}>{children}</View>
                     </BlurView>
                 </Animated.View>
             </View>

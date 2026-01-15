@@ -103,27 +103,28 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: 8,
-          paddingVertical: 4,
-          borderRadius: 12,
-          backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)',
-          gap: 6,
+          paddingVertical: 2,
+          borderRadius: 10,
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+          gap: 4,
         }}
       >
-        {getIcon(mode)}
+        {getIcon(mode, 10)}
         <Typography
           style={{
-            fontSize: 10,
-            fontWeight: '800',
+            fontSize: 9,
+            fontWeight: '900',
+            letterSpacing: -0.2,
             color:
               mode === 'auto'
-                ? '#6366f1'
+                ? '#818cf8'
                 : mode === 'semi'
-                  ? '#d97706'
+                  ? '#fbbf24'
                   : mode === 'manual'
-                    ? '#059669'
+                    ? '#34d399'
                     : isDark
-                      ? 'rgba(255,255,255,0.6)'
-                      : 'rgba(0,0,0,0.6)',
+                      ? 'rgba(255,255,255,0.45)'
+                      : 'rgba(0,0,0,0.45)',
           }}
         >
           {getLabel(mode)}
