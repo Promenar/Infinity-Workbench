@@ -7,6 +7,7 @@ import {
   Platform,
   Image,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -15,11 +16,12 @@ import {
   Cpu,
   Square,
   Calculator,
-  Globe,
-  BrainCircuit,
   X,
   Image as ImageIcon,
   Camera,
+  Zap,
+  Shield,
+  PlayCircle,
 } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 import { useI18n } from '../../../lib/i18n';
@@ -38,12 +40,104 @@ import { useTheme } from '../../../theme/ThemeProvider';
 import { Typography, ConfirmDialog } from '../../../components/ui';
 import Svg, { Circle } from 'react-native-svg';
 import { TokenUsage } from '../../../types/chat';
-import { formatTokenCount } from '../utils/token-counter';
+import { formatTokenCount } from '../utils/token-counter'
 import { useChatStore } from '../../../store/chat-store';
 import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
 import { useApiStore } from '../../../store/api-store';
 import { ANIMATION_DURATION } from '../../../theme/animations';
-import { SummaryIndicator } from './SummaryIndicator'; // ✅ 导入摘要指示器
+import { SummaryIndicator } from './SummaryIndicator';
+
+// ✅ 内联执行模式按钮（适配输入栏风格）
+const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark: boolean }) => {
+  const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
+  const setExecutionMode = useChatStore(s => s.setExecutionMode);
+  const [visible, setVisible] = useState(false);
+
+  if (!session) return null;
+  const mode = session.executionMode || 'auto';
+
+  const getIcon = (m: string, size: number = 14) => {
+    switch (m) {
+      case 'auto': return <Zap size={size} color="#6366f1" strokeWidth={2.5} />;
+      case 'semi': return <Shield size={size} color="#d97706" strokeWidth={2.5} />;
+      case 'manual': return <PlayCircle size={size} color="#059669" strokeWidth={2.5} />;
+      default: return <Zap size={size} color={isDark ? '#52525b' : '#a1a1aa'} />;
+    }
+  };
+
+  const handleSelect = (m: 'auto' | 'semi' | 'manual') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExecutionMode(sessionId, m);
+    setVisible(false);
+  };
+
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setVisible(true);
+        }}
+        activeOpacity={0.7}
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+        }}
+      >
+        {getIcon(mode)}
+      </TouchableOpacity>
+
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+          activeOpacity={1}
+          onPress={() => setVisible(false)}
+        >
+          <View style={{
+            width: 280,
+            backgroundColor: isDark ? '#1e1e1e' : '#ffffff',
+            borderRadius: 16,
+            padding: 16,
+            gap: 12,
+          }}>
+            <Typography variant="h3" style={{ marginBottom: 4 }}>执行模式</Typography>
+
+            {(['auto', 'semi', 'manual'] as const).map((m) => (
+              <TouchableOpacity
+                key={m}
+                onPress={() => handleSelect(m)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: mode === m ? (isDark ? 'rgba(255,255,255,0.1)' : '#f3f4f6') : 'transparent',
+                  gap: 12,
+                }}
+              >
+                <View style={{ padding: 8, borderRadius: 8, backgroundColor: m === 'auto' ? 'rgba(99, 102, 241, 0.1)' : m === 'semi' ? 'rgba(217, 119, 6, 0.1)' : 'rgba(16, 185, 129, 0.1)' }}>
+                  {getIcon(m, 20)}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Typography variant="body" style={{ fontWeight: '600' }}>
+                    {m === 'auto' ? '自动' : m === 'semi' ? '半自动' : '手动'}
+                  </Typography>
+                  <Typography variant="caption" color="secondary">
+                    {m === 'auto' ? '连续运行' : m === 'semi' ? '高风险操作暂停' : '每步需确认'}
+                  </Typography>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  );
+};
 
 interface ChatInputProps {
   onSendMessage: (
@@ -410,55 +504,9 @@ export function ChatInput({
 
           <View style={{ flex: 1 }} />
 
-          <View style={{ flexDirection: 'row', gap: 8, paddingRight: 12 }}>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                updateSessionOptions(sessionId, { webSearch: !webSearchEnabled });
-              }}
-              activeOpacity={0.7}
-              style={[
-                styles.toggleButton,
-                webSearchEnabled && {
-                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)',
-                },
-              ]}
-            >
-              <Globe
-                size={14}
-                color={webSearchEnabled ? '#3b82f6' : isDark ? '#52525b' : '#a1a1aa'}
-                strokeWidth={webSearchEnabled ? 2.5 : 2}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => {
-                if (!isModelForcedReasoning) {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  updateSessionOptions(sessionId, { reasoning: !reasoningEnabled });
-                }
-              }}
-              activeOpacity={isModelForcedReasoning ? 1 : 0.7}
-              style={[
-                styles.toggleButton,
-                (reasoningEnabled || isModelForcedReasoning) && {
-                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.2)' : 'rgba(139, 92, 246, 0.1)',
-                },
-                isModelForcedReasoning && { opacity: 0.6 },
-              ]}
-            >
-              <BrainCircuit
-                size={14}
-                color={
-                  reasoningEnabled || isModelForcedReasoning
-                    ? '#8b5cf6'
-                    : isDark
-                      ? '#52525b'
-                      : '#a1a1aa'
-                }
-                strokeWidth={reasoningEnabled || isModelForcedReasoning ? 2.5 : 2}
-              />
-            </TouchableOpacity>
+          {/* ✅ 执行模式切换器（替换原联网搜索和深度思考按钮） */}
+          <View style={{ paddingRight: 12 }}>
+            <ExecutionModeButton sessionId={sessionId} isDark={isDark} />
           </View>
         </View>
 

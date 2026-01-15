@@ -292,14 +292,14 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
 
             <Animated.View layout={Layout.springify()} className="items-center mr-3 w-6">
                 <View className={clsx(
-                    "w-6 h-6 rounded-full items-center justify-center border",
-                    step.type === 'error' ? "border-red-500 bg-red-500/20" :
-                        step.type === 'intervention_required' ? "border-amber-500 bg-amber-500/20" :
-                            "border-white/10 bg-white/5"
+                    "w-6 h-6 rounded-full items-center justify-center",
+                    step.type === 'error' ? "border border-red-500/50 bg-red-500/20" :
+                        step.type === 'intervention_required' ? "border border-amber-500/50 bg-amber-500/20" :
+                            "bg-black/5 dark:bg-zinc-900/50"
                 )}>
                     <StepIcon type={step.type} toolName={step.toolName} />
                 </View>
-                {!isLast && <Animated.View layout={Layout.springify()} className="w-[1px] flex-1 my-1" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />}
+                {!isLast && <Animated.View layout={Layout.springify()} className="w-[1px] flex-1 my-1" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />}
             </Animated.View>
 
             <Animated.View layout={Layout.springify()} className="flex-1 pb-4">
@@ -307,11 +307,16 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                     activeOpacity={0.7}
                     onPress={() => setExpanded(!expanded)}
                     className={clsx(
-                        "flex-row items-center justify-between rounded-2xl p-2 border",
+                        "flex-row items-center justify-between rounded-2xl p-2",
                         step.type === 'intervention_required'
-                            ? "bg-amber-500/10 border-amber-500/20"
-                            : "bg-white/5 border-white/5"
+                            ? "bg-amber-500/5 dark:bg-amber-500/10"
+                            : "bg-black/5 dark:bg-transparent"
                     )}
+                    style={{
+                        // 仅在需要注意的状态下显示极其微弱的边框或完全无边框
+                        borderWidth: step.type === 'intervention_required' ? 1 : 0,
+                        borderColor: step.type === 'intervention_required' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
+                    }}
                 >
                     <View className="flex-1 mr-2 px-1">
                         <Typography

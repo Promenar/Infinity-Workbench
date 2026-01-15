@@ -68,18 +68,9 @@ export default function ChatDetailScreen() {
   }, [providers, currentModelId]);
 
   const headerSubtitle = useMemo(() => {
-    if (!agent) return '';
-    let text = agent.name;
-    if (modelConfig) {
-      text += ` • ${modelConfig.name}`;
-      const caps = [];
-      if (modelConfig.capabilities?.vision) caps.push('Vision');
-      if (modelConfig.capabilities?.internet) caps.push('Web');
-      if (modelConfig.capabilities?.reasoning) caps.push('Reasoning');
-      if (caps.length > 0) text += ` • ${caps.join(' ')}`;
-    }
-    return text;
-  }, [agent, modelConfig]);
+    // ✅ 仅显示助手名称，不显示模型名称
+    return agent?.name || '';
+  }, [agent]);
 
   // @ts-ignore
   const { messages, sendMessage, loading, stop } = useChat(id);
@@ -704,7 +695,6 @@ export default function ChatDetailScreen() {
           },
           label: t.common.settings,
         }}
-        headerRight={<ExecutionModeSelector sessionId={id} />}
       />
 
 
