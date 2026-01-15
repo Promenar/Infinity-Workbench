@@ -16,7 +16,7 @@ export const ThemedSlider: React.FC<Props> = ({ ...props }) => {
   const { isDark, colors } = useTheme();
   return (
     <Slider
-      style={{ width: '100%', height: 40 }}
+      style={{ width: '100%', height: 32 }} // Compact: 40 -> 32
       minimumTrackTintColor={colors[500]}
       maximumTrackTintColor={isDark ? '#3f3f46' : '#e2e8f0'}
       thumbTintColor={colors[500]}

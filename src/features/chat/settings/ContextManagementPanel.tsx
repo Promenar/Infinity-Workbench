@@ -19,7 +19,34 @@ interface ContextManagementPanelProps {
   sessionId: string;
 }
 
-// SectionHeader removed as it will be provided by parent SettingsSection
+// 装饰性的小标题组件
+const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 12 }) => {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        marginTop: mt,
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+        paddingHorizontal: 4,
+      }}
+    >
+      <View
+        style={{
+          width: 4,
+          height: 12,
+          borderRadius: 999,
+          marginRight: 8,
+          backgroundColor: colors[500],
+        }}
+      />
+      <Typography className="text-xs font-bold uppercase tracking-widest text-gray-900 dark:text-white">
+        {title}
+      </Typography>
+    </View>
+  );
+};
 
 export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ sessionId }) => {
   const { t } = useI18n();
@@ -144,7 +171,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
   return (
     <View>
       {lastError && (
-        <View className="flex-row items-center bg-red-50 dark:bg-red-900/10 rounded-2xl p-3 mb-4 border border-red-100 dark:border-red-900/20">
+        <View className="flex-row items-center bg-red-50 dark:bg-red-900/10 rounded-2xl p-2.5 mb-3 border border-red-100 dark:border-red-900/20">
           <AlertCircle size={16} color="#ef4444" className="mr-2" />
           <Typography className="text-red-600 dark:text-red-400 text-xs flex-1">
             {lastError}
@@ -153,12 +180,11 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
       )}
 
       {/* Card 1: Token Stats */}
-      <Card variant="glass" className="p-4 shadow-sm mb-4">
+      <SectionHeader title={t.rag.tokenStats} mt={0} />
+      <Card variant="glass" className="p-3 shadow-sm mb-3">
         <View className="flex-row justify-between items-center mb-4">
           <View className="flex-row items-center">
-            <Typography className="text-sm font-bold text-gray-900 dark:text-white mr-2">
-              {t.rag.tokenStats}
-            </Typography>
+            {/* Header moved outside */}
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
@@ -217,11 +243,9 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
       </Card>
 
       {/* Card 2: Memory Archives */}
-      <Card variant="glass" className="p-4 shadow-sm">
-        <View className="flex-row justify-between items-center mb-4">
-          <Typography className="text-sm font-bold text-gray-900 dark:text-white">
-            {t.rag.memoryArchives}
-          </Typography>
+      <SectionHeader title={t.rag.memoryArchives} />
+      <Card variant="glass" className="p-3 shadow-sm">
+        <View className="flex-row justify-end items-center mb-4">
           <View className="bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
             <Typography className="text-[10px] font-bold text-gray-500 dark:text-gray-400">
               {summaries.length}

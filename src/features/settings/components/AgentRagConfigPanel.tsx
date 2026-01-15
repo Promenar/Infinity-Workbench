@@ -19,9 +19,25 @@ interface Props {
 const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 12 }) => {
   const { colors } = useTheme();
   return (
-    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 mt-2">
-      <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
-      <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+    <View
+      style={{
+        marginTop: mt,
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+        paddingHorizontal: 4,
+      }}
+    >
+      <View
+        style={{
+          width: 4,
+          height: 12,
+          borderRadius: 999,
+          marginRight: 8,
+          backgroundColor: colors[500],
+        }}
+      />
+      <Typography className="text-xs font-bold uppercase tracking-widest text-gray-900 dark:text-white">
         {title}
       </Typography>
     </View>
@@ -105,8 +121,8 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
     <View>
       {/* 状态标签 */}
       <SectionHeader title={t.rag.configStatus} mt={0} />
-      <Card variant="glass" className="mb-6">
-        <View className="p-5 flex-row items-center justify-between">
+      <Card variant="glass" className="mb-3">
+        <View className="p-3 flex-row items-center justify-between">
           <View>
             <Typography className="text-sm font-bold text-gray-900 dark:text-white mb-1">
               {t.rag.configMode}
@@ -141,7 +157,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
 
       {/* 预设快捷选择 */}
       <SectionHeader title={t.rag.quickPresets} />
-      <View className="flex-row mb-6 gap-3">
+      <View className="flex-row mb-3 gap-2">
         {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((key) => {
           const preset = PRESETS[key];
           const Icon = preset.icon;
@@ -152,16 +168,42 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
               : key === 'writing'
                 ? t.rag.presetWriting
                 : t.rag.presetCode;
+
+          const isActive =
+            currentConfig.memoryLimit === preset.config.memoryLimit &&
+            currentConfig.docLimit === preset.config.docLimit &&
+            currentConfig.contextWindow === preset.config.contextWindow;
+
           return (
             <Card
               key={key}
               variant="glass"
               onPress={() => applyPreset(key)}
-              className="flex-1 items-center"
+              className="flex-1 p-0"
+              style={
+                isActive
+                  ? {
+                    borderColor: colors[500],
+                    borderWidth: 1.5,
+                    overflow: 'hidden',
+                    borderRadius: 20,
+                  }
+                  : { overflow: 'hidden', borderRadius: 20 }
+              }
             >
-              <View className="p-4 items-center">
-                <Icon size={20} color={colors[500]} />
-                <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
+              <View
+                className="p-4 items-center w-full rounded-[20px]"
+                style={{
+                  backgroundColor: isActive
+                    ? (isDark ? `${colors[500]}15` : `${colors[500]}08`)
+                    : 'transparent',
+                }}
+              >
+                <Icon size={20} color={isActive ? colors[500] : colors[400]} />
+                <Typography
+                  className={`text-xs font-bold mt-2 ${isActive ? '' : 'text-gray-500 dark:text-gray-400'}`}
+                  style={isActive ? { color: colors[500] } : null}
+                >
                   {presetName}
                 </Typography>
               </View>
@@ -172,24 +214,26 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
 
       {/* 自动摘要设置 */}
       <SectionHeader title={t.rag.summarySettings} />
-      <Card variant="glass" className="mb-6">
-        <View className="p-5">
-          <View className="mb-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              {t.rag.activeWindow}
-            </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {t.rag.activeWindowDesc}
-            </Typography>
-            <View className="flex-row justify-between mb-2">
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
-              <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+      <Card variant="glass" className="mb-3">
+        <View className="p-3">
+          <View className="mb-2">
+            <View className="flex-row items-center justify-between mb-1">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                {t.rag.activeWindow}
+              </Typography>
+              <Typography style={{ color: colors[600] }} className="text-xs font-bold">
                 {t.rag.messageCount.replace(
                   '{count}',
                   (currentConfig.contextWindow ?? 20).toString(),
                 )}
               </Typography>
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">50</Typography>
+            </View>
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              {t.rag.activeWindowDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-0">
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">10</Typography>
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">50</Typography>
             </View>
             <Slider
               value={currentConfig.contextWindow ?? 20}
@@ -202,22 +246,24 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
 
           <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-2" />
 
-          <View className="mb-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              {t.rag.triggerThreshold}
-            </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {t.rag.triggerThresholdDesc}
-            </Typography>
-            <View className="flex-row justify-between mb-2">
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
-              <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+          <View className="mb-2">
+            <View className="flex-row items-center justify-between mb-1">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                {t.rag.triggerThreshold}
+              </Typography>
+              <Typography style={{ color: colors[600] }} className="text-xs font-bold">
                 {t.rag.messageCount.replace(
                   '{count}',
                   (currentConfig.summaryThreshold ?? 10).toString(),
                 )}
               </Typography>
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">30</Typography>
+            </View>
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              {t.rag.triggerThresholdDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-0">
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">5</Typography>
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">30</Typography>
             </View>
             <Slider
               value={currentConfig.summaryThreshold ?? 10}

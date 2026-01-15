@@ -120,7 +120,7 @@ export default function RagAdvancedSettings() {
         <ScrollView
           className="flex-1 px-4"
           contentContainerStyle={{
-            paddingTop: 110, // Adjusted for glass header + spacing
+            paddingTop: 100, // Compact: 110 -> 100
             paddingBottom: 40,
           }}
           showsVerticalScrollIndicator={false}
@@ -154,7 +154,7 @@ export default function RagAdvancedSettings() {
 
           {/* 1. 策略选择 */}
           <SettingsSection title={t.rag.kg.costStrategyTitle}>
-            <Card variant="glass" className="p-4 bg-transparent border-0">
+            <Card variant="glass" className="p-3 bg-transparent border-0">
               <View className="flex-row items-center mb-4">
                 <DollarSign size={20} color={colors[500]} style={{ marginRight: 8 }} />
                 <View style={{ flex: 1 }}>
@@ -196,7 +196,7 @@ export default function RagAdvancedSettings() {
                     borderColor: globalRagConfig.costStrategy === opt.key ? opt.color : 'transparent',
                     overflow: 'hidden',
                   }}
-                  className="p-3 rounded-[16px] mb-1.5 border border-transparent"
+                  className="p-3 rounded-[16px] mb-1 border border-transparent"
                 >
                   <View className="flex-row items-center">
                     <View
@@ -250,7 +250,7 @@ export default function RagAdvancedSettings() {
 
           {/* 3. 提示词配置 */}
           <SettingsSection title={t.rag.kg.extractionPrompt}>
-            <Card variant="glass" className="p-4">
+            <Card variant="glass" className="p-3">
               <View className="flex-row justify-between items-center mb-4">
                 <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
                   {t.rag.kg.entityRelationPrompt}
@@ -325,7 +325,7 @@ export default function RagAdvancedSettings() {
               onPress={() => router.push('/knowledge-graph')}
               activeOpacity={0.8}
             >
-              <Card variant="glass" className="p-4 items-center justify-center bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-500/20">
+              <Card variant="glass" className="p-3 items-center justify-center bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-500/20">
                 <Typography style={{ color: colors[500] }} className="font-bold">
                   {t.rag.kg.viewFullGraph}
                 </Typography>

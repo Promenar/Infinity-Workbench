@@ -55,10 +55,10 @@ export const SkillsSettingsPanel: React.FC = () => {
                 {/* Loop Limit */}
                 <View className="flex-row justify-between items-center px-4 py-4 border-b border-gray-100 dark:border-zinc-800">
                     <View className="flex-1 mr-4">
-                        <Typography variant="h3" className="text-gray-900 dark:text-white text-base">
+                        <Typography variant="h3" className="text-gray-900 dark:text-white text-sm font-bold">
                             {t.settings.skillsSettings.loopLimit}
                         </Typography>
-                        <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-1">
+                        <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-1 text-[10px]">
                             {t.settings.skillsSettings.loopLimitDesc}
                         </Typography>
                     </View>
@@ -113,23 +113,23 @@ export const SkillsSettingsPanel: React.FC = () => {
                         <View
                             key={skill.id}
                             style={[
-                                { padding: 16 },
+                                { padding: 12 },
                                 !isLast && { borderBottomWidth: 1, borderBottomColor: themeColors.borderDefault }
                             ]}
                         >
-                            <View className="flex-row justify-between items-center mb-2">
+                            <View className="flex-row justify-between items-center mb-1">
                                 <View className="flex-1 mr-4">
                                     <View className="flex-row items-center gap-2">
                                         <Text style={{
-                                            fontSize: 16,
-                                            fontWeight: '600',
+                                            fontSize: 14,
+                                            fontWeight: '700',
                                             color: themeColors.textPrimary
                                         }}>
                                             {localizedName}
                                         </Text>
-                                        <View className="bg-gray-200 dark:bg-zinc-800 px-2 py-0.5 rounded">
+                                        <View className="bg-gray-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
                                             <Text style={{
-                                                fontSize: 10,
+                                                fontSize: 9,
                                                 fontFamily: 'monospace',
                                                 color: themeColors.textTertiary
                                             }}>
@@ -145,9 +145,9 @@ export const SkillsSettingsPanel: React.FC = () => {
                             </View>
 
                             <Text style={{
-                                fontSize: 13,
+                                fontSize: 10,
                                 color: themeColors.textSecondary,
-                                lineHeight: 18
+                                lineHeight: 14
                             }}>
                                 {localizedDesc}
                             </Text>

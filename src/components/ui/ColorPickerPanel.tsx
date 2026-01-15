@@ -33,9 +33,8 @@ export const ColorPickerPanel: React.FC<ColorPickerPanelProps> = ({ color: selec
 
     return (
         <View>
-            <View className="flex-row items-center mb-6 px-1">
-                <View className="w-1.5 h-4 rounded-full mr-3" style={{ backgroundColor: colors[500] }} />
-                <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
+            <View className="mb-3 px-1">
+                <Typography className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     {title || t.common.color.title}
                 </Typography>
             </View>
@@ -87,10 +86,8 @@ export const ColorPickerPanel: React.FC<ColorPickerPanelProps> = ({ color: selec
                 </View>
             </View>
 
-            {/* Custom Rainbow Slider & Input */}
-            <View className="flex-row items-center mb-4 px-1">
-                <View className="w-1.5 h-4 rounded-full mr-3" style={{ backgroundColor: colors[500] }} />
-                <Typography className="text-sm font-bold text-gray-900 dark:text-white uppercase">
+            <View className="mb-3 mt-4 px-1">
+                <Typography className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     {t.common.color.custom}
                 </Typography>
             </View>

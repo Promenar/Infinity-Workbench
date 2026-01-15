@@ -530,7 +530,7 @@ export default function SuperAssistantSettingsScreen() {
           <SettingsSection title={t.agent.superAssistant.fabAppearance}>
             <View className="px-5 py-4">
               {/* 图标样式 Grid (4列 对齐) */}
-              <Typography style={{ color: colors[500] }} className="font-bold text-xs mb-3 uppercase tracking-wider">
+              <Typography className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wider">
                 {t.agent.superAssistant.iconStyle}
               </Typography>
               <FABIconGrid
@@ -693,12 +693,8 @@ export default function SuperAssistantSettingsScreen() {
             </TouchableOpacity>
           </SettingsSection>
 
-          {/* 上下文管理 */}
-          <SettingsSection title={t.rag.contextManagement}>
-            <View className="p-4 pt-2">
-              <ContextManagementPanel sessionId={SPA_SESSION_ID} />
-            </View>
-          </SettingsSection>
+          {/* 上下文管理 (Self-contained headers) */}
+          <ContextManagementPanel sessionId={SPA_SESSION_ID} />
 
 
 

@@ -11,8 +11,8 @@ const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 3
   const { colors } = useTheme();
   return (
     <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-      <View style={{ backgroundColor: colors[500] }} className="w-1.5 h-4 rounded-full mr-3" />
-      <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
+      <View style={{ backgroundColor: colors[500] }} className="w-1 h-3 rounded-full mr-2" />
+      <Typography className="text-xs font-bold text-gray-900 dark:text-white tracking-tight uppercase">
         {title}
       </Typography>
     </View>
@@ -28,39 +28,40 @@ export const AdvancedRetrievalPanel: React.FC = () => {
     <View>
       {/* 检索配置 */}
       <SectionHeader title={t.rag.retrievalSettings} mt={0} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
         <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
           {t.rag.memoryRetrieval}
         </Typography>
 
-        <View className="mb-4" style={{ opacity: globalRagConfig.enableRerank ? 0.5 : 1 }}>
+        <View className="mb-2" style={{ opacity: globalRagConfig.enableRerank ? 0.5 : 1 }}>
           <View className="flex-row items-center mb-1">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
               {t.rag.memoryLimit}
             </Typography>
             {globalRagConfig.enableRerank && (
               <View
-                className="px-2 py-0.5 rounded ml-2"
+                className="px-1.5 py-0.5 rounded ml-2"
                 style={{ backgroundColor: isDark ? `${colors[500]}30` : `${colors[500]}15` }}
               >
                 <Typography
-                  className="text-[10px] font-bold"
+                  className="text-[9px] font-bold"
                   style={{ color: colors[500] }}
                 >
-                  Rerank 覆盖
+                  Rerank
                 </Typography>
               </View>
             )}
-          </View>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.memoryLimitDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">3</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+            <View className="flex-1" />
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {t.rag.unitItems.replace('{count}', (globalRagConfig.memoryLimit ?? 5).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.memoryLimitDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">3</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">10</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.memoryLimit ?? 5}
@@ -72,19 +73,21 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           />
         </View>
 
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.similarityThreshold}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.memoryThresholdDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">50%</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+        <View className="mb-2">
+          <View className="flex-row items-center justify-between mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.similarityThreshold}
+            </Typography>
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {Math.round((globalRagConfig.memoryThreshold ?? 0.7) * 100)}%
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">95%</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.memoryThresholdDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">50%</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">95%</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.memoryThreshold ?? 0.7}
@@ -101,34 +104,35 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           {t.rag.docRetrieval}
         </Typography>
 
-        <View className="mb-4" style={{ opacity: globalRagConfig.enableRerank ? 0.5 : 1 }}>
+        <View className="mb-2" style={{ opacity: globalRagConfig.enableRerank ? 0.5 : 1 }}>
           <View className="flex-row items-center mb-1">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
               {t.rag.docLimit}
             </Typography>
             {globalRagConfig.enableRerank && (
               <View
-                className="px-2 py-0.5 rounded ml-2"
+                className="px-1.5 py-0.5 rounded ml-2"
                 style={{ backgroundColor: isDark ? `${colors[500]}30` : `${colors[500]}15` }}
               >
                 <Typography
-                  className="text-[10px] font-bold"
+                  className="text-[9px] font-bold"
                   style={{ color: colors[500] }}
                 >
-                  Rerank 覆盖
+                  Rerank
                 </Typography>
               </View>
             )}
-          </View>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.docLimitDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+            <View className="flex-1" />
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {t.rag.unitItems.replace('{count}', (globalRagConfig.docLimit ?? 8).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">15</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.docLimitDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">5</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">15</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.docLimit ?? 8}
@@ -141,18 +145,20 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         </View>
 
         <View>
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.similarityThreshold}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.docThresholdDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">30%</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+          <View className="flex-row items-center justify-between mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.similarityThreshold}
+            </Typography>
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {Math.round((globalRagConfig.docThreshold ?? 0.45) * 100)}%
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">80%</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.docThresholdDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">30%</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">80%</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.docThreshold ?? 0.45}
@@ -166,14 +172,14 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* Rerank配置 */}
       <SectionHeader title={t.rag.rerankSection} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
         {/* 启用Rerank */}
-        <View className="flex-row items-center justify-between mb-6">
+        <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1">
               {t.rag.enableRerank}
             </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400">
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400">
               {t.rag.rerankEnabledDesc}
             </Typography>
           </View>
@@ -186,19 +192,21 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-6" />
 
         {/* 初召回数量 */}
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.rerankRecallCount}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.rerankRecallCountDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+        <View className="mb-2">
+          <View className="flex-row items-center justify-between mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.rerankRecallCount}
+            </Typography>
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {t.rag.unitItems.replace('{count}', (globalRagConfig.rerankTopK ?? 30).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">100</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.rerankRecallCountDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">10</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">100</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.rerankTopK ?? 30}
@@ -211,18 +219,20 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
         {/* 精排后返回数量 */}
         <View>
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.rerankResultCount}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.rerankFinalKDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">3</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+          <View className="flex-row items-center justify-between mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.rerankResultCount}
+            </Typography>
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {t.rag.unitItems.replace('{count}', (globalRagConfig.rerankFinalK ?? 8).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">20</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.rerankFinalKDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">3</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">20</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.rerankFinalK ?? 8}
@@ -236,14 +246,14 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* 查询重写配置 */}
       <SectionHeader title={t.rag.queryRewrite} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
         {/* 启用查询重写 */}
-        <View className="flex-row items-center justify-between mb-6">
+        <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1">
               {t.rag.queryRewriteEnabled}
             </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400">
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400">
               {t.rag.queryRewriteEnabledDesc}
             </Typography>
           </View>
@@ -286,18 +296,20 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
         {/* 变体数量 */}
         <View>
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.queryRewriteCount}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.queryRewriteCountDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">2</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+          <View className="flex-row items-center justify-between mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.queryRewriteCount}
+            </Typography>
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {t.rag.unitItems.replace('{count}', (globalRagConfig.queryRewriteCount ?? 3).toString())}
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.queryRewriteCountDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">2</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">5</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.queryRewriteCount ?? 3}
@@ -311,14 +323,14 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* 混合检索配置 */}
       <SectionHeader title={t.rag.hybridSearch} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
         {/* 启用混合检索 */}
-        <View className="flex-row items-center justify-between mb-6">
+        <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1">
               {t.rag.hybridSearchEnabled}
             </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400">
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400">
               {t.rag.hybridSearchEnabledDesc}
             </Typography>
           </View>
@@ -331,19 +343,21 @@ export const AdvancedRetrievalPanel: React.FC = () => {
         <View className="h-[1px] bg-gray-100 dark:bg-zinc-800/50 my-6" />
 
         {/* 向量权重 */}
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.vectorWeight}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.vectorWeightDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">0</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+        <View className="mb-2">
+          <View className="flex-row items-center justify-between mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.vectorWeight}
+            </Typography>
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {((globalRagConfig.hybridAlpha ?? 0.6) * 100).toFixed(0)}%
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">100%</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.vectorWeightDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">0</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">100%</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.hybridAlpha ?? 0.6}
@@ -356,18 +370,20 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
         {/* BM25权重增益 */}
         <View>
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.bm25Boost}
-          </Typography>
-          <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            {t.rag.bm25BoostDesc}
-          </Typography>
-          <View className="flex-row justify-between mb-2">
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">0.5x</Typography>
-            <Typography style={{ color: colors[600] }} className="text-sm font-bold">
+          <View className="flex-row items-center justify-between mb-1">
+            <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.bm25Boost}
+            </Typography>
+            <Typography style={{ color: colors[500] }} className="text-xs font-bold">
               {(globalRagConfig.hybridBM25Boost ?? 1.0).toFixed(1)}x
             </Typography>
-            <Typography className="text-sm text-gray-400 dark:text-zinc-500">2.0x</Typography>
+          </View>
+          <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+            {t.rag.bm25BoostDesc}
+          </Typography>
+          <View className="flex-row justify-between mb-0">
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">0.5x</Typography>
+            <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">2.0x</Typography>
           </View>
           <ThemedSlider
             value={globalRagConfig.hybridBM25Boost ?? 1.0}
@@ -381,7 +397,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* 可观测性配置 */}
       <SectionHeader title={t.rag.observability} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm">
+      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
         {/* 显示检索进度 */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">

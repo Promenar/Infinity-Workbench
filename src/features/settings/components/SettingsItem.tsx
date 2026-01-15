@@ -78,8 +78,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14, // High Density: 12->14 (Wait, plan said 10px? 14 looks better for touch targets with 20px radius. Let's stick to 13-14 for balance)
-    minHeight: 52, // Ensure minimum touch target
+    paddingVertical: 11, // Ultra Compact: 13->11
+    minHeight: 44, // Ultra Compact: 48->44
   },
   iconContainer: {
     width: 22,

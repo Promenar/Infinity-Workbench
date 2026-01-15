@@ -23,20 +23,20 @@ const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 3
         marginTop: mt,
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 8, // Compact: 16 -> 8
         paddingHorizontal: 4,
       }}
     >
       <View
         style={{
-          width: 6,
-          height: 16,
+          width: 4, // Compact: 6 -> 4
+          height: 12, // Compact: 16 -> 12
           borderRadius: 999,
-          marginRight: 12,
+          marginRight: 8, // Compact: 12 -> 8
           backgroundColor: colors[500],
         }}
       />
-      <Typography className="text-sm font-bold uppercase tracking-widest text-gray-900 dark:text-white">
+      <Typography className="text-xs font-bold uppercase tracking-widest text-gray-900 dark:text-white">
         {title}
       </Typography>
     </View>
@@ -202,21 +202,23 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
       {/* 文档分块设置 */}
       <SectionHeader title={t.rag.docChunkSettings} />
-      <Card variant="glass" className="mb-6">
-        <View className="p-5">
-          <View className="mb-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              {t.rag.chunkSize}
-            </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {t.rag.chunkSizeDesc}
-            </Typography>
-            <View className="flex-row justify-between mb-2">
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">200</Typography>
-              <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
+      <Card variant="glass" className="mb-4">
+        <View className="p-4">
+          <View className="mb-2">
+            <View className="flex-row items-center justify-between mb-1">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                {t.rag.chunkSize}
+              </Typography>
+              <Typography className="text-xs font-bold" style={{ color: colors[500] }}>
                 {t.rag.chars.replace('{count}', (globalRagConfig.docChunkSize ?? 800).toString())}
               </Typography>
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">2000</Typography>
+            </View>
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              {t.rag.chunkSizeDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-0">
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">200</Typography>
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">2000</Typography>
             </View>
             <Slider
               value={globalRagConfig.docChunkSize ?? 800}
@@ -230,18 +232,20 @@ export const GlobalRagConfigPanel: React.FC = () => {
           <View className="h-[1px] bg-indigo-500/10 dark:bg-indigo-400/10 my-4" />
 
           <View>
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              {t.rag.chunkOverlap}
-            </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {t.rag.chunkOverlapDesc}
-            </Typography>
-            <View className="flex-row justify-between mb-2">
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">0</Typography>
-              <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
+            <View className="flex-row items-center justify-between mb-1">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                {t.rag.chunkOverlap}
+              </Typography>
+              <Typography className="text-xs font-bold" style={{ color: colors[500] }}>
                 {t.rag.chars.replace('{count}', (globalRagConfig.chunkOverlap ?? 100).toString())}
               </Typography>
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">500</Typography>
+            </View>
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              {t.rag.chunkOverlapDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-0">
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">0</Typography>
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">500</Typography>
             </View>
             <Slider
               value={globalRagConfig.chunkOverlap ?? 100}
@@ -256,21 +260,23 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
       {/* 对话记忆分块设置 */}
       <SectionHeader title={t.rag.memorySettings} />
-      <Card variant="glass" className="mb-6">
-        <View className="p-5">
-          <View className="mb-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              {t.rag.memoryChunkSize}
-            </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {t.rag.memoryChunkSizeDesc}
-            </Typography>
-            <View className="flex-row justify-between mb-2">
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">500</Typography>
-              <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
+      <Card variant="glass" className="mb-4">
+        <View className="p-4">
+          <View className="mb-2">
+            <View className="flex-row items-center justify-between mb-1">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                {t.rag.memoryChunkSize}
+              </Typography>
+              <Typography className="text-xs font-bold" style={{ color: colors[500] }}>
                 {t.rag.chars.replace('{count}', (globalRagConfig.memoryChunkSize ?? 1000).toString())}
               </Typography>
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">2000</Typography>
+            </View>
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              {t.rag.memoryChunkSizeDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-0">
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">500</Typography>
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">2000</Typography>
             </View>
             <Slider
               value={globalRagConfig.memoryChunkSize ?? 1000}
@@ -285,24 +291,26 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
       {/* 摘要设置 (上下文窗口) */}
       <SectionHeader title={t.rag.summarySettings} />
-      <Card variant="glass" className="mb-6">
-        <View className="p-5">
-          <View className="mb-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              {t.rag.activeWindow}
-            </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {t.rag.activeWindowDesc}
-            </Typography>
-            <View className="flex-row justify-between mb-2">
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">10</Typography>
-              <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
+      <Card variant="glass" className="mb-4">
+        <View className="p-4">
+          <View className="mb-2">
+            <View className="flex-row items-center justify-between mb-1">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                {t.rag.activeWindow}
+              </Typography>
+              <Typography className="text-xs font-bold" style={{ color: colors[500] }}>
                 {t.rag.messageCount.replace(
                   '{count}',
                   (globalRagConfig.contextWindow ?? 20).toString(),
                 )}
               </Typography>
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">50</Typography>
+            </View>
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              {t.rag.activeWindowDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-0">
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">10</Typography>
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">50</Typography>
             </View>
             <Slider
               value={globalRagConfig.contextWindow ?? 20}
@@ -315,22 +323,24 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
           <View className="h-[1px] bg-indigo-500/10 dark:bg-indigo-400/10 my-4" />
 
-          <View className="mb-4">
-            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-              {t.rag.triggerThreshold}
-            </Typography>
-            <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              {t.rag.triggerThresholdDesc}
-            </Typography>
-            <View className="flex-row justify-between mb-2">
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
-              <Typography className="text-sm font-bold" style={{ color: colors[500] }}>
+          <View className="mb-2">
+            <View className="flex-row items-center justify-between mb-1">
+              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                {t.rag.triggerThreshold}
+              </Typography>
+              <Typography className="text-xs font-bold" style={{ color: colors[500] }}>
                 {t.rag.messageCount.replace(
                   '{count}',
                   (globalRagConfig.summaryThreshold ?? 10).toString(),
                 )}
               </Typography>
-              <Typography className="text-sm text-gray-400 dark:text-zinc-500">30</Typography>
+            </View>
+            <Typography className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              {t.rag.triggerThresholdDesc}
+            </Typography>
+            <View className="flex-row justify-between mb-0">
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">5</Typography>
+              <Typography className="text-[10px] text-gray-400 dark:text-zinc-500">30</Typography>
             </View>
             <Slider
               value={globalRagConfig.summaryThreshold ?? 10}
@@ -387,7 +397,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
       {/* 知识图谱与高级配置 */}
       <SectionHeader title={t.rag.advancedRagConfig || '高级配置'} />
-      <Card variant="glass" onPress={handleNavigateToDebug} className="mb-6">
+      <Card variant="glass" onPress={handleNavigateToDebug} className="mb-4">
         <View className="p-4 flex-row items-center justify-between">
           <View className="flex-row items-center gap-3">
             <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
@@ -410,8 +420,8 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
       {/* 统计信息看板 */}
       <SectionHeader title={t.rag.viewVectorStats} />
-      <Card variant="glass" className="mb-8">
-        <View className="p-5">
+      <Card variant="glass" className="mb-6">
+        <View className="p-4">
           <View className="flex-row justify-between items-center mb-6">
             <View className="flex-row items-center gap-3">
               <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
