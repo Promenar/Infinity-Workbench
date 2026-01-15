@@ -63,6 +63,10 @@ interface ChatInputProps {
   };
   onTokenPress?: () => void;
   isInterventionMode?: boolean;
+  // ✅ 新增：重发编辑模式
+  editingMessageId?: string;      // 正在编辑的消息 ID
+  initialEditText?: string;       // 初始编辑内容
+  onCancelEdit?: () => void;      // 取消编辑回调
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -79,6 +83,9 @@ export function ChatInput({
   tokenUsage,
   onTokenPress,
   isInterventionMode,
+  editingMessageId,
+  initialEditText,
+  onCancelEdit,
 }: ChatInputProps) {
   const { t } = useI18n();
   const { isDark, colors } = useTheme();
@@ -86,6 +93,13 @@ export function ChatInput({
   const [text, setText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+
+  // ✅ 编辑模式：当进入编辑模式时，设置初始文本
+  useEffect(() => {
+    if (editingMessageId && initialEditText !== undefined) {
+      setText(initialEditText);
+    }
+  }, [editingMessageId, initialEditText]);
 
   // 确认弹窗状态
   const [confirmState, setConfirmState] = useState<{
@@ -304,8 +318,11 @@ export function ChatInput({
         style={[
           styles.blurContainer,
           {
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
-            borderWidth: 1.5,
+            // ✅ 编辑模式：红色边框提示
+            borderColor: editingMessageId
+              ? 'rgba(239, 68, 68, 0.6)' // 红色半透明
+              : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
+            borderWidth: editingMessageId ? 2 : 1.5,
           },
         ]}
       >
@@ -487,6 +504,26 @@ export function ChatInput({
                   />
                 </Svg>
               </Animated.View>
+            )}
+            {/* ✅ 编辑模式：取消按钮 */}
+            {editingMessageId && (
+              <TouchableOpacity
+                onPress={() => {
+                  setText('');
+                  onCancelEdit?.();
+                }}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginRight: 8,
+                }}
+              >
+                <X size={16} color="#ef4444" strokeWidth={2.5} />
+              </TouchableOpacity>
             )}
             <TouchableOpacity
               onPress={handleSend}

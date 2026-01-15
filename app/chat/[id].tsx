@@ -92,6 +92,13 @@ export default function ChatDetailScreen() {
   const [showModelPicker, setShowModelPicker] = React.useState(false);
   const [showTokenStats, setShowTokenStats] = React.useState(false);
 
+  // ✅ 新增：重发编辑模式状态
+  const [editingMessage, setEditingMessage] = React.useState<{
+    id: string;
+    content: string;
+    images?: any[];
+  } | null>(null);
+
   const isAtBottom = useSharedValue(true);
   // 如果有初始滚动位置，则初始认为不在底部，以显示按钮
   React.useEffect(() => {
@@ -411,25 +418,31 @@ export default function ChatDetailScreen() {
               onSummarize={handleManualSummarize} // ✅ Manual Summarize
               onResend={
                 item.role === 'user'
-                  ? async () => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    // ✅ 使用 skipUserMessage 避免创建重复用户消息
-                    await useChatStore.getState().generateMessage(id, item.content, {
-                      skipUserMessage: true,
-                      images: item.images,
-                    });
+                  ? () => {
+                    // ✅ 进入编辑模式：复制消息到输入框
+                    setTimeout(() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      setEditingMessage({
+                        id: item.id,
+                        content: item.content,
+                        images: item.images,
+                      });
+                    }, 10);
                   }
                   : undefined
               }
               onRegenerate={
                 item.role === 'user'
-                  ? async () => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    // ✅ 使用 skipUserMessage 避免创建重复用户消息
-                    await useChatStore.getState().generateMessage(id, item.content, {
-                      skipUserMessage: true,
-                      images: item.images,
-                    });
+                  ? () => {
+                    // ✅ 用户消息的重新生成也进入编辑模式
+                    setTimeout(() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      setEditingMessage({
+                        id: item.id,
+                        content: item.content,
+                        images: item.images,
+                      });
+                    }, 10);
                   }
                   : async () => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -510,8 +523,24 @@ export default function ChatDetailScreen() {
 
         <ChatInput
           isInterventionMode={session.loopStatus === 'running' || session.loopStatus === 'waiting_for_approval'}
-          onSendMessage={(content, options) => {
-            sendMessage(content, options);
+          onSendMessage={async (content, options) => {
+            if (editingMessage) {
+              // ✅ 编辑模式：更新原消息并重新生成
+              useChatStore.getState().updateMessageContent(
+                id,
+                editingMessage.id,
+                content
+              );
+              setEditingMessage(null);
+              // 触发重新生成（跳过创建用户消息）
+              await useChatStore.getState().generateMessage(id, content, {
+                skipUserMessage: true,
+                images: options?.images || editingMessage.images,
+              });
+            } else {
+              // 正常发送
+              sendMessage(content, options);
+            }
             userScrolledAway.value = false;
             isAtBottom.value = true;
             setTimeout(() => {
@@ -529,6 +558,10 @@ export default function ChatDetailScreen() {
             last: messages.length > 0 ? messages[messages.length - 1].tokens : undefined,
           }}
           onTokenPress={() => setShowTokenStats(true)}
+          // ✅ 新增：编辑模式 props
+          editingMessageId={editingMessage?.id}
+          initialEditText={editingMessage?.content}
+          onCancelEdit={() => setEditingMessage(null)}
         />
       </KeyboardAvoidingView>
 
