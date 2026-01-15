@@ -22,6 +22,7 @@ import {
   Zap,
   Shield,
   PlayCircle,
+  Check,
 } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 import { useI18n } from '../../../lib/i18n';
@@ -37,7 +38,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { useTheme } from '../../../theme/ThemeProvider';
-import { Typography, ConfirmDialog } from '../../../components/ui';
+import { Typography, ConfirmDialog, GlassBottomSheet } from '../../../components/ui';
 import Svg, { Circle } from 'react-native-svg';
 import { TokenUsage } from '../../../types/chat';
 import { formatTokenCount } from '../utils/token-counter'
@@ -49,8 +50,8 @@ import { SummaryIndicator } from './SummaryIndicator';
 
 // ✅ 内联执行模式按钮（适配输入栏风格）
 const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark: boolean }) => {
-  const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
-  const setExecutionMode = useChatStore(s => s.setExecutionMode);
+  const session = useChatStore((s) => s.sessions.find((sk) => sk.id === sessionId));
+  const setExecutionMode = useChatStore((s) => s.setExecutionMode);
   const [visible, setVisible] = useState(false);
 
   if (!session) return null;
@@ -58,17 +59,36 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
 
   const getIcon = (m: string, size: number = 14) => {
     switch (m) {
-      case 'auto': return <Zap size={size} color="#6366f1" strokeWidth={2.5} />;
-      case 'semi': return <Shield size={size} color="#d97706" strokeWidth={2.5} />;
-      case 'manual': return <PlayCircle size={size} color="#059669" strokeWidth={2.5} />;
-      default: return <Zap size={size} color={isDark ? '#52525b' : '#a1a1aa'} />;
+      case 'auto':
+        return <Zap size={size} color="#6366f1" strokeWidth={2.5} />;
+      case 'semi':
+        return <Shield size={size} color="#d97706" strokeWidth={2.5} />;
+      case 'manual':
+        return <PlayCircle size={size} color="#059669" strokeWidth={2.5} />;
+      default:
+        return <Zap size={size} color={isDark ? '#52525b' : '#a1a1aa'} />;
+    }
+  };
+
+  const getLabel = (m: string) => {
+    switch (m) {
+      case 'auto':
+        return 'AUTO';
+      case 'semi':
+        return 'SEMI';
+      case 'manual':
+        return 'MANU';
+      default:
+        return m.toUpperCase();
     }
   };
 
   const handleSelect = (m: 'auto' | 'semi' | 'manual') => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setExecutionMode(sessionId, m);
-    setVisible(false);
+    setTimeout(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setExecutionMode(sessionId, m);
+      setVisible(false);
+    }, 10);
   };
 
   return (
@@ -80,61 +100,114 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
         }}
         activeOpacity={0.7}
         style={{
-          width: 24,
-          height: 24,
-          borderRadius: 12,
+          flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 12,
+          backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)',
+          gap: 6,
         }}
       >
         {getIcon(mode)}
+        <Typography
+          style={{
+            fontSize: 10,
+            fontWeight: '800',
+            color:
+              mode === 'auto'
+                ? '#6366f1'
+                : mode === 'semi'
+                  ? '#d97706'
+                  : mode === 'manual'
+                    ? '#059669'
+                    : isDark
+                      ? 'rgba(255,255,255,0.6)'
+                      : 'rgba(0,0,0,0.6)',
+          }}
+        >
+          {getLabel(mode)}
+        </Typography>
       </TouchableOpacity>
 
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
-        <TouchableOpacity
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        >
-          <View style={{
-            width: 280,
-            backgroundColor: isDark ? '#1e1e1e' : '#ffffff',
-            borderRadius: 16,
-            padding: 16,
-            gap: 12,
-          }}>
-            <Typography variant="h3" style={{ marginBottom: 4 }}>执行模式</Typography>
-
-            {(['auto', 'semi', 'manual'] as const).map((m) => (
+      <GlassBottomSheet
+        visible={visible}
+        onClose={() => setVisible(false)}
+        title="执行模式"
+        subtitle="选择 AI 的任务执行策略"
+        height="auto"
+      >
+        <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 8 }}>
+          {(['auto', 'semi', 'manual'] as const).map((m) => {
+            const isSelected = mode === m;
+            return (
               <TouchableOpacity
                 key={m}
                 onPress={() => handleSelect(m)}
+                activeOpacity={0.7}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: mode === m ? (isDark ? 'rgba(255,255,255,0.1)' : '#f3f4f6') : 'transparent',
-                  gap: 12,
+                  padding: 14,
+                  borderRadius: 20,
+                  backgroundColor: isSelected
+                    ? isDark
+                      ? 'rgba(255, 255, 255, 0.08)'
+                      : 'rgba(0, 0, 0, 0.04)'
+                    : 'transparent',
+                  borderWidth: 1,
+                  borderColor: isSelected
+                    ? isDark
+                      ? 'rgba(255, 255, 255, 0.12)'
+                      : 'rgba(0, 0, 0, 0.08)'
+                    : 'transparent',
+                  gap: 14,
                 }}
               >
-                <View style={{ padding: 8, borderRadius: 8, backgroundColor: m === 'auto' ? 'rgba(99, 102, 241, 0.1)' : m === 'semi' ? 'rgba(217, 119, 6, 0.1)' : 'rgba(16, 185, 129, 0.1)' }}>
-                  {getIcon(m, 20)}
+                <View
+                  style={{
+                    padding: 10,
+                    borderRadius: 12,
+                    backgroundColor:
+                      m === 'auto'
+                        ? 'rgba(99, 102, 241, 0.12)'
+                        : m === 'semi'
+                          ? 'rgba(217, 119, 6, 0.12)'
+                          : 'rgba(16, 185, 129, 0.12)',
+                  }}
+                >
+                  {getIcon(m, 22)}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Typography variant="body" style={{ fontWeight: '600' }}>
+                  <Typography style={{ fontSize: 16, fontWeight: '700', color: isDark ? '#fff' : '#111' }}>
                     {m === 'auto' ? '自动' : m === 'semi' ? '半自动' : '手动'}
                   </Typography>
-                  <Typography variant="caption" color="secondary">
+                  <Typography
+                    variant="caption"
+                    style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', marginTop: 2 }}
+                  >
                     {m === 'auto' ? '连续运行' : m === 'semi' ? '高风险操作暂停' : '每步需确认'}
                   </Typography>
                 </View>
+                {isSelected && (
+                  <View
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 12,
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Check size={14} color={isDark ? '#fff' : '#000'} strokeWidth={3} />
+                  </View>
+                )}
               </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+            );
+          })}
+        </View>
+      </GlassBottomSheet>
     </>
   );
 };
