@@ -55,7 +55,7 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
   const [visible, setVisible] = useState(false);
 
   if (!session) return null;
-  const mode = session.executionMode || 'auto';
+  const mode = session.executionMode || 'semi';
 
   const getIcon = (m: string, size: number = 14) => {
     switch (m) {

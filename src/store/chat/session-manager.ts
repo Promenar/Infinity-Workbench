@@ -15,7 +15,7 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
                 sessions: [
                     {
                         ...session,
-                        executionMode: session.executionMode || 'auto',
+                        executionMode: session.executionMode || 'semi',
                         loopStatus: session.loopStatus || 'completed',
                     },
                     ...state.sessions,

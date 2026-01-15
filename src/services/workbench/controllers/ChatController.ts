@@ -51,7 +51,7 @@ export const ChatController = {
             createdAt: Date.now(),
             updatedAt: Date.now(),
             modelId: agent.defaultModel,
-            executionMode: 'auto' as const,
+            executionMode: 'semi' as const,
             loopStatus: 'completed' as const
         };
 

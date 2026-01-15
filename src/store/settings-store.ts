@@ -148,7 +148,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       maxLoopCount: 5,
       setMaxLoopCount: (count) => set({ maxLoopCount: count }),
-      executionMode: 'auto',
+      executionMode: 'semi',
       setExecutionMode: (mode) => set({ executionMode: mode }),
       skillsConfig: {},
       setSkillEnabled: (skillId, enabled) =>
