@@ -525,16 +525,29 @@ export default function ChatDetailScreen() {
           isInterventionMode={session.loopStatus === 'running' || session.loopStatus === 'waiting_for_approval'}
           onSendMessage={async (content, options) => {
             if (editingMessage) {
-              // ✅ 编辑模式：更新原消息并重新生成
-              useChatStore.getState().updateMessageContent(
-                id,
-                editingMessage.id,
-                content
-              );
+              // ✅ 编辑模式：截断后续消息并重新生成
+              const store = useChatStore.getState();
+              const currentSession = store.getSession(id);
+              if (currentSession) {
+                // 找到被编辑消息的索引
+                const msgIndex = currentSession.messages.findIndex(m => m.id === editingMessage.id);
+                if (msgIndex !== -1) {
+                  // 截断该消息之后的所有消息
+                  const truncatedMessages = currentSession.messages.slice(0, msgIndex);
+                  // 更新 session 消息列表
+                  useChatStore.setState(state => ({
+                    sessions: state.sessions.map(s =>
+                      s.id === id
+                        ? { ...s, messages: truncatedMessages }
+                        : s
+                    )
+                  }));
+                }
+              }
               setEditingMessage(null);
-              // 触发重新生成（跳过创建用户消息）
-              await useChatStore.getState().generateMessage(id, content, {
-                skipUserMessage: true,
+
+              // 触发新的生成（会创建新的用户消息和 AI 回复）
+              await store.generateMessage(id, content, {
                 images: options?.images || editingMessage.images,
               });
             } else {

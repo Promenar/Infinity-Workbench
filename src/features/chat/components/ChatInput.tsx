@@ -312,17 +312,46 @@ export function ChatInput({
         }),
       ]}
     >
+      {/* ✅ 编辑模式横条 Banner - 定位在输入框上边框中心 */}
+      {editingMessageId && (
+        <TouchableOpacity
+          onPress={() => {
+            setText('');
+            onCancelEdit?.();
+          }}
+          activeOpacity={0.8}
+          style={{
+            position: 'absolute',
+            top: -12, // 使文字横跨上边框内外
+            left: '50%',
+            transform: [{ translateX: -55 }],
+            zIndex: 100,
+            backgroundColor: 'rgba(185, 28, 28, 0.95)',
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <X size={11} color="white" strokeWidth={2.5} />
+          <Typography style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
+            退出重发模式
+          </Typography>
+        </TouchableOpacity>
+      )}
       <BlurView
         intensity={isDark ? 80 : 120}
-        tint={isDark ? 'dark' : 'light'}
+        tint={editingMessageId ? 'default' : (isDark ? 'dark' : 'light')}
         style={[
           styles.blurContainer,
           {
-            // ✅ 编辑模式：红色边框提示
+            // ✅ 编辑模式：红色边框 + 红色背景
             borderColor: editingMessageId
-              ? 'rgba(239, 68, 68, 0.6)' // 红色半透明
+              ? 'rgba(239, 68, 68, 0.5)'
               : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
-            borderWidth: editingMessageId ? 2 : 1.5,
+            borderWidth: editingMessageId ? 1.5 : 1.5,
           },
         ]}
       >
@@ -330,7 +359,10 @@ export function ChatInput({
           style={[
             styles.overlay,
             {
-              backgroundColor: isDark ? 'rgba(10, 10, 12, 0.8)' : 'rgba(255, 255, 255, 0.3)',
+              // ✅ 编辑模式：红色半透明叠加
+              backgroundColor: editingMessageId
+                ? 'rgba(185, 28, 28, 0.25)' // 红色半透明
+                : isDark ? 'rgba(10, 10, 12, 0.8)' : 'rgba(255, 255, 255, 0.3)',
             },
           ]}
         />
@@ -504,26 +536,6 @@ export function ChatInput({
                   />
                 </Svg>
               </Animated.View>
-            )}
-            {/* ✅ 编辑模式：取消按钮 */}
-            {editingMessageId && (
-              <TouchableOpacity
-                onPress={() => {
-                  setText('');
-                  onCancelEdit?.();
-                }}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  marginRight: 8,
-                }}
-              >
-                <X size={16} color="#ef4444" strokeWidth={2.5} />
-              </TouchableOpacity>
             )}
             <TouchableOpacity
               onPress={handleSend}
