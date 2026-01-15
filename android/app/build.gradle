@@ -132,11 +132,22 @@ android {
                 keyAlias MYAPP_UPLOAD_KEY_ALIAS
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
             } else {
-                def secureEnv = file("../../secure_env/secure.properties")
-                if (secureEnv.exists()) {
+                def findSecureProps = {
+                    def root = projectDir
+                    for (int i = 0; i < 5; i++) {
+                        def target = new File(root, "secure_env/secure.properties")
+                        if (target.exists()) return target
+                        root = root.parentFile
+                        if (root == null) break
+                    }
+                    return null
+                }
+                def secureEnv = findSecureProps()
+                if (secureEnv != null) {
                     def props = new Properties()
                     secureEnv.withInputStream { props.load(it) }
-                    storeFile file("../../secure_env/promenar.keystore")
+                    def keystore = new File(secureEnv.parentFile, "promenar.keystore")
+                    storeFile keystore
                     storePassword props.getProperty("KEYSTORE_PASSWORD")
                     keyAlias props.getProperty("KEY_ALIAS")
                     keyPassword props.getProperty("KEY_PASSWORD")
