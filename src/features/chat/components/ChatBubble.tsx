@@ -107,8 +107,10 @@ interface ChatBubbleProps {
   onVectorize?: () => void;
   onSummarize?: () => void;
   modelId?: string;
+  modelName?: string; // ✅ 新增：友好的模型名称
   sessionId: string;
   onLayout?: (event: any) => void;
+  isLastAssistantMessage?: boolean; // ✅ 新增：是否是最新的 AI 回复
 }
 
 // SVGErrorBoundary removed as we use WebView now
@@ -387,60 +389,51 @@ const SelectTextModal: React.FC<{
   );
 };
 
-const ActionBar: React.FC<{
-  content: string;
-  onDelete?: () => void;
-  onShare: () => void;
-  onSelect: () => void;
-  onResend?: () => void;
-  onRegenerate?: () => void;
+/**
+ * MessageMeta - 消息元信息组件
+ * 显示模型名称和时间戳，替代原有的 ActionBar
+ * 设计原则：隐式注脚，不喧宾夺主
+ */
+const MessageMeta: React.FC<{
+  modelName?: string;
+  timestamp?: number;
   isDark: boolean;
-  isArchived?: boolean; // ✅ 新增：归档状态
-  isProcessing?: boolean; // ✅ 新增：处理中状态
-}> = ({ content, onDelete, onShare, onSelect, onResend, onRegenerate, isDark, isArchived, isProcessing }) => {
-  const handleCopy = async () => {
-    await Clipboard.setStringAsync(content);
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, 10);
-  };
-
-  const iconColor = isDark ? '#a1a1aa' : '#71717a';
-  const btnStyle = 'p-2 mx-1';
+}> = ({ modelName, timestamp, isDark }) => {
+  const timeStr = timestamp
+    ? new Date(timestamp).toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    : '';
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-      <TouchableOpacity onPress={handleCopy} className={btnStyle}>
-        <Copy size={16} color={iconColor} />
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={onSelect} className={btnStyle}>
-        <Type size={16} color={iconColor} />
-      </TouchableOpacity>
-
-      {onResend && (
-        <TouchableOpacity onPress={onResend} className={btnStyle}>
-          <RefreshCw size={16} color={iconColor} />
-        </TouchableOpacity>
+    <View style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+      gap: 8,
+      opacity: 0.6, // 隐式设计
+    }}>
+      {modelName && (
+        <Text style={{
+          fontSize: 11,
+          color: isDark ? '#71717a' : '#a1a1aa',
+          fontWeight: '400',
+        }}>
+          {modelName}
+        </Text>
       )}
-
-      {onRegenerate && (
-        <TouchableOpacity onPress={onRegenerate} className={btnStyle}>
-          <RefreshCw size={16} color={iconColor} />
-        </TouchableOpacity>
+      {modelName && timeStr && (
+        <Text style={{ fontSize: 11, color: isDark ? '#52525b' : '#d4d4d8' }}>·</Text>
       )}
-
-      <TouchableOpacity onPress={onShare} className={btnStyle}>
-        <Share2 size={16} color={iconColor} />
-      </TouchableOpacity>
-
-      {onDelete && (
-        <TouchableOpacity onPress={onDelete} className={btnStyle}>
-          <Trash2 size={16} color="#ef4444" />
-        </TouchableOpacity>
+      {timeStr && (
+        <Text style={{
+          fontSize: 11,
+          color: isDark ? '#52525b' : '#d4d4d8',
+        }}>
+          {timeStr}
+        </Text>
       )}
-
-      {/* 状态指示器已统一集成到消息上方的 RagOmniIndicator 中 */}
     </View>
   );
 };
@@ -495,8 +488,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   onSummarize, // ✅ 新增
   isGenerating,
   modelId,
+  modelName, // ✅ 新增：友好模型名称
   sessionId,
   onLayout, // ✅ 新增：传递布局回调
+  isLastAssistantMessage, // ✅ 新增：是否最新 AI 回复
 }) => {
   const { t } = useI18n();
 
@@ -859,7 +854,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           <ContextMenu
             items={[
               {
-                label: '复制内容',
+                label: '复制内容', // 4字
                 icon: <Copy />,
                 onPress: () => {
                   Clipboard.setStringAsync(message.content);
@@ -867,7 +862,27 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 },
               },
               {
-                label: '删除消息',
+                label: '选择文本', // 4字
+                icon: <Type />,
+                onPress: () => setModalVisible(true),
+              },
+              {
+                label: '分享消息', // 4字
+                icon: <Share2 />,
+                onPress: handleShare,
+              },
+              onResend && {
+                label: '重新发送', // 4字
+                icon: <RefreshCw />,
+                onPress: () => {
+                  setTimeout(() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onResend?.();
+                  }, 10);
+                },
+              },
+              {
+                label: '删除消息', // 4字
                 icon: <Trash2 />,
                 destructive: true,
                 onPress: () => {
@@ -875,7 +890,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                   onDelete?.();
                 },
               },
-            ]}
+            ].filter(Boolean) as any}
           >
             <View
               ref={bubbleRef}
@@ -950,14 +965,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
               width: '100%',
             }}
           >
-            <ActionBar
-              content={message.content || ''}
-              onDelete={onDelete}
-              onShare={handleShare}
-              onSelect={() => setModalVisible(true)}
-              onResend={onResend}
+            <MessageMeta
+              timestamp={message.createdAt}
               isDark={isDark}
-              isArchived={isArchived} // ✅ 传递归档状态
             />
           </View>
 
@@ -1082,7 +1092,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       <ContextMenu
         items={[
           {
-            label: '复制内容',
+            label: '复制内容', // 4字
             icon: <Copy />,
             onPress: () => {
               Clipboard.setStringAsync(message.content);
@@ -1090,28 +1100,49 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             },
           },
           {
-            label: '提取知识图谱',
+            label: '选择文本', // 4字
+            icon: <Type />,
+            onPress: () => setModalVisible(true),
+          },
+          {
+            label: '分享消息', // 4字
+            icon: <Share2 />,
+            onPress: handleShare,
+          },
+          // 重新生成只在最新 AI 回复上显示
+          isLastAssistantMessage && onRegenerate && {
+            label: '重新生成', // 4字
+            icon: <RefreshCw />,
+            onPress: () => {
+              setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onRegenerate?.();
+              }, 10);
+            },
+          },
+          {
+            label: '知识图谱', // 4字
             icon: <BrainCircuit />,
             onPress: () => {
               onExtractGraph?.();
             },
           },
           {
-            label: '手动切片向量化',
+            label: '手动向量', // 4字
             icon: <FileInput />,
             onPress: () => {
               onVectorize?.();
             },
           },
           {
-            label: '手动触发摘要',
+            label: '触发摘要', // 4字
             icon: <FileText />,
             onPress: () => {
               onSummarize?.();
             },
           },
           {
-            label: '删除消息',
+            label: '删除消息', // 4字
             icon: <Trash2 />,
             destructive: true,
             onPress: () => {
@@ -1231,7 +1262,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
       </ContextMenu>
 
-      {/* Action Bar (Bottom Alignment) */}
+      {/* Message Meta (模型名称 + 时间戳) */}
       <View
         style={{
           marginTop: 8,
@@ -1240,15 +1271,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           paddingTop: 4,
         }}
       >
-        <ActionBar
-          content={message.content || ''}
-          onDelete={onDelete}
-          onShare={handleShare}
-          onSelect={() => setModalVisible(true)}
-          onRegenerate={onRegenerate}
+        <MessageMeta
+          modelName={modelName}
+          timestamp={message.createdAt}
           isDark={isDark}
-          isArchived={isArchived} // ✅ 传递归档状态
-          isProcessing={isProcessing} // ✅ Pass processing state
         />
       </View>
 

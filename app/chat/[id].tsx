@@ -430,6 +430,10 @@ export default function ChatDetailScreen() {
                   }
               }
               modelId={session?.modelId}
+              modelName={modelConfig?.name} // ✅ 新增：友好模型名称
+              isLastAssistantMessage={
+                item.role === 'assistant' && index === messages.length - 1
+              } // ✅ 新增：是否最新 AI 回复
               onLayout={(event) => {
                 const { height } = event.nativeEvent.layout;
                 if (height > 0) {
