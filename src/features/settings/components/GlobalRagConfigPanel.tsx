@@ -48,6 +48,7 @@ const PRESETS = {
   balanced: {
     name: '平衡',
     icon: Zap,
+    color: '#06b6d4',
     config: {
       docChunkSize: 800,
       chunkOverlap: 100,
@@ -59,6 +60,7 @@ const PRESETS = {
   writing: {
     name: '写作',
     icon: BookOpen,
+    color: '#f59e0b',
     config: {
       docChunkSize: 1200,
       chunkOverlap: 200,
@@ -70,6 +72,7 @@ const PRESETS = {
   coding: {
     name: '代码',
     icon: Code,
+    color: '#6366f1',
     config: {
       docChunkSize: 600,
       chunkOverlap: 50,
@@ -148,7 +151,10 @@ export const GlobalRagConfigPanel: React.FC = () => {
         {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((key) => {
           const preset = PRESETS[key];
           const Icon = preset.icon;
-          // 这里的名称也要国际化 (虽然目前PRESETS是硬编码中文)
+          const isActive =
+            globalRagConfig.docChunkSize === preset.config.docChunkSize &&
+            globalRagConfig.memoryChunkSize === preset.config.memoryChunkSize;
+
           const name =
             key === 'balanced'
               ? t.rag.presetBalanced
@@ -162,10 +168,22 @@ export const GlobalRagConfigPanel: React.FC = () => {
               variant="glass"
               onPress={() => applyPreset(key)}
               className="flex-1 items-center"
+              style={
+                isActive
+                  ? {
+                    borderColor: preset.color,
+                    borderWidth: 1.5,
+                    backgroundColor: isDark ? `${preset.color}15` : `${preset.color}08`,
+                  }
+                  : null
+              }
             >
               <View className="p-4 items-center">
-                <Icon size={20} color={colors[500]} />
-                <Typography className="text-xs font-bold mt-2 text-gray-900 dark:text-white">
+                <Icon size={20} color={isActive ? preset.color : colors[500]} />
+                <Typography
+                  className={`text-xs font-bold mt-2 ${isActive ? '' : 'text-gray-900 dark:text-white'}`}
+                  style={isActive ? { color: preset.color } : null}
+                >
                   {name}
                 </Typography>
               </View>

@@ -37,7 +37,7 @@ export function Card({ variant = 'default', onPress, className, children, style,
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         />
       )}
-      <View style={variant === 'glass' ? { backgroundColor: isDark ? 'rgba(28, 28, 40, 0.7)' : 'rgba(255, 255, 255, 0.8)' } : null}>
+      <View style={variant === 'glass' ? { backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(255, 255, 255, 0.8)' } : null}>
         {children}
       </View>
     </>

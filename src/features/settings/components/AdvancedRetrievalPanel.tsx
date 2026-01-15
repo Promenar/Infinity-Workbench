@@ -95,7 +95,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           <View className="flex-row justify-between mb-2">
             <Typography className="text-sm text-gray-400 dark:text-zinc-500">5</Typography>
             <Typography style={{ color: colors[600] }} className="text-sm font-bold">
-              {t.rag.unitItems.replace('{count}', (globalRagConfig.memoryLimit ?? 8).toString())}
+              {t.rag.unitItems.replace('{count}', (globalRagConfig.docLimit ?? 8).toString())}
             </Typography>
             <Typography className="text-sm text-gray-400 dark:text-zinc-500">15</Typography>
           </View>
