@@ -364,8 +364,9 @@ export class DeepSeekClient implements LlmClient {
             // 🔑 DeepSeek特定：保留reasoning_content字段
             // DeepSeek Reasoner强制要求assistant消息在多轮对话中包含reasoning_content
             // 参考：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#tool-calls
-            if (m.role === 'assistant' && m.reasoning) {
-              msg.reasoning_content = m.reasoning; // ✅ 关键！DeepSeek要求
+            // 🔥 CRITICAL: 必须检查 !== undefined 而非 truthy，因为空字符串''也是有效值
+            if (m.role === 'assistant' && m.reasoning !== undefined) {
+              msg.reasoning_content = m.reasoning; // ✅ 包括空字符串
             }
 
             // 🧐 CRITICAL: Format tool_calls ONLY for assistant specification
