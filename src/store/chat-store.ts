@@ -80,7 +80,7 @@ const enrichMessagesWithArchiveStatus = async (
   }
 };
 
-interface ChatState {
+export interface ChatState {
   sessions: Session[];
   activeRequests: Record<string, LlmClient>; // sessionId -> activeClient
   activeKGExtractions: Record<string, boolean>; // sessionId -> isExtractingKG
