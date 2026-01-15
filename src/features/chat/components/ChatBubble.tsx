@@ -424,32 +424,42 @@ const MessageMeta: React.FC<{
 
   const timeStr = timestamp ? getTimeStr(timestamp) : '';
 
+  // 嵌刻阴影效果（letterpress effect）
+  const insetShadowStyle = isDark
+    ? { textShadowColor: 'rgba(0, 0, 0, 0.8)', textShadowOffset: { width: 0, height: -1 }, textShadowRadius: 0 }
+    : { textShadowColor: 'rgba(255, 255, 255, 0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 };
+
   return (
     <View style={{
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 4, // 减少间距：8 -> 4
-      gap: 6, // 减少间距：8 -> 6
-      opacity: 0.6, // 隐式设计
+      marginTop: 2, // 进一步减少间距：4 -> 2
+      gap: 5, // 进一步减少间距：6 -> 5
     }}>
       {modelName && (
         <Text style={{
-          fontSize: 11,
-          color: isDark ? '#71717a' : '#a1a1aa',
-          fontWeight: '400',
-          textTransform: 'uppercase', // 大写字母
-          letterSpacing: 0.5, // 增加字间距提升可读性
+          fontSize: 10, // 稍微缩小：11 -> 10
+          color: isDark ? '#52525b' : '#d4d4d8',
+          fontWeight: '500',
+          textTransform: 'uppercase',
+          letterSpacing: 0.8,
+          ...insetShadowStyle,
         }}>
           {modelName}
         </Text>
       )}
       {modelName && timeStr && (
-        <Text style={{ fontSize: 11, color: isDark ? '#52525b' : '#d4d4d8' }}>·</Text>
+        <Text style={{
+          fontSize: 10,
+          color: isDark ? '#3f3f46' : '#e4e4e7',
+          ...insetShadowStyle,
+        }}>·</Text>
       )}
       {timeStr && (
         <Text style={{
-          fontSize: 11,
-          color: isDark ? '#52525b' : '#d4d4d8',
+          fontSize: 10,
+          color: isDark ? '#3f3f46' : '#e4e4e7',
+          ...insetShadowStyle,
         }}>
           {timeStr}
         </Text>
@@ -977,10 +987,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
           <View
             style={{
-              marginTop: 4, // 减少间距：8 -> 4
-              borderTopWidth: StyleSheet.hairlineWidth,
-              borderTopColor: isDark ? 'rgba(39, 39, 42, 0.5)' : '#f3f4f6',
-              paddingTop: 2, // 减少间距：4 -> 2
+              marginTop: 2, // 进一步减少间距：4 -> 2
               alignItems: 'flex-end',
               width: '100%',
             }}
@@ -1285,10 +1292,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       {/* Message Meta (模型名称 + 时间戳) */}
       <View
         style={{
-          marginTop: 4, // 减少间距：8 -> 4
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
-          paddingTop: 2, // 减少间距：4 -> 2
+          marginTop: 2, // 进一步减少间距：4 -> 2
         }}
       >
         <MessageMeta
