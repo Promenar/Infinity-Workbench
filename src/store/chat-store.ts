@@ -1303,17 +1303,18 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                     // 🔑 CRITICAL: 字段继承规则
                     // - thought_signature: 所有assistant都必须继承（VertexAI要求）
-                    // - reasoning_content: 所有assistant都必须有（DeepSeek要求，第一个有内容，其他为空）
+                    // - reasoning: 内部字段，所有assistant都必须有（DeepSeek要求，第一个有内容，其他为空）
+                    // - DeepSeekClient会将reasoning转换为reasoning_content发送给API
 
                     if (isFirstAssistant && tcIdx === 0) {
                       // 第一个assistant：包含实际reasoning和thought_signature
-                      virtualAssistant.reasoning_content = (m as any).reasoning || '';
+                      virtualAssistant.reasoning = (m as any).reasoning || '';  // ✅ 设置reasoning而非reasoning_content
                       if ((m as any).thought_signature) {
                         virtualAssistant.thought_signature = (m as any).thought_signature;
                       }
                     } else {
                       // 后续assistant：空reasoning，但仍需继承thought_signature
-                      virtualAssistant.reasoning_content = '';
+                      virtualAssistant.reasoning = '';  // ✅ 设置reasoning而非reasoning_content
                       if ((m as any).thought_signature) {
                         virtualAssistant.thought_signature = (m as any).thought_signature;
                       }
