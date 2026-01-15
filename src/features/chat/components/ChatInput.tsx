@@ -340,15 +340,23 @@ export function ChatInput({
       )}
       <BlurView
         intensity={isDark ? 80 : 120}
-        tint={editingMessageId ? 'default' : (isDark ? 'dark' : 'light')}
+        tint={isDark ? 'dark' : 'light'}
         style={[
           styles.blurContainer,
           {
-            // ✅ 编辑模式：红色边框 + 红色背景
+            // ✅ 编辑模式：红色边框
             borderColor: editingMessageId
-              ? 'rgba(239, 68, 68, 0.5)'
+              ? 'rgba(239, 68, 68, 0.7)'
               : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
-            borderWidth: editingMessageId ? 1.5 : 1.5,
+            borderWidth: editingMessageId ? 2 : 1.5,
+          },
+          // ✅ 编辑模式：羽化红色阴影
+          editingMessageId && {
+            shadowColor: '#ef4444',
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.5,
+            shadowRadius: 12,
+            elevation: 8,
           },
         ]}
       >
@@ -356,10 +364,8 @@ export function ChatInput({
           style={[
             styles.overlay,
             {
-              // ✅ 编辑模式：极淡的红色边缘，保持毛玻璃通透感
-              backgroundColor: editingMessageId
-                ? 'rgba(220, 38, 38, 0.08)' // 极淡红色，几乎透明
-                : isDark ? 'rgba(10, 10, 12, 0.8)' : 'rgba(255, 255, 255, 0.3)',
+              // 正常模式背景
+              backgroundColor: isDark ? 'rgba(10, 10, 12, 0.8)' : 'rgba(255, 255, 255, 0.3)',
             },
           ]}
         />
