@@ -114,6 +114,7 @@ export interface ChatState {
         isGlobal?: boolean;
       };
       isResumption?: boolean; // ✅ Added for Steerable Loop
+      skipUserMessage?: boolean; // ✅ 重新发送时跳过创建用户消息
     },
   ) => Promise<void>;
   generateSessionTitle: (sessionId: SessionId) => Promise<string | undefined>;
@@ -343,10 +344,11 @@ export const useChatStore = create<ChatState>()(
             images: normalizedImages,
           };
 
-          if (!options?.isResumption) {
+          // 重新发送/恢复时跳过创建用户消息
+          if (!options?.isResumption && !options?.skipUserMessage) {
             get().addMessage(sessionId, userMsg);
           } else {
-            console.log('[ChatStore] Resumption: Skipping User Message creation');
+            console.log('[ChatStore] Skipping User Message creation (isResumption or skipUserMessage)');
           }
 
           set({ currentGeneratingSessionId: sessionId });

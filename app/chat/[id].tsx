@@ -411,17 +411,25 @@ export default function ChatDetailScreen() {
               onSummarize={handleManualSummarize} // ✅ Manual Summarize
               onResend={
                 item.role === 'user'
-                  ? () => {
+                  ? async () => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    sendMessage(item.content);
+                    // ✅ 使用 skipUserMessage 避免创建重复用户消息
+                    await useChatStore.getState().generateMessage(id, item.content, {
+                      skipUserMessage: true,
+                      images: item.images,
+                    });
                   }
                   : undefined
               }
               onRegenerate={
                 item.role === 'user'
-                  ? () => {
+                  ? async () => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    sendMessage(item.content);
+                    // ✅ 使用 skipUserMessage 避免创建重复用户消息
+                    await useChatStore.getState().generateMessage(id, item.content, {
+                      skipUserMessage: true,
+                      images: item.images,
+                    });
                   }
                   : async () => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
