@@ -105,26 +105,18 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
           paddingHorizontal: 8,
           paddingVertical: 2,
           borderRadius: 10,
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+          backgroundColor: 'rgba(0,0,0,0.03)',
           gap: 4,
         }}
       >
         {getIcon(mode, 10)}
         <Typography
+          className="text-gray-400 dark:text-gray-500"
           style={{
             fontSize: 9,
             fontWeight: '900',
             letterSpacing: -0.2,
-            color:
-              mode === 'auto'
-                ? '#818cf8'
-                : mode === 'semi'
-                  ? '#fbbf24'
-                  : mode === 'manual'
-                    ? '#34d399'
-                    : isDark
-                      ? 'rgba(255,255,255,0.45)'
-                      : 'rgba(0,0,0,0.45)',
+            textTransform: 'uppercase',
           }}
         >
           {getLabel(mode)}
