@@ -2068,9 +2068,10 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             ),
           }));
 
-          // 2. 重新生成（复用 generateMessage）
+          // 2. 重新生成（复用 generateMessage，跳过创建用户消息）
           await get().generateMessage(sessionId, userContent, {
             images: userImages,
+            skipUserMessage: true, // ✅ 避免创建重复用户消息
           });
         },
 

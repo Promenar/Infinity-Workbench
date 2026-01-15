@@ -330,12 +330,9 @@ export function ChatInput({
             paddingHorizontal: 10,
             paddingVertical: 4,
             borderRadius: 10,
-            flexDirection: 'row',
             alignItems: 'center',
-            gap: 4,
           }}
         >
-          <X size={11} color="white" strokeWidth={2.5} />
           <Typography style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
             退出重发模式
           </Typography>
@@ -359,9 +356,9 @@ export function ChatInput({
           style={[
             styles.overlay,
             {
-              // ✅ 编辑模式：红色半透明叠加
+              // ✅ 编辑模式：极淡的红色边缘，保持毛玻璃通透感
               backgroundColor: editingMessageId
-                ? 'rgba(185, 28, 28, 0.25)' // 红色半透明
+                ? 'rgba(220, 38, 38, 0.08)' // 极淡红色，几乎透明
                 : isDark ? 'rgba(10, 10, 12, 0.8)' : 'rgba(255, 255, 255, 0.3)',
             },
           ]}
