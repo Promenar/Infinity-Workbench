@@ -109,14 +109,14 @@ export const SwipeableSessionItem = ({
     >
       <TouchableOpacity
         activeOpacity={0.9} // Better feedback
-        className="flex-row items-start p-4 bg-gray-50/50 dark:bg-zinc-900/40 rounded-3xl border border-gray-100/50 dark:border-zinc-800/50"
+        className="flex-row items-center px-4 h-[80px] bg-gray-50/50 dark:bg-zinc-900/40 rounded-[20px] border border-gray-100/50 dark:border-zinc-800/50"
         style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb' }}
         onPress={() => {
           swipeableRef.current?.close();
           onPress();
         }}
       >
-        <View className="mr-4 mt-1">
+        <View className="mr-4">
           <AgentAvatar
             id={agentId}
             name={item.title}
@@ -126,7 +126,7 @@ export const SwipeableSessionItem = ({
           />
         </View>
 
-        <View className="flex-1 py-1">
+        <View className="flex-1">
           <View className="flex-row justify-between items-start mb-1">
             <View style={{ flexDirection: 'row', flex: 1, alignItems: 'center' }}>
               {item.isPinned && (

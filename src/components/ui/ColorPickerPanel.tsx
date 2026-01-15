@@ -49,11 +49,35 @@ export const ColorPickerPanel: React.FC<ColorPickerPanelProps> = ({ color: selec
                             <TouchableOpacity
                                 key={preset.value}
                                 onPress={() => onColorChange(preset.value)}
-                                className="w-[16.6%] mb-3 items-center"
+                                style={{
+                                    width: '16.6%',
+                                    marginBottom: 12,
+                                    alignItems: 'center',
+                                }}
                             >
                                 <View
-                                    className={`w-10 h-10 rounded-full items-center justify-center border-2 ${isSelected ? 'border-gray-900 dark:border-white shadow-sm' : 'border-transparent'}`}
-                                    style={{ backgroundColor: preset.value }}
+                                    style={{
+                                        width: 40,
+                                        height: 40,
+                                        borderRadius: 20,
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        borderWidth: 2,
+                                        backgroundColor: preset.value,
+                                        borderColor: isSelected
+                                            ? (isDark ? '#ffffff' : '#111827')
+                                            : 'transparent',
+                                        ...(isSelected ? {
+                                            shadowColor: "#000",
+                                            shadowOffset: {
+                                                width: 0,
+                                                height: 1,
+                                            },
+                                            shadowOpacity: 0.20,
+                                            shadowRadius: 1.41,
+                                            elevation: 2,
+                                        } : {})
+                                    }}
                                 >
                                     {isSelected && <Check size={18} color="#fff" />}
                                 </View>

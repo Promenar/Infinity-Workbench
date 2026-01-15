@@ -125,7 +125,7 @@ export default function RootLayout() {
                     headerShown: false,
                     animation: 'slide_from_right',
                     animationDuration: 200, // 提速至 200ms，增强跟手感
-                    contentStyle: { backgroundColor: currentTheme.colors.background },
+                    contentStyle: { backgroundColor: 'transparent' },
                   }}
                 >
                   <Stack.Screen name="(tabs)" />

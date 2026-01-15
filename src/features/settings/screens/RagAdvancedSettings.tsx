@@ -7,11 +7,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Modal,
-  FlatList,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Typography, Switch, PageLayout, GlassHeader } from '../../../components/ui';
+import { Typography, Switch, PageLayout, GlassHeader, Card } from '../../../components/ui';
+import { SettingsSection } from '../components/SettingsSection';
+import { SettingsItem } from '../components/SettingsItem';
+import { SettingsSwitchItem } from '../components/SettingsSwitchItem';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useI18n } from '../../../lib/i18n';
@@ -21,58 +22,15 @@ import {
   Cpu,
   DollarSign,
   Edit3,
-  Save,
   ChevronLeft,
   Bot,
-  Check,
-  X,
   RotateCcw,
   AlertTriangle,
-  Database,
-  Trash2,
 } from 'lucide-react-native';
 import { useApiStore } from '../../../store/api-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloatingTextEditorModal } from '../../../components/ui/FloatingTextEditorModal';
 import { ModelPicker } from '../ModelPicker';
-import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
-
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
-  const { isDark, colors } = useTheme();
-  return (
-    <View
-      style={{
-        marginTop: mt,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-        paddingHorizontal: 4,
-      }}
-    >
-      <View
-        style={{
-          width: 6,
-          height: 16,
-          borderRadius: 999,
-          marginRight: 12,
-          backgroundColor: colors[500],
-        }}
-      />
-      <Typography
-        style={{
-          fontSize: 14,
-          fontWeight: 'bold',
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          color: isDark ? Colors.dark.textPrimary : Colors.light.textPrimary,
-        }}
-      >
-        {title}
-
-      </Typography>
-    </View>
-  );
-};
 
 export default function RagAdvancedSettings() {
   const { isDark, colors } = useTheme();
@@ -82,13 +40,6 @@ export default function RagAdvancedSettings() {
   const { globalRagConfig, updateGlobalRagConfig } = useSettingsStore();
   const { providers } = useApiStore();
   const [modelModalVisible, setModelModalVisible] = useState(false);
-  const [confirmState, setConfirmState] = useState({
-    visible: false,
-    title: '',
-    message: '',
-    onConfirm: () => { },
-    isDestructive: false,
-  });
 
   const selectedModelName = useMemo(() => {
     if (!globalRagConfig.kgExtractionModel) return null;
@@ -128,7 +79,6 @@ export default function RagAdvancedSettings() {
 
     const save = () => {
       updateGlobalRagConfig({ kgExtractionPrompt: content });
-      // promptText is already updated via onSave prop from modal? 
       setPromptText(content);
       setIsEditorVisible(false);
       Alert.alert(t.rag.kg.saveChanges, t.rag.kg.editPromptTitle);
@@ -168,247 +118,196 @@ export default function RagAdvancedSettings() {
         className="flex-1"
       >
         <ScrollView
-          className="flex-1 px-5"
+          className="flex-1 px-4"
           contentContainerStyle={{
-            paddingTop: 74 + insets.top,
+            paddingTop: 110, // Adjusted for glass header + spacing
             paddingBottom: 40,
           }}
           showsVerticalScrollIndicator={false}
         >
           {/* 0. 知识图谱总开关 */}
-          <SectionHeader title={t.rag.kg.title} mt={10} />
-          <View
-            className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] border border-indigo-50 dark:border-indigo-500/10 mb-6 overflow-hidden shadow-sm"
-          >
-            <View className="p-4 flex-row justify-between items-center">
-              <View style={{ flex: 1 }}>
-                <View className="flex-row items-center mb-1">
-                  <Network size={16} color={colors[500]} style={{ marginRight: 6 }} />
-                  <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                    {t.rag.kg.enable}
-                  </Typography>
-                </View>
-                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
-                  {t.rag.kg.enableDesc}
+          <SettingsSection title={t.rag.kg.title}>
+            <SettingsSwitchItem
+              icon={Network}
+              title={t.rag.kg.enable}
+              subtitle={t.rag.kg.enableDesc}
+              value={!!globalRagConfig.enableKnowledgeGraph}
+              onValueChange={(v) => updateGlobalRagConfig({ enableKnowledgeGraph: v })}
+            />
+            {/* Model Selection - Conditionally styled or disabled if KG disabled? keeping it visible as per original */}
+            <SettingsItem
+              icon={Bot}
+              title={t.rag.kg.extractionModel}
+              subtitle={selectedModelName
+                ? t.rag.kg.currentModel.replace('{name}', selectedModelName)
+                : t.rag.kg.extractionModelDefault}
+              onPress={() => globalRagConfig.enableKnowledgeGraph && setModelModalVisible(true)}
+              showChevron
+              isLast
+              rightElement={
+                <Typography style={{ color: colors[600], opacity: globalRagConfig.enableKnowledgeGraph ? 1 : 0.5 }} className="text-xs font-bold mr-1">
+                  {t.rag.kg.change}
                 </Typography>
-              </View>
-              <Switch
-                value={!!globalRagConfig.enableKnowledgeGraph}
-                onValueChange={(v) => updateGlobalRagConfig({ enableKnowledgeGraph: v })}
-              />
-            </View>
+              }
+            />
+          </SettingsSection>
 
-            {/* Model Selection Row - Always visible */}
-            <View>
-              <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }} className="h-[1px] mx-4" />
-              <TouchableOpacity
-                onPress={() => globalRagConfig.enableKnowledgeGraph && setModelModalVisible(true)}
-                activeOpacity={globalRagConfig.enableKnowledgeGraph ? 0.7 : 1}
-                className="p-4 flex-row justify-between items-center transition-colors"
-              >
-                <View style={{ flex: 1, opacity: globalRagConfig.enableKnowledgeGraph ? 1 : 0.5 }}>
-                  <View className="flex-row items-center mb-1">
-                    <Bot
-                      size={16}
-                      color={globalRagConfig.enableKnowledgeGraph ? colors[500] : '#94a3b8'}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                      {t.rag.kg.extractionModel}
-                    </Typography>
-                  </View>
+          {/* 1. 策略选择 */}
+          <SettingsSection title={t.rag.kg.costStrategyTitle}>
+            <Card variant="glass" className="p-4 bg-transparent border-0">
+              <View className="flex-row items-center mb-4">
+                <DollarSign size={20} color={colors[500]} style={{ marginRight: 8 }} />
+                <View style={{ flex: 1 }}>
+                  <Typography className="text-base font-bold text-gray-900 dark:text-white">
+                    {t.rag.kg.costStrategyTitle}
+                  </Typography>
                   <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
-                    {selectedModelName
-                      ? t.rag.kg.currentModel.replace('{name}', selectedModelName)
-                      : t.rag.kg.extractionModelDefault}
+                    {t.rag.kg.costStrategyDesc}
                   </Typography>
                 </View>
-                <View className="flex-row items-center">
-                  <Typography style={{ color: colors[600] }} className="text-xs font-bold mr-1">{t.rag.kg.change}</Typography>
-                  <ChevronLeft
-                    size={16}
-                    color={colors[500]}
-                    style={{ transform: [{ rotate: '180deg' }] }}
-                  />
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* 1. 策略选择 (降本核心) */}
-          <SectionHeader title={t.rag.kg.costStrategyTitle} mt={10} />
-          <View
-            className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8 shadow-sm"
-          >
-            <View className="flex-row items-center mb-4">
-              <DollarSign size={20} color={colors[500]} style={{ marginRight: 8 }} />
-              <View style={{ flex: 1 }}>
-                <Typography className="text-base font-bold text-gray-900 dark:text-white">
-                  {t.rag.kg.costStrategyTitle}
-                </Typography>
-                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
-                  {t.rag.kg.costStrategyDesc}
-                </Typography>
               </View>
-            </View>
 
-            {/* Radio Options */}
-            {[
-              {
-                key: 'summary-first',
-                label: t.rag.kg.summaryFirst,
-                desc: t.rag.kg.summaryFirstDesc,
-                color: colors[500],
-              },
-              {
-                key: 'on-demand',
-                label: t.rag.kg.onDemand,
-                desc: t.rag.kg.onDemandDesc,
-                color: colors[400],
-              },
-              {
-                key: 'full',
-                label: t.rag.kg.fullScan,
-                desc: t.rag.kg.fullScanDesc,
-                color: '#ef4444',
-              },
-            ].map((opt) => (
-              <TouchableOpacity
-                key={opt.key}
-                onPress={() => updateGlobalRagConfig({ costStrategy: opt.key as any })}
-                style={{
-                  backgroundColor: globalRagConfig.costStrategy === opt.key ? colors.opacity10 : 'transparent',
-                  borderColor: globalRagConfig.costStrategy === opt.key ? opt.color : 'transparent',
-                }}
-                className="p-3 rounded-xl mb-2 border"
-              >
-                <View className="flex-row items-center">
-                  <View
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: 8,
-                      borderWidth: 2,
-                      borderColor: opt.color,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginRight: 10,
-                    }}
-                  >
-                    {globalRagConfig.costStrategy === opt.key && (
-                      <View
-                        style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: opt.color }}
-                      />
-                    )}
+              {/* Radio Options - Custom UI inside Card */}
+              {[
+                {
+                  key: 'summary-first',
+                  label: t.rag.kg.summaryFirst,
+                  desc: t.rag.kg.summaryFirstDesc,
+                  color: colors[500],
+                },
+                {
+                  key: 'on-demand',
+                  label: t.rag.kg.onDemand,
+                  desc: t.rag.kg.onDemandDesc,
+                  color: colors[400],
+                },
+                {
+                  key: 'full',
+                  label: t.rag.kg.fullScan,
+                  desc: t.rag.kg.fullScanDesc,
+                  color: '#ef4444',
+                },
+              ].map((opt) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => updateGlobalRagConfig({ costStrategy: opt.key as any })}
+                  style={{
+                    backgroundColor: globalRagConfig.costStrategy === opt.key ? colors.opacity10 : 'transparent',
+                    borderColor: globalRagConfig.costStrategy === opt.key ? opt.color : 'transparent',
+                    overflow: 'hidden',
+                  }}
+                  className="p-3 rounded-[16px] mb-1.5 border border-transparent"
+                >
+                  <View className="flex-row items-center">
+                    <View
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: 8,
+                        borderWidth: 2,
+                        borderColor: opt.color,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: 10,
+                      }}
+                    >
+                      {globalRagConfig.costStrategy === opt.key && (
+                        <View
+                          style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: opt.color }}
+                        />
+                      )}
+                    </View>
+                    <View>
+                      <Typography className="font-bold text-sm text-gray-800 dark:text-gray-200">
+                        {opt.label}
+                      </Typography>
+                      <Typography className="text-xs text-gray-400">{opt.desc}</Typography>
+                    </View>
                   </View>
-                  <View>
-                    <Typography className="font-bold text-sm text-gray-800 dark:text-gray-200">
-                      {opt.label}
-                    </Typography>
-                    <Typography className="text-xs text-gray-400">{opt.desc}</Typography>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
+                </TouchableOpacity>
+              ))}
+            </Card>
+          </SettingsSection>
 
           {/* 2. 本地优化开关 */}
-          <SectionHeader title={t.rag.kg.localOptimization} />
-          <View className="rounded-2xl overflow-hidden border mb-6" style={{ backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb', borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#e5e7eb' }}>
-            <View className="p-4 border-b border-gray-100 dark:border-gray-800 flex-row justify-between items-center">
-              <View style={{ flex: 1 }}>
-                <View className="flex-row items-center mb-1">
-                  <Cpu size={16} color={colors[500]} style={{ marginRight: 6 }} />
-                  <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                    {t.rag.kg.incrementalHash}
-                  </Typography>
-                </View>
-                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
-                  {t.rag.kg.incrementalHashDesc}
-                </Typography>
-              </View>
-              <Switch
-                value={!!globalRagConfig.enableIncrementalHash}
-                onValueChange={(v) => updateGlobalRagConfig({ enableIncrementalHash: v })}
-              />
-            </View>
-            <View className="p-4 flex-row justify-between items-center">
-              <View style={{ flex: 1 }}>
-                <View className="flex-row items-center mb-1">
-                  <Network size={16} color={colors[500]} style={{ marginRight: 6 }} />
-                  <Typography className="font-bold text-gray-900 dark:text-gray-100">
-                    {t.rag.kg.rulesPreFilter}
-                  </Typography>
-                </View>
-                <Typography variant="caption" className="text-gray-500 dark:text-gray-400">
-                  {t.rag.kg.rulesPreFilterDesc}
-                </Typography>
-              </View>
-              <Switch
-                value={!!globalRagConfig.enableLocalPreprocess}
-                onValueChange={(v) => updateGlobalRagConfig({ enableLocalPreprocess: v })}
-              />
-            </View>
-          </View>
+          <SettingsSection title={t.rag.kg.localOptimization}>
+            <SettingsSwitchItem
+              icon={Cpu}
+              title={t.rag.kg.incrementalHash}
+              subtitle={t.rag.kg.incrementalHashDesc}
+              value={!!globalRagConfig.enableIncrementalHash}
+              onValueChange={(v) => updateGlobalRagConfig({ enableIncrementalHash: v })}
+            />
+            <SettingsSwitchItem
+              icon={Network}
+              title={t.rag.kg.rulesPreFilter}
+              subtitle={t.rag.kg.rulesPreFilterDesc}
+              value={!!globalRagConfig.enableLocalPreprocess}
+              onValueChange={(v) => updateGlobalRagConfig({ enableLocalPreprocess: v })}
+              isLast
+            />
+          </SettingsSection>
 
-          {/* 3. 提示词配置 (Playground) */}
-          <SectionHeader title={t.rag.kg.extractionPrompt} />
-          <View className="rounded-2xl p-4 border" style={{ backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb', borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#e5e7eb' }}>
-            <View className="flex-row justify-between items-center mb-4">
-              <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                {t.rag.kg.entityRelationPrompt}
-              </Typography>
+          {/* 3. 提示词配置 */}
+          <SettingsSection title={t.rag.kg.extractionPrompt}>
+            <Card variant="glass" className="p-4">
+              <View className="flex-row justify-between items-center mb-4">
+                <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  {t.rag.kg.entityRelationPrompt}
+                </Typography>
+                <TouchableOpacity
+                  onPress={() => {
+                    const { DEFAULT_KG_PROMPT } = require('../../../lib/rag/defaults');
+                    setPromptText(DEFAULT_KG_PROMPT);
+                    setIsEditorVisible(true);
+                  }}
+                  className="flex-row items-center bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full"
+                >
+                  <RotateCcw size={12} color="#64748b" style={{ marginRight: 4 }} />
+                  <Typography className="text-xs font-bold text-gray-500">{t.rag.kg.resetDefault}</Typography>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
-                onPress={() => {
-                  const { DEFAULT_KG_PROMPT } = require('../../../lib/rag/defaults');
-                  setPromptText(DEFAULT_KG_PROMPT);
-                  setIsEditorVisible(true); // Open editor with default
-                }}
-                className="flex-row items-center bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full"
+                onPress={() => setIsEditorVisible(true)}
+                activeOpacity={0.7}
+                className={`p-4 rounded-[16px] border border-dashed ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'
+                  }`}
               >
-                <RotateCcw size={12} color="#64748b" style={{ marginRight: 4 }} />
-                <Typography className="text-xs font-bold text-gray-500">{t.rag.kg.resetDefault}</Typography>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => setIsEditorVisible(true)}
-              activeOpacity={0.7}
-              className={`p-4 rounded-xl border border-dashed ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'
-                }`}
-            >
-              <View className="flex-row items-center justify-between mb-2">
-                <View className="flex-row items-center">
-                  <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
-                  <Typography className="font-bold text-gray-700 dark:text-gray-300">
-                    {t.rag.kg.editPrompt}
-                  </Typography>
+                <View className="flex-row items-center justify-between mb-2">
+                  <View className="flex-row items-center">
+                    <Edit3 size={16} color={isDark ? '#a1a1aa' : '#64748b'} className="mr-2" />
+                    <Typography className="font-bold text-gray-700 dark:text-gray-300">
+                      {t.rag.kg.editPrompt}
+                    </Typography>
+                  </View>
+                  {promptText ? (
+                    <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+                      <Typography className="text-[10px] text-green-700 dark:text-green-400">{t.rag.configured}</Typography>
+                    </View>
+                  ) : (
+                    <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
+                      <Typography className="text-[10px] text-gray-500">{t.rag.usingDefault}</Typography>
+                    </View>
+                  )}
                 </View>
-                {promptText ? (
-                  <View className="bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
-                    <Typography className="text-[10px] text-green-700 dark:text-green-400">{t.rag.configured}</Typography>
-                  </View>
-                ) : (
-                  <View className="bg-gray-200 dark:bg-gray-800 px-2 py-0.5 rounded">
-                    <Typography className="text-[10px] text-gray-500">{t.rag.usingDefault}</Typography>
-                  </View>
-                )}
+
+                <Typography
+                  numberOfLines={3}
+                  className="text-xs text-gray-500 dark:text-gray-400 leading-5"
+                >
+                  {promptText || t.rag.kg.usingDefaultPrompt}
+                </Typography>
+              </TouchableOpacity>
+
+              <View className="mt-3 flex-row items-start bg-orange-50 dark:bg-orange-900/10 p-3 rounded-xl">
+                <AlertTriangle size={14} color="#f97316" style={{ marginTop: 2, marginRight: 6 }} />
+                <Typography className="text-[11px] text-orange-600 dark:text-orange-400 flex-1 leading-4">
+                  {t.rag.kg.promptWarning}
+                </Typography>
               </View>
-
-              <Typography
-                numberOfLines={3}
-                className="text-xs text-gray-500 dark:text-gray-400 leading-5"
-              >
-                {promptText || t.rag.kg.usingDefaultPrompt}
-              </Typography>
-            </TouchableOpacity>
-
-            <View className="mt-3">
-              <Typography className="text-[10px] text-orange-500 flex-1 leading-4">
-                {t.rag.kg.promptWarning}
-              </Typography>
-            </View>
-          </View>
+            </Card>
+          </SettingsSection>
 
           <FloatingTextEditorModal
             visible={isEditorVisible}
@@ -420,17 +319,19 @@ export default function RagAdvancedSettings() {
             onSave={handleSavePrompt}
           />
 
-          {/* 4. 可视化入口 (Beta) */}
-          <SectionHeader title={t.rag.kg.visualization} />
-          <TouchableOpacity
-            onPress={() => router.push('/knowledge-graph')}
-            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-            className="p-4 rounded-2xl items-center border mb-6"
-          >
-            <Typography style={{ color: colors[600] }} className="font-bold">
-              {t.rag.kg.viewFullGraph}
-            </Typography>
-          </TouchableOpacity>
+          {/* 4. 可视化入口 */}
+          <SettingsSection title={t.rag.kg.visualization}>
+            <TouchableOpacity
+              onPress={() => router.push('/knowledge-graph')}
+              activeOpacity={0.8}
+            >
+              <Card variant="glass" className="p-4 items-center justify-center bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-500/20">
+                <Typography style={{ color: colors[500] }} className="font-bold">
+                  {t.rag.kg.viewFullGraph}
+                </Typography>
+              </Card>
+            </TouchableOpacity>
+          </SettingsSection>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -439,8 +340,6 @@ export default function RagAdvancedSettings() {
         visible={modelModalVisible}
         onClose={() => setModelModalVisible(false)}
         onSelect={(uuid) => {
-          // ModelPicker returns UUID, but we store ID
-          // We need to find the ID corresponding to this UUID
           let foundId = undefined;
           for (const p of providers) {
             const m = p.models.find((model) => model.uuid === uuid);

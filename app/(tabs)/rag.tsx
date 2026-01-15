@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl } from 'react-native';
 import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, GlassHeader } from '../../src/components/ui';
-import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive } from 'lucide-react-native';
+import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive, Check } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
@@ -1311,7 +1311,9 @@ const FileEditorModal = ({ visible, docId, docTitle, onClose, onSave }: FileEdit
             onPress: onClose
           }}
           rightAction={{
-            icon: loading ? <ActivityIndicator size="small" /> : <Typography className="font-bold" style={{ color: colors[500] }}>保存</Typography>,
+            icon: loading ? <ActivityIndicator size="small" /> : (
+              <Check size={24} color={isDark ? '#fff' : '#000'} />
+            ),
             onPress: () => onSave(content)
           }}
         />

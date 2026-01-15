@@ -33,10 +33,25 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           {t.rag.memoryRetrieval}
         </Typography>
 
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.memoryLimit}
-          </Typography>
+        <View className="mb-4" style={{ opacity: globalRagConfig.enableRerank ? 0.5 : 1 }}>
+          <View className="flex-row items-center mb-1">
+            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.memoryLimit}
+            </Typography>
+            {globalRagConfig.enableRerank && (
+              <View
+                className="px-2 py-0.5 rounded ml-2"
+                style={{ backgroundColor: isDark ? `${colors[500]}30` : `${colors[500]}15` }}
+              >
+                <Typography
+                  className="text-[10px] font-bold"
+                  style={{ color: colors[500] }}
+                >
+                  Rerank 覆盖
+                </Typography>
+              </View>
+            )}
+          </View>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {t.rag.memoryLimitDesc}
           </Typography>
@@ -53,6 +68,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             minimumValue={3}
             maximumValue={10}
             step={1}
+            disabled={globalRagConfig.enableRerank}
           />
         </View>
 
@@ -85,10 +101,25 @@ export const AdvancedRetrievalPanel: React.FC = () => {
           {t.rag.docRetrieval}
         </Typography>
 
-        <View className="mb-4">
-          <Typography className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
-            {t.rag.docLimit}
-          </Typography>
+        <View className="mb-4" style={{ opacity: globalRagConfig.enableRerank ? 0.5 : 1 }}>
+          <View className="flex-row items-center mb-1">
+            <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
+              {t.rag.docLimit}
+            </Typography>
+            {globalRagConfig.enableRerank && (
+              <View
+                className="px-2 py-0.5 rounded ml-2"
+                style={{ backgroundColor: isDark ? `${colors[500]}30` : `${colors[500]}15` }}
+              >
+                <Typography
+                  className="text-[10px] font-bold"
+                  style={{ color: colors[500] }}
+                >
+                  Rerank 覆盖
+                </Typography>
+              </View>
+            )}
+          </View>
           <Typography className="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {t.rag.docLimitDesc}
           </Typography>
@@ -105,6 +136,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             minimumValue={5}
             maximumValue={15}
             step={1}
+            disabled={globalRagConfig.enableRerank}
           />
         </View>
 

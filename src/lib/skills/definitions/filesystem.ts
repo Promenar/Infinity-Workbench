@@ -48,17 +48,62 @@ export const WriteFileSkill: Skill = {
         try {
             const fullPath = await resolveSafePath(params.path);
 
-            // 自动创建父目录
+            // 自动创建父目录 (Robust physical write)
             const directory = fullPath.substring(0, fullPath.lastIndexOf('/'));
             const dirInfo = await FileSystem.getInfoAsync(directory);
             if (!dirInfo.exists) {
                 await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
             }
 
-            // 写入文件
+            // 写入文件 (Physical Write)
             await FileSystem.writeAsStringAsync(fullPath, params.content, {
                 encoding: (FileSystem as any).EncodingType.UTF8
             });
+
+            // 🛡️ RAG Sync: Register document in RAG Store
+            try {
+                // Dynamic import to avoid cycles if any, though store is usually safe
+                const { useRagStore } = require('../../../store/rag-store');
+                const store = useRagStore.getState();
+
+                // 1. Ensure folders are loaded to find 'workspace'
+                if (store.folders.length === 0) {
+                    await store.loadFolders();
+                }
+
+                // 2. Find Workspace Folder
+                const workspaceFolder = store.folders.find((f: any) => f.name === 'workspace' && !f.parentId);
+
+                if (workspaceFolder) {
+                    // Check if doc already exists to update instead of add? 
+                    // addDocument in store doesn't check dupes, it generates new ID. 
+                    // But we want to avoid duplicates if agent overwrites.
+                    // Let's check simply by title+folderId
+                    const existingDoc = store.documents.find((d: any) => d.title === params.path && d.folderId === workspaceFolder.id);
+
+                    if (existingDoc) {
+                        await store.updateDocumentContent(existingDoc.id, params.content);
+                        console.log('[FileSystem] RAG Document updated:', params.path);
+                    } else {
+                        // 3. Register New Document
+                        // Note: addDocument will perform a 2nd write, which is fine as dirs are ensured above.
+                        await store.addDocument(
+                            params.path,    // Title (relative path)
+                            params.content,
+                            params.content.length,
+                            'text',         // Type
+                            workspaceFolder.id,
+                            undefined       // Thumbnail
+                        );
+                        console.log('[FileSystem] RAG Document registered:', params.path);
+                    }
+                } else {
+                    console.warn('[FileSystem] RAG Sync skipped: Workspace folder not found.');
+                }
+            } catch (err) {
+                console.warn('[FileSystem] RAG Sync failed (Physical write succeeded):', err);
+                // We do NOT fail the skill execution because the file WAS written.
+            }
 
             console.log('[FileSystem] File written successfully:', {
                 inputPath: params.path,
@@ -72,7 +117,7 @@ export const WriteFileSkill: Skill = {
                 status: 'success',
                 data: {
                     path: params.path,
-                    fullPath,  // 添加完整路径用于调试
+                    fullPath,
                     size: params.content.length
                 }
             };

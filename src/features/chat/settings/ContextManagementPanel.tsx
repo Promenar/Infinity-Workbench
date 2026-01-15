@@ -153,7 +153,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
       )}
 
       {/* Card 1: Token Stats */}
-      <Card variant="glass" className="p-4 shadow-sm mb-4" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+      <Card variant="glass" className="p-4 shadow-sm mb-4">
         <View className="flex-row justify-between items-center mb-4">
           <View className="flex-row items-center">
             <Typography className="text-sm font-bold text-gray-900 dark:text-white mr-2">
@@ -217,7 +217,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
       </Card>
 
       {/* Card 2: Memory Archives */}
-      <Card variant="glass" className="p-4 shadow-sm" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+      <Card variant="glass" className="p-4 shadow-sm">
         <View className="flex-row justify-between items-center mb-4">
           <Typography className="text-sm font-bold text-gray-900 dark:text-white">
             {t.rag.memoryArchives}

@@ -12,7 +12,7 @@ interface CardProps extends ViewProps {
 export function Card({ variant = 'default', onPress, className, children, style, ...props }: CardProps) {
   const { isDark } = useTheme();
 
-  const baseStyle = 'bg-surface-primary border border-border-default rounded-[24px] overflow-hidden';
+  const baseStyle = 'bg-surface-primary border border-border-default rounded-[20px] overflow-hidden'; // Radius 20px (Golden Standard)
 
   const variants = {
     default: '',
@@ -24,7 +24,7 @@ export function Card({ variant = 'default', onPress, className, children, style,
     baseStyle,
     variants[variant],
     onPress && 'active:scale-[0.98] active:border-primary-500/50 transition-all',
-    variant === 'glass' && 'bg-transparent border-indigo-500/10 dark:border-indigo-400/20',
+    variant === 'glass' && 'bg-transparent border-indigo-500/10 dark:border-white/10', // Improved dark mode border visibility
     className,
   );
 

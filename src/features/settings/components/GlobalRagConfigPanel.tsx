@@ -167,18 +167,26 @@ export const GlobalRagConfigPanel: React.FC = () => {
               key={key}
               variant="glass"
               onPress={() => applyPreset(key)}
-              className="flex-1 items-center"
+              className="flex-1 p-0" // Remove padding from card to let inner view fill
               style={
                 isActive
                   ? {
                     borderColor: preset.color,
                     borderWidth: 1.5,
-                    backgroundColor: isDark ? `${preset.color}15` : `${preset.color}08`,
+                    overflow: 'hidden',
+                    borderRadius: 20,
                   }
-                  : null
+                  : { overflow: 'hidden', borderRadius: 20 }
               }
             >
-              <View className="p-4 items-center">
+              <View
+                className="p-4 items-center w-full rounded-[20px]"
+                style={{
+                  backgroundColor: isActive
+                    ? (isDark ? `${preset.color}15` : `${preset.color}08`)
+                    : 'transparent',
+                }}
+              >
                 <Icon size={20} color={isActive ? preset.color : colors[500]} />
                 <Typography
                   className={`text-xs font-bold mt-2 ${isActive ? '' : 'text-gray-900 dark:text-white'}`}

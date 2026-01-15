@@ -93,14 +93,14 @@ const ModelItem = React.memo(
     return (
       <View
         style={{
-          backgroundColor: isDark ? '#18181b' : '#f9fafb',
-          borderRadius: 12,
-          padding: 10,
-          marginBottom: 8,
+          backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#fff', // Slightly more transparent/glassy feel in dark mode
+          borderRadius: 20, // Standard: 20px
+          padding: 16, // Increased padding 10->16 for breathability
+          marginBottom: 10,
           marginHorizontal: 16,
           borderWidth: 1,
-          borderColor: isDark ? '#27272a' : '#e5e7eb',
-          minHeight: 185, // Ensure stable height for FlashList measurement
+          borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(0,0,0,0.05)', // Standard Glass Border
+          minHeight: 185,
         }}
       >
         <View

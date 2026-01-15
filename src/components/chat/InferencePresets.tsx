@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Typography } from '../ui/Typography';
+import { Card } from '../ui/Card';
 import { InferenceParams } from '../../types/chat';
 import { useI18n } from '../../lib/i18n';
-import { Zap, Anchor, Sparkles } from 'lucide-react-native';
+import { Zap, BookOpen, Code } from 'lucide-react-native';
 import { clsx } from 'clsx';
 import * as Haptics from '../../lib/haptics';
 
@@ -16,36 +17,36 @@ interface Props {
 
 export const InferencePresets: React.FC<Props> = ({ currentTemperature, onSelect }) => {
     const { t } = useI18n();
-    const { colors } = useTheme();
+    const { isDark, colors } = useTheme();
 
     const PRESETS = useMemo(
         () => [
             {
                 id: 'precise',
-                icon: Anchor,
-                label: t.agent.inference.precise,
-                color: '#10b981',
+                icon: Code,
+                label: t.rag.presetCode,
+                color: '#6366f1',
                 params: { temperature: 0.1, topP: 0.9 },
                 targetTemp: 0.1
             },
             {
                 id: 'balanced',
                 icon: Zap,
-                label: t.agent.inference.balanced,
-                color: colors[500],
+                label: t.rag.presetBalanced,
+                color: '#06b6d4',
                 params: { temperature: 0.7, topP: 1.0 },
                 targetTemp: 0.7,
             },
             {
                 id: 'creative',
-                icon: Sparkles,
-                label: t.agent.inference.creative,
-                color: '#f43f5e',
+                icon: BookOpen,
+                label: t.rag.presetWriting,
+                color: '#f59e0b',
                 params: { temperature: 1.2, topP: 0.95 },
                 targetTemp: 1.2
             },
         ],
-        [t.agent.inference.precise, t.agent.inference.balanced, t.agent.inference.creative],
+        [t.rag.presetCode, t.rag.presetBalanced, t.rag.presetWriting],
     );
 
     const handleSelect = (preset: typeof PRESETS[0]) => {
@@ -65,44 +66,47 @@ export const InferencePresets: React.FC<Props> = ({ currentTemperature, onSelect
             {PRESETS.map((item) => {
                 const isActive = activeId === item.id;
                 return (
-                    <TouchableOpacity
+                    <Card
                         key={item.id}
+                        variant="glass"
                         onPress={() => handleSelect(item)}
-                        activeOpacity={0.7}
-                        className={clsx(
-                            'flex-1 items-center rounded-2xl p-4 border shadow-sm',
-                            isActive
-                                ? 'bg-white dark:bg-zinc-800'
-                                : 'bg-white dark:bg-zinc-900 border-indigo-50 dark:border-indigo-500/10',
-                        )}
+                        className="flex-1 p-0" // Remove padding from card to let inner view fill
                         style={
                             isActive
                                 ? {
                                     borderColor: item.color,
-                                    shadowColor: item.color,
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.15,
-                                    shadowRadius: 4,
-                                    elevation: 3,
+                                    borderWidth: 1.5,
+                                    overflow: 'hidden',
+                                    borderRadius: 20,
                                 }
-                                : undefined
+                                : { overflow: 'hidden', borderRadius: 20 }
                         }
                     >
-                        <item.icon
-                            size={22}
-                            color={isActive ? item.color : '#9ca3af'}
-                            className="mb-2"
-                        />
-                        <Typography
-                            variant="caption"
-                            className={clsx(
-                                "font-bold text-xs mt-1 text-center",
-                                isActive ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"
-                            )}
+                        <View
+                            className="p-4 items-center w-full rounded-[20px]"
+                            style={{
+                                backgroundColor: isActive
+                                    ? (isDark ? `${item.color}15` : `${item.color}08`)
+                                    : 'transparent',
+                            }}
                         >
-                            {item.label}
-                        </Typography>
-                    </TouchableOpacity>
+                            <item.icon
+                                size={22}
+                                color={isActive ? item.color : '#9ca3af'}
+                                className="mb-2"
+                            />
+                            <Typography
+                                variant="caption"
+                                className={clsx(
+                                    "font-bold text-xs mt-1 text-center",
+                                    isActive ? "" : "text-gray-500 dark:text-gray-400"
+                                )}
+                                style={isActive ? { color: item.color } : undefined}
+                            >
+                                {item.label}
+                            </Typography>
+                        </View>
+                    </Card>
                 );
             })}
         </View>

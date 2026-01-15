@@ -593,9 +593,9 @@ export default function SettingsScreen() {
                     <Card
                       key={provider.id}
                       variant="glass"
-                      className="mb-4"
+                      className="mb-2"
                     >
-                      <View className="p-4">
+                      <View className="p-3">
                         <View
                           style={{
                             flexDirection: 'row',

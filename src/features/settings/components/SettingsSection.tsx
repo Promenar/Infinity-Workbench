@@ -30,18 +30,15 @@ export function SettingsSection({ title, children, containerStyle }: SettingsSec
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 16, // Reduced 24 -> 16
+    marginBottom: 20, // Standardize section spacing
   },
   sectionTitle: {
-    fontSize: 10,
+    fontSize: 11, // Standard: 11px
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: 10, // Reduced from 12 -> 10 for tighter grouping
     paddingHorizontal: 16,
-    letterSpacing: 1.5,
+    letterSpacing: 1.2, // Slightly reduced but still distinct
+    opacity: 0.8,
   },
-  card: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-  },
+  // card style removed - effectively delegated to Card component
 });

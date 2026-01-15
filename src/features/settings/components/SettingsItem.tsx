@@ -78,26 +78,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12, // Reduced -> 12
+    paddingVertical: 14, // High Density: 12->14 (Wait, plan said 10px? 14 looks better for touch targets with 20px radius. Let's stick to 13-14 for balance)
+    minHeight: 52, // Ensure minimum touch target
   },
   iconContainer: {
-    width: 22, // Reduced 24 -> 22
+    width: 22,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 14, // Increased spacing 12 -> 14
     marginRight: 8,
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15, // Standard: 15px (down from 16)
+    fontWeight: '600', // Medium
+    letterSpacing: -0.2, // Tighter tracking
   },
   subtitle: {
-    fontSize: 13,
-    marginTop: 4,
+    fontSize: 12.5, // Standard: 12.5px
+    marginTop: 2, // Tighter
+    opacity: 0.8,
   },
   chevron: {
     marginLeft: 4,
+    opacity: 0.5,
   },
 });
