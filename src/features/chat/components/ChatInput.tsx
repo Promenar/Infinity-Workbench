@@ -323,19 +323,24 @@ export function ChatInput({
           style={{
             position: 'absolute',
             top: -12, // 使文字横跨上边框内外
-            left: '50%',
-            transform: [{ translateX: -55 }],
+            left: 0,
+            right: 0,
             zIndex: 100,
-            backgroundColor: 'rgba(185, 28, 28, 0.95)',
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-            borderRadius: 10,
-            alignItems: 'center',
+            alignItems: 'center', // 子元素水平居中
           }}
         >
-          <Typography style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
-            退出重发模式
-          </Typography>
+          <View
+            style={{
+              backgroundColor: 'rgba(185, 28, 28, 0.95)',
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              borderRadius: 10,
+            }}
+          >
+            <Typography style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
+              退出重发模式
+            </Typography>
+          </View>
         </TouchableOpacity>
       )}
       <BlurView
