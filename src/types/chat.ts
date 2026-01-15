@@ -155,7 +155,7 @@ export interface Session {
 
   // Steerable Agent Loop Fields
   executionMode: 'auto' | 'semi' | 'manual';
-  loopStatus: 'running' | 'paused' | 'waiting_for_approval' | 'completed';
+  loopStatus: 'idle' | 'running' | 'paused' | 'waiting_for_approval' | 'completed';
   pendingIntervention?: string; // 待注入的用户指令
   approvalRequest?: {          // 待批准的操作详情
     toolName: string;

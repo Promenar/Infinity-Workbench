@@ -33,6 +33,17 @@ import { ToolCall, ToolResult, ExecutionStep, SkillContext } from '../types/skil
 import { StreamParser } from '../lib/llm/stream-parser'; // ✅ StreamParser
 import { FormatterFactory } from '../lib/llm/formatter-factory';
 
+// 🔑 高风险工具列表（Semi模式下需要用户审批）
+const HIGH_RISK_TOOLS = [
+  'write_file',
+  'write_to_file',
+  'replace_file_content',
+  'multi_replace_file_content',
+  'run_command',
+  'send_command_input',
+];
+
+
 // ✅ 辅助函数：从数据库查询消息归档状态
 const enrichMessagesWithArchiveStatus = async (
   sessionId: string,
@@ -153,7 +164,7 @@ interface ChatState {
 
   // Steerable Agent Loop Actions
   setExecutionMode: (sessionId: string, mode: 'auto' | 'semi' | 'manual') => void;
-  setLoopStatus: (sessionId: string, status: 'running' | 'paused' | 'waiting_for_approval' | 'completed') => void;
+  setLoopStatus: (sessionId: string, status: 'idle' | 'running' | 'paused' | 'waiting_for_approval' | 'completed') => void;
   setPendingIntervention: (sessionId: string, intervention: string | undefined) => void;
   setApprovalRequest: (sessionId: string, request: { toolName: string; args: any; reason: string } | undefined) => void;
   // Internal Helper (exposed for loop and resume)
@@ -776,13 +787,17 @@ export const useChatStore = create<ChatState>()(
         let accumulatedContent = '';
 
         if (options?.isResumption) {
-          // Reuse last assistant message
-          const lastMsg = session.messages[session.messages.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant') {
-            assistantMsgId = lastMsg.id;
-            accumulatedContent = lastMsg.content || '';
+          // ✅ 虚拟拆分架构关键修复：向前查找最后一个assistant消息
+          // executeTools会添加tool消息，导致最后一条不是assistant
+          const lastAssistantMsg = [...session.messages].reverse().find(m => m.role === 'assistant');
+
+          if (lastAssistantMsg) {
+            assistantMsgId = lastAssistantMsg.id;
+            accumulatedContent = lastAssistantMsg.content || '';
             console.log(`[ChatStore] Resumed assistant message ${assistantMsgId}, initial content length: ${accumulatedContent.length}`);
           } else {
+            // Fallback: 如果找不到assistant消息（不应该发生），创建新的
+            console.warn('[ChatStore] Resumption: No assistant message found, creating new one');
             assistantMsgId = `msg_ai_${Date.now()}`;
             get().addMessage(sessionId, {
               id: assistantMsgId,
@@ -1223,9 +1238,17 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
           // Add user message to context
           console.log('[AgentLoop] Finalizing User Message Content:', {
             length: apiMessage.content.length,
-            isMerged: apiMessage.content.includes('You are NeuralFlow')
+            isMerged: apiMessage.content.includes('You are NeuralFlow'),
+            isResumption: options?.isResumption
           });
-          contextMsgs.push({ role: 'user', content: await formatContent(apiMessage.content, apiMessage.images) });
+
+          // ✅ 虚拟拆分架构关键修复：resumption模式下不添加空用户消息
+          if (!options?.isResumption || apiMessage.content.trim()) {
+            contextMsgs.push({ role: 'user', content: await formatContent(apiMessage.content, apiMessage.images) });
+          } else {
+            console.log('[AgentLoop] Resumption: Skipping empty user message in contextMsgs');
+          }
+
 
           // 🔑 Phase 3.5: Apply Model-Specific System Prompt Enhancements
           // 使用FormatterFactory对消息历史进行模型特定优化
@@ -1932,6 +1955,34 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             }
 
             if (toolCalls && toolCalls.length > 0) {
+              // 🔑 DeepSeek过程文本处理：将工具调用前的过程描述文本保存到Timeline
+              // DeepSeek会在tool_calls之前输出类似"我将为您...首先让我创建...现在执行第二步"的文本
+              // 这些文本是内部推理过程，应在Timeline中展示但不显示在正文区
+              if (accumulatedContent.trim()) {
+                console.log('[AgentLoop] Saving process text to Timeline, content length:', accumulatedContent.length);
+
+                // 添加thinking步骤到Timeline
+                const thinkingStep: any = {
+                  id: `thinking_${Date.now()}`,
+                  type: 'thinking',
+                  content: accumulatedContent.trim(),
+                  timestamp: Date.now()
+                };
+
+                set(state => ({
+                  sessions: state.sessions.map(s => s.id === sessionId ? {
+                    ...s,
+                    messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
+                      ...m,
+                      executionSteps: [...(m.executionSteps || []), thinkingStep]
+                    } : m)
+                  } : s)
+                }));
+
+                // 清空正文区内容（过程文本已转移到Timeline）
+                accumulatedContent = '';
+              }
+
               // 1. Plan/Task Detection & Extraction (Legacy support provided by Parser, checking content strip only)
               // Parser already detected logic, but maybe we need to strip legacy <plan> tags if they remain?
               // The parser strips them from 'content' but accumulatedContent might differ? 
@@ -2049,23 +2100,29 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               let shouldPause = false;
               if (executionMode === 'manual') shouldPause = true;
               else if (executionMode === 'semi') {
-                // Check high risk
+                // 🔑 使用HIGH_RISK_TOOLS精确匹配
                 if (toolCalls.some(tc => {
                   const name = (tc as any).name || (tc as any).function?.name || '';
-                  return ['write_to_file', 'run_command', 'replace_file_content', 'multi_replace_file_content'].some(risk => name.includes(risk));
+                  return HIGH_RISK_TOOLS.includes(name);
                 })) shouldPause = true;
               }
 
               if (shouldPause) {
                 console.log('[AgentLoop] Pausing for approval in mode:', executionMode);
-                const currentSession = get().getSession(sessionId);
 
-                // 🔑 协作反馈优化：如果 content 为空（模型只调用了工具），注入占位提示语
-                // 以便在 ChatBubble 中看起来更连贯
-                if (!accumulatedContent.trim()) {
-                  accumulatedContent = "I've planned some actions that require your approval before I proceed.";
-                  get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent);
+                // ✅ 虚拟拆分架构：resumption模式下跳过审批检测
+                // 工具已在批准后执行，不应重复暂停
+                if (options?.isResumption) {
+                  console.log('[AgentLoop] Resumption: Skipping approval (tools already executed), continuing loop');
+                  shouldPause = false;  // 重置标记，继续执行
                 }
+              }
+
+              // 仅在非resumption或手动拒绝时才真正暂停
+              if (shouldPause) {
+
+                // ✅ 虚拟拆分架构：不注入占位文本，保持内容纯净
+                // 审批信息完全由Timeline显示
 
                 // Save request
                 get().setApprovalRequest(sessionId, {
@@ -2165,6 +2222,12 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
           // =====================================================================================
           // Phase 5: Post-Processing
           // =====================================================================================
+
+          // ✅ 关键修复：AgentLoop结束后重置状态，允许新消息
+          // 如果不重置，会话将永久卡在running/waiting_for_approval状态
+          console.log('[AgentLoop] Loop ended, resetting status to idle');
+          get().setLoopStatus(sessionId, 'idle');
+          get().setApprovalRequest(sessionId, undefined);  // 清除任何残留的审批请求
 
           // Re-calculate context tokens for stats fallback
           const activeWindowSize = agent.ragConfig?.contextWindow || 10;
@@ -2854,21 +2917,18 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             let shouldPause = false;
             if (executionMode === 'manual') shouldPause = true;
             else if (executionMode === 'semi') {
-              // Check high risk
+              // 🔑 使用HIGH_RISK_TOOLS精确匹配
               if (toolCalls.some(tc => {
                 const name = (tc as any).name || (tc as any).function?.name || '';
-                return ['write_to_file', 'run_command', 'replace_file_content', 'multi_replace_file_content'].some(risk => name.includes(risk));
+                return HIGH_RISK_TOOLS.includes(name);
               })) shouldPause = true;
             }
 
             if (shouldPause) {
               console.log('[AgentLoop] Regenerate: Pausing for approval in mode:', executionMode);
 
-              // 🔑 Feedback Injection: If content is empty while pausing, inject a friendly message
-              if (!accumulatedContent.trim()) {
-                accumulatedContent = "I've planned some actions that require your approval before I proceed.";
-                get().updateMessageContent(sessionId, messageId, accumulatedContent);
-              }
+              // ✅ 虚拟拆分架构：不注入占位文本，保持内容纯净
+              // 审批信息完全由Timeline显示
 
               // Save request
               get().setApprovalRequest(sessionId, {

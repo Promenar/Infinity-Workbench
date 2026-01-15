@@ -89,76 +89,97 @@ const InterventionUI = ({ sessionId, toolName }: { sessionId: string, toolName?:
     const [inputValue, setInputValue] = useState('');
     const { isDark } = useTheme();
     const { t } = useI18n();
+    const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
 
     const handleApprove = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        useChatStore.getState().resumeGeneration(sessionId, true);
+        setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }, 10);
+        useChatStore.getState().resumeGeneration(sessionId, true, inputValue.trim() || undefined);
     };
 
     const handleReject = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        if (inputValue.trim()) {
-            useChatStore.getState().resumeGeneration(sessionId, false, inputValue.trim());
-        } else {
-            useChatStore.getState().resumeGeneration(sessionId, false);
-        }
-    };
-
-    const handleIntervene = () => {
-        if (!inputValue.trim()) return;
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        useChatStore.getState().resumeGeneration(sessionId, true, inputValue.trim());
+        setTimeout(() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }, 10);
+        useChatStore.getState().resumeGeneration(sessionId, false);
     };
 
     return (
         <Animated.View
             entering={FadeIn.duration(400)}
-            className="mt-3 p-4 rounded-3xl border border-white/10 overflow-hidden"
-            style={{
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-            }}
+            className="mt-3"
         >
-            <Typography variant="caption" className="mb-3 font-bold opacity-60 uppercase tracking-widest text-[10px]">
-                {t.agent.waitingForApproval}
-            </Typography>
+            {/* 工具详情展示 */}
+            {session?.approvalRequest && (
+                <View className="mb-3 p-3 rounded-xl" style={{
+                    backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : 'rgba(251, 191, 36, 0.12)',
+                    borderWidth: 0,
+                }}>
+                    <Typography className="text-xs font-bold mb-1" style={{ color: isDark ? '#fbbf24' : '#d97706' }}>
+                        {session.approvalRequest.toolName}
+                    </Typography>
+                    {session.approvalRequest.args && session.approvalRequest.args.length > 0 && (
+                        <Typography variant="caption" className="font-mono text-[10px] opacity-60">
+                            {JSON.stringify(session.approvalRequest.args, null, 2).slice(0, 150)}
+                            {JSON.stringify(session.approvalRequest.args).length > 150 ? '...' : ''}
+                        </Typography>
+                    )}
+                </View>
+            )}
 
-            <View className="flex-row items-center justify-between mb-4">
-                <TouchableOpacity
-                    onPress={handleApprove}
-                    className="flex-1 flex-row items-center justify-center py-2.5 bg-indigo-500/90 rounded-2xl mr-2 shadow-sm"
-                >
-                    <Check size={16} color="#fff" strokeWidth={3} />
-                    <Typography className="ml-2 text-white font-bold text-xs">{t.common.approve}</Typography>
-                </TouchableOpacity>
+            {/* 介入输入框 */}
+            <View className="mb-3">
+                <Typography variant="caption" className="mb-2 opacity-60 text-xs">
+                    {t.agent.manualInterventionHint || "可选：提供修改指令"}
+                </Typography>
+                <View className="rounded-2xl px-3 py-2" style={{
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                    borderWidth: 0,
+                }}>
+                    <TextInput
+                        placeholder="例如: '仅写入 /tmp 目录'"
+                        placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
+                        className="text-xs"
+                        style={{ color: isDark ? '#fff' : '#000', minHeight: 32 }}
+                        value={inputValue}
+                        onChangeText={setInputValue}
+                        multiline
+                        numberOfLines={2}
+                    />
+                </View>
+            </View>
 
+            {/* 操作按钮 - 无边界、深度嵌入 */}
+            <View className="flex-row gap-3">
                 <TouchableOpacity
                     onPress={handleReject}
-                    className="flex-1 flex-row items-center justify-center py-2.5 bg-zinc-800/80 rounded-2xl border border-white/5"
+                    className="flex-1 py-2.5 rounded-xl items-center justify-center"
+                    style={{
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                        borderWidth: 0,
+                    }}
                 >
-                    <X size={16} color="#fff" />
-                    <Typography className="ml-2 text-white font-bold text-xs">{t.common.reject}</Typography>
+                    <Typography className="text-xs font-semibold" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }}>
+                        {t.common.reject}
+                    </Typography>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    onPress={handleApprove}
+                    className="flex-1 py-2.5 rounded-xl items-center justify-center"
+                    style={{
+                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.15)' : 'rgba(251, 191, 36, 0.2)',
+                        borderWidth: 0,
+                    }}
+                >
+                    <Typography className="text-xs font-bold" style={{ color: isDark ? '#fbbf24' : '#d97706' }}>
+                        {inputValue.trim() ? '携带指令批准' : '批准并执行'}
+                    </Typography>
                 </TouchableOpacity>
             </View>
 
-            <View className="flex-row items-center bg-white/5 rounded-2xl border border-white/5 px-3 py-1.5">
-                <TextInput
-                    placeholder={t.agent.manualInterventionHint || "Direct agent..."}
-                    placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
-                    className="flex-1 text-xs py-1"
-                    style={{ color: isDark ? '#fff' : '#000' }}
-                    value={inputValue}
-                    onChangeText={setInputValue}
-                    onSubmitEditing={handleIntervene}
-                    returnKeyType="send"
-                />
-                <TouchableOpacity
-                    onPress={handleIntervene}
-                    disabled={!inputValue.trim()}
-                    className={clsx("p-2 rounded-xl", inputValue.trim() ? "bg-indigo-500" : "bg-white/5")}
-                >
-                    <Send size={14} color="#fff" />
-                </TouchableOpacity>
-            </View>
+
         </Animated.View>
     );
 };

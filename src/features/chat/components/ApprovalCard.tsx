@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, TouchableOpacity, ViewStyle } from 'react-native';
+import React, { useState } from 'react';
+import { View, TouchableOpacity, TextInput, ViewStyle, Platform } from 'react-native';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useChatStore } from '../../../store/chat-store';
 import { Typography } from '../../../components/ui/Typography';
@@ -16,17 +16,26 @@ export const ApprovalCard = ({ sessionId, containerStyle }: ApprovalCardProps) =
     const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
     const resumeGeneration = useChatStore(s => s.resumeGeneration);
 
+    // 介入指令状态
+    const [interventionText, setInterventionText] = useState('');
+
     if (!session || session.loopStatus !== 'waiting_for_approval' || !session.approvalRequest) return null;
 
     const { toolName, args, reason } = session.approvalRequest;
 
     const handleApprove = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        resumeGeneration(sessionId, true);
+        // 原生桥接延迟防护
+        setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }, 10);
+        resumeGeneration(sessionId, true, interventionText.trim() || undefined);
     };
 
     const handleReject = () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        // 原生桥接延迟防护
+        setTimeout(() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }, 10);
         resumeGeneration(sessionId, false);
     };
 
@@ -72,6 +81,33 @@ export const ApprovalCard = ({ sessionId, containerStyle }: ApprovalCardProps) =
                 </View>
             </View>
 
+            {/* 介入输入框 */}
+            <View style={{ marginBottom: 12 }}>
+                <Typography variant="caption" color="secondary" style={{ marginBottom: 6 }}>
+                    可选：提供修改指令以调整执行行为
+                </Typography>
+                <TextInput
+                    value={interventionText}
+                    onChangeText={setInterventionText}
+                    placeholder="例如: '仅写入 /tmp 目录' 或 '使用安全模式'"
+                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                    multiline
+                    numberOfLines={2}
+                    style={{
+                        backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : '#fff',
+                        borderRadius: 8,
+                        padding: 10,
+                        borderWidth: 1,
+                        borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#e5e7eb',
+                        color: isDark ? '#ffffff' : '#18181b',
+                        fontSize: 14,
+                        lineHeight: 20,
+                        minHeight: 44,
+                        textAlignVertical: 'top'
+                    }}
+                />
+            </View>
+
             {/* Actions */}
             <View style={{ flexDirection: 'row', gap: 12 }}>
                 <TouchableOpacity
@@ -107,7 +143,9 @@ export const ApprovalCard = ({ sessionId, containerStyle }: ApprovalCardProps) =
                     }}
                 >
                     <Play size={16} color="#fff" fill="#fff" />
-                    <Typography variant="body" style={{ fontWeight: '700', color: '#fff' }}>Approve & Run</Typography>
+                    <Typography variant="body" style={{ fontWeight: '700', color: '#fff' }}>
+                        {interventionText.trim() ? '携带指令批准' : '批准并执行'}
+                    </Typography>
                 </TouchableOpacity>
             </View>
         </View>

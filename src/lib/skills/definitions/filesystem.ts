@@ -60,12 +60,19 @@ export const WriteFileSkill: Skill = {
                 encoding: (FileSystem as any).EncodingType.UTF8
             });
 
+            console.log('[FileSystem] File written successfully:', {
+                inputPath: params.path,
+                fullPath,
+                size: params.content.length
+            });
+
             return {
                 id: `write_${Date.now()}`,
                 content: `Successfully wrote ${params.content.length} characters to "${params.path}".`,
                 status: 'success',
                 data: {
                     path: params.path,
+                    fullPath,  // 添加完整路径用于调试
                     size: params.content.length
                 }
             };

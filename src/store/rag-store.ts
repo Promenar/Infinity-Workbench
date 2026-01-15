@@ -13,7 +13,7 @@ const RAW_SANDBOX_ROOT = (FileSystem as any).documentDirectory || (FileSystem as
 const SANDBOX_ROOT = RAW_SANDBOX_ROOT + 'agent_sandbox/';
 const WORKSPACE_NAME = 'workspace';
 const WORKSPACE_TAG = 'workspace'; // 内部标识符
-const LEGACY_WORKSPACE_NAME = '工作区';
+const LEGACY_WORKSPACE_NAME = '工作区'; // 旧版中文名称（迁移用）
 
 let isEnsuringWorkspace = false;
 

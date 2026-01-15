@@ -91,7 +91,7 @@ import {
 } from 'lucide-react-native';
 import { ActivityIndicator } from 'react-native';
 import { Colors } from '../../../theme/colors';
-import { ApprovalCard } from './ApprovalCard';
+
 
 interface ChatBubbleProps {
   message: Message;
@@ -1068,14 +1068,6 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             marginTop: 2,
             marginBottom: 4
           }}
-        />
-      )}
-
-      {/* ✅ Approval Card (Steerable Agent Loop) */}
-      {!isUser && (
-        <ApprovalCard
-          sessionId={sessionId}
-          containerStyle={{ marginTop: 8 }}
         />
       )}
 
