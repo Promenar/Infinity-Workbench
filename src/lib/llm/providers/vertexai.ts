@@ -357,15 +357,20 @@ export class VertexAiClient implements LlmClient {
 
         // System Nudge for Voice/Tool consistency
         const hasTools = (options?.skills && options.skills.length > 0) || options?.webSearch;
+        // 🔄 Adjust search guidance based on native vs custom search
+        const searchGuidance = options?.webSearch
+          ? '2. If you need current information, USE YOUR NATIVE SEARCH CAPABILITY directly (do NOT call search_internet function).'
+          : '2. If you need information, call \'query_vector_db\' or \'search_internet\' IMMEDIATELY.';
+
         const toolGuidance = hasTools
           ? `\nYou are a helpful assistant with access to tools. 
 CRITICAL RULES:
 1. You MUST use the native function calling mechanism to execute tools. DO NOT just write code blocks or descriptions of tool calls.
-2. If you need information, call 'query_vector_db' or 'search_internet' IMMEDIATELY.
+${searchGuidance}
 3. If you need to generate an image, call 'generate_image' IMMEDIATELY.
-4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION.
+4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION or execute directly.
 5. You can call multiple tools if needed.
-Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
+Available tools: ${options?.skills?.filter((s: any) => !options?.webSearch || s.id !== 'search_internet').map((s: any) => s.id).join(', ') || 'N/A'}${options?.webSearch ? ' + Native Web Search' : ''}.`
           : '';
 
         const finalSystemInstruction = combinedSystemTitle + toolGuidance;
@@ -462,8 +467,13 @@ Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
           tools.push({ google_search: {} });
         }
 
-        if (hasTools && options?.skills && options.skills.length > 0) {
-          const geminiTools = this.mapSkillsToGeminiTools(options.skills);
+        // 🔄 Filter out search_internet if native webSearch is enabled to avoid redundancy
+        const effectiveSkills = options?.webSearch
+          ? (options?.skills || []).filter((s: Skill) => s.id !== 'search_internet')
+          : (options?.skills || []);
+
+        if (effectiveSkills.length > 0) {
+          const geminiTools = this.mapSkillsToGeminiTools(effectiveSkills);
           tools.push(...geminiTools);
 
           body.tool_config = {
