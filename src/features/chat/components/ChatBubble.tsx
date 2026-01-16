@@ -526,7 +526,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   const { t } = useI18n();
 
   const { isDark, colors } = useTheme();
-  const { processingState, updateProcessingState } = useRagStore();
+  const { processingState, updateProcessingState, processingHistory } = useRagStore();
   const sessionData = useChatStore(
     React.useCallback((state) => state.sessions.find((s) => s.id === sessionId), [sessionId]),
   );
@@ -1063,7 +1063,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             (Array.isArray(message.ragReferences) && message.ragReferences.length > 0) ||
             (processingState.activeMessageId === message.id && (processingState.status !== 'idle' || processingState.kgStatus !== 'idle')) ||
             (processingState.activeMessageId === message.id && processingState.pulseActive) ||
-            (isGenerating && processingState.activeMessageId === message.id) || // 🔑 即使结果为 0，生成期间也要保活
+            (isGenerating && processingState.activeMessageId === message.id) ||
+            (!!processingHistory[message.id]) || // ✅ 关键修复：只要有历史记录（即便0引用）也显示
             (!!message.ragProgress) // 🔑 长效存留：只要 RAG 曾经运行过，就保留指示器以显示历史结果
           ) && (
               <View style={{ width: '100%', marginBottom: 4 }}>

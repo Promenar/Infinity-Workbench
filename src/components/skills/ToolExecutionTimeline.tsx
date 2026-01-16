@@ -307,7 +307,7 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                 {!isLast && <Animated.View layout={Layout.springify()} className="w-[1px] flex-1 my-1" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />}
             </Animated.View>
 
-            <Animated.View layout={Layout.springify()} className="flex-1 pb-4">
+            <Animated.View className="flex-1 pb-4">
                 <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => setExpanded(!expanded)}
@@ -379,7 +379,9 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                             </View>
                         ) : (
                             <Typography variant="body" className="text-sm mt-1" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }}>
-                                {step.content}
+                                {step.type === 'thinking' && (step.content || '').length > 1000
+                                    ? `... (showing last 1000 chars)\n${(step.content || '').slice(-1000)}`
+                                    : (step.content || '')}
                             </Typography>
                         )}
                     </Animated.View>
@@ -408,20 +410,8 @@ const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
     const scrollViewRef = React.useRef<ScrollView>(null);
-    const lastScrollTime = React.useRef(0);
-
-    React.useEffect(() => {
-        if ((isMessageGenerating || steps.some(s => s.type === 'intervention_required')) && steps.length > 0) {
-            const now = Date.now();
-            if (now - lastScrollTime.current > 500) {
-                const timer = setTimeout(() => {
-                    scrollViewRef.current?.scrollToEnd({ animated: true });
-                    lastScrollTime.current = Date.now();
-                }, 100);
-                return () => clearTimeout(timer);
-            }
-        }
-    }, [steps.length, isMessageGenerating]);
+    // 🔑 Removed internal auto-scroll to prevent conflict with main lists
+    // The main ChatList handles scrolling to bottom.
 
     if (!steps || steps.length === 0) return null;
 
@@ -429,7 +419,7 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
         <View className="py-2 my-1 relative">
             <GHScrollView
                 ref={scrollViewRef as any}
-                nestedScrollEnabled={false}
+                nestedScrollEnabled={true}
                 showsVerticalScrollIndicator={false}
                 fadingEdgeLength={32}
                 style={{ maxHeight: 280 }}

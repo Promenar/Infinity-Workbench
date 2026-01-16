@@ -126,6 +126,9 @@ export class VectorStore {
 
     // @ts-ignore
     for (let i = 0; i < results.rows.length; i++) {
+      // 🛡️ 强制防阻塞：每计算 100 个向量，主动让出主线程 5ms
+      if (i % 100 === 0) await new Promise(resolve => setTimeout(resolve, 5));
+
       // @ts-ignore
       const row = results.rows[i];
       const vec = this.fromBlob(row.embedding);

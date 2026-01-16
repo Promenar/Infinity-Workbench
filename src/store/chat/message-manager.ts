@@ -9,6 +9,111 @@ import type { Message, SessionId, TokenUsage, RagReference, RagProgress, RagMeta
 export const createMessageManager = (context: ManagerContext): MessageManager => {
     const { get, set } = context;
 
+    // 🔑 Throttling & Buffer State
+    const pendingUpdates = new Map<string, {
+        content: string;
+        tokens?: TokenUsage;
+        reasoning?: string;
+        citations?: { title: string; url: string; source?: string }[];
+        ragReferences?: RagReference[];
+        ragReferencesLoading?: boolean;
+        ragMetadata?: RagMetadata;
+        thought_signature?: string;
+        taskState?: TaskState;
+    }>();
+
+    const throttleTimers = new Map<string, NodeJS.Timeout>();
+
+    const flushUpdate = (sessionId: string, messageId: string) => {
+        const key = `${sessionId}:${messageId}`;
+        const pending = pendingUpdates.get(key);
+        if (!pending) return;
+
+        // Clear buffer and timer
+        pendingUpdates.delete(key);
+        throttleTimers.delete(key);
+
+        // Perform actual store update
+        set((state) => {
+            const session = state.sessions.find((s) => s.id === sessionId);
+            if (!session) return {};
+
+            const message = session.messages.find((m) => m.id === messageId);
+            if (!message) return {};
+
+            // Calculate Token Deltas (Billing) using pending data vs current state
+            const oldTokens = message.tokens || { input: 0, output: 0, total: 0 };
+            const newTokens = pending.tokens || oldTokens;
+
+            const tokensChanged = newTokens.total !== oldTokens.total;
+            const deltaInput = newTokens.input - oldTokens.input;
+            const deltaOutput = newTokens.output - oldTokens.output;
+            const deltaTotal = newTokens.total - oldTokens.total;
+
+            const currentBilling = session.stats?.billing || {
+                chatInput: { count: 0, isEstimated: false },
+                chatOutput: { count: 0, isEstimated: false },
+                ragSystem: { count: 0, isEstimated: false },
+                total: 0,
+                costUSD: 0,
+            };
+
+            const updatedBilling = { ...currentBilling };
+
+            if (tokensChanged && deltaTotal > 0) {
+                if (message.role === 'assistant') {
+                    updatedBilling.chatOutput.count += deltaOutput;
+                    const ragSystemDelta = deltaTotal - deltaOutput;
+                    const hasRag =
+                        (pending.ragMetadata !== undefined ? pending.ragMetadata : message.ragMetadata) ||
+                        (pending.ragReferences !== undefined ? pending.ragReferences : message.ragReferences);
+
+                    if (hasRag && ragSystemDelta > 0) {
+                        updatedBilling.ragSystem.count += ragSystemDelta;
+                    } else {
+                        updatedBilling.chatInput.count += deltaInput;
+                    }
+                } else {
+                    updatedBilling.chatInput.count += deltaInput;
+                }
+                updatedBilling.total += deltaTotal;
+            }
+
+            return {
+                sessions: state.sessions.map((s) => {
+                    if (s.id === sessionId) {
+                        return {
+                            ...s,
+                            messages: s.messages.map((m) =>
+                                m.id === messageId
+                                    ? {
+                                        ...m,
+                                        content: pending.content,
+                                        tokens: newTokens,
+                                        ...(pending.reasoning !== undefined && { reasoning: pending.reasoning }),
+                                        ...(pending.citations !== undefined && { citations: pending.citations }),
+                                        ...(pending.ragReferences !== undefined && { ragReferences: pending.ragReferences }),
+                                        ...(pending.ragReferencesLoading !== undefined && { ragReferencesLoading: pending.ragReferencesLoading }),
+                                        ...(pending.ragMetadata !== undefined && { ragMetadata: pending.ragMetadata }),
+                                        ...(pending.thought_signature !== undefined && { thought_signature: pending.thought_signature }),
+                                        ...(pending.taskState && { planningTask: pending.taskState }),
+                                    }
+                                    : m
+                            ),
+                            lastMessage: pending.content,
+                            stats: {
+                                ...s.stats,
+                                totalTokens: updatedBilling.total,
+                                billing: updatedBilling,
+                            },
+                        };
+                    }
+                    return s;
+                }),
+            };
+        });
+    };
+
     return {
         addMessage: (sessionId: string, message: Message) => {
             set((state) => ({
@@ -40,98 +145,36 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             thought_signature?: string,
             taskState?: TaskState
         ) => {
-            set((state) => {
-                const session = state.sessions.find((s) => s.id === sessionId);
-                if (!session) return {};
+            const key = `${sessionId}:${messageId}`;
+            const currentPending = pendingUpdates.get(key) || { content };
 
-                // 计算新增的 token（用于累加）
-                const message = session.messages.find((m) => m.id === messageId);
-                if (!message) return {};
-
-                const oldTokens = message.tokens || { input: 0, output: 0, total: 0 };
-                const newTokens = tokens || oldTokens;
-
-                // 🔑 防止重复累加：只有当 tokens 真正变化时才累加
-                const tokensChanged = newTokens.total !== oldTokens.total;
-
-                // 计算 delta（增量）
-                const deltaInput = newTokens.input - oldTokens.input;
-                const deltaOutput = newTokens.output - oldTokens.output;
-                const deltaTotal = newTokens.total - oldTokens.total;
-
-                // 更新 session.stats.billing（累加模式）
-                const currentBilling = session.stats?.billing || {
-                    chatInput: { count: 0, isEstimated: false },
-                    chatOutput: { count: 0, isEstimated: false },
-                    ragSystem: { count: 0, isEstimated: false },
-                    total: 0,
-                    costUSD: 0,
-                };
-
-                // 🔑 关键修复：只在 token 变化且有增量时累加
-                const updatedBilling = { ...currentBilling };
-
-                if (tokensChanged && deltaTotal > 0) {
-                    if (message.role === 'assistant') {
-                        // Assistant 消息：output 增量 + 可能包含的 RAG token
-                        updatedBilling.chatOutput.count += deltaOutput;
-
-                        // RAG token 在 input 中
-                        const ragSystemDelta = deltaTotal - deltaOutput;
-
-                        // 检测是否有 RAG 参与（通过 ragMetadata 或 ragReferences）
-                        // 注意：这里使用传入的新值，而非message的旧值
-                        const hasRag =
-                            (ragMetadata !== undefined ? ragMetadata : message.ragMetadata) ||
-                            (ragReferences !== undefined ? ragReferences : message.ragReferences);
-
-                        if (hasRag && ragSystemDelta > 0) {
-                            // 有 RAG 参与
-                            updatedBilling.ragSystem.count += ragSystemDelta;
-                        } else {
-                            updatedBilling.chatInput.count += deltaInput;
-                        }
-                    } else {
-                        // User 消息：只有 input
-                        updatedBilling.chatInput.count += deltaInput;
-                    }
-
-                    updatedBilling.total += deltaTotal;
-                }
-
-                return {
-                    sessions: state.sessions.map((s) => {
-                        if (s.id === sessionId) {
-                            return {
-                                ...s,
-                                messages: s.messages.map((m) =>
-                                    m.id === messageId
-                                        ? {
-                                            ...m,
-                                            content,
-                                            tokens: newTokens,
-                                            ...(reasoning !== undefined && { reasoning }),
-                                            ...(citations !== undefined && { citations }),
-                                            ...(ragReferences !== undefined && { ragReferences }),
-                                            ...(ragReferencesLoading !== undefined && { ragReferencesLoading }),
-                                            ...(ragMetadata !== undefined && { ragMetadata }),
-                                            ...(thought_signature !== undefined && { thought_signature }),
-                                            ...(taskState && { planningTask: taskState }),
-                                        }
-                                        : m
-                                ),
-                                lastMessage: content,
-                                stats: {
-                                    ...s.stats,
-                                    totalTokens: updatedBilling.total,
-                                    billing: updatedBilling,
-                                },
-                            };
-                        }
-                        return s;
-                    }),
-                };
+            // Merge updates
+            pendingUpdates.set(key, {
+                ...currentPending,
+                content: content, // Always overwrite content with latest
+                ...(tokens !== undefined && { tokens }),
+                ...(reasoning !== undefined && { reasoning }),
+                ...(citations !== undefined && { citations }),
+                ...(ragReferences !== undefined && { ragReferences }),
+                ...(ragReferencesLoading !== undefined && { ragReferencesLoading }),
+                ...(ragMetadata !== undefined && { ragMetadata }),
+                ...(thought_signature !== undefined && { thought_signature }),
+                ...(taskState !== undefined && { taskState }),
             });
+
+            // If no timer active, schedule flush (Leading Edge + Trailing Edge logic)
+            // Implementation: We always delay 100ms. This is "Throttling" (capped at 10fps).
+            // For smoother typing effect, we might want "Leading Edge" (immediate first char),
+            // but for avoiding freeze, strict throttling is safer.
+            // Let's use strict throttling to solve the "DeepSeek Freeze".
+            if (!throttleTimers.has(key)) {
+                // If it's the very first token (buffer was empty), maybe flush immediately?
+                // No, consistency is key. Just invoke in 100ms.
+                const timer = setTimeout(() => {
+                    flushUpdate(sessionId, messageId);
+                }, 200); // 5fps limit
+                throttleTimers.set(key, timer);
+            }
         },
 
         deleteMessage: (sessionId: SessionId, messageId: string) => {

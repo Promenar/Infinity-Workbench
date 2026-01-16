@@ -44,6 +44,7 @@ export const CoreMemoryList: React.FC = () => {
             <Button
                 variant="ghost"
                 size="sm"
+                label=""
                 onPress={() => handleDelete(item.id)}
                 className="opacity-70 active:opacity-100"
             >

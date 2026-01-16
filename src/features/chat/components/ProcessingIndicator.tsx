@@ -270,14 +270,22 @@ export const ProcessingIndicatorDetails: React.FC<ProcessingIndicatorDetailsProp
               最近切片 ({chunks.length})
             </Text>
           </View>
-          {chunks.map((chunk: string, i: number) => (
-            <View key={i} style={styles.chunkItem}>
-              <Text style={[styles.chunkIndex, { color: '#94a3b8' }]}>#{i + 1}</Text>
-              <Text style={[styles.chunkContent, { color: textColor }]} numberOfLines={3}>
-                {chunk}
-              </Text>
-            </View>
-          ))}
+          {chunks.length > 5 && (
+            <Text style={[styles.chunkIndex, { color: '#94a3b8', textAlign: 'center', marginBottom: 6, fontSize: 10 }]}>
+              ... {chunks.length - 5} more previous chunks ...
+            </Text>
+          )}
+          {chunks.slice(-5).map((chunk: string, i: number) => {
+            const realIndex = chunks.length > 5 ? chunks.length - 5 + i : i;
+            return (
+              <View key={realIndex} style={styles.chunkItem}>
+                <Text style={[styles.chunkIndex, { color: '#94a3b8' }]}>#{realIndex + 1}</Text>
+                <Text style={[styles.chunkContent, { color: textColor }]} numberOfLines={3}>
+                  {chunk}
+                </Text>
+              </View>
+            );
+          })}
         </View>
       )}
     </Animated.View>

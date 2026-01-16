@@ -44,6 +44,8 @@ export default function AgentSessionsScreen() {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       unread: 0,
       messages: [],
+      executionMode: 'auto',
+      loopStatus: 'idle',
     };
     addSession(newSession);
     setTimeout(() => {

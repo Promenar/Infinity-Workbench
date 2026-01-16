@@ -18,7 +18,7 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
     const [visible, setVisible] = useState(false);
 
     if (!session) return null;
-    const mode = session.executionMode || 'auto';
+    const mode = session.executionMode || 'semi';
 
     const getIcon = (m: string) => {
         switch (m) {

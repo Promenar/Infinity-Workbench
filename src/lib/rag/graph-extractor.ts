@@ -201,6 +201,8 @@ export class GraphExtractor {
         try {
           const id = await graphStore.upsertNode(node.name, node.type, node.metadata, scope);
           nameToIdMap.set(node.name, id);
+          // Yield to UI thread every node to prevent freeze
+          if (result.nodes.length > 5) await new Promise((resolve) => setTimeout(resolve, 2));
         } catch (e) {
           console.error(`[GraphExtractor] Failed to save node ${node.name}`, e);
         }
@@ -221,6 +223,8 @@ export class GraphExtractor {
               edge.weight || 1.0,
               scope,
             );
+            // Yield to UI thread every edge
+            if (result.edges.length > 5) await new Promise((resolve) => setTimeout(resolve, 2));
           } catch (e) {
             console.error(`[GraphExtractor] Failed to save edge ${edge.source}->${edge.target}`, e);
           }

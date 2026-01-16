@@ -196,18 +196,21 @@ export default function ChatDetailScreen() {
         // 用户发送新消息，强制滚动到底部
         userScrolledAway.value = false;
         isAtBottom.value = true;
+        // User message added: Animate strictly
         listRef.current?.scrollToEnd({ animated: true });
       } else if (!userScrolledAway.value) {
         // 🔑 AI生成的第一帧：如果用户之前就在底部（未打断），则开始追踪
+        // Use animated: false for instant snap-to-bottom
         if (isAtBottom.value || loading) {
-          listRef.current?.scrollToEnd({ animated: true });
+          listRef.current?.scrollToEnd({ animated: false });
         }
       }
     } else if (loading) {
       // 🔑 Content updating: Only scroll if user hasn't scrolled away
       // Strict check: if userScrolledAway is true, DO NOT SCROLL even if loading
       if (!userScrolledAway.value) {
-        listRef.current?.scrollToEnd({ animated: true });
+        // Use animated: false for stream following
+        listRef.current?.scrollToEnd({ animated: false });
       }
     }
     lastMessageCount.current = messages.length;
@@ -251,7 +254,7 @@ export default function ChatDetailScreen() {
         if (lastReasoningState.current && !hasReasoning) {
           if (!userScrolledAway.value) {
             // 折叠reasoning并滚动到正文
-            listRef.current?.scrollToEnd({ animated: true });
+            listRef.current?.scrollToEnd({ animated: false });
           }
         }
         lastReasoningState.current = hasReasoning;
@@ -273,7 +276,8 @@ export default function ChatDetailScreen() {
       // 正在生成中，且用户未打断，持续追踪内容变化
       // 不再检查 isAtBottom.value，原因同上
       const timer = setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: true });
+        // Use animated: false to avoid animation stack lag
+        listRef.current?.scrollToEnd({ animated: false });
       }, 50);
       return () => clearTimeout(timer);
     }
