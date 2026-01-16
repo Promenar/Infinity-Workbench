@@ -66,30 +66,36 @@ export class ContextManager {
       }
 
       // Calculate how many unsummarized messages we have pending
-      // We want to keep the last 'maxMessages' (e.g., 20) as active context
-      // So we summarize everything before `total - maxMessages`
-      const activeWindowSize = finalConfig.maxMessages;
-      const pendingCount = contentMessages.length - startIndex;
+      // Design: Keep the last X (activeWindowSize) messages as active context
+      // Only messages BEFORE the active window are candidates for summarization
+      // Summarize in batches of Y (summaryThreshold) messages
+      const activeWindowSize = finalConfig.maxMessages; // X
+      const summaryBatchSize = finalConfig.summarizeThreshold || 10; // Y
 
-      // e.g. 50 messages total, start=0. pending=50. max=20.
-      // We can summarize 50 - 20 = 30 messages.
-      const messagesToSummarizeCount = pendingCount - activeWindowSize;
+      // Total content messages in session
+      const totalMessages = contentMessages.length;
 
-      // 修复：使用summarizeThreshold，而不是硬编码10
-      const minBatchSize = Math.min(finalConfig.summarizeThreshold || 10, 10);
+      // Messages that should remain in active window (not summarized)
+      // These are the last X messages
+      const activeWindowStart = Math.max(0, totalMessages - activeWindowSize);
+
+      // Unsummarized messages that are OUTSIDE the active window
+      // = messages from startIndex to activeWindowStart
+      const pendingForSummary = activeWindowStart - startIndex;
 
       console.log(
-        `[ContextManager] 摘要检查: pending=${messagesToSummarizeCount}, minBatch=${minBatchSize}, contentMessages=${contentMessages.length}, activeWindow=${activeWindowSize}`,
+        `[ContextManager] 摘要检查: total=${totalMessages}, activeWindow=${activeWindowSize}, startIdx=${startIndex}, activeWindowStart=${activeWindowStart}, pendingForSummary=${pendingForSummary}, batchSize=${summaryBatchSize}`,
       );
 
-      if (messagesToSummarizeCount < minBatchSize) {
-        // Not enough messages to bother summarizing yet (batch it)
-        console.log(`[ContextManager] 跳过摘要：未达到批次大小`);
+      // Only summarize if we have at least Y messages pending outside the active window
+      if (pendingForSummary < summaryBatchSize) {
+        console.log(`[ContextManager] 跳过摘要：超出活跃窗口的消息 (${pendingForSummary}) 未达到批次大小 (${summaryBatchSize})`);
         return;
       }
 
-      // Select the chunk to summarize
-      const chunk = contentMessages.slice(startIndex, startIndex + messagesToSummarizeCount);
+      // Select exactly Y messages for this batch (or all pending if less than Y remain)
+      const batchEnd = Math.min(startIndex + summaryBatchSize, activeWindowStart);
+      const chunk = contentMessages.slice(startIndex, batchEnd);
       if (chunk.length === 0) return;
 
       console.log(
@@ -102,7 +108,20 @@ export class ContextManager {
 
       const { summary, tokenUsage, usageDetails } = summaryResult;
 
-      // 3. Store Summary in DB
+      // 3. Defensive Check: Ensure session exists before inserting (FK constraint)
+      const sessionCheck = await db.execute(
+        'SELECT id FROM sessions WHERE id = ?',
+        [sessionId]
+      );
+      const sessionExists = sessionCheck.rows &&
+        ((sessionCheck.rows as any)._array?.length > 0 || (sessionCheck.rows as any).length > 0);
+
+      if (!sessionExists) {
+        console.warn('[ContextManager] Session not found, skipping summary storage:', sessionId);
+        return;
+      }
+
+      // 4. Store Summary in DB
       const id = `summary_${Date.now()}`;
       await db.execute(
         `INSERT INTO context_summaries (id, session_id, start_message_id, end_message_id, summary_content, created_at, token_usage) VALUES (?, ?, ?, ?, ?, ?, ?)`,

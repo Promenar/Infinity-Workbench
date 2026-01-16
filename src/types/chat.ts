@@ -115,6 +115,7 @@ export interface Message {
   layoutHeight?: number; // ✅ 新增：缓存布局高度，优化滚动性能
   executionSteps?: ExecutionStep[]; // ✅ 新增：Agentic Loop 执行步骤
   tool_calls?: ToolCall[]; // ✅ 新增：工具调用列表
+  pendingApprovalToolIds?: string[]; // ✅ 新增：待审批工具 ID 列表（Semi模式下标记）
   tool_call_id?: string; // ✅ 新增：工具调用关联 ID (用于 role: tool)
   name?: string; // ✅ 新增：工具名称 (用于 role: tool)
   thought_signature?: string; // ✅ 新增：思维签名 (仅限 Gemini 2.0 Thinking 模型)

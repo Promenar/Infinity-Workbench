@@ -71,12 +71,10 @@ export const SummaryIndicator: React.FC<SummaryIndicatorProps> = ({ sessionId, i
     }
   }, [processingState.status, processingState.sessionId, sessionId]);
 
-  if (processingState.sessionId !== sessionId) return null;
-  if (processingState.status !== 'summarizing' && !showComplete) return null;
-
   const isSummarizing = processingState.status === 'summarizing';
   const accentColor = isSummarizing ? '#3b82f6' : '#10b981'; // Blue vs Green
 
+  // ✅ CRITICAL: All hooks must be called BEFORE any early returns
   const containerStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
     transform: [{ scale: scale.value }],
@@ -87,6 +85,10 @@ export const SummaryIndicator: React.FC<SummaryIndicatorProps> = ({ sessionId, i
     opacity: glowOpacity.value,
     backgroundColor: accentColor,
   }));
+
+  // Early returns AFTER all hooks
+  if (processingState.sessionId !== sessionId) return null;
+  if (processingState.status !== 'summarizing' && !showComplete) return null;
 
   return (
     <Animated.View style={[styles.wrapper, containerStyle]}>

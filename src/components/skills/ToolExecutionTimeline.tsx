@@ -91,6 +91,11 @@ const InterventionUI = ({ sessionId, toolName }: { sessionId: string, toolName?:
     const { t } = useI18n();
     const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
 
+    // ✅ CRITICAL FIX: 当不在等待审批状态或 approvalRequest 为空时，不渲染任何内容
+    if (!session || session.loopStatus !== 'waiting_for_approval' || !session.approvalRequest) {
+        return null;
+    }
+
     const handleApprove = () => {
         setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -310,7 +315,7 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                         "flex-row items-center justify-between rounded-2xl p-2",
                         step.type === 'intervention_required'
                             ? "bg-amber-500/5 dark:bg-amber-500/10"
-                            : "bg-black/5 dark:bg-transparent"
+                            : "bg-transparent" // ✅ 两种模式下都保持透明，避免边框感
                     )}
                     style={{
                         // 仅在需要注意的状态下显示极其微弱的边框或完全无边框

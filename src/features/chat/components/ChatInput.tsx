@@ -46,7 +46,6 @@ import { useChatStore } from '../../../store/chat-store';
 import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
 import { useApiStore } from '../../../store/api-store';
 import { ANIMATION_DURATION } from '../../../theme/animations';
-import { SummaryIndicator } from './SummaryIndicator';
 
 // ✅ 内联执行模式按钮（适配输入栏风格）
 const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark: boolean }) => {
@@ -564,8 +563,7 @@ export function ChatInput({
 
           {/* Indicators Stack */}
           <View className="flex-col items-start gap-1">
-            <SummaryIndicator sessionId={sessionId} isDark={isDark} />
-            {/* 状态指示器已移至消息气泡内集成 */}
+            {/* SummaryIndicator 已移除，摘要状态由消息气泡内的 RAG 指示器统一处理 */}
           </View>
 
           <View style={{ flex: 1 }} />

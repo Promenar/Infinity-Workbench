@@ -23,8 +23,15 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
             if (!session || !session.approvalRequest) return;
 
             // 0. Update Timeline with Decision
-            const lastMsg = session.messages[session.messages.length - 1];
-            if (lastMsg && lastMsg.role === 'assistant') {
+            // ✅ CRITICAL FIX: 查找包含待审批工具（pendingApprovalToolIds）的 Assistant 消息
+            // 因为低风险工具执行后，最后一条消息可能是 tool 消息，而非 assistant 消息
+            const targetMsg = session.messages
+                .slice()
+                .reverse()
+                .find(m => m.role === 'assistant' && (m as any).pendingApprovalToolIds?.length > 0)
+                || session.messages[session.messages.length - 1]; // Fallback
+
+            if (targetMsg && targetMsg.role === 'assistant') {
                 const decisionStep: ExecutionStep = {
                     id: `dec_${Date.now()}`,
                     type: 'intervention_result',
@@ -42,7 +49,7 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
                             ? {
                                 ...s,
                                 messages: s.messages.map((m) =>
-                                    m.id === lastMsg.id
+                                    m.id === targetMsg.id
                                         ? {
                                             ...m,
                                             executionSteps: [
@@ -73,8 +80,32 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
 
             // 1. Execute Tools if approved
             if (approved && !intervention) {
-                if (lastMsg && lastMsg.tool_calls) {
-                    await get().executeTools(sessionId, lastMsg.tool_calls, lastMsg.id);
+                if (targetMsg && targetMsg.tool_calls) {
+                    // ✅ CRITICAL FIX: 只执行待审批的工具（由 pendingApprovalToolIds 标记）
+                    // 低风险工具在暂停前已执行，不应重复执行
+                    const pendingIds = (targetMsg as any).pendingApprovalToolIds || [];
+                    const toolsToExecute = pendingIds.length > 0
+                        ? targetMsg.tool_calls.filter((tc: any) => pendingIds.includes(tc.id))
+                        : targetMsg.tool_calls; // 回退：如果没有标记，执行全部
+
+                    console.log('[ApprovalManager] Executing', toolsToExecute.length, 'of', targetMsg.tool_calls.length, 'tools');
+                    await get().executeTools(sessionId, toolsToExecute, targetMsg.id);
+
+                    // 清除 pendingApprovalToolIds 标记
+                    set((state) => ({
+                        sessions: state.sessions.map((s) =>
+                            s.id === sessionId
+                                ? {
+                                    ...s,
+                                    messages: s.messages.map((m) =>
+                                        m.id === targetMsg.id
+                                            ? { ...m, pendingApprovalToolIds: undefined }
+                                            : m
+                                    ),
+                                }
+                                : s
+                        ),
+                    }));
                 }
             }
 

@@ -1548,8 +1548,61 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                 if (isTaskComplete) {
                   console.log('[AgentLoop] Task marked as complete, executing final update and stopping');
-                  // 执行complete调用以更新任务状态，然后立即退出
-                  await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
+
+                  // ✅ CRITICAL FIX: 即使任务完成，也要尊重审批流程
+                  // 分离高风险工具，先执行低风险的 manage_task，高风险工具需要审批
+                  const executionMode = session.executionMode || 'auto';
+
+                  if (executionMode !== 'auto') {
+                    const highRiskInComplete: ToolCall[] = [];
+                    const lowRiskInComplete: ToolCall[] = [];
+
+                    for (const tc of toolCalls) {
+                      const name = (tc as any).name || (tc as any).function?.name || '';
+                      if (HIGH_RISK_TOOLS.includes(name)) {
+                        highRiskInComplete.push(tc);
+                      } else {
+                        lowRiskInComplete.push(tc);
+                      }
+                    }
+
+                    // 先执行低风险工具（包括 manage_task）
+                    if (lowRiskInComplete.length > 0) {
+                      console.log('[AgentLoop] Task complete: Executing', lowRiskInComplete.length, 'low-risk tools first');
+                      await get().executeTools(sessionId, lowRiskInComplete, currentAssistantMsgId);
+                    }
+
+                    // 高风险工具需要审批
+                    if (highRiskInComplete.length > 0 && (executionMode === 'semi' || executionMode === 'manual')) {
+                      console.log('[AgentLoop] Task complete: Pausing for', highRiskInComplete.length, 'high-risk tools approval');
+
+                      const pendingApprovalToolIds = highRiskInComplete.map(tc => tc.id || `pending_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
+
+                      get().setApprovalRequest(sessionId, {
+                        toolName: highRiskInComplete.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
+                        args: highRiskInComplete.map(tc => (tc as any).arguments || (tc as any).function?.arguments),
+                        reason: `Task completion requires approval for high-risk tools.`
+                      });
+                      get().setLoopStatus(sessionId, 'waiting_for_approval');
+
+                      set(state => ({
+                        sessions: state.sessions.map(s => s.id === sessionId ? {
+                          ...s,
+                          messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
+                            ...m,
+                            content: accumulatedContent,
+                            tool_calls: toolCalls,
+                            pendingApprovalToolIds,
+                            thought_signature: turnThoughtSignature || m.thought_signature
+                          } : m)
+                        } : s)
+                      }));
+                      return; // 暂停等待审批
+                    }
+                  } else {
+                    // Auto 模式直接执行
+                    await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
+                  }
                   break; // 任务完成，退出循环
                 }
 
@@ -1645,17 +1698,39 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 // Steerable Agent Loop: Check Approval
                 const executionMode = session.executionMode || 'auto';
                 let shouldPause = false;
-                if (executionMode === 'manual') shouldPause = true;
-                else if (executionMode === 'semi') {
-                  // 🔑 使用HIGH_RISK_TOOLS精确匹配
-                  if (toolCalls.some(tc => {
-                    const name = (tc as any).name || (tc as any).function?.name || '';
-                    return HIGH_RISK_TOOLS.includes(name);
-                  })) shouldPause = true;
+
+                // ✅ CRITICAL FIX: 分离高风险和低风险工具
+                const highRiskCalls: ToolCall[] = [];
+                const lowRiskCalls: ToolCall[] = [];
+
+                for (const tc of toolCalls) {
+                  const name = (tc as any).name || (tc as any).function?.name || '';
+                  if (HIGH_RISK_TOOLS.includes(name)) {
+                    highRiskCalls.push(tc);
+                  } else {
+                    lowRiskCalls.push(tc);
+                  }
                 }
 
+                if (executionMode === 'manual') {
+                  shouldPause = toolCalls.length > 0; // 所有工具都需要审批
+                } else if (executionMode === 'semi') {
+                  shouldPause = highRiskCalls.length > 0; // 只有高风险工具需要审批
+                }
+
+                // 🔍 DEBUG: 追踪审批逻辑
+                console.log('[AgentLoop] Approval Check:', {
+                  executionMode,
+                  shouldPause,
+                  highRiskCount: highRiskCalls.length,
+                  lowRiskCount: lowRiskCalls.length,
+                  toolNames: toolCalls.map((tc: any) => tc.name || tc.function?.name).join(', '),
+                  isResumption: !!options?.isResumption
+                });
+
                 if (shouldPause) {
-                  console.log('[AgentLoop] Pausing for approval in mode:', executionMode);
+                  console.log('[AgentLoop] Pausing for approval in mode:', executionMode,
+                    `(high-risk: ${highRiskCalls.length}, low-risk: ${lowRiskCalls.length})`);
 
                   // ✅ 虚拟拆分架构：resumption模式下跳过审批检测
                   // 工具已在批准后执行，不应重复暂停
@@ -1667,14 +1742,25 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                 // 仅在非resumption或手动拒绝时才真正暂停
                 if (shouldPause) {
+                  // ✅ Semi模式下：先执行低风险工具，再对高风险工具请求审批
+                  if (executionMode === 'semi' && lowRiskCalls.length > 0) {
+                    console.log('[AgentLoop] Semi-mode: Auto-executing', lowRiskCalls.length, 'low-risk tools first');
+                    await get().executeTools(sessionId, lowRiskCalls, currentAssistantMsgId);
+                  }
 
                   // ✅ 虚拟拆分架构：不注入占位文本，保持内容纯净
                   // 审批信息完全由Timeline显示
 
-                  // Save request
+                  // 确定需要审批的工具列表
+                  const toolsNeedingApproval = executionMode === 'manual' ? toolCalls : highRiskCalls;
+
+                  // 🔑 CRITICAL: 提取待审批工具的 ID，供恢复时使用
+                  const pendingApprovalToolIds = toolsNeedingApproval.map(tc => tc.id || `pending_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
+
+                  // Save request - 只显示需要审批的工具
                   get().setApprovalRequest(sessionId, {
-                    toolName: toolCalls.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
-                    args: toolCalls.map(tc => (tc as any).arguments || (tc as any).function?.arguments),
+                    toolName: toolsNeedingApproval.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
+                    args: toolsNeedingApproval.map(tc => (tc as any).arguments || (tc as any).function?.arguments),
                     reason: `Action requires approval in ${executionMode} mode.`
                   });
                   get().setLoopStatus(sessionId, 'waiting_for_approval');
@@ -1682,18 +1768,20 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   const interventionStep: any = {
                     id: `int_${Date.now()}`,
                     type: 'intervention_required',
-                    toolName: toolCalls.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
+                    toolName: toolsNeedingApproval.map(tc => (tc as any).name || (tc as any).function?.name).join(', '),
                     timestamp: Date.now()
                   };
 
-                  // Save results to store but DO NOT execute
+                  // ✅ CRITICAL FIX: 保存完整的 tool_calls（包括已执行和待审批的）
+                  // 同时标记哪些工具待审批，供恢复时使用
                   set(state => ({
                     sessions: state.sessions.map(s => s.id === sessionId ? {
                       ...s,
                       messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
                         ...m,
                         content: accumulatedContent,
-                        tool_calls: toolCalls,
+                        tool_calls: toolCalls, // ✅ 保存完整的工具调用列表
+                        pendingApprovalToolIds, // ✅ 新字段：标记待审批的工具 ID
                         thought_signature: turnThoughtSignature || m.thought_signature,
                         executionSteps: [...(m.executionSteps || []), interventionStep]
                       } : m)

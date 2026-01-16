@@ -125,7 +125,7 @@ export const TaskManagementSkill: Skill = {
                                 id: newStep.id || `step-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                                 title: newStep.title || (newStep.description ?
                                     (newStep.description.length > 20 ? newStep.description.substring(0, 20) + '...' : newStep.description) :
-                                    `Action ${updatedSteps.length + 1}`),
+                                    `动作 ${updatedSteps.length + 1}`), // ✅ 统一使用中文
                                 status: newStep.status || 'pending',
                                 description: newStep.description
                             });

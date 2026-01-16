@@ -397,8 +397,20 @@ Available tools: ${options?.skills?.map((s: any) => s.id).join(', ') || 'N/A'}.`
 
           if (m.role === 'user' || m.role === 'tool') {
             const lastTurn = normalizedTurns[normalizedTurns.length - 1];
-            if (lastTurn && lastTurn.role === 'user') {
+            // ✅ CRITICAL FIX: Only merge tool results with previous user turn
+            // For actual user messages (not tool results), we should NOT merge
+            // to avoid confusing the model with multiple distinct queries
+            if (m.role === 'tool' && lastTurn && lastTurn.role === 'user') {
+              // Tool results can be safely merged with user context
               lastTurn.parts.push(...currentParts);
+            } else if (m.role === 'user' && lastTurn && lastTurn.role === 'user') {
+              // ⚠️ Two consecutive user messages - insert placeholder model response
+              // This prevents the model from getting confused by merged distinct queries
+              normalizedTurns.push({
+                role: 'model',
+                parts: [{ text: '好的，我理解了。' }] // Minimal acknowledgment
+              });
+              normalizedTurns.push({ role: 'user', parts: currentParts });
             } else {
               normalizedTurns.push({ role: 'user', parts: currentParts });
             }

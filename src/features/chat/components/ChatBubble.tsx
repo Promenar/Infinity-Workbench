@@ -1095,10 +1095,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
       )}
 
-      {!isUser && (message.planningTask || (isGenerating && sessionData?.activeTask)) && (
+      {!isUser && message.planningTask && (
         <TaskMonitor
           sessionId={sessionId}
-          task={message.planningTask || sessionData?.activeTask}
+          task={message.planningTask}
           containerStyle={{
             marginLeft: -15,
             marginRight: -12, // Exact match with Timeline (-12)
