@@ -76,17 +76,24 @@ export default function LocalModelSettingsScreen() {
     const syncProviderModels = (files: LocalModelFile[]) => {
         const localProvider = providers.find(p => p.type === 'local');
         if (localProvider) {
-            const newModels: ModelConfig[] = files.map(f => ({
-                uuid: `local-${f.name}`,
-                id: f.path, // Use full path as ID for the client
-                name: f.name,
-                type: 'chat', // Default to chat
-                capabilities: { reason: false, vision: false, tools: true },
-                enabled: true,
-                isAutoFetched: true
-            }));
+            const existingModels = localProvider.models || [];
+            const newModels: ModelConfig[] = files.map(f => {
+                const id = f.path;
+                const existing = existingModels.find(m => m.id === id);
 
-            // Update provider if different
+                return {
+                    uuid: existing?.uuid || `local-${f.name}`,
+                    id: id, // Use full path as ID for the client
+                    name: f.name,
+                    type: existing?.type || 'chat',
+                    capabilities: existing?.capabilities || { reason: false, vision: false, tools: true },
+                    enabled: existing ? existing.enabled : true,
+                    isAutoFetched: true,
+                    contextLength: existing?.contextLength
+                };
+            });
+
+            // Update provider if different (using deep compare)
             if (JSON.stringify(newModels) !== JSON.stringify(localProvider.models)) {
                 updateProvider(localProvider.id, { models: newModels });
             }

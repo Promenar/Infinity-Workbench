@@ -7,9 +7,9 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
-  KeyboardAvoidingView,
   ScrollView,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Switch } from '../../components/ui/Switch';
 import {
@@ -602,8 +602,8 @@ export function ModelSettingsModal({
               updatedModels[existingIndex] = {
                 ...existing,
                 contextLength: nm.contextLength || existing.contextLength,
-                // 对于自动拉取的模型，总是使用新识别的类型（允许rerank等类型更新）
-                type: nm.type,
+                // 保留用户手动设置的类型，仅在无旧类型时使用新检测的
+                type: existing.type || nm.type,
                 capabilities: {
                   ...existing.capabilities,
                   // 只添加新的能力，不覆盖已有的
@@ -857,12 +857,14 @@ export function ModelSettingsModal({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1, backgroundColor: isDark ? '#09090b' : '#f9fafb' }} // Hardcode dark bg to avoid transparency issues
-        keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
-      >
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={onClose}
+      statusBarTranslucent={true}
+    >
+      <View style={{ flex: 1, backgroundColor: isDark ? '#09090b' : '#f9fafb' }}>
         <GlassHeader
           title={provider?.name || ''}
           subtitle={t.settings.modelSettings.title}
@@ -872,39 +874,45 @@ export function ModelSettingsModal({
           }}
           intensity={isDark ? 0 : 60} // Disable blur in dark mode to avoid gray overlay
         />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={0}
+        >
 
-        {isReady ? (
-          <TypedFlashList
-            data={filteredModels}
-            renderItem={renderItem}
-            estimatedItemSize={195}
-            removeClippedSubviews={false}
-            keyExtractor={(item: ModelConfig) => item.uuid}
-            contentContainerStyle={{
-              paddingBottom: 100,
-              paddingTop: insets.top + 64 + 16, // Header height + spacing
-            }}
-            ListHeaderComponent={renderHeader}
-            extraData={testResults}
-            getItemType={() => 'model'}
+          {isReady ? (
+            <TypedFlashList
+              data={filteredModels}
+              renderItem={renderItem}
+              estimatedItemSize={195}
+              removeClippedSubviews={false}
+              keyExtractor={(item: ModelConfig) => item.uuid}
+              contentContainerStyle={{
+                paddingBottom: 100,
+                paddingTop: insets.top + 64 + 16, // Header height + spacing
+              }}
+              ListHeaderComponent={renderHeader}
+              extraData={testResults}
+              getItemType={() => 'model'}
+            />
+          ) : (
+            <View
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100 }}
+            >
+              <ActivityIndicator size="large" color={colors[500]} />
+            </View>
+          )}
+
+          <ConfirmDialog
+            visible={confirmState.visible}
+            title={confirmState.title}
+            message={confirmState.message}
+            isDestructive={confirmState.isDestructive}
+            onConfirm={confirmState.onConfirm}
+            onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
           />
-        ) : (
-          <View
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100 }}
-          >
-            <ActivityIndicator size="large" color={colors[500]} />
-          </View>
-        )}
-
-        <ConfirmDialog
-          visible={confirmState.visible}
-          title={confirmState.title}
-          message={confirmState.message}
-          isDestructive={confirmState.isDestructive}
-          onConfirm={confirmState.onConfirm}
-          onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
-        />
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
