@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { emitToast } from '../../src/lib/utils/toast-emitter';
 import { Stack, useRouter } from 'expo-router';
 import { PageLayout, Switch, GlassHeader, ConfirmDialog } from '../../src/components/ui';
 import { SettingsSection } from '../../src/features/settings/components/SettingsSection';
@@ -130,11 +131,11 @@ export default function LocalModelSettingsScreen() {
             setLoading(true);
             const result = await ModelStorageManager.importModel();
             if (result) {
-                Alert.alert(t.settings.localModels.success, t.settings.localModels.importSuccess.replace('{name}', result.name));
+                emitToast(t.settings.localModels.importSuccess.replace('{name}', result.name), 'success');
                 refreshModels();
             }
         } catch (e: any) {
-            Alert.alert(t.settings.localModels.importFail, e.message);
+            emitToast(`${t.settings.localModels.importFail}: ${e.message}`, 'error');
         } finally {
             setLoading(false);
         }
@@ -175,7 +176,7 @@ export default function LocalModelSettingsScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 return;
             } catch (e: any) {
-                Alert.alert(t.settings.localModels.loadFail, e.message);
+                emitToast(`${t.settings.localModels.loadFail}: ${e.message}`, 'error');
                 return;
             }
         }
@@ -183,7 +184,7 @@ export default function LocalModelSettingsScreen() {
             await localStore.loadModel(model.path, slot);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (e: any) {
-            Alert.alert(t.settings.localModels.loadFail, e.message);
+            emitToast(`${t.settings.localModels.loadFail}: ${e.message}`, 'error');
         }
     };
 
@@ -251,6 +252,22 @@ export default function LocalModelSettingsScreen() {
                                                     <Text style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
                                                         {(model.size / 1024 / 1024).toFixed(2)} MB
                                                     </Text>
+
+                                                    {/* Q8 compatibility warning */}
+                                                    {model.name.toUpperCase().includes('Q8_0') && (
+                                                        <View style={{
+                                                            marginTop: 6,
+                                                            padding: 6,
+                                                            backgroundColor: isDark ? 'rgba(234, 179, 8, 0.1)' : '#fefce8',
+                                                            borderRadius: 6,
+                                                            borderWidth: 1,
+                                                            borderColor: isDark ? 'rgba(234, 179, 8, 0.2)' : '#fef08a'
+                                                        }}>
+                                                            <Text style={{ fontSize: 10, color: '#a16207', lineHeight: 14 }}>
+                                                                ⚠️ Q8 在部分 ARM64 设备可能崩溃，建议 Q4_K_M 或 Q5_K_M
+                                                            </Text>
+                                                        </View>
+                                                    )}
 
                                                     {/* Status Indicators */}
                                                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>

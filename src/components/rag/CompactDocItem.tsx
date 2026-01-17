@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { View, TouchableOpacity, Image } from 'react-native';
-import { Typography, ContextMenu } from '../ui';
+import { Typography, ContextMenu, Marquee } from '../ui';
 import { TagCapsule } from './TagCapsule';
 import {
   FileText,
@@ -9,6 +9,14 @@ import {
   Loader,
   Circle,
   AlertCircle,
+  Zap,
+  Network,
+  FolderInput,
+  Tag,
+  Edit,
+  Share,
+  Trash2,
+  FileSearch,
 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from 'expo-haptics';
@@ -106,6 +114,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
         ? {
           key: 'vectorize',
           label: '向量化',
+          icon: <Zap />,
           onPress: () => {
             setTimeout(() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -118,6 +127,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
         ? {
           key: 'view-graph',
           label: '查看图谱',
+          icon: <Network />,
           onPress: () => {
             setTimeout(() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -129,6 +139,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       {
         key: 'move',
         label: '移动到',
+        icon: <FolderInput />,
         onPress: () => {
           setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -139,6 +150,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       {
         key: 'tag',
         label: '打标签',
+        icon: <Tag />,
         onPress: () => {
           setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -149,6 +161,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       {
         key: 'edit',
         label: '编辑内容',
+        icon: <Edit />,
         onPress: () => {
           setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -159,6 +172,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       {
         key: 'share',
         label: '分享导出',
+        icon: <Share />,
         onPress: () => {
           setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -170,6 +184,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       {
         key: 'extract-full',
         label: '全量提取',
+        icon: <FileSearch />,
         onPress: () => {
           setTimeout(() => {
             onExtractGraph?.('full');
@@ -179,6 +194,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       {
         key: 'extract-summary',
         label: '摘要提取',
+        icon: <Network />,
         onPress: () => {
           setTimeout(() => {
             onExtractGraph?.('summary-first');
@@ -188,6 +204,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
       {
         key: 'delete',
         label: '删除',
+        icon: <Trash2 />,
         onPress: () => {
           setTimeout(() => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -209,7 +226,7 @@ export const CompactDocItem = memo<CompactDocItemProps>(
           onPress={onPress}
           onLongPress={onLongPress}
           activeOpacity={0.7}
-          className="flex-1 flex-row items-center px-3 py-2.5"
+          className="flex-1 flex-row items-center pl-3 pr-0 py-2.5"
         >
           {/* 文档图标 (Document Icon/Thumbnail) */}
           <View className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 items-center justify-center mr-3 overflow-hidden">
@@ -221,13 +238,11 @@ export const CompactDocItem = memo<CompactDocItemProps>(
           </View>
 
           {/* 文档信息 */}
-          <View className="flex-1 min-w-0">
-            <Typography
+          <View className="flex-1 min-w-0 mr-4">
+            <Marquee
+              text={title}
               className="font-bold text-sm text-gray-900 dark:text-white"
-              numberOfLines={1}
-            >
-              {title}
-            </Typography>
+            />
             <Typography className="text-xs text-gray-400 mt-0.5">
               {formatSize(fileSize)} · {getStatusText()}
             </Typography>
@@ -242,14 +257,16 @@ export const CompactDocItem = memo<CompactDocItemProps>(
             )}
           </View>
 
-          {/* 状态指示器 / Checkbox */}
-          <View className="w-6 h-6 items-center justify-center mr-2">{getStatusIcon()}</View>
+          {/* 状态指示器 / Checkbox - 极限靠右 */}
+          <View className="w-5 items-center justify-center">
+            {getStatusIcon()}
+          </View>
         </TouchableOpacity>
 
         {/* 操作菜单 - 独立触摸区域 */}
         {!isSelectionMode && (
           <ContextMenu items={menuItems as any} triggerOnPress>
-            <View className="p-3">
+            <View className="py-3 pr-2 pl-1">
               <MoreVertical size={16} color="#94a3b8" />
             </View>
           </ContextMenu>

@@ -65,9 +65,9 @@ export function ContextMenu({ children, items, triggerOnPress = false }: Context
     // 默认在目标下方 (如果是触摸点，就是触摸点下方)
     let posY = pageY + targetHeight;
 
-    // 如果是触摸点触发，增加一点垂直偏移，避免手指遮挡
+    // 如果是触摸点触发，增加极小垂直边界，避免手指遮挡但不产生由于间距过大导致的离手感
     if (targetHeight === 0) {
-      posY += 20;
+      posY += 8;
     }
 
     // 边界检查
@@ -155,26 +155,33 @@ export function ContextMenu({ children, items, triggerOnPress = false }: Context
                     }}
                     activeOpacity={0.6}
                     className={clsx(
-                      'flex-row items-center justify-between py-3.5 px-5',
+                      'flex-row items-center justify-between py-3 px-5 h-[52px]', // 统一高度确保稳定感
                       index < items.length - 1 && 'border-b border-gray-50 dark:border-zinc-800/10',
                     )}
                   >
-                    <Typography
-                      className={clsx(
-                        'text-[15px] font-bold',
-                        item.destructive ? 'text-red-500' : 'text-gray-900 dark:text-white',
+                    <View className="flex-1 mr-4">
+                      <Typography
+                        className={clsx(
+                          'text-[15px] font-bold',
+                          item.destructive ? 'text-red-500' : 'text-gray-900 dark:text-white',
+                        )}
+                        numberOfLines={1}
+                      >
+                        {item.label}
+                      </Typography>
+                    </View>
+                    <View className="w-5 items-center justify-center">
+                      {item.icon ? (
+                        <View className="opacity-40">
+                          {React.cloneElement(item.icon as React.ReactElement<any>, {
+                            size: 18,
+                            color: item.destructive ? '#ef4444' : '#64748b',
+                          })}
+                        </View>
+                      ) : (
+                        <View className="w-5" /> // 即使没图标也占据空间确保右侧对齐
                       )}
-                    >
-                      {item.label}
-                    </Typography>
-                    {item.icon && (
-                      <View className="opacity-30">
-                        {React.cloneElement(item.icon as React.ReactElement<any>, {
-                          size: 18,
-                          color: item.destructive ? '#ef4444' : '#64748b',
-                        })}
-                      </View>
-                    )}
+                    </View>
                   </TouchableOpacity>
                 ))}
               </Animated.View>

@@ -70,7 +70,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             <ActivityIndicator size="small" color={colors[500]} />
             <View>
               <Typography className="text-xs font-bold text-gray-900 dark:text-white">
-                {currentTask.progress}%
+                {Math.round(currentTask.progress)}%
               </Typography>
               <Typography className="text-[10px] text-gray-400">
                 {t.library.pending.replace('{count}', queueLength.toString())}

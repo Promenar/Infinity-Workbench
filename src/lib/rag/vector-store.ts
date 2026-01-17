@@ -137,6 +137,9 @@ export class VectorStore {
 
       // Dimension check
       if (vec.length !== queryEmbedding.length) {
+        if (dimensionMismatchCount === 0) {
+          console.error(`[VectorStore] Dimension mismatch! Query: ${queryEmbedding.length}, Stored: ${vec.length} (ID: ${row.id})`);
+        }
         dimensionMismatchCount++;
         continue; // Skip mismatched vectors
       }
@@ -159,6 +162,13 @@ export class VectorStore {
     }
 
     // Diagnostics
+    if (candidates.length === 0 && dimensionMismatchCount > 0) {
+      console.error(`[VectorStore] CRITICAL: Search found 0 candidates due to dimension mismatch in ${dimensionMismatchCount} vectors.`);
+      // Optional: Notify via Toast if in Dev mode or critical
+      const { emitToast } = require('../utils/toast-emitter'); // Lazy import to avoid cycle
+      emitToast(`检索失败: 向量维度不匹配 (Q:${queryEmbedding.length}, DB:${dimensionMismatchCount}个不符)`, 'error');
+    }
+
     console.log(`[VectorStore] Search: ${results.rows?.length || 0} vectors, Query dim: ${queryEmbedding.length}, Max similarity: ${maxSimilarity.toFixed(4)}, Above threshold (${Threshold}): ${candidates.length}`);
     if (dimensionMismatchCount > 0) {
       console.warn(`[VectorStore] ⚠️ ${dimensionMismatchCount} vectors skipped due to dimension mismatch!`);
@@ -202,6 +212,8 @@ export class VectorStore {
    */
   async clearAllVectors() {
     await db.execute('DELETE FROM vectors');
+    // 🛡️ 强制 SSOT: 重置所有文档的向量化状态和计数
+    await db.execute('UPDATE documents SET vectorized = 0, vector_count = 0');
   }
 
   /**

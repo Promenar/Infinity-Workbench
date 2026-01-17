@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, TouchableOpacity, TextInput, StyleSheet, Alert } from 'react-native';
-import { Typography, Switch } from '../../../components/ui';
+import { useFocusEffect } from 'expo-router';
+import { Typography, Switch, useToast } from '../../../components/ui';
 import { ThemedSlider as Slider } from '../../../components/ui/Slider';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useRagStore } from '../../../store/rag-store';
@@ -88,8 +89,16 @@ export const GlobalRagConfigPanel: React.FC = () => {
   const { t } = useI18n();
   const router = useRouter();
   const { globalRagConfig, updateGlobalRagConfig } = useSettingsStore();
-  const { getVectorStats } = useRagStore();
+  const { showToast } = useToast();
+  const { getVectorStats, loadDocuments } = useRagStore();
   const vectorStats = getVectorStats();
+
+  // 🛡️ 修复：进入页面时自动刷新数据，确保二级页面操作能同步回来
+  useFocusEffect(
+    useCallback(() => {
+      loadDocuments();
+    }, [loadDocuments])
+  );
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -132,11 +141,12 @@ export const GlobalRagConfigPanel: React.FC = () => {
     setIsClearing(true);
     try {
       await vectorStore.clearAllVectors();
+      await loadDocuments(); // 🛡️ 关键：清除后立即刷新 Store 状态
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(t.common.success, t.rag.vectorStats.clearDataSuccess);
+      showToast(t.rag.vectorStats.clearDataSuccess, 'success');
     } catch (error) {
       console.error('[GlobalRagConfigPanel] Clear Vectors Error:', error);
-      Alert.alert(t.common.error, t.common.fail);
+      showToast(t.common.fail, 'error');
     } finally {
       setIsClearing(false);
       setShowClearConfirm(false);

@@ -1,7 +1,7 @@
 import React, { useEffect, memo } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Typography, ContextMenu } from '../ui';
-import { Folder, FolderOpen, ChevronRight, MoreVertical } from 'lucide-react-native';
+import { Folder, FolderOpen, ChevronRight, MoreVertical, Network, FileSearch, Edit, FolderInput, Trash2 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from 'expo-haptics';
 import Animated, {
@@ -73,6 +73,7 @@ export const FolderItem = memo<FolderItemProps>(({
   const menuItems: ContextMenuItem[] = [
     {
       label: '查看图谱',
+      icon: <Network />,
       onPress: () => {
         setTimeout(() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -82,22 +83,27 @@ export const FolderItem = memo<FolderItemProps>(({
     },
     {
       label: '全量提取图谱',
+      icon: <FileSearch />,
       onPress: () => onExtractGraph?.('full'),
     },
     {
       label: '摘要提取图谱',
+      icon: <Network />,
       onPress: () => onExtractGraph?.('summary-first'),
     },
     {
       label: '重命名',
+      icon: <Edit />,
       onPress: () => onRename?.(),
     },
     {
       label: '移动到',
+      icon: <FolderInput />,
       onPress: () => onMove?.(),
     },
     {
       label: '删除',
+      icon: <Trash2 />,
       destructive: true,
       onPress: () => onDelete?.(),
     },

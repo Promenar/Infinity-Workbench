@@ -13,4 +13,5 @@ export * from './ColorPickerPanel';
 export * from './FloatingTextEditorModal';
 export * from './GlassBottomSheet';
 export * from './ParticleEnergyGlow';
+export * from './Marquee';
 export * from '../../features/settings/components/SettingsSection';
