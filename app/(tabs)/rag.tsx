@@ -146,19 +146,6 @@ export default function RagScreen() {
     return true; // 返回 true 表示已处理返回事件
   }, [setSelectedFolder]);
 
-  // 处理系统返回键
-  useEffect(() => {
-    const onBackPress = () => {
-      if (viewMode !== 'portal') {
-        handleBackToPortal();
-        return true;
-      }
-      return false;
-    };
-
-    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-    return () => subscription.remove();
-  }, [viewMode, handleBackToPortal]);
 
   // 搜索过滤
   const filteredDocuments = useMemo(() => {
@@ -259,6 +246,52 @@ export default function RagScreen() {
     setIsSelectionMode(false);
     setSelectedDocIds(new Set());
   }, []);
+
+  // 🛡️ 修复：将依赖状态变量的 useEffect 移至此处，防止变量提升错误
+  // 1. 处理系统返回键 (Hardware Back / Swipe Back)
+  useEffect(() => {
+    const onBackPress = () => {
+      // 优先级 1: 如果在多选模式，优先退出多选
+      if (isSelectionMode) {
+        exitSelectionMode();
+        return true;
+      }
+
+      // 优先级 2: 如果在搜索且有输入，清空搜索 (保持在当前 viewMode)
+      if (searchQuery) {
+        setSearchQuery('');
+        return true;
+      }
+
+      // 优先级 3: 如果在子目录，回推到父目录
+      if (selectedFolder) {
+        const folder = folders.find(f => f.id === selectedFolder);
+        setSelectedFolder(folder?.parentId || null);
+        return true;
+      }
+
+      // 优先级 4: 如果在非 portal 视图，回到 portal
+      if (viewMode !== 'portal') {
+        setViewMode('portal');
+        return true;
+      }
+
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [isSelectionMode, exitSelectionMode, searchQuery, selectedFolder, folders, setSelectedFolder, viewMode]);
+
+  // 2. 页面失焦自动退出多选模式 (防止 Tab 切换导致状态残留)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('blur', () => {
+      if (isSelectionMode) {
+        exitSelectionMode();
+      }
+    });
+    return unsubscribe;
+  }, [navigation, isSelectionMode, exitSelectionMode]);
 
   // 批量删除
   const handleBatchDelete = useCallback(() => {
@@ -654,7 +687,7 @@ export default function RagScreen() {
                 {t.library.tabDocuments}
               </Typography>
               <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
-                {documents.length + folders.length} {t.library.itemsCount}
+                {documents.length} {t.library.documents}
               </Typography>
             </BlurView>
           </TouchableOpacity>
@@ -742,7 +775,7 @@ export default function RagScreen() {
     return (
       <View className="mb-0">
         <Animated.View
-          key={`${viewMode}-${currentFolderId}`}
+          key={viewMode}
           entering={FadeIn.duration(200)}
           exiting={FadeOut.duration(150)}
         >
@@ -811,8 +844,8 @@ export default function RagScreen() {
           </View>
         </View>
 
-        {/* 控制栏 (仅在文档列表或门户且有任务时显示) */}
-        {(viewMode === 'docs' || (isPortal && (vectorizationQueue.length > 0 || currentTask))) && (
+        {/* 控制栏 (仅在文档列表显示) */}
+        {viewMode === 'docs' && (
           <ControlBar
             onNewFolder={handleNewFolder}
             onViewGraph={() => router.push('/knowledge-graph')}

@@ -104,39 +104,44 @@ export const useLocalModelStore = create<StoreType>()(
                     if (!state.autoLoadEnabled) return false;
                     let loadedCount = 0;
 
+                    const ensureFileUri = (path: string) => path.startsWith('file://') ? path : `file://${path}`;
+
                     // 1. Auto-load Main Model (Chat)
                     if (state.lastLoadedModel) {
-                        const fileInfo = await FileSystem.getInfoAsync(state.lastLoadedModel);
+                        const fileUri = ensureFileUri(state.lastLoadedModel);
+                        const fileInfo = await FileSystem.getInfoAsync(fileUri);
                         if (fileInfo.exists) {
                             console.log('[LocalServer] Auto-loading Main model:', state.lastLoadedModel);
                             await get().loadModel(state.lastLoadedModel, 'main');
                             loadedCount++;
                         } else {
-                            console.warn('[LocalServer] Main model file not found:', state.lastLoadedModel);
+                            console.warn('[LocalServer] Main model file not found at:', fileUri);
                         }
                     }
 
                     // 2. Auto-load Embedding Model
                     if (state.lastEmbeddingModel) {
-                        const fileInfo = await FileSystem.getInfoAsync(state.lastEmbeddingModel);
+                        const fileUri = ensureFileUri(state.lastEmbeddingModel);
+                        const fileInfo = await FileSystem.getInfoAsync(fileUri);
                         if (fileInfo.exists) {
                             console.log('[LocalServer] Auto-loading Embedding model:', state.lastEmbeddingModel);
                             await get().loadModel(state.lastEmbeddingModel, 'embedding');
                             loadedCount++;
                         } else {
-                            console.warn('[LocalServer] Embedding model file not found:', state.lastEmbeddingModel);
+                            console.warn('[LocalServer] Embedding model file not found at:', fileUri);
                         }
                     }
 
                     // 3. Auto-load Rerank Model
                     if (state.lastRerankModel) {
-                        const fileInfo = await FileSystem.getInfoAsync(state.lastRerankModel);
+                        const fileUri = ensureFileUri(state.lastRerankModel);
+                        const fileInfo = await FileSystem.getInfoAsync(fileUri);
                         if (fileInfo.exists) {
                             console.log('[LocalServer] Auto-loading Rerank model:', state.lastRerankModel);
                             await get().loadModel(state.lastRerankModel, 'rerank');
                             loadedCount++;
                         } else {
-                            console.warn('[LocalServer] Rerank model file not found:', state.lastRerankModel);
+                            console.warn('[LocalServer] Rerank model file not found at:', fileUri);
                         }
                     }
 
@@ -177,10 +182,12 @@ export const useLocalModelStore = create<StoreType>()(
                             // Note: 'flash_attn' caused crashes on some devices, disabled for now.
                             n_gpu_layers: 99,
                             // flash_attn_type: 'auto', // Disabled due to instability
-                            embedding: slot === 'embedding', // Only enable embedding processing for embedding slot to save resources? 
+                            embedding: true, // Enable embedding for all slots to support fallback (Main slot used for embedding) 
                             // Actually llama.cpp context needs embedding=true to generate embeddings, but for main chat it might not be strictly necessary if we don't use it for that.
                             // But let's keep it safe.
                             // n_batch: 32, // Default is usually 512, 32 might be too small? Let's leave default or set safe.
+                            n_batch: 512, // Explicitly set batch size to prevent overflow
+                            n_ubatch: 512, // Physical batch size
                         }, (progress) => {
                             set(produce((s: StoreType) => {
                                 s[slot].loadProgress = progress;
@@ -249,16 +256,55 @@ export const useLocalModelStore = create<StoreType>()(
                 },
 
                 generateEmbedding: async (text: string) => {
-                    const { embedding, main } = get();
-                    const ctx = embedding.context || main.context;
-                    if (!ctx) throw new Error('No local model loaded');
+                    let { embedding } = get();
+
+                    // If no embedding model loaded, try auto-load default
+                    if (!embedding.context) {
+                        const { lastEmbeddingModel, loadModel } = get();
+                        if (lastEmbeddingModel) {
+                            console.log('[LocalServer] Embedding model missing, auto-loading:', lastEmbeddingModel);
+                            emitToast('正在加载默认向量模型...', 'info');
+                            try {
+                                await loadModel(lastEmbeddingModel, 'embedding');
+                                embedding = get().embedding; // Refresh state
+                            } catch (e) {
+                                console.error('[LocalServer] Failed to auto-load embedding model:', e);
+                                emitToast('向量模型加载失败，请检查文件', 'error');
+                                throw e;
+                            }
+                        } else {
+                            emitToast('未配置本地向量模型', 'error');
+                            throw new Error('No local embedding model configured');
+                        }
+                    }
+
+                    const ctx = embedding.context; // Strict usage, NO fallback to main
+                    if (!ctx) {
+                        emitToast('向量化服务不可用', 'error');
+                        throw new Error('Embedding context is null');
+                    }
+
+                    if (!text || text.trim().length === 0) {
+                        console.warn('[LocalServer] generateEmbedding: Empty text provided');
+                        // ❌ 不要返回硬编码的 1024 维向量，这会导致维度不匹配！
+                        // 应该抛出错误让上层 aware，或者返回空数组让上层处理
+                        throw new Error('generateEmbedding called with empty text');
+                    }
+
                     console.log(`[LocalServer] generateEmbedding: Starting for text length ${text.length}`);
-                    const result = await runWithLock(ctx, async () => {
-                        console.log('[LocalServer] generateEmbedding: Acquired lock, calling native embedding...');
-                        return ctx!.embedding(text);
-                    });
-                    console.log(`[LocalServer] generateEmbedding: Complete, vector length ${result?.embedding?.length}`);
-                    return result.embedding;
+                    try {
+                        const result = await runWithLock(ctx, async () => {
+                            if (!ctx) throw new Error('Context became null during lock acquisition');
+                            console.log('[LocalServer] generateEmbedding: Acquired lock, calling native embedding...');
+                            return ctx.embedding(text);
+                        });
+                        console.log(`[LocalServer] generateEmbedding: Complete, vector length ${result?.embedding?.length}`);
+                        return result.embedding;
+                    } catch (e: any) {
+                        console.error('[LocalServer] Native embedding crash/error:', e);
+                        // If it's a hard crash, this might not catch it, but it helps for exceptions.
+                        throw new Error(`Native Embedding Failed: ${e.message}`);
+                    }
                 },
 
                 performRerank: async (query: string, documents: string[], topK?: number) => {
