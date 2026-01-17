@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import { X, ChevronDown, ChevronLeft } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
@@ -16,6 +17,7 @@ import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
 import { GlassHeader } from '../../components/ui/GlassHeader';
 import { ProviderConfig, ApiProviderType } from '../../store/api-store';
+import { ParsedInput } from './components/ParsedInput';
 
 interface ProviderModalProps {
   visible: boolean;
@@ -82,7 +84,7 @@ const PROVIDER_PRESETS: Record<string, { name: string; baseUrl: string; type: Ap
 
 export function ProviderModal({ visible, onClose, onSave, editingProvider }: ProviderModalProps) {
   const { t } = useI18n();
-  const { theme, isDark, colors } = useTheme();
+  const { isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   const [name, setName] = useState('');
@@ -92,8 +94,8 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
   const [region, setRegion] = useState('us-central1');
   const [vertexProject, setVertexProject] = useState('');
   const [jsonInput, setJsonInput] = useState('');
-  const [selectedPreset, setSelectedPreset] = useState<string>(''); // 新增：预设选择
-  const [showPresetPicker, setShowPresetPicker] = useState(false); // 新增：显示选择器
+  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const [showPresetPicker, setShowPresetPicker] = useState(false);
   const [errors, setErrors] = useState<{
     name?: string;
     apiKey?: string;
@@ -101,74 +103,72 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
     jsonInput?: string;
   }>({});
 
+  // Reset state on open
   useEffect(() => {
-    if (editingProvider) {
-      setName(editingProvider.name);
-      setType(editingProvider.type);
-      setBaseUrl(editingProvider.baseUrl || '');
-      setApiKey(editingProvider.apiKey);
-      setRegion(editingProvider.vertexLocation || 'us-central1');
-      setVertexProject(editingProvider.vertexProject || '');
-      setJsonInput(editingProvider.vertexKeyJson || '');
-    } else {
-      setName('');
-      setType('openai');
-      setBaseUrl(PROVIDER_PRESETS.openai.baseUrl);
-      setApiKey('');
-      setRegion('us-central1');
-      setVertexProject('');
-      setJsonInput('');
-      setSelectedPreset(''); // 重置预设选择
+    if (visible) {
+      if (editingProvider) {
+        setName(editingProvider.name);
+        setType(editingProvider.type);
+        setBaseUrl(editingProvider.baseUrl || '');
+        setApiKey(editingProvider.apiKey);
+        setRegion(editingProvider.vertexLocation || 'us-central1');
+        setVertexProject(editingProvider.vertexProject || '');
+        setJsonInput(editingProvider.vertexKeyJson || '');
+      } else {
+        setName('');
+        setType('openai');
+        setBaseUrl(PROVIDER_PRESETS.openai.baseUrl);
+        setApiKey('');
+        setRegion('us-central1');
+        setVertexProject('');
+        setJsonInput('');
+        setSelectedPreset('');
+      }
+      setErrors({});
     }
-    setErrors({});
   }, [editingProvider, visible]);
 
-  // 当地区改变时，自动更新 VertexAI 的 Base URL
+  // Update BaseURL for Google
   useEffect(() => {
     if (type === 'google' && !editingProvider) {
       setBaseUrl(`https://${region}-aiplatform.googleapis.com/v1`);
     }
   }, [region, type, editingProvider]);
 
-  const handlePresetSelect = (presetKey: string) => {
-    if (!presetKey) return;
+  const handleJSONParsed = useCallback((json: any) => {
+    // Fill in fields if detected
+    if (json.project_id) {
+      if (!vertexProject) setVertexProject(json.project_id);
+      if (!name) setName(`VertexAI - ${json.project_id}`);
+    }
+  }, [vertexProject, name]);
 
-    const preset = PROVIDER_PRESETS[presetKey];
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setSelectedPreset(presetKey);
-      setName(preset.name);
-      setType(preset.type);
-      if (preset.type === 'google') {
-        setRegion('us-central1');
-        setBaseUrl(`https://us-central1-aiplatform.googleapis.com/v1`);
-      } else if (preset.type === 'gemini') {
-        setBaseUrl(preset.baseUrl);
-      } else {
-        setBaseUrl(preset.baseUrl);
-      }
-      setShowPresetPicker(false); // 关闭选择器
-    }, 10);
-  };
+  const handleJSONError = useCallback((err: string | null) => {
+    // We defer the rigorous check to Save, but ParsedInput handles inline debounced validation
+    // Here we could update 'errors' state if we wanted real-time error messages in strict mode
+    // For now, let ParsedInput handle its own display, we just clear/set errors for the modal if needed
+    if (err) {
+      setErrors(prev => ({ ...prev, jsonInput: err }));
+    } else {
+      setErrors(prev => ({ ...prev, jsonInput: undefined }));
+    }
+  }, []);
 
   const handleSave = () => {
-    const newErrors: {
-      name?: string;
-      apiKey?: string;
-      vertexProject?: string;
-      jsonInput?: string;
-    } = {};
+    const newErrors: typeof errors = {};
 
     if (!name.trim()) {
       newErrors.name = t.settings.providerModal.nameRequired;
     }
 
-    // VertexAI 特殊验证
     if (type === 'google') {
       if (!vertexProject.trim()) {
         newErrors.vertexProject = 'Project ID is required';
       }
-      if (jsonInput && jsonInput.trim()) {
+      if (!jsonInput.trim()) {
+        newErrors.jsonInput = 'Service Account JSON is required';
+      } else {
+        // Double check JSON validity before save
         try {
           const json = JSON.parse(jsonInput);
           if (!json.private_key || !json.client_email) {
@@ -177,11 +177,8 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
         } catch (e) {
           newErrors.jsonInput = 'Invalid JSON format';
         }
-      } else {
-        newErrors.jsonInput = 'Service Account JSON is required';
       }
     } else {
-      // 其他服务商需要 API Key
       if (!apiKey.trim()) {
         newErrors.apiKey = t.settings.providerModal.apiKeyRequired;
       }
@@ -195,14 +192,12 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
     setTimeout(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // VertexAI 特殊处理
       let finalApiKey = apiKey.trim();
       if (type === 'google' && jsonInput) {
         try {
           const json = JSON.parse(jsonInput);
           finalApiKey = json.private_key || 'vertex-placeholder';
         } catch (e) {
-          // JSON 解析失败，使用占位符
           finalApiKey = 'vertex-placeholder';
         }
       }
@@ -222,124 +217,110 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
     }, 10);
   };
 
-  const handleCancel = () => {
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onClose();
-    }, 10);
-  };
+  const handlePresetSelect = useCallback((presetKey: string) => {
+    const preset = PROVIDER_PRESETS[presetKey];
+    if (!preset) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    setSelectedPreset(presetKey);
+    setName(preset.name);
+    setType(preset.type);
+
+    if (preset.type === 'google') {
+      setRegion('us-central1');
+      setBaseUrl(`https://us-central1-aiplatform.googleapis.com/v1`);
+    } else {
+      setBaseUrl(preset.baseUrl);
+    }
+    setShowPresetPicker(false);
+  }, []);
+
+  // Memoized Styles
+  const containerStyle = useMemo(() => ({
+    flex: 1,
+    backgroundColor: isDark ? '#000' : '#fff'
+  }), [isDark]);
+
+  const presetButtonStyle = useMemo(() => ({
+    backgroundColor: isDark ? '#18181b' : '#f9fafb',
+    borderWidth: 1,
+    borderColor: isDark ? '#27272a' : '#e5e7eb',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  }), [isDark]);
+
+  const inputStyle = useMemo(() => ({
+    backgroundColor: isDark ? '#18181b' : '#f9fafb',
+    borderColor: isDark ? '#27272a' : '#e5e7eb',
+    color: isDark ? '#fff' : '#111',
+  }), [isDark]);
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent={false}
-      onRequestClose={handleCancel}
+      onRequestClose={onClose}
     >
       <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}
+        style={containerStyle}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <GlassHeader
-          title={
-            editingProvider ? t.settings.providerModal.editTitle : t.settings.providerModal.addTitle
-          }
+          title={editingProvider ? t.settings.providerModal.editTitle : t.settings.providerModal.addTitle}
           leftAction={{
             icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
-            onPress: handleCancel,
+            onPress: onClose,
           }}
           intensity={isDark ? 40 : 60}
         />
 
         <ScrollView
-          style={{ flex: 1, paddingHorizontal: 24 }}
+          style={styles.scrollView}
           contentContainerStyle={{ paddingTop: 64 + insets.top + 20, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* 快速配置 (仅添加模式) */}
+          {/* Presets */}
           {!editingProvider && (
-            <View style={{ marginBottom: 20 }}>
-              <Text
-                style={{ fontSize: 13, fontWeight: 'bold', color: '#9ca3af', marginBottom: 10 }}
-              >
-                {t.settings.providerModal.presets}
-              </Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.settings.providerModal.presets}</Text>
 
-              {/* 自定义下拉选择器 */}
               <TouchableOpacity
-                onPress={() => {
-                  setTimeout(() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setShowPresetPicker(!showPresetPicker);
-                  }, 10);
-                }}
-                style={{
-                  backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                  borderWidth: 1,
-                  borderColor: isDark ? '#27272a' : '#e5e7eb',
-                  borderRadius: 12,
-                  paddingHorizontal: 16,
-                  paddingVertical: 12,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
+                onPress={() => setShowPresetPicker(!showPresetPicker)}
+                style={presetButtonStyle}
               >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    color: selectedPreset ? (isDark ? '#fff' : '#111') : '#9ca3af',
-                  }}
-                >
-                  {selectedPreset
-                    ? PROVIDER_PRESETS[selectedPreset].name
-                    : t.settings.selectProvider}
+                <Text style={{
+                  fontSize: 14,
+                  color: selectedPreset ? (isDark ? '#fff' : '#111') : '#9ca3af'
+                }}>
+                  {selectedPreset ? PROVIDER_PRESETS[selectedPreset].name : t.settings.selectProvider}
                 </Text>
                 <ChevronDown size={20} color="#9ca3af" />
               </TouchableOpacity>
 
-              {/* 下拉选项列表 */}
               {showPresetPicker && (
-                <View
-                  style={{
-                    marginTop: 8,
-                    backgroundColor: isDark ? '#18181b' : '#fff',
-                    borderWidth: 1,
-                    borderColor: isDark ? '#27272a' : '#e5e7eb',
-                    borderRadius: 12,
-                    maxHeight: 300,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <ScrollView
-                    nestedScrollEnabled={true}
-                    onStartShouldSetResponder={() => true}
-                    onMoveShouldSetResponder={() => true}
-                  >
+                <View style={[styles.dropdown, {
+                  backgroundColor: isDark ? '#18181b' : '#fff',
+                  borderColor: isDark ? '#27272a' : '#e5e7eb'
+                }]}>
+                  <ScrollView nestedScrollEnabled>
                     {Object.entries(PROVIDER_PRESETS).map(([key, preset]) => (
                       <TouchableOpacity
                         key={key}
                         onPress={() => handlePresetSelect(key)}
-                        style={{
-                          paddingHorizontal: 16,
-                          paddingVertical: 12,
-                          backgroundColor:
-                            selectedPreset === key
-                              ? isDark
-                                ? '#27272a'
-                                : '#f3f4f6'
-                              : 'transparent',
-                          borderBottomWidth: 1,
+                        style={[styles.dropdownItem, {
                           borderBottomColor: isDark ? '#27272a' : '#f3f4f6',
-                        }}
+                          backgroundColor: selectedPreset === key ? (isDark ? '#27272a' : '#f3f4f6') : 'transparent'
+                        }]}
                       >
-                        <Text
-                          style={{
-                            fontSize: 14,
-                            fontWeight: selectedPreset === key ? '600' : '400',
-                            color: selectedPreset === key ? colors[500] : isDark ? '#fff' : '#111',
-                          }}
-                        >
+                        <Text style={{
+                          color: selectedPreset === key ? colors[500] : (isDark ? '#fff' : '#111'),
+                          fontWeight: selectedPreset === key ? '600' : '400'
+                        }}>
                           {preset.name}
                         </Text>
                       </TouchableOpacity>
@@ -350,127 +331,40 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
             </View>
           )}
 
-          {/* 表单字段 */}
-          <View style={{ gap: 16 }}>
-            {/* 名称 */}
-            <View>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: isDark ? '#fff' : '#111',
-                  marginBottom: 8,
-                }}
-              >
-                {t.settings.providerModal.name}
-              </Text>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder={t.settings.providerModal.namePlaceholder}
-                placeholderTextColor="#9ca3af"
-                style={{
-                  backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                  borderWidth: 1,
-                  borderColor: errors.name ? '#ef4444' : isDark ? '#27272a' : '#e5e7eb',
-                  borderRadius: 12,
-                  paddingHorizontal: 16,
-                  paddingVertical: 12,
-                  fontSize: 16,
-                  color: isDark ? '#fff' : '#111',
-                }}
-              />
-              {errors.name && (
-                <Text style={{ color: '#ef4444', fontSize: 12, marginTop: 4 }}>{errors.name}</Text>
-              )}
-            </View>
+          <View style={styles.formGap}>
+            {/* Name */}
+            <ParsedInput
+              label={t.settings.providerModal.name}
+              value={name}
+              onValueChange={setName}
+              placeholder={t.settings.providerModal.namePlaceholder}
+              error={errors.name}
+              required
+            />
 
-            {/* VertexAI 特有字段 */}
+            {/* Vertex AI Fields */}
             {type === 'google' && (
               <>
-                {/* Project ID（必填） */}
-                <View>
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: isDark ? '#fff' : '#111',
-                      marginBottom: 8,
-                    }}
-                  >
-                    Google Cloud Project ID *
-                  </Text>
-                  <TextInput
-                    value={vertexProject}
-                    onChangeText={setVertexProject}
-                    placeholder="my-project-123456"
-                    placeholderTextColor="#9ca3af"
-                    autoCapitalize="none"
-                    style={{
-                      backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                      borderWidth: 1,
-                      borderColor: errors.vertexProject
-                        ? '#ef4444'
-                        : isDark
-                          ? '#27272a'
-                          : '#e5e7eb',
-                      borderRadius: 12,
-                      paddingHorizontal: 16,
-                      paddingVertical: 10,
-                      fontSize: 16,
-                      color: isDark ? '#fff' : '#111',
-                    }}
-                  />
-                  {errors.vertexProject && (
-                    <Text style={{ color: '#ef4444', fontSize: 12, marginTop: 4 }}>
-                      {errors.vertexProject}
-                    </Text>
-                  )}
-                </View>
-
-                {/* Region */}
-                <View>
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: isDark ? '#fff' : '#111',
-                      marginBottom: 8,
-                    }}
-                  >
-                    {t.settings.providerModal.region}
-                  </Text>
-                  <TextInput
-                    value={region}
-                    onChangeText={setRegion}
-                    placeholder={t.settings.providerModal.regionPlaceholder}
-                    placeholderTextColor="#9ca3af"
-                    autoCapitalize="none"
-                    style={{
-                      backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                      borderWidth: 1,
-                      borderColor: isDark ? '#27272a' : '#e5e7eb',
-                      borderRadius: 12,
-                      paddingHorizontal: 16,
-                      paddingVertical: 10,
-                      fontSize: 16,
-                      color: isDark ? '#fff' : '#111',
-                    }}
-                  />
-                </View>
+                <ParsedInput
+                  label="Google Cloud Project ID"
+                  value={vertexProject}
+                  onValueChange={setVertexProject}
+                  placeholder="my-project-123456"
+                  error={errors.vertexProject}
+                  required
+                />
+                <ParsedInput
+                  label={t.settings.providerModal.region}
+                  value={region}
+                  onValueChange={setRegion}
+                  placeholder={t.settings.providerModal.regionPlaceholder}
+                />
               </>
             )}
 
             {/* Base URL */}
             <View>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: isDark ? '#fff' : '#111',
-                  marginBottom: 8,
-                }}
-              >
+              <Text style={[styles.label, { color: isDark ? '#fff' : '#111' }]}>
                 {t.settings.providerModal.baseUrl}
               </Text>
               <TextInput
@@ -480,156 +374,128 @@ export function ProviderModal({ visible, onClose, onSave, editingProvider }: Pro
                 placeholderTextColor="#9ca3af"
                 autoCapitalize="none"
                 keyboardType="url"
-                style={{
-                  backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                  borderWidth: 1,
-                  borderColor: isDark ? '#27272a' : '#e5e7eb',
-                  borderRadius: 12,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  fontSize: 16,
-                  color: isDark ? '#fff' : '#111',
-                  opacity: type === 'google' ? 0.6 : 1,
-                }}
                 editable={type !== 'google'}
+                style={[styles.input, inputStyle, { opacity: type === 'google' ? 0.6 : 1 }]}
               />
             </View>
 
-            {/* API Key (对于 VertexAI 隐藏) */}
-            <View style={{ display: type === 'google' ? 'none' : 'flex' }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: isDark ? '#fff' : '#111',
-                  marginBottom: 8,
-                }}
-              >
-                {t.settings.providerModal.apiKey}
-              </Text>
-              <TextInput
-                value={apiKey}
-                onChangeText={setApiKey}
-                placeholder={t.settings.providerModal.apiKeyPlaceholder}
-                placeholderTextColor="#9ca3af"
-                autoCapitalize="none"
-                secureTextEntry
-                style={{
-                  backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                  borderWidth: 1,
-                  borderColor: errors.apiKey ? '#ef4444' : isDark ? '#27272a' : '#e5e7eb',
-                  borderRadius: 12,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  fontSize: 16,
-                  color: isDark ? '#fff' : '#111',
-                  fontFamily: 'monospace',
-                }}
-              />
-              {errors.apiKey && (
-                <Text style={{ color: '#ef4444', fontSize: 12, marginTop: 4 }}>
-                  {errors.apiKey}
-                </Text>
-              )}
-            </View>
-
-            {/* VertexAI Service Account JSON */}
-            {type === 'google' && (
+            {/* API Key */}
+            {type !== 'google' && (
               <View>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: isDark ? '#fff' : '#111',
-                    marginBottom: 8,
-                  }}
-                >
-                  {t.settings.providerModal.importVertexJson} *
+                <Text style={[styles.label, { color: isDark ? '#fff' : '#111' }]}>
+                  {t.settings.providerModal.apiKey}
                 </Text>
                 <TextInput
-                  value={jsonInput}
-                  multiline
-                  numberOfLines={6}
-                  placeholder={t.settings.providerModal.importPlaceholder}
+                  value={apiKey}
+                  onChangeText={setApiKey}
+                  placeholder={t.settings.providerModal.apiKeyPlaceholder}
                   placeholderTextColor="#9ca3af"
-                  onChangeText={(v) => {
-                    setJsonInput(v);
-                    try {
-                      const json = JSON.parse(v);
-                      if (json.project_id && !vertexProject) {
-                        setVertexProject(json.project_id);
-                      }
-                      if (json.project_id && !name) {
-                        setName(`VertexAI - ${json.project_id}`);
-                      }
-                    } catch (e) {
-                      // 无效 JSON，忽略
-                    }
-                  }}
-                  style={{
-                    backgroundColor: isDark ? '#18181b' : '#f9fafb',
-                    borderWidth: 1,
-                    borderColor: errors.jsonInput ? '#ef4444' : isDark ? '#27272a' : '#e5e7eb',
-                    borderRadius: 12,
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    fontSize: 10,
-                    color: isDark ? '#fff' : '#111',
-                    height: 120,
-                    textAlignVertical: 'top',
-                    fontFamily: 'monospace',
-                  }}
+                  secureTextEntry
+                  style={[styles.input, inputStyle]}
                 />
-                {errors.jsonInput && (
-                  <Text style={{ color: '#ef4444', fontSize: 12, marginTop: 4 }}>
-                    {errors.jsonInput}
-                  </Text>
-                )}
+                {errors.apiKey && <Text style={styles.errorText}>{errors.apiKey}</Text>}
               </View>
+            )}
+
+            {/* Vertex JSON - Optimized */}
+            {type === 'google' && (
+              <ParsedInput
+                label={t.settings.providerModal.importVertexJson}
+                value={jsonInput}
+                onValueChange={setJsonInput}
+                placeholder={t.settings.providerModal.importPlaceholder}
+                multiline
+                numberOfLines={6}
+                inputStyle={{ height: 120, textAlignVertical: 'top', fontSize: 10, fontFamily: 'monospace' }}
+                parser={(text) => JSON.parse(text)}
+                onParsed={handleJSONParsed}
+                onError={handleJSONError}
+                required
+              />
             )}
           </View>
 
           <View style={{ height: 40 }} />
         </ScrollView>
 
-        {/* Footer Buttons */}
-        <View
-          style={{
-            paddingHorizontal: 24,
-            paddingVertical: 16,
-            borderTopWidth: 1,
-            borderTopColor: isDark ? '#27272a' : '#e5e7eb',
-            gap: 12,
-          }}
-        >
-          <TouchableOpacity
-            onPress={handleSave}
-            style={{
-              backgroundColor: colors[500],
-              borderRadius: 12,
-              paddingVertical: 14,
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
-              {t.settings.providerModal.save}
-            </Text>
+        <View style={[styles.footer, { borderTopColor: isDark ? '#27272a' : '#e5e7eb' }]}>
+          <TouchableOpacity onPress={handleSave} style={[styles.saveBtn, { backgroundColor: colors[500] }]}>
+            <Text style={styles.btnText}>{t.settings.providerModal.save}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleCancel}
-            style={{
-              backgroundColor: isDark ? '#27272a' : '#f3f4f6',
-              borderRadius: 12,
-              paddingVertical: 14,
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ color: isDark ? '#fff' : '#111', fontSize: 16, fontWeight: '600' }}>
-              {t.settings.providerModal.cancel}
-            </Text>
+          <TouchableOpacity onPress={onClose} style={[styles.cancelBtn, { backgroundColor: isDark ? '#27272a' : '#f3f4f6' }]}>
+            <Text style={[styles.btnText, { color: isDark ? '#fff' : '#111' }]}>{t.settings.providerModal.cancel}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  scrollView: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#9ca3af',
+    marginBottom: 10,
+  },
+  dropdown: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    maxHeight: 300,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  formGap: {
+    gap: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  footer: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    gap: 12,
+  },
+  saveBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cancelBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  btnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  }
+});

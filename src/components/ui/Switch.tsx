@@ -16,22 +16,33 @@ interface SwitchProps {
   disabled?: boolean;
 }
 
-export const Switch: React.FC<SwitchProps> = ({ value, onValueChange, disabled = false }) => {
+export const Switch = React.memo(({ value, onValueChange, disabled = false }: SwitchProps) => {
   const { isDark, colors } = useTheme();
 
   // 动画共享值：0 为关闭，1 为开启
   const progress = useSharedValue(value ? 1 : 0);
+  const isMounted = useSharedValue(false);
 
   useEffect(() => {
+    // 性能优化：首次挂载建议直接设置值，避免 spring 导致初次渲染出现微小位移/闪烁
+    if (!isMounted.value) {
+      progress.value = value ? 1 : 0;
+      isMounted.value = true;
+      return;
+    }
+
+    // 随后的变化使用弹簧动画
     progress.value = withSpring(value ? 1 : 0, {
-      damping: 20,
-      stiffness: 200,
+      damping: 25, // 略微增加阻尼，减少视觉抖动
+      stiffness: 250,
+      mass: 0.5, // 减小质量，让反馈更灵敏
     });
   }, [value]);
 
   const handleToggle = () => {
     if (disabled) return;
 
+    // 延迟 10ms 执行原生调用，防御死锁
     setTimeout(() => {
       Haptics.selectionAsync();
       onValueChange(!value);
@@ -39,43 +50,34 @@ export const Switch: React.FC<SwitchProps> = ({ value, onValueChange, disabled =
   };
 
   const animatedTrackStyle = useAnimatedStyle(() => {
-    const backgroundColor = interpolateColor(
-      progress.value,
-      [0, 1],
-      isDark
-        ? ['rgba(255, 255, 255, 0.1)', colors.opacity30] // Dark mode: subtle grey -> dynamic tint
-        : ['rgba(0, 0, 0, 0.05)', colors.opacity20], // Light mode: grey -> dynamic tint
-    );
-
-    const borderColor = interpolateColor(
-      progress.value,
-      [0, 1],
-      isDark
-        ? ['rgba(255, 255, 255, 0.15)', colors.opacity30]
-        : ['rgba(0, 0, 0, 0.1)', colors.opacity20],
-    );
-
     return {
-      backgroundColor,
-      borderColor,
+      backgroundColor: interpolateColor(
+        progress.value,
+        [0, 1],
+        isDark
+          ? ['rgba(255, 255, 255, 0.1)', colors.opacity30]
+          : ['rgba(0, 0, 0, 0.05)', colors.opacity20],
+      ),
+      borderColor: interpolateColor(
+        progress.value,
+        [0, 1],
+        isDark
+          ? ['rgba(255, 255, 255, 0.15)', colors.opacity30]
+          : ['rgba(0, 0, 0, 0.1)', colors.opacity20],
+      ),
     };
   });
 
   const animatedThumbStyle = useAnimatedStyle(() => {
-    // 总长度 50，圆点直径 26，边距 2 -> 移动距离 = 50 - 26 - 4 = 20
-    const translateX = progress.value * 20;
-
-    const backgroundColor = interpolateColor(
-      progress.value,
-      [0, 1],
-      isDark
-        ? ['#94a3b8', colors[500]] // slate -> dynamic primary
-        : ['#cbd5e1', colors[500]], // slate-light -> dynamic primary
-    );
-
     return {
-      transform: [{ translateX }],
-      backgroundColor,
+      transform: [{ translateX: progress.value * 20 }],
+      backgroundColor: interpolateColor(
+        progress.value,
+        [0, 1],
+        isDark
+          ? ['#94a3b8', colors[500]]
+          : ['#cbd5e1', colors[500]],
+      ),
     };
   });
 
@@ -91,7 +93,7 @@ export const Switch: React.FC<SwitchProps> = ({ value, onValueChange, disabled =
       </Animated.View>
     </TouchableOpacity>
   );
-};
+});
 
 const styles = StyleSheet.create({
   track: {

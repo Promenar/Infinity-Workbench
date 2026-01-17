@@ -75,13 +75,9 @@ const ModelItem = React.memo(
 
     useEffect(() => {
       setLocalName(model.name);
-    }, [model.name]);
-    useEffect(() => {
       setLocalId(model.id);
-    }, [model.id]);
-    useEffect(() => {
       setLocalContext(model.contextLength?.toString() || '');
-    }, [model.contextLength]);
+    }, [model.name, model.id, model.contextLength]);
 
     const handleSync = useCallback(
       (updates: Partial<ModelConfig>) => {
@@ -169,8 +165,7 @@ const ModelItem = React.memo(
             </TouchableOpacity>
 
             <Switch
-              key={model.uuid} // Critical Fix: Prevent animation reset on FlashList recycle
-              value={model.enabled}
+              value={!!model.enabled}
               onValueChange={(v) => onToggle(model.uuid, v)}
             />
             <TouchableOpacity onPress={() => onDelete(model.uuid)}>
@@ -355,10 +350,6 @@ export function ModelSettingsModal({
         const initialModels = (provider.models || []).map((m) =>
           m.uuid ? m : { ...m, uuid: m.id + '-' + Math.random().toString(36).substr(2, 9) },
         );
-        setModels(initialModels);
-        setSearchQuery('');
-        setTestResults({});
-        setIsReady(true);
         setModels(initialModels);
         setSearchQuery('');
         setTestResults({});
@@ -716,9 +707,6 @@ export function ModelSettingsModal({
       />
     ),
     [
-      theme,
-      isDark,
-      t,
       handleToggleModel,
       handleDeleteModel,
       handleUpdateModel,
