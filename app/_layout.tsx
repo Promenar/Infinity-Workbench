@@ -25,6 +25,7 @@ import { useI18n } from '../src/lib/i18n';
 import { initDb } from '../src/lib/db';
 import { createTables } from '../src/lib/db/schema';
 import { migrateDatabase } from '../src/lib/db/migration';
+import { useLocalModelStore } from '../src/lib/local-inference/LocalModelServer'; // Hook auto-load
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 
@@ -88,6 +89,7 @@ export default function RootLayout() {
             console.warn('[App] Auto backup initial trigger failed:', err.message);
           });
         }, 1000);
+
       } catch (e) {
         console.error('[App] DB Init Failed', e);
       } finally {

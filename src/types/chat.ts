@@ -141,6 +141,7 @@ export interface Session {
   options?: {
     webSearch?: boolean;
     reasoning?: boolean;
+    toolsEnabled?: boolean; // New option
   };
   ragOptions?: {
     enableMemory?: boolean; // 启用长期记忆

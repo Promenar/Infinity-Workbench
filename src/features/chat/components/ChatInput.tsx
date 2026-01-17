@@ -23,6 +23,7 @@ import {
   Shield,
   PlayCircle,
   Check,
+  Wrench, // New Icon for tools
 } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 import { useI18n } from '../../../lib/i18n';
@@ -97,7 +98,7 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setVisible(true);
         }}
-        activeOpacity={0.7}
+        activeOpacity={0.6}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
@@ -110,12 +111,9 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
       >
         {getIcon(mode, 10)}
         <Typography
-          className="text-gray-400 dark:text-gray-500"
+          className="text-[9px] font-black uppercase tracking-tight"
           style={{
-            fontSize: 9,
-            fontWeight: '900',
-            letterSpacing: -0.2,
-            textTransform: 'uppercase',
+            color: mode === 'auto' ? '#6366f1' : mode === 'semi' ? '#d97706' : '#059669',
           }}
         >
           {getLabel(mode)}
@@ -226,6 +224,8 @@ interface ChatInputProps {
   editingMessageId?: string;      // 正在编辑的消息 ID
   initialEditText?: string;       // 初始编辑内容
   onCancelEdit?: () => void;      // 取消编辑回调
+  toolsEnabled?: boolean;         // New prop
+  onToggleTools?: () => void;     // New prop
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -245,6 +245,8 @@ export function ChatInput({
   editingMessageId,
   initialEditText,
   onCancelEdit,
+  toolsEnabled = true, // Default to true
+  onToggleTools,
 }: ChatInputProps) {
   const { t } = useI18n();
   const { isDark, colors } = useTheme();
@@ -542,7 +544,12 @@ export function ChatInput({
               style={styles.modelBar}
             >
               <Cpu size={10} color={agentColor} />
-              <Typography className="text-[9px] font-black ml-1 uppercase tracking-tight text-gray-400 dark:text-gray-500">
+              <Typography
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                className="text-[9px] font-black ml-1 uppercase tracking-tight text-gray-400 dark:text-gray-500"
+                style={{ maxWidth: 120 }}
+              >
                 {currentModel}
               </Typography>
             </TouchableOpacity>
@@ -556,7 +563,7 @@ export function ChatInput({
             >
               <Calculator size={10} color={isDark ? '#52525b' : '#a1a1aa'} />
               <Typography className="text-[9px] font-bold ml-1 text-gray-400 dark:text-zinc-600">
-                {formatTokenCount(tokenUsage.total)} tok
+                {formatTokenCount(tokenUsage.total)} TOK
               </Typography>
             </TouchableOpacity>
           )}
@@ -565,6 +572,31 @@ export function ChatInput({
           <View className="flex-col items-start gap-1">
             {/* SummaryIndicator 已移除，摘要状态由消息气泡内的 RAG 指示器统一处理 */}
           </View>
+
+          {/* Tools Toggle */}
+          <TouchableOpacity
+            onPress={() => {
+              const newState = !toolsEnabled;
+              onToggleTools?.();
+              // Use emitToast for global toast notification (Toast provides its own haptics)
+              const { emitToast } = require('../../../lib/utils/toast-emitter');
+              emitToast(newState ? '工具链已启用' : '工具链已隔离', newState ? 'success' : 'warning');
+            }}
+            activeOpacity={0.6}
+            style={styles.modelBar}
+          >
+            {toolsEnabled ? (
+              <Wrench size={10} color="#6366f1" />
+            ) : (
+              <Shield size={10} color={isDark ? '#52525b' : '#a1a1aa'} />
+            )}
+            <Typography
+              className="text-[9px] font-black ml-1 uppercase tracking-tight"
+              style={{ color: toolsEnabled ? '#6366f1' : (isDark ? '#52525b' : '#a1a1aa') }}
+            >
+              TOOLS
+            </Typography>
+          </TouchableOpacity>
 
           <View style={{ flex: 1 }} />
 

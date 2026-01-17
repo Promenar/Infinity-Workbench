@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { produce } from 'immer';
 import { RagConfiguration } from '../types/chat';
 import { DEFAULT_KG_PROMPT } from '../lib/rag/defaults';
 
@@ -49,6 +50,10 @@ interface SettingsState {
   skillsConfig: Record<string, boolean>; // skillId -> enabled
   setSkillEnabled: (skillId: string, enabled: boolean) => void;
 
+  // Local Models
+  localModelsEnabled: boolean;
+  setLocalModelsEnabled: (enabled: boolean) => void;
+
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
 }
@@ -63,7 +68,16 @@ export const useSettingsStore = create<SettingsState>()(
       setHapticsEnabled: (enabled) => set({ hapticsEnabled: enabled }),
 
       accentColor: '#6366f1',
-      setAccentColor: (color) => set({ accentColor: color }),
+      accentColor: '#6366f1',
+      setAccentColor: (color) => {
+        // Robust Validation: Must be valid 6-digit hex or 3-digit hex
+        if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)) {
+          set({ accentColor: color });
+        } else {
+          console.warn(`[SettingsStore] Invalid accentColor ignored: ${color}`);
+          // Do not save invalid color
+        }
+      },
 
       defaultSummaryModel: undefined,
       defaultTempSessionModel: undefined,
@@ -156,6 +170,9 @@ export const useSettingsStore = create<SettingsState>()(
           skillsConfig: { ...state.skillsConfig, [skillId]: enabled },
         })),
 
+      localModelsEnabled: false,
+      setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
+
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
     }),
@@ -176,8 +193,14 @@ export const useSettingsStore = create<SettingsState>()(
         maxLoopCount: state.maxLoopCount,
         executionMode: state.executionMode,
         skillsConfig: state.skillsConfig,
+        localModelsEnabled: state.localModelsEnabled,
       }),
       onRehydrateStorage: () => (state) => {
+        // Fail-safe: Sanitize hydration
+        if (state && (!state.accentColor || !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(state.accentColor))) {
+          console.warn(`[SettingsStore] Repairing corrupted accentColor: ${state?.accentColor}`);
+          if (state) state.accentColor = '#6366f1';
+        }
         state?.setHasHydrated(true);
       },
     },

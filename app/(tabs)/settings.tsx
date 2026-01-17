@@ -477,7 +477,7 @@ export default function SettingsScreen() {
                 />
               </SettingsSection>
 
-              <SettingsSection title="Intelligence">
+              <SettingsSection title={t.settings.intelligenceSection}>
                 <SettingsItem
                   icon={Sparkles}
                   title={t.settings.agentSkills.title}
@@ -485,6 +485,14 @@ export default function SettingsScreen() {
                   showChevron
                   isLast
                   onPress={() => router.push('/settings/skills' as any)}
+                />
+                <SettingsItem
+                  icon={Cpu}
+                  title={t.settings.localModels.title}
+                  subtitle={t.settings.localModels.subtitle}
+                  showChevron
+                  isLast
+                  onPress={() => router.push('/settings/local-models' as any)}
                 />
               </SettingsSection>
 

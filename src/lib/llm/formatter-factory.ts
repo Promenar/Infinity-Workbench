@@ -33,6 +33,7 @@ export class FormatterFactory {
 
     private static createFormatter(provider: ProviderType, modelName?: string): MessageFormatter {
         switch (provider) {
+            case 'local':
             case 'openai':
             case 'siliconflow':
             case 'github':

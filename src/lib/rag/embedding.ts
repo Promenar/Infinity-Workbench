@@ -1,7 +1,7 @@
 import { ProviderConfig } from '../../store/api-store';
 import { OpenAiClient } from '../llm/providers/openai';
 import { VertexAiClient } from '../llm/providers/vertexai';
-
+import { useLocalModelStore } from '../local-inference/LocalModelServer';
 /**
  * Embedding 客户端 - 复用现有 Provider 实现
  *
@@ -63,6 +63,11 @@ export class EmbeddingClient {
   ): Promise<{ embeddings: number[][]; usage?: { total_tokens: number } }> {
     if (!texts || texts.length === 0) {
       throw new Error('No texts provided for embedding');
+    }
+
+    // Local Provider
+    if (this.provider.type === 'local') {
+      return this.embedLocal(texts);
     }
 
     // Vertex AI
@@ -266,6 +271,33 @@ export class EmbeddingClient {
     return {
       embeddings: allEmbeddings,
       usage: totalTokens > 0 ? { total_tokens: totalTokens } : undefined,
+    };
+  }
+
+
+  /**
+   * Local Embedding (via llama.rn)
+   */
+  private async embedLocal(
+    texts: string[],
+  ): Promise<{ embeddings: number[][]; usage?: { total_tokens: number } }> {
+    const store = useLocalModelStore.getState();
+    const isAvailable = store.embedding.isLoaded || store.main.isLoaded;
+    if (!isAvailable) {
+      throw new Error('Local embedding model not loaded (check Embedding slot or Main slot)');
+    }
+
+    const embeddings: number[][] = [];
+    // llama.rn currently processes one by one (or check update)
+    // We loop for now.
+    for (const text of texts) {
+      const emb = await store.generateEmbedding(text);
+      embeddings.push(emb);
+    }
+
+    return {
+      embeddings,
+      // No token usage from local yet
     };
   }
 }

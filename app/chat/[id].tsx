@@ -58,13 +58,13 @@ export default function ChatDetailScreen() {
   const agent = useMemo(() => (session ? getAgent(session.agentId) : undefined), [session]);
 
   const currentModelId = session?.modelId || agent?.defaultModel;
-  const modelConfig = useMemo(() => {
-    if (!currentModelId) return undefined;
+  const { modelConfig, currentProvider } = useMemo(() => {
+    if (!currentModelId) return { modelConfig: undefined, currentProvider: undefined };
     for (const p of providers) {
       const found = p.models.find((m) => m.uuid === currentModelId || m.id === currentModelId);
-      if (found) return found;
+      if (found) return { modelConfig: found, currentProvider: p };
     }
-    return undefined;
+    return { modelConfig: undefined, currentProvider: undefined };
   }, [providers, currentModelId]);
 
   const headerSubtitle = useMemo(() => {
@@ -97,6 +97,22 @@ export default function ChatDetailScreen() {
       isAtBottom.value = false;
     }
   }, [id]);
+
+  // ✅ Auto-toggle tools based on model type (Local vs Cloud)
+  useEffect(() => {
+    if (!currentProvider || !id) return;
+
+    const isLocal = currentProvider.type === 'local';
+    const isCurrentlyEnabled = session?.options?.toolsEnabled !== false;
+
+    if (isLocal && isCurrentlyEnabled) {
+      console.log('[ChatDetail] Auto-disabling tools for local model');
+      useChatStore.getState().updateSessionOptions(id, { toolsEnabled: false });
+    } else if (!isLocal && !isCurrentlyEnabled) {
+      console.log('[ChatDetail] Auto-enabling tools for cloud model');
+      useChatStore.getState().updateSessionOptions(id, { toolsEnabled: true });
+    }
+  }, [currentProvider?.type, id]);
 
   const lastMessageCount = useRef(0);
   const scrollOffset = useSharedValue(0);
@@ -570,6 +586,14 @@ export default function ChatDetailScreen() {
           editingMessageId={editingMessage?.id}
           initialEditText={editingMessage?.content}
           onCancelEdit={() => setEditingMessage(null)}
+          toolsEnabled={session.options?.toolsEnabled ?? true}
+          onToggleTools={() => {
+            const current = session.options?.toolsEnabled ?? true;
+            useChatStore.getState().updateSessionOptions(id, { toolsEnabled: !current });
+            if (RNPlatform.OS === 'android') {
+              ToastAndroid.show(!current ? 'Tools Enabled' : 'Tools Disabled', ToastAndroid.SHORT);
+            }
+          }}
         />
       </KeyboardAvoidingView>
 

@@ -28,7 +28,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
     <View>
       {/* 检索配置 */}
       <SectionHeader title={t.rag.retrievalSettings} mt={0} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
         <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
           {t.rag.memoryRetrieval}
         </Typography>
@@ -172,7 +172,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* Rerank配置 */}
       <SectionHeader title={t.rag.rerankSection} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
         {/* 启用Rerank */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -246,7 +246,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* 查询重写配置 */}
       <SectionHeader title={t.rag.queryRewrite} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
         {/* 启用查询重写 */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -323,7 +323,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* 混合检索配置 */}
       <SectionHeader title={t.rag.hybridSearch} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
         {/* 启用混合检索 */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -397,7 +397,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
 
       {/* 可观测性配置 */}
       <SectionHeader title={t.rag.observability} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
         {/* 显示检索进度 */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">

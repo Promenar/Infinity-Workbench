@@ -123,6 +123,8 @@ export class VectorStore {
     const candidates: SearchResult[] = [];
     // Pre-calculate query magnitude for optimization
     const queryMag = Math.sqrt(queryEmbedding.reduce((sum, val) => sum + val * val, 0));
+    let maxSimilarity = 0;
+    let dimensionMismatchCount = 0;
 
     // @ts-ignore
     for (let i = 0; i < results.rows.length; i++) {
@@ -133,7 +135,14 @@ export class VectorStore {
       const row = results.rows[i];
       const vec = this.fromBlob(row.embedding);
 
+      // Dimension check
+      if (vec.length !== queryEmbedding.length) {
+        dimensionMismatchCount++;
+        continue; // Skip mismatched vectors
+      }
+
       const similarity = this.cosineSimilarity(queryEmbedding, vec, queryMag);
+      if (similarity > maxSimilarity) maxSimilarity = similarity;
 
       if (similarity >= Threshold) {
         candidates.push({
@@ -147,6 +156,12 @@ export class VectorStore {
           similarity,
         });
       }
+    }
+
+    // Diagnostics
+    console.log(`[VectorStore] Search: ${results.rows?.length || 0} vectors, Query dim: ${queryEmbedding.length}, Max similarity: ${maxSimilarity.toFixed(4)}, Above threshold (${Threshold}): ${candidates.length}`);
+    if (dimensionMismatchCount > 0) {
+      console.warn(`[VectorStore] ⚠️ ${dimensionMismatchCount} vectors skipped due to dimension mismatch!`);
     }
 
     // Sort desc

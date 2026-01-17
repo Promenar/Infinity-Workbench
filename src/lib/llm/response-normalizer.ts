@@ -29,6 +29,7 @@ export type ProviderType =
   | 'openai'
   | 'gemini'
   | 'google'  // VertexAI uses 'google' as provider type
+  | 'local'   // Llama.rn local inference
   | 'siliconflow'
   | 'zhipu'
   | 'moonshot'

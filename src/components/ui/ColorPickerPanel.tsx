@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, TextInput } from 'react-native';
 import { Typography } from './Typography';
 import { RainbowSlider } from './RainbowSlider';
@@ -30,6 +30,20 @@ interface ColorPickerPanelProps {
 export const ColorPickerPanel: React.FC<ColorPickerPanelProps> = ({ color: selectedColor, onColorChange, title }) => {
     const { isDark, colors } = useTheme();
     const { t } = useI18n();
+    const [inputValue, setInputValue] = useState(selectedColor);
+
+    useEffect(() => {
+        setInputValue(selectedColor);
+    }, [selectedColor]);
+
+    const handleTextChange = (text: string) => {
+        setInputValue(text);
+        // Only trigger update if valid hex
+        const normalized = text.startsWith('#') ? text : `#${text}`;
+        if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(normalized)) {
+            onColorChange(normalized.toLowerCase());
+        }
+    };
 
     return (
         <View>
@@ -104,17 +118,15 @@ export const ColorPickerPanel: React.FC<ColorPickerPanelProps> = ({ color: selec
                     />
                     <TextInput
                         className="flex-1 text-gray-900 dark:text-white font-mono font-bold py-3 px-4 bg-white dark:bg-black rounded-xl border border-gray-100 dark:border-zinc-800"
-                        value={selectedColor.toUpperCase()}
-                        onChangeText={(text) => {
-                            if (text.startsWith('#') && text.length <= 7) {
-                                onColorChange(text.toLowerCase());
-                            } else if (!text.startsWith('#') && text.length <= 6) {
-                                onColorChange('#' + text.toLowerCase());
-                            }
-                        }}
+                        value={inputValue.toUpperCase()}
+                        onChangeText={handleTextChange}
                         placeholder="#6366F1"
                         placeholderTextColor="#94a3b8"
                         maxLength={7}
+                        onBlur={() => {
+                            // Reset to valid color on blur if invalid
+                            setInputValue(selectedColor);
+                        }}
                     />
                 </View>
             </View>

@@ -1,5 +1,6 @@
 import { ProviderConfig } from '../../store/api-store';
 import { SearchResult } from './vector-store';
+import { useLocalModelStore } from '../local-inference/LocalModelServer';
 
 export interface RerankResult {
   index: number;
@@ -27,6 +28,56 @@ export class RerankClient {
   ): Promise<SearchResult[]> {
     if (!this.provider || !documents.length) {
       return documents;
+    }
+
+    // Local Rerank
+    if (this.provider.type === 'local') {
+      const store = useLocalModelStore.getState();
+      const isAvailable = store.rerank.isLoaded || store.main.isLoaded;
+      if (isAvailable) {
+        try {
+          // Rerank using local model
+          // Note: local model rerank support depends on model type
+          // But llama.rn exposes it if supported.
+          const results = await store.performRerank(query, documents.map(d => d.content), topK);
+          console.log(`[RerankClient] RAW:`, results);
+
+          const reordered: SearchResult[] = [];
+          const sorted = (results as any[]).sort((a, b) => {
+            const sA = a.score ?? a.relevance_score ?? 0;
+            const sB = b.score ?? b.relevance_score ?? 0;
+            return sB - sA;
+          });
+
+          for (const res of sorted) {
+            const score = res.score ?? res.relevance_score ?? 0;
+            if (res.index >= 0 && res.index < documents.length) {
+              const original = documents[res.index];
+              reordered.push({
+                ...original,
+                similarity: score,
+                originalSimilarity: original.originalSimilarity ?? original.similarity
+              });
+            }
+          }
+
+          // If topK specified, slice
+          const finalResult = reordered.slice(0, topK);
+
+          // CRITICAL: If rerank returned nothing (but we had input), fallback to original order
+          // to avoid wiping out retrieval results.
+          if (finalResult.length === 0 && documents.length > 0) {
+            console.warn('[RerankClient] Local rerank returned 0 results, falling back to original order');
+            return documents;
+          }
+
+          return finalResult;
+
+        } catch (e) {
+          console.warn('[RerankClient] Local rerank failed', e);
+          return documents;
+        }
+      }
     }
 
     try {

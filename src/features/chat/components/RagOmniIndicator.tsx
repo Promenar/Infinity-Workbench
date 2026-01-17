@@ -118,6 +118,7 @@ export const RagOmniIndicator: React.FC<RagOmniIndicatorProps> = ({
                 'API_TX': '上推请求数据...',
                 'API_WAIT': '模型推理中...',
                 'API_RX': '接收 RAG 响应...',
+                'RERANK': '精排：深度相关性重排序...',
                 'KG_SCAN': '知识图谱：关系溯源...',
             };
             const label = (processingState.subStage && dict[processingState.subStage]) ||

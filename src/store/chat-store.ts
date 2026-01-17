@@ -115,6 +115,7 @@ export interface ChatState {
       };
       isResumption?: boolean; // ✅ Added for Steerable Loop
       skipUserMessage?: boolean; // ✅ 重新发送时跳过创建用户消息
+      toolsEnabled?: boolean; // ✅ Override for tool usage
     },
   ) => Promise<void>;
   generateSessionTitle: (sessionId: SessionId) => Promise<string | undefined>;
@@ -136,6 +137,7 @@ export interface ChatState {
         activeFolderIds?: string[];
         isGlobal?: boolean;
       };
+      toolsEnabled?: boolean; // New option
     },
   ) => void;
   updateSessionScrollOffset: (id: SessionId, offset: number) => void;
@@ -573,8 +575,11 @@ export const useChatStore = create<ChatState>()(
               console.log('[RAG DEBUG] RAG已禁用，跳过检索');
             }
 
+
             // 4. 准备上下文 (Prepare Context)
-            const availableSkills = skillRegistry.getEnabledSkills();
+            // ✅ Only get skills if tools are enabled
+            const toolsEnabled = options?.toolsEnabled ?? session.options?.toolsEnabled ?? true;
+            const availableSkills = toolsEnabled ? skillRegistry.getEnabledSkills() : [];
 
             // Inject Tools into System Prompt (Belt and Suspenders for DeepSeek/Gemini)
             let finalSystemPrompt =
@@ -1026,7 +1031,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             };
 
 
-            while (loopCount < MAX_LOOP_COUNT) {
+            while (loopCount < MAX_LOOP_COUNT && get().activeRequests[sessionId]) {
               loopCount++;
               console.log(`[AgentLoop] Turn ${loopCount}/${MAX_LOOP_COUNT}`);
 
@@ -1047,6 +1052,12 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               // 5. Stream Chat
               let toolCalls: ToolCall[] | undefined;
               let reasoningFromThisTurn = '';
+
+              // 🔑 Check for Abort BEFORE streamChat
+              if (!get().activeRequests[sessionId]) {
+                console.log('[AgentLoop] Detected abort BEFORE streamChat, breaking loop');
+                break;
+              }
 
               // 🧠 Optimization: Use Array Buffer for Content to reduce GC pressure
               let contentBuffer: string[] = [];
@@ -1601,6 +1612,11 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                     }
                   } else {
                     // Auto 模式直接执行
+                    // 🔑 Check for Abort BEFORE executeTools
+                    if (!get().activeRequests[sessionId]) {
+                      console.log('[AgentLoop] Detected abort BEFORE executeTools, breaking loop');
+                      break;
+                    }
                     await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
                   }
                   break; // 任务完成，退出循环

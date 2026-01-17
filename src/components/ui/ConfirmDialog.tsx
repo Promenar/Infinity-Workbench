@@ -65,13 +65,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         >
           <View
             style={{
-              backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
-              borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(0, 0, 0, 0.05)',
+              backgroundColor: isDark ? 'rgba(15, 17, 26, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+              borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(0, 0, 0, 0.08)',
             }}
-            className="rounded-2xl overflow-hidden shadow-2xl border"
+            className="rounded-2xl overflow-hidden border"
           >
             <BlurView
-              intensity={isDark ? 30 : 60}
+              intensity={isDark ? 50 : 80}
               tint={isDark ? 'dark' : 'light'}
               style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
             />

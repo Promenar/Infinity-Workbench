@@ -476,7 +476,7 @@ export class MemoryManager {
     let rerankEndTime = 0;
 
     if (effectiveRagConfig.enableRerank) {
-      onProgress?.('reranking', 70, 'PAYLOAD_PREP');
+      onProgress?.('reranking', 70, 'RERANK');
       rerankStartTime = Date.now();
       const rerankModelId = settings.defaultRerankModel;
       let rerankProvider = undefined;
