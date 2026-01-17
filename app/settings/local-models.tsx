@@ -13,6 +13,31 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import * as Haptics from '../../src/lib/haptics';
 import { Box, FileDown, Trash2, Cpu, HardDrive, ChevronLeft, BrainCircuit } from 'lucide-react-native';
 import { Card } from '../../src/components/ui/Card';
+import { Zap } from 'lucide-react-native';
+
+const HardwareBadge = ({ info }: { info: any }) => {
+    if (!info) return <Text style={{ color: '#9ca3af', fontSize: 12 }}>Unknown</Text>;
+
+    if (info.gpu) {
+        return (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(139, 92, 246, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                <Zap size={10} color="#8b5cf6" style={{ marginRight: 4 }} />
+                <Text style={{ color: '#8b5cf6', fontSize: 10, fontWeight: '700' }}>
+                    GPU/NPU ACCELERATED
+                </Text>
+            </View>
+        );
+    }
+
+    return (
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245, 158, 11, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+            <Cpu size={10} color="#f59e0b" style={{ marginRight: 4 }} />
+            <Text style={{ color: '#f59e0b', fontSize: 10, fontWeight: '600' }}>
+                CPU ({info.reasonNoGPU ? info.reasonNoGPU.substring(0, 15) + '...' : 'Software'})
+            </Text>
+        </View>
+    );
+};
 
 export default function LocalModelSettingsScreen() {
     const router = useRouter();
@@ -312,34 +337,63 @@ export default function LocalModelSettingsScreen() {
 
                         <SettingsSection title={t.settings.localModels.status}>
                             <Card variant="glass">
-                                <View className="p-4 gap-2">
-                                    <Text style={{ color: isDark ? '#fff' : '#111' }}>
-                                        {t.settings.localModels.engine}: llama.rn (v0.10)
-                                    </Text>
-
-                                    <View className="flex-row justify-between">
-                                        <Text style={{ color: '#22c55e' }}>Main Slot:</Text>
-                                        <Text style={{ color: isDark ? '#d1d5db' : '#4b5563' }}>
-                                            {localStore.main.isLoaded ? 'Active' : 'Empty'}
+                                <View className="p-4 gap-3">
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: isDark ? '#3f3f46' : '#e5e7eb', paddingBottom: 8 }}>
+                                        <Text style={{ color: isDark ? '#fff' : '#111', fontWeight: '600' }}>
+                                            {t.settings.localModels.engine}: llama.rn (v0.10)
                                         </Text>
                                     </View>
 
-                                    <View className="flex-row justify-between">
-                                        <Text style={{ color: '#3b82f6' }}>Embedding Slot:</Text>
-                                        <Text style={{ color: isDark ? '#d1d5db' : '#4b5563' }}>
-                                            {localStore.embedding.isLoaded ? 'Active' : 'Empty'}
-                                        </Text>
+                                    {/* Main Slot Status */}
+                                    <View className="gap-1">
+                                        <View className="flex-row justify-between items-center">
+                                            <Text style={{ color: '#22c55e', fontWeight: 'bold', fontSize: 13 }}>Main Slot</Text>
+                                            <Text style={{ color: isDark ? '#d1d5db' : '#4b5563', fontSize: 12 }}>
+                                                {localStore.main.isLoaded ? 'Loaded' : 'Empty'}
+                                            </Text>
+                                        </View>
+                                        {localStore.main.isLoaded && (
+                                            <View className="flex-row justify-between items-center pl-2">
+                                                <Text style={{ color: '#9ca3af', fontSize: 12 }}>Hardware:</Text>
+                                                <HardwareBadge info={localStore.main.accelerationInfo} />
+                                            </View>
+                                        )}
                                     </View>
 
-                                    <View className="flex-row justify-between">
-                                        <Text style={{ color: '#8b5cf6' }}>Rerank Slot:</Text>
-                                        <Text style={{ color: isDark ? '#d1d5db' : '#4b5563' }}>
-                                            {localStore.rerank.isLoaded ? 'Active' : 'Empty'}
-                                        </Text>
+                                    {/* Embedding Slot Status */}
+                                    <View className="gap-1">
+                                        <View className="flex-row justify-between items-center">
+                                            <Text style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: 13 }}>Embedding Slot</Text>
+                                            <Text style={{ color: isDark ? '#d1d5db' : '#4b5563', fontSize: 12 }}>
+                                                {localStore.embedding.isLoaded ? 'Loaded' : 'Empty'}
+                                            </Text>
+                                        </View>
+                                        {localStore.embedding.isLoaded && (
+                                            <View className="flex-row justify-between items-center pl-2">
+                                                <Text style={{ color: '#9ca3af', fontSize: 12 }}>Hardware:</Text>
+                                                <HardwareBadge info={localStore.embedding.accelerationInfo} />
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    {/* Rerank Slot Status */}
+                                    <View className="gap-1">
+                                        <View className="flex-row justify-between items-center">
+                                            <Text style={{ color: '#8b5cf6', fontWeight: 'bold', fontSize: 13 }}>Rerank Slot</Text>
+                                            <Text style={{ color: isDark ? '#d1d5db' : '#4b5563', fontSize: 12 }}>
+                                                {localStore.rerank.isLoaded ? 'Loaded' : 'Empty'}
+                                            </Text>
+                                        </View>
+                                        {localStore.rerank.isLoaded && (
+                                            <View className="flex-row justify-between items-center pl-2">
+                                                <Text style={{ color: '#9ca3af', fontSize: 12 }}>Hardware:</Text>
+                                                <HardwareBadge info={localStore.rerank.accelerationInfo} />
+                                            </View>
+                                        )}
                                     </View>
 
                                     {localStore.error && (
-                                        <Text style={{ color: '#ef4444', marginTop: 4 }}>
+                                        <Text style={{ color: '#ef4444', marginTop: 4, fontSize: 12 }}>
                                             Error: {localStore.error}
                                         </Text>
                                     )}

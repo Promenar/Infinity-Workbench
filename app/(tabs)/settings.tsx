@@ -201,7 +201,8 @@ export default function SettingsScreen() {
         </View>
 
         {activeTab === 'app' ? (
-          <View key="app-tab-wrapper">
+          <View key="app-tab-wrapper" style={{ overflow: 'hidden' }}>
+            {/* 🔴 CRITICAL FIX: Add overflow hidden container to prevent EdgeToEdgeReactViewGroup crash on Android */}
             <Animated.View
               entering={FadeIn.duration(300)}
               layout={LinearTransition.duration(300)}
@@ -548,7 +549,7 @@ export default function SettingsScreen() {
           </View>
         ) : (
           // 服务商管理
-          <View key="providers-tab-wrapper">
+          <View key="providers-tab-wrapper" style={{ overflow: 'hidden' }}>
             <Animated.View
               entering={FadeIn.duration(300)}
               layout={LinearTransition.duration(300)}

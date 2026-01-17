@@ -40,7 +40,9 @@ import { KGExtractionIndicator } from '../../src/components/rag/KGExtractionIndi
 
 import { graphExtractor } from '../../src/lib/rag/graph-extractor'; // ✅
 import * as Clipboard from 'expo-clipboard'; // ✅
-import { Platform as RNPlatform, ToastAndroid, Alert } from 'react-native'; // ✅
+import { Platform as RNPlatform, Alert } from 'react-native'; // ✅
+import { emitToast } from '../../src/lib/utils/toast-emitter'; // ✅
+
 
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
@@ -352,8 +354,9 @@ export default function ChatDetailScreen() {
           });
           console.log('[ManualExtraction] Success');
           if (RNPlatform.OS === 'android') {
-            ToastAndroid.show('知识图谱提取成功', ToastAndroid.SHORT);
+            emitToast('知识图谱提取成功', 'success');
           }
+
         } catch (e) {
           console.warn('[ManualExtraction] Failed', e);
           Alert.alert(t.common.error, 'Extraction failed: ' + (e as Error).message);
@@ -372,8 +375,9 @@ export default function ChatDetailScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await useChatStore.getState().vectorizeMessage(id, messageId);
       if (RNPlatform.OS === 'android') {
-        ToastAndroid.show('消息已加入向量库', ToastAndroid.SHORT);
+        emitToast('消息已加入向量库', 'success');
       }
+
     } catch (e) {
       Alert.alert('Error', 'Vectorization failed');
     }
@@ -383,8 +387,9 @@ export default function ChatDetailScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       if (RNPlatform.OS === 'android') {
-        ToastAndroid.show('正在生成摘要...', ToastAndroid.SHORT);
+        emitToast('正在生成摘要...', 'info');
       }
+
       await useChatStore.getState().summarizeSession(id);
     } catch (e) {
       Alert.alert('Error', 'Summarization failed');
@@ -590,9 +595,6 @@ export default function ChatDetailScreen() {
           onToggleTools={() => {
             const current = session.options?.toolsEnabled ?? true;
             useChatStore.getState().updateSessionOptions(id, { toolsEnabled: !current });
-            if (RNPlatform.OS === 'android') {
-              ToastAndroid.show(!current ? 'Tools Enabled' : 'Tools Disabled', ToastAndroid.SHORT);
-            }
           }}
         />
       </KeyboardAvoidingView>

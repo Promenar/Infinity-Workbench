@@ -126,38 +126,20 @@ android {
     signingConfigs {
 
         release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+            def secureEnv = file("../../../../secure_env/secure.properties")
+            if (secureEnv.exists()) {
+                def props = new Properties()
+                secureEnv.withInputStream { props.load(it) }
+                storeFile file("../../../../secure_env/promenar.keystore")
+                storePassword props.getProperty("KEYSTORE_PASSWORD")
+                keyAlias props.getProperty("KEY_ALIAS")
+                keyPassword props.getProperty("KEY_PASSWORD")
             } else {
-                def findSecureProps = {
-                    def root = projectDir
-                    for (int i = 0; i < 5; i++) {
-                        def target = new File(root, "secure_env/secure.properties")
-                        if (target.exists()) return target
-                        root = root.parentFile
-                        if (root == null) break
-                    }
-                    return null
-                }
-                def secureEnv = findSecureProps()
-                if (secureEnv != null) {
-                    def props = new Properties()
-                    secureEnv.withInputStream { props.load(it) }
-                    def keystore = new File(secureEnv.parentFile, "promenar.keystore")
-                    storeFile keystore
-                    storePassword props.getProperty("KEYSTORE_PASSWORD")
-                    keyAlias props.getProperty("KEY_ALIAS")
-                    keyPassword props.getProperty("KEY_PASSWORD")
-                } else {
-                    println "Secure signing config not found, falling back to debug."
-                    storeFile file('debug.keystore')
-                    storePassword 'android'
-                    keyAlias 'androiddebugkey'
-                    keyPassword 'android'
-                }
+                println "Secure env not found at $secureEnv, falling back to debug signing for release block."
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
             }
         }
         debug {

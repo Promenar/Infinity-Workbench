@@ -133,10 +133,7 @@ export class VertexAiClient implements LlmClient {
       return this.accessToken!;
     } catch (e) {
       console.warn('Vertex AI Auth Error (Network/Auth):', e);
-      // 🔥 CRITICAL: Do NOT throw here if we are in a background process like KG extraction.
-      // Returning null or empty string will bubble up to getAccessToken which will use the existing (possibly expired) token or fallback.
-      // But more importantly, it avoids RED BOX in React Native.
-      return '';
+      throw e; // Rethrow to let caller handle it
     }
   }
 
@@ -233,8 +230,23 @@ export class VertexAiClient implements LlmClient {
 
         // 1. Get Authentication
         const token = await this.getAccessToken().catch((e) => {
-          throw e;
+          console.warn('[VertexAiClient] Auth failed:', e.message);
+          // Only throw if we have no fallback API key, OR if we were trying to use JSON auth and it failed explicitly
+          if (this.keyJson || this.serviceAccountJson) {
+            throw new Error(`Authentication Failed: ${e.message}. Please check your Service Account JSON in settings.`);
+          }
+          return ''; // Fallback to empty (will try apiKey if logical fallback existed, but here getAccessToken handles logic.
+          // Actually getAccessToken logic is: if keyJson exists, mintToken. If that throws, we are here.
         });
+
+        // 1.1 Only use API Key fallback if we have NO token and NO keyJson/serviceAccountJson
+        if (!token && !this.keyJson && !this.serviceAccountJson && this.apiKey) {
+          // This path is already handled in getAccessToken if keyJson was missing.
+          // But if mintToken failed, token is undefined/empty.
+        }
+
+        const validToken = token || this.apiKey;
+
 
         // 2. Resolve Endpoint
         const region = this.location || 'us-central1';
@@ -248,7 +260,7 @@ export class VertexAiClient implements LlmClient {
         const xhr = this.activeXhr;
         xhr.open('POST', endpoint);
         xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${validToken}`);
 
         // 3. Prepare Payload
         const formatContentPart = (m: ChatMessage) => {
