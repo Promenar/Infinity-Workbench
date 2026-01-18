@@ -16,6 +16,7 @@ export type ApiProviderType =
   | 'github'
   | 'cloudflare'
   | 'github-copilot'
+  | 'openai-compatible'
   | 'local';
 
 // 模型能力标识

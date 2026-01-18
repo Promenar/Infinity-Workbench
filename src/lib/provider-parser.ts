@@ -57,8 +57,22 @@ export class ModelService {
       return this.getPresetModels(type);
     }
 
-    const url = baseUrl || this.getDefaultBaseUrl(type);
-    const endpoint = `${url}/models`;
+    let url = baseUrl || this.getDefaultBaseUrl(type);
+
+    // Heuristic: If it's a generic/custom URL and doesn't end with /v1, 
+    // Aggregate providers (OneAPI/NewAPI) usually strictly require it.
+    if (url && (type === 'openai' || type === 'openai-compatible') && baseUrl) {
+      const trimmedUrl = url.trim().replace(/\/+$/, '');
+      if (!trimmedUrl.endsWith('/v1') &&
+        !trimmedUrl.includes('api.openai.com') &&
+        !trimmedUrl.includes('api.deepseek.com') &&
+        !trimmedUrl.includes('api.moonshot.cn')) {
+        console.log(`[ModelService] Custom URL detected without /v1, attempting to append: ${trimmedUrl}`);
+        url = `${trimmedUrl}/v1`;
+      }
+    }
+
+    const endpoint = `${url?.replace(/\/+$/, '')}/models`;
 
     try {
       console.log(`[ModelService] Fetching from: ${endpoint}`);
@@ -164,6 +178,7 @@ export class ModelService {
       zhipu: 'https://open.bigmodel.cn/api/paas/v4',
       siliconflow: 'https://api.siliconflow.cn/v1',
       github: 'https://models.inference.ai.azure.com',
+      'openai-compatible': '', // Left to user input
     };
     return mapping[type] || '';
   }

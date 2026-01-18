@@ -214,6 +214,9 @@ export class VectorStore {
     await db.execute('DELETE FROM vectors');
     // 🛡️ 强制 SSOT: 重置所有文档的向量化状态和计数
     await db.execute('UPDATE documents SET vectorized = 0, vector_count = 0');
+    // 🛡️ 同步清理知识图谱数据
+    await db.execute('DELETE FROM kg_nodes');
+    await db.execute('DELETE FROM kg_edges');
   }
 
   /**

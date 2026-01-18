@@ -27,7 +27,7 @@ export const createLlmClient = (config: ExtendedModelConfig): LlmClient => {
     case 'github':
     case 'cloudflare':
     case 'github-copilot':
-    case 'github-copilot':
+    case 'openai-compatible':
       // case 'local': // Moved to own block
       return new OpenAiClient(
         config.apiKey,

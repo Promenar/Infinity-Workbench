@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -186,15 +186,25 @@ export default function SettingsScreen() {
               {
                 position: 'absolute',
                 top: 4,
+                bottom: 4,
                 left: 4,
                 width: containerWidth ? (containerWidth / 2 - 4) : '50%',
-                height: 48,
                 borderRadius: 20,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 3,
+                backgroundColor: isDark ? 'rgba(63, 63, 70, 0.9)' : '#ffffff',
+                // 🎨 物理立体感方案：使用底边加粗模拟投影 (Rule 3)
+                // 通过 borderBottom 实现阴影效果，彻底规避 elevation 的残影闪烁
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                borderBottomWidth: isDark ? 1 : 1.5,
+                borderBottomColor: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.12)',
+
+                // iOS 端原生阴影极其稳定，可以保留
+                ...(Platform.OS === 'ios' && {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: isDark ? 0 : 0.08,
+                  shadowRadius: 3,
+                }),
               },
               animatedSelectorStyle
             ]}

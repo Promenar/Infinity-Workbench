@@ -37,6 +37,7 @@ import { ProviderConfig, ModelConfig } from '../../store/api-store';
 import { useToast } from '../../components/ui/Toast';
 import { createLlmClient } from '../../lib/llm/factory';
 import { findContextLength, extractContextLengthFromName } from '../../lib/llm/model-specs';
+import { ModelService } from '../../lib/provider-parser';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
 // 使用 any 绕过某些环境下 FlashList 的类型检测问题
@@ -458,142 +459,27 @@ export function ModelSettingsModal({
   );
 
   const handleAutoFetch = async () => {
-    if (!provider?.apiKey || !provider?.baseUrl) {
+    if (!provider?.apiKey) {
       showToast(t.settings.modelSettings.fetchError, 'error');
       return;
     }
 
     setIsFetching(true);
     try {
-      const response = await fetch(`${provider.baseUrl}/models`, {
-        headers: { Authorization: `Bearer ${provider.apiKey}` },
-      });
+      const fetchedModels = await ModelService.fetchModels(
+        provider.type,
+        provider.apiKey,
+        provider.baseUrl
+      );
 
-      if (!response?.ok) throw new Error(`HTTP ${response?.status}`);
-
-      const data = await response.json();
-      const apiModels = Array.isArray(data.data)
-        ? data.data
-        : Array.isArray(data)
-          ? data
-          : data.models || [];
-
-      if (apiModels.length === 0) {
+      if (!fetchedModels || fetchedModels.length === 0) {
         showToast(t.settings.modelSettings.noModelsFound, 'info');
         return;
       }
 
-      const newModels: ModelConfig[] = apiModels.map((m: any) => {
-        const modelId = (m.id || '').toLowerCase();
-        const modelName = (m.name || '').toLowerCase();
-        const fullText = `${modelId} ${modelName}`;
-
-        // 模型类型自动识别（优先级：rerank > embedding > image > reasoning > chat）
-        let type: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank' = 'chat';
-
-        // Rerank 模型识别（重排序）- 最高优先级,避免被 embedding 误识别
-        if (
-          fullText.includes('rerank') ||
-          fullText.includes('bge-reranker') ||
-          fullText.includes('jina-reranker') ||
-          fullText.includes('cohere-rerank') ||
-          fullText.includes('bce-reranker')
-        ) {
-          type = 'rerank';
-        }
-        // Embedding 模型识别（向量/嵌入）
-        else if (
-          fullText.includes('embedding') ||
-          fullText.includes('embed') ||
-          fullText.includes('vector') ||
-          fullText.includes('bge-') ||
-          fullText.includes('gte-') ||
-          fullText.includes('m3e-') ||
-          fullText.includes('bce-') ||
-          fullText.includes('sentence-')
-        ) {
-          type = 'embedding';
-        }
-        // Image 模型识别（图像生成）
-        else if (
-          fullText.includes('dall-e') ||
-          fullText.includes('dalle') ||
-          fullText.includes('stable-diffusion') ||
-          fullText.includes('sd-') ||
-          fullText.includes('sdxl') ||
-          fullText.includes('flux') ||
-          fullText.includes('midjourney') ||
-          fullText.includes('image') ||
-          fullText.includes('creative') ||
-          fullText.includes('cogview') ||
-          fullText.includes('wanx') ||
-          fullText.includes('hunyuan-turbo') ||
-          fullText.includes('hunyuan-standard') ||
-          fullText.includes('ernie-vilg') ||
-          fullText.includes('文心一格')
-        ) {
-          type = 'image';
-        }
-        // Reasoning 模型识别（推理/深度思考）
-        else if (
-          fullText.includes('o1') ||
-          fullText.includes('r1') ||
-          fullText.includes('reasoning') ||
-          fullText.includes('reasoner') ||
-          fullText.includes('reason') ||
-          fullText.includes('thinking') ||
-          fullText.includes('thought') ||
-          fullText.includes('deepthink') ||
-          fullText.includes('deep-think') ||
-          fullText.includes('chain-of-thought') ||
-          fullText.includes('cot')
-        ) {
-          type = 'reasoning';
-        }
-
-        const hasVision =
-          fullText.includes('vision') ||
-          fullText.includes('-vl') ||
-          (modelId.endsWith('-v') && !modelId.includes('deepseek')) ||
-          fullText.includes('multimodal');
-        const hasInternet =
-          fullText.includes('search') ||
-          fullText.includes('internet') ||
-          fullText.includes('web') ||
-          fullText.includes('online');
-        const isReasoning = type === 'reasoning' || fullText.includes('thought');
-
-        // 上下文长度推断（优先级：API 返回 > 数据库匹配 > 名称提取）
-        let contextLength = m.context_window || m.max_context || m.context_length || undefined;
-        if (!contextLength) {
-          // 1. 尝试从模型规格数据库匹配
-          contextLength = findContextLength(m.id || m.name || '');
-
-          // 2. 如果数据库没有，尝试从名称提取（如 "128k", "2m"）
-          if (!contextLength) {
-            contextLength = extractContextLengthFromName(fullText);
-          }
-        }
-
-        return {
-          uuid: (m.id || 'm') + '-' + Math.random().toString(36).substr(2, 9),
-          id: m.id || m.name || 'unknown',
-          name: m.name || m.id || t.settings.modelSettings.unnamedModel,
-          enabled: false,
-          isAutoFetched: true,
-          type,
-          contextLength,
-          capabilities: {
-            vision: hasVision,
-            internet: hasInternet,
-            reasoning: isReasoning,
-          },
-        };
-      });
-
       setModels((prev) => {
         const updatedModels = [...prev];
-        newModels.forEach((nm) => {
+        fetchedModels.forEach((nm) => {
           const existingIndex = updatedModels.findIndex((m) => m.id === nm.id);
           if (existingIndex > -1) {
             // 模型已存在，更新时保留用户设置
@@ -618,14 +504,16 @@ export function ModelSettingsModal({
             updatedModels.push(nm);
           }
         });
-        onUpdateModels(updatedModels);
+        // Defer parent update
+        requestAnimationFrame(() => onUpdateModels(updatedModels));
         return updatedModels;
       });
       showToast(
-        t.settings.modelSettings.fetchSuccess.replace('{count}', newModels.length.toString()),
+        t.settings.modelSettings.fetchSuccess.replace('{count}', fetchedModels.length.toString()),
         'success',
       );
     } catch (error: any) {
+      console.error('Fetch models failed:', error);
       showToast(`${t.settings.modelSettings.fetchError}: ${error.message}`, 'error');
     } finally {
       setIsFetching(false);

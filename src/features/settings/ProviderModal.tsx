@@ -80,6 +80,7 @@ const PROVIDER_PRESETS: Record<string, { name: string; baseUrl: string; type: Ap
     type: 'siliconflow',
   },
   groq: { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', type: 'openai' },
+  'openai-compatible': { name: 'OpenAI Compatible (NewAPI/OneAPI)', baseUrl: '', type: 'openai-compatible' },
 };
 
 export function ProviderModal({ visible, onClose, onSave, editingProvider }: ProviderModalProps) {

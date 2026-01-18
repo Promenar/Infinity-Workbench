@@ -120,7 +120,15 @@ export const GlobalRagConfigPanel: React.FC = () => {
     setIsEditorVisible(false);
   };
 
-  // 这里的路由跳转到调试页
+  // 这里的路由导航到高级图谱配置
+  const handleNavigateToAdvanced = () => {
+    setTimeout(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push('/settings/rag-advanced' as any);
+    }, 10);
+  };
+
+  // 这里的路由跳转到统计页
   const handleNavigateToDebug = () => {
     setTimeout(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -407,7 +415,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
       {/* 知识图谱与高级配置 */}
       <SectionHeader title={t.rag.advancedRagConfig || '高级配置'} />
-      <Card variant="glass" onPress={handleNavigateToDebug} className="mb-4">
+      <Card variant="glass" onPress={handleNavigateToAdvanced} className="mb-4">
         <View className="p-4 flex-row items-center justify-between">
           <View className="flex-row items-center gap-3">
             <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
