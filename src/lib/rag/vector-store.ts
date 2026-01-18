@@ -209,14 +209,33 @@ export class VectorStore {
   /**
    * Clear ALL vectors in the database
    * Use with EXTREME CAUTION - this deletes ALL vector data
+   * Note: Knowledge Graph is now cleared separately via clearKnowledgeGraph()
    */
   async clearAllVectors() {
     await db.execute('DELETE FROM vectors');
     // 🛡️ 强制 SSOT: 重置所有文档的向量化状态和计数
     await db.execute('UPDATE documents SET vectorized = 0, vector_count = 0');
-    // 🛡️ 同步清理知识图谱数据
+  }
+
+  /**
+   * Clear ALL Knowledge Graph data (nodes and edges)
+   * Use with EXTREME CAUTION - this deletes ALL graph data
+   */
+  async clearKnowledgeGraph() {
+    await db.execute('DELETE FROM kg_edges'); // 先删边，再删节点（遵循外键约束）
     await db.execute('DELETE FROM kg_nodes');
-    await db.execute('DELETE FROM kg_edges');
+  }
+
+  /**
+   * Get Knowledge Graph statistics
+   */
+  async getKnowledgeGraphStats(): Promise<{ nodeCount: number; edgeCount: number }> {
+    const nodesResult = await db.execute('SELECT COUNT(*) as count FROM kg_nodes');
+    const edgesResult = await db.execute('SELECT COUNT(*) as count FROM kg_edges');
+    return {
+      nodeCount: (nodesResult.rows?.[0] as any)?.count || 0,
+      edgeCount: (edgesResult.rows?.[0] as any)?.count || 0,
+    };
   }
 
   /**

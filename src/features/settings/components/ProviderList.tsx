@@ -2,6 +2,7 @@ import React, { memo, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { Server, Edit2, Trash2, Cpu } from 'lucide-react-native';
 import { Card } from '../../../components/ui/Card';
+import { Marquee } from '../../../components/ui/Marquee';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { ProviderConfig } from '../../../store/api-store';
 import * as Haptics from '../../../lib/haptics';
@@ -69,12 +70,10 @@ const ProviderListItem = memo(({
                             <Server size={20} color={colors[500]} />
                         </View>
                         <View style={styles.textContainer}>
-                            <Text style={[
-                                styles.nameText,
-                                { color: isDark ? Colors.dark.textPrimary : '#111' }
-                            ]}>
-                                {provider.name}
-                            </Text>
+                            <Marquee
+                                text={provider.name}
+                                className="font-bold text-[15px]"
+                            />
                             <Text style={[
                                 styles.urlText,
                                 { color: isDark ? Colors.dark.textSecondary : '#666' }
@@ -194,6 +193,7 @@ const styles = StyleSheet.create({
     },
     textContainer: {
         marginLeft: 10, // Reduced from 12
+        flex: 1,
     },
     nameText: {
         fontSize: 15, // Slightly smaller from 16

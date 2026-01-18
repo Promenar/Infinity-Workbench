@@ -97,15 +97,28 @@ export const GlobalRagConfigPanel: React.FC = () => {
   useFocusEffect(
     useCallback(() => {
       loadDocuments();
+      refreshKgStats();
     }, [loadDocuments])
   );
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showKgLinkedConfirm, setShowKgLinkedConfirm] = useState(false); // 联动提示
   const [isClearing, setIsClearing] = useState(false);
+  const [kgStats, setKgStats] = useState<{ nodeCount: number; edgeCount: number }>({ nodeCount: 0, edgeCount: 0 });
 
   // Local state for prompt editing
   const [promptText, setPromptText] = useState(globalRagConfig.summaryPrompt || '');
   const [isEditorVisible, setIsEditorVisible] = useState(false);
+
+  // 刷新知识图谱统计
+  const refreshKgStats = async () => {
+    try {
+      const stats = await vectorStore.getKnowledgeGraphStats();
+      setKgStats(stats);
+    } catch (e) {
+      console.error('[GlobalRagConfigPanel] Failed to get KG stats:', e);
+    }
+  };
 
   // Sync prompt text
   React.useEffect(() => {
@@ -144,20 +157,44 @@ export const GlobalRagConfigPanel: React.FC = () => {
     }, 10);
   };
 
-  // 清空所有向量
-  const handleClearAllVectors = async () => {
+  // 第一步：点击清空向量按钮时检查图谱状态
+  const handleClearVectorRequest = async () => {
+    setShowClearConfirm(false);
+
+    // 检查是否存在知识图谱数据
+    await refreshKgStats();
+    if (kgStats.nodeCount > 0) {
+      // 存在图谱数据，询问是否联动清理
+      setShowKgLinkedConfirm(true);
+    } else {
+      // 无图谱数据，直接清理向量
+      await doClearVectors(false);
+    }
+  };
+
+  // 执行清理操作
+  const doClearVectors = async (includeKg: boolean) => {
     setIsClearing(true);
+    setShowKgLinkedConfirm(false);
     try {
       await vectorStore.clearAllVectors();
-      await loadDocuments(); // 🛡️ 关键：清除后立即刷新 Store 状态
+      if (includeKg) {
+        await vectorStore.clearKnowledgeGraph();
+      }
+      await loadDocuments();
+      await refreshKgStats();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast(t.rag.vectorStats.clearDataSuccess, 'success');
+      showToast(
+        includeKg
+          ? `${t.rag.vectorStats.clearDataSuccess}；${t.rag.clearKgSuccess}`
+          : t.rag.vectorStats.clearDataSuccess,
+        'success'
+      );
     } catch (error) {
-      console.error('[GlobalRagConfigPanel] Clear Vectors Error:', error);
+      console.error('[GlobalRagConfigPanel] Clear Error:', error);
       showToast(t.common.fail, 'error');
     } finally {
       setIsClearing(false);
-      setShowClearConfirm(false);
     }
   };
 
@@ -523,8 +560,18 @@ export const GlobalRagConfigPanel: React.FC = () => {
         message={t.rag.vectorStats.clearDataConfirmMsg}
         confirmText={t.common.confirm}
         cancelText={t.common.cancel}
-        onConfirm={handleClearAllVectors}
+        onConfirm={handleClearVectorRequest}
         onCancel={() => setShowClearConfirm(false)}
+      />
+      {/* 联动清理图谱确认弹窗 */}
+      <ConfirmDialog
+        visible={showKgLinkedConfirm}
+        title={t.rag.clearKgConfirmTitle || '知识图谱'}
+        message={(t.rag.kgLinkedPrompt || '检测到知识图谱中有 {nodes} 个节点。是否同时清空？').replace('{nodes}', String(kgStats.nodeCount))}
+        confirmText={t.rag.clearBoth || '一并清空'}
+        cancelText={t.rag.clearVectorOnly || '仅清空向量'}
+        onConfirm={() => doClearVectors(true)}
+        onCancel={() => doClearVectors(false)}
       />
       <FloatingTextEditorModal
         visible={isEditorVisible}

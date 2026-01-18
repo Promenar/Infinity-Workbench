@@ -30,6 +30,7 @@ import {
 import * as Haptics from '../../lib/haptics';
 import { GlassHeader } from '../../components/ui/GlassHeader';
 import { Typography } from '../../components/ui/Typography';
+import { Marquee } from '../../components/ui/Marquee';
 import { FlashList } from '@shopify/flash-list';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -73,6 +74,7 @@ const ModelItem = React.memo(
     const [localName, setLocalName] = useState(model.name);
     const [localId, setLocalId] = useState(model.id);
     const [localContext, setLocalContext] = useState(model.contextLength?.toString() || '');
+    const [isEditingName, setIsEditingName] = useState(false);
 
     useEffect(() => {
       setLocalName(model.name);
@@ -110,37 +112,54 @@ const ModelItem = React.memo(
         >
           <View style={{ flex: 1, marginRight: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-              <TextInput
-                value={localName}
-                onChangeText={setLocalName}
-                onBlur={() => localName !== model.name && handleSync({ name: localName })}
-                style={{
-                  fontSize: 14,
-                  fontWeight: 'bold',
-                  color: isDark ? '#fff' : '#111',
-                  flex: 1,
-                }}
-                placeholder={t.settings.modelSettings.namePlaceholder}
-                placeholderTextColor="#9ca3af"
-              />
-              <Edit2 size={12} color="#9ca3af" style={{ opacity: 0.5 }} />
+              {!isEditingName ? (
+                <TouchableOpacity
+                  onPress={() => setIsEditingName(true)}
+                  style={{ flex: 1, height: 22, justifyContent: 'center' }}
+                >
+                  <Marquee
+                    text={localName || t.settings.modelSettings.unnamedModel}
+                    className="font-bold text-sm text-gray-900 dark:text-white"
+                  />
+                </TouchableOpacity>
+              ) : (
+                <TextInput
+                  value={localName}
+                  autoFocus
+                  onChangeText={setLocalName}
+                  onBlur={() => {
+                    setIsEditingName(false);
+                    if (localName !== model.name) handleSync({ name: localName });
+                  }}
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    color: isDark ? '#fff' : '#111',
+                    flex: 1,
+                    height: 22,
+                    padding: 0,
+                  }}
+                  placeholder={t.settings.modelSettings.namePlaceholder}
+                  placeholderTextColor="#9ca3af"
+                />
+              )}
+              <Edit2 size={12} color="#9ca3af" style={{ opacity: 0.5, marginLeft: 4 }} />
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <TextInput
-                value={localId}
-                editable={!model.isAutoFetched}
-                onChangeText={setLocalId}
-                onBlur={() => localId !== model.id && handleSync({ id: localId })}
-                style={{
-                  fontSize: 10,
-                  color: model.isAutoFetched ? '#6b7280' : isDark ? '#d1d5db' : '#4b5563',
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                  flex: 1,
-                }}
-                placeholder={t.settings.modelSettings.modelIdPlaceholder}
-                placeholderTextColor="#9ca3af"
-              />
-              {!model.isAutoFetched && <Edit2 size={10} color="#9ca3af" style={{ opacity: 0.5 }} />}
+              <View style={{ flex: 1 }}>
+                <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  style={{
+                    fontSize: 10,
+                    color: model.isAutoFetched ? '#6b7280' : isDark ? '#d1d5db' : '#4b5563',
+                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                  }}
+                >
+                  {localId}
+                </Text>
+              </View>
+              {!model.isAutoFetched && <Edit2 size={10} color="#9ca3af" style={{ opacity: 0.5, marginLeft: 4 }} />}
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
