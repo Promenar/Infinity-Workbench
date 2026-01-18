@@ -90,6 +90,9 @@ export interface ChatState {
   activeKGExtractions: Record<string, boolean>; // sessionId -> isExtractingKG
   currentGeneratingSessionId: string | null;
 
+  // 🔑 Phase 4b: 从 SQLite 加载会话
+  loadSessions: () => Promise<void>;
+
   addSession: (session: Session) => void;
   updateSession: (id: SessionId, updates: Partial<Session>) => void;
   deleteSession: (id: SessionId) => void;
@@ -193,6 +196,18 @@ export const useChatStore = create<ChatState>()(
         activeRequests: {},
         activeKGExtractions: {},
         currentGeneratingSessionId: null,
+
+        // 🔑 Phase 4b: 从 SQLite 加载会话
+        loadSessions: async () => {
+          try {
+            const { SessionRepository } = await import('../lib/db/session-repository');
+            const sessions = await SessionRepository.getAllFullSessions();
+            set({ sessions });
+            console.log(`[ChatStore] Loaded ${sessions.length} sessions from SQLite`);
+          } catch (e) {
+            console.error('[ChatStore] Failed to load sessions from SQLite:', e);
+          }
+        },
 
         addSession: sessionManager.addSession,
         setKGExtractionStatus: (sessionId, isExtracting) =>
@@ -2199,7 +2214,9 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
     {
       name: 'chat-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ sessions: state.sessions }),
+      // 🔑 Phase 4b: sessions 现在存储在 SQLite 中，不再持久化到 AsyncStorage
+      // 保留其他状态（如 activeRequests）的持久化能力以备后用
+      partialize: (state) => ({}), // 暂时不持久化任何内容到 AsyncStorage
     }
   )
 );

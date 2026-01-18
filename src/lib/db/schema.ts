@@ -2,31 +2,73 @@ import { db } from './index';
 
 export const createTables = async () => {
   try {
-    // 1. Sessions Table
+    // 1. Sessions Table (🔑 Phase 4b: 完整字段版本)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY NOT NULL,
+        agent_id TEXT NOT NULL,
         title TEXT DEFAULT 'New Chat',
+        last_message TEXT,
+        time TEXT,
+        unread INTEGER DEFAULT 0,
+        model_id TEXT,
+        custom_prompt TEXT,
+        is_pinned INTEGER DEFAULT 0,
+        scroll_offset REAL,
+        draft TEXT,
+        execution_mode TEXT DEFAULT 'auto',
+        loop_status TEXT DEFAULT 'idle',
+        pending_intervention TEXT,
+        approval_request TEXT, -- JSON
+        rag_options TEXT, -- JSON
+        inference_params TEXT, -- JSON
+        active_task TEXT, -- JSON
+        stats TEXT, -- JSON (billing usage)
+        options TEXT, -- JSON (webSearch, reasoning, toolsEnabled)
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        mode TEXT DEFAULT 'chat', -- 'chat' | 'writer'
-        pinned INTEGER DEFAULT 0,
-        model_config TEXT -- JSON string for specific model override
+        updated_at INTEGER NOT NULL
       );
     `);
 
-    // 2. Messages Table
+
+    // 2. Messages Table (🔑 Phase 4b: 完整字段版本)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY NOT NULL,
         session_id TEXT NOT NULL,
-        role TEXT NOT NULL, -- 'user' | 'assistant' | 'system'
+        role TEXT NOT NULL, -- 'user' | 'assistant' | 'system' | 'tool'
         content TEXT NOT NULL,
+        model_id TEXT,
+        status TEXT, -- 'sending' | 'sent' | 'error' | 'streaming'
+        reasoning TEXT, -- Chain of Thought
+        thought_signature TEXT, -- Gemini Thinking 签名
+        images TEXT, -- JSON: GeneratedImageData[]
+        tokens TEXT, -- JSON: TokenUsage
+        citations TEXT, -- JSON: Web Search citations
+        rag_references TEXT, -- JSON: RagReference[]
+        rag_progress TEXT, -- JSON: RagProgress
+        rag_metadata TEXT, -- JSON: RagMetadata
+        rag_references_loading INTEGER DEFAULT 0,
+        execution_steps TEXT, -- JSON: ExecutionStep[]
+        tool_calls TEXT, -- JSON: ToolCall[]
+        pending_approval_tool_ids TEXT, -- JSON: string[]
+        tool_call_id TEXT, -- 工具调用关联 ID (role: tool)
+        name TEXT, -- 工具名称 (role: tool)
+        planning_task TEXT, -- JSON: TaskState
+        is_archived INTEGER DEFAULT 0,
+        vectorization_status TEXT, -- 'processing' | 'success' | 'error'
+        layout_height REAL,
         created_at INTEGER NOT NULL,
-        parent_id TEXT, -- For tree-based history if needed later
-        metadata TEXT, -- JSON for tokens, timing, etc.
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       );
+    `);
+
+    // Index for efficient message queries
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+    `);
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
     `);
 
     // 3. Attachments/Files (Multimodal)
@@ -218,8 +260,9 @@ export const createTables = async () => {
         -- Timestamps
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
-        -- 🔑 仅 doc_id 有外键约束，session_id 无需约束（sessions 存储在 AsyncStorage 中）
-        FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
+        -- 🔑 Phase 4b: 现在两个 FK 都有效，因为 sessions 表已在 SQLite 中
+        FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       );
     `);
 

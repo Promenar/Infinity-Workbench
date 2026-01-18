@@ -75,6 +75,7 @@ const ModelItem = React.memo(
     const [localId, setLocalId] = useState(model.id);
     const [localContext, setLocalContext] = useState(model.contextLength?.toString() || '');
     const [isEditingName, setIsEditingName] = useState(false);
+    const [isEditingId, setIsEditingId] = useState(false);
 
     useEffect(() => {
       setLocalName(model.name);
@@ -147,19 +148,46 @@ const ModelItem = React.memo(
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
-                <Text
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  style={{
-                    fontSize: 10,
-                    color: model.isAutoFetched ? '#6b7280' : isDark ? '#d1d5db' : '#4b5563',
-                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                  }}
-                >
-                  {localId}
-                </Text>
+                {!isEditingId ? (
+                  <TouchableOpacity
+                    onPress={() => setIsEditingId(true)}
+                    style={{ flex: 1, minHeight: 18, justifyContent: 'center' }}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                      style={{
+                        fontSize: 10,
+                        color: model.isAutoFetched ? '#6b7280' : isDark ? '#d1d5db' : '#4b5563',
+                        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                      }}
+                    >
+                      {localId}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TextInput
+                    value={localId}
+                    autoFocus
+                    onChangeText={setLocalId}
+                    onBlur={() => {
+                      setIsEditingId(false);
+                      if (localId !== model.id) handleSync({ id: localId });
+                    }}
+                    style={{
+                      fontSize: 10,
+                      color: isDark ? '#d1d5db' : '#4b5563',
+                      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                      flex: 1,
+                      height: 18,
+                      padding: 0,
+                    }}
+                    placeholder={t.settings.modelSettings.modelIdPlaceholder}
+                    placeholderTextColor="#9ca3af"
+                  />
+                )}
               </View>
-              {!model.isAutoFetched && <Edit2 size={10} color="#9ca3af" style={{ opacity: 0.5, marginLeft: 4 }} />}
+              <Edit2 size={10} color="#9ca3af" style={{ opacity: 0.5, marginLeft: 4 }} />
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

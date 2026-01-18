@@ -1,15 +1,20 @@
 /**
- * 消息管理模块
+ * 消息管理模块 (🔑 Phase 4b: SQLite 双写模式)
  * 负责消息的创建、更新、删除和向量化
+ * 使用防抖机制处理高频更新，同时持久化到 SQLite
  */
 
 import type { ManagerContext, MessageManager } from './types';
 import type { Message, SessionId, TokenUsage, RagReference, RagProgress, RagMetadata, TaskState } from '../../types/chat';
+import { SessionRepository } from '../../lib/db/session-repository';
+
+// 🔑 防抖写入 SQLite 的间隔（流式更新时）
+const DB_DEBOUNCE_MS = 500;
 
 export const createMessageManager = (context: ManagerContext): MessageManager => {
     const { get, set } = context;
 
-    // 🔑 Throttling & Buffer State
+    // 🔑 Throttling & Buffer State (for Zustand updates)
     const pendingUpdates = new Map<string, {
         content: string;
         tokens?: TokenUsage;
@@ -23,6 +28,39 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
     }>();
 
     const throttleTimers = new Map<string, NodeJS.Timeout>();
+
+    // 🔑 Phase 4b: DB 防抖写入状态
+    const dbPendingUpdates = new Map<string, Partial<Message>>();
+    const dbDebounceTimers = new Map<string, NodeJS.Timeout>();
+
+    // 防抖写入 SQLite
+    const debouncedDbUpdate = (sessionId: string, messageId: string, updates: Partial<Message>) => {
+        const key = `${sessionId}:${messageId}`;
+
+        // 合并更新
+        const existing = dbPendingUpdates.get(key) || {};
+        dbPendingUpdates.set(key, { ...existing, ...updates });
+
+        // 清除旧定时器
+        const oldTimer = dbDebounceTimers.get(key);
+        if (oldTimer) clearTimeout(oldTimer);
+
+        // 设置新定时器
+        const timer = setTimeout(async () => {
+            const pendingUpdate = dbPendingUpdates.get(key);
+            if (pendingUpdate) {
+                try {
+                    await SessionRepository.updateMessage(sessionId, messageId, pendingUpdate);
+                } catch (e) {
+                    console.warn('[MessageManager] DB update failed:', e);
+                }
+                dbPendingUpdates.delete(key);
+            }
+            dbDebounceTimers.delete(key);
+        }, DB_DEBOUNCE_MS);
+
+        dbDebounceTimers.set(key, timer);
+    };
 
     const flushUpdate = (sessionId: string, messageId: string) => {
         const key = `${sessionId}:${messageId}`;
@@ -79,6 +117,19 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                 updatedBilling.total += deltaTotal;
             }
 
+            // 🔑 Phase 4b: 同时防抖写入 SQLite
+            debouncedDbUpdate(sessionId, messageId, {
+                content: pending.content,
+                tokens: newTokens,
+                reasoning: pending.reasoning,
+                citations: pending.citations,
+                ragReferences: pending.ragReferences,
+                ragReferencesLoading: pending.ragReferencesLoading,
+                ragMetadata: pending.ragMetadata,
+                thought_signature: pending.thought_signature,
+                planningTask: pending.taskState,
+            });
+
             return {
                 sessions: state.sessions.map((s) => {
                     if (s.id === sessionId) {
@@ -115,7 +166,15 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
     };
 
     return {
-        addMessage: (sessionId: string, message: Message) => {
+        addMessage: async (sessionId: string, message: Message) => {
+            // 🔑 Phase 4b: 先写 SQLite
+            try {
+                await SessionRepository.addMessage(sessionId, message);
+            } catch (e) {
+                console.warn('[MessageManager] DB addMessage failed:', e);
+            }
+
+            // 更新 Zustand
             set((state) => ({
                 sessions: state.sessions.map((s) => {
                     if (s.id === sessionId) {
@@ -163,21 +222,16 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             });
 
             // If no timer active, schedule flush (Leading Edge + Trailing Edge logic)
-            // Implementation: We always delay 100ms. This is "Throttling" (capped at 10fps).
-            // For smoother typing effect, we might want "Leading Edge" (immediate first char),
-            // but for avoiding freeze, strict throttling is safer.
-            // Let's use strict throttling to solve the "DeepSeek Freeze".
+            // Implementation: We always delay 200ms. This is "Throttling" (capped at 5fps).
             if (!throttleTimers.has(key)) {
-                // If it's the very first token (buffer was empty), maybe flush immediately?
-                // No, consistency is key. Just invoke in 100ms.
                 const timer = setTimeout(() => {
                     flushUpdate(sessionId, messageId);
-                }, 200); // 5fps limit
+                }, 200); // 5fps limit for Zustand
                 throttleTimers.set(key, timer);
             }
         },
 
-        deleteMessage: (sessionId: SessionId, messageId: string) => {
+        deleteMessage: async (sessionId: SessionId, messageId: string) => {
             const state = get();
             // If the session being edited is currently generating
             if (state.currentGeneratingSessionId === sessionId) {
@@ -190,6 +244,13 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                         state.abortGeneration(sessionId);
                     }
                 }
+            }
+
+            // 🔑 Phase 4b: 从 SQLite 删除
+            try {
+                await SessionRepository.deleteMessage(sessionId, messageId);
+            } catch (e) {
+                console.warn('[MessageManager] DB deleteMessage failed:', e);
             }
 
             set((state) => ({
@@ -223,6 +284,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
         },
 
         updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => {
+            // 进度更新不写 DB（高频且临时）
             set((state) => ({
                 sessions: state.sessions.map((s) =>
                     s.id === sessionId
@@ -244,6 +306,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
 
             // 只有当高度未设置，或高度差异超过 2px 时才更新，避免微小抖动导致的频繁写入
             if (message && (!message.layoutHeight || Math.abs(message.layoutHeight - height) > 2)) {
+                // 布局高度更新不写 DB（高频且可重计算）
                 set((state) => ({
                     sessions: state.sessions.map((s) =>
                         s.id === sessionId
@@ -260,7 +323,19 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
         },
 
         // Phase 4a: 从 chat-store.ts 迁移
-        setVectorizationStatus: (sessionId: string, messageIds: string[], status: 'processing' | 'success' | 'error') => {
+        setVectorizationStatus: async (sessionId: string, messageIds: string[], status: 'processing' | 'success' | 'error') => {
+            // 🔑 Phase 4b: 写入 SQLite
+            for (const msgId of messageIds) {
+                try {
+                    await SessionRepository.updateMessage(sessionId, msgId, {
+                        vectorizationStatus: status,
+                        isArchived: status === 'success' ? true : undefined,
+                    });
+                } catch (e) {
+                    console.warn('[MessageManager] DB setVectorizationStatus failed:', e);
+                }
+            }
+
             set((state) => {
                 const session = state.sessions.find((s) => s.id === sessionId);
                 if (!session) return {};

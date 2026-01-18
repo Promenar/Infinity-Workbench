@@ -68,7 +68,6 @@ export const useSettingsStore = create<SettingsState>()(
       setHapticsEnabled: (enabled) => set({ hapticsEnabled: enabled }),
 
       accentColor: '#6366f1',
-      accentColor: '#6366f1',
       setAccentColor: (color) => {
         // Robust Validation: Must be valid 6-digit hex or 3-digit hex
         if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)) {

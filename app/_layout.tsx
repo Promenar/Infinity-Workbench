@@ -82,6 +82,14 @@ export default function RootLayout() {
         await migrateDatabase(); // Run migrations
         console.log('[App] DB Initialized');
 
+        // 🔑 Phase 4b: 从 SQLite 加载会话
+        try {
+          const { useChatStore } = require('../src/store/chat-store');
+          await useChatStore.getState().loadSessions();
+        } catch (err: any) {
+          console.warn('[App] Session loading failed:', err.message);
+        }
+
         // Fire and forget auto backup in next tick
         setTimeout(() => {
           const { BackupManager } = require('../src/lib/backup/BackupManager');

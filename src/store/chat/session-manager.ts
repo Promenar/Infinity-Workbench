@@ -1,35 +1,61 @@
 /**
- * 会话管理模块
+ * 会话管理模块 (🔑 Phase 4b: SQLite 双写模式)
  * 负责会话的创建、更新、删除和查询
+ * 所有写操作同时更新 SQLite 和 Zustand 状态
  */
 
 import type { ManagerContext, SessionManager } from './types';
 import type { Session, SessionId, InferenceParams } from '../../types/chat';
+import { SessionRepository } from '../../lib/db/session-repository';
 
 export const createSessionManager = (context: ManagerContext): SessionManager => {
     const { get, set } = context;
 
     return {
-        addSession: (session: Session) => {
+        addSession: async (session: Session) => {
+            // 🔑 Phase 4b: 双写模式
+            const enrichedSession = {
+                ...session,
+                executionMode: session.executionMode || 'semi',
+                loopStatus: session.loopStatus || 'completed',
+            };
+
+            // 1. 写入 SQLite
+            try {
+                await SessionRepository.create(enrichedSession);
+            } catch (e) {
+                console.warn('[SessionManager] DB write failed, continuing with memory only:', e);
+            }
+
+            // 2. 更新 Zustand 缓存
             set((state) => ({
-                sessions: [
-                    {
-                        ...session,
-                        executionMode: session.executionMode || 'semi',
-                        loopStatus: session.loopStatus || 'completed',
-                    },
-                    ...state.sessions,
-                ],
+                sessions: [enrichedSession, ...state.sessions],
             }));
         },
 
-        updateSession: (id: SessionId, updates: Partial<Session>) => {
+        updateSession: async (id: SessionId, updates: Partial<Session>) => {
+            // 1. 写入 SQLite
+            try {
+                await SessionRepository.update(id, updates);
+            } catch (e) {
+                console.warn('[SessionManager] DB update failed:', e);
+            }
+
+            // 2. 更新 Zustand 缓存
             set((state) => ({
                 sessions: state.sessions.map((s) => (s.id === id ? { ...s, ...updates } : s)),
             }));
         },
 
-        deleteSession: (id: SessionId) => {
+        deleteSession: async (id: SessionId) => {
+            // 1. 从 SQLite 删除（CASCADE 自动删除 messages）
+            try {
+                await SessionRepository.delete(id);
+            } catch (e) {
+                console.warn('[SessionManager] DB delete failed:', e);
+            }
+
+            // 2. 更新 Zustand 缓存
             set((state) => ({
                 sessions: state.sessions.filter((s) => s.id !== id),
             }));
@@ -39,7 +65,13 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
             return get().sessions.find((s) => s.id === id);
         },
 
-        updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => {
+        updateSessionDraft: async (sessionId: SessionId, draft: string | undefined) => {
+            try {
+                await SessionRepository.update(sessionId, { draft });
+            } catch (e) {
+                console.warn('[SessionManager] DB update draft failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) =>
                     s.id === sessionId ? { ...s, draft } : s
@@ -47,15 +79,30 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
             }));
         },
 
-        toggleSessionPin: (sessionId: SessionId) => {
+        toggleSessionPin: async (sessionId: SessionId) => {
+            const session = get().sessions.find((s) => s.id === sessionId);
+            const newPinned = !session?.isPinned;
+
+            try {
+                await SessionRepository.update(sessionId, { isPinned: newPinned });
+            } catch (e) {
+                console.warn('[SessionManager] DB toggle pin failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) =>
-                    s.id === sessionId ? { ...s, isPinned: !s.isPinned } : s
+                    s.id === sessionId ? { ...s, isPinned: newPinned } : s
                 ),
             }));
         },
 
-        updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => {
+        updateSessionInferenceParams: async (id: SessionId, params: InferenceParams) => {
+            try {
+                await SessionRepository.update(id, { inferenceParams: params });
+            } catch (e) {
+                console.warn('[SessionManager] DB update params failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) =>
                     s.id === id ? { ...s, inferenceParams: params } : s
@@ -64,39 +111,72 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
         },
 
         // Phase 4a: 从 chat-store.ts 迁移的辅助方法
-        updateSessionTitle: (id: SessionId, title: string) => {
+        updateSessionTitle: async (id: SessionId, title: string) => {
+            try {
+                await SessionRepository.update(id, { title });
+            } catch (e) {
+                console.warn('[SessionManager] DB update title failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) => (s.id === id ? { ...s, title } : s)),
             }));
         },
 
-        updateSessionPrompt: (id: SessionId, prompt: string | undefined) => {
+        updateSessionPrompt: async (id: SessionId, prompt: string | undefined) => {
+            try {
+                await SessionRepository.update(id, { customPrompt: prompt });
+            } catch (e) {
+                console.warn('[SessionManager] DB update prompt failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) => (s.id === id ? { ...s, customPrompt: prompt } : s)),
             }));
         },
 
-        updateSessionModel: (id: SessionId, modelId: string | undefined) => {
+        updateSessionModel: async (id: SessionId, modelId: string | undefined) => {
+            try {
+                await SessionRepository.update(id, { modelId });
+            } catch (e) {
+                console.warn('[SessionManager] DB update model failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) => (s.id === id ? { ...s, modelId } : s)),
             }));
         },
 
-        updateSessionOptions: (id: SessionId, options: any) => {
+        updateSessionOptions: async (id: SessionId, options: any) => {
+            const session = get().sessions.find((s) => s.id === id);
+            const newOptions = { ...session?.options, ...options };
+            const newRagOptions = { ...session?.ragOptions, ...options?.ragOptions };
+
+            try {
+                await SessionRepository.update(id, {
+                    options: newOptions,
+                    ragOptions: newRagOptions
+                });
+            } catch (e) {
+                console.warn('[SessionManager] DB update options failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) =>
                     s.id === id
                         ? {
                             ...s,
-                            options: { ...s.options, ...options },
-                            ragOptions: { ...s.ragOptions, ...options?.ragOptions },
+                            options: newOptions,
+                            ragOptions: newRagOptions,
                         }
                         : s
                 ),
             }));
         },
 
-        updateSessionScrollOffset: (id: SessionId, offset: number) => {
+        updateSessionScrollOffset: async (id: SessionId, offset: number) => {
+            // 滚动偏移量高频更新，使用防抖
+            // 暂时只更新 Zustand，不写 DB（可后续优化）
             set((state) => ({
                 sessions: state.sessions.map((s) => (s.id === id ? { ...s, scrollOffset: offset } : s)),
             }));
@@ -110,7 +190,13 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
             });
         },
 
-        dismissActiveTask: (sessionId: SessionId) => {
+        dismissActiveTask: async (sessionId: SessionId) => {
+            try {
+                await SessionRepository.update(sessionId, { activeTask: undefined });
+            } catch (e) {
+                console.warn('[SessionManager] DB dismiss task failed:', e);
+            }
+
             set((state) => ({
                 sessions: state.sessions.map((s) =>
                     s.id === sessionId ? { ...s, activeTask: undefined } : s

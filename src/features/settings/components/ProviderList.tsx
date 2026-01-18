@@ -72,7 +72,7 @@ const ProviderListItem = memo(({
                         <View style={styles.textContainer}>
                             <Marquee
                                 text={provider.name}
-                                className="font-bold text-[15px]"
+                                className="font-bold text-[15px] text-gray-900 dark:text-white"
                             />
                             <Text style={[
                                 styles.urlText,

@@ -163,11 +163,15 @@ export class TrigramTextSplitter {
       }
 
       // 移动起始位置（考虑重叠）
-      startIndex = endIndex - this.chunkOverlap;
+      const nextStartIndex = endIndex - this.chunkOverlap;
 
-      // 避免死循环
-      if (startIndex === endIndex) {
+      // 🔑 严格防御死循环：确保 startIndex 每次至少前进
+      // 如果计算出的 nextStartIndex 导致位置没有前进（可能因为 overlap 较大且 endIndex 被标点缩减），
+      // 则强制跳转到 endIndex，牺牲该位置的重叠以保证程序继续。
+      if (nextStartIndex <= startIndex) {
         startIndex = endIndex;
+      } else {
+        startIndex = nextStartIndex;
       }
     }
 
