@@ -6,6 +6,7 @@ import { produce } from 'immer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { emitToast } from '../utils/toast-emitter';
+import { useSettingsStore } from '../../store/settings-store';
 
 interface SlotState {
     context: LlamaContext | null;
@@ -101,6 +102,14 @@ export const useLocalModelStore = create<StoreType>()(
 
                 initialize: async (): Promise<boolean> => {
                     const state = get();
+
+                    // 🔑 检查全局本地模型开关
+                    const settingsState = useSettingsStore.getState();
+                    if (!settingsState.localModelsEnabled) {
+                        console.log('[LocalServer] Local models disabled in settings, skipping auto-load');
+                        return false;
+                    }
+
                     if (!state.autoLoadEnabled) return false;
                     let loadedCount = 0;
 
@@ -339,6 +348,13 @@ export const useLocalModelStore = create<StoreType>()(
                 if (state) {
                     state.setHasHydrated(true);
                     if (state.autoLoadEnabled && (state.lastLoadedModel || state.lastEmbeddingModel || state.lastRerankModel)) {
+                        // 🔑 检查全局本地模型开关
+                        const settingsState = useSettingsStore.getState();
+                        if (!settingsState.localModelsEnabled) {
+                            console.log('[LocalServer] Local models disabled in settings, skipping auto-load on hydration');
+                            return;
+                        }
+
                         console.log('[LocalServer] Hydration complete, scheduling auto-load in 3s...');
                         // Delay auto-load by 3 seconds to prevent startup crashes
                         setTimeout(() => {
