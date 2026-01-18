@@ -38,9 +38,11 @@ export const SwipeableAgentItem = ({ item, onPress, onPin, onDelete }: Swipeable
         <Animated.View style={[styles.rightAction, { transform: [{ translateX: trans }] }]}>
           <TouchableOpacity
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-              swipeableRef.current?.close();
-              onDelete();
+              setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                swipeableRef.current?.close();
+                onDelete();
+              }, 10);
             }}
             style={styles.deleteButton}
           >
@@ -62,9 +64,11 @@ export const SwipeableAgentItem = ({ item, onPress, onPin, onDelete }: Swipeable
         <Animated.View style={[styles.leftAction, { transform: [{ translateX: trans }] }]}>
           <TouchableOpacity
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              swipeableRef.current?.close();
-              onPin();
+              setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                swipeableRef.current?.close();
+                onPin();
+              }, 10);
             }}
             style={styles.pinButton}
           >

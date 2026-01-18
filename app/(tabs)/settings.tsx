@@ -81,7 +81,10 @@ export default function SettingsScreen() {
     updateDefaultModel,
     hapticsEnabled,
     setHapticsEnabled,
+    loggingEnabled,
+    setLoggingEnabled,
   } = useSettingsStore();
+
   const { providers, deleteProvider, addProvider, updateProvider } = useApiStore();
 
   const [activeTab, setActiveTab] = useState<'app' | 'providers'>('app');
@@ -594,11 +597,42 @@ export default function SettingsScreen() {
               /> */}
 
               <SettingsItem
+                icon={FileText}
+                title={t.settings.logging || '运行日志记录'}
+                subtitle={t.settings.loggingDesc || '记录应用运行与 API 调试信息'}
+                rightElement={
+                  <Switch
+                    value={loggingEnabled}
+                    onValueChange={(v) => {
+                      setLoggingEnabled(v);
+                    }}
+                  />
+                }
+              />
+
+              <SettingsItem
+                icon={FileText}
+                title={t.settings.exportLogs || '导出运行日志'}
+                subtitle={t.settings.exportLogsDesc || '通过系统分享导出日志'}
+                onPress={async () => {
+                  try {
+                    const { Logger } = require('../../src/lib/logging/Logger');
+                    await Logger.getInstance().exportLogs();
+                    showToast(t.settings.exportSuccess, 'success');
+                  } catch (e) {
+                    showToast(t.settings.exportFail, 'error');
+                  }
+                }}
+              />
+
+              <SettingsItem
                 icon={Info}
                 title={t.settings.about}
+
                 subtitle={`v${Constants.expoConfig?.version ?? '1.1'} (${Constants.expoConfig?.android?.versionCode ?? 2})`}
                 isLast
                 onPress={() => {
+
                   const newCount = (eggCount || 0) + 1;
                   setEggCount(newCount);
 

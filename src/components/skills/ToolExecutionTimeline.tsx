@@ -18,7 +18,8 @@ import {
     Check,
     Send,
     User,
-    Hand
+    Hand,
+    RotateCw
 } from 'lucide-react-native';
 import clsx from 'clsx';
 import * as Sharing from 'expo-sharing';
@@ -41,7 +42,10 @@ const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
     if (type === 'thinking') return <Brain size={16} color="#A0A0A0" />;
     if (type === 'error') return <AlertCircle size={16} color="#FF6B6B" />;
     if (type === 'plan_item') return <ListTodo size={16} color="#A0A0A0" />;
-    if (type === 'intervention_required') return <Hand size={16} color="#f59e0b" />;
+    if (type === 'intervention_required') {
+        if (toolName === 'Loop Limit') return <RotateCw size={16} color="#3b82f6" />;
+        return <Hand size={16} color="#f59e0b" />;
+    }
     if (type === 'intervention_result') return <User size={16} color="#10b981" />;
 
     // Tool Icons
@@ -96,6 +100,8 @@ const InterventionUI = ({ sessionId, toolName }: { sessionId: string, toolName?:
         return null;
     }
 
+    const isContinuation = session.approvalRequest.type === 'continuation';
+
     const handleApprove = () => {
         setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -110,26 +116,32 @@ const InterventionUI = ({ sessionId, toolName }: { sessionId: string, toolName?:
         useChatStore.getState().resumeGeneration(sessionId, false);
     };
 
+    // 颜色配置
+    const mainColor = isContinuation ? (isDark ? '#60a5fa' : '#2563eb') : (isDark ? '#fbbf24' : '#d97706');
+    const bgColor = isContinuation
+        ? (isDark ? 'rgba(37, 99, 235, 0.1)' : 'rgba(37, 99, 235, 0.08)')
+        : (isDark ? 'rgba(251, 191, 36, 0.08)' : 'rgba(251, 191, 36, 0.12)');
+    const buttonBg = isContinuation
+        ? (isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(37, 99, 235, 0.15)')
+        : (isDark ? 'rgba(251, 191, 36, 0.15)' : 'rgba(251, 191, 36, 0.2)');
+
     return (
         <Animated.View
             entering={FadeIn.duration(400)}
             className="mt-3"
         >
-            {/* 工具详情展示 */}
+            {/* 工具/轮数详情展示 */}
             {session?.approvalRequest && (
                 <View className="mb-3 p-3 rounded-xl" style={{
-                    backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : 'rgba(251, 191, 36, 0.12)',
+                    backgroundColor: bgColor,
                     borderWidth: 0,
                 }}>
-                    <Typography className="text-xs font-bold mb-1" style={{ color: isDark ? '#fbbf24' : '#d97706' }}>
-                        {session.approvalRequest.toolName}
+                    <Typography className="text-xs font-bold mb-1" style={{ color: mainColor }}>
+                        {isContinuation ? 'Loop Limit Reached' : session.approvalRequest.toolName}
                     </Typography>
-                    {session.approvalRequest.args && session.approvalRequest.args.length > 0 && (
-                        <Typography variant="caption" className="font-mono text-[10px] opacity-60">
-                            {JSON.stringify(session.approvalRequest.args, null, 2).slice(0, 150)}
-                            {JSON.stringify(session.approvalRequest.args).length > 150 ? '...' : ''}
-                        </Typography>
-                    )}
+                    <Typography variant="caption" className="opacity-70 text-[11px]">
+                        {isContinuation ? (session.approvalRequest.reason || 'Maximum execution turns reached.') : 'Action Approval Required'}
+                    </Typography>
                 </View>
             )}
 
@@ -159,14 +171,14 @@ const InterventionUI = ({ sessionId, toolName }: { sessionId: string, toolName?:
             <View className="flex-row gap-3">
                 <TouchableOpacity
                     onPress={handleReject}
-                    className="flex-1 py-2.5 rounded-xl items-center justify-center"
+                    className="flex-1 py-2.5 rounded-xl items-center justify-center border"
                     style={{
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                        borderWidth: 0,
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                     }}
                 >
-                    <Typography className="text-xs font-semibold" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }}>
-                        {t.common.reject}
+                    <Typography className="text-xs font-semibold" style={{ color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)' }}>
+                        {isContinuation ? 'End Task' : t.common.reject}
                     </Typography>
                 </TouchableOpacity>
 
@@ -174,12 +186,14 @@ const InterventionUI = ({ sessionId, toolName }: { sessionId: string, toolName?:
                     onPress={handleApprove}
                     className="flex-1 py-2.5 rounded-xl items-center justify-center"
                     style={{
-                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.15)' : 'rgba(251, 191, 36, 0.2)',
+                        backgroundColor: buttonBg,
                         borderWidth: 0,
                     }}
                 >
-                    <Typography className="text-xs font-bold" style={{ color: isDark ? '#fbbf24' : '#d97706' }}>
-                        {inputValue.trim() ? '携带指令批准' : '批准并执行'}
+                    <Typography className="text-xs font-bold" style={{ color: mainColor }}>
+                        {isContinuation
+                            ? 'Continue (+10)'
+                            : (inputValue.trim() ? '携带指令批准' : '批准并执行')}
                     </Typography>
                 </TouchableOpacity>
             </View>
@@ -299,7 +313,8 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                 <View className={clsx(
                     "w-6 h-6 rounded-full items-center justify-center",
                     step.type === 'error' ? "border border-red-500/50 bg-red-500/20" :
-                        step.type === 'intervention_required' ? "border border-amber-500/50 bg-amber-500/20" :
+                        step.type === 'intervention_required'
+                            ? (step.toolName === 'Loop Limit' ? "border border-blue-500/50 bg-blue-500/20" : "border border-amber-500/50 bg-amber-500/20") :
                             "bg-black/5 dark:bg-zinc-900/50"
                 )}>
                     <StepIcon type={step.type} toolName={step.toolName} />
@@ -314,13 +329,15 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                     className={clsx(
                         "flex-row items-center justify-between rounded-2xl p-2",
                         step.type === 'intervention_required'
-                            ? "bg-amber-500/5 dark:bg-amber-500/10"
+                            ? (step.toolName === 'Loop Limit' ? "bg-blue-500/5 dark:bg-blue-500/10" : "bg-amber-500/5 dark:bg-amber-500/10")
                             : "bg-transparent" // ✅ 两种模式下都保持透明，避免边框感
                     )}
                     style={{
                         // 仅在需要注意的状态下显示极其微弱的边框或完全无边框
                         borderWidth: step.type === 'intervention_required' ? 1 : 0,
-                        borderColor: step.type === 'intervention_required' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
+                        borderColor: step.type === 'intervention_required'
+                            ? (step.toolName === 'Loop Limit' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(245, 158, 11, 0.2)')
+                            : 'transparent',
                     }}
                 >
                     <View className="flex-1 mr-2 px-1">
@@ -329,7 +346,9 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                             className="font-bold"
                             style={{
                                 color: step.type === 'intervention_required'
-                                    ? (isDark ? '#fbbf24' : '#d97706')
+                                    ? (step.toolName === 'Loop Limit'
+                                        ? (isDark ? '#60a5fa' : '#2563eb')
+                                        : (isDark ? '#fbbf24' : '#d97706'))
                                     : (isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)')
                             }}
                         >

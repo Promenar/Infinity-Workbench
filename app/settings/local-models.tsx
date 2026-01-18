@@ -103,7 +103,9 @@ export default function LocalModelSettingsScreen() {
     // Toggle Logic
     const handleToggle = (enabled: boolean) => {
         setLocalModelsEnabled(enabled);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }, 10);
 
         if (enabled) {
             // Ensure provider exists

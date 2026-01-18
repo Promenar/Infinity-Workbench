@@ -80,9 +80,11 @@ export default function PortableWorkbenchScreen() {
 
     const copyToClipboard = async (text: string | null) => {
         if (!text) return;
-        await Clipboard.setStringAsync(text);
-        showToast(t.settings.workbench.copied, 'success');
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setTimeout(async () => {
+            await Clipboard.setStringAsync(text);
+            showToast(t.settings.workbench.copied, 'success');
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }, 10);
     };
 
     return (
@@ -328,9 +330,11 @@ export default function PortableWorkbenchScreen() {
 
                                 <TouchableOpacity
                                     onPress={() => {
-                                        const newCode = generateAccessCode();
-                                        setAccessCode(newCode);
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        setTimeout(() => {
+                                            const newCode = generateAccessCode();
+                                            setAccessCode(newCode);
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        }, 10);
                                     }}
                                     style={{
                                         padding: 12,

@@ -285,9 +285,6 @@ export class StreamParser {
             case 'deepseek':
                 // 移除完整的tool_call XML块
                 cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
-                // 移除可能泄露的HTML/XML代码块
-                cleaned = cleaned.replace(/```html[\s\S]*?```/gi, '');
-                cleaned = cleaned.replace(/```xml[\s\S]*?```/gi, '');
                 // 移除孤立的tool_calls/tools标签对
                 cleaned = cleaned.replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '');
                 cleaned = cleaned.replace(/<tools>[\s\S]*?<\/tools>/gi, '');

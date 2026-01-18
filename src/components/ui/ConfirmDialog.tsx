@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Modal, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { View, Modal, TouchableOpacity, StyleSheet, Dimensions, BackHandler } from 'react-native';
 import Animated, { FadeIn, FadeOut, FadeInUp } from 'react-native-reanimated';
 import { Typography } from './Typography';
 import { BlurView } from 'expo-blur';
@@ -31,6 +31,20 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onCancel,
 }) => {
   const { isDark } = useTheme();
+
+  React.useEffect(() => {
+    const onBackPress = () => {
+      if (visible) {
+        onCancel();
+        return true;
+      }
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [visible, onCancel]);
+
   if (!visible) return null;
 
   const handleConfirm = () => {

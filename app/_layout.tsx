@@ -11,6 +11,14 @@ configureReanimatedLogger({
 });
 
 import '../src/services/NotifeeBackgroundRunner'; // Register background task
+import { initCrashHandler } from '../src/lib/logging/CrashHandler';
+import { Logger } from '../src/lib/logging/Logger';
+
+// Initialize global crash handler
+initCrashHandler();
+
+const logger = Logger.getInstance();
+
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -80,21 +88,21 @@ export default function RootLayout() {
         await initDb();
         await createTables();
         await migrateDatabase(); // Run migrations
-        console.log('[App] DB Initialized');
+        logger.info('App', 'DB Initialized');
 
         // 🔑 Phase 4b: 从 SQLite 加载会话
         try {
           const { useChatStore } = require('../src/store/chat-store');
           await useChatStore.getState().loadSessions();
         } catch (err: any) {
-          console.warn('[App] Session loading failed:', err.message);
+          logger.warn('App', 'Session loading failed', { error: err.message });
         }
 
         // Fire and forget auto backup in next tick
         setTimeout(() => {
           const { BackupManager } = require('../src/lib/backup/BackupManager');
           BackupManager.checkAndTriggerAutoBackup().catch((err: any) => {
-            console.warn('[App] Auto backup initial trigger failed:', err.message);
+            logger.warn('App', 'Auto backup initial trigger failed', { error: err.message });
           });
         }, 1000);
 
@@ -107,12 +115,12 @@ export default function RootLayout() {
               await queue.resumeInterruptedTasks();
             }
           } catch (err: any) {
-            console.warn('[App] Queue recovery failed:', err.message);
+            logger.warn('App', 'Queue recovery failed', { error: err.message });
           }
         }, 2000);
 
       } catch (e) {
-        console.error('[App] DB Init Failed', e);
+        logger.error('App', 'DB Init Failed', { error: e });
       } finally {
         setDbReady(true);
       }

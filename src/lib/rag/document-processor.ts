@@ -3,6 +3,7 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import { PdfExtractorRef } from '../../components/rag/PdfExtractor';
 import { imageDescriptionService } from './image-service';
+import { readFileContent } from '../file-utils';
 
 export type FileType = 'text' | 'pdf' | 'docx' | 'xlsx' | 'image' | 'unknown';
 
@@ -62,7 +63,7 @@ export class DocumentProcessor {
     }
 
     private async processText(uri: string): Promise<string> {
-        return await FileSystem.readAsStringAsync(uri);
+        return await readFileContent(uri);
     }
 
     private async processPdf(uri: string): Promise<string> {

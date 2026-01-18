@@ -5,7 +5,11 @@
  */
 
 import type { ManagerContext, MessageManager } from './types';
-import type { Message, SessionId, TokenUsage, RagReference, RagProgress, RagMetadata, TaskState } from '../../types/chat';
+import type {
+    Message, SessionId, TokenUsage, RagReference, RagProgress, RagMetadata, TaskState,
+    InferenceParams
+} from '../../types/chat';
+import { ToolCall } from '../../types/skills';
 import { SessionRepository } from '../../lib/db/session-repository';
 
 // 🔑 防抖写入 SQLite 的间隔（流式更新时）
@@ -25,6 +29,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
         ragMetadata?: RagMetadata;
         thought_signature?: string;
         taskState?: TaskState;
+        tool_calls?: ToolCall[];
     }>();
 
     const throttleTimers = new Map<string, NodeJS.Timeout>();
@@ -128,6 +133,8 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                 ragMetadata: pending.ragMetadata,
                 thought_signature: pending.thought_signature,
                 planningTask: pending.taskState,
+                // Phase 4c: DeepSeek Consistency - save tool_calls if pending
+                ...(pending.tool_calls && { tool_calls: pending.tool_calls })
             });
 
             return {
@@ -148,6 +155,11 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                                         ...(pending.ragMetadata !== undefined && { ragMetadata: pending.ragMetadata }),
                                         ...(pending.thought_signature !== undefined && { thought_signature: pending.thought_signature }),
                                         ...(pending.taskState && { planningTask: pending.taskState }),
+                                        ...(pending.tool_calls && { tool_calls: pending.tool_calls }),
+                                        // 🔑 Phase 4c: Fix Potential Stale Overwrite of Tool Calls
+                                        // If pending doesn't have tool_calls, do we keep existing ones? Yes, spread ...m does that.
+                                        // But if we are about to overwrite msg with new tool_calls via another setter, we must ensure
+                                        // that setter sees the latest state. 'flushMessageUpdates' ensures pendingUpdates are applied.
                                     }
                                     : m
                             ),
@@ -202,7 +214,8 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             ragReferencesLoading?: boolean,
             ragMetadata?: RagMetadata,
             thought_signature?: string,
-            taskState?: TaskState
+            taskState?: TaskState,
+            tool_calls?: ToolCall[]
         ) => {
             const key = `${sessionId}:${messageId}`;
             const currentPending = pendingUpdates.get(key) || { content };
@@ -219,6 +232,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                 ...(ragMetadata !== undefined && { ragMetadata }),
                 ...(thought_signature !== undefined && { thought_signature }),
                 ...(taskState !== undefined && { taskState }),
+                ...(tool_calls !== undefined && { tool_calls }),
             });
 
             // If no timer active, schedule flush (Leading Edge + Trailing Edge logic)
@@ -360,5 +374,9 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                 };
             });
         },
+
+        flushMessageUpdates: (sessionId: string, messageId: string) => {
+            flushUpdate(sessionId, messageId);
+        }
     };
 };

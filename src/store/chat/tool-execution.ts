@@ -75,9 +75,11 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                 });
             };
 
+            console.log('[ToolExecutor] executing tools:', toolCalls.length);
             for (const tc of toolCalls) {
                 if (!tc) continue;
                 const tcName = (tc as any).name || (tc as any).function?.name;
+                console.log('[ToolExecutor] processing tool:', tcName, tc.id);
                 if (!tcName) continue;
 
                 const skill = skillRegistry.getSkill(tcName);
@@ -108,11 +110,13 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                 let result: ToolResult;
                 try {
                     if (skill) {
+                        console.log('[ToolExecutor] calling skill execution:', tcName);
                         result = await skill.execute(finalArgs, { sessionId, agentId: agent.id });
                     } else {
                         result = { id: (tc as any).id, content: `Error: Skill ${tcName} not found`, status: 'error' };
                     }
                 } catch (e: any) {
+                    console.error('[ToolExecutor] skill execution failed:', e);
                     result = { id: (tc as any).id, content: `Error: ${e.message}`, status: 'error' };
                 }
 
@@ -126,8 +130,9 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                     timestamp: Date.now()
                 });
 
+                console.log('[ToolExecutor] adding tool message to store:', tc.id);
                 // 🧐 UI 优化：所有工具执行结果都必须加入历史记录
-                get().addMessage(sessionId, {
+                await get().addMessage(sessionId, {
                     id: `tool_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                     role: 'tool',
                     tool_call_id: tc.id,
@@ -136,6 +141,7 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                     createdAt: Date.now(),
                     thought_signature: targetMsg.thought_signature // 🔑 继承父 assistant 消息的签名
                 });
+                console.log('[ToolExecutor] message added');
 
                 // ✅ 任务状态持久化：如果工具返回了 TaskState 数据 (特别是 manage_task)，
                 // 则将其同步回写至触发它的 Assistant 消息中。
@@ -155,11 +161,15 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                             false,
                             undefined,
                             undefined,
-                            result.data // 同步任务状态至消息级别
+                            result.data // taskState (param 11)
                         );
+                        // Let's stick to the log replacement which covers lines 78-140 mostly.
+                        // I will replace the block from `for (const tc of toolCalls) {` to `get().addMessage(...)`.
                     }
                 }
             }
         },
     };
 };
+
+

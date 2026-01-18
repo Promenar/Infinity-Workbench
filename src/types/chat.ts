@@ -159,7 +159,9 @@ export interface Session {
   executionMode: 'auto' | 'semi' | 'manual';
   loopStatus: 'idle' | 'running' | 'paused' | 'waiting_for_approval' | 'completed';
   pendingIntervention?: string; // 待注入的用户指令
+  continuationBudget?: number;   // ✅ 新增：续杯额度（+10轮 累加）
   approvalRequest?: {          // 待批准的操作详情
+    type?: 'tool_approval' | 'continuation'; // ✅ 新增：区分请求类型
     toolName: string;
     args: any;
     reason: string;

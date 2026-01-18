@@ -37,6 +37,9 @@ export class ContextManager {
       maxMessages: ragConfig.contextWindow,
       summarizeThreshold: ragConfig.summaryThreshold,
     };
+    // 0. Yield thread to ensure UI responsiveness before heavy operations
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     // 1. Identify unsummarized messages
     try {
       // Fetch existing summaries to determine the "summarized frontier"
@@ -267,6 +270,9 @@ export class ContextManager {
   }
 
   private static async vectorizeSummary(sessionId: string, summary: string) {
+    // Yield thread before network/db heavy lifting
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const apiStore = useApiStore.getState();
     let provider = apiStore.providers.find(
       (p) =>

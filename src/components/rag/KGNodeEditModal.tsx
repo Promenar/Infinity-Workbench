@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Modal, TextInput, TouchableOpacity, Text } from 'react-native';
+import { View, Modal, TextInput, TouchableOpacity, Text, BackHandler } from 'react-native';
 import { Typography } from '../ui/Typography';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useI18n } from '../../lib/i18n';
@@ -39,6 +39,19 @@ export const KGNodeEditModal: React.FC<KGNodeEditModalProps> = ({
             }
         }
     }, [visible, node]);
+
+    useEffect(() => {
+        const onBackPress = () => {
+            if (visible) {
+                onClose();
+                return true;
+            }
+            return false;
+        };
+
+        const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+        return () => subscription.remove();
+    }, [visible, onClose]);
 
     const handleSave = async () => {
         if (!name.trim()) return;

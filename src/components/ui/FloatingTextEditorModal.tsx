@@ -8,6 +8,7 @@ import {
     TouchableWithoutFeedback,
     Keyboard,
     Dimensions,
+    BackHandler,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -65,6 +66,20 @@ export const FloatingTextEditorModal: React.FC<FloatingTextEditorModalProps> = (
             return () => clearTimeout(timer);
         }
     }, [visible, initialContent]);
+
+    // Handle Hardware Back Button
+    useEffect(() => {
+        const onBackPress = () => {
+            if (visible) {
+                onClose();
+                return true;
+            }
+            return false;
+        };
+
+        const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+        return () => subscription.remove();
+    }, [visible, onClose]);
 
     useKeyboardHandler({
         onMove: (e) => {

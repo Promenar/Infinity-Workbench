@@ -22,14 +22,15 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
             const session = get().getSession(sessionId);
             if (!session || !session.approvalRequest) return;
 
+            const isContinuation = session.approvalRequest.type === 'continuation';
+
             // 0. Update Timeline with Decision
-            // ✅ CRITICAL FIX: 查找包含待审批工具（pendingApprovalToolIds）的 Assistant 消息
-            // 因为低风险工具执行后，最后一条消息可能是 tool 消息，而非 assistant 消息
-            const targetMsg = session.messages
-                .slice()
-                .reverse()
-                .find(m => m.role === 'assistant' && (m as any).pendingApprovalToolIds?.length > 0)
-                || session.messages[session.messages.length - 1]; // Fallback
+            // ✅ CRITICAL FIX: 对于续杯，查找最后一个 assistant 消息（因为续杯没有 pendingApprovalToolIds）
+            // 对于工具审批，查找包含待审批工具的 assistant 消息
+            const targetMsg = isContinuation
+                ? session.messages.slice().reverse().find(m => m.role === 'assistant')
+                : (session.messages.slice().reverse().find(m => m.role === 'assistant' && (m as any).pendingApprovalToolIds?.length > 0)
+                    || session.messages[session.messages.length - 1]);
 
             if (targetMsg && targetMsg.role === 'assistant') {
                 const decisionStep: ExecutionStep = {
@@ -38,8 +39,8 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
                     content: intervention
                         ? `Human Instruction: ${intervention}`
                         : approved
-                            ? 'User Approved'
-                            : 'User Rejected',
+                            ? (isContinuation ? 'User Approved Continuation (+10 Loops)' : 'User Approved')
+                            : (isContinuation ? 'User Ended Task' : 'User Rejected'),
                     timestamp: Date.now(),
                 };
 
@@ -71,9 +72,16 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
                 get().setPendingIntervention(sessionId, intervention);
             }
 
-            if (!approved && !intervention) {
+            if (!approved && !intervention && !isContinuation) {
                 // If rejected without instruction, stop loop
                 get().setLoopStatus(sessionId, 'paused');
+                get().setApprovalRequest(sessionId, undefined);
+                return;
+            }
+
+            if (isContinuation && !approved && !intervention) {
+                // 用户在续杯卡片点击了 "End Task" (Reject)
+                get().setLoopStatus(sessionId, 'completed');
                 get().setApprovalRequest(sessionId, undefined);
                 return;
             }
@@ -113,7 +121,21 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
             get().setApprovalRequest(sessionId, undefined);
             get().setLoopStatus(sessionId, 'running');
 
+            // 🆕 如果是续杯且已批准，增加 continuationBudget
+            if (isContinuation && approved) {
+                const currentBudget = session?.continuationBudget || 0;
+                set((state) => ({
+                    sessions: state.sessions.map((s) =>
+                        s.id === sessionId
+                            ? { ...s, continuationBudget: currentBudget + 10 }
+                            : s
+                    ),
+                }));
+                console.log('[ApprovalManager] Continuation approved, budget increased to:', currentBudget + 10);
+            }
+
             // 3. Continue Generation (Next Turn)
+            // 🆕 如果是续杯或干预，确保 generateMessage 被触发
             await get().generateMessage(sessionId, '', {
                 isResumption: true,
             } as any);

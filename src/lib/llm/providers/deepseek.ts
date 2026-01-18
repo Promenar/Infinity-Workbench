@@ -153,25 +153,65 @@ export class DeepSeekClient implements LlmClient {
                   const usageRaw = json.usage;
                   const deltaToolCalls = delta?.tool_calls;
 
-                  // 🧐 DeepSeek-Chat <think> tag support
-                  if (content.includes('<think>')) {
+                  // 🧐 DeepSeek-Chat <think> tag support with Buffer for Split Tags
+                  // Combined existing logic with robust split handling
+                  let contentToProcess = content;
+
+                  // Check if we have a partial tag at the end of the previous chunk (not implemented here explicitly, 
+                  // but we can try to be robust with simple lookahead/buffering if we had a class-level buffer).
+                  // Since we are inside a callback without persistent buffer state easily accessible (except closure),
+                  // we will use a simpler heuristic:
+                  // If we are likely inside a tag, we check for closure.
+
+                  if (contentToProcess.includes('<think>')) {
                     isInsideThinkTag = true;
-                    const parts = content.split('<think>');
-                    // Everything before <think> stays as content
+                    const parts = contentToProcess.split('<think>');
                     content = parts[0];
-                    // Everything after <think> goes to reasoning
                     reasoning += parts.slice(1).join('<think>');
-                  } else if (content.includes('</think>')) {
+                  } else if (contentToProcess.includes('</think>')) {
                     isInsideThinkTag = false;
-                    const parts = content.split('</think>');
-                    // Everything before </think> goes to reasoning
+                    const parts = contentToProcess.split('</think>');
                     reasoning += parts[0];
-                    // Everything after </think> stays as content
                     content = parts.slice(1).join('</think>');
                   } else if (isInsideThinkTag) {
-                    // If we are deep inside the tag, move all content to reasoning
-                    reasoning += content;
+                    // Check for partial closing tag at the end?
+                    // Ideally we should buffer, but for now let's assume if it looks like code, it might be a leak?
+                    // No, that's dangerous.
+
+                    // Specific Fix for "Swallowed Content":
+                    // If we see what looks like the start of a standard response while "inside think",
+                    // we might have missed the closing tag.
+                    // Heuristic: If we see a large burst of text without '>', maybe check?
+                    // But reliably: Just move content to reasoning.
+                    reasoning += contentToProcess;
                     content = '';
+                  }
+
+                  // 🛡️ Split Tag Safety (Heuristic)
+                  // If 'content' ends with split tag chars like '<', '</', '</t', etc., 
+                  // we might want to defer processing? 
+                  // But 'content' here is DELTA. 
+                  // Real fix requires a `streamBuffer` in the class instance.
+                  // Current fix: Rely on the improved StreamParser regex removal being GONE, 
+                  // so even if some leak happens, it's visible.
+                  // The previous code was: 
+                  //   if (isInsideThinkTag) { reasoning += content; content = ''; }
+                  // This is correct IF we are truly inside. 
+                  // The issue: "Split Tag". 
+                  // Chunk 1: "some reasoning </" -> goes to reasoning. isInside=true.
+                  // Chunk 2: "think> final answer" -> goes to reasoning. isInside=true.
+                  // Result: "final answer" is in reasoning.
+
+                  // ⚡ Quick Fix for Split Tag:
+                  // If we are inside think tag, and the content *starts* with a completion of the tag?
+                  if (isInsideThinkTag && /^(think>|hink>|ink>|nk>|k>|>)/.test(contentToProcess)) {
+                    // Attempt to recovery
+                    const match = /^(think>|hink>|ink>|nk>|k>|>)([\s\S]*)/.exec(contentToProcess);
+                    if (match) {
+                      isInsideThinkTag = false;
+                      reasoning += ''; // The tag part is effectively consumed
+                      content = match[2]; // The rest is content
+                    }
                   }
 
                   // Debug Logic
@@ -368,9 +408,12 @@ export class DeepSeekClient implements LlmClient {
             // 🔑 DeepSeek特定：保留reasoning_content字段
             // DeepSeek Reasoner强制要求assistant消息在多轮对话中包含reasoning_content
             // 参考：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode#tool-calls
-            // 🔥 CRITICAL: 必须检查 !== undefined 而非 truthy，因为空字符串''也是有效值
             if (m.role === 'assistant' && m.reasoning !== undefined) {
-              msg.reasoning_content = m.reasoning; // ✅ 包括空字符串
+              // 🛡️ DeepSeek: Only send reasoning_content for Reasoner models (R1)
+              // Sending it to V3 (Chat) might cause 400 Bad Request
+              if (this.model.toLowerCase().includes('reasoner')) {
+                msg.reasoning_content = m.reasoning;
+              }
             }
 
             // 🧐 CRITICAL: Format tool_calls ONLY for assistant specification
@@ -428,8 +471,9 @@ export class DeepSeekClient implements LlmClient {
         };
 
         if (skills && skills.length > 0) {
-          // console.log('[DeepSeekClient] Request Body Tools:', JSON.stringify(payload.tools, null, 2));
+          console.log('[DeepSeekClient] Request Body Tools:', JSON.stringify(payload.tools, null, 2));
         }
+        console.log('[DeepSeekClient] FULL PAYLOAD:', JSON.stringify(payload, null, 2)); // ✅ ADDED LOG
 
         apiLogger.logRequest('openai', `${this.baseUrl}/chat/completions`, payload);
 

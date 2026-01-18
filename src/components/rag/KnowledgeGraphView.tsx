@@ -95,8 +95,10 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     // Link Mode Logic
     if (isLinkMode) {
       if (!linkSourceId) {
-        setLinkSourceId(nodeId);
-        Haptics.selectionAsync();
+        setTimeout(() => {
+          setLinkSourceId(nodeId);
+          Haptics.selectionAsync();
+        }, 10);
         // Ideally show toast here: "Select target node"
       } else {
         if (linkSourceId === nodeId) {
@@ -348,9 +350,11 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
         {/* Link Mode Toggle */}
         <TouchableOpacity
           onPress={() => {
-            setIsLinkMode(!isLinkMode);
-            setLinkSourceId(null);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setTimeout(() => {
+              setIsLinkMode(!isLinkMode);
+              setLinkSourceId(null);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            }, 10);
           }}
           style={{
             backgroundColor: isLinkMode ? colors[500] : (isDark ? '#27272a' : '#ffffff'),

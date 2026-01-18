@@ -70,8 +70,12 @@ export function Button({
 
   const handlePress = (e: any) => {
     if (disabled || loading) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress && onPress(e);
+
+    // Native Bridge Defensive Driving: Yield to UI thread before sending bridge commands
+    setTimeout(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress && onPress(e);
+    }, 10);
   };
 
   return (

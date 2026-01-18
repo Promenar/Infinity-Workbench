@@ -3,7 +3,7 @@ import { View, TouchableOpacity, TextInput, ViewStyle, Platform } from 'react-na
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useChatStore } from '../../../store/chat-store';
 import { Typography } from '../../../components/ui/Typography';
-import { Play, XCircle, AlertTriangle } from 'lucide-react-native';
+import { Play, XCircle, AlertTriangle, RotateCw, Hourglass } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 
 interface ApprovalCardProps {
@@ -21,7 +21,19 @@ export const ApprovalCard = ({ sessionId, containerStyle }: ApprovalCardProps) =
 
     if (!session || session.loopStatus !== 'waiting_for_approval' || !session.approvalRequest) return null;
 
-    const { toolName, args, reason } = session.approvalRequest;
+    const { toolName, args, reason, type } = session.approvalRequest;
+
+    // Config based on type
+    const isContinuation = type === 'continuation';
+    const mainColor = isContinuation ? '#3b82f6' : '#d97706'; // Blue vs Amber
+    const bgColor = isContinuation ? (isDark ? 'rgba(59, 130, 246, 0.1)' : '#eff6ff') : (isDark ? 'rgba(217, 119, 6, 0.1)' : '#fffbeb');
+    const borderColor = isContinuation ? (isDark ? 'rgba(59, 130, 246, 0.3)' : '#bfdbfe') : (isDark ? 'rgba(217, 119, 6, 0.3)' : '#fcd34d');
+
+    // Labels
+    const title = isContinuation ? 'Loop Limit Reached' : 'Action Approval Required';
+    const rejectLabel = isContinuation ? 'End Task' : 'Reject';
+    const approveLabel = isContinuation ? 'Continue (+10)' : (interventionText.trim() ? '携带指令批准' : '批准并执行');
+    const Icon = isContinuation ? RotateCw : AlertTriangle;
 
     const handleApprove = () => {
         // 原生桥接延迟防护
@@ -45,16 +57,16 @@ export const ApprovalCard = ({ sessionId, containerStyle }: ApprovalCardProps) =
             marginBottom: 8,
             padding: 12,
             borderRadius: 12,
-            backgroundColor: isDark ? 'rgba(217, 119, 6, 0.1)' : '#fffbeb', // Amber tint
+            backgroundColor: bgColor,
             borderWidth: 1,
-            borderColor: isDark ? 'rgba(217, 119, 6, 0.3)' : '#fcd34d',
+            borderColor: borderColor,
         }, containerStyle]}>
 
             {/* Header */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-                <AlertTriangle size={18} color="#d97706" />
-                <Typography variant="body" style={{ fontWeight: '700', color: '#d97706' }}>
-                    Action Approval Required
+                <Icon size={18} color={mainColor} />
+                <Typography variant="body" style={{ fontWeight: '700', color: mainColor }}>
+                    {title}
                 </Typography>
             </View>
 
@@ -126,7 +138,7 @@ export const ApprovalCard = ({ sessionId, containerStyle }: ApprovalCardProps) =
                     }}
                 >
                     <XCircle size={16} color={isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)'} />
-                    <Typography variant="body" color="secondary" style={{ fontWeight: '600' }}>Reject</Typography>
+                    <Typography variant="body" color="secondary" style={{ fontWeight: '600' }}>{rejectLabel}</Typography>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -138,13 +150,13 @@ export const ApprovalCard = ({ sessionId, containerStyle }: ApprovalCardProps) =
                         justifyContent: 'center',
                         padding: 10,
                         borderRadius: 8,
-                        backgroundColor: '#d97706',
+                        backgroundColor: mainColor,
                         gap: 6
                     }}
                 >
                     <Play size={16} color="#fff" fill="#fff" />
                     <Typography variant="body" style={{ fontWeight: '700', color: '#fff' }}>
-                        {interventionText.trim() ? '携带指令批准' : '批准并执行'}
+                        {approveLabel}
                     </Typography>
                 </TouchableOpacity>
             </View>

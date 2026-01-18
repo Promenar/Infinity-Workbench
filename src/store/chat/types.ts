@@ -44,7 +44,8 @@ export interface MessageManager {
         ragReferencesLoading?: boolean,
         ragMetadata?: RagMetadata,
         thought_signature?: string,
-        taskState?: TaskState
+        taskState?: TaskState,
+        tool_calls?: ToolCall[]
     ) => void;
 
     deleteMessage: (sessionId: string, messageId: string) => void;
@@ -65,6 +66,13 @@ export interface MessageManager {
 
     // Phase 4a: 新增方法
     setVectorizationStatus: (sessionId: string, messageIds: string[], status: 'processing' | 'success' | 'error') => void;
+
+    // Phase 4c: 竞态条件修复
+    flushMessageUpdates: (sessionId: string, messageId: string) => void;
+
+    // Phase 4c: Add tool_calls support
+    // (This is implicitly supported by DB update but not type definition?)
+    // No, updateMessageContent signature in types.ts is strict.
 }
 
 // ===== 会话管理接口 =====

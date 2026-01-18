@@ -136,7 +136,15 @@ export const translations = {
       dataStorageDesc: '清理缓存与下载',
       privacy: '私隐与安全',
       privacyDesc: '生物识别锁定与密钥',
+      logging: '运行日志记录',
+      loggingDesc: '记录应用运行与 API 调试信息，用于故障排查',
+      exportLogs: '导出运行日志',
+      exportLogsDesc: '生成日志文件并呼起系统分享',
+      exportSuccess: '日志导出成功',
+      exportFail: '日志导出失败',
       about: '关于',
+
+
       version: '版本',
       recentAdded: '显示最新添加',
       recentAddedDesc: '在轮播图下方显示最新添加的文件',
@@ -992,7 +1000,15 @@ export const translations = {
       dataStorageDesc: 'Clear cache and downloads',
       privacy: 'Privacy & Security',
       privacyDesc: 'Biometric lock and keys',
+      logging: 'Operation Logging',
+      loggingDesc: 'Record app execution and API debug info',
+      exportLogs: 'Export Runtime Logs',
+      exportLogsDesc: 'Generate log file and evoke system sharing',
+      exportSuccess: 'Logs exported successfully',
+      exportFail: 'Failed to export logs',
       about: 'About',
+
+
       version: 'Version',
       recentAdded: 'Show Recently Added',
       recentAddedDesc: 'Show recently added files under carousel',

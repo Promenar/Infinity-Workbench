@@ -528,7 +528,7 @@ export default function ChatDetailScreen() {
       {/* Floating ChatInput */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         style={{
           position: 'absolute',
           bottom: 0,
@@ -536,7 +536,6 @@ export default function ChatDetailScreen() {
           right: 0,
         }}
       >
-
         <ChatInput
           isInterventionMode={session.loopStatus === 'running' || session.loopStatus === 'waiting_for_approval'}
           onSendMessage={async (content, options) => {
@@ -728,6 +727,6 @@ export default function ChatDetailScreen() {
       />
 
 
-    </PageLayout>
+    </PageLayout >
   );
 }

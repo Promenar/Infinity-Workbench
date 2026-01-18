@@ -1,14 +1,17 @@
+import { Logger } from '../logging/Logger';
 
 /**
  * API Debug Logger
- * Captures request and response payloads for debugging multi-model issues.
+ * Captures request and response payloads for debugging.
+ * Wraps the unified Logger system.
  */
 class ApiLogger {
     private static instance: ApiLogger;
-    private logs: any[] = [];
-    private maxLogs = 50;
+    private logger: Logger;
 
-    private constructor() { }
+    private constructor() {
+        this.logger = Logger.getInstance();
+    }
 
     static getInstance() {
         if (!ApiLogger.instance) {
@@ -18,45 +21,38 @@ class ApiLogger {
     }
 
     logRequest(provider: string, endpoint: string, body: any) {
-        const entry = {
-            timestamp: new Date().toISOString(),
+        // console.log output is kept for dev debugging if needed, or we rely on Logger's internal dev output
+        // Logger.info uses the 'tag' argument. We use 'ApiLogger' or provider name as tag?
+        // Let's use 'ApiLogger' as tag, and put provider info in message or metadata.
+
+        this.logger.info('ApiLogger', `REQ [${provider}] -> ${endpoint}`, {
             type: 'request',
             provider,
             endpoint,
-            body: JSON.parse(JSON.stringify(body)) // Deep copy
-        };
-        this.addEntry(entry);
-        console.log(`[API_DEBUG][REQ][${provider}] -> ${endpoint}`);
-        console.log(`[API_DEBUG][REQ_BODY] ${JSON.stringify(body).substring(0, 500)}...`);
+            body
+        });
     }
 
     logResponse(provider: string, status: number, body: any) {
-        const entry = {
-            timestamp: new Date().toISOString(),
+        this.logger.info('ApiLogger', `RES [${provider}] <- ${status}`, {
             type: 'response',
             provider,
             status,
-            body: typeof body === 'string' ? body.substring(0, 1000) : JSON.parse(JSON.stringify(body))
-        };
-        this.addEntry(entry);
-        console.log(`[API_DEBUG][RES][${provider}] <- ${status}`);
-        const resText = typeof body === 'string' ? body : JSON.stringify(body);
-        console.log(`[API_DEBUG][RES_BODY] ${resText.substring(0, 500)}...`);
+            body
+        });
     }
 
-    private addEntry(entry: any) {
-        this.logs.unshift(entry);
-        if (this.logs.length > this.maxLogs) {
-            this.logs.pop();
-        }
-    }
-
+    /**
+     * @deprecated Use Logger.getInstance().getRecentLogs() instead
+     */
     getLogs() {
-        return this.logs;
+        // For compatibility, return empty or map recent logs. 
+        // Returning empty array to avoid breaking if caller expects specific format not matching generic LogEntry.
+        return [];
     }
 
     clear() {
-        this.logs = [];
+        // No-op or clear global logger? Better no-op to avoid clearing valuable app logs
     }
 }
 

@@ -79,10 +79,12 @@ export function GlassHeader({
 
     const handleAction = (action: GlassHeaderAction) => {
         preventDoubleTap(() => {
+            // 遵循 Native Bridge 防御规则：
+            // 任何 Haptics 或 Navigation 操作必须延迟执行，避免与 TouchUp 事件冲突锁死 Bridge
             setTimeout(() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 action.onPress();
-            }, 0);
+            }, 15);
         });
     };
 

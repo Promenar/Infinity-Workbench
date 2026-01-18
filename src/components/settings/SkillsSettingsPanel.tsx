@@ -40,8 +40,8 @@ export const SkillsSettingsPanel: React.FC = () => {
     };
 
     const handleLoopChange = (delta: number) => {
-        const currentCount = maxLoopCount || 5;
-        const newValue = Math.max(1, Math.min(20, currentCount + delta));
+        const currentCount = maxLoopCount || 20;
+        const newValue = Math.max(1, Math.min(99, currentCount + delta));
         if (newValue !== currentCount) {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setMaxLoopCount(newValue);
@@ -70,8 +70,8 @@ export const SkillsSettingsPanel: React.FC = () => {
                         <TouchableOpacity
                             onPress={() => handleLoopChange(-1)}
                             className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
-                            style={{ opacity: (maxLoopCount || 5) <= 1 ? 0.4 : 1 }}
-                            disabled={(maxLoopCount || 5) <= 1}
+                            style={{ opacity: (maxLoopCount || 20) <= 1 ? 0.4 : 1 }}
+                            disabled={(maxLoopCount || 20) <= 1}
                         >
                             <Minus size={18} color={isDark ? '#fff' : '#000'} />
                         </TouchableOpacity>
@@ -84,14 +84,14 @@ export const SkillsSettingsPanel: React.FC = () => {
                             fontWeight: '700',
                             color: isDark ? '#fff' : '#000'
                         }}>
-                            {maxLoopCount || 5}
+                            {maxLoopCount || 20}
                         </Text>
 
                         <TouchableOpacity
                             onPress={() => handleLoopChange(1)}
                             className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
-                            style={{ opacity: (maxLoopCount || 5) >= 20 ? 0.4 : 1 }}
-                            disabled={(maxLoopCount || 5) >= 20}
+                            style={{ opacity: (maxLoopCount || 20) >= 99 ? 0.4 : 1 }}
+                            disabled={(maxLoopCount || 20) >= 99}
                         >
                             <Plus size={18} color={isDark ? '#fff' : '#000'} />
                         </TouchableOpacity>

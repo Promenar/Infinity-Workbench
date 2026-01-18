@@ -18,6 +18,7 @@ import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
 import { useApiStore } from './api-store';
 import { useSettingsStore } from './settings-store';
+
 import { useRagStore } from './rag-store'; // ✅ 导入 RagStore
 import { createLlmClient } from '../lib/llm/factory';
 import { estimateTokens } from '../features/chat/utils/token-counter';
@@ -156,15 +157,17 @@ export interface ChatState {
     ragMetadata?: RagMetadata,
     thought_signature?: string, // 🧠 Added for Gemini 2.0
     planningTask?: TaskState, // ✅ Added for Message-Scoped Tasks
+    tool_calls?: ToolCall[], // ✅ Added for DeepSeek Consistency
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
-  deleteMessage: (sessionId: SessionId, messageId: string) => void;
+  deleteMessage: (sessionId: SessionId, messageId: string) => Promise<void>;
   toggleSessionPin: (sessionId: SessionId) => void;
 
   updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
   // Deprecated: setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
   setVectorizationStatus: (sessionId: SessionId, messageIds: string[], status: 'processing' | 'success' | 'error') => void;
+  flushMessageUpdates: (sessionId: string, messageId: string) => void;
   updateMessageLayout: (sessionId: SessionId, messageId: string, height: number) => void;
   setKGExtractionStatus: (sessionId: SessionId, isExtracting: boolean) => void;
   vectorizeMessage: (sessionId: string, messageId: string) => Promise<void>;
@@ -176,7 +179,7 @@ export interface ChatState {
   setExecutionMode: (sessionId: string, mode: 'auto' | 'semi' | 'manual') => void;
   setLoopStatus: (sessionId: string, status: 'idle' | 'running' | 'paused' | 'waiting_for_approval' | 'completed') => void;
   setPendingIntervention: (sessionId: string, intervention: string | undefined) => void;
-  setApprovalRequest: (sessionId: string, request: { toolName: string; args: any; reason: string } | undefined) => void;
+  setApprovalRequest: (sessionId: string, request: { type?: 'tool_approval' | 'continuation'; toolName: string; args: any; reason: string } | undefined) => void;
   // Internal Helper (exposed for loop and resume)
   executeTools: (sessionId: string, toolCalls: ToolCall[], targetMessageId?: string) => Promise<void>;
   resumeGeneration: (sessionId: string, approved?: boolean, intervention?: string) => Promise<void>;
@@ -234,8 +237,9 @@ export const useChatStore = create<ChatState>()(
         updateSessionDraft: sessionManager.updateSessionDraft,
 
         updateMessageProgress: messageManager.updateMessageProgress,
+        flushMessageUpdates: messageManager.flushMessageUpdates,
 
-        deleteMessage: (sessionId, messageId) => {
+        deleteMessage: async (sessionId, messageId) => {
           const state = get();
           // If the session being edited is currently generating
           if (state.currentGeneratingSessionId === sessionId) {
@@ -250,6 +254,11 @@ export const useChatStore = create<ChatState>()(
             }
           }
 
+          // 1. Delete from DB (Sync Source of Truth)
+          const { SessionRepository } = await import('../lib/db/session-repository');
+          await SessionRepository.deleteMessage(sessionId, messageId);
+
+          // 2. Delete from State
           set((state) => ({
             sessions: state.sessions.map((s) => {
               if (s.id === sessionId) {
@@ -524,6 +533,10 @@ export const useChatStore = create<ChatState>()(
                   progress: 2
                 }, assistantMsgId);
 
+                // 🔑 CRITICAL FIX: Yield thread to allow UI events (Navigation/Back) to process
+                // RAG retrieval involves heavy SQLite ops which can block the JS thread preventing navigation
+                await new Promise(resolve => setTimeout(resolve, 0));
+
                 const {
                   context: retrievedContext,
                   references,
@@ -643,7 +656,8 @@ If the user's request is complex, multi-step, or requires maintaining state (e.g
 2. 🚫 NO PARAMETER WRAPPING: DO NOT wrap arguments in a "parameters" or "arguments" key. Example: Use \`manage_task({ "action": "create", ... })\`, NOT \`manage_task({ "parameters": { "action": "create", ... } })\`.
 3. 🚫 NO INTRODUCTORY TEXT: DO NOT say "I will now search..." or "Here is the plan...". Your response must ONLY contain tool calls.
 4. PROVIDE ALL REQUIRED PARAMETERS. For 'query_vector_db', ensures 'query' is NOT empty.
-5. Trigger tools immediately. Any leading/trailing conversational text is an ERROR.`;
+5. Trigger tools immediately. Any leading/trailing conversational text is an ERROR.
+6. ⚠️ AFTER TOOL EXECUTION: You MUST provide a natural language summary or answer based on the tool results. DO NOT STOP after the tool runs.`;
 
               finalSystemPrompt += toolInstruction;
 
@@ -1046,9 +1060,52 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             };
 
 
-            while (loopCount < MAX_LOOP_COUNT && get().activeRequests[sessionId]) {
+            const maxLoops = useSettingsStore.getState().maxLoopCount || 20;
+            const continuationBudget = session?.continuationBudget || 0;
+            const effectiveMaxLoops = maxLoops + continuationBudget;
+
+            while (get().activeRequests[sessionId]) {
               loopCount++;
-              console.log(`[AgentLoop] Turn ${loopCount}/${MAX_LOOP_COUNT}`);
+              console.log(`[AgentLoop] Turn ${loopCount}/${effectiveMaxLoops} (base: ${maxLoops}, budget: ${continuationBudget})`);
+
+              // 🛡️ Continuation Check
+              if (loopCount > effectiveMaxLoops) {
+                console.log(`[AgentLoop] Max loops (${effectiveMaxLoops}) reached. Pausing for continuation.`);
+
+                get().setApprovalRequest(sessionId, {
+                  type: 'continuation',
+                  toolName: 'Loop Limit',
+                  args: {},
+                  reason: `已达到最大执行轮数 (${effectiveMaxLoops})`
+                });
+                get().setLoopStatus(sessionId, 'waiting_for_approval');
+
+                // ✅ 关键：同步向 Timeline 推送一个待续步骤
+                const interventionStep: ExecutionStep = {
+                  id: `cont_${Date.now()}`,
+                  type: 'intervention_required',
+                  toolName: 'Loop Limit',
+                  content: `已达到执行轮数上限 (${maxLoops})。是否继续执行？`,
+                  timestamp: Date.now()
+                };
+
+                // Persist state
+                set(state => ({
+                  sessions: state.sessions.map(s => s.id === sessionId ? {
+                    ...s,
+                    messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
+                      ...m,
+                      content: accumulatedContent,
+                      tool_calls: toolCalls,
+                      thought_signature: turnThoughtSignature || m.thought_signature,
+                      executionSteps: [...(m.executionSteps || []), interventionStep]
+                    } : m)
+                  } : s)
+                }));
+
+                break;
+              }
+
 
               // Steerable Agent Loop: Intervention
               const pending = get().getSession(sessionId)?.pendingIntervention;
@@ -1234,7 +1291,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                       sessionId,
                       currentAssistantMsgId,
                       accumulatedContent,
-                      token.usage
+                      token.usage,
+                      undefined, // reasoning
+                      undefined, // citations
+                      undefined, // ragReferences
+                      undefined, // ragReferencesLoading
+                      undefined, // ragMetadata
+                      undefined, // thought_signature
+                      undefined, // taskState
+                      token.toolCalls
                     );
                     lastContentUpdateTime = now;
                   }
@@ -1280,7 +1345,15 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 sessionId,
                 currentAssistantMsgId,
                 finalDisplayContent,
-                accumulatedUsage
+                accumulatedUsage,
+                undefined, // reasoning
+                undefined, // citations
+                undefined, // ragReferences
+                undefined, // ragReferencesLoading
+                undefined, // ragMetadata
+                turnThoughtSignature, // thought_signature
+                undefined, // taskState
+                toolCalls // 🔑 Phase 4c: Ensure final toolCalls are saved
               );
 
               // Flush remaining content buffer if any
@@ -1315,12 +1388,21 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   finalDisplayContent,
                   accumulatedUsage,
                   reasoningFromThisTurn,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  turnThoughtSignature
+                  undefined, // citations
+                  undefined, // ragReferences
+                  undefined, // ragReferencesLoading
+                  undefined, // ragMetadata
+                  turnThoughtSignature,
+                  undefined, // taskState
+                  toolCalls // 🔑 Phase 4c: Ensure toolCalls are saved with reasoning update
                 );
+
+              }
+
+              // ✅ Phase 4c: 竞态条件修复 - 强制刷新消息状态
+              // 确保后续工具执行时能读到最新的 thought_signature 和 tool_calls
+              if (get().flushMessageUpdates) {
+                get().flushMessageUpdates(sessionId, currentAssistantMsgId);
               }
 
               // 6. Output Processing
@@ -1850,6 +1932,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                   if (currentAssistantIdx > -1) {
                     // 提取当前assistant及其后的tool消息
+                    console.log('[AgentLoop] latestSession messages count:', latestSession.messages.length, 'idx:', currentAssistantIdx);
                     const newSegment = latestSession.messages.slice(currentAssistantIdx);
 
                     console.log('[AgentLoop] Extracting new segment (normal branch):', {
@@ -1888,6 +1971,12 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             // =====================================================================================
             // Phase 5: Post-Processing
             // =====================================================================================
+
+            // ✅ 关键逻辑：如果是因为等待审批而退出的循环，不要执行清理逻辑
+            if (get().getSession(sessionId)?.loopStatus === 'waiting_for_approval') {
+              console.log('[AgentLoop] Loop paused for approval/continuation. Skipping cleanup.');
+              return;
+            }
 
             // ✅ 关键修复：AgentLoop结束后重置状态，允许新消息
             // 如果不重置，会话将永久卡在running/waiting_for_approval状态
@@ -2178,7 +2267,11 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
           console.log('[ChatStore] Regenerating last message, user content:', userContent.substring(0, 50));
 
-          // 1. 删除最后一条 AI 回复
+          // 1. 删除最后一条 AI 回复 from DB and State
+          // ⚠️ Critical Fix: Must delete from DB to prevent ghost messages on reload
+          const { SessionRepository } = await import('../lib/db/session-repository');
+          await SessionRepository.deleteMessage(sessionId, lastMsg.id);
+
           set((state: ChatState) => ({
             sessions: state.sessions.map(s =>
               s.id === sessionId

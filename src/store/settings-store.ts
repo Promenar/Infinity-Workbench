@@ -54,7 +54,12 @@ interface SettingsState {
   localModelsEnabled: boolean;
   setLocalModelsEnabled: (enabled: boolean) => void;
 
+  // Logging
+  loggingEnabled: boolean;
+  setLoggingEnabled: (enabled: boolean) => void;
+
   _hasHydrated: boolean;
+
   setHasHydrated: (state: boolean) => void;
 }
 
@@ -159,7 +164,7 @@ export const useSettingsStore = create<SettingsState>()(
           globalRagConfig: { ...state.globalRagConfig, ...updates },
         })),
 
-      maxLoopCount: 5,
+      maxLoopCount: 20,
       setMaxLoopCount: (count) => set({ maxLoopCount: count }),
       executionMode: 'semi',
       setExecutionMode: (mode) => set({ executionMode: mode }),
@@ -172,7 +177,11 @@ export const useSettingsStore = create<SettingsState>()(
       localModelsEnabled: false,
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
 
+      loggingEnabled: true,
+      setLoggingEnabled: (enabled) => set({ loggingEnabled: enabled }),
+
       _hasHydrated: false,
+
       setHasHydrated: (state) => set({ _hasHydrated: state }),
     }),
     {
@@ -193,7 +202,9 @@ export const useSettingsStore = create<SettingsState>()(
         executionMode: state.executionMode,
         skillsConfig: state.skillsConfig,
         localModelsEnabled: state.localModelsEnabled,
+        loggingEnabled: state.loggingEnabled,
       }),
+
       onRehydrateStorage: () => (state) => {
         // Fail-safe: Sanitize hydration
         if (state && (!state.accentColor || !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(state.accentColor))) {
