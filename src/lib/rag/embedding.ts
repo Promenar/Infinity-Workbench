@@ -138,10 +138,20 @@ export class EmbeddingClient {
       });
 
       if (!response.ok) {
+        const contentType = response.headers.get('Content-Type') || '';
         const errorText = await response.text();
+        if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+          throw new Error(`Vertex AI Embedding failed: HTTP ${response.status} (Received HTML/Non-JSON response)`);
+        }
         throw new Error(
           `Vertex AI Embedding failed: ${response.status} ${errorText.substring(0, 200)}`,
         );
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Vertex AI Embedding failed: Expected JSON but got ${contentType}. Content: ${text.substring(0, 100)}`);
       }
 
       const data = await response.json();
@@ -193,10 +203,20 @@ export class EmbeddingClient {
       });
 
       if (!response.ok) {
+        const contentType = response.headers.get('Content-Type') || '';
         const errorText = await response.text();
+        if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+          throw new Error(`Gemini Embedding failed: HTTP ${response.status} (Received HTML/Non-JSON response)`);
+        }
         throw new Error(
           `Gemini Embedding failed: ${response.status} ${errorText.substring(0, 200)}`,
         );
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Gemini Embedding failed: Expected JSON but got ${contentType}. Content: ${text.substring(0, 100)}`);
       }
 
       const data = await response.json();
@@ -220,52 +240,22 @@ export class EmbeddingClient {
   private async embedOpenAI(
     texts: string[],
   ): Promise<{ embeddings: number[][]; usage?: { total_tokens: number } }> {
-    const baseUrl = this.provider.baseUrl || 'https://api.openai.com/v1';
-    const endpoint = `${baseUrl}/embeddings`;
+    if (!this.openaiClient) {
+      throw new Error('OpenAI client not initialized');
+    }
 
-    // OpenAI 批量限制通常为 2048，但保守处理
-    // SiliconFlow 等 API 代理限制较严（如 64），调整为 50 以确保兼容性
+    // OpenAI 批量限制处理：OpenAiClient.embeddings 会处理输入数组，
+    // 但这里我们保留批量切片逻辑，以保持对 API 代理（如 SiliconFlow）的保守兼容性。
     const batchSize = 50;
     const allEmbeddings: number[][] = [];
     let totalTokens = 0;
 
     for (let i = 0; i < texts.length; i += batchSize) {
       const batch = texts.slice(i, i + batchSize);
+      const result = await this.openaiClient.embeddings(batch);
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.provider.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          input: batch,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `OpenAI Embedding failed: ${response.status} ${errorText.substring(0, 200)}`,
-        );
-      }
-
-      const data = await response.json();
-
-      if (!data.data || !Array.isArray(data.data)) {
-        throw new Error('Invalid OpenAI response: missing data array');
-      }
-
-      const embeddings = data.data
-        .sort((a: any, b: any) => a.index - b.index)
-        .map((item: any) => item.embedding);
-
-      allEmbeddings.push(...embeddings);
-
-      if (data.usage?.total_tokens) {
-        totalTokens += data.usage.total_tokens;
-      }
+      allEmbeddings.push(...result.embeddings);
+      totalTokens += result.usage.total_tokens;
     }
 
     return {

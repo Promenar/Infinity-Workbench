@@ -565,7 +565,12 @@ export class OpenAiClient implements LlmClient {
     });
 
     if (!response.ok) {
+      // 🛡️ Rule 8.4: Capture HTML error pages
+      const contentType = response.headers.get('Content-Type') || '';
       const errorText = await response.text();
+      if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+        throw new Error(`HTTP ${response.status}: Received non-JSON response (possibly HTML error page).`);
+      }
       throw new Error(`OpenAI Image Error (${response.status}): ${errorText}`);
     }
 
@@ -611,7 +616,12 @@ export class OpenAiClient implements LlmClient {
     });
 
     if (!response.ok) {
+      // 🛡️ Rule 8.4: Capture HTML error pages
+      const contentType = response.headers.get('Content-Type') || '';
       const errorText = await response.text();
+      if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+        throw new Error(`HTTP ${response.status}: Received non-JSON response (possibly HTML error page).`);
+      }
       throw new Error(`Completion Error (${response.status}): ${errorText}`);
     }
 
@@ -625,6 +635,55 @@ export class OpenAiClient implements LlmClient {
           total: data.usage.total_tokens,
         }
         : undefined,
+    };
+  }
+
+  /**
+   * 🛠️ Rule 8.4 Compliant Embedding Method
+   */
+  async embeddings(input: string | string[]): Promise<{ embeddings: number[][]; usage: { total_tokens: number } }> {
+    // 启发式路径修正：如果 URL 看起来像聚合器且缺少 /v1，自动尝试补全
+    const isAggregator = this.baseUrl.includes('api.') || this.baseUrl.includes('api-');
+    const hasV1 = this.baseUrl.endsWith('/v1') || this.baseUrl.includes('/v1/');
+    const baseUrlInternal = (isAggregator && !hasV1) ? `${this.baseUrl.replace(/\/$/, '')}/v1` : this.baseUrl;
+
+    const endpoint = `${baseUrlInternal}/embeddings`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        input: Array.isArray(input) ? input : [input],
+      }),
+    });
+
+    if (!response.ok) {
+      // 🛡️ Rule 8.4: Capture HTML error pages
+      const contentType = response.headers.get('Content-Type') || '';
+      const errorText = await response.text();
+      if (errorText.trim().startsWith('<') || !contentType.includes('application/json')) {
+        throw new Error(`HTTP ${response.status}: Received non-JSON response from ${endpoint} (possibly HTML error page).`);
+      }
+      throw new Error(`Embedding Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data.data || !Array.isArray(data.data)) {
+      throw new Error('Invalid OpenAI embedding response: missing data array');
+    }
+
+    const embeddings = data.data
+      .sort((a: any, b: any) => (a.index || 0) - (b.index || 0))
+      .map((item: any) => item.embedding);
+
+    return {
+      embeddings,
+      usage: {
+        total_tokens: data.usage?.total_tokens || 0,
+      },
     };
   }
 
