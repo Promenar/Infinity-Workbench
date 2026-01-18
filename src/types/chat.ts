@@ -246,6 +246,7 @@ export interface RagConfiguration {
   costStrategy?: 'summary-first' | 'on-demand' | 'full'; // 抽取策略
   enableIncrementalHash?: boolean; // 启用增量Hash校验 (默认true)
   enableLocalPreprocess?: boolean; // 启用本地规则预处理 (默认true)
+  kgBatchSize?: number; // 🔑 会话级 KG 批量抽取阈值（默认 3，即每 3 轮对话触发一次抽取）
 
   // Scope Configuration (Added for Global RAG Context)
   activeDocIds?: string[]; // 全局默认授权文档

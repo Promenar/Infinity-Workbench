@@ -260,49 +260,61 @@ export class MemoryManager {
 
       const results: SearchResult[] = [];
 
-      // 3.1 记忆搜索
+      // 🔑 优化：Memory 和 Doc 搜索并行执行
+      onProgress?.('searching', 45, 'LOCAL_SCAN');
+
+      const searchTasks: Promise<SearchResult[]>[] = [];
+
+      // 3.1 记忆搜索任务
       if (enableMemory) {
-        onProgress?.('searching', 45, 'LOCAL_SCAN');
-        try {
-          // 🔑 动态召回数量：如果开启重排序或混合搜索，则扩大初搜范围
-          const initialRecallLimit = effectiveRagConfig.enableRerank || effectiveRagConfig.enableHybridSearch
-            ? (effectiveRagConfig.rerankTopK || 30)
-            : (effectiveRagConfig.memoryLimit || 5) * 2;
-
-          const memResults = await vectorStore.search(queryEmbedding, {
-            limit: initialRecallLimit,
-            threshold: effectiveRagConfig.memoryThreshold,
-            filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' },
-          });
-          results.push(...memResults);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
-      // 3.2 文档搜索
-      if (enableDocs) {
-        const hasAuth = isGlobal || (authorizedDocIds && authorizedDocIds.size > 0);
-        if (hasAuth) {
+        const memoryTask = (async () => {
           try {
             const initialRecallLimit = effectiveRagConfig.enableRerank || effectiveRagConfig.enableHybridSearch
               ? (effectiveRagConfig.rerankTopK || 30)
-              : (effectiveRagConfig.docLimit || 8) * 2;
+              : (effectiveRagConfig.memoryLimit || 5) * 2;
 
-            const docResults = await vectorStore.search(queryEmbedding, {
+            return await vectorStore.search(queryEmbedding, {
               limit: initialRecallLimit,
-              threshold: effectiveRagConfig.docThreshold,
-              filter: isGlobal
-                ? { type: 'doc' }
-                : { type: 'doc', docIds: Array.from(authorizedDocIds!) }, // 🔑 下沉过滤
+              threshold: effectiveRagConfig.memoryThreshold,
+              filter: isGlobal ? { type: 'memory' } : { sessionId, type: 'memory' },
             });
-
-            results.push(...docResults);
           } catch (e) {
-            console.error(e);
+            console.error('[MemoryManager] Memory search failed:', e);
+            return [];
           }
+        })();
+        searchTasks.push(memoryTask);
+      }
+
+      // 3.2 文档搜索任务
+      if (enableDocs) {
+        const hasAuth = isGlobal || (authorizedDocIds && authorizedDocIds.size > 0);
+        if (hasAuth) {
+          const docTask = (async () => {
+            try {
+              const initialRecallLimit = effectiveRagConfig.enableRerank || effectiveRagConfig.enableHybridSearch
+                ? (effectiveRagConfig.rerankTopK || 30)
+                : (effectiveRagConfig.docLimit || 8) * 2;
+
+              return await vectorStore.search(queryEmbedding, {
+                limit: initialRecallLimit,
+                threshold: effectiveRagConfig.docThreshold,
+                filter: isGlobal
+                  ? { type: 'doc' }
+                  : { type: 'doc', docIds: Array.from(authorizedDocIds!) },
+              });
+            } catch (e) {
+              console.error('[MemoryManager] Doc search failed:', e);
+              return [];
+            }
+          })();
+          searchTasks.push(docTask);
         }
       }
+
+      // 🔑 并行执行所有搜索任务
+      const searchResults = await Promise.all(searchTasks);
+      searchResults.forEach(r => results.push(...r));
 
       return results;
     });
@@ -635,7 +647,8 @@ export class MemoryManager {
   }
 
   /**
-   * 将一个“对话轮次” (用户消息 + AI 回复) 归档到向量记忆中
+   * 将一个"对话轮次" (用户消息 + AI 回复) 归档到向量记忆中
+   * 🔑 非阻塞实现：任务入队后立即返回，由统一队列异步处理
    */
   static async addTurnToMemory(
     sessionId: string,
@@ -646,8 +659,54 @@ export class MemoryManager {
   ) {
     if (!userContent || !aiContent) return;
 
+    // 🔑 使用统一的向量化队列进行异步处理
+    // 这将任务入队并立即返回，不阻塞 UI
+    const { useRagStore } = await import('../../store/rag-store');
+    const ragStore = useRagStore.getState();
+
+    // 获取队列实例并入队
+    // @ts-ignore - 内部方法访问
+    const queue = ragStore._getQueue?.();
+    if (queue) {
+      await queue.enqueueMemory(
+        sessionId,
+        userContent,
+        aiContent,
+        userMessageId,
+        assistantMessageId,
+      );
+      console.log(`[MemoryManager] Memory task enqueued for async processing (session: ${sessionId})`);
+    } else {
+      console.warn('[MemoryManager] Queue not available, falling back to inline processing');
+      // Fallback: 如果队列不可用，使用静默的后台处理
+      setTimeout(async () => {
+        try {
+          await MemoryManager.addTurnToMemoryInline(
+            sessionId,
+            userContent,
+            aiContent,
+            userMessageId,
+            assistantMessageId,
+          );
+        } catch (e) {
+          console.error('[MemoryManager] Fallback archiving failed:', e);
+        }
+      }, 100);
+    }
+  }
+
+  /**
+   * 内联归档方法 (Fallback 或内部调用)
+   * 🔑 私有方法：仅在队列不可用时作为降级方案使用
+   */
+  private static async addTurnToMemoryInline(
+    sessionId: string,
+    userContent: string,
+    aiContent: string,
+    userMessageId: string,
+    assistantMessageId: string,
+  ) {
     // 🛡️ Sanitize: Strip massive Base64 image data to prevent TextSplitter recursion overflow
-    // Replace ![...](data:image/...) with [Image Generated]
     const sanitize = (text: string) =>
       text.replace(/!\[(.*?)\]\(data:image\/.*?;base64,.*?\)/g, '[Image: $1]');
 
@@ -696,29 +755,17 @@ export class MemoryManager {
     if (!provider || !modelId) return;
 
     try {
-      // Ensure session exists in SQLite for FK constraint
-      // Since ChatStore uses AsyncStorage, we must sync the ID here
       const now = Date.now();
       await db.execute(
         `INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
         [sessionId, 'Shadow Session', now, now],
       );
 
-      // 格式: "User: ... \n Assistant: ..."
       const turnText = `User: ${userContent}\nAssistant: ${aiContent}`;
+      const ragConfig = settings.globalRagConfig;
 
-      // 🔑 动态获取 RAG 配置：优先从该 Session 关联的 Agent 获取
-      const chatStore = (await import('../../store/chat-store')).useChatStore.getState();
-      const agentStore = (await import('../../store/agent-store')).useAgentStore.getState();
-      const settings = (await import('../../store/settings-store')).useSettingsStore.getState();
-
-      const session = chatStore.getSession(sessionId);
-      const agent = session ? agentStore.getAgent(session.agentId) : undefined;
-      const ragConfig = agent?.ragConfig || settings.globalRagConfig;
-
-      // ✅ 使用 Trigram 分词器（中文友好）
       const splitter = new TrigramTextSplitter({
-        chunkSize: ragConfig.memoryChunkSize, // Use memoryChunkSize for turn archiving
+        chunkSize: ragConfig.memoryChunkSize,
         chunkOverlap: ragConfig.chunkOverlap,
       });
       const chunks = await splitter.splitText(turnText);
@@ -726,7 +773,6 @@ export class MemoryManager {
       const embeddingClient = new EmbeddingClient(provider, modelId);
       const { embeddings, usage } = await embeddingClient.embedDocuments(chunks);
 
-      // Track usage for archiving
       let archiveTokens = 0;
       let isEstimated = false;
 
@@ -737,7 +783,6 @@ export class MemoryManager {
         isEstimated = true;
       }
 
-      // Report to global stats store
       try {
         const { useTokenStatsStore } = await import('../../store/token-stats-store');
         useTokenStatsStore.getState().trackUsage({
@@ -760,11 +805,12 @@ export class MemoryManager {
       }));
 
       await vectorStore.addVectors(vectors);
-      console.log(`[MemoryManager] 已归档会话 ${sessionId} (${vectors.length} 个切片)`);
+      console.log(`[MemoryManager] Inline archiving completed: ${sessionId} (${vectors.length} chunks)`);
     } catch (e) {
-      console.error('[MemoryManager] 归档轮次失败:', e);
+      console.error('[MemoryManager] Inline archiving failed:', e);
     }
   }
+
 
   /**
    * Manually upsert a single memory item (e.g. manual vectorization of a specific message)

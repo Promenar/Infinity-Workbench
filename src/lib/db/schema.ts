@@ -194,6 +194,40 @@ export const createTables = async () => {
       );
     `);
 
+    // 11. Vectorization Tasks Queue (Checkpoint Persistence)
+    // 🔑 用于持久化向量化任务状态，支持后台中断恢复
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS vectorization_tasks (
+        id TEXT PRIMARY KEY NOT NULL,
+        type TEXT NOT NULL, -- 'document' | 'memory'
+        status TEXT NOT NULL, -- 'pending' | 'processing' | 'completed' | 'failed' | 'interrupted'
+        -- Document task fields
+        doc_id TEXT,
+        doc_title TEXT,
+        -- Memory task fields
+        session_id TEXT,
+        user_content TEXT,
+        ai_content TEXT,
+        user_message_id TEXT,
+        assistant_message_id TEXT,
+        -- Checkpoint fields
+        last_chunk_index INTEGER DEFAULT 0,
+        total_chunks INTEGER,
+        progress REAL DEFAULT 0,
+        error TEXT,
+        -- Timestamps
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        -- 🔑 仅 doc_id 有外键约束，session_id 无需约束（sessions 存储在 AsyncStorage 中）
+        FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Index for quick status lookups
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_vectorization_tasks_status ON vectorization_tasks(status);
+    `);
+
     console.log('[DB] Tables created successfully');
   } catch (e) {
     console.error('[DB] Error creating tables:', e);

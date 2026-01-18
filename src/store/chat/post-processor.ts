@@ -84,14 +84,14 @@ export async function archiveToRag(params: PostProcessorParams): Promise<void> {
 }
 
 /**
- * 执行 KG 提取
+ * 执行 KG 提取 (🔑 改为批量累积模式)
+ * 不再直接抽取，而是累积到 rag-store，达到阈值后由统一队列处理
  */
 export async function extractKnowledgeGraph(params: PostProcessorParams): Promise<void> {
     const {
         sessionId, assistantMsgId,
         userContent, assistantContent,
         agent, session,
-        setKGExtractionStatus, updateMessageProgress
     } = params;
 
     if (!assistantContent.trim()) return;
@@ -109,32 +109,15 @@ export async function extractKnowledgeGraph(params: PostProcessorParams): Promis
             const costStrategy = agent?.ragConfig?.costStrategy || globalConfig.costStrategy || 'summary-first';
             if (costStrategy === 'on-demand' && !isSuperAssistant) return;
 
-            setKGExtractionStatus(sessionId, true);
-
-            updateMessageProgress(sessionId, assistantMsgId, {
-                stage: 'searching',
-                percentage: 10,
-                message: '全域知识同步：实体识别...'
-            });
-
+            // 🔑 改为累积模式：不再直接抽取，而是入列统一队列
             const combinedText = `User: ${userContent}\nAssistant: ${assistantContent}`;
-            await graphExtractor.extractAndSave(combinedText, undefined, {
-                sessionId,
-                agentId: session.agentId,
-                messageId: assistantMsgId
-            });
+            useRagStore.getState().accumulateForKG(sessionId, combinedText, assistantMsgId);
 
-            updateMessageProgress(sessionId, assistantMsgId, {
-                stage: 'done',
-                percentage: 100,
-                message: '知识同步完成'
-            });
+            console.log(`[PostProcessor] KG content accumulated for session ${sessionId}`);
         } catch (e) {
-            console.warn('[PostProcessor] KG extraction failed:', e);
-        } finally {
-            setKGExtractionStatus(sessionId, false);
+            console.warn('[PostProcessor] KG accumulation failed:', e);
         }
-    }, 800);
+    }, 500);
 }
 
 /**

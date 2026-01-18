@@ -6,6 +6,7 @@ import { generateId } from '../lib/utils/id-generator';
 import { VectorizationQueue } from '../lib/rag/vectorization-queue';
 import { RagDocument, RagFolder, VectorizationTask, RagMemory } from '../types/rag';
 import { graphStore } from '../lib/rag/graph-store';
+import { useSettingsStore } from './settings-store';
 import * as FileSystem from 'expo-file-system/legacy';
 
 // 🛡️ 物理沙箱根路径
@@ -28,6 +29,14 @@ interface RagState {
   // 向量化队列状态
   vectorizationQueue: VectorizationTask[];
   currentTask: VectorizationTask | null;
+
+  // 🔑 会话 KG 批量累积器
+  kgAccumulator: {
+    [sessionId: string]: {
+      contents: string[];
+      messageIds: string[];
+    };
+  };
 
   // UI状态
   expandedFolders: Set<string>;
@@ -83,6 +92,9 @@ interface RagState {
   // 内部状态更新
   _updateQueueState: (queue: VectorizationTask[], current: VectorizationTask | null) => void;
 
+  // 🔑 会话 KG 批量累积
+  accumulateForKG: (sessionId: string, content: string, messageId: string) => void;
+
   // RAG 运行中状态管理 (指示器逻辑 - 全局单任务)
   processingState: {
     sessionId?: string;
@@ -128,6 +140,8 @@ interface RagState {
   // 🛡️ 内部物理同步支持
   _getPhysicalPath: (folderId?: string | null) => Promise<string>;
   _ensureWorkspace: () => Promise<void>;
+  // 🔑 队列实例访问器 (供 MemoryManager 调用)
+  _getQueue: () => VectorizationQueue;
 }
 
 export const useRagStore = create<RagState>()(
@@ -149,6 +163,7 @@ export const useRagStore = create<RagState>()(
         memories: [],
         vectorizationQueue: [],
         currentTask: null,
+        kgAccumulator: {}, // 🔑 会话 KG 批量累积器初始状态
         expandedFolders: new Set(),
         selectedFolder: null,
         isLoading: false,
@@ -998,6 +1013,44 @@ export const useRagStore = create<RagState>()(
           const totalVectors = docs.reduce((acc: number, doc: RagDocument) => acc + (doc.vectorCount || 0), 0);
           const totalSize = docs.reduce((acc: number, doc: RagDocument) => acc + (doc.fileSize || 0), 0);
           return { totalDocs, totalVectors, totalSize };
+        },
+
+        // 🔑 队列实例访问器 (供 MemoryManager 调用)
+        _getQueue: getQueue,
+
+        // 🔑 会话 KG 批量累积
+        accumulateForKG: (sessionId: string, content: string, messageId: string) => {
+          const settings = useSettingsStore.getState();
+          const batchSize = settings.globalRagConfig.kgBatchSize || 3;
+
+          set((state) => {
+            const acc = state.kgAccumulator[sessionId] || { contents: [], messageIds: [] };
+            acc.contents.push(content);
+            acc.messageIds.push(messageId);
+
+            // 检查是否达到批量阈值
+            if (acc.contents.length >= batchSize) {
+              // 触发批量 KG 抽取任务
+              const queue = getQueue();
+              queue.enqueueSessionKG(sessionId, [...acc.contents], [...acc.messageIds]);
+
+              // 清空累积器
+              return {
+                kgAccumulator: {
+                  ...state.kgAccumulator,
+                  [sessionId]: { contents: [], messageIds: [] },
+                },
+              };
+            }
+
+            // 未达阈值，仅更新累积器
+            return {
+              kgAccumulator: {
+                ...state.kgAccumulator,
+                [sessionId]: acc,
+              },
+            };
+          });
         },
       };
     },

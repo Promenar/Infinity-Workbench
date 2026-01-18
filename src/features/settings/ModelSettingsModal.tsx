@@ -781,11 +781,7 @@ export function ModelSettingsModal({
           }}
           intensity={isDark ? 0 : 60} // Disable blur in dark mode to avoid gray overlay
         />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-          keyboardVerticalOffset={0}
-        >
+        <View style={{ flex: 1 }}>
 
           {isReady ? (
             <TypedFlashList
@@ -795,8 +791,8 @@ export function ModelSettingsModal({
               removeClippedSubviews={false}
               keyExtractor={(item: ModelConfig) => item.uuid}
               contentContainerStyle={{
-                paddingBottom: 100,
-                paddingTop: insets.top + 64 + 16, // Header height + spacing
+                paddingBottom: 450, // 💡 增加底部间距，允许用户手动向上滚动以避开键盘 (Rule 1)
+                paddingTop: insets.top + 64 + 16,
               }}
               ListHeaderComponent={renderHeader}
               extraData={testResults}
@@ -818,7 +814,7 @@ export function ModelSettingsModal({
             onConfirm={confirmState.onConfirm}
             onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
           />
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </Modal>
   );

@@ -90,6 +90,19 @@ export default function RootLayout() {
           });
         }, 1000);
 
+        // 🔑 恢复中断的向量化任务 (Checkpoint Recovery)
+        setTimeout(async () => {
+          try {
+            const { useRagStore } = require('../src/store/rag-store');
+            const queue = useRagStore.getState()._getQueue?.();
+            if (queue) {
+              await queue.resumeInterruptedTasks();
+            }
+          } catch (err: any) {
+            console.warn('[App] Queue recovery failed:', err.message);
+          }
+        }, 2000);
+
       } catch (e) {
         console.error('[App] DB Init Failed', e);
       } finally {

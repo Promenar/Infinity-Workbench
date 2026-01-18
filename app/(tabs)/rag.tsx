@@ -852,7 +852,7 @@ export default function RagScreen() {
             currentTask={
               currentTask
                 ? {
-                  docTitle: currentTask.docTitle,
+                  docTitle: currentTask.docTitle || '处理中...',
                   progress: currentTask.progress,
                 }
                 : null

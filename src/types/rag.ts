@@ -28,14 +28,32 @@ export interface RagDocument {
 
 export interface VectorizationTask {
   id: string;
-  docId: string;
-  docTitle: string;
+  // 🔑 任务类型：文档 或 记忆(消息) 或 会话KG批量抽取
+  type: 'document' | 'memory' | 'session-kg';
+  // 文档任务专用字段
+  docId?: string;
+  docTitle?: string;
+  // 记忆任务专用字段
+  sessionId?: string;
+  userContent?: string;
+  aiContent?: string;
+  userMessageId?: string;
+  assistantMessageId?: string;
+  // 🔑 会话 KG 批量任务专用字段
+  kgBatchContent?: string[];  // 累积的消息内容
+  kgMessageIds?: string[];    // 关联的消息 ID
+  // 通用字段
   status: 'pending' | 'reader' | 'chunking' | 'vectorizing' | 'saving' | 'extracting' | 'completed' | 'failed';
   progress: number; // 0-100
   error?: string;
   createdAt: number;
+  updatedAt?: number; // 🔑 心跳时间戳
   kgStrategy?: 'full' | 'summary-first' | 'on-demand';
+  // 🔑 检查点字段 (Checkpoint)
+  lastChunkIndex?: number;
+  totalChunks?: number;
 }
+
 
 export interface RagMemory {
   id: string; // vector_id in database
