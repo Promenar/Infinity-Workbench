@@ -310,6 +310,13 @@ ${formattedSteps}
 IMPORTANT: You are currently working on this task. Use 'manage_task' with the correct taskId to update steps.`;
             finalSystemPrompt += taskContext;
         }
+    } else {
+        // 🆕 Case: No tools enabled, but we still need Output Guidance (Thinking tags)
+        const modelFamily = inferModelFamily(provider.type, session.modelId);
+        const outputGuidance = getOutputFormatGuidance(modelFamily);
+        if (outputGuidance) {
+            finalSystemPrompt += `\n\n${outputGuidance}`;
+        }
     }
 
     // 注入 RAG 上下文

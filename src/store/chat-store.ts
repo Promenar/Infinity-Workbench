@@ -1073,12 +1073,14 @@ export const useChatStore = create<ChatState>()(
               // 判断模型是否支持原生联网（Gemini/Google Vertex）
               // 对于这些模型，无条件移除 search_internet 工具，模型将使用原生 Grounding 自主搜索
               const isNativeWebSearchProvider = provider.type === 'gemini' || provider.type === 'google';
+              const toolsEnabled = options?.toolsEnabled ?? session.options?.toolsEnabled ?? true;
 
-              const availableSkills = skillRegistry.getEnabledSkillsForModel({
+              const availableSkills = toolsEnabled ? skillRegistry.getEnabledSkillsForModel({
                 nativeWebSearch: isNativeWebSearchProvider,
-              });
+              }) : [];
+
               console.log('[AgentLoop] Available Skills:', availableSkills.map(s => s.id),
-                { nativeWebSearch: isNativeWebSearchProvider });
+                { nativeWebSearch: isNativeWebSearchProvider, toolsEnabled });
 
 
               // 5. Stream Chat
