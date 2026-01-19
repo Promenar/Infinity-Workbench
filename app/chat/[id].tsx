@@ -547,9 +547,12 @@ export default function ChatDetailScreen() {
                 // 找到被编辑消息的索引
                 const msgIndex = currentSession.messages.findIndex(m => m.id === editingMessage.id);
                 if (msgIndex !== -1) {
-                  // 截断该消息之后的所有消息
+                  // 🔑 物理删除 SQLite 中该消息及之后的所有消息，防止幽灵消息
+                  const editedMsg = currentSession.messages[msgIndex];
+                  await store.deleteMessagesAfter(id, editedMsg.createdAt);
+
+                  // 内存状态同步（过滤掉该索引及之后的消息，因为后面会由 generateMessage 重新发送）
                   const truncatedMessages = currentSession.messages.slice(0, msgIndex);
-                  // 更新 session 消息列表
                   useChatStore.setState(state => ({
                     sessions: state.sessions.map(s =>
                       s.id === id
@@ -560,6 +563,7 @@ export default function ChatDetailScreen() {
                 }
               }
               setEditingMessage(null);
+
 
               // 触发新的生成（会创建新的用户消息和 AI 回复）
               await store.generateMessage(id, content, {

@@ -203,6 +203,9 @@ export default function AgentExplorerScreen() {
                 reasoning: true,
                 webSearch: false,
               },
+              ragOptions: {
+                enableKnowledgeGraph: false, // ✅ 超级助手默认也关闭图谱抽取
+              },
             };
             chatStore.addSession(newSession as any);
           }

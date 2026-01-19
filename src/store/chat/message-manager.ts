@@ -276,6 +276,32 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             }));
         },
 
+        deleteMessagesAfter: async (sessionId: SessionId, timestamp: number) => {
+            const state = get();
+            // 如果会话正在生成，中止它
+            if (state.currentGeneratingSessionId === sessionId) {
+                console.log('[MessageManager] Truncating while generating, aborting...');
+                state.abortGeneration(sessionId);
+            }
+
+            // 🔑 Phase 4b: 从 SQLite 删除
+            try {
+                await SessionRepository.deleteMessagesAfter(sessionId, timestamp);
+            } catch (e) {
+                console.warn('[MessageManager] DB deleteMessagesAfter failed:', e);
+            }
+
+            set((state) => ({
+                sessions: state.sessions.map((s) =>
+                    s.id === sessionId
+                        ? { ...s, messages: s.messages.filter((m) => m.createdAt < timestamp) }
+                        : s
+                ),
+            }));
+        },
+
+
+
         vectorizeMessage: async (sessionId: string, messageId: string) => {
             const session = get().sessions.find((s) => s.id === sessionId);
             if (!session) return;

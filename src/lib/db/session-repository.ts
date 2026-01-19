@@ -199,6 +199,18 @@ export async function deleteMessage(sessionId: string, messageId: string): Promi
 }
 
 /**
+ * 删除指定时间之后的所有消息 (用于重新发送时的截断)
+ */
+export async function deleteMessagesAfter(sessionId: string, timestamp: number): Promise<void> {
+    await db.execute(
+        'DELETE FROM messages WHERE session_id = ? AND created_at >= ?',
+        [sessionId, timestamp]
+    );
+    await db.execute('UPDATE sessions SET updated_at = ? WHERE id = ?', [Date.now(), sessionId]);
+}
+
+
+/**
  * 获取会话的所有消息
  */
 export async function getMessages(sessionId: string, limit?: number, offset?: number): Promise<Message[]> {
@@ -314,7 +326,9 @@ export const SessionRepository = {
     addMessage,
     updateMessage,
     deleteMessage,
+    deleteMessagesAfter,
     getMessages,
+
     // Full
     getFullSession,
     getAllFullSessions,

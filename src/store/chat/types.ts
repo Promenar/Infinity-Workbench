@@ -48,7 +48,10 @@ export interface MessageManager {
         tool_calls?: ToolCall[]
     ) => void;
 
-    deleteMessage: (sessionId: string, messageId: string) => void;
+    deleteMessage: (sessionId: string, messageId: string) => Promise<void>;
+    deleteMessagesAfter: (sessionId: string, timestamp: number) => Promise<void>;
+
+
 
     vectorizeMessage: (sessionId: string, messageId: string) => Promise<void>;
 

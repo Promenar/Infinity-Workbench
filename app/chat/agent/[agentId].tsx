@@ -46,6 +46,9 @@ export default function AgentSessionsScreen() {
       messages: [],
       executionMode: 'semi',
       loopStatus: 'idle',
+      ragOptions: {
+        enableKnowledgeGraph: false, // ✅ 默认关闭图谱抽取
+      },
     };
     addSession(newSession);
     setTimeout(() => {

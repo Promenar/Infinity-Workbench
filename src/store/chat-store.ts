@@ -162,7 +162,10 @@ export interface ChatState {
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
   deleteMessage: (sessionId: SessionId, messageId: string) => Promise<void>;
+  deleteMessagesAfter: (sessionId: SessionId, timestamp: number) => Promise<void>;
+
   toggleSessionPin: (sessionId: SessionId) => void;
+
 
   updateSessionDraft: (sessionId: SessionId, draft: string | undefined) => void;
   // Deprecated: setMessagesArchived: (sessionId: SessionId, messageIds: string[]) => void;
@@ -239,40 +242,10 @@ export const useChatStore = create<ChatState>()(
         updateMessageProgress: messageManager.updateMessageProgress,
         flushMessageUpdates: messageManager.flushMessageUpdates,
 
-        deleteMessage: async (sessionId, messageId) => {
-          const state = get();
-          // If the session being edited is currently generating
-          if (state.currentGeneratingSessionId === sessionId) {
-            const session = state.sessions.find((s) => s.id === sessionId);
-            if (session) {
-              // If we are deleting the last message (which is usually the AI message under generation)
-              const lastMsg = session.messages[session.messages.length - 1];
-              if (lastMsg && lastMsg.id === messageId) {
-                console.log('[ChatStore] Deleting active generating message, aborting...');
-                state.abortGeneration(sessionId);
-              }
-            }
-          }
-
-          // 1. Delete from DB (Sync Source of Truth)
-          const { SessionRepository } = await import('../lib/db/session-repository');
-          await SessionRepository.deleteMessage(sessionId, messageId);
-
-          // 2. Delete from State
-          set((state) => ({
-            sessions: state.sessions.map((s) => {
-              if (s.id === sessionId) {
-                return {
-                  ...s,
-                  messages: s.messages.filter((m) => m.id !== messageId),
-                };
-              }
-              return s;
-            }),
-          }));
-        },
-
+        deleteMessage: messageManager.deleteMessage,
+        deleteMessagesAfter: messageManager.deleteMessagesAfter,
         setVectorizationStatus: messageManager.setVectorizationStatus,
+
 
         abortGeneration: (sessionId) => {
           const client = get().activeRequests[sessionId];

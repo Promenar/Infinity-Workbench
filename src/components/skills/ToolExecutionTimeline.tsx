@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput } from 'react-native';
-import { ScrollView } from 'react-native-gesture-handler';
+import { ScrollView, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { Typography } from '../ui/Typography';
 import {
@@ -429,8 +429,28 @@ const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
     const scrollViewRef = React.useRef<ScrollView>(null);
-    // 🔑 Removed internal auto-scroll to prevent conflict with main lists
-    // The main ChatList handles scrolling to bottom.
+    const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+    const stepsCount = steps.length;
+
+    // 🔑 自动追踪新步骤：当步骤数增加且自动滚动开启时，滚动到底部
+    useEffect(() => {
+        if (isAutoScrollEnabled && stepsCount > 0) {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+        }
+    }, [stepsCount, isAutoScrollEnabled]);
+
+    // 处理滚动事件，判断用户是否手动向上滑
+    const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+        const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
+
+        if (isAtBottom) {
+            if (!isAutoScrollEnabled) setIsAutoScrollEnabled(true);
+        } else {
+            // 用户向上滑，断开自动追踪
+            if (isAutoScrollEnabled) setIsAutoScrollEnabled(false);
+        }
+    };
 
     if (!steps || steps.length === 0) return null;
 
@@ -439,6 +459,8 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
             <GHScrollView
                 ref={scrollViewRef as any}
                 nestedScrollEnabled={true}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 fadingEdgeLength={32}
                 style={{ maxHeight: 280 }}

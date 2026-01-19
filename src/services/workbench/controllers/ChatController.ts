@@ -52,7 +52,10 @@ export const ChatController = {
             updatedAt: Date.now(),
             modelId: agent.defaultModel,
             executionMode: 'semi' as const,
-            loopStatus: 'completed' as const
+            loopStatus: 'completed' as const,
+            ragOptions: {
+                enableKnowledgeGraph: false, // ✅ Workbench 会话默认关闭图谱抽取
+            },
         };
 
         addSession(newSession as any);

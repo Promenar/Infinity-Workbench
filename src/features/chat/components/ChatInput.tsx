@@ -283,6 +283,8 @@ export function ChatInput({
   const webSearchEnabled = session?.options?.webSearch ?? false; // Default to false
   const reasoningEnabled = session?.options?.reasoning ?? true; // Default to true
 
+  const draftTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
   // Load draft on mount
   useEffect(() => {
     if (session?.draft) {
@@ -292,7 +294,9 @@ export function ChatInput({
 
   // Save draft on text change (debounced)
   useEffect(() => {
-    const timer = setTimeout(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+
+    draftTimerRef.current = setTimeout(() => {
       if (session && text !== session.draft) {
         // Only update if changed to avoid loop
         // Don't save empty string if it was already undefined/empty to avoid unnecessary writes
@@ -300,10 +304,14 @@ export function ChatInput({
           updateSessionDraft(sessionId, text || undefined);
         }
       }
+      draftTimerRef.current = null;
     }, 500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
   }, [text, sessionId]);
+
 
   // 检测是否为强制推理模型（无法关闭推理）
   const providers = useApiStore((state) => state.providers);
@@ -346,6 +354,13 @@ export function ChatInput({
 
     setTimeout(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // ✅ 立即清除草稿保存定时器，防止发送后的 setText('') 触发竞态回填
+      if (draftTimerRef.current) {
+        clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = null;
+      }
+
       // Pass the current persistent options
       onSendMessage(text, {
         webSearch: webSearchEnabled,
@@ -353,9 +368,10 @@ export function ChatInput({
         images: selectedImages.length > 0 ? selectedImages : undefined,
       });
       setText('');
-      updateSessionDraft(sessionId, undefined); // Clear draft immediately
+      updateSessionDraft(sessionId, undefined); // Clear draft immediately IN DB
       setSelectedImages([]);
     }, 0);
+
   };
 
   const handlePickImage = async (source: 'camera' | 'library') => {

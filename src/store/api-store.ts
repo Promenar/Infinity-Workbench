@@ -67,12 +67,17 @@ interface ApiState {
   enabledModels: Record<string, string[]>; // providerId -> modelIds[]
   globalStats: Record<string, TokenStats>; // providerId or modelId -> stats
 
-  // Google Custom Search Config
-  googleSearchConfig?: {
-    apiKey: string;
-    cx: string;
+  // Multi-Engine Search Config
+  searchConfig: {
+    provider: 'google' | 'tavily' | 'bing' | 'bocha' | 'searxng';
+    maxResults: number;
+    google?: { apiKey: string; cx: string };
+    tavily?: { apiKey: string };
+    bing?: { apiKey: string };
+    bocha?: { apiKey: string };
+    searxng?: { baseUrl: string };
   };
-  setGoogleSearchConfig: (config: { apiKey: string; cx: string }) => void;
+  setSearchConfig: (config: Partial<ApiState['searchConfig']>) => void;
 
   // 操作方法
   addProvider: (provider: Omit<ProviderConfig, 'id'>) => void;
@@ -91,12 +96,20 @@ export const useApiStore = create<ApiState>()(
       providers: [],
       enabledModels: {},
       globalStats: {},
-      googleSearchConfig: undefined,
+      searchConfig: {
+        provider: 'google',
+        maxResults: 5,
+        google: { apiKey: '', cx: '' },
+        tavily: { apiKey: '' },
+        bing: { apiKey: '' },
+        bocha: { apiKey: '' },
+        searxng: { baseUrl: '' },
+      },
 
-      setGoogleSearchConfig: (config) =>
+      setSearchConfig: (config) =>
         set(
           produce((state: ApiState) => {
-            state.googleSearchConfig = config;
+            state.searchConfig = { ...state.searchConfig, ...config };
           }),
         ),
 
@@ -188,8 +201,14 @@ export const useApiStore = create<ApiState>()(
         ),
     }),
     {
-      name: 'api-storage-v2', // 升级版本以避免与旧配置冲突
+      name: 'api-storage-v2',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        providers: state.providers,
+        enabledModels: state.enabledModels,
+        globalStats: state.globalStats,
+        searchConfig: state.searchConfig,
+      }),
     },
   ),
 );

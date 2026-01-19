@@ -143,13 +143,12 @@ export const SearchInternetSkill: Skill = {
     execute: async (params: { query: string }, context) => {
         try {
             const apiStore = useApiStore.getState();
-            const config = apiStore.googleSearchConfig;
+            const config = apiStore.searchConfig;
 
-            // Call the shared web search utility
+            // Call the shared web search utility with full config
             const { context: searchResultText, sources } = await performWebSearch(
                 params.query,
-                config?.apiKey,
-                config?.cx
+                config
             );
 
             return {
