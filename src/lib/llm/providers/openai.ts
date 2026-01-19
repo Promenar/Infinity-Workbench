@@ -66,6 +66,36 @@ export class OpenAiClient implements LlmClient {
   }
 
   private mapSkillsToOpenAITools(skills: Skill[]): any[] {
+    // Helper to enforce Strict Mode requirements (All objects must have additionalProperties: false)
+    const enforceStrictSchema = (schema: any): any => {
+      if (!schema || typeof schema !== 'object') return schema;
+
+      const newSchema = { ...schema };
+
+      if (newSchema.type === 'object') {
+        newSchema.additionalProperties = false;
+
+        // Ensure required fields are explicit
+        if (!newSchema.required && newSchema.properties) {
+          newSchema.required = Object.keys(newSchema.properties);
+        }
+      }
+
+      if (newSchema.properties) {
+        const newProps: any = {};
+        for (const key in newSchema.properties) {
+          newProps[key] = enforceStrictSchema(newSchema.properties[key]);
+        }
+        newSchema.properties = newProps;
+      }
+
+      if (newSchema.items) {
+        newSchema.items = enforceStrictSchema(newSchema.items);
+      }
+
+      return newSchema;
+    };
+
     return skills.map((skill) => {
       // 🧐 Force OpenAI/JSON Schema 7 compatibility
       let schema = zodToJsonSchema(skill.schema as any, {
@@ -73,11 +103,9 @@ export class OpenAiClient implements LlmClient {
         $refStrategy: 'none'
       }) as any;
 
-      // Deep clone to avoid mutation
+      // Deep clone and clean
       schema = JSON.parse(JSON.stringify(schema));
-
       delete schema.$schema;
-      delete schema.additionalProperties;
       if (schema.definitions) delete schema.definitions;
 
       // Ensure 'type' is present for parameters
@@ -85,12 +113,16 @@ export class OpenAiClient implements LlmClient {
         schema.type = 'object';
       }
 
+      // Apply Strict Mode recursively
+      schema = enforceStrictSchema(schema);
+
       return {
         type: 'function',
         function: {
           name: skill.id,
           description: skill.description,
           parameters: schema,
+          strict: true, // 🔒 ENABLE STRICT MODE
         },
       };
     });

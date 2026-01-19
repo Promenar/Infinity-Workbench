@@ -27,6 +27,63 @@ export const SkillsSettingsPanel: React.FC = () => {
         setExecutionMode
     } = useSettingsStore();
 
+    // ⚡ Local State for Performance (Debounced Persistence)
+    const [localCount, setLocalCount] = useState(maxLoopCount || 20);
+    // 🧠 Ref to track latest value synchronously for stopAdjusting closure safety
+    const localCountRef = React.useRef(maxLoopCount || 20);
+    const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
+    const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+    // Sync from store only when store updates externally
+    useEffect(() => {
+        if (maxLoopCount !== undefined) {
+            setLocalCount(maxLoopCount);
+            localCountRef.current = maxLoopCount;
+        }
+    }, [maxLoopCount]);
+
+    // Clean up timers
+    useEffect(() => {
+        return () => {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
+    }, []);
+
+    const adjustValue = (delta: number) => {
+        const prev = localCountRef.current;
+        let newVal = prev + delta;
+
+        if (newVal > 100) newVal = 100; // Cap at 100 (∞)
+        if (newVal < 1) newVal = 1;
+
+        if (newVal !== prev) {
+            localCountRef.current = newVal;
+            setLocalCount(newVal);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+    };
+
+    const startAdjusting = (delta: number) => {
+        // 1. Immediate trigger
+        adjustValue(delta);
+
+        // 2. Setup rapid fire delay
+        timeoutRef.current = setTimeout(() => {
+            intervalRef.current = setInterval(() => {
+                adjustValue(delta);
+            }, 80); // 80ms interval for smooth fast-forward
+        }, 400); // 400ms hold delay before rapid fire
+    };
+
+    const stopAdjusting = () => {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+
+        // ⚡ Commit to store (Persistence) using the latest Ref value
+        setMaxLoopCount(localCountRef.current);
+    };
+
     const [skills, setSkills] = useState<Skill[]>([]);
 
     useEffect(() => {
@@ -39,63 +96,79 @@ export const SkillsSettingsPanel: React.FC = () => {
         setSkillEnabled(id, value);
     };
 
-    const handleLoopChange = (delta: number) => {
-        const currentCount = maxLoopCount || 20;
-        const newValue = Math.max(1, Math.min(99, currentCount + delta));
-        if (newValue !== currentCount) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setMaxLoopCount(newValue);
-        }
-    };
+    // Use localCount for logic instead of store value
+    const isInfinite = localCount >= 100;
 
     return (
         <View className="flex-1">
             {/* Logic Control Group */}
             <SettingsSection title={t.settings.skillsSettings.title}>
                 {/* Loop Limit */}
-                <View className="flex-row justify-between items-center px-4 py-4 border-b border-gray-100 dark:border-zinc-800">
-                    <View className="flex-1 mr-4">
-                        <Typography variant="h3" className="text-gray-900 dark:text-white text-sm font-bold">
-                            {t.settings.skillsSettings.loopLimit}
-                        </Typography>
-                        <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-1 text-[10px]">
-                            {t.settings.skillsSettings.loopLimitDesc}
-                        </Typography>
+                <View className="flex-col px-4 py-4 border-b border-gray-100 dark:border-zinc-800 gap-3">
+                    <View className="flex-row justify-between items-center">
+                        <View className="flex-1 mr-4">
+                            <Typography variant="h3" className="text-gray-900 dark:text-white text-sm font-bold">
+                                {t.settings.skillsSettings.loopLimit}
+                            </Typography>
+                            <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-1 text-[10px]">
+                                {t.settings.skillsSettings.loopLimitDesc}
+                            </Typography>
+                        </View>
+
+                        <View
+                            className="flex-row items-center rounded-2xl px-1 py-1"
+                            style={{ backgroundColor: isDark ? '#27272a' : '#f3f4f6' }}
+                        >
+                            <TouchableOpacity
+                                onPressIn={() => startAdjusting(-1)}
+                                onPressOut={stopAdjusting}
+                                className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
+                                style={{ opacity: localCount <= 1 ? 0.4 : 1 }}
+                                disabled={localCount <= 1}
+                            >
+                                <Minus size={18} color={isDark ? '#fff' : '#000'} />
+                            </TouchableOpacity>
+
+                            <Text style={{
+                                marginHorizontal: 16,
+                                minWidth: 24,
+                                textAlign: 'center',
+                                fontSize: 18,
+                                fontWeight: '700',
+                                color: isInfinite ? '#ef4444' : (isDark ? '#fff' : '#000') // 红色强调无限
+                            }}>
+                                {isInfinite ? '∞' : localCount}
+                            </Text>
+
+                            <TouchableOpacity
+                                onPressIn={() => startAdjusting(1)}
+                                onPressOut={stopAdjusting}
+                                className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
+                                style={{ opacity: isInfinite ? 0.4 : 1 }}
+                                disabled={isInfinite}
+                            >
+                                <Plus size={18} color={isDark ? '#fff' : '#000'} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
-                    <View
-                        className="flex-row items-center rounded-2xl px-1 py-1"
-                        style={{ backgroundColor: isDark ? '#27272a' : '#f3f4f6' }}
-                    >
-                        <TouchableOpacity
-                            onPress={() => handleLoopChange(-1)}
-                            className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
-                            style={{ opacity: (maxLoopCount || 20) <= 1 ? 0.4 : 1 }}
-                            disabled={(maxLoopCount || 20) <= 1}
-                        >
-                            <Minus size={18} color={isDark ? '#fff' : '#000'} />
-                        </TouchableOpacity>
+                    {/* ⚠️ Infinite Warning */}
+                    {isInfinite && (
+                        <View className="bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg border border-red-100 dark:border-red-900/50">
+                            <Typography className="text-xs text-red-600 dark:text-red-400 font-medium">
+                                ⚠️ 警告：无限模式可能导致 Token 消耗激增。请确保您的 API 额度充足，并密切关注任务状态。
+                            </Typography>
+                        </View>
+                    )}
 
-                        <Text style={{
-                            marginHorizontal: 16,
-                            minWidth: 24,
-                            textAlign: 'center',
-                            fontSize: 18,
-                            fontWeight: '700',
-                            color: isDark ? '#fff' : '#000'
-                        }}>
-                            {maxLoopCount || 20}
-                        </Text>
-
-                        <TouchableOpacity
-                            onPress={() => handleLoopChange(1)}
-                            className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
-                            style={{ opacity: (maxLoopCount || 20) >= 99 ? 0.4 : 1 }}
-                            disabled={(maxLoopCount || 20) >= 99}
-                        >
-                            <Plus size={18} color={isDark ? '#fff' : '#000'} />
-                        </TouchableOpacity>
-                    </View>
+                    {/* ⚠️ Low Limit Warning */}
+                    {localCount < 10 && (
+                        <View className="bg-yellow-50 dark:bg-yellow-900/20 px-3 py-2 rounded-lg border border-yellow-100 dark:border-yellow-900/50">
+                            <Typography className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">
+                                ⚠️ 注意：过低的思考轮数限制 ({localCount}) 可能导致复杂任务非正常中断。建议至少设置为 10。
+                            </Typography>
+                        </View>
+                    )}
                 </View>
 
             </SettingsSection>

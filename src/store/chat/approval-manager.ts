@@ -39,7 +39,7 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
                     content: intervention
                         ? `Human Instruction: ${intervention}`
                         : approved
-                            ? (isContinuation ? 'User Approved Continuation (+10 Loops)' : 'User Approved')
+                            ? (isContinuation ? `User Approved Continuation (+${session.autoLoopLimit || 5} Loops)` : 'User Approved')
                             : (isContinuation ? 'User Ended Task' : 'User Rejected'),
                     timestamp: Date.now(),
                 };
@@ -124,20 +124,24 @@ export const createApprovalManager = (context: ManagerContext): ApprovalManager 
             // 🆕 如果是续杯且已批准，增加 continuationBudget
             if (isContinuation && approved) {
                 const currentBudget = session?.continuationBudget || 0;
+                // 🆕 续杯步长动态调整：优先使用用户设置的 Loop Limit，否则默认为 5 (符合用户习惯)
+                const stepSize = session.autoLoopLimit || 5;
                 set((state) => ({
                     sessions: state.sessions.map((s) =>
                         s.id === sessionId
-                            ? { ...s, continuationBudget: currentBudget + 10 }
+                            ? { ...s, continuationBudget: currentBudget + stepSize }
                             : s
                     ),
                 }));
-                console.log('[ApprovalManager] Continuation approved, budget increased to:', currentBudget + 10);
+                console.log('[ApprovalManager] Continuation approved, budget increased from', currentBudget, 'to', currentBudget + stepSize);
             }
 
             // 3. Continue Generation (Next Turn)
-            // 🆕 如果是续杯或干预，确保 generateMessage 被触发
-            await get().generateMessage(sessionId, '', {
-                isResumption: true,
+            // 🆕 续杯机制：传递续杯标志，让 generateMessage 根据模型类型生成正确的提示词
+            await get().generateMessage(sessionId, intervention || '', {
+                isResumption: true, // 始终使用恢复模式，不创建可见用户消息
+                skipUserMessage: true, // 不添加用户消息到 UI
+                isContinuationApproval: isContinuation && approved && !intervention, // 🆕 续杯批准标志
             } as any);
         },
 

@@ -138,48 +138,63 @@ export class VertexAiClient implements LlmClient {
   }
 
   private mapSkillsToGeminiTools(skills: Skill[]): any[] {
-    // Helper to recursively uppercase types in schema for Gemini strictness
-    const fixSchema = (s: any): any => {
+    // Helper to recursively normalize schema for Gemini/Vertex (Strict Schema Hardening)
+    // 🧠 Google models require UPPERCASE types and NO additionalProperties/pattern/const/default/title
+    const normalizeGoogleSchema = (s: any): any => {
       if (!s || typeof s !== 'object') return s;
       const result = { ...s };
+
+      // 1. Clean unsupported fields
+      delete result.additionalProperties;
+      delete result.title;
+      delete result.default;
+      delete result.$schema;
+      delete result.pattern;
+      delete result.const;
+
+      // 2. Enforce Uppercase Types & Object Default
       if (result.type && typeof result.type === 'string') {
         result.type = result.type.toUpperCase();
+      } else if (!result.type && result.properties) {
+        // Infer object type if missing but has properties
+        result.type = 'OBJECT';
       }
+
+      // 3. Recursive Traversal
       if (result.properties) {
         const newProps: any = {};
         for (const key in result.properties) {
-          newProps[key] = fixSchema(result.properties[key]);
+          newProps[key] = normalizeGoogleSchema(result.properties[key]);
         }
         result.properties = newProps;
       }
       if (result.items) {
-        result.items = fixSchema(result.items);
+        result.items = normalizeGoogleSchema(result.items);
       }
+
+      // 4. Ensure required is an array if present
+      if (result.required && !Array.isArray(result.required)) {
+        delete result.required;
+      }
+
       return result;
     };
 
     return [{
       function_declarations: skills.map((skill) => {
         let schema = zodToJsonSchema(skill.schema as any) as any;
-        schema = JSON.parse(JSON.stringify(schema)); // Deep clone to avoid mutation issues
+        // Deep clone to avoid mutation issues
+        schema = JSON.parse(JSON.stringify(schema));
 
-        delete schema.$schema;
-        delete schema.additionalProperties;
-
-        // CRITICAL FIX: Vertex AI strictly requires 'type' to be 'OBJECT' for parameters
+        // Fix root level type for VertexAI
         if (!schema.type) {
           schema.type = 'OBJECT';
-        } else {
-          schema.type = schema.type.toUpperCase();
         }
-
-        // Apply recursive fix to properties
-        schema = fixSchema(schema);
 
         return {
           name: skill.id,
           description: skill.description,
-          parameters: schema,
+          parameters: normalizeGoogleSchema(schema),
         };
       })
     }];
@@ -368,11 +383,17 @@ export class VertexAiClient implements LlmClient {
         });
 
         // System Nudge for Voice/Tool consistency
-        const hasTools = (options?.skills && options.skills.length > 0) || options?.webSearch;
-        // 🔄 Adjust search guidance based on native vs custom search
-        const searchGuidance = options?.webSearch
-          ? '2. If you need current information, USE YOUR NATIVE SEARCH CAPABILITY directly (do NOT call search_internet function).'
-          : '2. If you need information, call \'query_vector_db\' or \'search_internet\' IMMEDIATELY.';
+        const hasTools = options?.skills && options.skills.length > 0;
+
+        // 🆕 Phase 3 重构：始终使用原生搜索指导（与工具过滤逻辑一致）
+        // VertexAI 模型自主判断何时需要联网搜索，无需提示调用 search_internet
+        const searchGuidance = '2. If you need current information, USE YOUR NATIVE SEARCH CAPABILITY directly. DO NOT call any search function.';
+
+        // 始终从工具列表描述中排除 search_internet
+        const toolListDesc = (options?.skills || [])
+          .filter((s: any) => s.id !== 'search_internet')
+          .map((s: any) => s.id)
+          .join(', ') || 'N/A';
 
         const toolGuidance = hasTools
           ? `\nYou are a helpful assistant with access to tools. 
@@ -382,7 +403,7 @@ ${searchGuidance}
 3. If you need to generate an image, call 'generate_image' IMMEDIATELY.
 4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION or execute directly.
 5. You can call multiple tools if needed.
-Available tools: ${options?.skills?.filter((s: any) => !options?.webSearch || s.id !== 'search_internet').map((s: any) => s.id).join(', ') || 'N/A'}${options?.webSearch ? ' + Native Web Search' : ''}.`
+Available tools: ${toolListDesc} + Native Web Search (built-in).`
           : '';
 
         const finalSystemInstruction = combinedSystemTitle + toolGuidance;
@@ -474,15 +495,16 @@ Available tools: ${options?.skills?.filter((s: any) => !options?.webSearch || s.
         }
 
         const tools: any[] = [];
-        if (options?.webSearch) {
-          // 🔥 CRITICAL FIX (Gemini 3): Use google_search instead of deprecated google_search_retrieval
-          tools.push({ google_search: {} });
-        }
 
-        // 🔄 Filter out search_internet if native webSearch is enabled to avoid redundancy
-        const effectiveSkills = options?.webSearch
-          ? (options?.skills || []).filter((s: Skill) => s.id !== 'search_internet')
-          : (options?.skills || []);
+        // 🆕 Phase 3 重构：始终为 VertexAI 启用原生 Google Search
+        // VertexAI 模型自主判断何时需要联网搜索，无需手动开关
+        // 原 search_internet 工具应已在 registry.getEnabledSkillsForModel 中被过滤
+        tools.push({ google_search: {} });
+        console.log('[VertexAI] Native Google Search enabled (always-on for VertexAI models)');
+
+        // 🛡️ 二次防护：即便上游未过滤，这里也确保移除 search_internet
+        // 避免与原生 Google Search 冲突
+        const effectiveSkills = (options?.skills || []).filter((s: Skill) => s.id !== 'search_internet');
 
         if (effectiveSkills.length > 0) {
           const geminiTools = this.mapSkillsToGeminiTools(effectiveSkills);

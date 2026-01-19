@@ -75,7 +75,7 @@ interface ApiState {
     tavily?: { apiKey: string };
     bing?: { apiKey: string };
     bocha?: { apiKey: string };
-    searxng?: { baseUrl: string };
+    searxng?: { baseUrl: string; apiKey?: string };
   };
   setSearchConfig: (config: Partial<ApiState['searchConfig']>) => void;
 
@@ -103,7 +103,7 @@ export const useApiStore = create<ApiState>()(
         tavily: { apiKey: '' },
         bing: { apiKey: '' },
         bocha: { apiKey: '' },
-        searxng: { baseUrl: '' },
+        searxng: { baseUrl: '', apiKey: '' },
       },
 
       setSearchConfig: (config) =>

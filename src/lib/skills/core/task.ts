@@ -5,43 +5,41 @@ import { useChatStore } from '../../../store/chat-store';
 export const TaskManagementSkill: Skill = {
     id: 'manage_task',
     name: 'Task Manager',
-    description: 'Manage a persistent, multi-step task or plan. IMPORTANT: You should ALWAYS call this tool to "create" a plan BEFORE starting a complex task sequence to let the user know your roadmap.',
+    description: `Manage a persistent, multi-step task or plan. 
+IMPORTANT: You should ALWAYS call this tool to "create" a plan BEFORE starting a complex task sequence.
+CRITICAL: Each step MUST have a descriptive 'title'.
+Self-Correction: If you forget the 'action' parameter, I will try to infer it based on context (defaulting to 'update').`,
     schema: z.object({
-        action: z.enum(['create', 'update', 'complete', 'fail']).describe('The action to perform on the task.'),
-        title: z.string().optional().describe('Title of the entire task (required for "create").'),
+        action: z.enum(['create', 'update', 'complete', 'fail']).optional().describe('The action to perform. Defaults to "update" if omitted but steps are provided.'),
+        title: z.string().optional().describe('Title of the entire task (required for "create"). Must be descriptive.'),
         steps: z.array(z.object({
-            id: z.string().describe('Unique ID for the step (e.g., "step-1")'),
-            title: z.string().optional().describe('Short title of the step. If omitted, it will be derived from description.'),
+            id: z.string().optional().describe('Unique ID for the step. If omitted, will be auto-generated or matched by title.'),
+            title: z.string().describe('REQUIRED: Descriptive title of the step.'),
             status: z.enum(['pending', 'in-progress', 'completed', 'failed', 'skipped']).optional().describe('Status of the step'),
             description: z.string().optional().describe('Optional detailed description')
         })).optional().describe('List of steps to create or update.'),
-        progress: z.number().min(0).max(100).optional().describe('Override overall progress percentage (0-100). If omitted, auto-calculated.')
+        progress: z.number().min(0).max(100).optional().describe('Override overall progress percentage (0-100).'),
+        final_summary: z.string().optional().describe('REQUIRED when action="complete". The FINAL DELIVERABLE or ANSWER requested by the user. Do NOT describe the process or what you did; just provide the result.')
     }),
     execute: async (args: any, context: SkillContext): Promise<ToolResult> => {
         const { sessionId } = context;
-        if (!sessionId) {
-            return { id: 'error', content: 'Session ID is required', status: 'error' };
-        }
+        if (!sessionId) return { id: 'error', content: 'Session ID is required', status: 'error' };
+
         const store = useChatStore.getState();
         const session = store.getSession(sessionId);
-
-        if (!session) {
-            return { id: 'error', content: 'Session not found', status: 'error' };
-        }
+        if (!session) return { id: 'error', content: 'Session not found', status: 'error' };
 
         let activeTask = session.activeTask;
-
         let taskArgs = args;
 
         // 🛡️ 智能参数展平 (Universal Parameter Flattening)
-        // 兼容 GLM/DeepSeek 等模型可能将参数嵌套在 'parameters' 或 'arguments' 字段的情况
         if (args && typeof args === 'object') {
             const nestedTarget = args.parameters || args.arguments;
             if (nestedTarget) {
                 if (typeof nestedTarget === 'string') {
                     try {
                         const parsed = JSON.parse(nestedTarget);
-                        taskArgs = { ...args, ...parsed }; // 合并而非覆盖，增强鲁棒性
+                        taskArgs = { ...args, ...parsed };
                         console.log('[TaskSkill] Auto-unwrapped string parameters');
                     } catch (e) {
                         console.warn('[TaskSkill] Failed to parse nested parameters string:', e);
@@ -54,7 +52,7 @@ export const TaskManagementSkill: Skill = {
         }
 
         try {
-            // 🛡️ 防御性解析：兼容 steps 被传为 JSON 字符串的情况
+            // 🛡️ 防御性解析：兼容 steps 被传为 JSON 字符串
             if (typeof taskArgs.steps === 'string') {
                 try {
                     const sanitized = taskArgs.steps.trim().replace(/^```json\s*|\s*```$/g, '');
@@ -64,76 +62,144 @@ export const TaskManagementSkill: Skill = {
                 }
             }
 
+            // 🧠 智能动作推断 (Self-Correction)
+            if (!taskArgs.action) {
+                if (!activeTask && taskArgs.title && taskArgs.steps?.length > 0) {
+                    taskArgs.action = 'create';
+                    console.log('[TaskSkill] Auto-inferred action: create');
+                } else if (activeTask) {
+                    taskArgs.action = 'update';
+                    console.log('[TaskSkill] Auto-inferred action: update');
+                } else {
+                    return {
+                        id: 'error',
+                        content: 'Missing "action" parameter. Please specify "create" (for new tasks) or "update" (for existing tasks).',
+                        status: 'error'
+                    };
+                }
+            }
+
             if (taskArgs.action === 'create') {
-                if (!taskArgs.title || !taskArgs.steps || taskArgs.steps.length === 0) {
-                    return { id: 'error', content: 'Title and steps are required for creating a task. You MUST specify { "action": "create", "title": "...", "steps": [...] }.', status: 'error' };
+                // 🛡️ Strict Mode: Prevent overwriting active tasks
+                if (activeTask && activeTask.status === 'in-progress') {
+                    return {
+                        id: 'error',
+                        content: `⚠️ REJECTED: An active task "${activeTask.title}" is already in progress. You MUST complete or fail the current task before creating a new one.\nUse 'action': 'update' to track the current task.`,
+                        status: 'error',
+                        data: activeTask
+                    };
                 }
 
+                if (!taskArgs.title || !taskArgs.steps || taskArgs.steps.length === 0) {
+                    return {
+                        id: 'error',
+                        content: 'Invalid CREATE request. Title and steps are required.\nCorrection: Please call again with { "action": "create", "title": "...", "steps": [...] }.',
+                        status: 'error'
+                    };
+                }
+
+                const taskUid = `task-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
                 activeTask = {
+                    id: taskUid,
                     title: taskArgs.title,
                     status: 'in-progress',
                     progress: 0,
-                    steps: taskArgs.steps.map((s: any, idx: number) => {
-                        const derivedTitle = s.title || (s.description ?
-                            (s.description.length > 20 ? s.description.substring(0, 20) + '...' : s.description) :
-                            `动作 ${idx + 1}`);
-                        return {
-                            id: s.id || `step-${idx}`,
-                            title: derivedTitle,
-                            status: s.status || 'pending',
-                            description: s.description
-                        };
-                    }),
+                    steps: taskArgs.steps.map((s: any, idx: number) => ({
+                        id: s.id || `${taskUid}-step-${idx}`,
+                        title: s.title || s.description || `Step ${idx + 1}`,
+                        status: s.status || 'pending',
+                        description: s.description
+                    })),
                     createdAt: Date.now(),
                     updatedAt: Date.now()
-                };
+                } as any;
             }
             else if (taskArgs.action === 'update') {
                 if (!activeTask) {
-                    return { id: 'error', content: 'No active task found to update. Use "create" first.', status: 'error' };
+                    return {
+                        id: 'error',
+                        content: 'No active task found to update. Correction: Use "action": "create" to start a new task.',
+                        status: 'error'
+                    };
                 }
 
                 const updatedSteps = [...activeTask.steps];
 
                 if (taskArgs.steps) {
-                    taskArgs.steps.forEach((newStep: any) => {
-                        // 1. Try match by ID
+                    // 🛡️ Strict Mode: Immutable Plan & Sequential Execution
+                    for (const newStep of taskArgs.steps) {
+                        // 1. Identify Target Step with Smart Resolution
                         let index = -1;
+
+                        // Strategy A: Exact ID Match
                         if (newStep.id) {
                             index = updatedSteps.findIndex(s => s.id === newStep.id);
                         }
 
-                        // 2. If ID not found or not provided, try match by Title (fuzzy)
+                        // Strategy B: 1-Based Index Match (Handling model guessing "1", "2", "3")
+                        if (index === -1 && newStep.id && !isNaN(parseInt(newStep.id))) {
+                            const numIndex = parseInt(newStep.id) - 1;
+                            if (numIndex >= 0 && numIndex < updatedSteps.length) {
+                                index = numIndex;
+                                console.log(`[TaskSkill] Resolved numeric ID "${newStep.id}" to step index ${index}`);
+                            }
+                        }
+
+                        // Strategy C: Fuzzy Title Match
                         if (index === -1 && newStep.title) {
-                            // Find unmatched step with same title (case-insensitive)
                             index = updatedSteps.findIndex(s =>
                                 s.title?.trim().toLowerCase() === newStep.title.trim().toLowerCase()
                             );
                         }
 
-                        if (index !== -1) {
-                            // Update existing
-                            updatedSteps[index] = {
-                                ...updatedSteps[index],
-                                ...newStep,
-                                id: updatedSteps[index].id, // Keep original ID
-                                title: newStep.title || updatedSteps[index].title
+                        // ❌ REJECT: Step Not Found? Give Helpful Hints!
+                        if (index === -1) {
+                            const validStepsHint = updatedSteps.map((s, i) =>
+                                `${i + 1}. [${s.id}] "${s.title}" (${s.status})`
+                            ).join('\n');
+
+                            return {
+                                id: 'error',
+                                content: `⛔ REJECTED: Step identifier "${newStep.id || newStep.title}" not found.\n\n💡 HINT: You provided an invalid ID. Here are the valid steps:\n${validStepsHint}\n\nPlease retry using the exact ID or the 1-based index (e.g., "id": "1").`,
+                                status: 'error',
+                                data: activeTask
                             };
-                        } else {
-                            // Create new
-                            updatedSteps.push({
-                                id: newStep.id || `step-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                                title: newStep.title || (newStep.description ?
-                                    (newStep.description.length > 20 ? newStep.description.substring(0, 20) + '...' : newStep.description) :
-                                    `动作 ${updatedSteps.length + 1}`), // ✅ 统一使用中文
-                                status: newStep.status || 'pending',
-                                description: newStep.description
-                            });
                         }
-                    });
+
+                        // ❌ REJECT: Modifying Title/Description (Structural Change) - Warning only or Strict? 
+                        // User said "add/delete/change steps content not allowed".
+                        // We will ignore title/desc changes and ONLY update status.
+                        // But we should verify status transition.
+
+                        const targetStep = updatedSteps[index];
+                        const nextStatus = newStep.status || targetStep.status;
+
+                        // 🛡️ Sequential Check: If marking as completed/skipped
+                        if ((nextStatus === 'completed' || nextStatus === 'skipped') && targetStep.status !== 'completed' && targetStep.status !== 'skipped') {
+                            // Verify all previous steps are done
+                            for (let i = 0; i < index; i++) {
+                                const prevStep = updatedSteps[i];
+                                if (prevStep.status !== 'completed' && prevStep.status !== 'skipped') {
+                                    return {
+                                        id: 'error',
+                                        content: `⛔ REJECTED: Sequential Order Violation. Step ${i + 1} ("${prevStep.title}") is not yet completed.\n\n⚠️ RULE: You MUST complete steps in strict order (1->2->3...).\n👉 FIX: Please mark Step ${i + 1} as 'completed' first.`,
+                                        status: 'error',
+                                        data: activeTask
+                                    };
+                                }
+                            }
+                        }
+
+                        // Apply Status Update ONLY
+                        updatedSteps[index] = {
+                            ...targetStep,
+                            status: nextStatus
+                            // Ignore title/desc updates to enforce immutability
+                        };
+                    }
                 }
 
-                // Auto-calculate progress if not provided
+                // 🧠 Auto-calculate progress
                 let newProgress = taskArgs.progress;
                 if (newProgress === undefined) {
                     const completed = updatedSteps.filter(s => s.status === 'completed' || s.status === 'skipped').length;
@@ -149,7 +215,32 @@ export const TaskManagementSkill: Skill = {
             }
             else if (taskArgs.action === 'complete') {
                 if (!activeTask) return { id: 'error', content: 'No active task found to complete.', status: 'error' };
-                activeTask = { ...activeTask, status: 'completed', progress: 100, updatedAt: Date.now() };
+
+                // 🛡️ Strict Mode: Enforce Final Summary
+                if (!taskArgs.final_summary || taskArgs.final_summary.length < 5) {
+                    return {
+                        id: 'error',
+                        content: `⛔ REJECTED: You MUST provide a 'final_summary' when completing a task. Please summarize what was achieved in natural language for the user.\nCall again with 'action': 'complete' AND 'final_summary': '...'.`,
+                        status: 'error',
+                        data: activeTask
+                    };
+                }
+
+                // 🛡️ Auto-complete pending steps
+                const completedSteps = activeTask.steps.map((step: any) => {
+                    if (step.status === 'pending' || step.status === 'in-progress') {
+                        return { ...step, status: 'completed' };
+                    }
+                    return step;
+                });
+
+                activeTask = {
+                    ...activeTask,
+                    steps: completedSteps,
+                    status: 'completed',
+                    progress: 100,
+                    updatedAt: Date.now()
+                };
             }
             else if (taskArgs.action === 'fail') {
                 if (!activeTask) return { id: 'error', content: 'No active task found to fail.', status: 'error' };
@@ -158,7 +249,7 @@ export const TaskManagementSkill: Skill = {
             else {
                 return {
                     id: 'error',
-                    content: `Missing or invalid "action" parameter: "${taskArgs.action}". You MUST provide "action": "create" | "update" | "complete" | "fail".`,
+                    content: `Invalid action "${taskArgs.action}". Allowed: create, update, complete, fail.`,
                     status: 'error'
                 };
             }
@@ -172,13 +263,13 @@ export const TaskManagementSkill: Skill = {
             const finalProgress = activeTask ? activeTask.progress : 0;
             const finalTitle = activeTask ? activeTask.title : 'Untitled';
 
-            // 🔑 针对DeepSeek等模型的特殊处理：
-            // 创建任务后明确指示下一步执行，防止反复创建
-            let resultContent = `Task \"${finalTitle}\" handled. Status: ${finalStatus}, Progress: ${finalProgress}%`;
+            // 🧠 Enhanced Contextual Feedback
+            let resultContent = `Task "${finalTitle}" updated. Status: ${finalStatus}, Progress: ${finalProgress}%`;
 
-            if (taskArgs.action === 'create' && activeTask && activeTask.steps.length > 0) {
-                const firstStep = activeTask.steps[0];
-                resultContent = `✅ Task \"${finalTitle}\" created successfully with ${activeTask.steps.length} steps.\n\n🚀 NEXT ACTION: Immediately execute the first step: \"${firstStep.title || firstStep.description || 'first task'}\"\n\nDo NOT create the task again. Execute the corresponding tool now (e.g., web_search, query_vector_db, etc.).`;
+            if (taskArgs.action === 'create') {
+                resultContent = `✅ Task "${finalTitle}" created.\n\n👉 NEXT: Execute the first step immediately.`;
+            } else if (taskArgs.action === 'complete') {
+                resultContent = `🎉 Task "${finalTitle}" completed. Please provide a final summary to the user.`;
             }
 
             return {
@@ -189,7 +280,7 @@ export const TaskManagementSkill: Skill = {
             };
 
         } catch (e: any) {
-            return { id: 'error', content: `Failed to manage task: ${e.message}`, status: 'error' };
+            return { id: 'error', content: `Task Management Error: ${e.message}`, status: 'error' };
         }
     }
 };

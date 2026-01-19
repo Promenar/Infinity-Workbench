@@ -34,6 +34,7 @@ export default function SearchSettingsScreen() {
   const [bingKey, setBingKey] = useState(searchConfig.bing?.apiKey || '');
   const [bochaKey, setBochaKey] = useState(searchConfig.bocha?.apiKey || '');
   const [searxngUrl, setSearxngUrl] = useState(searchConfig.searxng?.baseUrl || '');
+  const [searxngKey, setSearxngKey] = useState(searchConfig.searxng?.apiKey || '');
 
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -46,10 +47,11 @@ export default function SearchSettingsScreen() {
       tavilyKey !== (searchConfig.tavily?.apiKey || '') ||
       bingKey !== (searchConfig.bing?.apiKey || '') ||
       bochaKey !== (searchConfig.bocha?.apiKey || '') ||
-      searxngUrl !== (searchConfig.searxng?.baseUrl || '');
+      searxngUrl !== (searchConfig.searxng?.baseUrl || '') ||
+      searxngKey !== (searchConfig.searxng?.apiKey || '');
 
     setHasChanges(isChanged);
-  }, [provider, maxResults, googleKey, googleCx, tavilyKey, bingKey, bochaKey, searxngUrl, searchConfig]);
+  }, [provider, maxResults, googleKey, googleCx, tavilyKey, bingKey, bochaKey, searxngUrl, searxngKey, searchConfig]);
 
   const handleSave = () => {
     setSearchConfig({
@@ -59,7 +61,7 @@ export default function SearchSettingsScreen() {
       tavily: { apiKey: tavilyKey.trim() },
       bing: { apiKey: bingKey.trim() },
       bocha: { apiKey: bochaKey.trim() },
-      searxng: { baseUrl: searxngUrl.trim() },
+      searxng: { baseUrl: searxngUrl.trim(), apiKey: searxngKey.trim() },
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setHasChanges(false);
@@ -77,20 +79,28 @@ export default function SearchSettingsScreen() {
               <TextInput
                 value={googleKey}
                 onChangeText={setGoogleKey}
-                placeholder="AIza..."
+                placeholder="Google API Key"
                 className="p-3.5 bg-gray-50 dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 text-gray-900 dark:text-white"
                 autoCapitalize="none"
               />
+              <TouchableOpacity onPress={() => Linking.openURL('https://console.cloud.google.com/apis/credentials')} className="flex-row items-center mt-2">
+                <ExternalLink size={12} color={colors[500]} className="mr-1" />
+                <Typography className="text-[10px] text-blue-500">{t.settings.google.getApiKey}</Typography>
+              </TouchableOpacity>
             </View>
             <View>
               <Typography className="text-xs font-semibold text-gray-500 dark:text-zinc-500 mb-2 uppercase tracking-wider">{t.settings.google.cx}</Typography>
               <TextInput
                 value={googleCx}
                 onChangeText={setGoogleCx}
-                placeholder="0123..."
+                placeholder="Google Search Engine ID (CX)"
                 className="p-3.5 bg-gray-50 dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 text-gray-900 dark:text-white"
                 autoCapitalize="none"
               />
+              <TouchableOpacity onPress={() => Linking.openURL('https://programmablesearchengine.google.com/')} className="flex-row items-center mt-2">
+                <ExternalLink size={12} color={colors[500]} className="mr-1" />
+                <Typography className="text-[10px] text-blue-500">{t.settings.google.getCx}</Typography>
+              </TouchableOpacity>
             </View>
           </View>
         );
@@ -117,15 +127,21 @@ export default function SearchSettingsScreen() {
         break;
       case 'bing':
         content = (
-          <View>
-            <Typography className="text-xs font-semibold text-gray-500 dark:text-zinc-500 mb-2 uppercase tracking-wider">{t.settings.bing.apiKey}</Typography>
-            <TextInput
-              value={bingKey}
-              onChangeText={setBingKey}
-              placeholder="Bing API Key"
-              className="p-3.5 bg-gray-50 dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 text-gray-900 dark:text-white"
-              autoCapitalize="none"
-            />
+          <View className="gap-4">
+            <View>
+              <Typography className="text-xs font-semibold text-gray-500 dark:text-zinc-500 mb-2 uppercase tracking-wider">{t.settings.bing.apiKey}</Typography>
+              <TextInput
+                value={bingKey}
+                onChangeText={setBingKey}
+                placeholder="Bing API Key"
+                className="p-3.5 bg-gray-50 dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 text-gray-900 dark:text-white"
+                autoCapitalize="none"
+              />
+            </View>
+            <TouchableOpacity onPress={() => Linking.openURL('https://portal.azure.com/#create/Microsoft.BingSearch')} className="flex-row items-center">
+              <ExternalLink size={12} color={colors[500]} className="mr-1" />
+              <Typography className="text-xs text-blue-500">{t.settings.bing.getApiKey}</Typography>
+            </TouchableOpacity>
           </View>
         );
         break;
@@ -151,15 +167,30 @@ export default function SearchSettingsScreen() {
         break;
       case 'searxng':
         content = (
-          <View>
-            <Typography className="text-xs font-semibold text-gray-500 dark:text-zinc-500 mb-2 uppercase tracking-wider">{t.settings.searxng.baseUrl}</Typography>
-            <TextInput
-              value={searxngUrl}
-              onChangeText={setSearxngUrl}
-              placeholder="https://searxng.instance.com"
-              className="p-3.5 bg-gray-50 dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 text-gray-900 dark:text-white"
-              autoCapitalize="none"
-            />
+          <View className="gap-4">
+            <View>
+              <Typography className="text-xs font-semibold text-gray-500 dark:text-zinc-500 mb-2 uppercase tracking-wider">{t.settings.searxng.baseUrl}</Typography>
+              <TextInput
+                value={searxngUrl}
+                onChangeText={setSearxngUrl}
+                placeholder="https://searxng.instance.com"
+                className="p-3.5 bg-gray-50 dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 text-gray-900 dark:text-white"
+                autoCapitalize="none"
+              />
+            </View>
+            <View>
+              <Typography className="text-xs font-semibold text-gray-500 dark:text-zinc-500 mb-2 uppercase tracking-wider">{t.settings.searxng.apiKey}</Typography>
+              <TextInput
+                value={searxngKey}
+                onChangeText={setSearxngKey}
+                placeholder="SearXNG API Key"
+                className="p-3.5 bg-gray-50 dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 text-gray-900 dark:text-white"
+                autoCapitalize="none"
+              />
+            </View>
+            <Typography className="text-[10px] text-gray-400 mt-1 italic">
+              * 确保实例已开启 JSON 格式支持 (format=json) 且支持 GET 请求。
+            </Typography>
           </View>
         );
         break;

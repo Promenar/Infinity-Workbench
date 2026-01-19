@@ -34,8 +34,9 @@ import { ToolCall, ToolResult, ExecutionStep, SkillContext } from '../types/skil
 import { StreamParser } from '../lib/llm/stream-parser'; // ✅ StreamParser
 
 import { FormatterFactory } from '../lib/llm/formatter-factory';
+import { inferModelFamily, getContinuationPrompt, getModelSpecificEnhancements } from '../lib/llm/model-prompts'; // 🆕 模型特定提示词
 import { createMessageManager, createSessionManager, createApprovalManager, createToolExecutor } from './chat'; // ✅ Import Managers
-import { performClientSideSearch } from './chat/context-builder'; // ✅ Phase 4b: Context Builder
+import { performClientSideSearch, buildSystemPrompt } from './chat/context-builder'; // ✅ Phase 4b: Context Builder
 import { archiveToRag, extractKnowledgeGraph, updateStats } from './chat/post-processor'; // ✅ Phase 4b: Post Processor
 
 // 🔑 高风险工具列表（Semi模式下需要用户审批）
@@ -120,6 +121,7 @@ export interface ChatState {
       isResumption?: boolean; // ✅ Added for Steerable Loop
       skipUserMessage?: boolean; // ✅ 重新发送时跳过创建用户消息
       toolsEnabled?: boolean; // ✅ Override for tool usage
+      isContinuationApproval?: boolean; // 🆕 续杯批准标志（用于生成模型特定的提示词）
     },
   ) => Promise<void>;
   generateSessionTitle: (sessionId: SessionId) => Promise<string | undefined>;
@@ -158,6 +160,8 @@ export interface ChatState {
     thought_signature?: string, // 🧠 Added for Gemini 2.0
     planningTask?: TaskState, // ✅ Added for Message-Scoped Tasks
     tool_calls?: ToolCall[], // ✅ Added for DeepSeek Consistency
+    executionSteps?: ExecutionStep[],
+    pendingApprovalToolIds?: string[]
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
@@ -582,82 +586,17 @@ export const useChatStore = create<ChatState>()(
             const toolsEnabled = options?.toolsEnabled ?? session.options?.toolsEnabled ?? true;
             const availableSkills = toolsEnabled ? skillRegistry.getEnabledSkills() : [];
 
-            // Inject Tools into System Prompt (Belt and Suspenders for DeepSeek/Gemini)
-            let finalSystemPrompt =
-              agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
-
-            if (availableSkills.length > 0) {
-              // 🧠 Generate Detailed Tool Descriptions for ALL models
-              const toolsDesc = availableSkills.map(s => {
-                let argsDesc = 'No arguments';
-                if (s.schema && (s.schema as any).shape) {
-                  argsDesc = Object.entries((s.schema as any).shape).map(([key, val]: [string, any]) => {
-                    // Handle Zod optionality and descriptions
-                    const isOptional = val._def?.typeName === 'ZodOptional' || (val.isOptional && typeof val.isOptional === 'function' && val.isOptional());
-                    const desc = val.description || (val._def?.description) || '';
-
-                    // Special Handling for Knowledge Base Scope
-                    let extraGuidance = '';
-                    if (s.id === 'query_vector_db' && key === 'scope') {
-                      extraGuidance = ' (CRITICAL: Use "global" ONLY when the user explicitly asks for all documents or global search; use "session" for current context)';
-                    }
-
-                    return `  - ${key}${isOptional ? ' (optional)' : ' (REQUIRED)'}: ${desc}${extraGuidance}`;
-                  }).join('\n');
-                }
-
-                return `### ${s.name} (ID: ${s.id})\n${s.description}\nArguments:\n${argsDesc}`;
-              }).join('\n\n');
-
-
-              // 🧠 Unified System Prompt Injection for ALL models
-              const toolInstruction = `\n\n[AVAILABLE TOOLS]
-You have access to the following skills:
-
-${toolsDesc}
-
-[PLANNING & TASK MANAGEMENT]
-If the user's request is complex, multi-step, or requires maintaining state (e.g. "Research and generate a summary"), you MUST use the \`manage_task\` tool.
-- CREATE a plan BEFORE execution: \`manage_task({ action: 'create', title: '...', steps: [...] })\`
-- UPDATE steps as you finish them: \`manage_task({ action: 'update', steps: [{ id: '...', status: 'completed' }] })\`
-- COMPLETE the task when fully done: \`manage_task({ action: 'complete' })\`
-
-🛑 CRITICAL: DO NOT use plain text to list your plan. ALWAYS use \`manage_task\` to keep the user informed.
-
-[EXECUTION RULES]
-1. NATIVE TOOL CALLS ONLY. Use the JSON schema provided.
-2. 🚫 NO PARAMETER WRAPPING: DO NOT wrap arguments in a "parameters" or "arguments" key. Example: Use \`manage_task({ "action": "create", ... })\`, NOT \`manage_task({ "parameters": { "action": "create", ... } })\`.
-3. 🚫 NO INTRODUCTORY TEXT: DO NOT say "I will now search..." or "Here is the plan...". Your response must ONLY contain tool calls.
-4. PROVIDE ALL REQUIRED PARAMETERS. For 'query_vector_db', ensures 'query' is NOT empty.
-5. Trigger tools immediately. Any leading/trailing conversational text is an ERROR.
-6. ⚠️ AFTER TOOL EXECUTION: You MUST provide a natural language summary or answer based on the tool results. DO NOT STOP after the tool runs.`;
-
-              finalSystemPrompt += toolInstruction;
-
-              // 🆕 Task State Injection: Provide current task status to the model
-              const currentSession = get().getSession(sessionId);
-              if (currentSession?.activeTask) {
-                const task = currentSession.activeTask;
-                const formattedSteps = task.steps.map((s, idx) =>
-                  `${idx + 1}. [${s.status.toUpperCase()}] ${s.title}${s.description ? ` (${s.description})` : ''}`
-                ).join('\n');
-
-                const taskContext = `\n\n[CURRENT TASK STATUS]
-Title: ${task.title}
-Status: ${task.status}
-Progress: ${task.progress}%
-Steps:
-${formattedSteps}
- 
-IMPORTANT: You are currently working on this task. Use 'manage_task' to update the status of steps as you complete them.`;
-                finalSystemPrompt += taskContext;
-              }
-            }
-
-            // 将 RAG 上下文注入到系统提示词中
-            if (ragContext) {
-              finalSystemPrompt += `\n\n${ragContext}`;
-            }
+            // 💉 Refactor: Use centralized context builder
+            const isNativeWebSearchProvider = !!(provider as any).nativeWebSearch;
+            const finalSystemPrompt = buildSystemPrompt(
+              agent,
+              get().getSession(sessionId) || session,
+              ragContext,
+              searchContext,
+              provider,
+              isNativeWebSearchProvider,
+              availableSkills
+            );
 
             let contextMsgs: any[] = [];
             // 将搜索上下文 (Web) 注入到系统提示词或作为单独的系统消息
@@ -803,6 +742,14 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               console.log('[AgentLoop] Resumption: Skipping empty user message in contextMsgs');
             }
 
+            // 🆕 续杯机制：根据模型类型注入隐式续杯提示（不存储到消息历史，仅在上下文中）
+            if (options?.isContinuationApproval) {
+              const modelFamily = inferModelFamily(provider.type, modelId);
+              const continuationPrompt = getContinuationPrompt(modelFamily);
+              contextMsgs.push({ role: 'user', content: continuationPrompt });
+              console.log('[AgentLoop] Injected model-specific continuation prompt:', modelFamily);
+            }
+
 
             // 🔑 Phase 3.5: Apply Model-Specific System Prompt Enhancements
             // 使用FormatterFactory对消息历史进行模型特定优化
@@ -946,7 +893,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             };
 
             const MAX_LOOP_COUNT = useSettingsStore.getState().maxLoopCount || 5;
-            let loopCount = 0;
+            // let loopCount = 0; // 🛡️ 已迁移到下方的 session 持久化逻辑
             let currentAssistantMsgId = assistantMsgId; // Track current assistant message
             let accumulatedUsage: { input: number; output: number; total: number } | undefined;
 
@@ -986,13 +933,11 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 ragReferences,
                 false,
                 undefined,
+                undefined,
+                undefined,
+                undefined,
+                loopExecutionSteps
               );
-              set(state => ({
-                sessions: state.sessions.map(s => s.id === sessionId ? {
-                  ...s,
-                  messages: s.messages.map(m => m.id === currentAssistantMsgId ? { ...m, executionSteps: loopExecutionSteps } : m)
-                } : s)
-              }));
             }
 
             // Helper to update execution steps in store
@@ -1023,25 +968,54 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 ragReferences,
                 false,
                 undefined,
+                undefined,
+                undefined,
+                undefined,
+                updatedSteps
               );
-              set(state => ({
-                sessions: state.sessions.map(s => s.id === sessionId ? {
-                  ...s,
-                  messages: s.messages.map(m => m.id === currentAssistantMsgId ? { ...m, executionSteps: updatedSteps } : m)
-                } : s)
-              }));
             };
 
 
             const maxLoops = useSettingsStore.getState().maxLoopCount || 20;
+            // 🆕 Phase 2.6: Infinite Loop Support
+            // If setting is >= 100, treat as Infinite (set to 9999 internal limit)
             const continuationBudget = session?.continuationBudget || 0;
-            const effectiveMaxLoops = maxLoops + continuationBudget;
+            const isInfiniteMode = maxLoops >= 100;
+            const effectiveMaxLoops = isInfiniteMode ? 9999 : (maxLoops + continuationBudget);
+
+            // 🛡️ 逻辑修复：从 session 获取已执行轮数，支持续杯后的连续性
+            let loopCount = session?.currentLoopCount || 0;
+
+            // 🆕 Phase 4: 死循环检测机制
+            // 追踪连续相同工具调用，若超过阈值则自动中断
+            const MAX_CONSECUTIVE_SAME_ACTIONS = 3;
+            let lastToolCallSignature = '';
+            let consecutiveSameActionCount = 0;
 
             while (get().activeRequests[sessionId]) {
               loopCount++;
+              // 同步当前轮数到会话状态（用于 UI 显示和后续续杯参考）
+              get().updateSession(sessionId, { currentLoopCount: loopCount });
+
+              const latestSession = get().getSession(sessionId);
+              const targetMsg = latestSession?.messages.find(m => m.id === currentAssistantMsgId);
+              if (!targetMsg) break;
+
+              let toolCalls: ToolCall[] | undefined;
+              let turnThoughtSignature = '';
+
               console.log(`[AgentLoop] Turn ${loopCount}/${effectiveMaxLoops} (base: ${maxLoops}, budget: ${continuationBudget})`);
 
               // 🛡️ Continuation Check
+              const SOFT_LIMIT = 20;
+
+              // Soft Limit Check (Passive Notification)
+              if (loopCount >= SOFT_LIMIT && !session?.isLongRunning) {
+                console.log(`[AgentLoop] Soft limit (${SOFT_LIMIT}) reached. Activating passive monitoring.`);
+                get().updateSession(sessionId, { isLongRunning: true });
+              }
+
+              // Hard Limit Check (Blocking Approval)
               if (loopCount > effectiveMaxLoops) {
                 console.log(`[AgentLoop] Max loops (${effectiveMaxLoops}) reached. Pausing for continuation.`);
 
@@ -1053,6 +1027,9 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 });
                 get().setLoopStatus(sessionId, 'waiting_for_approval');
 
+                // Clear long running state on pause
+                get().updateSession(sessionId, { isLongRunning: false });
+
                 // ✅ 关键：同步向 Timeline 推送一个待续步骤
                 const interventionStep: ExecutionStep = {
                   id: `cont_${Date.now()}`,
@@ -1063,18 +1040,22 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 };
 
                 // Persist state
-                set(state => ({
-                  sessions: state.sessions.map(s => s.id === sessionId ? {
-                    ...s,
-                    messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
-                      ...m,
-                      content: accumulatedContent,
-                      tool_calls: toolCalls,
-                      thought_signature: turnThoughtSignature || m.thought_signature,
-                      executionSteps: [...(m.executionSteps || []), interventionStep]
-                    } : m)
-                  } : s)
-                }));
+                get().updateMessageContent(
+                  sessionId,
+                  currentAssistantMsgId,
+                  accumulatedContent,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  turnThoughtSignature || targetMsg.thought_signature,
+                  undefined,
+                  toolCalls,
+                  [...(targetMsg.executionSteps || []), interventionStep],
+                  undefined // pendingApprovalToolIds
+                );
 
                 break;
               }
@@ -1088,14 +1069,19 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 get().setPendingIntervention(sessionId, undefined);
               }
 
+              // 4. Get Enabled Skills (🆕 Phase 3: 动态工具路由)
+              // 判断模型是否支持原生联网（Gemini/Google Vertex）
+              // 对于这些模型，无条件移除 search_internet 工具，模型将使用原生 Grounding 自主搜索
+              const isNativeWebSearchProvider = provider.type === 'gemini' || provider.type === 'google';
 
-              // 4. Get Enabled Skills
-              const availableSkills = skillRegistry.getEnabledSkills();
-              console.log('[AgentLoop] Available Skills:', availableSkills.map(s => s.id));
+              const availableSkills = skillRegistry.getEnabledSkillsForModel({
+                nativeWebSearch: isNativeWebSearchProvider,
+              });
+              console.log('[AgentLoop] Available Skills:', availableSkills.map(s => s.id),
+                { nativeWebSearch: isNativeWebSearchProvider });
 
 
               // 5. Stream Chat
-              let toolCalls: ToolCall[] | undefined;
               let reasoningFromThisTurn = '';
 
               // 🔑 Check for Abort BEFORE streamChat
@@ -1107,7 +1093,6 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               // 🧠 Optimization: Use Array Buffer for Content to reduce GC pressure
               let contentBuffer: string[] = [];
               let turnContent = ''; // RE-ADDED: Sync with contentBuffer for history persistence
-              let turnThoughtSignature = '';
 
               // 🧠 StreamParser for incremental parsing
               const parser = new StreamParser(provider.type as any);
@@ -1153,6 +1138,28 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                   }
                   if (token.reasoning) {
                     reasoningFromThisTurn += token.reasoning;
+                  }
+
+                  // 🆕 Phase 3: 捕获 Gemini 原生搜索结果并生成 ExecutionStep
+                  // 用于在 Timeline 中可视化原生 Google Search（紫色 Globe 图标区分）
+                  if (token.citations && token.citations.length > 0) {
+                    const searchStepId = `native_search_${Date.now()}`;
+                    // 1. 生成"正在搜索"调用步骤
+                    updateSteps({
+                      id: searchStepId,
+                      type: 'native_search',
+                      content: '正在使用 Google 原生网络搜索...',
+                      timestamp: Date.now()
+                    } as any);
+                    // 2. 生成"搜索结果"步骤
+                    updateSteps({
+                      id: `${searchStepId}_result`,
+                      type: 'native_search_result',
+                      content: `Found ${token.citations.length} sources.`,
+                      data: { sources: token.citations },
+                      timestamp: Date.now() + 100
+                    } as any);
+                    console.log('[AgentLoop] Captured native search citations:', token.citations.length);
                   }
 
                   if (parseResult.toolCalls) {
@@ -1301,7 +1308,8 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 (error) => { console.warn('Stream error', error); },
                 {
                   skills: availableSkills,
-                  reasoning: true,
+                  webSearch: options?.webSearch ?? session.options?.webSearch,
+                  reasoning: options?.reasoning ?? session.options?.reasoning,
                   inferenceParams: {
                     temperature: agent.params?.temperature || 0.7,
                     maxTokens: agent.params?.maxTokens,
@@ -1583,13 +1591,25 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
               }
 
               if (toolCalls && toolCalls.length > 0) {
-                // 🔑 DeepSeek过程文本处理：将工具调用前的过程描述文本保存到Timeline
-                // DeepSeek会在tool_calls之前输出类似"我将为您...首先让我创建...现在执行第二步"的文本
-                // 这些文本是内部推理过程，应在Timeline中展示但不显示在正文区
-                if (accumulatedContent.trim()) {
-                  console.log('[AgentLoop] Saving process text to Timeline, content length:', accumulatedContent.length);
 
-                  // 添加thinking步骤到Timeline
+                // 1. 🔑 任务状态预检测 (提前识别 Manage Task Complete)
+                const isTaskComplete = toolCalls.some(tc =>
+                  ((tc as any).name || (tc as any).function?.name) === 'manage_task' &&
+                  (tc.arguments?.action === 'complete' || (tc as any).function?.arguments?.action === 'complete')
+                );
+
+                // 2. 🔑 智能文本分流 (识别“思考引导语”与“正式正文”)
+                // 只有当文本较短且符合特征时才移入 Timeline，确保长篇总结保留在正文区
+                // 增加英文引导词支持 (I will, Searching, etc.)
+                const trimmed = accumulatedContent.trim();
+                const isLikelyThinking = accumulatedContent.length < 600 &&
+                  (trimmed.endsWith('...') ||
+                    trimmed.endsWith('：') ||
+                    trimmed.endsWith(':') ||
+                    /^(我将|正在|首先|现在|已经|让我|接下来|I will|Searching|First|Now|Starting|Next)/i.test(trimmed));
+
+                if (trimmed && !isTaskComplete && isLikelyThinking) {
+                  console.log('[AgentLoop] Captured process text:', accumulatedContent.length);
                   const thinkingStep: any = {
                     id: `thinking_${Date.now()}`,
                     type: 'thinking',
@@ -1597,41 +1617,28 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                     timestamp: Date.now()
                   };
 
-                  set(state => ({
-                    sessions: state.sessions.map(s => s.id === sessionId ? {
-                      ...s,
-                      messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
-                        ...m,
-                        executionSteps: [...(m.executionSteps || []), thinkingStep]
-                      } : m)
-                    } : s)
-                  }));
-
-                  // 清空正文区内容（过程文本已转移到Timeline）
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    '', // Clear content since it's moved to timeline
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    [...(targetMsg.executionSteps || []), thinkingStep],
+                    undefined // pendingApprovalToolIds (14th)
+                  );
                   accumulatedContent = '';
                 }
 
-                // 1. Plan/Task Detection & Extraction (Legacy support provided by Parser, checking content strip only)
-                // Parser already detected logic, but maybe we need to strip legacy <plan> tags if they remain?
-                // The parser strips them from 'content' but accumulatedContent might differ? 
-                // My parser returns CLEAN content. So detecting <plan> in turnContent is redundant if using parser output.
-                // BUT: AccumulatedContent logic in onToken: accumulatedContent += parseResult.content (which IS parsed/clean).
-                // So we don't need to strip <plan> here.
-
-                // 2. 历史上下文同步已由后续的动态重组逻辑（1872-1890行）处理
-                // 不再在此处 push，以防止重复消息导致 API 错误
-                console.log(`[AgentLoop] End of Turn ${loopCount} - Tools detected:`, toolCalls.length);
-
-                // 🔑 检测 manage_task complete（任务完成，退出循环）
-                const isTaskComplete = toolCalls.some(tc =>
-                  tc.name === 'manage_task' && tc.arguments?.action === 'complete'
-                );
-
+                // 3. 🔑 任务收尾与审批流逻辑
                 if (isTaskComplete) {
-                  console.log('[AgentLoop] Task marked as complete, executing final update and stopping');
-
-                  // ✅ CRITICAL FIX: 即使任务完成，也要尊重审批流程
-                  // 分离高风险工具，先执行低风险的 manage_task，高风险工具需要审批
+                  console.log('[AgentLoop] Task marked as complete, stopping loop');
                   const executionMode = session.executionMode || 'auto';
 
                   if (executionMode !== 'auto') {
@@ -1666,18 +1673,22 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                       });
                       get().setLoopStatus(sessionId, 'waiting_for_approval');
 
-                      set(state => ({
-                        sessions: state.sessions.map(s => s.id === sessionId ? {
-                          ...s,
-                          messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
-                            ...m,
-                            content: accumulatedContent,
-                            tool_calls: toolCalls,
-                            pendingApprovalToolIds,
-                            thought_signature: turnThoughtSignature || m.thought_signature
-                          } : m)
-                        } : s)
-                      }));
+                      get().updateMessageContent(
+                        sessionId,
+                        currentAssistantMsgId,
+                        accumulatedContent,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        turnThoughtSignature || targetMsg.thought_signature,
+                        undefined,
+                        toolCalls,
+                        undefined,
+                        pendingApprovalToolIds
+                      );
                       return; // 暂停等待审批
                     }
                   } else {
@@ -1705,18 +1716,22 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                   // 🔑 关键修复：重构消息历史（包含tool results）再continue
                   // DeepSeek是无状态API，必须传递完整历史
-                  set(state => ({
-                    sessions: state.sessions.map(s => s.id === sessionId ? {
-                      ...s,
-                      messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
-                        ...m,
-                        tool_calls: toolCalls,
-                        thought_signature: turnThoughtSignature || m.thought_signature,
-                        // 🔑 CRITICAL: 保留reasoning字段，不要覆盖（Turn 1已通过updateMessageContent保存）
-                        reasoning: m.reasoning  // 保留原有reasoning
-                      } : m)
-                    } : s)
-                  }));
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    accumulatedContent,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    turnThoughtSignature || targetMsg.thought_signature,
+                    undefined,
+                    toolCalls,
+                    undefined,
+                    undefined
+                  );
 
                   // 🔑 关键修复：虚拟拆分新增的assistant+tool（不重新提取整个session）
                   const latestSession = get().getSession(sessionId);
@@ -1761,9 +1776,9 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                     }
                   }
 
-                  loopCount++;
-                  if (loopCount >= MAX_LOOP_COUNT) {
-                    console.log('[AgentLoop] Max loop count reached after task create');
+                  // 🛡️ 轮数限制检查（由于已递增，直接检查）
+                  if (loopCount >= effectiveMaxLoops) {
+                    console.log(`[AgentLoop] Max loop count (${effectiveMaxLoops}) reached after task create`);
                     break;
                   }
                   console.log(`[AgentLoop] Continuing to Turn ${loopCount + 1} after task create, currentMessages count:`, currentMessages.length);
@@ -1860,20 +1875,57 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                   // ✅ CRITICAL FIX: 保存完整的 tool_calls（包括已执行和待审批的）
                   // 同时标记哪些工具待审批，供恢复时使用
-                  set(state => ({
-                    sessions: state.sessions.map(s => s.id === sessionId ? {
-                      ...s,
-                      messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
-                        ...m,
-                        content: accumulatedContent,
-                        tool_calls: toolCalls, // ✅ 保存完整的工具调用列表
-                        pendingApprovalToolIds, // ✅ 新字段：标记待审批的工具 ID
-                        thought_signature: turnThoughtSignature || m.thought_signature,
-                        executionSteps: [...(m.executionSteps || []), interventionStep]
-                      } : m)
-                    } : s)
-                  }));
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    accumulatedContent,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    turnThoughtSignature || targetMsg.thought_signature,
+                    undefined,
+                    toolCalls,
+                    [...(targetMsg.executionSteps || []), interventionStep],
+                    pendingApprovalToolIds
+                  );
                   return; // Break loop and function
+                }
+
+                // 🆕 Phase 4: 死循环检测
+                // 计算当前工具调用签名（工具名+参数的 JSON 哈希）
+                const currentToolCallSignature = toolCalls
+                  .map(tc => `${(tc as any).name || (tc as any).function?.name}:${JSON.stringify(tc.arguments || (tc as any).function?.arguments || {})}`)
+                  .sort()
+                  .join('|');
+
+                if (currentToolCallSignature === lastToolCallSignature) {
+                  consecutiveSameActionCount++;
+                  console.log(`[AgentLoop] Same action detected (${consecutiveSameActionCount}/${MAX_CONSECUTIVE_SAME_ACTIONS})`);
+
+                  if (consecutiveSameActionCount >= MAX_CONSECUTIVE_SAME_ACTIONS) {
+                    console.warn('[AgentLoop] Dead loop detected! Breaking out.');
+
+                    // 记录到 Timeline
+                    const deadLoopStep: ExecutionStep = {
+                      id: `deadloop_${Date.now()}`,
+                      type: 'error',
+                      content: `检测到死循环：连续 ${MAX_CONSECUTIVE_SAME_ACTIONS} 轮执行相同的工具调用。自动中断。`,
+                      timestamp: Date.now()
+                    };
+                    updateSteps(deadLoopStep);
+
+                    // 更新消息内容
+                    accumulatedContent += '\n\n⚠️ 检测到死循环，已自动中断任务。';
+                    get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage);
+                    break;
+                  }
+                } else {
+                  // 签名变化，重置计数器
+                  consecutiveSameActionCount = 1;
+                  lastToolCallSignature = currentToolCallSignature;
                 }
 
                 //  Proceed to Execute
@@ -1881,18 +1933,22 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
                 // 🔑 时序修复：先保存 tool_calls 到 Session，再重新拼装历史
                 // 这样拼装时就能获取到完整的数据
-                set(state => ({
-                  sessions: state.sessions.map(s => s.id === sessionId ? {
-                    ...s,
-                    messages: s.messages.map(m => m.id === currentAssistantMsgId ? {
-                      ...m,
-                      tool_calls: toolCalls,
-                      thought_signature: turnThoughtSignature || m.thought_signature,
-                      // 🔑 CRITICAL: 保留reasoning字段，不要覆盖（与isTaskCreate分支保持一致）
-                      reasoning: m.reasoning  // 保留原有reasoning
-                    } : m)
-                  } : s)
-                }));
+                get().updateMessageContent(
+                  sessionId,
+                  currentAssistantMsgId,
+                  accumulatedContent,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  turnThoughtSignature || targetMsg.thought_signature,
+                  undefined,
+                  toolCalls,
+                  undefined,
+                  undefined
+                );
 
                 // 🔑 关键修复：虚拟拆分新增的assistant+tool（不重新提取整个session）
                 const latestSession = get().getSession(sessionId);
@@ -1952,10 +2008,19 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             }
 
             // ✅ 关键修复：AgentLoop结束后重置状态，允许新消息
-            // 如果不重置，会话将永久卡在running/waiting_for_approval状态
             console.log('[AgentLoop] Loop ended, resetting status to idle');
             get().setLoopStatus(sessionId, 'idle');
             get().setApprovalRequest(sessionId, undefined);  // 清除任何残留的审批请求
+
+            // 🔑 最终同步：确保从 Store 中获取最新的内容（包括 ToolExecutor 提升的 final_summary）
+            // 否则归档到 RAG 的内容可能是空的或旧的
+            const finalMsg = get().getSession(sessionId)?.messages.find(m => m.id === currentAssistantMsgId);
+            const finalContent = finalMsg?.content || accumulatedContent;
+
+            // 🔑 强制持久化：确保所有防抖的更新立即写入数据库
+            if (get().flushMessageUpdates) {
+              get().flushMessageUpdates(sessionId, currentAssistantMsgId);
+            }
 
             // Re-calculate context tokens for stats fallback
             const activeWindowSize = agent.ragConfig?.contextWindow || 10;
@@ -1972,7 +2037,7 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
                 assistantMsgId,
                 userMsgId: userMsg.id,
                 userContent: content,
-                assistantContent: accumulatedContent,
+                assistantContent: finalContent, // ✅ Use finalContent
                 agent,
                 session,
                 ragEnabled: true,
@@ -1988,13 +2053,13 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
             }
 
             // 2. KG Extraction (Phase 4b: 使用 post-processor 子模块)
-            if (accumulatedContent.trim()) {
+            if (finalContent.trim()) {
               extractKnowledgeGraph({
                 sessionId,
                 assistantMsgId,
                 userMsgId: userMsg.id,
                 userContent: content,
-                assistantContent: accumulatedContent,
+                assistantContent: finalContent, // ✅ Use finalContent
                 agent,
                 session,
                 ragEnabled: true,
@@ -2061,9 +2126,9 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' to update t
 
             const billingUsage = {
               chatInput: { count: finalUsage ? finalUsage.input : totalContextTokens, isEstimated: !finalUsage },
-              chatOutput: { count: finalUsage ? finalUsage.output : estimateTokens(accumulatedContent), isEstimated: !finalUsage },
+              chatOutput: { count: finalUsage ? finalUsage.output : estimateTokens(finalContent), isEstimated: !finalUsage }, // ✅ Use finalContent
               ragSystem: ragUsage ? { count: ragUsage.ragSystem, isEstimated: ragUsage.isEstimated } : { count: 0, isEstimated: false },
-              total: (finalUsage ? finalUsage.total : totalContextTokens + estimateTokens(accumulatedContent)) + (ragUsage?.ragSystem || 0)
+              total: (finalUsage ? finalUsage.total : totalContextTokens + estimateTokens(finalContent)) + (ragUsage?.ragSystem || 0)
             };
 
             get().updateSession(sessionId, { stats: { totalTokens: billingUsage.total, billing: billingUsage } });

@@ -184,3 +184,36 @@ function getMockResults(query: string, isFallback: boolean, maxResults: number) 
 
   return formatResult(mockResults);
 }
+
+/**
+ * 抓取网页内容并转换为 Markdown
+ */
+export async function fetchWebPageContent(url: string): Promise<string> {
+  try {
+    console.log(`[WebSearch] Fetching content for: ${url}`);
+    // 使用 Jina Reader 转 Markdown
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const response = await fetch(jinaUrl, {
+      headers: {
+        'X-Return-Format': 'markdown',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch page: ${response.status} ${response.statusText}`);
+    }
+
+    const content = await response.text();
+
+    // 简单清洗：如果内容太长，截断至 15000 字符（约 10k-12k tokens）
+    const MAX_CONTENT_LENGTH = 15000;
+    if (content.length > MAX_CONTENT_LENGTH) {
+      return content.substring(0, MAX_CONTENT_LENGTH) + '\n\n...[Content truncated for length]...';
+    }
+
+    return content;
+  } catch (err) {
+    console.error(`[WebSearch] Error fetching page content:`, err);
+    return `Error reading page content: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}

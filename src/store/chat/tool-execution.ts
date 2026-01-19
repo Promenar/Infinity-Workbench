@@ -9,6 +9,7 @@ import type { ToolCall, ToolResult, ExecutionStep } from '../../types/skills';
 import type { TaskState } from '../../types/chat';
 import { skillRegistry } from '../../lib/skills/registry';
 import { useAgentStore } from '../agent-store';
+import { SessionRepository } from '../../lib/db/session-repository';
 
 export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
     const { get, set } = context;
@@ -66,6 +67,12 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                         updatedSteps.push(newStep);
                     }
 
+                    // 🔑 Fix Persistence: Immediately save steps to DB
+                    // Fire-and-forget to avoid blocking UI
+                    SessionRepository.updateMessage(sessionId, targetMsgId!, {
+                        executionSteps: updatedSteps
+                    }).catch(e => console.warn('[ToolExecutor] Failed to persist steps:', e));
+
                     return {
                         sessions: state.sessions.map(s => s.id === sessionId ? {
                             ...s,
@@ -120,6 +127,15 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                     result = { id: (tc as any).id, content: `Error: ${e.message}`, status: 'error' };
                 }
 
+                // 🛡️ Global Tool Interceptor: Auto-Reflection for Resilience
+                if (result.status === 'error') {
+                    // Append system guidance to the error message
+                    const reflectionHint = `\n\n[SYSTEM NOTE]: The tool execution failed. Please analyze the error message above. Do NOT give up or apologize. Instead:\n1. Check if arguments were correct (e.g., path existence, valid options).\n2. If a file/directory is missing, use 'list_dir' or 'search_by_name' to locate it.\n3. If a parameter was invalid, check the docs or schema and retry.\n4. Propose a specific alternative approach immediately.`;
+
+                    result.content += reflectionHint;
+                    console.log('[ToolExecutor] Interceptor: Added reflection hint to error result');
+                }
+
                 updateSteps({
                     id: `res_${stepId}`,
                     type: result.status === 'success' ? 'tool_result' : 'error',
@@ -150,10 +166,19 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                         data && typeof data === 'object' && 'steps' in data && 'progress' in data;
 
                     if (isTaskState(result.data)) {
+                        // 🧠 Intelligent UI Hoisting: 
+                        // If completing a task with a summary, promote the summary to the visible message body!
+                        // This fixes the issue where the final result is hidden inside the JSON tool args.
+                        let visibleContent = targetMsg.content;
+                        if (tcName === 'manage_task' && finalArgs.action === 'complete' && finalArgs.final_summary) {
+                            visibleContent = finalArgs.final_summary;
+                            console.log('[ToolExecutor] Hoisted final_summary to message body:', visibleContent.substring(0, 50) + '...');
+                        }
+
                         get().updateMessageContent(
                             sessionId,
                             targetMsgId,
-                            targetMsg.content,
+                            visibleContent, // 🚀 Updated Content
                             undefined,
                             undefined,
                             undefined,
@@ -163,13 +188,16 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
                             undefined,
                             result.data // taskState (param 11)
                         );
-                        // Let's stick to the log replacement which covers lines 78-140 mostly.
-                        // I will replace the block from `for (const tc of toolCalls) {` to `get().addMessage(...)`.
+
+                        // 🏁 Persistence Finalizer: 
+                        // Force immediate DB flush when task is complete to prevent data loss on app restart.
+                        if (get().flushMessageUpdates && tcName === 'manage_task' && finalArgs.action === 'complete') {
+                            console.log('[ToolExecutor] Forcing immediate DB flush for final_summary');
+                            get().flushMessageUpdates(sessionId, targetMsgId);
+                        }
                     }
                 }
             }
         },
     };
 };
-
-

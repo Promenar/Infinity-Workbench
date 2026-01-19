@@ -54,7 +54,7 @@ export interface ToolCall {
  */
 export interface ExecutionStep {
     id: string;
-    type: 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'plan_item' | 'intervention_required' | 'intervention_result';
+    type: 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'plan_item' | 'intervention_required' | 'intervention_result' | 'native_search' | 'native_search_result';
     content?: string; // Markdown content or JSON string
     toolName?: string;
     toolArgs?: any;

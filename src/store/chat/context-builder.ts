@@ -10,6 +10,7 @@ import { useRagStore } from '../rag-store';
 import { performWebSearch } from '../../features/chat/utils/web-search';
 import { MemoryManager } from '../../lib/rag/memory-manager';
 import { skillRegistry } from '../../lib/skills/registry';
+import { inferModelFamily, getTaskPlanningGuidance, getToolUsageGuidance, getOutputFormatGuidance } from '../../lib/llm/model-prompts'; // 🆕 模型特定提示词
 import type { Session, Message, RagReference, GeneratedImageData } from '../../types/chat';
 
 export interface ContextBuilderParams {
@@ -65,11 +66,10 @@ export async function performClientSideSearch(
     }
 
     try {
-        const searchConfig = useApiStore.getState().googleSearchConfig;
+        const searchConfig = useApiStore.getState().searchConfig;
         const { context, sources } = await performWebSearch(
             query,
-            searchConfig?.apiKey,
-            searchConfig?.cx
+            searchConfig
         );
         console.log('[ContextBuilder] Client-side search completed', {
             sources: sources.length,
@@ -191,14 +191,56 @@ export function buildSystemPrompt(
     agent: any,
     session: Session,
     ragContext: string,
-    searchContext: string
+    searchContext: string,
+    provider: any, // 🆕 通过参数注入
+    isNativeWebSearchProvider: boolean, // 🆕 通过参数注入
+    availableSkills?: any[] // 🆕 允许外部传入已筛选的工具列表
 ): string {
-    let finalSystemPrompt = agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
+    // 🔑 Phase 1: Context Anchoring - 优先状态注入
+    // 在系统提示词的最顶部建立“锚点”，防止模型迷失
+    let prioritizedState = '';
+
+    if (session.activeTask && session.activeTask.status === 'in-progress') {
+        const task = session.activeTask;
+        const currentStepIndex = task.steps.findIndex(s => s.status === 'in-progress');
+        const currentStep = task.steps[currentStepIndex];
+        const totalSteps = task.steps.length;
+
+        // 分析 Last Action (简单启发式：找最近的 tool 或者是 assistant 的 tool_calls)
+        let lastAction = 'None';
+        const msgs = session.messages;
+        if (msgs.length > 0) {
+            for (let i = msgs.length - 1; i >= 0; i--) {
+                const m = msgs[i];
+                if (m.role === 'tool') {
+                    lastAction = `✅ Tool Execution ('${m.name}') COMPLETED -> Result is in History`;
+                    break;
+                }
+                if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+                    const names = m.tool_calls.map((t: any) => t.name).join(', ');
+                    lastAction = `⏳ Tool Request ('${names}') -> Waiting for Output`;
+                    break;
+                }
+                if (m.role === 'user') {
+                    lastAction = `👤 User Input`;
+                    break;
+                }
+            }
+        }
+
+        prioritizedState = `### [PRIORITIZED STATE - READ THIS FIRST]
+- **Current Task**: "${task.title}" (Step ${currentStepIndex !== -1 ? currentStepIndex + 1 : '?'}/${totalSteps}: ${currentStep?.status === 'in-progress' ? 'Running' : 'Pending'})
+- **Last Action**: ${lastAction}
+- **Immediate Goal**: ${currentStep ? (currentStep.description || currentStep.title) : 'Proceed with task'}
+\n**CRITICAL INSTRUCTION**: If Last Action indicates a tool completed, **DO NOT REPEAT IT**. Use the result in history to advance the task (update status or proceed to next step).\n\n`;
+    }
+
+    let finalSystemPrompt = prioritizedState + agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
 
     // 注入工具描述
-    const availableSkills = skillRegistry.getEnabledSkills();
-    if (availableSkills.length > 0) {
-        const toolsDesc = availableSkills.map(s => {
+    const skillsToUse = availableSkills ?? skillRegistry.getEnabledSkills();
+    if (skillsToUse.length > 0) {
+        const toolsDesc = skillsToUse.map(s => {
             let argsDesc = 'No arguments';
             if (s.schema && (s.schema as any).shape) {
                 argsDesc = Object.entries((s.schema as any).shape).map(([key, val]: [string, any]) => {
@@ -214,41 +256,58 @@ export function buildSystemPrompt(
             return `### ${s.name} (ID: ${s.id})\n${s.description}\nArguments:\n${argsDesc}`;
         }).join('\n\n');
 
+        // 🆕 根据模型类型生成特定的任务规划和工具使用指导
+        const modelFamily = inferModelFamily(provider.type, session.modelId);
+        const taskGuidance = getTaskPlanningGuidance(modelFamily);
+        const toolGuidance = getToolUsageGuidance(modelFamily, isNativeWebSearchProvider);
+        const outputGuidance = getOutputFormatGuidance(modelFamily);
+
         const toolInstruction = `\n\n[AVAILABLE TOOLS]
 You have access to the following skills:
 
 ${toolsDesc}
 
-[PLANNING & TASK MANAGEMENT]
-If the user's request is complex, multi-step, or requires maintaining state, you MUST use the \`manage_task\` tool.
-- CREATE a plan BEFORE execution: \`manage_task({ action: 'create', title: '...', steps: [...] })\`
-- UPDATE steps as you finish them: \`manage_task({ action: 'update', steps: [{ id: '...', status: 'completed' }] })\`
-- COMPLETE the task when fully done: \`manage_task({ action: 'complete' })\`
+${taskGuidance}
+
+${toolGuidance}
+
+${outputGuidance}
 
 [EXECUTION RULES]
 1. NATIVE TOOL CALLS ONLY. Use the JSON schema provided.
 2. 🚫 NO PARAMETER WRAPPING: DO NOT wrap arguments in a "parameters" key.
-3. 🚫 NO INTRODUCTORY TEXT: Response must ONLY contain tool calls.
+3. 🚫 NO INTRODUCTORY TEXT before tool calls.
 4. PROVIDE ALL REQUIRED PARAMETERS.
-5. Trigger tools immediately.`;
+5. Trigger tools immediately.
+
+[TASK MANAGEMENT IRON RULES]
+1. 🔒 IMMUTABLE PLAN: Once a task is created (manage_task:create), you CANNOT add, remove, or rename steps.
+2. ⛓️ SEQUENTIAL EXECUTION: Steps MUST be completed in strict order (1->2->3...). You cannot mark Step N as done until Step N-1 is done.
+3. 🚥 STATUS ONLY: Use 'manage_task:update' ONLY to advance the status of the CURRENT step. Do not try to change descriptions or titles.
+4. 🏁 RESULT REQUIRED: The 'final_summary' in 'manage_task:complete' MUST be the ACTUAL ANSWER/DELIVERABLE (e.g., "The weather is 25°C"), NOT a process report (e.g., "I have checked the weather").
+`;
+
 
         finalSystemPrompt += toolInstruction;
 
-        // 任务状态注入
-        if (session.activeTask) {
+        // 🔑 Phase 2: 任务状态注入优化
+        // 仅当任务处于活跃状态（非完成/失败）时注入
+        // 避免已完成任务的状态污染后续消息
+        if (session.activeTask && session.activeTask.status === 'in-progress') {
             const task = session.activeTask;
             const formattedSteps = task.steps.map((s, idx) =>
                 `${idx + 1}. [${s.status.toUpperCase()}] ${s.title}${s.description ? ` (${s.description})` : ''}`
             ).join('\n');
 
             const taskContext = `\n\n[CURRENT TASK STATUS]
+Task ID: ${task.id || 'N/A'}
 Title: ${task.title}
 Status: ${task.status}
 Progress: ${task.progress}%
 Steps:
 ${formattedSteps}
  
-IMPORTANT: You are currently working on this task. Use 'manage_task' to update the status of steps as you complete them.`;
+IMPORTANT: You are currently working on this task. Use 'manage_task' with the correct taskId to update steps.`;
             finalSystemPrompt += taskContext;
         }
     }

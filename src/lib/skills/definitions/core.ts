@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { Skill, SkillContext, SkillResult } from '../../../types/skills';
 import { useApiStore } from '../../../store/api-store';
 // Removed static import of useChatStore to break require cycle
-import { performWebSearch } from '../../../features/chat/utils/web-search';
+import { performWebSearch, fetchWebPageContent } from '../../../features/chat/utils/web-search';
 import { MemoryManager } from '../../rag/memory-manager';
 
 // Mock implementation helper until we connect to real services in Phase 4
@@ -194,6 +194,35 @@ export const GenerateImageSkill: Skill = {
             return {
                 id: `img_err_${Date.now()}`,
                 content: `Image generation failed: ${e.message}`,
+                status: 'error'
+            };
+        }
+    },
+};
+
+export const BrowseWebPageSkill: Skill = {
+    id: 'browse_web_page',
+    name: 'Browse Web Page',
+    description: 'Fetch and read the full content of a specific web page. Use this when search snippets are insufficient and you need to dive deeper into a specific URL.',
+    schema: z.object({
+        url: z.string().url().describe('The URL of the web page to read'),
+    }),
+    execute: async (params: { url: string }, context) => {
+        try {
+            const content = await fetchWebPageContent(params.url);
+
+            return {
+                id: `browse_${Date.now()}`,
+                content: content,
+                status: 'success',
+                data: {
+                    url: params.url
+                }
+            };
+        } catch (e: any) {
+            return {
+                id: `browse_err_${Date.now()}`,
+                content: `Failed to read page: ${e.message}`,
                 status: 'error'
             };
         }

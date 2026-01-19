@@ -69,6 +69,55 @@ export const migrateDatabase = async () => {
       await db.execute('ALTER TABLE vectors ADD COLUMN end_message_id TEXT');
     }
 
+    // Migration 4.5 (Phase 4b Repair): 补全 messages 和 sessions 表缺失的字段
+    // 这是一个关键修复，因为 schema.ts 更新了但缺少迁移脚本，导致旧版本升级后无法写入新字段
+    const msgInfo = await db.execute('PRAGMA table_info(messages)');
+    const msgCols = msgInfo.rows?.map((row: any) => row.name as string) || [];
+
+    const msgNewCols = [
+      { name: 'reasoning', type: 'TEXT' },
+      { name: 'thought_signature', type: 'TEXT' },
+      { name: 'rag_references', type: 'TEXT' },
+      { name: 'rag_progress', type: 'TEXT' },
+      { name: 'rag_metadata', type: 'TEXT' },
+      { name: 'rag_references_loading', type: 'INTEGER DEFAULT 0' },
+      { name: 'execution_steps', type: 'TEXT' },
+      { name: 'tool_calls', type: 'TEXT' },
+      { name: 'pending_approval_tool_ids', type: 'TEXT' },
+      { name: 'tool_call_id', type: 'TEXT' },
+      { name: 'name', type: 'TEXT' },
+      { name: 'planning_task', type: 'TEXT' },
+      { name: 'vectorization_status', type: 'TEXT' },
+      { name: 'layout_height', type: 'REAL' },
+      { name: 'is_archived', type: 'INTEGER DEFAULT 0' }
+    ];
+
+    for (const col of msgNewCols) {
+      if (!msgCols.includes(col.name)) {
+        console.log(`[DB Migration] Adding ${col.name} column to messages...`);
+        await db.execute(`ALTER TABLE messages ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
+
+    const sessionInfo = await db.execute('PRAGMA table_info(sessions)');
+    const sessionCols = sessionInfo.rows?.map((row: any) => row.name as string) || [];
+
+    const sessionNewCols = [
+      { name: 'approval_request', type: 'TEXT' },
+      { name: 'rag_options', type: 'TEXT' },
+      { name: 'inference_params', type: 'TEXT' },
+      { name: 'active_task', type: 'TEXT' },
+      { name: 'stats', type: 'TEXT' },
+      { name: 'options', type: 'TEXT' }
+    ];
+
+    for (const col of sessionNewCols) {
+      if (!sessionCols.includes(col.name)) {
+        console.log(`[DB Migration] Adding ${col.name} column to sessions...`);
+        await db.execute(`ALTER TABLE sessions ADD COLUMN ${col.name} ${col.type}`);
+      }
+    }
+
     // Migration 5 (Phase 8): Tags and KG tables
     const tagsInfo = await db.execute(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='tags'",

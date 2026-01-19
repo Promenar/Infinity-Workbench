@@ -24,6 +24,7 @@ export interface BackupData {
     document_tags: any[];
     kg_nodes: any[];
     kg_edges: any[];
+    vectorization_tasks: any[];
   };
   files?: Record<string, string>; // relativePath -> base64
 }
@@ -114,6 +115,7 @@ export class BackupManager {
     const document_tags = await this.safeQuery('SELECT * FROM document_tags');
     const kg_nodes = await this.safeQuery('SELECT * FROM kg_nodes');
     const kg_edges = await this.safeQuery('SELECT * FROM kg_edges');
+    const vectorization_tasks = await this.safeQuery('SELECT * FROM vectorization_tasks');
 
     // 3. Collect Physical Files and transform paths
     const physicalFiles: Record<string, string> = {};
@@ -206,6 +208,7 @@ export class BackupManager {
         document_tags,
         kg_nodes,
         kg_edges,
+        vectorization_tasks,
       },
       files: physicalFiles,
     };
@@ -295,6 +298,7 @@ export class BackupManager {
       await db.execute('DELETE FROM attachments');
       await db.execute('DELETE FROM messages');
       await db.execute('DELETE FROM documents');
+      await db.execute('DELETE FROM vectorization_tasks');
       await db.execute('DELETE FROM context_summaries');
       await db.execute('DELETE FROM sessions');
       await db.execute('DELETE FROM folders');
@@ -305,6 +309,7 @@ export class BackupManager {
       await this.bulkInsert('documents', restoredDocuments);
       await this.bulkInsert('messages', backup.sqlite.messages);
       await this.bulkInsert('attachments', restoredAttachments);
+      await this.bulkInsert('vectorization_tasks', backup.sqlite.vectorization_tasks);
       await this.bulkInsert('context_summaries', backup.sqlite.context_summaries);
       await this.bulkInsert('tags', backup.sqlite.tags);
       await this.bulkInsert('document_tags', backup.sqlite.document_tags);

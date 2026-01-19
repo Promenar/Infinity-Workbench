@@ -55,6 +55,33 @@ class SkillRegistry {
             return skillsConfig[skill.id] !== false;
         });
     }
+
+    /**
+     * 🆕 Phase 3: 基于模型能力的动态工具路由
+     * 
+     * @param options.nativeWebSearch - 模型是否支持原生联网（Gemini/Google Vertex）
+     * @returns 过滤后的技能列表
+     * 
+     * 设计决策：
+     * - 对于支持原生联网的模型，**无条件**移除 search_internet 工具
+     * - 因为这些模型可以自主判断何时需要联网，使用其内置 Grounding 能力
+     * - 对于其他模型，保留 search_internet 让模型通过工具调用进行搜索
+     */
+    public getEnabledSkillsForModel(options: {
+        nativeWebSearch?: boolean;
+    } = {}): Skill[] {
+        const baseSkills = this.getEnabledSkills();
+        const { nativeWebSearch } = options;
+
+        // 🔑 核心逻辑：如果模型支持原生联网，则从工具列表中移除 search_internet
+        // 模型将使用其内置的 Grounding 能力自主搜索
+        if (nativeWebSearch) {
+            console.log('[SkillRegistry] Native web search provider detected, removing search_internet tool');
+            return baseSkills.filter(skill => skill.id !== 'search_internet');
+        }
+
+        return baseSkills;
+    }
 }
 
 export const skillRegistry = SkillRegistry.getInstance();

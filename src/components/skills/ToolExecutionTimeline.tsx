@@ -48,6 +48,11 @@ const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
     }
     if (type === 'intervention_result') return <User size={16} color="#10b981" />;
 
+    // 🆕 原生搜索调用与结果：使用紫色 Globe 图标区分
+    if (type === 'native_search' || type === 'native_search_result') {
+        return <Globe size={16} color="#a855f7" />; // 紫色，区别于工具调用的蓝色
+    }
+
     // Tool Icons
     if (toolName === 'search_internet') return <Globe size={16} color="#4F8EF7" />;
     if (toolName === 'query_vector_db') return <Database size={16} color="#FF9F43" />;
@@ -55,6 +60,7 @@ const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
 
     return <Terminal size={16} color="#A0A0A0" />; // Default tool icon
 };
+
 
 // ... (SearchResultsList stays the same)
 const SearchResultsList = ({ sources, isDark }: { sources: any[], isDark: boolean }) => {
@@ -225,6 +231,9 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
             case 'error': return t.skills.timeline.error;
             case 'intervention_required': return t.agent.interventionRequired || 'Approval Required';
             case 'intervention_result': return t.agent.interventionTaken || 'Intervention Taken';
+            // 🆕 原生搜索类型
+            case 'native_search': return '正在使用 原生网络搜索';
+            case 'native_search_result': return '已获取执行结果';
         }
     };
 
@@ -254,6 +263,11 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
             if (step.toolName === 'search_internet' && step.data?.sources) {
                 return `${step.data.sources.length} source(s)`;
             }
+        }
+
+        // 🆕 原生搜索结果预览
+        if (step.type === 'native_search_result' && step.data?.sources) {
+            return `${step.data.sources.length} source(s) (Google)`;
         }
 
         return (step.content || '').substring(0, 60) + '...';

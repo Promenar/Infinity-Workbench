@@ -42,36 +42,54 @@ export class GeminiClient implements LlmClient {
   }
 
   private mapSkillsToGeminiTools(skills: Skill[]): any[] {
-    // Helper to recursively uppercase types in schema for Gemini strictness
-    const fixSchema = (s: any): any => {
+    // Helper to recursively normalize schema for Gemini/Vertex (Strict Schema Hardening)
+    const normalizeGoogleSchema = (s: any): any => {
       if (!s || typeof s !== 'object') return s;
       const result = { ...s };
+
+      // 1. Clean unsupported fields
+      delete result.additionalProperties;
+      delete result.title;
+      delete result.default;
+      delete result.$schema;
+      delete result.pattern; // Regex validation not supported
+      delete result.const;   // Const validation not supported
+
+      // 2. Enforce Uppercase Types (Google Requirement)
       if (result.type && typeof result.type === 'string') {
         result.type = result.type.toUpperCase();
       }
+
+      // 3. Recursive Traversal
       if (result.properties) {
         const newProps: any = {};
         for (const key in result.properties) {
-          newProps[key] = fixSchema(result.properties[key]);
+          newProps[key] = normalizeGoogleSchema(result.properties[key]);
         }
         result.properties = newProps;
       }
       if (result.items) {
-        result.items = fixSchema(result.items);
+        result.items = normalizeGoogleSchema(result.items);
       }
+
+      // 4. Ensure required is an array if present
+      if (result.required && !Array.isArray(result.required)) {
+        delete result.required;
+      }
+
       return result;
     };
 
     return [{
       functionDeclarations: skills.map((skill) => {
         const schema = zodToJsonSchema(skill.schema as any) as any;
-        delete schema.$schema;
-        delete schema.additionalProperties;
+        // Deep clone to safely mutate
+        const cleanSchema = JSON.parse(JSON.stringify(schema));
 
         return {
           name: skill.id,
           description: skill.description,
-          parameters: fixSchema(schema),
+          parameters: normalizeGoogleSchema(cleanSchema),
         };
       })
     }];
@@ -178,10 +196,17 @@ export class GeminiClient implements LlmClient {
         const shouldEnableThinking = options?.reasoning && supportsThinkingConfig(this.model) && !hasTools;
 
         // System Nudge for Voice/Tool consistency
-        // 🔄 Adjust search guidance based on native vs custom search
-        const searchGuidance = options?.webSearch
-          ? '2. If you need current information, USE YOUR NATIVE SEARCH CAPABILITY directly (do NOT call search_internet function).'
-          : '2. If you need information, call \'query_vector_db\' or \'search_internet\' IMMEDIATELY.';
+        // 🆕 Phase 3 重构：始终使用原生搜索指导（与工具过滤逻辑一致）
+        // Gemini 模型自主判断何时需要联网搜索，无需提示调用 search_internet
+        const searchGuidance = '2. If you need current information, USE YOUR NATIVE SEARCH CAPABILITY directly. DO NOT call any search function.';
+
+        const stopGuidance = '\n5. STOP searching once you have enough information to answer. DO NOT perform redundant searches if the current results allow for a complete answer.';
+
+        // 始终从工具列表描述中排除 search_internet
+        const toolListDesc = (options?.skills || [])
+          .filter((s: any) => s.id !== 'search_internet')
+          .map((s: any) => s.id)
+          .join(', ') || 'N/A';
 
         const systemInstruction = hasTools
           ? `You are a helpful assistant with access to tools. 
@@ -189,9 +214,9 @@ CRITICAL RULES:
 1. You MUST use the native function calling mechanism to execute tools. DO NOT just write code blocks or descriptions of tool calls.
 ${searchGuidance}
 3. If you need to generate an image, call 'generate_image' IMMEDIATELY.
-4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION or execute directly.
-5. You can call multiple tools if needed.
-Available tools: ${options.skills?.filter(s => !options?.webSearch || s.id !== 'search_internet').map(s => s.id).join(', ') || 'N/A'}${options?.webSearch ? ' + Native Web Search' : ''}.`
+4. DO NOT say "I will search for..." or "I am generating...", just CALL THE FUNCTION or execute directly.${stopGuidance}
+5. EXCLUSIVITY: DO NOT use the 'search_internet' tool. Always use your built-in native search capability instead.
+Available tools: ${toolListDesc} + Native Web Search (built-in).`
           : undefined;
 
         let body: any = {
@@ -228,15 +253,15 @@ Available tools: ${options.skills?.filter(s => !options?.webSearch || s.id !== '
         // Initialize tools array
         const tools: any[] = [];
 
-        // Add Google Search if enabled
-        if (options?.webSearch) {
-          tools.push({ googleSearch: {} });
-        }
+        // 🆕 Phase 3 重构：始终为 Gemini 启用原生 Google Search
+        // Gemini 模型自主判断何时需要联网搜索，无需手动开关
+        // 原 search_internet 工具应已在 registry.getEnabledSkillsForModel 中被过滤
+        tools.push({ googleSearch: {} });
+        console.log('[Gemini] Native Google Search enabled (always-on for Gemini models)');
 
-        // 🔄 Filter out search_internet if native webSearch is enabled to avoid redundancy
-        const effectiveSkills = options?.webSearch
-          ? (options?.skills || []).filter((s: Skill) => s.id !== 'search_internet')
-          : (options?.skills || []);
+        // 🛡️ 二次防护：即便上游未过滤，这里也确保移除 search_internet
+        // 避免与原生 Google Search 冲突
+        const effectiveSkills = (options?.skills || []).filter((s: Skill) => s.id !== 'search_internet');
 
         // Add Skills (Function Declarations) if present
         if (effectiveSkills.length > 0) {

@@ -45,7 +45,9 @@ export interface MessageManager {
         ragMetadata?: RagMetadata,
         thought_signature?: string,
         taskState?: TaskState,
-        tool_calls?: ToolCall[]
+        tool_calls?: ToolCall[],
+        executionSteps?: ExecutionStep[],
+        pendingApprovalToolIds?: string[]
     ) => void;
 
     deleteMessage: (sessionId: string, messageId: string) => Promise<void>;

@@ -164,7 +164,7 @@ export const useSettingsStore = create<SettingsState>()(
           globalRagConfig: { ...state.globalRagConfig, ...updates },
         })),
 
-      maxLoopCount: 20,
+      maxLoopCount: 50,
       setMaxLoopCount: (count) => set({ maxLoopCount: count }),
       executionMode: 'semi',
       setExecutionMode: (mode) => set({ executionMode: mode }),

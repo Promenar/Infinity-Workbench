@@ -132,6 +132,8 @@ export interface Session {
   messages: Message[];
   modelId?: string; // Override agent's default model for this session
   customPrompt?: string; // Additional prompt specific to this session (appended to agent's systemPrompt)
+  currentLoopCount?: number; // 🆕 追踪当前执行轮数（支持跨续杯连续计数）
+  isLongRunning?: boolean;   // ✅ 新增：标记是否处于长程自动迭代状态（>20步）
   isPinned?: boolean;
   stats?: {
     totalTokens: number; // 兼容现有字段 (保留用于向后兼容)
@@ -160,6 +162,7 @@ export interface Session {
   loopStatus: 'idle' | 'running' | 'paused' | 'waiting_for_approval' | 'completed';
   pendingIntervention?: string; // 待注入的用户指令
   continuationBudget?: number;   // ✅ 新增：续杯额度（+10轮 累加）
+  autoLoopLimit?: number;        // ✅ 新增：自动执行轮数上限
   approvalRequest?: {          // 待批准的操作详情
     type?: 'tool_approval' | 'continuation'; // ✅ 新增：区分请求类型
     toolName: string;
@@ -176,6 +179,7 @@ export interface TaskStep {
 }
 
 export interface TaskState {
+  id?: string; // 🔑 任务唯一标识符 ( UUID )
   title: string;
   status: 'pending' | 'in-progress' | 'completed' | 'failed';
   progress: number; // 0-100

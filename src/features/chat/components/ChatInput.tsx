@@ -284,6 +284,7 @@ export function ChatInput({
   const reasoningEnabled = session?.options?.reasoning ?? true; // Default to true
 
   const draftTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const isSendingRef = React.useRef(false); // 🆕 防止发送后的 setText('') 触发草稿保存
 
   // Load draft on mount
   useEffect(() => {
@@ -294,15 +295,24 @@ export function ChatInput({
 
   // Save draft on text change (debounced)
   useEffect(() => {
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    // 🔑 无条件清除旧定时器（确保发送后不会有残留定时器）
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
 
+    // 🔑 发送过程中的 setText('') 不应触发草稿保存
+    if (isSendingRef.current) {
+      isSendingRef.current = false;
+      return;
+    }
+
+    // 只有非发送场景才创建新的防抖定时器
     draftTimerRef.current = setTimeout(() => {
-      if (session && text !== session.draft) {
+      if (session && text !== (session.draft || '')) {
         // Only update if changed to avoid loop
         // Don't save empty string if it was already undefined/empty to avoid unnecessary writes
-        if (text || session.draft) {
-          updateSessionDraft(sessionId, text || undefined);
-        }
+        updateSessionDraft(sessionId, text);
       }
       draftTimerRef.current = null;
     }, 500);
@@ -361,6 +371,9 @@ export function ChatInput({
         draftTimerRef.current = null;
       }
 
+      // 🆕 标记正在发送，防止 setText('') 触发 useEffect 重新保存草稿
+      isSendingRef.current = true;
+
       // Pass the current persistent options
       onSendMessage(text, {
         webSearch: webSearchEnabled,
@@ -368,7 +381,7 @@ export function ChatInput({
         images: selectedImages.length > 0 ? selectedImages : undefined,
       });
       setText('');
-      updateSessionDraft(sessionId, undefined); // Clear draft immediately IN DB
+      updateSessionDraft(sessionId, ''); // Clear draft immediately IN DB
       setSelectedImages([]);
     }, 0);
 
@@ -489,7 +502,7 @@ export function ChatInput({
         }),
       ]}
     >
-      {/* ✅ 编辑模式横条 Banner - 定位在输入框上边框中心 */}
+      {/* ✅ 编辑模式横条 Banner */}
       {editingMessageId && (
         <TouchableOpacity
           onPress={() => {
@@ -499,16 +512,16 @@ export function ChatInput({
           activeOpacity={0.8}
           style={{
             position: 'absolute',
-            top: -12, // 使文字横跨上边框内外
+            top: -12,
             left: 0,
             right: 0,
             zIndex: 100,
-            alignItems: 'center', // 子元素水平居中
+            alignItems: 'center',
           }}
         >
           <View
             style={{
-              backgroundColor: 'rgba(185, 28, 28, 0.95)',
+              backgroundColor: 'rgba(239, 68, 68, 0.95)',
               paddingHorizontal: 10,
               paddingVertical: 4,
               borderRadius: 10,
@@ -519,6 +532,46 @@ export function ChatInput({
             </Typography>
           </View>
         </TouchableOpacity>
+      )}
+
+      {/* ✅ 长程任务指示器 (Passive Loop Indicator) */}
+      {session?.isLongRunning && !editingMessageId && (
+        <View
+          style={{
+            position: 'absolute',
+            top: -24,
+            left: 0,
+            right: 0,
+            zIndex: 90, // Lower than editing banner
+            alignItems: 'center',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: isDark ? 'rgba(99, 102, 241, 0.9)' : 'rgba(99, 102, 241, 0.9)',
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.2)',
+              shadowColor: '#6366f1',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 4,
+            }}
+          >
+            <Animated.View style={animatedCircleStyle}>
+              <Zap size={12} color="white" fill="white" />
+            </Animated.View>
+            <Typography style={{ color: 'white', fontSize: 11, fontWeight: '700' }}>
+              自动迭代中 ({session.currentLoopCount}步)
+            </Typography>
+          </View>
+        </View>
       )}
       <BlurView
         intensity={isDark ? 80 : 120}

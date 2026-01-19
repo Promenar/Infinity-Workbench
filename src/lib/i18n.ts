@@ -132,6 +132,7 @@ export const translations = {
         title: 'SearXNG',
         description: '自托管隐私搜索引擎，支持整合多个搜索源',
         baseUrl: '实例基址 (Base URL)',
+        apiKey: 'API 令牌 (可选)',
       },
       haptics: '触感反馈',
       hapticsDesc: '在交互时启用震动反馈',
@@ -320,7 +321,7 @@ export const translations = {
         title: '技能深度配置',
         description: '启用或禁用特定的 AI 能力。禁用后，Agent 将无法感知或调用该工具。',
         loopLimit: '最大思考轮数',
-        loopLimitDesc: '限制 Agent 在单次回复中进行推理和行动循环的最大次数 (默认 5)。',
+        loopLimitDesc: '限制 Agent 在单次回复中进行推理和行动循环的最大次数 (默认 50，支持无限模式)。',
         executionMode: 'Agent 执行模式',
         executionModeDesc: '控制工具执行前的审核逻辑。',
         modes: {
@@ -1017,6 +1018,7 @@ export const translations = {
         title: 'SearXNG',
         description: 'Self-hosted privacy meta-search engine',
         baseUrl: 'Base URL',
+        apiKey: 'API Key (Optional)',
       },
       haptics: 'Haptic Feedback',
       hapticsDesc: 'Enable vibration feedback on interactions',
@@ -1209,7 +1211,7 @@ export const translations = {
           'Enable or disable specific AI capabilities. Once disabled, the Agent will not be aware of or able to call the tool.',
         loopLimit: 'Max Reasoning Loops',
         loopLimitDesc:
-          'Limit the maximum number of reasoning and action cycles the Agent can perform in a single reply (default 5).',
+          'Limit the maximum number of reasoning and action cycles the Agent can perform in a single reply (default 50, supports infinite mode).',
         executionMode: 'Execution Mode',
         executionModeDesc: 'Control the approval logic before tool execution.',
         modes: {
