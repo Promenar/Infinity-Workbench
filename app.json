@@ -3,7 +3,7 @@
     "name": "Nexara",
     "slug": "nexara",
     "scheme": "nexara",
-    "version": "1.1.41",
+    "version": "1.1.45",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -24,7 +24,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.promenar.nexara",
-      "versionCode": 49,
+      "versionCode": 52,
       "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
