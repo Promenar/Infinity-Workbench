@@ -265,7 +265,7 @@ export class MemoryManager {
 
       const searchTasks: Promise<SearchResult[]>[] = [];
 
-      // 3.1 记忆搜索任务
+      // 3.1 记忆搜索任务 (Raw Memory)
       if (enableMemory) {
         const memoryTask = (async () => {
           try {
@@ -284,6 +284,27 @@ export class MemoryManager {
           }
         })();
         searchTasks.push(memoryTask);
+
+        // 3.1.5 摘要搜索任务 (Summary)
+        // 🔑 新增：显式搜索 type='summary' 的向量，用于召回深度历史
+        const summaryTask = (async () => {
+          try {
+            // 摘要数量通常较少，且包含高密度信息，召回限制可适度放宽
+            // 默认召回 5 条摘要 (或根据 Rerank 配置翻倍)
+            const summaryLimit = effectiveRagConfig.enableRerank ? 10 : 5;
+
+            return await vectorStore.search(queryEmbedding, {
+              limit: summaryLimit,
+              // 摘要通常语义更宏观，阈值稍微降低以增加召回率
+              threshold: (effectiveRagConfig.memoryThreshold || 0.6) - 0.05,
+              filter: isGlobal ? { type: 'summary' } : { sessionId, type: 'summary' },
+            });
+          } catch (e) {
+            console.error('[MemoryManager] Summary search failed:', e);
+            return [];
+          }
+        })();
+        searchTasks.push(summaryTask);
       }
 
       // 3.2 文档搜索任务
@@ -607,15 +628,39 @@ export class MemoryManager {
 
         if (mentionedNodeIds.length > 0) {
           // 2. 拉取关联的边 (一跳关系)
+          // 🔑 隐私修复: 必须确保边关联的 doc_id 在授权列表内，或属于全局知识 (doc_id IS NULL 假设为通用知识，视具体需求而定)
+          // 鉴于 schema 中 kg_edges 有 doc_id 字段，我们必须应用过滤。
+          // 如果是一般知识点推理（非文档归属），doc_id 可能为空，这里我们保留 doc_id IS NULL 的边（通用常识）
+          // 并明确允许 authorizedDocIds 中的边。
+
+          let docFilterClause = 'e.doc_id IS NULL'; // 默认允许无归属的通用边
+          const authDocList = Array.from(authorizedDocIds || []);
+
+          if (enableDocs && !isGlobal && authDocList.length > 0) {
+            const docPlaceholders = authDocList.map(() => '?').join(',');
+            docFilterClause += ` OR e.doc_id IN (${docPlaceholders})`;
+          } else if (enableDocs && isGlobal) {
+            // Global 模式下允许所有文档边
+            docFilterClause = '1=1';
+          }
+
           const placeholders = mentionedNodeIds.map(() => '?').join(',');
+
+          //构建完整的参数数组
+          let queryParams = [...mentionedNodeIds];
+          if (enableDocs && !isGlobal && authDocList.length > 0) {
+            queryParams = [...queryParams, ...authDocList];
+          }
+
           const edgesRes = await db.execute(
             `SELECT e.*, n1.name as source_name, n2.name as target_name 
              FROM kg_edges e
              JOIN kg_nodes n1 ON e.source_id = n1.id
              JOIN kg_nodes n2 ON e.target_id = n2.id
-             WHERE source_id IN (${placeholders}) OR target_id IN (${placeholders})
+             WHERE (source_id IN (${placeholders}) OR target_id IN (${placeholders}))
+             AND (${docFilterClause})
              LIMIT 20`,
-            mentionedNodeIds
+            queryParams
           );
 
           const edges = (edgesRes.rows as any)._array || (edgesRes.rows as any) || [];

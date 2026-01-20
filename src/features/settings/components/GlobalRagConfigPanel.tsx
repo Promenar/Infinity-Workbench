@@ -84,6 +84,8 @@ const PRESETS = {
   },
 };
 
+import { RAG_PRESETS } from '../../../lib/rag/constants';
+
 export const GlobalRagConfigPanel: React.FC = () => {
   const { isDark, colors } = useTheme();
   const { t } = useI18n();
@@ -150,10 +152,13 @@ export const GlobalRagConfigPanel: React.FC = () => {
   };
 
   // 应用预设
-  const applyPreset = (presetKey: keyof typeof PRESETS) => {
+  const applyPreset = (presetKey: string) => {
     setTimeout(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      updateGlobalRagConfig(PRESETS[presetKey].config);
+      const preset = RAG_PRESETS[presetKey];
+      if (preset) {
+        updateGlobalRagConfig(preset.config);
+      }
     }, 10);
   };
 
@@ -203,19 +208,13 @@ export const GlobalRagConfigPanel: React.FC = () => {
       {/* 预设选择 */}
       <SectionHeader title={t.rag.quickPresets} mt={0} />
       <View className="flex-row mb-6 gap-3">
-        {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((key) => {
-          const preset = PRESETS[key];
+        {Object.entries(RAG_PRESETS).map(([key, preset]) => {
           const Icon = preset.icon;
           const isActive =
             globalRagConfig.docChunkSize === preset.config.docChunkSize &&
             globalRagConfig.memoryChunkSize === preset.config.memoryChunkSize;
 
-          const name =
-            key === 'balanced'
-              ? t.rag.presetBalanced
-              : key === 'writing'
-                ? t.rag.presetWriting
-                : t.rag.presetCode;
+          const name = (t as any)[preset.name] || preset.name;
 
           return (
             <Card

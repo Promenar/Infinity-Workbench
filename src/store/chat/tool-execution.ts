@@ -36,6 +36,53 @@ export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
             const targetMsg = session.messages.find(m => m.id === targetMsgId);
             if (!targetMsg) return;
 
+            // 🛡️ Tool Shielding & Self-Reflection Interceptor
+            // If tools are explicitly disabled in session options, intercept the call and force a reflection.
+            if (session.options?.toolsEnabled === false) {
+                console.warn('[ToolExecutor] Intercepted tool call because tools are disabled for this session.');
+
+                // Create synthetic error results for all calls
+                const syntheticResults: ToolResult[] = toolCalls.map(tc => ({
+                    id: (tc as any).id || 'unknown',
+                    status: 'error',
+                    content: `[SYSTEM WARNING]: Tool usage is currently DISABLED by the user configuration.
+You CANNOT use tools in this turn.
+Please STOP trying to use tools and answer the user's request directly using your internal knowledge.`
+                }));
+
+                // Persist these "errors" so the model sees them and self-corrects
+                for (const result of syntheticResults) {
+                    // We need to add a "tool_result" step to visualization so user knows what happened
+                    const stepId = `step_shield_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                    const tc = toolCalls.find(t => t.id === result.id);
+                    const tcName = tc ? ((tc as any).name || (tc as any).function?.name) : 'unknown_tool';
+
+                    set(state => {
+                        const session = state.sessions.find(s => s.id === sessionId);
+                        if (!session) return {};
+                        // Add a visual step (optional, but good for UX)
+                        /* 
+                        // Skipped adding visual step to avoid cluttering UI with 'failed' steps for blocked actions?
+                        // Actually, showing it as an error is good feedback.
+                        */
+                        return {};
+                    });
+
+                    // Add the tool message (Role: tool) so model sees the feedback
+                    await get().addMessage(sessionId, {
+                        id: `tool_shield_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                        role: 'tool',
+                        tool_call_id: result.id,
+                        content: result.content,
+                        name: tcName,
+                        createdAt: Date.now(),
+                        thought_signature: targetMsg.thought_signature
+                    });
+                }
+
+                return; // ⛔ Stop execution here
+            }
+
             // 🛡️ 应用级调度防护：防止 OpenAI 兼容模型在流式初期发送空参数导致的崩溃循环
             const hasIncompleteCall = toolCalls.some(tc => {
                 const name = (tc as any).name || (tc as any).function?.name;

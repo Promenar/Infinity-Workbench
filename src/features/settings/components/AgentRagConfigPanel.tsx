@@ -44,44 +44,7 @@ const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 1
   );
 };
 
-const PRESETS = {
-  balanced: {
-    name: '平衡',
-    icon: Zap,
-    config: {
-      contextWindow: 20,
-      summaryThreshold: 10,
-      memoryLimit: 5,
-      memoryThreshold: 0.7,
-      docLimit: 8,
-      docThreshold: 0.45,
-    },
-  },
-  writing: {
-    name: '写作',
-    icon: BookOpen,
-    config: {
-      contextWindow: 30,
-      summaryThreshold: 15,
-      memoryLimit: 7,
-      memoryThreshold: 0.75,
-      docLimit: 10,
-      docThreshold: 0.5,
-    },
-  },
-  coding: {
-    name: '代码',
-    icon: Code,
-    config: {
-      contextWindow: 15,
-      summaryThreshold: 8,
-      memoryLimit: 4,
-      memoryThreshold: 0.65,
-      docLimit: 6,
-      docThreshold: 0.4,
-    },
-  },
-};
+import { RAG_PRESETS } from '../../../lib/rag/constants';
 
 export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
   const { t } = useI18n();
@@ -95,11 +58,14 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
   const isUsingGlobal = !agent.ragConfig;
 
   // 应用预设
-  const applyPreset = (presetKey: keyof typeof PRESETS) => {
+  const applyPreset = (presetKey: string) => {
     setTimeout(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const newConfig = { ...(agent.ragConfig || globalConfig), ...PRESETS[presetKey].config };
-      onUpdate({ ragConfig: newConfig });
+      const preset = RAG_PRESETS[presetKey];
+      if (preset) {
+        const newConfig = { ...(agent.ragConfig || globalConfig), ...preset.config };
+        onUpdate({ ragConfig: newConfig });
+      }
     }, 10);
   };
 
@@ -158,16 +124,10 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
       {/* 预设快捷选择 */}
       <SectionHeader title={t.rag.quickPresets} />
       <View className="flex-row mb-3 gap-2">
-        {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((key) => {
-          const preset = PRESETS[key];
+        {Object.entries(RAG_PRESETS).map(([key, preset]) => {
           const Icon = preset.icon;
-          // Map preset keys to i18n keys
-          const presetName =
-            key === 'balanced'
-              ? t.rag.presetBalanced
-              : key === 'writing'
-                ? t.rag.presetWriting
-                : t.rag.presetCode;
+          // Use i18n key from preset
+          const presetName = (t as any)[preset.name] || preset.name;
 
           const isActive =
             currentConfig.memoryLimit === preset.config.memoryLimit &&

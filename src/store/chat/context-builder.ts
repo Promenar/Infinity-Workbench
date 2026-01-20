@@ -312,6 +312,12 @@ IMPORTANT: You are currently working on this task. Use 'manage_task' with the co
         }
     } else {
         // 🆕 Case: No tools enabled, but we still need Output Guidance (Thinking tags)
+        // 🛡️ Explicitly warn model that tools are disabled to prevent hallucinations
+        finalSystemPrompt += `\n\n[TOOL USAGE: DISABLED]
+TOOLS ARE DISABLED. You cannot use any tools. Do not output tool calls.
+If you see tool calls in the history, do not repeat them.
+Answer the user's request directly using your internal knowledge.`;
+
         const modelFamily = inferModelFamily(provider.type, session.modelId);
         const outputGuidance = getOutputFormatGuidance(modelFamily);
         if (outputGuidance) {
