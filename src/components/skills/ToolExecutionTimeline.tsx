@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput } from 'react-native';
-import { ScrollView, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { ScrollView, NativeSyntheticEvent, NativeScrollEvent, Platform } from 'react-native';
 import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import Markdown from 'react-native-markdown-display';
 import { Typography } from '../ui/Typography';
 import {
     ChevronDown,
+    ChevronUp,
     ChevronRight,
     Brain,
     Globe,
@@ -411,11 +414,34 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                                 </View>
                             </View>
                         ) : (
-                            <Typography variant="body" className="text-sm mt-1" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }}>
-                                {step.type === 'thinking' && (step.content || '').length > 1000
-                                    ? `... (showing last 1000 chars)\n${(step.content || '').slice(-1000)}`
-                                    : (step.content || '')}
-                            </Typography>
+                            <View className="mt-1">
+                                {step.type === 'thinking' ? (
+                                    <Markdown
+                                        style={{
+                                            body: {
+                                                color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)',
+                                                fontSize: 13,
+                                                lineHeight: 18,
+                                            },
+                                            code_inline: {
+                                                backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                                color: isDark ? '#a7f3d0' : '#14532d',
+                                                borderRadius: 4,
+                                                paddingHorizontal: 4,
+                                                paddingVertical: 1,
+                                            }
+                                        }}
+                                    >
+                                        {step.content || ''}
+                                    </Markdown>
+                                ) : (
+                                    <Typography variant="body" className="text-sm" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }}>
+                                        {(step.content || '').length > 1000
+                                            ? `... (showing last 1000 chars)\n${(step.content || '').slice(-1000)}`
+                                            : (step.content || '')}
+                                    </Typography>
+                                )}
+                            </View>
                         )}
                     </Animated.View>
                 )}
@@ -444,56 +470,122 @@ const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
     const scrollViewRef = React.useRef<ScrollView>(null);
     const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const stepsCount = steps.length;
+    const { isDark } = useTheme();
+    const { t } = useI18n();
 
-    // 🔑 自动追踪新步骤：当步骤数增加且自动滚动开启时，滚动到底部
+    // 🔑 自动追踪新步骤
     useEffect(() => {
         if (isAutoScrollEnabled && stepsCount > 0) {
             scrollViewRef.current?.scrollToEnd({ animated: true });
         }
     }, [stepsCount, isAutoScrollEnabled]);
 
-    // 处理滚动事件，判断用户是否手动向上滑
+    // 🔑 自动折叠逻辑
+    useEffect(() => {
+        if (!isMessageGenerating && stepsCount > 0) {
+            const timer = setTimeout(() => {
+                setIsCollapsed(true);
+            }, 500);
+            return () => clearTimeout(timer);
+        } else if (isMessageGenerating) {
+            setIsCollapsed(false);
+        }
+    }, [isMessageGenerating, stepsCount]);
+
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
         const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
-
         if (isAtBottom) {
             if (!isAutoScrollEnabled) setIsAutoScrollEnabled(true);
-        } else {
-            // 用户向上滑，断开自动追踪
-            if (isAutoScrollEnabled) setIsAutoScrollEnabled(false);
+        } else if (isAutoScrollEnabled) {
+            setIsAutoScrollEnabled(false);
         }
     };
 
     if (!steps || steps.length === 0) return null;
 
-    return (
-        <View className="py-2 my-1 relative">
-            <GHScrollView
-                ref={scrollViewRef as any}
-                nestedScrollEnabled={true}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-                showsVerticalScrollIndicator={false}
-                fadingEdgeLength={32}
-                style={{ maxHeight: 280 }}
-                contentContainerStyle={{ paddingVertical: 8, paddingRight: 8 }}
-            >
-                {steps.filter(s => s.type !== 'plan_item').map((step, index, arr) => (
-                    <TimelineItem
-                        key={step.id}
-                        step={step}
-                        isLast={index === arr.length - 1}
-                        isMessageGenerating={isMessageGenerating}
-                        sessionId={sessionId}
-                    />
-                ))}
-            </GHScrollView>
+    const thoughtsCount = steps.filter(s => s.type === 'thinking').length;
+    const toolsCount = steps.filter(s => s.type === 'tool_result').length;
 
-            {/* 常态化干预输入框：当 Loop 处于活跃状态且这是最后一个消息时渲染 */}
+    return (
+        <Animated.View layout={Layout.springify()} className="my-1 overflow-hidden" style={{ borderRadius: 16, width: '100%' }}>
+            <BlurView
+                intensity={isDark ? 30 : 50}
+                tint={isDark ? 'dark' : 'light'}
+                style={{
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.4)',
+                    borderTopWidth: 0.5,
+                    borderBottomWidth: 0.5,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                    borderRadius: 16,
+                }}
+            >
+                {/* Unified Header Area */}
+                <TouchableOpacity
+                    onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setIsCollapsed(!isCollapsed);
+                    }}
+                    activeOpacity={0.8}
+                    disabled={isMessageGenerating}
+                    style={{ paddingLeft: 25, paddingRight: 16, paddingVertical: 16 }}
+                    className="flex-row items-center justify-between"
+                >
+                    <View className="flex-row items-center flex-1">
+                        <Brain size={14} color={isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.4)"} />
+                        <Typography className="text-[11px] font-bold ml-2.5 opacity-80" style={{ color: isDark ? '#fff' : '#000' }}>
+                            {isCollapsed ? (
+                                <>
+                                    {thoughtsCount > 0 && `已思考 ${thoughtsCount} 轮`}
+                                    {thoughtsCount > 0 && toolsCount > 0 && "，"}
+                                    {toolsCount > 0 && `已调用工具 ${toolsCount} 轮`}
+                                </>
+                            ) : (
+                                t.skills.timeline.executionDetails
+                            )}
+                        </Typography>
+                    </View>
+                    <View>
+                        {isCollapsed ? (
+                            <ChevronDown size={14} color={isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.3)"} />
+                        ) : (
+                            <ChevronUp size={14} color={isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.3)"} />
+                        )}
+                    </View>
+                </TouchableOpacity>
+
+                {/* 2. 展开状态：完整列表 */}
+                {!isCollapsed && (
+                    <Animated.View entering={FadeIn} exiting={FadeOut} className="relative">
+                        <GHScrollView
+                            ref={scrollViewRef as any}
+                            nestedScrollEnabled={true}
+                            onScroll={handleScroll}
+                            scrollEventThrottle={16}
+                            showsVerticalScrollIndicator={false}
+                            fadingEdgeLength={32}
+                            style={{ maxHeight: 350 }}
+                            contentContainerStyle={{ paddingLeft: 22, paddingRight: 12, paddingBottom: 16 }}
+                        >
+                            {steps.filter(s => s.type !== 'plan_item').map((step, index, arr) => (
+                                <TimelineItem
+                                    key={step.id}
+                                    step={step}
+                                    isLast={index === arr.length - 1}
+                                    isMessageGenerating={isMessageGenerating}
+                                    sessionId={sessionId}
+                                />
+                            ))}
+                        </GHScrollView>
+                    </Animated.View>
+                )}
+            </BlurView>
+
+            {/* 常态化干预输入框 */}
             <LoopActiveIntervention sessionId={sessionId} />
-        </View>
+        </Animated.View>
     );
 };
 
@@ -502,29 +594,10 @@ const LoopActiveIntervention = ({ sessionId }: { sessionId?: string }) => {
     const { t } = useI18n();
     const session = useChatStore(s => sessionId ? s.sessions.find(sk => sk.id === sessionId) : null);
     const loopStatus = session?.loopStatus;
-    const isWaiting = loopStatus === 'waiting_for_approval';
-    const isRunning = loopStatus === 'running';
-
-    // 如果已经在 TimelineItem 中渲染了完整的 InterventionUI (waiting_for_approval 且有 intervention_required step)，
-    // 或者进程已结束，则不在此处重复渲染简单输入框。
-    // 但是用户要求“常态保持”，我们可以始终在底部提供一个简洁的输入区。
-
-    if (!sessionId || (!isRunning && !isWaiting)) return null;
-
-    // 如果是 waiting 状态，TimelineItem 已经处理了带按钮的 UI，所以这里可以返回 null 避免重复
-    // 除非我们想把输入框从 TimelineItem 剥离到全局底部。
-    // 基于目前的视觉结构，保留 TimelineItem 中的审批按钮，但在底部常驻一个输入框。
-
-    // 用户反馈：干预输入框不可见。
-    // 我们进一步放宽显示条件，只要会话存在且状态不是 'success'，就优先显示。
-    // 甚至在 'error' 状态下也保留，以便用户可以尝试通过指令“抢救”或重新触发。
-    if (!sessionId) return null;
+    if (!sessionId || (loopStatus !== 'running' && loopStatus !== 'waiting_for_approval')) return null;
 
     return (
-        <Animated.View
-            entering={FadeIn.duration(400)}
-            className="mt-2 px-1"
-        >
+        <Animated.View entering={FadeIn} className="mt-2 px-1 pb-2">
             <View className="flex-row items-center bg-zinc-100 dark:bg-white/5 rounded-2xl border border-black/5 dark:border-white/5 px-3 py-1.5">
                 <TextInput
                     placeholder={t.agent.manualInterventionHint || "Direct agent..."}

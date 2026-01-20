@@ -242,10 +242,10 @@ const ThinkingLevelButton = ({ sessionId, isDark, activeModelId }: { sessionId: 
 
   const getLabel = (l: string) => {
     switch (l) {
-      case 'minimal': return '极速';
-      case 'low': return '轻量';
-      case 'medium': return '均衡';
-      case 'high': return '深度';
+      case 'minimal': return 'MINI';
+      case 'low': return 'LOW';
+      case 'medium': return 'MED';
+      case 'high': return 'HIGH';
       default: return l.toUpperCase();
     }
   };

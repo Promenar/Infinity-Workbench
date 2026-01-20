@@ -59,6 +59,7 @@ import {
 } from '../../../components/chat/MathRenderer';
 import { extractImagesFromMarkdown } from '../utils/markdown-utils';
 import { TaskMonitor } from './TaskMonitor';
+import { TaskFinalResult } from './TaskFinalResult';
 
 import { parseMarkdownContent } from '../../../lib/markdown-parser';
 import { SafeUserImage } from './SafeUserImage';
@@ -1111,9 +1112,21 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
       {/* ✅ Agentic Loop Timeline (Aligned with Avatar Center) */}
       {message.executionSteps && message.executionSteps.length > 0 && (
-        <View style={{ marginLeft: 5, marginRight: -12, marginBottom: 4 }}>
+        <View style={{ marginLeft: -15, marginRight: -12, marginBottom: 4 }}>
           <ToolExecutionTimeline steps={message.executionSteps} isMessageGenerating={isGenerating} sessionId={sessionId} />
         </View>
+      )}
+
+      {!isUser && message.planningTask && (
+        <TaskFinalResult
+          task={message.planningTask}
+          containerStyle={{
+            marginLeft: -15,
+            marginRight: -12,
+            marginTop: 2,
+            marginBottom: 4
+          }}
+        />
       )}
 
       {/* Main Content (No indentation) */}
