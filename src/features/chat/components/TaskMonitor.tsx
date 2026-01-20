@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useChatStore } from '../../../store/chat-store';
 import { TaskStep, TaskState } from '../../../types/chat';
+import Markdown from 'react-native-markdown-display';
 
 // Enable layout animation on Android
 if (Platform.OS === 'android') {
@@ -146,7 +147,54 @@ export const TaskMonitor = ({ sessionId, containerStyle, task }: RequestProps) =
                         </View>
                     </View>
 
-                    {/* Expanded Content: Step List */}
+                    {/* Always ensure Final Summary is visible when completed */}
+                    {activeTask.status === 'completed' && activeTask.final_summary && (
+                        <View className="mt-3 mb-1 p-3 bg-green-500/10 dark:bg-green-500/20 rounded-lg border border-green-500/20">
+                            <View className="flex-row items-center mb-1">
+                                <CheckCircle2 size={14} color="#22c55e" />
+                                <Text className="text-[12px] font-bold text-green-700 dark:text-green-300 ml-1.5 uppercase">
+                                    Final Result
+                                </Text>
+                            </View>
+                            <View className="px-1">
+                                <Markdown
+                                    style={{
+                                        body: {
+                                            color: isDark ? '#d1d5db' : '#374151', // zinc-200 : zinc-700
+                                            fontSize: 13,
+                                            lineHeight: 20,
+                                        },
+                                        paragraph: {
+                                            marginVertical: 4,
+                                        },
+                                        list_item: {
+                                            marginVertical: 2,
+                                        },
+                                        bullet_list: {
+                                            marginVertical: 4,
+                                        },
+                                        strong: {
+                                            fontWeight: 'bold',
+                                            color: isDark ? '#e4e4e7' : '#18181b', // zinc-200 : zinc-900
+                                        },
+                                        code_inline: {
+                                            backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)',
+                                            color: isDark ? '#a7f3d0' : '#14532d', // green-200 : green-900 (High contrast on green card)
+                                            borderRadius: 4,
+                                            paddingHorizontal: 4,
+                                            paddingVertical: 1,
+                                            fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                                            fontSize: 12,
+                                        }
+                                    }}
+                                >
+                                    {activeTask.final_summary}
+                                </Markdown>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Expanded Content: Step List Only */}
                     {expanded && (
                         <View className="mt-3 space-y-3 pb-1">
                             {activeTask.steps.map((step, index) => (
@@ -174,7 +222,7 @@ export const TaskMonitor = ({ sessionId, containerStyle, task }: RequestProps) =
                         </View>
                     )}
 
-                    {/* Collapsed Preview: Current Step (Only if not expanded) */}
+                    {/* Collapsed Preview: Current Step (Only if not expanded AND not completed) */}
                     {!expanded && activeTask.status === 'in-progress' && (
                         <Animated.View entering={FadeIn} className="mt-1 flex-row items-center ml-3.5 pl-3 border-l-2 border-primary-500/30">
                             <Text numberOfLines={1} className="text-[11px] text-zinc-500 dark:text-zinc-400 italic">

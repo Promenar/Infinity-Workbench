@@ -584,6 +584,7 @@ export default function ChatDetailScreen() {
           loading={loading}
           agentColor={agent.color}
           currentModel={modelConfig?.name || currentModelId}
+          activeModelId={currentModelId}
           onModelPress={() => setShowModelPicker(true)}
           tokenUsage={{
             total: session.stats?.totalTokens || 0,

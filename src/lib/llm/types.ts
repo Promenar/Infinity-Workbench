@@ -29,6 +29,7 @@ export interface ChatMessageOptions {
     maxTokens?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;
+    thinkingLevel?: 'low' | 'medium' | 'high' | 'minimal';
   };
 }
 

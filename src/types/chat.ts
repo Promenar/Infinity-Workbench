@@ -9,6 +9,7 @@ export interface InferenceParams {
   maxTokens?: number; // 1 - Context Limit
   frequencyPenalty?: number; // -2.0 - 2.0
   presencePenalty?: number; // -2.0 - 2.0
+  thinkingLevel?: 'low' | 'medium' | 'high' | 'minimal'; // ✅ Gemini 3 Flash Thinking Mode
 }
 
 export interface Agent {
@@ -143,6 +144,7 @@ export interface Session {
   options?: {
     webSearch?: boolean;
     reasoning?: boolean;
+    thinkingLevel?: 'low' | 'medium' | 'high' | 'minimal'; // ✅ Gemini 3 Flash Thinking Mode
     toolsEnabled?: boolean; // New option
   };
   ragOptions?: {
@@ -184,6 +186,7 @@ export interface TaskState {
   status: 'pending' | 'in-progress' | 'completed' | 'failed';
   progress: number; // 0-100
   steps: TaskStep[];
+  final_summary?: string; // 🧠 The final deliverable/result of the task
   createdAt: number;
   updatedAt: number;
 }

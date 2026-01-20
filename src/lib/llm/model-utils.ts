@@ -42,7 +42,7 @@ export function supportsThinkingConfig(modelId: string): boolean {
 
   // 1. Explicitly check for Flash Thinking or any Gemini 2.0+ models
   // Gemini 2.0 Flash/Pro often have implicit reasoning or dedicated thinking modes
-  if (lowerId.includes('flash-thinking') || lowerId.includes('thinking') || lowerId.includes('gemini-2.0')) {
+  if (lowerId.includes('flash-thinking') || lowerId.includes('thinking') || lowerId.includes('gemini-2.0') || lowerId.includes('gemini-3')) {
     return true;
   }
 

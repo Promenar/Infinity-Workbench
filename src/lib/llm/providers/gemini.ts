@@ -238,6 +238,7 @@ Available tools: ${toolListDesc} + Native Web Search (built-in).`
               ? {
                 thinkingConfig: {
                   includeThoughts: true,
+                  thinkingLevel: options?.inferenceParams?.thinkingLevel?.toUpperCase(), // MINIMAL, LOW, MEDIUM, HIGH
                 },
               }
               : {}),

@@ -39,6 +39,7 @@ const resolveSafePath = async (relativePath: string): Promise<string> => {
 export const WriteFileSkill: Skill = {
     id: 'write_file',
     name: 'Write File',
+    isHighRisk: true, // 🚨 High Risk: File modification
     description: 'Create or overwrite a text file in the local storage. Use this to save notes, code, or logs. The file path is relative to the app\'s sandbox root.',
     schema: z.object({
         path: z.string().describe('Relative path to the file (e.g., "notes/meeting.txt")'),

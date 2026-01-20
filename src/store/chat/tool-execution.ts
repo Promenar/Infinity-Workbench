@@ -214,18 +214,13 @@ Please STOP trying to use tools and answer the user's request directly using you
 
                     if (isTaskState(result.data)) {
                         // 🧠 Intelligent UI Hoisting: 
-                        // If completing a task with a summary, promote the summary to the visible message body!
-                        // This fixes the issue where the final result is hidden inside the JSON tool args.
-                        let visibleContent = targetMsg.content;
-                        if (tcName === 'manage_task' && finalArgs.action === 'complete' && finalArgs.final_summary) {
-                            visibleContent = finalArgs.final_summary;
-                            console.log('[ToolExecutor] Hoisted final_summary to message body:', visibleContent.substring(0, 50) + '...');
-                        }
+                        // DEPRECATED: We now render final_summary in TaskMonitor.tsx
+                        // No need to mutate message content anymore.
 
                         get().updateMessageContent(
                             sessionId,
                             targetMsgId,
-                            visibleContent, // 🚀 Updated Content
+                            targetMsg.content, // ✅ Keep original content (don't inject summary)
                             undefined,
                             undefined,
                             undefined,
@@ -233,7 +228,7 @@ Please STOP trying to use tools and answer the user's request directly using you
                             false,
                             undefined,
                             undefined,
-                            result.data // taskState (param 11)
+                            result.data // taskState (param 11) - includes final_summary now
                         );
 
                         // 🏁 Persistence Finalizer: 

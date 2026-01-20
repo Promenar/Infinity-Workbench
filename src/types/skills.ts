@@ -10,6 +10,7 @@ export interface Skill {
     name: string;        // 模型/UI可见名称 (e.g., 'Generate Image')
     description: string; // Prompt 描述 (决定模型何时调用)
     schema: z.ZodSchema<any>; // 参数校验 Schema (Zod)
+    isHighRisk?: boolean; // 🚨 High Risk Action (Sensitive tools requiring approval)
 
     // 执行逻辑
     execute: (params: any, context: SkillContext) => Promise<SkillResult>;

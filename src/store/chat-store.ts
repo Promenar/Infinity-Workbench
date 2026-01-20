@@ -39,15 +39,31 @@ import { createMessageManager, createSessionManager, createApprovalManager, crea
 import { performClientSideSearch, buildSystemPrompt } from './chat/context-builder'; // ✅ Phase 4b: Context Builder
 import { archiveToRag, extractKnowledgeGraph, updateStats } from './chat/post-processor'; // ✅ Phase 4b: Post Processor
 
-// 🔑 高风险工具列表（Semi模式下需要用户审批）
-const HIGH_RISK_TOOLS = [
-  'write_file',
-  'write_to_file',
-  'replace_file_content',
-  'multi_replace_file_content',
-  'run_command',
-  'send_command_input',
-];
+// =====================================================================================
+// 🚨 ARCHITECTURE RED LINE (2026-01-20) 🚨
+// =====================================================================================
+//
+// ⚠️ CRITICAL RULES FOR THIS FILE:
+//
+// 1. NO NEW NON-UI LOGIC: Do NOT add new business logic, algorithms, or complex data
+//    processing to this file. It is already too large.
+//
+// 2. UI STATE ONLY: Modifications should be limited to UI state management (toggles,
+//    simple setters, layout updates).
+//
+// 3. USE HOOKS: New features (e.g., Speech-T-Text, File Processing) MUST be implemented
+//    as separate Hooks (e.g., useSpeech.ts) or Services, and imported into components.
+//    Do NOT inline them here.
+//
+// 4. PRESERVE STABILITY: This file handles the critical hot-path of the application.
+//    Refactors here are high-risk. Follow the "Boy Scout Rule" gently, but avoid
+//    massive rewrites without strict approval.
+//
+// Refer to: .agent/PROJECT_RULES.md (Rule 16)
+// =====================================================================================
+
+// 🔑 高风险工具列表移至 Skill 定义 (isHighRisk) - Refactored 2026-01-20
+// const HIGH_RISK_TOOLS = [...];
 
 
 // ✅ 辅助函数：从数据库查询消息归档状态
@@ -144,6 +160,7 @@ export interface ChatState {
         isGlobal?: boolean;
       };
       toolsEnabled?: boolean; // New option
+      thinkingLevel?: 'low' | 'medium' | 'high' | 'minimal';
     },
   ) => void;
   updateSessionScrollOffset: (id: SessionId, offset: number) => void;
@@ -1649,7 +1666,8 @@ export const useChatStore = create<ChatState>()(
 
                     for (const tc of toolCalls) {
                       const name = (tc as any).name || (tc as any).function?.name || '';
-                      if (HIGH_RISK_TOOLS.includes(name)) {
+                      const skill = skillRegistry.getSkill(name);
+                      if (skill?.isHighRisk) {
                         highRiskInComplete.push(tc);
                       } else {
                         lowRiskInComplete.push(tc);
@@ -1808,7 +1826,8 @@ export const useChatStore = create<ChatState>()(
 
                 for (const tc of toolCalls) {
                   const name = (tc as any).name || (tc as any).function?.name || '';
-                  if (HIGH_RISK_TOOLS.includes(name)) {
+                  const skill = skillRegistry.getSkill(name);
+                  if (skill?.isHighRisk) {
                     highRiskCalls.push(tc);
                   } else {
                     lowRiskCalls.push(tc);

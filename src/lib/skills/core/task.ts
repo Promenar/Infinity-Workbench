@@ -105,7 +105,7 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                     status: 'in-progress',
                     progress: 0,
                     steps: taskArgs.steps.map((s: any, idx: number) => ({
-                        id: s.id || `${taskUid}-step-${idx}`,
+                        id: s.id || `${taskUid}-step-${idx + 1}`, // 🧠 1-based indexing for Model Alignment
                         title: s.title || s.description || `Step ${idx + 1}`,
                         status: s.status || 'pending',
                         description: s.description
@@ -127,6 +127,20 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
 
                 if (taskArgs.steps) {
                     // 🛡️ Strict Mode: Immutable Plan & Sequential Execution
+                    // Feature: Atomic Completion (Zero-Tolerance for Rapids-Fire Completion)
+                    let completionCount = 0;
+                    for (const s of taskArgs.steps) {
+                        if (s.status === 'completed') completionCount++;
+                    }
+                    if (completionCount > 1) {
+                        return {
+                            id: 'error',
+                            content: `⛔ STRICT MODE REJECTION: You are attempting to complete ${completionCount} steps at once.\n\n⚠️ RULE: To prevent hallucination, you can only complete ONE step per tool call.\n👉 FIX: Mark ONLY the first completed step as 'completed'. Then, EXECUTE the actions for the next step. Then, mark the next step.`,
+                            status: 'error',
+                            data: activeTask
+                        };
+                    }
+
                     for (const newStep of taskArgs.steps) {
                         // 1. Identify Target Step with Smart Resolution
                         let index = -1;
@@ -239,6 +253,7 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                     steps: completedSteps,
                     status: 'completed',
                     progress: 100,
+                    final_summary: taskArgs.final_summary, // ✅ Persist the summary
                     updatedAt: Date.now()
                 };
             }
@@ -270,6 +285,14 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                 resultContent = `✅ Task "${finalTitle}" created.\n\n👉 NEXT: Execute the first step immediately.`;
             } else if (taskArgs.action === 'complete') {
                 resultContent = `🎉 Task "${finalTitle}" completed. Please provide a final summary to the user.`;
+            } else if (taskArgs.action === 'update') {
+                // Anti-Hallucination: Find next pending step
+                if (activeTask) {
+                    const nextStep = activeTask.steps.find((s: any) => s.status === 'pending');
+                    if (nextStep) {
+                        resultContent += `\n\n⚠️ WAIT: The next step is "${nextStep.title}" (ID: ${nextStep.id}).\n Have you explicitly EXECUTED the action for it? If not, DO NOT mark it as completed yet. Perform the action now.`;
+                    }
+                }
             }
 
             return {
