@@ -108,7 +108,7 @@ android {
             }
         }
     
-    ndkVersion "27.1.12297006"
+    ndkVersion rootProject.ext.ndkVersion
 
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
@@ -118,19 +118,19 @@ android {
         applicationId 'com.promenar.nexara'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 53
-        versionName "1.1.46"
+        versionCode 57
+        versionName "1.1.47"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
     signingConfigs {
 
         release {
-            def secureEnv = file("../../../../secure_env/secure.properties")
+            def secureEnv = file("${projectRoot}/secure_env/secure.properties")
             if (secureEnv.exists()) {
                 def props = new Properties()
                 secureEnv.withInputStream { props.load(it) }
-                storeFile file("../../../../secure_env/promenar.keystore")
+                storeFile file("${projectRoot}/secure_env/promenar.keystore")
                 storePassword props.getProperty("KEYSTORE_PASSWORD")
                 keyAlias props.getProperty("KEY_ALIAS")
                 keyPassword props.getProperty("KEY_PASSWORD")
