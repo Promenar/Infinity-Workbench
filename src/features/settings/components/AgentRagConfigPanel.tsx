@@ -127,7 +127,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
         {Object.entries(RAG_PRESETS).map(([key, preset]) => {
           const Icon = preset.icon;
           // Use i18n key from preset
-          const presetName = (t as any)[preset.name] || preset.name;
+          const presetName = (t.rag[preset.name.split('.')[1] as keyof typeof t.rag] as any) || preset.name;
 
           const isActive =
             currentConfig.memoryLimit === preset.config.memoryLimit &&

@@ -214,7 +214,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
             globalRagConfig.docChunkSize === preset.config.docChunkSize &&
             globalRagConfig.memoryChunkSize === preset.config.memoryChunkSize;
 
-          const name = (t as any)[preset.name] || preset.name;
+          const name = (t.rag[preset.name.split('.')[1] as keyof typeof t.rag] as any) || preset.name;
 
           return (
             <Card
