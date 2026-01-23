@@ -636,18 +636,20 @@ export default function SettingsScreen() {
                   const newCount = (eggCount || 0) + 1;
                   setEggCount(newCount);
 
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setTimeout(() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-                  if (newCount >= 5) {
-                    setEggCount(0);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    showToast('Developer Mode: Visual Demo Unlocked', 'success');
-                    router.push('/visual-demo');
-                  } else if (newCount > 1) {
-                    // Subtle hints for 2, 3, 4 taps? maybe not needed to keep it hidden
-                  } else {
-                    showToast(`Nexara v${Constants.expoConfig?.version ?? '1.1'}`, 'info');
-                  }
+                    if (newCount >= 5) {
+                      setEggCount(0);
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      showToast('Developer Mode: Visual Demo Unlocked', 'success');
+                      router.push('/visual-demo');
+                    } else if (newCount > 1) {
+                      // Subtle hints for 2, 3, 4 taps? maybe not needed to keep it hidden
+                    } else {
+                      showToast(`Nexara v${Constants.expoConfig?.version ?? '1.1'}`, 'info');
+                    }
+                  }, 10);
                 }}
               />
             </SettingsSection>

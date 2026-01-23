@@ -27,15 +27,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     // 触发触感反馈
-    if (type === 'success') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else if (type === 'error') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } else if (type === 'warning') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    } else {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    setTimeout(() => {
+      if (type === 'success') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else if (type === 'error') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } else if (type === 'warning') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    }, 10);
 
     setToast({ message, type });
 
@@ -60,8 +62,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      {toast && (
-        <View className="absolute top-24 left-0 right-0 z-[1000] items-center pointer-events-none px-6">
+      {/* 
+          🔑 核心修复：始终挂载最外层容器，避免动态增删子节点导致 EdgeToEdgeReactViewGroup 崩溃。
+          IllegalStateException: EdgeToEdgeReactViewGroup contains null child at index 1
+      */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', top: 96, left: 0, right: 0, zIndex: 1000, alignItems: 'center' }}
+      >
+        {toast && (
           <Animated.View
             entering={FadeInUp.duration(400).springify().damping(18).stiffness(120)}
             exiting={FadeOutUp.duration(200)}
@@ -85,8 +94,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               {toast.message}
             </Typography>
           </Animated.View>
-        </View>
-      )}
+        )}
+      </View>
     </ToastContext.Provider>
   );
 }

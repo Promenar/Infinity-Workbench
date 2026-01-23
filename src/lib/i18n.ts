@@ -152,6 +152,7 @@ export const translations = {
       appearance: '外观',
       themeSystem: '跟随系统',
       themeDark: '深色',
+      themeLight: '浅色',
       notifications: '通知设置',
       notificationsDesc: '管理提醒和声音',
       dataStorage: '数据与存储',
