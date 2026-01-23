@@ -9,13 +9,8 @@ GRADLE_PROPS_FILE="android/gradle.properties"
 
 echo -e "\033[36m🔐 Starting Secure Build Process...\033[0m"
 
-# 0. Auto-Bump Version
-echo "📦 Bumping Version (Patch)..."
-npm run bump:patch
-if [ $? -ne 0 ]; then
-    echo -e "\033[31m❌ Version Bump Failed\033[0m"
-    exit 1
-fi
+# 0. Auto-Bump Version Disabled
+# Versions are locked at 1.1.54 (63)
 
 # 1. Check Secure Environment
 if [ ! -f "$SECURE_DIR/promenar.keystore" ]; then
