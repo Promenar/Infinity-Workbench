@@ -7,6 +7,7 @@ export interface SearchResult {
 
 export interface SearchOptions {
   provider: 'google' | 'tavily' | 'bing' | 'bocha' | 'searxng';
+  engineOrder?: ('google' | 'tavily' | 'bing' | 'bocha' | 'searxng')[];
   maxResults: number;
   google?: { apiKey: string; cx: string };
   tavily?: { apiKey: string };
@@ -19,33 +20,61 @@ export async function performWebSearch(
   query: string,
   options: SearchOptions
 ): Promise<{ context: string; sources: SearchResult[] }> {
-  try {
-    let result: { context: string, sources: SearchResult[] };
+  // 1. 确定搜索序列：以当前 provider 为首，后面跟随 engineOrder 中的其他引擎
+  const defaultOrder: ('google' | 'tavily' | 'bing' | 'bocha' | 'searxng')[] = ['google', 'tavily', 'bing', 'bocha', 'searxng'];
+  const userOrder = options.engineOrder || defaultOrder;
 
-    switch (options.provider) {
-      case 'tavily':
-        result = await performTavilySearch(query, options.tavily?.apiKey, options.maxResults);
-        break;
-      case 'bing':
-        result = await performBingSearch(query, options.bing?.apiKey, options.maxResults);
-        break;
-      case 'bocha':
-        result = await performBochaSearch(query, options.bocha?.apiKey, options.maxResults);
-        break;
-      case 'searxng':
-        result = await performSearXNGSearch(query, options.searxng?.baseUrl, options.maxResults);
-        break;
-      case 'google':
-      default:
-        result = await performGoogleSearch(query, options.google?.apiKey, options.google?.cx, options.maxResults);
-        break;
+  // 按照优先级排序：用户选中的 provider 第一位，其余按 engineOrder 顺序排列（排除已选中的）
+  const searchSequence = [
+    options.provider,
+    ...userOrder.filter(p => p !== options.provider)
+  ];
+
+  let lastError: any = null;
+
+  // 2. 依次尝试引擎
+  for (const currentProvider of searchSequence) {
+    try {
+      console.log(`[WebSearch] Trying provider: ${currentProvider}`);
+      let result: { context: string, sources: SearchResult[] };
+
+      switch (currentProvider) {
+        case 'tavily':
+          result = await performTavilySearch(query, options.tavily?.apiKey, options.maxResults);
+          break;
+        case 'bing':
+          result = await performBingSearch(query, options.bing?.apiKey, options.maxResults);
+          break;
+        case 'bocha':
+          result = await performBochaSearch(query, options.bocha?.apiKey, options.maxResults);
+          break;
+        case 'searxng':
+          result = await performSearXNGSearch(query, options.searxng?.baseUrl, options.maxResults);
+          break;
+        case 'google':
+        default:
+          result = await performGoogleSearch(query, options.google?.apiKey, options.google?.cx, options.maxResults);
+          break;
+      }
+
+      // 如果结果有效且不是 Mock 数据，则返回
+      // 注意：performGoogleSearch 等函数如果缺少 Key 会返回 Mock。如果没有 Key，我们应该跳过尝试下一个。
+      const isMock = result.sources.length === 1 && result.sources[0].source === 'System';
+      if (!isMock) {
+        return result;
+      } else {
+        console.log(`[WebSearch] Provider ${currentProvider} is not configured (Mock returned), skipping...`);
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn(`[WebSearch] Provider ${currentProvider} failed:`, error);
+      // 继续循环尝试下一个
     }
-
-    return result;
-  } catch (error) {
-    console.error(`[WebSearch] ${options.provider} failed:`, error);
-    return getMockResults(query, true, options.maxResults);
   }
+
+  // 3. 所有真实引擎都失败或未配置，最终回退到带有错误标识的 Mock
+  console.error('[WebSearch] All search providers failed or unconfigured.', lastError);
+  return getMockResults(query, true, options.maxResults);
 }
 
 async function performGoogleSearch(

@@ -70,6 +70,7 @@ interface ApiState {
   // Multi-Engine Search Config
   searchConfig: {
     provider: 'google' | 'tavily' | 'bing' | 'bocha' | 'searxng';
+    engineOrder: ('google' | 'tavily' | 'bing' | 'bocha' | 'searxng')[];
     maxResults: number;
     google?: { apiKey: string; cx: string };
     tavily?: { apiKey: string };
@@ -98,6 +99,7 @@ export const useApiStore = create<ApiState>()(
       globalStats: {},
       searchConfig: {
         provider: 'google',
+        engineOrder: ['google', 'tavily', 'bing', 'bocha', 'searxng'],
         maxResults: 5,
         google: { apiKey: '', cx: '' },
         tavily: { apiKey: '' },

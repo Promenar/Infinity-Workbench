@@ -741,7 +741,7 @@ export default function RagScreen() {
         {/* 其它功能入口 */}
         <View style={{ marginTop: 8 }}>
           <Typography className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 ml-1">
-            其他功能
+            {t.rag.otherFeatures}
           </Typography>
           <TouchableOpacity
             onPress={() => router.push('/knowledge-graph')}
@@ -756,8 +756,8 @@ export default function RagScreen() {
               <Brain size={20} color={colors[500]} />
             </View>
             <View className="flex-1">
-              <Typography className="font-bold text-gray-900 dark:text-white">全局知识图谱</Typography>
-              <Typography className="text-xs text-gray-400 mt-0.5">查看所有文档的关联关系</Typography>
+              <Typography className="font-bold text-gray-900 dark:text-white">{t.rag.globalKnowledgeGraph}</Typography>
+              <Typography className="text-xs text-gray-400 mt-0.5">{t.rag.viewAllDocRelations}</Typography>
             </View>
             <ChevronRight size={18} color="#94a3b8" />
           </TouchableOpacity>

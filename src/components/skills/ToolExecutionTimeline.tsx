@@ -470,7 +470,8 @@ const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
     const scrollViewRef = React.useRef<ScrollView>(null);
     const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(!isMessageGenerating); // 🆕 初始状态：生成中展开，非生成中折叠
+    const [hasManuallyToggled, setHasManuallyToggled] = useState(false);
     const stepsCount = steps.length;
     const { isDark } = useTheme();
     const { t } = useI18n();
@@ -482,17 +483,21 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
         }
     }, [stepsCount, isAutoScrollEnabled]);
 
-    // 🔑 自动折叠逻辑
+    // 🔑 自动折叠/展开逻辑：仅在用户未手动干预时生效
     useEffect(() => {
-        if (!isMessageGenerating && stepsCount > 0) {
-            const timer = setTimeout(() => {
+        if (hasManuallyToggled) return;
+
+        if (isMessageGenerating) {
+            setIsCollapsed(false); // 正在生成时自动展开
+        } else {
+            // 生成结束或处于非生成状态时，如果已有步骤，则将其闭合
+            if (stepsCount > 0) {
+                // 如果是刚结束生成（从 true 变 false），则延迟闭合以提供视觉缓冲
+                // 如果是历史消息加载，则保持初始折叠
                 setIsCollapsed(true);
-            }, 500);
-            return () => clearTimeout(timer);
-        } else if (isMessageGenerating) {
-            setIsCollapsed(false);
+            }
         }
-    }, [isMessageGenerating, stepsCount]);
+    }, [isMessageGenerating, stepsCount > 0, hasManuallyToggled]);
 
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
@@ -526,10 +531,10 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                 <TouchableOpacity
                     onPress={() => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setHasManuallyToggled(true); // 👈 标记用户已介入
                         setIsCollapsed(!isCollapsed);
                     }}
                     activeOpacity={0.8}
-                    disabled={isMessageGenerating}
                     style={{ paddingLeft: 25, paddingRight: 16, paddingVertical: 16 }}
                     className="flex-row items-center justify-between"
                 >

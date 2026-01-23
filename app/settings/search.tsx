@@ -22,10 +22,13 @@ const PROVIDERS = [
 export default function SearchSettingsScreen() {
   const { isDark, colors } = useTheme();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { searchConfig, setSearchConfig } = useApiStore();
 
   const [provider, setProvider] = useState(searchConfig.provider);
+  const [engineOrder, setEngineOrder] = useState<('google' | 'tavily' | 'bing' | 'bocha' | 'searxng')[]>(
+    searchConfig.engineOrder || ['google', 'tavily', 'bing', 'bocha', 'searxng']
+  );
   const [maxResults, setMaxResults] = useState(searchConfig.maxResults);
 
   const [googleKey, setGoogleKey] = useState(searchConfig.google?.apiKey || '');
@@ -42,6 +45,7 @@ export default function SearchSettingsScreen() {
     const isChanged =
       provider !== searchConfig.provider ||
       maxResults !== searchConfig.maxResults ||
+      JSON.stringify(engineOrder) !== JSON.stringify(searchConfig.engineOrder) ||
       googleKey !== (searchConfig.google?.apiKey || '') ||
       googleCx !== (searchConfig.google?.cx || '') ||
       tavilyKey !== (searchConfig.tavily?.apiKey || '') ||
@@ -51,11 +55,12 @@ export default function SearchSettingsScreen() {
       searxngKey !== (searchConfig.searxng?.apiKey || '');
 
     setHasChanges(isChanged);
-  }, [provider, maxResults, googleKey, googleCx, tavilyKey, bingKey, bochaKey, searxngUrl, searxngKey, searchConfig]);
+  }, [provider, engineOrder, maxResults, googleKey, googleCx, tavilyKey, bingKey, bochaKey, searxngUrl, searxngKey, searchConfig]);
 
   const handleSave = () => {
     setSearchConfig({
       provider,
+      engineOrder,
       maxResults,
       google: { apiKey: googleKey.trim(), cx: googleCx.trim() },
       tavily: { apiKey: tavilyKey.trim() },
@@ -66,6 +71,21 @@ export default function SearchSettingsScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setHasChanges(false);
     router.back();
+  };
+
+  const moveEngine = (id: string, direction: 'left' | 'right') => {
+    const index = engineOrder.indexOf(id as any);
+    if (index === -1) return;
+
+    const newOrder = [...engineOrder];
+    const newIndex = direction === 'left' ? index - 1 : index + 1;
+
+    if (newIndex >= 0 && newIndex < newOrder.length) {
+      // Swap
+      [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
+      setEngineOrder(newOrder);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
   };
 
   const renderConfigSection = () => {
@@ -223,31 +243,39 @@ export default function SearchSettingsScreen() {
         contentContainerStyle={{ paddingTop: 110, paddingBottom: 120, paddingHorizontal: 16 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Engine Selector */}
         <SettingsSection title={t.settings.searchEngine}>
+          <Typography className="text-[10px] text-gray-400 dark:text-zinc-500 mb-2 italic">
+            * {language === 'zh' ? '长按引擎标签可向左移动排序 (Fallback 优先级)' : 'Long press to move engine left (Fallback priority)'}
+          </Typography>
           <Card variant="glass" className="p-1">
             <View className="flex-row items-center justify-between">
-              {PROVIDERS.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  onPress={() => {
-                    setProvider(p.id as any);
-                    Haptics.selectionAsync();
-                  }}
-                  className={`flex-1 px-1 py-2.5 rounded-xl items-center justify-center ${provider === p.id
-                    ? 'bg-blue-600 dark:bg-blue-600'
-                    : 'bg-transparent'
-                    }`}
-                >
-                  <Typography
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    className={`text-[11px] font-bold ${provider === p.id ? 'text-white' : 'text-gray-500 dark:text-zinc-500'}`}
+              {engineOrder.map((id) => {
+                const p = PROVIDERS.find(item => item.id === id);
+                if (!p) return null;
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    onPress={() => {
+                      setProvider(p.id as any);
+                      Haptics.selectionAsync();
+                    }}
+                    onLongPress={() => moveEngine(p.id, 'left')}
+                    delayLongPress={300}
+                    className={`flex-1 px-1 py-2.5 rounded-xl items-center justify-center ${provider === p.id
+                      ? 'bg-blue-600 dark:bg-blue-600'
+                      : 'bg-transparent'
+                      }`}
                   >
-                    {p.name}
-                  </Typography>
-                </TouchableOpacity>
-              ))}
+                    <Typography
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      className={`text-[11px] font-bold ${provider === p.id ? 'text-white' : 'text-gray-500 dark:text-zinc-500'}`}
+                    >
+                      {p.name}
+                    </Typography>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </Card>
         </SettingsSection>
