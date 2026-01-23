@@ -34,9 +34,12 @@ fi
 echo "-> Injecting Keystore..."
 cp "$SECURE_DIR/promenar.keystore" "$ANDROID_APP_DIR/promenar.keystore"
 
-# 4. Inject Gradle Properties
+# 4. Inject Gradle Properties (Memory & Signing)
 echo "-> Injecting Gradle Properties..."
 INJECTION_MARKER="### INJECTED_SIGNING_CONFIG ###"
+
+# Apply Memory Optimization (Prevents Metaspace error)
+sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m/' "$GRADLE_PROPS_FILE"
 
 # Remove old injection if exists
 sed -i "/$INJECTION_MARKER/,/$INJECTION_MARKER/d" "$GRADLE_PROPS_FILE" 2>/dev/null || true
