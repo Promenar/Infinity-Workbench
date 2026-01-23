@@ -75,6 +75,22 @@ export const TaskFinalResult = ({ task, containerStyle }: TaskFinalResultProps) 
                                     paddingVertical: 1,
                                     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                                     fontSize: 12,
+                                },
+                                heading1: {
+                                    fontSize: 22,
+                                    lineHeight: 32,
+                                    fontWeight: '900',
+                                    marginTop: 16,
+                                    marginBottom: 8,
+                                    color: isDark ? '#f4f4f5' : '#18181b', // zinc-100 : zinc-900
+                                },
+                                heading2: {
+                                    fontSize: 18,
+                                    lineHeight: 26,
+                                    fontWeight: '800',
+                                    marginTop: 12,
+                                    marginBottom: 6,
+                                    color: isDark ? '#e4e4e7' : '#27272a', // zinc-200 : zinc-800
                                 }
                             }}
                         >

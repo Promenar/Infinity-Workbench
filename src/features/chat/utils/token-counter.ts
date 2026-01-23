@@ -36,5 +36,10 @@ export function estimateTokens(text: string): number {
 
 export function formatTokenCount(tokens: number): string {
   if (tokens < 1000) return tokens.toString();
-  return (tokens / 1000).toFixed(1) + 'k';
+  if (tokens < 1000000) {
+    const k = tokens / 1000;
+    return k >= 100 ? Math.round(k).toString() + 'k' : k.toFixed(1) + 'k';
+  }
+  const m = tokens / 1000000;
+  return m >= 100 ? Math.round(m).toString() + 'M' : m.toFixed(1) + 'M';
 }

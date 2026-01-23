@@ -50,7 +50,17 @@ import { useAgentStore } from '../../../store/agent-store';
 import { ANIMATION_DURATION } from '../../../theme/animations';
 
 // ✅ 内联执行模式按钮（适配输入栏风格）
-const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark: boolean }) => {
+const ExecutionModeButton = ({
+  sessionId,
+  isDark,
+  toolsEnabled,
+  onToggleTools
+}: {
+  sessionId: string;
+  isDark: boolean;
+  toolsEnabled: boolean;
+  onToggleTools?: () => void
+}) => {
   const session = useChatStore((s) => s.sessions.find((sk) => sk.id === sessionId));
   const setExecutionMode = useChatStore((s) => s.setExecutionMode);
   const [visible, setVisible] = useState(false);
@@ -59,13 +69,22 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
   const mode = session.executionMode || 'semi';
 
   const getIcon = (m: string, size: number = 14) => {
+    // 若工具关闭，显示灰色
+    const color = !toolsEnabled
+      ? (isDark ? '#52525b' : '#a1a1aa')
+      : m === 'auto'
+        ? '#6366f1'
+        : m === 'semi'
+          ? '#d97706'
+          : '#059669';
+
     switch (m) {
       case 'auto':
-        return <Zap size={size} color="#6366f1" strokeWidth={2.5} />;
+        return <Zap size={size} color={color} strokeWidth={2.5} />;
       case 'semi':
-        return <Shield size={size} color="#d97706" strokeWidth={2.5} />;
+        return <Shield size={size} color={color} strokeWidth={2.5} />;
       case 'manual':
-        return <PlayCircle size={size} color="#059669" strokeWidth={2.5} />;
+        return <PlayCircle size={size} color={color} strokeWidth={2.5} />;
       default:
         return <Zap size={size} color={isDark ? '#52525b' : '#a1a1aa'} />;
     }
@@ -88,9 +107,10 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
     setTimeout(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setExecutionMode(sessionId, m);
-      setVisible(false);
     }, 10);
   };
+
+  const { t } = useI18n();
 
   return (
     <>
@@ -108,13 +128,16 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
           borderRadius: 10,
           backgroundColor: 'rgba(0,0,0,0.03)',
           gap: 4,
+          opacity: toolsEnabled ? 1 : 0.8,
         }}
       >
         {getIcon(mode, 10)}
         <Typography
           className="text-[9px] font-black uppercase tracking-tight"
           style={{
-            color: mode === 'auto' ? '#6366f1' : mode === 'semi' ? '#d97706' : '#059669',
+            color: !toolsEnabled
+              ? (isDark ? '#52525b' : '#a1a1aa')
+              : mode === 'auto' ? '#6366f1' : mode === 'semi' ? '#d97706' : '#059669',
           }}
         >
           {getLabel(mode)}
@@ -124,79 +147,160 @@ const ExecutionModeButton = ({ sessionId, isDark }: { sessionId: string; isDark:
       <GlassBottomSheet
         visible={visible}
         onClose={() => setVisible(false)}
-        title="执行模式"
-        subtitle="选择 AI 的任务执行策略"
+        title="执行模式与工具"
+        subtitle="配置 AI 的任务执行策略与工具权限"
         height="auto"
       >
-        <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 8 }}>
-          {(['auto', 'semi', 'manual'] as const).map((m) => {
-            const isSelected = mode === m;
-            return (
-              <TouchableOpacity
-                key={m}
-                onPress={() => handleSelect(m)}
-                activeOpacity={0.7}
+        <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}>
+          {/* Tools Toggle Item */}
+          <View className="mb-2">
+            <Typography variant="caption" className="mb-2 px-1 text-gray-500 uppercase font-bold tracking-widest">
+              工具链状态
+            </Typography>
+            <TouchableOpacity
+              onPress={() => {
+                const newState = !toolsEnabled;
+                onToggleTools?.();
+                const { emitToast } = require('../../../lib/utils/toast-emitter');
+                emitToast(newState ? '工具链已启用' : '工具链已隔离', newState ? 'success' : 'warning');
+              }}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                padding: 16,
+                borderRadius: 20,
+                backgroundColor: toolsEnabled
+                  ? (isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)')
+                  : (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.02)'),
+                borderWidth: 1.5,
+                borderColor: toolsEnabled
+                  ? (isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)')
+                  : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'),
+                gap: 14,
+              }}
+            >
+              <View
                 style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  padding: 14,
-                  borderRadius: 20,
-                  backgroundColor: isSelected
-                    ? isDark
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(0, 0, 0, 0.04)'
-                    : 'transparent',
-                  borderWidth: 1,
-                  borderColor: isSelected
-                    ? isDark
-                      ? 'rgba(255, 255, 255, 0.12)'
-                      : 'rgba(0, 0, 0, 0.08)'
-                    : 'transparent',
-                  gap: 14,
+                  padding: 10,
+                  borderRadius: 12,
+                  backgroundColor: toolsEnabled ? 'rgba(99, 102, 241, 0.12)' : (isDark ? '#3f3f46' : '#f4f4f5'),
                 }}
               >
-                <View
+                {toolsEnabled ? (
+                  <Wrench size={20} color="#6366f1" strokeWidth={2.5} />
+                ) : (
+                  <Shield size={20} color={isDark ? '#a1a1aa' : '#71717a'} strokeWidth={2} />
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Typography style={{ fontSize: 16, fontWeight: '700', color: isDark ? '#fff' : '#111' }}>
+                  {toolsEnabled ? '工具链已开启' : '工具链已禁用'}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', marginTop: 2 }}
+                >
+                  {toolsEnabled ? '自动调用执行工具完成复杂任务' : '纯文本对话，不执行外部操作'}
+                </Typography>
+              </View>
+              <View
+                style={{
+                  width: 36,
+                  height: 20,
+                  borderRadius: 10,
+                  backgroundColor: toolsEnabled ? '#6366f1' : (isDark ? '#3f3f46' : '#d4d4d8'),
+                  justifyContent: 'center',
+                  paddingHorizontal: 2,
+                }}
+              >
+                <Animated.View
                   style={{
-                    padding: 10,
-                    borderRadius: 12,
-                    backgroundColor:
-                      m === 'auto'
-                        ? 'rgba(99, 102, 241, 0.12)'
-                        : m === 'semi'
-                          ? 'rgba(217, 119, 6, 0.12)'
-                          : 'rgba(16, 185, 129, 0.12)',
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    backgroundColor: 'white',
+                    transform: [{ translateX: toolsEnabled ? 16 : 0 }]
+                  }}
+                />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          <Typography variant="caption" className="px-1 text-gray-500 uppercase font-bold tracking-widest">
+            迭代控制
+          </Typography>
+
+          <View style={{ gap: 8 }}>
+            {(['auto', 'semi', 'manual'] as const).map((m) => {
+              const isSelected = mode === m;
+              return (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => handleSelect(m)}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 14,
+                    borderRadius: 20,
+                    backgroundColor: isSelected
+                      ? isDark
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.04)'
+                      : 'transparent',
+                    borderWidth: 1,
+                    borderColor: isSelected
+                      ? isDark
+                        ? 'rgba(255, 255, 255, 0.12)'
+                        : 'rgba(0, 0, 0, 0.08)'
+                      : 'transparent',
+                    gap: 14,
                   }}
                 >
-                  {getIcon(m, 22)}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Typography style={{ fontSize: 16, fontWeight: '700', color: isDark ? '#fff' : '#111' }}>
-                    {m === 'auto' ? '自动' : m === 'semi' ? '半自动' : '手动'}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', marginTop: 2 }}
-                  >
-                    {m === 'auto' ? '连续运行' : m === 'semi' ? '高风险操作暂停' : '每步需确认'}
-                  </Typography>
-                </View>
-                {isSelected && (
                   <View
                     style={{
-                      width: 24,
-                      height: 24,
+                      padding: 10,
                       borderRadius: 12,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      backgroundColor:
+                        m === 'auto'
+                          ? 'rgba(99, 102, 241, 0.12)'
+                          : m === 'semi'
+                            ? 'rgba(217, 119, 6, 0.12)'
+                            : 'rgba(16, 185, 129, 0.12)',
                     }}
                   >
-                    <Check size={14} color={isDark ? '#fff' : '#000'} strokeWidth={3} />
+                    {getIcon(m, 22)}
                   </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
+                  <View style={{ flex: 1 }}>
+                    <Typography style={{ fontSize: 16, fontWeight: '700', color: isDark ? '#fff' : '#111' }}>
+                      {m === 'auto' ? '自动' : m === 'semi' ? '半自动' : '手动'}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', marginTop: 2 }}
+                    >
+                      {m === 'auto' ? '连续运行' : m === 'semi' ? '高风险操作暂停' : '每步需确认'}
+                    </Typography>
+                  </View>
+                  {isSelected && (
+                    <View
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Check size={14} color={isDark ? '#fff' : '#000'} strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       </GlassBottomSheet>
     </>
@@ -774,7 +878,7 @@ export function ChatInput({
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 className="text-[9px] font-black ml-1 uppercase tracking-tight text-gray-400 dark:text-gray-500"
-                style={{ maxWidth: 120 }}
+                style={{ maxWidth: 100 }}
               >
                 {currentModel}
               </Typography>
@@ -799,30 +903,6 @@ export function ChatInput({
             {/* SummaryIndicator 已移除，摘要状态由消息气泡内的 RAG 指示器统一处理 */}
           </View>
 
-          {/* Tools Toggle */}
-          <TouchableOpacity
-            onPress={() => {
-              const newState = !toolsEnabled;
-              onToggleTools?.();
-              // Use emitToast for global toast notification (Toast provides its own haptics)
-              const { emitToast } = require('../../../lib/utils/toast-emitter');
-              emitToast(newState ? '工具链已启用' : '工具链已隔离', newState ? 'success' : 'warning');
-            }}
-            activeOpacity={0.6}
-            style={styles.modelBar}
-          >
-            {toolsEnabled ? (
-              <Wrench size={10} color="#6366f1" />
-            ) : (
-              <Shield size={10} color={isDark ? '#52525b' : '#a1a1aa'} />
-            )}
-            <Typography
-              className="text-[9px] font-black ml-1 uppercase tracking-tight"
-              style={{ color: toolsEnabled ? '#6366f1' : (isDark ? '#52525b' : '#a1a1aa') }}
-            >
-              TOOLS
-            </Typography>
-          </TouchableOpacity>
 
           <View style={{ flex: 1 }} />
 
@@ -830,7 +910,12 @@ export function ChatInput({
           <View style={{ paddingRight: 12, flexDirection: 'row', alignItems: 'center' }}>
             {/* ✅ 思考等级切换器 */}
             <ThinkingLevelButton sessionId={sessionId} isDark={isDark} activeModelId={activeModelId} />
-            <ExecutionModeButton sessionId={sessionId} isDark={isDark} />
+            <ExecutionModeButton
+              sessionId={sessionId}
+              isDark={isDark}
+              toolsEnabled={toolsEnabled}
+              onToggleTools={onToggleTools}
+            />
           </View>
         </View>
 

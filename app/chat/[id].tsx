@@ -30,7 +30,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '../../src/theme/ThemeProvider';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { KeyboardAvoidingView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
 
 import { TokenStatsModal } from '../../src/features/chat/components/TokenStatsModal';
@@ -526,9 +526,8 @@ export default function ChatDetailScreen() {
       </Animated.View>
 
       {/* Floating ChatInput */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      <KeyboardStickyView
+        offset={{ opened: 0, closed: 0 }}
         style={{
           position: 'absolute',
           bottom: 0,
@@ -601,7 +600,7 @@ export default function ChatDetailScreen() {
             useChatStore.getState().updateSessionOptions(id, { toolsEnabled: !current });
           }}
         />
-      </KeyboardAvoidingView>
+      </KeyboardStickyView>
 
       {/* 浮动"回到底部"按钮 */}
       <Animated.View
