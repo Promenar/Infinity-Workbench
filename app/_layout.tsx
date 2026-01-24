@@ -163,6 +163,7 @@ export default function RootLayout() {
                   <Stack.Screen name="index" />
                   <Stack.Screen name="settings/skills" />
                   <Stack.Screen name="demo/skills" />
+                  <Stack.Screen name="welcome" options={{ headerShown: false, gestureEnabled: false }} />
                 </Stack>
               </NavThemeProvider>
             </ToastProvider>

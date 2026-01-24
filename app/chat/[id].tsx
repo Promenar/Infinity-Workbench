@@ -38,6 +38,7 @@ import { Message } from '../../src/types/chat';
 import { useI18n } from '../../src/lib/i18n';
 import { KGExtractionIndicator } from '../../src/components/rag/KGExtractionIndicator';
 
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake'; // ✅
 import { graphExtractor } from '../../src/lib/rag/graph-extractor'; // ✅
 import * as Clipboard from 'expo-clipboard'; // ✅
 import { Platform as RNPlatform, Alert } from 'react-native'; // ✅
@@ -128,6 +129,20 @@ export default function ChatDetailScreen() {
 
   // Loading State
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+  // ✅ Keep Awake Logic: Prevent screen sleep during generation
+  const isGenerating = useChatStore((state) => state.currentGeneratingSessionId === id);
+
+  useEffect(() => {
+    if (isGenerating) {
+      activateKeepAwakeAsync();
+    } else {
+      deactivateKeepAwake();
+    }
+    return () => {
+      deactivateKeepAwake();
+    };
+  }, [isGenerating]);
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {

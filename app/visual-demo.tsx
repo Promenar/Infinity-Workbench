@@ -1,14 +1,16 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SilkyGlow } from '../src/components/ui/SilkyGlow';
 import { ParticleEnergyGlow } from '../src/components/ui';
 import { useTheme } from '../src/theme/ThemeProvider';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
+import { useSettingsStore } from '../src/store/settings-store';
 
 export default function DemoPage() {
     const { isDark } = useTheme();
     const insets = useSafeAreaInsets();
+    const router = useRouter();
+    const { setHasLaunched } = useSettingsStore();
 
     const colors = {
         background: isDark ? '#000000' : '#FFFFFF',
@@ -42,18 +44,47 @@ export default function DemoPage() {
                     </View>
                 </View>
 
-                {/* Section 3: Clipping Test */}
+                {/* Section 4: Welcome Screen Debug */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>3. Clipping Test (Overflow Visible)</Text>
-                    <View style={[styles.demoBox, { borderColor: 'red', borderWidth: 1, overflow: 'visible', width: 100, height: 100 }]}>
-                        <ParticleEnergyGlow color="#ef4444" size={160} style={{ position: 'absolute' }} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>4. Welcome Screen Debug</Text>
+                    <View style={[styles.demoBox, { borderColor: isDark ? '#333' : '#ddd', height: 'auto', padding: 20 }]}>
+                        <TouchableOpacity
+                            onPress={() => {
+                                setHasLaunched(false);
+                                Alert.alert('Success', 'HasLaunched status reset to FALSE. Restart app or click below to test.');
+                            }}
+                            style={[localStyles.button, { backgroundColor: '#ef4444', marginBottom: 12 }]}
+                        >
+                            <Text style={localStyles.buttonText}>Reset Launch State</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            onPress={() => router.push('/welcome')}
+                            style={[localStyles.button, { backgroundColor: colors.text }]}
+                        >
+                            <Text style={[localStyles.buttonText, { color: colors.background }]}>Go to Welcome Page</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
-
             </ScrollView>
         </View>
     );
 }
+
+const localStyles = StyleSheet.create({
+    button: {
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 8,
+        width: '100%',
+        alignItems: 'center',
+    },
+    buttonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
+    }
+});
 
 const styles = StyleSheet.create({
     container: {

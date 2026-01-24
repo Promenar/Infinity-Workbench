@@ -17,8 +17,11 @@ export const InferenceSettings: React.FC<Props> = ({ params, onUpdate, agentDefa
   const { t } = useI18n();
 
   // Helper to get effective value (session > agent > default)
-  const getValue = (key: keyof InferenceParams, fallback: number) => {
-    return params[key] ?? agentDefaultParams?.[key] ?? fallback;
+  const getValue = <K extends keyof InferenceParams>(
+    key: K,
+    fallback: NonNullable<InferenceParams[K]>
+  ): NonNullable<InferenceParams[K]> => {
+    return (params[key] ?? agentDefaultParams?.[key] ?? fallback) as NonNullable<InferenceParams[K]>;
   };
 
   const temperature = getValue('temperature', 0.7);

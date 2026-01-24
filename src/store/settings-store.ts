@@ -61,6 +61,10 @@ interface SettingsState {
   _hasHydrated: boolean;
 
   setHasHydrated: (state: boolean) => void;
+
+  // First Launch
+  hasLaunched: boolean;
+  setHasLaunched: (hasLaunched: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -68,6 +72,9 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       language: 'zh',
       setLanguage: (lang) => set({ language: lang }),
+
+      hasLaunched: false,
+      setHasLaunched: (hasLaunched) => set({ hasLaunched }),
 
       hapticsEnabled: false,
       setHapticsEnabled: (enabled) => set({ hapticsEnabled: enabled }),
@@ -203,6 +210,7 @@ export const useSettingsStore = create<SettingsState>()(
         skillsConfig: state.skillsConfig,
         localModelsEnabled: state.localModelsEnabled,
         loggingEnabled: state.loggingEnabled,
+        hasLaunched: state.hasLaunched,
       }),
 
       onRehydrateStorage: () => (state) => {
