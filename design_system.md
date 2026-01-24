@@ -14,6 +14,7 @@
 | **Section Header** | `text-sm font-bold uppercase tracking-wider text-gray-400` | Grouped Lists |
 | **Body** | `text-base` | Content |
 | **Label** | `text-[10px] font-medium` | Tab Bar Labels |
+| **Settings Title** | `text-[15px] font-semibold tracking-tight` | Standard Settings Row Title |
 
 ### Color Palette
 The design uses a semantic color system on top of a base Indigo scale.
@@ -91,9 +92,15 @@ interface ButtonProps {
 - **Interactive**: `cursor-pointer active:scale-[0.98]`
 - **Active**: `ring-2 ring-primary-500 border-primary-500`
 
-### Input (`<Input />`)
-**Base Style**:
 `bg-surface-secondary text-text-primary placeholder-text-tertiary border border-border-default rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30 focus:border-primary-500 transition-all`
+
+### Collapsible Section (`<CollapsibleSection />`)
+**Style**:
+- **Header**: `padding-16 bg-surface-primary/opacity-2`
+- **Animation**: `react-native-reanimated` timing (250ms)
+- **Chevron**: 180° rotation sync with expansion state.
+- **Haptics**: Light impact on toggle.
+
 
 ## 3. Layout Patterns
 
