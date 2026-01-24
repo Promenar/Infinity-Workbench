@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ScrollView, Animated, Easing, LayoutChangeEvent } from 'react-native';
+import { View, ScrollView, Animated, Easing, LayoutChangeEvent, TextProps } from 'react-native';
 import { Typography } from './Typography';
 
 interface MarqueeProps {
@@ -7,9 +7,11 @@ interface MarqueeProps {
     className?: string;
     duration?: number;
     delay?: number;
+    style?: any;
+    textProps?: TextProps;
 }
 
-export function Marquee({ text, className, duration = 3000, delay = 2000 }: MarqueeProps) {
+export function Marquee({ text, className, duration = 3000, delay = 2000, style, textProps }: MarqueeProps) {
     const [containerWidth, setContainerWidth] = useState(0);
     const [textWidth, setTextWidth] = useState(0);
     const scrollValue = useRef(new Animated.Value(0)).current;
@@ -48,7 +50,7 @@ export function Marquee({ text, className, duration = 3000, delay = 2000 }: Marq
     return (
         <View
             onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
-            style={{ overflow: 'hidden', flex: 1, height: 22, justifyContent: 'center' }}
+            style={[{ overflow: 'hidden', flex: 1, height: 22, justifyContent: 'center' }, style]}
         >
             {/* 隐藏的测量层 */}
             <View style={{ position: 'absolute', opacity: 0, width: 5000, flexDirection: 'row', top: -1000 }} pointerEvents="none">
@@ -60,7 +62,8 @@ export function Marquee({ text, className, duration = 3000, delay = 2000 }: Marq
                         }
                     }}
                     numberOfLines={0}
-                    style={{ flexShrink: 0 }}
+                    style={[{ flexShrink: 0 }, textProps?.style]}
+                    {...textProps}
                 >
                     {text}
                 </Typography>
@@ -79,7 +82,8 @@ export function Marquee({ text, className, duration = 3000, delay = 2000 }: Marq
                     className={className}
                     numberOfLines={isLongText ? 0 : 1}
                     ellipsizeMode={isLongText ? 'clip' : 'tail'}
-                    style={{ flexShrink: 0 }}
+                    style={[{ flexShrink: 0 }, textProps?.style]}
+                    {...textProps}
                 >
                     {text}
                 </Typography>
@@ -91,7 +95,8 @@ export function Marquee({ text, className, duration = 3000, delay = 2000 }: Marq
                             className={className}
                             numberOfLines={0}
                             ellipsizeMode="clip"
-                            style={{ flexShrink: 0 }}
+                            style={[{ flexShrink: 0 }, textProps?.style]}
+                            {...textProps}
                         >
                             {text}
                         </Typography>

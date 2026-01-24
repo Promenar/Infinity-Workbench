@@ -97,7 +97,7 @@ const ProviderListItem = memo(({
                     onPress={handleManageModels}
                     style={[
                         styles.modelButton,
-                        { backgroundColor: isDark ? 'rgba(39, 39, 42, 0.6)' : 'rgba(0, 0, 0, 0.05)' }
+                        { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50] }
                     ]}
                 >
                     <Cpu size={14} color={colors[500]} style={styles.modelIcon} />
@@ -219,7 +219,6 @@ const styles = StyleSheet.create({
         paddingVertical: 6, // Reduced from 8
         paddingHorizontal: 12, // Reduced from 16
         borderRadius: 10, // Tighter radius
-        borderWidth: 1, // Add border instead of heavy background
     },
     modelIcon: {
         marginRight: 4, // Reduced from 6

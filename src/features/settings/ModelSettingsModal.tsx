@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
 import { GlassHeader } from '../../components/ui/GlassHeader';
+import { AnimatedSearchBar } from '../../components/ui/AnimatedSearchBar';
+import { AnimatedInput } from '../../components/ui/AnimatedInput';
 import { Typography } from '../../components/ui/Typography';
 import { Marquee } from '../../components/ui/Marquee';
 import { FlashList } from '@shopify/flash-list';
@@ -116,15 +119,31 @@ const ModelItem = React.memo(
               {!isEditingName ? (
                 <TouchableOpacity
                   onPress={() => setIsEditingName(true)}
-                  style={{ flex: 1, height: 22, justifyContent: 'center' }}
+                  style={{
+                    flex: 1,
+                    height: 30,
+                    justifyContent: 'center',
+                    paddingHorizontal: 8,
+                    borderWidth: 1,
+                    borderColor: 'transparent',
+                    borderRadius: 8,
+                  }}
                 >
                   <Marquee
                     text={localName || t.settings.modelSettings.unnamedModel}
                     className="font-bold text-sm text-gray-900 dark:text-white"
+                    style={{ height: '100%' }}
+                    textProps={{
+                      style: {
+                        fontSize: 14,
+                        lineHeight: 18,
+                        includeFontPadding: false
+                      }
+                    }}
                   />
                 </TouchableOpacity>
               ) : (
-                <TextInput
+                <AnimatedInput
                   value={localName}
                   autoFocus
                   onChangeText={setLocalName}
@@ -132,16 +151,18 @@ const ModelItem = React.memo(
                     setIsEditingName(false);
                     if (localName !== model.name) handleSync({ name: localName });
                   }}
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 'bold',
-                    color: isDark ? '#fff' : '#111',
+                  containerStyle={{
                     flex: 1,
-                    height: 22,
-                    padding: 0,
+                    height: 30,
+                  }}
+                  inputStyle={{
+                    fontSize: 14,
+                    lineHeight: 18,
+                    fontWeight: 'bold',
+                    paddingVertical: 0,
+                    includeFontPadding: false,
                   }}
                   placeholder={t.settings.modelSettings.namePlaceholder}
-                  placeholderTextColor="#9ca3af"
                 />
               )}
               <Edit2 size={12} color="#9ca3af" style={{ opacity: 0.5, marginLeft: 4 }} />
@@ -151,22 +172,32 @@ const ModelItem = React.memo(
                 {!isEditingId ? (
                   <TouchableOpacity
                     onPress={() => setIsEditingId(true)}
-                    style={{ flex: 1, minHeight: 18, justifyContent: 'center' }}
+                    style={{
+                      flex: 1,
+                      height: 26,
+                      justifyContent: 'center',
+                      paddingHorizontal: 8,
+                      borderWidth: 1,
+                      borderColor: 'transparent',
+                      borderRadius: 8,
+                    }}
                   >
                     <Text
                       numberOfLines={1}
                       ellipsizeMode="tail"
                       style={{
                         fontSize: 10,
+                        lineHeight: 14,
                         color: model.isAutoFetched ? '#6b7280' : isDark ? '#d1d5db' : '#4b5563',
                         fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                        includeFontPadding: false,
                       }}
                     >
                       {localId}
                     </Text>
                   </TouchableOpacity>
                 ) : (
-                  <TextInput
+                  <AnimatedInput
                     value={localId}
                     autoFocus
                     onChangeText={setLocalId}
@@ -174,16 +205,18 @@ const ModelItem = React.memo(
                       setIsEditingId(false);
                       if (localId !== model.id) handleSync({ id: localId });
                     }}
-                    style={{
-                      fontSize: 10,
-                      color: isDark ? '#d1d5db' : '#4b5563',
-                      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                    containerStyle={{
                       flex: 1,
-                      height: 18,
-                      padding: 0,
+                      height: 26,
+                    }}
+                    inputStyle={{
+                      fontSize: 10,
+                      lineHeight: 14,
+                      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                      paddingVertical: 0,
+                      includeFontPadding: false,
                     }}
                     placeholder={t.settings.modelSettings.modelIdPlaceholder}
-                    placeholderTextColor="#9ca3af"
                   />
                 )}
               </View>
@@ -315,7 +348,7 @@ const ModelItem = React.memo(
           <Text style={{ fontSize: 10, color: '#6b7280', marginRight: 6 }}>
             {t.settings.modelSettings.contextLength}:
           </Text>
-          <TextInput
+          <AnimatedInput
             value={localContext}
             onChangeText={setLocalContext}
             onBlur={() => {
@@ -324,15 +357,13 @@ const ModelItem = React.memo(
             }}
             keyboardType="numeric"
             placeholder="e.g. 128000"
-            placeholderTextColor="#9ca3af"
-            style={{
+            containerStyle={{
               flex: 1,
+              height: 28,
+            }}
+            inputStyle={{
               fontSize: 11,
-              color: isDark ? '#fff' : '#111',
-              backgroundColor: isDark ? '#27272a' : '#f3f4f6',
-              borderRadius: 4,
-              paddingHorizontal: 5,
-              paddingVertical: 2,
+              paddingVertical: 0,
             }}
           />
         </View>
@@ -372,6 +403,16 @@ export function ModelSettingsModal({
   const [testResults, setTestResults] = useState<
     Record<string, { loading: boolean; success?: boolean; latency?: number; error?: string }>
   >({});
+  const inputRef = React.useRef<TextInput>(null);
+
+  useEffect(() => {
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      inputRef.current?.blur();
+    });
+    return () => {
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   // Confirmation Dialog State
   const [confirmState, setConfirmState] = useState<{
@@ -654,32 +695,13 @@ export function ModelSettingsModal({
     () => (
       <View>
         <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: isDark ? 'rgba(24, 24, 27, 0.8)' : '#f3f4f6', // Zinc-900 with transparency
-              borderRadius: 14,
-              paddingHorizontal: 12,
-              height: 48,
-              borderWidth: 1,
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e5e7eb',
-            }}
-          >
-            <Search size={18} color="#9ca3af" />
-            <TextInput
-              placeholder={t.settings.modelSettings.searchPlaceholder}
-              placeholderTextColor="#9ca3af"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              style={{ flex: 1, marginLeft: 8, fontSize: 14, color: isDark ? '#fff' : '#111' }}
-            />
-            {searchQuery !== '' && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
-            )}
-          </View>
+          <AnimatedSearchBar
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t.settings.modelSettings.searchPlaceholder}
+            containerStyle={{ marginBottom: 12 }}
+            inputRef={inputRef}
+          />
         </View>
 
         <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
@@ -825,6 +847,12 @@ export function ModelSettingsModal({
               ListHeaderComponent={renderHeader}
               extraData={testResults}
               getItemType={() => 'model'}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              onScrollBeginDrag={() => {
+                Keyboard.dismiss();
+                inputRef.current?.blur();
+              }}
             />
           ) : (
             <View

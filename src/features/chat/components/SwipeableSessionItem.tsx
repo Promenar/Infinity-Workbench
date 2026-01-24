@@ -3,7 +3,7 @@ import { View, Animated, StyleSheet, TouchableOpacity } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Session } from '../../../types/chat';
 import { Typography } from '../../../components/ui/Typography';
-import { Pin, Trash2 } from 'lucide-react-native';
+import { Pin, Trash2, ChevronRight } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 import { AgentAvatar } from '../../../components/chat/AgentAvatar';
 import { useChatStore } from '../../../store/chat-store';
@@ -108,26 +108,32 @@ export const SwipeableSessionItem = ({
       leftThreshold={40}
     >
       <TouchableOpacity
-        activeOpacity={0.9} // Better feedback
-        className="flex-row items-center px-4 h-[80px] bg-gray-50/50 dark:bg-zinc-900/40 rounded-[20px] border border-gray-100/50 dark:border-zinc-800/50"
-        style={{ backgroundColor: isDark ? '#18181b' : '#f9fafb' }}
+        activeOpacity={0.7}
+        style={{
+          backgroundColor: isDark ? '#000' : '#fff',
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 13,
+          width: '100%',
+        }}
         onPress={() => {
           swipeableRef.current?.close();
           onPress();
         }}
       >
-        <View className="mr-4">
+        <View className="mr-3">
           <AgentAvatar
             id={agentId}
             name={item.title}
             avatar={agentAvatar}
             color={agentColor}
-            size={48}
+            size={46} // Reduced to match agent list
           />
         </View>
 
-        <View className="flex-1">
-          <View className="flex-row justify-between items-start mb-1">
+        <View className="flex-1 justify-center py-1">
+          <View className="flex-row justify-between items-baseline mb-0.5 pr-1">
             <View style={{ flexDirection: 'row', flex: 1, alignItems: 'center' }}>
               {item.isPinned && (
                 <View
@@ -143,7 +149,12 @@ export const SwipeableSessionItem = ({
               )}
               <Typography
                 variant="h3"
-                className="text-[17px] font-black text-gray-900 dark:text-gray-100 leading-tight mr-2"
+                style={{
+                  fontSize: 16.5,
+                  fontWeight: 'bold',
+                  lineHeight: 20,
+                  color: isDark ? '#ffffff' : '#111827',
+                }}
                 numberOfLines={1}
               >
                 {item.title}
@@ -156,11 +167,13 @@ export const SwipeableSessionItem = ({
               {item.time}
             </Typography>
           </View>
-          <Typography variant="body" className={subtitleStyle} numberOfLines={2}>
+          <Typography variant="body" className={subtitleStyle} numberOfLines={1}>
             {isDraft && <Typography className="text-red-500 font-bold">[Draft] </Typography>}
             {subtitleText}
           </Typography>
         </View>
+
+        <ChevronRight size={18} color={isDark ? '#52525b' : '#9ca3af'} style={{ marginLeft: 8 }} />
       </TouchableOpacity>
     </Swipeable>
   );
@@ -168,20 +181,17 @@ export const SwipeableSessionItem = ({
 
 const styles = StyleSheet.create({
   swipeContainer: {
-    marginBottom: 12,
-    marginHorizontal: 16,
+    width: '100%',
   },
   leftActionContainer: {
     width: 80,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 16, // Offset to match margin
   },
   rightActionContainer: {
     width: 80,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16, // Offset to match margin
     alignSelf: 'flex-end',
   },
   leftAction: {

@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
-import { View, TouchableOpacity } from 'react-native';
-import { PageLayout, Typography, GlassHeader } from '../../../src/components/ui';
+import React, { useMemo, useState } from 'react';
+import { View, TouchableOpacity, TextInput, Keyboard } from 'react-native';
+import { PageLayout, Typography, GlassHeader, AnimatedSearchBar } from '../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
-import { MessageSquare, ChevronLeft, Plus, Settings2 } from 'lucide-react-native';
+import { MessageSquare, ChevronLeft, Plus, Settings2, Search } from 'lucide-react-native';
+import { BlurView } from 'expo-blur';
 import * as Haptics from '../../../src/lib/haptics';
 import { useAgentStore } from '../../../src/store/agent-store';
 import { useChatStore } from '../../../src/store/chat-store';
@@ -12,6 +13,7 @@ import { useI18n } from '../../../src/lib/i18n';
 import { useTheme } from '../../../src/theme/ThemeProvider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Colors } from '../../../src/theme/colors';
 import { SwipeableSessionItem } from '../../../src/features/chat/components/SwipeableSessionItem';
 
 export default function AgentSessionsScreen() {
@@ -31,6 +33,18 @@ export default function AgentSessionsScreen() {
     () => getSessionsByAgent(agentId),
     [agentId, allSessions, getSessionsByAgent],
   );
+
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredSessions = useMemo(() => {
+    if (!searchQuery) return sessions;
+    const lowerQuery = searchQuery.toLowerCase();
+    return sessions.filter(
+      (s) =>
+        s.title.toLowerCase().includes(lowerQuery) ||
+        s.lastMessage.toLowerCase().includes(lowerQuery)
+    );
+  }, [sessions, searchQuery]);
 
   if (!agent) return null;
 
@@ -80,6 +94,33 @@ export default function AgentSessionsScreen() {
     />
   );
 
+  const inputRef = React.useRef<TextInput>(null);
+
+  React.useEffect(() => {
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      inputRef.current?.blur();
+    });
+    return () => {
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
+  const ListHeader = () => (
+    <View className="px-6 pb-2 pt-2">
+      <AnimatedSearchBar
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder={t.chat.searchSessionPlaceholder || 'Search conversations...'}
+        inputRef={inputRef}
+        containerStyle={{ height: 40 }} // Keep original height? Or use standard? User said "apply this effect to other areas". Usually implies using the same component. RAG is h-12. If I use h-12 here, it's consistent. But `h-12` is default in component.
+      // I will override height to 40 (h-10) to match existing design if user wants, but likely they want UNIFORMITY.
+      // "Unify the search bar... apply this effect".
+      // I'll stick to the component's default `h-12` (48px) for consistency unless it looks bad.
+      // Actually the `Session` list had `h-10` explicitly. I'll delete the override comment and just use default `h-12` to be exactly like RAG.
+      />
+    </View>
+  );
+
   return (
     <PageLayout safeArea={false} className="bg-white dark:bg-black">
       <Stack.Screen options={{ headerShown: false }} />
@@ -100,13 +141,20 @@ export default function AgentSessionsScreen() {
       />
 
       <FlashList
-        data={sessions}
+        data={filteredSessions}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={ListHeader}
         // @ts-ignore
-        estimatedItemSize={90}
+        estimatedItemSize={72}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => {
+          Keyboard.dismiss();
+          inputRef.current?.blur();
+        }}
         contentContainerStyle={{
-          paddingTop: 84 + insets.top,
+          paddingTop: 74 + insets.top, // Header height (64) + 10px buffer
           paddingBottom: 110,
         }}
         ListEmptyComponent={
@@ -122,7 +170,15 @@ export default function AgentSessionsScreen() {
             </Typography>
           </View>
         }
-        ItemSeparatorComponent={() => null}
+        ItemSeparatorComponent={() => (
+          <View
+            style={{
+              height: 1,
+              backgroundColor: isDark ? Colors.dark.surfaceSecondary : '#f3f4f6',
+              marginHorizontal: 16,
+            }}
+          />
+        )}
       />
 
       {/* Floating Action Button */}

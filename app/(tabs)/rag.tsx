@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl } from 'react-native';
-import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, GlassHeader } from '../../src/components/ui';
+import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, GlassHeader, AnimatedSearchBar } from '../../src/components/ui';
 import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive, Check } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
@@ -12,6 +12,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useI18n } from '../../src/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Keyboard } from 'react-native';
 import { useRagStore } from '../../src/store/rag-store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { ControlBar } from '../../src/components/rag/ControlBar';
@@ -37,6 +38,16 @@ export default function RagScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
   const pdfExtractorRef = React.useRef<PdfExtractorRef>(null);
+  const inputRef = React.useRef<TextInput>(null);
+
+  useEffect(() => {
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      inputRef.current?.blur();
+    });
+    return () => {
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   // Dynamic imports for modals and components
   const [PdfExtractorComponent, setPdfExtractorComponent] = useState<any>(null);
@@ -128,7 +139,6 @@ export default function RagScreen() {
   }, [loadDocuments, loadFolders, loadMemories]);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
   // viewMode: portal (概览), docs (文档列表), memories (记忆列表)
   const [viewMode, setViewMode] = useState<'portal' | 'docs' | 'memories'>('portal');
 
@@ -808,40 +818,12 @@ export default function RagScreen() {
 
         {/* 搜索栏 */}
         <View className="px-6 pb-4">
-          <View
-            className="h-12 border rounded-2xl flex-row items-center px-4 transition-all overflow-hidden"
-            style={{
-              backgroundColor: isSearchFocused
-                ? (isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50])
-                : (isDark ? 'rgba(15, 17, 26, 0.4)' : '#f9fafb'),
-              borderColor: isSearchFocused
-                ? colors[500]
-                : (isDark ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6')
-            }}
-          >
-            {isDark && (
-              <BlurView
-                intensity={20}
-                tint="dark"
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-              />
-            )}
-            <Search size={18} color={isSearchFocused ? colors[500] : '#94a3b8'} strokeWidth={2} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setIsSearchFocused(false)}
-              placeholder={isMemories ? "搜索会话记忆..." : t.library.searchPlaceholder}
-              placeholderTextColor="#94a3b8"
-              className="flex-1 ml-3 text-gray-900 dark:text-white font-semibold text-base"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <X size={18} color="#94a3b8" />
-              </TouchableOpacity>
-            )}
-          </View>
+          <AnimatedSearchBar
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={isMemories ? "搜索会话记忆..." : t.library.searchPlaceholder}
+            inputRef={inputRef}
+          />
         </View>
 
         {/* 控制栏 (仅在文档列表显示) */}
@@ -1034,6 +1016,12 @@ export default function RagScreen() {
                 }}
                 estimatedItemSize={80}
                 contentContainerStyle={{ paddingBottom: 100 }}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+                onScrollBeginDrag={() => {
+                  Keyboard.dismiss();
+                  inputRef.current?.blur();
+                }}
                 refreshControl={
                   <RefreshControl
                     refreshing={refreshing}
@@ -1079,6 +1067,12 @@ export default function RagScreen() {
                 )}
                 estimatedItemSize={120}
                 contentContainerStyle={{ paddingBottom: 100 }}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+                onScrollBeginDrag={() => {
+                  Keyboard.dismiss();
+                  inputRef.current?.blur();
+                }}
                 ListEmptyComponent={() => (
                   <View className="items-center justify-center py-20 opacity-50">
                     <Typography className="text-gray-400 font-medium">{t.library.memoryEmptyState}</Typography>

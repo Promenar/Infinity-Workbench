@@ -15,3 +15,5 @@ export * from './GlassBottomSheet';
 export * from './ParticleEnergyGlow';
 export * from './Marquee';
 export * from '../../features/settings/components/SettingsSection';
+export * from './AnimatedSearchBar';
+export * from './AnimatedInput';

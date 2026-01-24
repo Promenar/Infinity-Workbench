@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet } from 'react-native';
-import { PageLayout, Typography, LargeTitleHeader } from '../../src/components/ui';
+import { PageLayout, Typography, LargeTitleHeader, AnimatedSearchBar } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Search, Plus, ChevronRight } from 'lucide-react-native';
 import * as Haptics from '../../src/lib/haptics';
@@ -14,6 +14,7 @@ import { useChatStore } from '../../src/store/chat-store';
 import { Agent } from '../../src/types/chat';
 import { AgentAvatar } from '../../src/components/chat/AgentAvatar';
 import { useSettingsStore } from '../../src/store/settings-store';
+import { Keyboard } from 'react-native';
 import { preventDoubleTap } from '../../src/lib/navigation-utils';
 import { SuperAssistantFAB } from '../../src/components/chat/SuperAssistantFAB';
 import { SwipeableAgentItem } from '../../src/components/chat/SwipeableAgentItem';
@@ -104,34 +105,26 @@ export default function AgentExplorerScreen() {
     );
   };
 
+  const inputRef = React.useRef<TextInput>(null);
+
+  useEffect(() => {
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      inputRef.current?.blur();
+    });
+    return () => {
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
   const ListHeader = () => (
     <View className="px-6 pb-6">
       {/* Flat Modern Search Bar */}
-      <View
-        className="flex-row items-center px-4 h-12 rounded-2xl border transition-all overflow-hidden"
-        style={{
-          backgroundColor: isDark ? 'rgba(15, 17, 26, 0.4)' : '#f9fafb',
-          borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6'
-        }}
-      >
-        {isDark && (
-          <BlurView
-            intensity={20}
-            tint="dark"
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          />
-        )}
-        <Search size={18} color="#94a3b8" />
-        <TextInput
-          className="flex-1 ml-3 text-gray-900 dark:text-gray-100 font-medium text-[14px] p-0"
-          placeholder={t.chat.searchPlaceholder}
-          placeholderTextColor="#94a3b8"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-        />
-      </View>
+      <AnimatedSearchBar
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder={t.chat.searchPlaceholder}
+        inputRef={inputRef}
+      />
     </View>
   );
 
@@ -170,6 +163,12 @@ export default function AgentExplorerScreen() {
         // @ts-ignore
         estimatedItemSize={90}
         contentContainerStyle={{ paddingBottom: 160 }}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => {
+          Keyboard.dismiss();
+          inputRef.current?.blur();
+        }}
         ItemSeparatorComponent={() => (
           <View
             style={{
