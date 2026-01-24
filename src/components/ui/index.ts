@@ -17,3 +17,4 @@ export * from './Marquee';
 export * from '../../features/settings/components/SettingsSection';
 export * from './AnimatedSearchBar';
 export * from './AnimatedInput';
+export * from './CollapsibleSection';

@@ -318,6 +318,20 @@ export default function SuperAssistantSettingsScreen() {
     }
   }, [debouncedTitle, session?.title]);
 
+  // 🪄 Migration: Auto-update legacy titles to new localized brand (Nexus Hub / 万象中枢)
+  useEffect(() => {
+    if (session) {
+      const legacyTitles = ['Super Personal Assistant', 'Super Assistant', '超级助手会话'];
+      // Exact match check to avoid overwriting user customizations
+      if (legacyTitles.includes(session.title)) {
+        const newTitle = t.agent.superAssistant.defaultTitle;
+        console.log(`[SPA] Migrating legacy title "${session.title}" to "${newTitle}"`);
+        updateSessionTitle(SPA_SESSION_ID, newTitle);
+        setFormData(prev => ({ ...prev, title: newTitle }));
+      }
+    }
+  }, []); // Run once on mount (or when session loads)
+
   const handleExportCurrent = async () => {
     if (isExporting || !session) return;
     setIsExporting(true);

@@ -172,7 +172,7 @@ export const SearchInternetSkill: Skill = {
 export const GenerateImageSkill: Skill = {
     id: 'generate_image',
     name: 'Generate Image',
-    description: 'Generate an image based on a text prompt. Use this when the user explicitly asks to draw or generate a picture.',
+    description: 'Generate an image using a specialized AI model. ALWAYS use this tool for image creation requests (e.g. "draw a cat"). Do NOT try to write image files manually via filesystem tools.',
     schema: z.object({
         prompt: z.string().describe('The image description prompt'),
         style: z.string().optional().describe('Art style (e.g., realistic, anime, oil painting)'),

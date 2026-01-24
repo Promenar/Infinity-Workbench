@@ -40,12 +40,13 @@ export const WriteFileSkill: Skill = {
     id: 'write_file',
     name: 'Write File',
     isHighRisk: true, // 🚨 High Risk: File modification
-    description: 'Create or overwrite a text file in the local storage. Use this to save notes, code, or logs. The file path is relative to the app\'s sandbox root.',
+    description: 'Create or overwrite a file. Use "utf8" for text/code, and "base64" for saving binary data. CRITICAL RULE: This tool is for STORAGE, not CREATION. Do NOT use this to manually generate complex file formats (Images, Audio, PDF, Excel, ZIP) by predicting bytes. If content requires specific encoding, you MUST use a specialized tool or Code Interpreter to generate it programmatically first.',
     schema: z.object({
         path: z.string().describe('Relative path to the file (e.g., "notes/meeting.txt")'),
         content: z.string().describe('The text content to write into the file'),
+        encoding: z.enum(['utf8', 'base64']).optional().describe('Encoding of the content. Default is utf8. Use base64 for binary files (images, pdfs, etc).')
     }),
-    execute: async (params: { path: string; content: string }, context) => {
+    execute: async (params: { path: string; content: string; encoding?: 'utf8' | 'base64' }, context) => {
         try {
             const fullPath = await resolveSafePath(params.path);
 
@@ -57,8 +58,12 @@ export const WriteFileSkill: Skill = {
             }
 
             // 写入文件 (Physical Write)
+            const encodingType = params.encoding === 'base64'
+                ? (FileSystem as any).EncodingType.Base64
+                : (FileSystem as any).EncodingType.UTF8;
+
             await FileSystem.writeAsStringAsync(fullPath, params.content, {
-                encoding: (FileSystem as any).EncodingType.UTF8
+                encoding: encodingType
             });
 
             // 🛡️ RAG Sync: Register document in RAG Store
@@ -142,8 +147,9 @@ export const ReadFileSkill: Skill = {
     description: 'Read the content of a local text file. Use this to retrieve previously saved information.',
     schema: z.object({
         path: z.string().describe('Relative path to the file (e.g., "notes/meeting.txt")'),
+        encoding: z.enum(['utf8', 'base64']).optional().describe('Read encoding. Default is utf8. Use base64 for reading binary files.')
     }),
-    execute: async (params: { path: string }, context) => {
+    execute: async (params: { path: string; encoding?: 'utf8' | 'base64' }, context) => {
         try {
             const fullPath = await resolveSafePath(params.path);
 
@@ -155,8 +161,12 @@ export const ReadFileSkill: Skill = {
                 throw new Error('Target is a directory, not a file. Use list_directory instead.');
             }
 
+            const encodingType = params.encoding === 'base64'
+                ? (FileSystem as any).EncodingType.Base64
+                : (FileSystem as any).EncodingType.UTF8;
+
             const content = await FileSystem.readAsStringAsync(fullPath, {
-                encoding: (FileSystem as any).EncodingType.UTF8
+                encoding: encodingType
             });
 
             return {

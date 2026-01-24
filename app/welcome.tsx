@@ -18,6 +18,7 @@ import Animated, {
 import { useSettingsStore } from '../src/store/settings-store';
 import { Colors } from '../src/theme/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAgentStore } from '../src/store/agent-store';
 import * as Haptics from 'expo-haptics';
 
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
@@ -48,11 +49,20 @@ export default function WelcomeScreen() {
         });
     }, []);
 
+
+
+    // ... imports
+
     const handleLanguageSelect = (lang: 'zh' | 'en') => {
         // 交互反馈：先震动，延迟设置状态（防御性编程）
         setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setLanguage(lang);
+
+            // 📍 核心逻辑：初始化助手预设 (One-off)
+            // 根据用户选择的语言，从 agent-presets 写入初始数据
+            useAgentStore.getState().initializeAgents(lang);
+
             setHasLaunched(true);
             router.replace('/(tabs)/chat');
         }, 10);

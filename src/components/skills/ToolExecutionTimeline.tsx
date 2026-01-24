@@ -423,6 +423,21 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                                                 fontSize: 13,
                                                 lineHeight: 18,
                                             },
+                                            blockquote: {
+                                                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                                borderLeftColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
+                                                color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
+                                                marginLeft: 0,
+                                                paddingLeft: 12,
+                                            },
+                                            em: {
+                                                color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.9)',
+                                                fontStyle: 'italic',
+                                            },
+                                            strong: {
+                                                color: isDark ? '#fff' : '#000',
+                                                fontWeight: 'bold',
+                                            },
                                             code_inline: {
                                                 backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                                                 color: isDark ? '#a7f3d0' : '#14532d',
@@ -451,7 +466,7 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                     <InterventionUI sessionId={sessionId} toolName={step.toolName} />
                 )}
             </Animated.View>
-        </Animated.View>
+        </Animated.View >
     );
 };
 

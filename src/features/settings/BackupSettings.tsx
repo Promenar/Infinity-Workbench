@@ -11,7 +11,7 @@ import {
   Platform,
   StyleSheet,
 } from 'react-native';
-import { Switch } from '../../components/ui';
+import { Switch, CollapsibleSection } from '../../components/ui';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -103,13 +103,26 @@ export function BackupSettings() {
     await AsyncStorage.setItem('backup_config', JSON.stringify(newConfig));
   };
 
+  // Backup Options State
+  const [backupOptions, setBackupOptions] = useState({
+    includeSessions: true,
+    includeKnowledgeBase: true,
+    includeFiles: true,
+    includeSettings: true,
+    includeSecrets: true,
+  });
+
+  const toggleOption = (key: keyof typeof backupOptions) => {
+    setBackupOptions(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   // --- Local Operations ---
 
   const handleLocalExport = async () => {
     setLoading(true);
     setStatus(t.settings.backup.generating);
     try {
-      const data = await BackupManager.exportData();
+      const data = await BackupManager.exportData(backupOptions);
       const json = JSON.stringify(data, null, 2);
 
       const filename = `nexara_backup_${new Date().toISOString().split('T')[0]}.json`;
@@ -199,7 +212,7 @@ export function BackupSettings() {
     setStatus(t.settings.backup.uploading);
     try {
       const client = getClient();
-      const data = await BackupManager.exportData();
+      const data = await BackupManager.exportData(backupOptions);
       const json = JSON.stringify(data);
       const filename = `nexara_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
 
@@ -265,9 +278,57 @@ export function BackupSettings() {
     );
   };
 
+  const OptionRow = ({ label, value, onToggle, desc }: { label: string; value: boolean; onToggle: () => void; desc?: string }) => (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: isDark ? Colors.dark.borderDefault : '#e5e7eb' }}>
+      <View style={{ flex: 1, marginRight: 16 }}>
+        <Text style={{ fontSize: 14, fontWeight: '500', color: isDark ? Colors.dark.textPrimary : '#1f2937' }}>{label}</Text>
+        {desc && <Text style={{ fontSize: 11, color: isDark ? Colors.dark.textSecondary : '#6b7280', marginTop: 2 }}>{desc}</Text>}
+      </View>
+      <Switch value={value} onValueChange={onToggle} />
+    </View>
+  );
+
   return (
     <>
       <SettingsSection title={t.settings.backup.backupHeader}>
+        <CollapsibleSection
+          title={t.settings.backup.contentSelection}
+          icon={<Folder size={18} color={colors[500]} />}
+        >
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+            <OptionRow
+              label={t.settings.backup.options.sessions}
+              desc={t.settings.backup.options.sessionsDesc}
+              value={backupOptions.includeSessions}
+              onToggle={() => toggleOption('includeSessions')}
+            />
+            <OptionRow
+              label={t.settings.backup.options.knowledge}
+              desc={t.settings.backup.options.knowledgeDesc}
+              value={backupOptions.includeKnowledgeBase}
+              onToggle={() => toggleOption('includeKnowledgeBase')}
+            />
+            <OptionRow
+              label={t.settings.backup.options.files}
+              desc={t.settings.backup.options.filesDesc}
+              value={backupOptions.includeFiles}
+              onToggle={() => toggleOption('includeFiles')}
+            />
+            <OptionRow
+              label={t.settings.backup.options.settings}
+              desc={t.settings.backup.options.settingsDesc}
+              value={backupOptions.includeSettings}
+              onToggle={() => toggleOption('includeSettings')}
+            />
+            <OptionRow
+              label={t.settings.backup.options.secrets}
+              desc={t.settings.backup.options.secretsDesc}
+              value={backupOptions.includeSecrets}
+              onToggle={() => toggleOption('includeSecrets')}
+            />
+          </View>
+        </CollapsibleSection>
+
         {/* Local Actions */}
         <ConfirmDialog
           visible={confirmDialog.visible}
