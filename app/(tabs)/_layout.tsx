@@ -15,7 +15,7 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         lazy: false, // 预加载所有页面，避免首次切换延迟
-        animation: 'fade', // 改为渐变切换，避免位移式抖动感
+        animation: 'fade', // ✅ 最终修正：淡入淡出是 Tab 切换的最优解，无位移干扰
         tabBarStyle: {
           backgroundColor: isDark ? '#000000' : '#FFFFFF',
           borderTopColor: isDark ? '#1e1e1e' : '#f1f1f1',

@@ -154,12 +154,17 @@ export default function RootLayout() {
                 <Stack
                   screenOptions={{
                     headerShown: false,
-                    animation: 'slide_from_right',
-                    animationDuration: 200, // 提速至 200ms，增强跟手感
+                    animation: 'default', // ✅ 回归原生默认：iOS 为覆盖式(Cover)，Android 为系统默认(往往是 Zoom 或 Cover)
+                    // animationDuration: 250, // 移除手动时长，交由系统物理引擎接管，实现最自然的“跟手”
+                    gestureEnabled: true,
+                    gestureDirection: 'horizontal',
+                    fullScreenGestureEnabled: true,
                     contentStyle: { backgroundColor: 'transparent' },
                   }}
                 >
                   <Stack.Screen name="(tabs)" />
+                  {/* 针对部分页面强制使用 Slide (如设置页)，如果系统默认不是由右向左，可以在此细化 */}
+                  {/* 但通常 Default 在 iOS 上就是 Slide from right (Cover) */}
                   <Stack.Screen name="index" />
                   <Stack.Screen name="settings/skills" />
                   <Stack.Screen name="demo/skills" />
