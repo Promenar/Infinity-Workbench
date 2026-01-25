@@ -16,6 +16,9 @@ export const TaskFinalResult = ({ task, containerStyle }: TaskFinalResultProps) 
     const { isDark } = useTheme();
     const { t } = useI18n();
 
+    // ✅ 优化策略：如果正文为空，总结文本已由 ChatBubble 主体渲染。
+    // 此处仅需显示“最终结论”的徽章/标题即可，不再重复渲染内容。
+    // 我们保留 BlurView 外观作为章节分割线。
     if (!task || !task.final_summary || task.status !== 'completed') return null;
 
     return (
@@ -36,66 +39,15 @@ export const TaskFinalResult = ({ task, containerStyle }: TaskFinalResultProps) 
                     borderTopWidth: 0.5,
                     borderBottomWidth: 0.5,
                     borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                    borderRadius: 16,
+                    borderRadius: 12, // Slightly reduced radius for badge look
                 }}
             >
-                <View style={{ paddingLeft: 25, paddingRight: 16, paddingVertical: 16 }}>
-                    <View className="flex-row items-center mb-1">
+                <View style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+                    <View className="flex-row items-center">
                         <CheckCircle2 size={14} color="#22c55e" />
                         <Text className="text-[12px] font-bold text-green-700 dark:text-green-300 ml-1.5 uppercase">
                             {t.skills.timeline.finalResult}
                         </Text>
-                    </View>
-                    <View className="px-1">
-                        <Markdown
-                            style={{
-                                body: {
-                                    color: isDark ? '#d1d5db' : '#374151', // zinc-200 : zinc-700
-                                    fontSize: 13,
-                                    lineHeight: 20,
-                                },
-                                paragraph: {
-                                    marginVertical: 4,
-                                },
-                                list_item: {
-                                    marginVertical: 2,
-                                },
-                                bullet_list: {
-                                    marginVertical: 4,
-                                },
-                                strong: {
-                                    fontWeight: 'bold',
-                                    color: isDark ? '#e4e4e7' : '#18181b', // zinc-200 : zinc-900
-                                },
-                                code_inline: {
-                                    backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)',
-                                    color: isDark ? '#a7f3d0' : '#14532d', // green-200 : green-900
-                                    borderRadius: 4,
-                                    paddingHorizontal: 4,
-                                    paddingVertical: 1,
-                                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                                    fontSize: 12,
-                                },
-                                heading1: {
-                                    fontSize: 22,
-                                    lineHeight: 32,
-                                    fontWeight: '900',
-                                    marginTop: 16,
-                                    marginBottom: 8,
-                                    color: isDark ? '#f4f4f5' : '#18181b', // zinc-100 : zinc-900
-                                },
-                                heading2: {
-                                    fontSize: 18,
-                                    lineHeight: 26,
-                                    fontWeight: '800',
-                                    marginTop: 12,
-                                    marginBottom: 6,
-                                    color: isDark ? '#e4e4e7' : '#27272a', // zinc-200 : zinc-800
-                                }
-                            }}
-                        >
-                            {task.final_summary}
-                        </Markdown>
                     </View>
                 </View>
             </BlurView>

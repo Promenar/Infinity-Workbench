@@ -640,8 +640,15 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
   // 只处理 LaTeX 块级公式的预处理
   // 将 $$...$$ 转换为 ```latex ... ``` 以便复用 fence 渲染逻辑
+  // ✅ 优化：内容归一化。如果正文为空，尝试使用任务总结作为正文显示。
   const processedContent = useMemo(() => {
     let content = message.content || '';
+
+    // 如果没有正文内容，但有任务最终总结，且任务已完成，则使用总结作为内容
+    if (!content && message.planningTask?.final_summary && message.planningTask?.status === 'completed') {
+      content = message.planningTask.final_summary;
+    }
+
     if (!content) return '';
 
     // 替换块级公式 $$...$$
@@ -651,7 +658,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     return content.replace(blockMathRegex, (match, formula) => {
       return `\n\`\`\`latex\n${formula.trim()}\n\`\`\`\n`;
     });
-  }, [message.content]);
+  }, [message.content, message.planningTask]);
 
   // Determine if this bubble is currently "loading" (last message and no content yet?)
   // Actually loading state is passed from parent but specific to session.
