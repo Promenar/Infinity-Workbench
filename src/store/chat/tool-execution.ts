@@ -206,21 +206,16 @@ Please STOP trying to use tools and answer the user's request directly using you
                 });
                 console.log('[ToolExecutor] message added');
 
-                // ✅ 任务状态持久化：如果工具返回了 TaskState 数据 (特别是 manage_task)，
-                // 则将其同步回写至触发它的 Assistant 消息中。
+                // ✅ 任务状态持久化
                 if (result.data && result.status === 'success') {
                     const isTaskState = (data: any): data is TaskState =>
                         data && typeof data === 'object' && 'steps' in data && 'progress' in data;
 
                     if (isTaskState(result.data)) {
-                        // 🧠 Intelligent UI Hoisting: 
-                        // DEPRECATED: We now render final_summary in TaskMonitor.tsx
-                        // No need to mutate message content anymore.
-
                         get().updateMessageContent(
                             sessionId,
                             targetMsgId,
-                            targetMsg.content, // ✅ Keep original content (don't inject summary)
+                            targetMsg.content,
                             undefined,
                             undefined,
                             undefined,
@@ -228,15 +223,32 @@ Please STOP trying to use tools and answer the user's request directly using you
                             false,
                             undefined,
                             undefined,
-                            result.data // taskState (param 11) - includes final_summary now
+                            result.data
                         );
 
-                        // 🏁 Persistence Finalizer: 
-                        // Force immediate DB flush when task is complete to prevent data loss on app restart.
                         if (get().flushMessageUpdates && tcName === 'manage_task' && finalArgs.action === 'complete') {
                             console.log('[ToolExecutor] Forcing immediate DB flush for final_summary');
                             get().flushMessageUpdates(sessionId, targetMsgId);
                         }
+                    }
+                }
+
+                // 🌟 SPECIAL FEATURE: Direct Rendering Injection
+                // If the tool is 'render_echarts' and it succeeded, we immediately inject
+                // a synthetic Assistant message containing the chart.
+                // This saves tokens (Model doesn't need to copy-paste) and improves UX (Instant feedback).
+                if (tcName === 'render_echarts' && result.status === 'success') {
+                    // Extract Markdown from content (result.content usually contains the block)
+                    const markdownMatch = result.content.match(/```echarts[\s\S]*?```/);
+                    if (markdownMatch) {
+                        console.log('[ToolExecutor] Injecting synthetic chart message');
+                        await get().addMessage(sessionId, {
+                            id: `chart_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                            role: 'assistant',
+                            content: markdownMatch[0], // Only the chart block
+                            createdAt: Date.now() + 10, // Ensure it appears after the tool result
+                            modelId: agent.defaultModel // Attribution
+                        });
                     }
                 }
             }

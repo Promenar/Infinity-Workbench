@@ -9,7 +9,7 @@ Use this tool whenever you need to visualize data (bar charts, line charts, pie 
 DO NOT use code interpreters or write HTML files for charts.
 `,
     schema: z.object({
-        config: z.union([z.string(), z.record(z.any())]).describe('The ECharts JSON configuration object. Can be a JSON string or an object.')
+        config: z.string().or(z.record(z.any())).describe('The ECharts JSON configuration object. Can be a JSON string or an object.')
     }),
     execute: async (args: any, context: SkillContext): Promise<ToolResult> => {
         let chartOptionStr = '';
@@ -27,7 +27,7 @@ DO NOT use code interpreters or write HTML files for charts.
 
             return {
                 id: 'success',
-                content: `Card rendered successfully.\n\n\`\`\`echarts\n${chartOptionStr}\n\`\`\``,
+                content: `✅ Chart rendered to UI successfully.\n\n\`\`\`echarts\n${chartOptionStr}\n\`\`\``,
                 status: 'success'
             };
         } catch (e: any) {
