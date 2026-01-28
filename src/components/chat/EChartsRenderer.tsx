@@ -17,6 +17,11 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
     const { isDark } = useTheme();
     const [title, setTitle] = useState("ECharts Visualization");
     const [chartType, setChartType] = useState<string>("bar");
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // 解析 JSON (每次渲染重新计算，不使用 state 以避免流式传输时的中间态锁定)
+    let chartOption = null;
+    let parseError = false;
 
     try {
         const cleanContent = content
