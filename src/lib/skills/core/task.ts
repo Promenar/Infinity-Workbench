@@ -8,6 +8,13 @@ export const TaskManagementSkill: Skill = {
     description: `Manage a persistent, multi-step task or plan. 
 IMPORTANT: You should ALWAYS call this tool to "create" a plan BEFORE starting a complex task sequence.
 CRITICAL: Each step MUST have a descriptive 'title'.
+
+INTERACTIVE PAUSE & USER FEEDBACK:
+- You MUST use action='ask_user' WHENEVER you need to ask the user a question, confirm a step, or request clarifying information.
+- This is the ONLY way to yield control back to the user to get a response during a task.
+- Use this aggressively for: Confirmation, Ambiguity Resolution, or Next-Step Guidance.
+- Do NOT just print a question; you MUST call this tool.
+
 Self-Correction: If you forget the 'action' parameter, I will try to infer it based on context (defaulting to 'update').`,
     schema: z.object({
         action: z.enum(['create', 'update', 'complete', 'fail', 'ask_user']).optional().describe('The action to perform. Defaults to "update" if omitted but steps are provided.'),

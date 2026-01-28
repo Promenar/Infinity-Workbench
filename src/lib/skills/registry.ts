@@ -22,6 +22,13 @@ class SkillRegistry {
         // Register Rendering Skills
         this.register(RenderChartSkill);
         this.register(RenderMermaidSkill);
+
+        // Register Meta Skill
+        const { ToolManagerSkill } = require('./definitions/meta');
+        this.register(ToolManagerSkill);
+
+        // Load Custom Skills
+        this.loadUserSkills().catch(e => console.error(e));
     }
 
     public static getInstance(): SkillRegistry {
@@ -45,6 +52,47 @@ class SkillRegistry {
     public getAllSkills(): Skill[] {
         return Array.from(this.skills.values());
     }
+
+    /**
+     * Load custom skills from FileSystem
+     */
+    public async loadUserSkills() {
+        try {
+            const { UserSkillsStorage } = await import('./storage');
+            const storedSkills = await UserSkillsStorage.loadSkills();
+
+            storedSkills.forEach(data => {
+                const skill = UserSkillsStorage.hydrateSkill(data);
+                // Force category
+                skill.category = (data.category as any) || 'user';
+                this.register(skill);
+            });
+            console.log(`[SkillRegistry] Loaded ${storedSkills.length} custom skills.`);
+        } catch (e) {
+            console.error('[SkillRegistry] Failed to load user skills:', e);
+        }
+    }
+
+    /**
+     * Reload (for ToolManager updates)
+     */
+    public async reloadUserSkills() {
+        await this.loadUserSkills();
+        // Since Map.set overwrites, we just re-register. 
+        // Deleted skills won't be removed from Map unless we clear or track them.
+        // For MVP, we might need to verify if we need to purge old 'user' skills first.
+
+        // Simple purge strategy:
+        const currentSkills = this.getAllSkills();
+        const userSkillIds = currentSkills.filter(s => s.category === 'user' || s.category === 'model').map(s => s.id);
+
+        // Remove all user skills from map
+        userSkillIds.forEach(id => this.skills.delete(id));
+
+        // Re-load
+        await this.loadUserSkills();
+    }
+
 
     /**
      * Get enabled skills based on user configuration.

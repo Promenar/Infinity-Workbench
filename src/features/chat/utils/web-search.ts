@@ -241,8 +241,17 @@ export async function fetchWebPageContent(url: string): Promise<string> {
     }
 
     return content;
-  } catch (err) {
-    console.error(`[WebSearch] Error fetching page content:`, err);
-    return `Error reading page content: ${err instanceof Error ? err.message : String(err)}`;
+  } catch (err: any) {
+    console.warn(`[WebSearch] Error fetching page content:`, err);
+
+    // Provide user-friendly messages for common HTTP errors
+    let errorMsg = err.message || String(err);
+    if (errorMsg.includes('451')) {
+      errorMsg = 'Failed to fetch page (Status 451: Unavailable For Legal Reasons). The website may be blocking automated access or is restricted in your region.';
+    } else if (errorMsg.includes('403')) {
+      errorMsg = 'Access Denied (Status 403). The website is blocking the request.';
+    }
+
+    return `Error reading page content: ${errorMsg}`;
   }
 }

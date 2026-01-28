@@ -121,6 +121,15 @@ export class BackupManager {
       keysToFetch.push('chat-storage', 'agent-storage');
     }
 
+    // 0. Explicitly backup user_skills.json if present (Part of Settings/Core)
+    if (options.includeSettings) {
+      const skillsFile = `${docDir}user_skills.json`;
+      const skillsContent = await this.safeReadFile(skillsFile);
+      if (skillsContent) {
+        physicalFiles['user_skills.json'] = skillsContent;
+      }
+    }
+
     const stores = await AsyncStorage.multiGet(keysToFetch);
     stores.forEach(([key, value]) => {
       // Filter out secrets if strictly disabled (double check)

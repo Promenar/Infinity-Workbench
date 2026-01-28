@@ -341,6 +341,8 @@ export const translations = {
       agentSkills: {
         title: '智能体技能',
         subtitle: '配置活跃工具与扩展能力',
+        preset: '预设技能',
+        user: '自定义',
       },
       dimensionAnalysis: '维度分析',
       docVectors: '文档向量',
@@ -891,8 +893,10 @@ export const translations = {
         render_echarts: 'ECharts 图表渲染',
         render_mermaid: 'Mermaid 流程图',
         query_financial_data: '查询金融数据 (Alpha Vantage)',
+        tool_manager: '工具构建器 (Meta-Tool)',
       },
       descriptions: {
+        tool_manager: '允许模型动态创建、测试并注册新工具。当用户需要执行当前没有工具支持的任务时使用此功能。',
         query_vector_db: '在用户的个人知识库和记忆中搜索相关信息。当用户询问有关其文档、历史记录或保存的上下文的特定问题时使用此项。',
         save_core_memory: '保存有关用户的重要事实、偏好或上下文以供长期记忆。仅当用户明确要求记住某些内容或需要跨会话保留的关键信息时才使用。',
         search_internet: '在互联网上搜索最新信息、新闻或知识库中不存在的特定数据。',
@@ -1260,6 +1264,8 @@ export const translations = {
       agentSkills: {
         title: 'Agent Skills',
         subtitle: 'Configure active tools and capabilities',
+        preset: 'Built-in',
+        user: 'Custom',
       },
       dimensionAnalysis: 'Dimension Analysis',
       docVectors: 'Doc Vectors',
@@ -1805,8 +1811,10 @@ export const translations = {
         render_echarts: 'ECharts Renderer',
         render_mermaid: 'Mermaid Renderer',
         query_financial_data: 'Query Financial Data (Alpha Vantage)',
+        tool_manager: 'Tool Builder (Meta-Tool)',
       },
       descriptions: {
+        tool_manager: 'Allows the model to dynamically create, test, and register new tools. Use this when the user needs to perform a task not supported by existing tools.',
         query_vector_db: 'Search for relevant information in the user\'s personal knowledge base and memories. Use this when the user asks specific questions about their documents, history, or saved context.',
         save_core_memory: 'Save important facts, preferences, or context about the user for long-term memory. ONLY use this when the user explicitly asks to remember something or for critical information that should persist across sessions.',
         search_internet: 'Search the live internet for up-to-date information, news, or specific data not present in the knowledge base.',

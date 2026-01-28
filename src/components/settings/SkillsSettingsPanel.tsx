@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, Text, TextInput } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { Typography } from '../ui/Typography';
 import { Switch } from '../ui/Switch';
 import { skillRegistry } from '../../lib/skills/registry';
@@ -12,6 +13,7 @@ import * as Haptics from '../../lib/haptics';
 import { SettingsSection } from '../../features/settings/components/SettingsSection';
 import { SettingsItem } from '../../features/settings/components/SettingsItem';
 import { Colors } from '../../theme/colors';
+import { FloatingCodeEditorModal } from '../ui/FloatingCodeEditorModal';
 
 export const SkillsSettingsPanel: React.FC = () => {
     const { t } = useI18n();
@@ -35,6 +37,18 @@ export const SkillsSettingsPanel: React.FC = () => {
     const localCountRef = React.useRef(maxLoopCount || 20);
     const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
     const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+    // Tab Animation Local State
+    const [containerWidth, setContainerWidth] = useState(0);
+    const tabProgress = useSharedValue(0);
+
+    const animatedIndicatorStyle = useAnimatedStyle(() => {
+        const halfWidth = containerWidth ? (containerWidth - 8) / 2 : 0;
+        return {
+            transform: [{ translateX: tabProgress.value * halfWidth }],
+            width: halfWidth,
+        };
+    });
 
     // Sync from store only when store updates externally
     useEffect(() => {
@@ -100,6 +114,118 @@ export const SkillsSettingsPanel: React.FC = () => {
 
     // Use localCount for logic instead of store value
     const isInfinite = localCount >= 100;
+
+    const [activeTab, setActiveTab] = useState<'preset' | 'user'>('preset');
+
+    useEffect(() => {
+        tabProgress.value = withTiming(activeTab === 'preset' ? 0 : 1, {
+            duration: 300,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        });
+    }, [activeTab]);
+    const [editorVisible, setEditorVisible] = useState(false);
+    const [configModalVisible, setConfigModalVisible] = useState(false);
+    const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
+    const [editingCode, setEditingCode] = useState('');
+    const [editingConfig, setEditingConfig] = useState('');
+
+    // Dynamic refresh
+    const refreshSkills = async () => {
+        const allSkills = skillRegistry.getAllSkills();
+        setSkills([...allSkills]); // Force new reference
+    };
+
+    // Subscribe to registry in some way? Or just poll/refresh on focus?
+    // For now, refresh on mount and deletions.
+
+    const filteredSkills = skills.filter(s => {
+        if (activeTab === 'preset') return !s.category || s.category === 'preset';
+        return s.category === 'user' || s.category === 'model';
+    });
+
+    const handleDeleteSkill = async (id: string) => {
+        const { UserSkillsStorage } = require('../../lib/skills/storage');
+        const { skillRegistry } = require('../../lib/skills/registry');
+        await UserSkillsStorage.deleteSkill(id);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await skillRegistry.reloadUserSkills();
+        refreshSkills();
+    };
+
+    const handleEditSkill = async (id: string) => {
+        const { UserSkillsStorage } = require('../../lib/skills/storage');
+        const storedSkills = await UserSkillsStorage.loadSkills();
+        const target = storedSkills.find((s: any) => s.id === id);
+        if (target) {
+            setEditingSkillId(id);
+            setEditingCode(target.code);
+            setEditorVisible(true);
+        }
+    };
+
+    const handleConfigureSkill = async (id: string) => {
+        const { UserSkillsStorage } = require('../../lib/skills/storage');
+        const storedSkills = await UserSkillsStorage.loadSkills();
+        const target = storedSkills.find((s: any) => s.id === id);
+        if (target) {
+            setEditingSkillId(id);
+            setEditingConfig(target.configJson || '{\n  "apiKey": ""\n}');
+            setConfigModalVisible(true);
+        }
+    };
+
+    const handleSaveCode = async (newCode: string) => {
+        if (!editingSkillId) return;
+        const { UserSkillsStorage } = require('../../lib/skills/storage');
+        const { skillRegistry } = require('../../lib/skills/registry');
+
+        const storedSkills = await UserSkillsStorage.loadSkills();
+        const target = storedSkills.find((s: any) => s.id === editingSkillId);
+
+        if (target) {
+            await UserSkillsStorage.saveSkill({
+                ...target,
+                code: newCode
+            });
+            await skillRegistry.reloadUserSkills();
+            refreshSkills();
+            setEditorVisible(false);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+    };
+
+    const handleSaveConfig = async (newConfig: string) => {
+        if (!editingSkillId) return;
+
+        // Validate JSON
+        try {
+            JSON.parse(newConfig);
+        } catch (e) {
+            alert('Invalid JSON');
+            // In a better world we use a Toast or inline error. 
+            // For now, let's just let the modal stay open or handle it? 
+            // The Modal implementation might not handle validation blockage.
+            // But let's assume the user knows JSON.
+            // Actually, let's just save. The storage safely ignores bad JSON on load.
+        }
+
+        const { UserSkillsStorage } = require('../../lib/skills/storage');
+        const { skillRegistry } = require('../../lib/skills/registry');
+
+        const storedSkills = await UserSkillsStorage.loadSkills();
+        const target = storedSkills.find((s: any) => s.id === editingSkillId);
+
+        if (target) {
+            await UserSkillsStorage.saveSkill({
+                ...target,
+                configJson: newConfig
+            });
+            await skillRegistry.reloadUserSkills();
+            refreshSkills();
+            setConfigModalVisible(false);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+    };
 
     return (
         <View className="flex-1">
@@ -177,12 +303,90 @@ export const SkillsSettingsPanel: React.FC = () => {
 
             {/* Individual Skills */}
             <SettingsSection title={t.settings.agentSkills.title}>
-                {skills.map((skill, index) => {
-                    const isEnabled = skillsConfig[skill.id] !== false;
-                    const isLast = index === skills.length - 1;
+                {/* Segmented Control Tab */}
+                {/* Segmented Control Tab (Reanimated) */}
+                <View
+                    className="mx-4 mb-4"
+                    onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+                    style={{
+                        flexDirection: 'row',
+                        backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#f3f4f6', // zinc-900/gray-100 with opacity
+                        padding: 4,
+                        borderRadius: 16,
+                        position: 'relative',
+                        height: 48,
+                    }}
+                >
+                    {/* Animated Indicator */}
+                    <Animated.View
+                        style={[
+                            {
+                                position: 'absolute',
+                                top: 4,
+                                left: 4,
+                                bottom: 4,
+                                borderRadius: 12,
+                                backgroundColor: isDark ? 'rgba(63, 63, 70, 0.8)' : '#ffffff', // zinc-700 / white
+                                shadowColor: '#000',
+                                shadowOffset: { width: 0, height: 1 },
+                                shadowOpacity: isDark ? 0 : 0.05,
+                                shadowRadius: 2,
+                            },
+                            animatedIndicatorStyle
+                        ]}
+                    />
 
-                    const localizedName = t.skills.names[skill.id as keyof typeof t.skills.names] || skill.name;
-                    const localizedDesc = t.skills.descriptions[skill.id as keyof typeof t.skills.descriptions] || skill.description;
+                    <TouchableOpacity
+                        onPress={() => {
+                            setActiveTab('preset');
+                            Haptics.selectionAsync();
+                        }}
+                        style={{
+                            flex: 1,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 1,
+                        }}
+                    >
+                        <Text style={{
+                            fontSize: 14,
+                            fontWeight: activeTab === 'preset' ? '700' : '500',
+                            color: activeTab === 'preset' ? (isDark ? '#fff' : '#000') : (isDark ? '#a1a1aa' : '#6b7280'), // zinc-400 / gray-500
+                        }}>
+                            {t.settings.agentSkills.preset || '预设技能'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={() => {
+                            setActiveTab('user');
+                            Haptics.selectionAsync();
+                        }}
+                        style={{
+                            flex: 1,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 1,
+                        }}
+                    >
+                        <Text style={{
+                            fontSize: 14,
+                            fontWeight: activeTab === 'user' ? '700' : '500',
+                            color: activeTab === 'user' ? (isDark ? '#fff' : '#000') : (isDark ? '#a1a1aa' : '#6b7280'),
+                        }}>
+                            {t.settings.agentSkills.user || '自定义'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {filteredSkills.map((skill, index) => {
+                    const isEnabled = skillsConfig[skill.id] !== false;
+                    const isLast = index === filteredSkills.length - 1;
+                    const isHighRisk = skill.isHighRisk;
+                    const isUser = skill.category === 'user' || skill.category === 'model';
+
+                    const localizedName = (!isUser && t.skills.names[skill.id as keyof typeof t.skills.names]) || skill.name;
+                    const localizedDesc = (!isUser && t.skills.descriptions[skill.id as keyof typeof t.skills.descriptions]) || skill.description;
 
                     return (
                         <View
@@ -202,6 +406,8 @@ export const SkillsSettingsPanel: React.FC = () => {
                                         }}>
                                             {localizedName}
                                         </Text>
+
+                                        {/* Tags */}
                                         <View className="bg-gray-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
                                             <Text style={{
                                                 fontSize: 9,
@@ -211,6 +417,12 @@ export const SkillsSettingsPanel: React.FC = () => {
                                                 {skill.id}
                                             </Text>
                                         </View>
+
+                                        {isHighRisk && (
+                                            <View className="bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded">
+                                                <Text style={{ fontSize: 9, color: isDark ? '#f87171' : '#dc2626' }}>HIGH RISK</Text>
+                                            </View>
+                                        )}
                                     </View>
                                 </View>
                                 <Switch
@@ -222,68 +434,65 @@ export const SkillsSettingsPanel: React.FC = () => {
                             <Text style={{
                                 fontSize: 10,
                                 color: themeColors.textSecondary,
-                                lineHeight: 14
+                                lineHeight: 14,
+                                marginBottom: 4
                             }}>
                                 {localizedDesc}
                             </Text>
 
-                            {/* 💸 Alpha Vantage API Key Configuration */}
-                            {skill.id === 'query_financial_data' && isEnabled && (
-                                <View className="mt-3 bg-gray-50 dark:bg-zinc-800/50 p-3 rounded-lg border border-gray-100 dark:border-zinc-700/50">
-                                    <View className="flex-row items-center justify-between mb-2">
-                                        <Text style={{
-                                            fontSize: 11,
-                                            fontWeight: '600',
-                                            color: themeColors.textSecondary
-                                        }}>
-                                            API Configuration
-                                        </Text>
-                                        <View className="bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
-                                            <Text style={{ fontSize: 9, color: isDark ? '#60a5fa' : '#2563eb' }}>
-                                                Required
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <View className="flex-row items-center gap-2">
-                                        <TextInput
-                                            value={alphaVantageApiKey || ''}
-                                            onChangeText={setAlphaVantageApiKey}
-                                            placeholder="Enter Alpha Vantage API Key"
-                                            placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
-                                            style={{
-                                                flex: 1,
-                                                height: 36,
-                                                backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#fff',
-                                                borderRadius: 8,
-                                                paddingHorizontal: 10,
-                                                fontSize: 12,
-                                                color: themeColors.textPrimary,
-                                                borderWidth: 1,
-                                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb'
-                                            }}
-                                            autoCapitalize="none"
-                                            autoCorrect={false}
-                                        />
-                                    </View>
-                                    <Text style={{
-                                        marginTop: 6,
-                                        fontSize: 10,
-                                        color: themeColors.textTertiary
-                                    }}>
-                                        Get a free key from: https://www.alphavantage.co/support/#api-key
-                                    </Text>
+                            {/* User Skill Actions */}
+                            {isUser && (
+                                <View className="flex-row gap-3 mt-2">
+                                    <TouchableOpacity
+                                        onPress={() => handleEditSkill(skill.id)}
+                                        className="bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-md"
+                                    >
+                                        <Text className="text-xs font-semibold text-blue-600 dark:text-blue-400">编辑代码</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => handleConfigureSkill(skill.id)}
+                                        className="bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-md"
+                                    >
+                                        <Text className="text-xs font-semibold text-purple-600 dark:text-purple-400">配置参数</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => handleDeleteSkill(skill.id)}
+                                        className="bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-md"
+                                    >
+                                        <Text className="text-xs font-semibold text-red-600 dark:text-red-400">删除</Text>
+                                    </TouchableOpacity>
                                 </View>
                             )}
                         </View>
                     );
                 })}
 
-                {skills.length === 0 && (
+                {filteredSkills.length === 0 && (
                     <View className="items-center py-10">
-                        <Typography color="secondary">No skills registered.</Typography>
+                        <Typography color="secondary">当前分类下暂无技能。</Typography>
                     </View>
                 )}
             </SettingsSection>
+
+            {/* Code Editor Modal */}
+            <FloatingCodeEditorModal
+                visible={editorVisible}
+                initialContent={editingCode}
+                title={`编辑: ${editingSkillId}`}
+                onClose={() => setEditorVisible(false)}
+                onSave={handleSaveCode}
+                warningMessage="修改工具代码可能导致功能异常。请确保返回有效的结果对象。"
+            />
+
+            {/* Config Editor Modal */}
+            <FloatingCodeEditorModal
+                visible={configModalVisible}
+                initialContent={editingConfig}
+                title={`配置: ${editingSkillId}`}
+                onClose={() => setConfigModalVisible(false)}
+                onSave={handleSaveConfig}
+                warningMessage="请填入 JSON 格式的默认参数（例如 API Key）。这些参数将在运行时自动合并。"
+            />
         </View>
     );
 };
