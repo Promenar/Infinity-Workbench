@@ -15,11 +15,8 @@ interface EChartsRendererProps {
  */
 export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => {
     const { isDark } = useTheme();
-    const [height, setHeight] = useState(350); // 默认高度
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    // 解析 JSON (每次渲染重新计算，不使用 state 以避免流式传输时的中间态锁定)
-    let chartOption = null;
-    let parseError = false;
+    const [title, setTitle] = useState("ECharts Visualization");
+    const [chartType, setChartType] = useState<string>("bar");
 
     try {
         const cleanContent = content
@@ -33,6 +30,18 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
             // 注意：这是运行在 RN JS 线程，相对安全
             const parseLoose = (str: string) => new Function('return ' + str)();
             chartOption = parseLoose(cleanContent);
+
+            // Extract Metadata for Card
+            if (chartOption) {
+                if (chartOption.title?.text) setTitle(chartOption.title.text);
+
+                // Infer type
+                if (chartOption.series && chartOption.series[0]?.type) {
+                    setChartType(chartOption.series[0].type);
+                } else if (chartOption.series && chartOption.series.length > 0) {
+                    setChartType(chartOption.series[0].type || 'mixed');
+                }
+            }
         }
     } catch (e) {
         parseError = true;
@@ -92,40 +101,62 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         );
     }
 
+    // 🎨 Card UI Render (Lightweight Placeholder)
+    const getIcon = () => {
+        // Simple mapping, can be expanded
+        return <Maximize2 size={24} color={isDark ? '#a1a1aa' : '#71717a'} />;
+    };
+
     return (
-        <View style={[styles.container, { borderColor: isDark ? '#3f3f46' : '#e4e4e7' }]}>
-            {/* 标题栏 */}
-            <View style={[styles.header, { borderBottomColor: isDark ? '#3f3f46' : '#e4e4e7' }]}>
-                <Text style={[styles.title, { color: isDark ? '#a1a1aa' : '#71717a' }]}>ECharts 数据图表</Text>
-                <TouchableOpacity onPress={() => {
+        <View style={{ width: '100%', alignItems: 'flex-start', marginVertical: 8 }}>
+            <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
                     Haptics.selectionAsync();
                     setIsFullscreen(true);
-                }}>
-                    <Maximize2 size={16} color={isDark ? '#a1a1aa' : '#71717a'} />
-                </TouchableOpacity>
-            </View>
+                }}
+                style={[styles.card, {
+                    backgroundColor: isDark ? '#27272a' : '#fff',
+                    borderColor: isDark ? '#3f3f46' : '#e4e4e7'
+                }]}
+            >
+                {/* Left: Icon/Preview Placeholder */}
+                <View style={[styles.iconBox, { backgroundColor: isDark ? '#3f3f46' : '#f4f4f5' }]}>
+                    {getIcon()}
+                </View>
 
-            <WebView
-                source={{ html: generateHtml(false) }}
-                style={{ height, backgroundColor: 'transparent' }}
-                scrollEnabled={false} // 禁止 WebView 自身滚动，专注于手势交互
-                javaScriptEnabled={true}
-                androidLayerType="software"
-            />
+                {/* Right: Info */}
+                <View style={styles.infoBox}>
+                    <Text style={[styles.cardTitle, { color: isDark ? '#fff' : '#18181b' }]} numberOfLines={1}>
+                        {title}
+                    </Text>
+                    <Text style={[styles.cardSubtitle, { color: isDark ? '#a1a1aa' : '#71717a' }]}>
+                        交互式 {chartType} 图表 • 点击查看详情
+                    </Text>
+                </View>
 
-            {/* 全屏模态框 */}
+                {/* Arrow */}
+                <Maximize2 size={16} color={isDark ? '#52525b' : '#d4d4d8'} style={{ marginLeft: 'auto', marginRight: 4 }} />
+            </TouchableOpacity>
+
+            {/* 全屏模态框 (Only mount heavy WebView here) */}
             <Modal visible={isFullscreen} animationType="slide" onRequestClose={() => setIsFullscreen(false)}>
                 <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}>
-                    <TouchableOpacity
-                        style={[styles.closeButton, { backgroundColor: isDark ? '#27272a' : '#f4f4f5' }]}
-                        onPress={() => setIsFullscreen(false)}
-                    >
-                        <X size={24} color={isDark ? '#fff' : '#000'} />
-                    </TouchableOpacity>
+                    <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#27272a' : '#e4e4e7' }]}>
+                        <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#000' }]}>{title}</Text>
+                        <TouchableOpacity
+                            style={[styles.closeButton, { backgroundColor: isDark ? '#27272a' : '#f4f4f5' }]}
+                            onPress={() => setIsFullscreen(false)}
+                        >
+                            <X size={20} color={isDark ? '#fff' : '#000'} />
+                        </TouchableOpacity>
+                    </View>
+
                     <WebView
                         source={{ html: generateHtml(true) }}
                         style={{ flex: 1, backgroundColor: 'transparent' }}
                         javaScriptEnabled={true}
+                        androidLayerType="software"
                     />
                 </View>
             </Modal>
@@ -135,29 +166,58 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
 
 const styles = StyleSheet.create({
     container: {
-        marginVertical: 12,
-        borderWidth: 1,
-        borderRadius: 12,
-        overflow: 'hidden',
         width: '100%',
     },
-    header: {
+    card: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
         padding: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderRadius: 12,
+        borderWidth: 1,
+        width: '100%', // Ensure typical message width logic applies or full width
+        maxWidth: 320, // Limit width to look like a card attachment
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 2,
     },
-    title: {
+    iconBox: {
+        width: 48,
+        height: 48,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    infoBox: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    cardTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    cardSubtitle: {
         fontSize: 12,
+    },
+    modalHeader: {
+        height: 60,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        paddingHorizontal: 16,
+    },
+    modalTitle: {
+        fontSize: 16,
         fontWeight: '600',
     },
     closeButton: {
         position: 'absolute',
-        top: 40,
-        right: 20,
-        zIndex: 10,
-        padding: 10,
+        right: 16,
+        padding: 8,
         borderRadius: 20,
     },
     errorContainer: {
@@ -165,6 +225,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
+        borderRadius: 12,
+        borderWidth: 1,
     },
     errorText: {
         fontSize: 14,
