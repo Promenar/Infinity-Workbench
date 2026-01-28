@@ -1953,6 +1953,31 @@ export const useChatStore = create<ChatState>()(
                 //  Proceed to Execute
                 await get().executeTools(sessionId, toolCalls, currentAssistantMsgId);
 
+                // 🚨 逻辑修复：如果工具执行导致会话暂停（如 ask_user），立即中断循环
+                // 防止模型针对"Task Paused"结果生成多余的回复
+                if (get().getSession(sessionId)?.loopStatus === 'paused') {
+                  console.log('[AgentLoop] Loop paused by tool execution (Auto Mode)');
+
+                  // 确保工具调用的记录已保存
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    accumulatedContent,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    turnThoughtSignature || targetMsg.thought_signature,
+                    undefined,
+                    toolCalls,
+                    undefined,
+                    undefined
+                  );
+                  break;
+                }
+
                 // 🔑 时序修复：先保存 tool_calls 到 Session，再重新拼装历史
                 // 这样拼装时就能获取到完整的数据
                 get().updateMessageContent(

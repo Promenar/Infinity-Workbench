@@ -49,6 +49,9 @@ interface SettingsState {
   setExecutionMode: (mode: 'auto' | 'semi' | 'manual') => void;
   skillsConfig: Record<string, boolean>; // skillId -> enabled
   setSkillEnabled: (skillId: string, enabled: boolean) => void;
+  // Alpha Vantage API Key
+  alphaVantageApiKey?: string;
+  setAlphaVantageApiKey: (key: string) => void;
 
   // Local Models
   localModelsEnabled: boolean;
@@ -181,6 +184,9 @@ export const useSettingsStore = create<SettingsState>()(
           skillsConfig: { ...state.skillsConfig, [skillId]: enabled },
         })),
 
+      alphaVantageApiKey: undefined,
+      setAlphaVantageApiKey: (key) => set({ alphaVantageApiKey: key }),
+
       localModelsEnabled: false,
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
 
@@ -208,6 +214,7 @@ export const useSettingsStore = create<SettingsState>()(
         maxLoopCount: state.maxLoopCount,
         executionMode: state.executionMode,
         skillsConfig: state.skillsConfig,
+        alphaVantageApiKey: state.alphaVantageApiKey,
         localModelsEnabled: state.localModelsEnabled,
         loggingEnabled: state.loggingEnabled,
         hasLaunched: state.hasLaunched,

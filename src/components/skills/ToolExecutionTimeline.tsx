@@ -507,9 +507,11 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
         } else {
             // 生成结束或处于非生成状态时，如果已有步骤，则将其闭合
             if (stepsCount > 0) {
-                // 如果是刚结束生成（从 true 变 false），则延迟闭合以提供视觉缓冲
-                // 如果是历史消息加载，则保持初始折叠
-                setIsCollapsed(true);
+                // ⏳ DEBOUNCE: 延迟闭合以防止状态闪烁导致的误折叠
+                const timer = setTimeout(() => {
+                    setIsCollapsed(true);
+                }, 1000); // 1秒缓冲期，确保真正结束后再折叠
+                return () => clearTimeout(timer);
             }
         }
     }, [isMessageGenerating, stepsCount > 0, hasManuallyToggled]);

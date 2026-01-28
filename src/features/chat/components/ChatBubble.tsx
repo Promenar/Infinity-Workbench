@@ -117,6 +117,7 @@ interface ChatBubbleProps {
   sessionId: string;
   onLayout?: (event: any) => void;
   isLastAssistantMessage?: boolean; // ✅ 新增：是否是最新的 AI 回复
+  globalPendingIntervention?: string; // ✅ 新增：Fallback pending intervention text
 }
 
 // SVGErrorBoundary removed as we use WebView now
@@ -528,6 +529,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   sessionId,
   onLayout, // ✅ 新增：传递布局回调
   isLastAssistantMessage, // ✅ 新增：是否最新 AI 回复
+  globalPendingIntervention, // ✅ 新增：Fallback pending intervention text
 }) => {
   const { t } = useI18n();
 
@@ -1118,8 +1120,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           sessionId={sessionId}
           task={message.planningTask}
           // ✅ UI Optimization: Pass context for history & intervention handling
+          // Priority: Prop > Store
           isLatest={isLastAssistantMessage}
-          pendingIntervention={isLastAssistantMessage ? sessionData?.pendingIntervention : undefined}
+          pendingIntervention={isLastAssistantMessage ? (globalPendingIntervention || sessionData?.pendingIntervention) : undefined}
           containerStyle={{
             marginLeft: -15,
             marginRight: -12, // Exact match with Timeline (-12)
@@ -1397,6 +1400,9 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
   if (prev.message.planningTask !== next.message.planningTask) return false;
   // @ts-ignore
   if (prev.message.toolResults !== next.message.toolResults) return false;
+
+  if (prev.isLastAssistantMessage !== next.isLastAssistantMessage) return false;
+  if (prev.globalPendingIntervention !== next.globalPendingIntervention) return false;
 
   return true;
 });

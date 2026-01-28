@@ -887,6 +887,10 @@ export const translations = {
         write_file: '写入文件',
         read_file: '读取文件',
         list_directory: '列出目录',
+        run_javascript: '代码解释器 (JS)',
+        render_echarts: 'ECharts 图表渲染',
+        render_mermaid: 'Mermaid 流程图',
+        query_financial_data: '查询金融数据 (Alpha Vantage)',
       },
       descriptions: {
         query_vector_db: '在用户的个人知识库和记忆中搜索相关信息。当用户询问有关其文档、历史记录或保存的上下文的特定问题时使用此项。',
@@ -899,6 +903,10 @@ export const translations = {
         write_file: '在本地存储中创建或覆写文本文件。用于保存笔记、代码或日志。文件路径相对于应用的沙箱根目录。',
         read_file: '读取本地文本文件的内容。用于检索之前保存的信息。',
         list_directory: '列出特定文件夹中的文件和子目录。用于探索文件结构。',
+        run_javascript: '执行 JavaScript 代码进行计算、数据处理或文本格式化。适用于 LLM 不擅长的精确数学或复杂数据转换。环境是沙箱化的：无 fetch/fs access。',
+        render_echarts: '渲染交互式 ECharts 可视化图表。用于展示数据（柱状图、折线图等）。',
+        render_mermaid: '渲染流程图、时序图或其他 Mermaid 可视化。用于展示逻辑流、数据结构或过程。',
+        query_financial_data: '查询美股 (Stock)、外汇 (Forex) 及数字货币实时数据。使用 Alpha Vantage API (需配置 Key)。',
       },
     },
     ragDebug: {
@@ -1793,6 +1801,10 @@ export const translations = {
         write_file: 'Write File',
         read_file: 'Read File',
         list_directory: 'List Directory',
+        run_javascript: 'Code Interpreter (JS)',
+        render_echarts: 'ECharts Renderer',
+        render_mermaid: 'Mermaid Renderer',
+        query_financial_data: 'Query Financial Data (Alpha Vantage)',
       },
       descriptions: {
         query_vector_db: 'Search for relevant information in the user\'s personal knowledge base and memories. Use this when the user asks specific questions about their documents, history, or saved context.',
@@ -1805,6 +1817,10 @@ export const translations = {
         write_file: 'Create or overwrite a text file in the local storage. Use this to save notes, code, or logs. The file path is relative to the app\'s sandbox root.',
         read_file: 'Read the content of a local text file. Use this to retrieve previously saved information.',
         list_directory: 'List files and subdirectories in a specific folder. Use this to explore the file structure.',
+        run_javascript: 'Execute JavaScript code to perform calculations, data processing, or text formatting. Use this when you need accurate math (which LLMs are bad at) or complex data transformation. The environment is sandboxed: no fetch/fs/require access.',
+        render_echarts: 'Render an interactive ECharts visualization. Use this tool whenever you need to visualize data (bar charts, line charts, pie charts, etc.).',
+        render_mermaid: 'Render a flowchart, sequence diagram, or other Mermaid visualization. Use this tool whenever you need to visualize logic flows, data structures, or processes.',
+        query_financial_data: 'Query real-time stock prices (US), forex exchange rates, and precious metals data using the Alpha Vantage API.',
       },
     },
     ragDebug: {

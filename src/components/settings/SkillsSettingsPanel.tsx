@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, Text } from 'react-native';
+import { View, TouchableOpacity, Text, TextInput } from 'react-native';
 import { Typography } from '../ui/Typography';
 import { Switch } from '../ui/Switch';
 import { skillRegistry } from '../../lib/skills/registry';
@@ -24,7 +24,9 @@ export const SkillsSettingsPanel: React.FC = () => {
         maxLoopCount,
         setMaxLoopCount,
         executionMode,
-        setExecutionMode
+        setExecutionMode,
+        alphaVantageApiKey, // 🔑
+        setAlphaVantageApiKey // 🔑
     } = useSettingsStore();
 
     // ⚡ Local State for Performance (Debounced Persistence)
@@ -224,6 +226,54 @@ export const SkillsSettingsPanel: React.FC = () => {
                             }}>
                                 {localizedDesc}
                             </Text>
+
+                            {/* 💸 Alpha Vantage API Key Configuration */}
+                            {skill.id === 'query_financial_data' && isEnabled && (
+                                <View className="mt-3 bg-gray-50 dark:bg-zinc-800/50 p-3 rounded-lg border border-gray-100 dark:border-zinc-700/50">
+                                    <View className="flex-row items-center justify-between mb-2">
+                                        <Text style={{
+                                            fontSize: 11,
+                                            fontWeight: '600',
+                                            color: themeColors.textSecondary
+                                        }}>
+                                            API Configuration
+                                        </Text>
+                                        <View className="bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+                                            <Text style={{ fontSize: 9, color: isDark ? '#60a5fa' : '#2563eb' }}>
+                                                Required
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <View className="flex-row items-center gap-2">
+                                        <TextInput
+                                            value={alphaVantageApiKey || ''}
+                                            onChangeText={setAlphaVantageApiKey}
+                                            placeholder="Enter Alpha Vantage API Key"
+                                            placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
+                                            style={{
+                                                flex: 1,
+                                                height: 36,
+                                                backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#fff',
+                                                borderRadius: 8,
+                                                paddingHorizontal: 10,
+                                                fontSize: 12,
+                                                color: themeColors.textPrimary,
+                                                borderWidth: 1,
+                                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb'
+                                            }}
+                                            autoCapitalize="none"
+                                            autoCorrect={false}
+                                        />
+                                    </View>
+                                    <Text style={{
+                                        marginTop: 6,
+                                        fontSize: 10,
+                                        color: themeColors.textTertiary
+                                    }}>
+                                        Get a free key from: https://www.alphavantage.co/support/#api-key
+                                    </Text>
+                                </View>
+                            )}
                         </View>
                     );
                 })}

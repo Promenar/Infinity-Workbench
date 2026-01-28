@@ -167,6 +167,7 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
             : isDark
               ? 'rgba(255, 255, 255, 0.05)'
               : 'rgba(0, 0, 0, 0.03)',
+          minHeight: 76, // Unified Height Baseline
         }}
       >
         <View

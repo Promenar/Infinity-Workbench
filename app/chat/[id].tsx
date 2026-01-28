@@ -430,114 +430,127 @@ export default function ChatDetailScreen() {
       />
 
       <Animated.View style={[{ flex: 1 }, listContainerStyle]}>
-        <AnimatedFlashList
-          ref={listRef}
-          inverted={false}
-          data={messages}
-          renderItem={({ item, index }: { item: any; index: number }) => (
-            <ChatBubble
-              message={item}
-              agentId={agent.id}
-              agentAvatar={agent.avatar}
-              agentColor={agentColor}
-              agentName={agent.name}
-              sessionId={id}
-              isGenerating={loading && index === messages.length - 1}
-              onDelete={() => handleDeleteMessage(item.id)}
-              onExtractGraph={() => handleExtractGraph(item)} // ✅ Manual Extract
-              onVectorize={() => handleManualVectorize(item.id)} // ✅ Manual Vectorize
-              onSummarize={handleManualSummarize} // ✅ Manual Summarize
-              onResend={
-                item.role === 'user'
-                  ? () => {
-                    // ✅ 进入编辑模式：复制消息到输入框
-                    setTimeout(() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      setEditingMessage({
-                        id: item.id,
-                        content: item.content,
-                        images: item.images,
-                      });
-                    }, 10);
+        {(() => {
+          // ✅ FIX: Calculate latest assistant message index strictly (ignoring tool messages)
+          // Find the last index where role is 'assistant'
+          let lastAssistantIdx = -1;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === 'assistant') {
+              lastAssistantIdx = i;
+              break;
+            }
+          }
+
+          return (
+            <AnimatedFlashList
+              ref={listRef}
+              inverted={false}
+              data={messages}
+              renderItem={({ item, index }: { item: any; index: number }) => (
+                <ChatBubble
+                  message={item}
+                  agentId={agent.id}
+                  agentAvatar={agent.avatar}
+                  agentColor={agentColor}
+                  agentName={agent.name}
+                  sessionId={id}
+                  isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && index === lastAssistantIdx} // Use computed index
+                  onDelete={() => handleDeleteMessage(item.id)}
+                  onExtractGraph={() => handleExtractGraph(item)}
+                  onVectorize={() => handleManualVectorize(item.id)}
+                  onSummarize={handleManualSummarize}
+                  onResend={
+                    item.role === 'user'
+                      ? () => {
+                        setTimeout(() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          setEditingMessage({
+                            id: item.id,
+                            content: item.content,
+                            images: item.images,
+                          });
+                        }, 10);
+                      }
+                      : undefined
                   }
-                  : undefined
-              }
-              onRegenerate={
-                item.role === 'user'
-                  ? () => {
-                    // ✅ 用户消息的重新生成也进入编辑模式
-                    setTimeout(() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      setEditingMessage({
-                        id: item.id,
-                        content: item.content,
-                        images: item.images,
-                      });
-                    }, 10);
+                  onRegenerate={
+                    item.role === 'user'
+                      ? () => {
+                        setTimeout(() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          setEditingMessage({
+                            id: item.id,
+                            content: item.content,
+                            images: item.images,
+                          });
+                        }, 10);
+                      }
+                      : async () => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        await useChatStore.getState().regenerateMessage(id, item.id);
+                      }
                   }
-                  : async () => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    // ✅ Call regenerateMessage for AI messages (in-place regeneration)
-                    await useChatStore.getState().regenerateMessage(id, item.id);
-                  }
-              }
-              modelId={session?.modelId}
-              modelName={modelConfig?.name} // ✅ 新增：友好模型名称
-              isLastAssistantMessage={
-                item.role === 'assistant' && index === messages.length - 1
-              } // ✅ 新增：是否最新 AI 回复
-              onLayout={(event) => {
-                const { height } = event.nativeEvent.layout;
-                if (height > 0) {
-                  useChatStore.getState().updateMessageLayout(id, item.id, height);
+                  modelId={session?.modelId}
+                  modelName={modelConfig?.name}
+                  isLastAssistantMessage={index === lastAssistantIdx} // ✅ Correct logic
+                  globalPendingIntervention={session?.pendingIntervention}
+                  onLayout={(event) => {
+                    const { height } = event.nativeEvent.layout;
+                    if (height > 0) {
+                      useChatStore.getState().updateMessageLayout(id, item.id, height);
+                    }
+                  }}
+                />
+              )}
+
+              estimatedItemSize={400}
+              overrideItemLayout={(layout: { size?: number; span?: number }, item: Message) => {
+                if (item.layoutHeight) {
+                  layout.size = item.layoutHeight;
                 }
               }}
+              onEndReachedThreshold={0.5}
+              drawDistance={2000}
+              overflowSize={500}
+              removeClippedSubviews={Platform.OS === 'android'}
+              getItemType={(item: any) => item.role}
+              contentContainerStyle={{
+                paddingTop: insets.top + 64 + 12,
+                paddingBottom: insets.bottom + 80,
+              }}
+              onLayout={() => setIsListReady(true)}
+              onContentSizeChange={handleContentSizeChange}
+              onScroll={onScroll}
+              onMomentumScrollEnd={handleScrollEnd}
+              onScrollEndDrag={handleScrollEnd}
+              overScrollMode="never"
+              decelerationRate="normal"
+              scrollEventThrottle={16}
             />
-          )}
-          estimatedItemSize={400}
-          overrideItemLayout={(layout: { size?: number; span?: number }, item: Message) => {
-            if (item.layoutHeight) {
-              layout.size = item.layoutHeight;
-            }
-          }}
-          onEndReachedThreshold={0.5}
-          drawDistance={2000}
-          overflowSize={500}
-          removeClippedSubviews={Platform.OS === 'android'}
-          getItemType={(item: any) => item.role}
-          contentContainerStyle={{
-            paddingTop: insets.top + 64 + 12, // 🔑 固定内边距：Header(64) + 基础间距(12)。任务监测器将作为 Overlay 覆盖在此区域。
-            paddingBottom: insets.bottom + 80,
-          }}
-          onLayout={() => setIsListReady(true)}
-          onContentSizeChange={handleContentSizeChange}
-          onScroll={onScroll}
-          onMomentumScrollEnd={handleScrollEnd}
-          onScrollEndDrag={handleScrollEnd}
-          overScrollMode="never"
-          decelerationRate="normal"
-          scrollEventThrottle={16}
-        />
+          );
+        })()}
 
         {/* Loading Overlay */}
-        {isInitialLoad && (
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: isDark ? '#000' : '#fff',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 999,
-              opacity: 1,
-            }}
-          >
-            <ActivityIndicator size="large" color={agentColor} />
-          </View>
-        )}
+        {
+          isInitialLoad && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: isDark ? '#000' : '#fff',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 999,
+                opacity: 1,
+              }}
+            >
+              <ActivityIndicator size="large" color={agentColor} />
+            </View>
+          )
+        }
       </Animated.View>
 
       {/* Floating ChatInput */}
