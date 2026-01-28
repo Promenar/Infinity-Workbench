@@ -100,7 +100,8 @@ export function getTaskPlanningGuidance(family: ModelFamily): string {
         case 'deepseek':
         case 'qwen':
             return `## 任务管理规范
-对于复杂或多步骤任务，**必须**使用 \`manage_task\` 工具：
+对于**多步骤**复杂开发任务（如"重构整个Auth模块"、"创建新页面"），**必须**使用 \`manage_task\` 工具。
+⚠️ **注意**: 对于简单的单步问答（如"解释这段代码"、"画一个图表"），**不需要**使用任务管理器。
 
 1. **创建计划 (Create)**: \`manage_task({ action: 'create', title: '任务名', steps: [...] })\`
 2. **更新状态 (Update)**: 每完成一步，立即调用 \`manage_task({ action: 'update', ... })\`
@@ -219,6 +220,7 @@ export function getCapabilitiesGuidance(family: ModelFamily): string {
 
 ⚠️ **重要提示**:
 - 你 **不** 需要使用 \`run_javascript\` 或 Python 来生成图表图片。
+- **严禁** 调用代码解释器 (Code Interpreter) 来绘制 ECharts 或 Matplotlib 图表。
 - 你 **不** 需要生成 HTML 文件来展示图表。
 - **请直接输出** 相应的 Markdown 代码块，UI 会自动捕获并渲染交互式组件。`;
 
@@ -239,12 +241,16 @@ IMPORTANT:
     }
 }
 
-switch (family) {
-    case 'deepseek':
-    case 'qwen':
-    case 'moonshot':
-    case 'glm':
-        return `[输出格式要求]
+/**
+ * 获取输出格式指导
+ */
+export function getOutputFormatGuidance(family: ModelFamily): string {
+    switch (family) {
+        case 'deepseek':
+        case 'qwen':
+        case 'moonshot':
+        case 'glm':
+            return `[输出格式要求]
 - **思考过程**（如果需要）: 包裹在 \`<!-- THINKING_START -->\` 和 \`<!-- THINKING_END -->\` 之间
 - **最终回复**: 清晰、用户友好的自然语言，不包含思考标记
 - **任务总结**: 多步任务完成后，必须包含一段核心成果总结
@@ -255,10 +261,10 @@ switch (family) {
     - ✅ **允许** 在其他场景（如网页开发任务）中生成常规 HTML 代码。
   - **代码**: 支持语法高亮，请注明语言类型 (如 \`\`\`python)`;
 
-    case 'gemini':
-    case 'openai':
-    case 'anthropic':
-        return `[OUTPUT FORMAT]
+        case 'gemini':
+        case 'openai':
+        case 'anthropic':
+            return `[OUTPUT FORMAT]
 - Wrap reasoning in <!-- THINKING_START --> and <!-- THINKING_END -->
 - Final answers should be clean, user-facing text
 - After completing a multi-step task, output a summary:
@@ -270,9 +276,9 @@ switch (family) {
   - **Charts**: Use \`\`\`echarts code blocks (content must be a valid JSON option object)
   - **Code**: Syntax highlighting is supported, always specify language (e.g., \`\`\`javascript)`;
 
-    default:
-        return '';
-}
+        default:
+            return '';
+    }
 }
 
 /**

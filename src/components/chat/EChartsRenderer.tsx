@@ -28,7 +28,11 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
             .trim();
         // 只有当有内容时才尝试解析
         if (cleanContent) {
-            chartOption = JSON.parse(cleanContent);
+            // 使用 new Function 来支持宽松的 JSON (JS Object) 解析，
+            // 因为模型经常输出不带引号的键名 (如 { title: ... })
+            // 注意：这是运行在 RN JS 线程，相对安全
+            const parseLoose = (str: string) => new Function('return ' + str)();
+            chartOption = parseLoose(cleanContent);
         }
     } catch (e) {
         parseError = true;

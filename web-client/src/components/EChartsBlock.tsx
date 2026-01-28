@@ -13,7 +13,9 @@ export const EChartsBlock: React.FC<EChartsBlockProps> = ({ config }) => {
         try {
             // Clean code block markers
             const cleanConfig = config.replace(/^```echarts\n?/, '').replace(/```$/, '').trim();
-            const parsed = JSON.parse(cleanConfig);
+            // Use new Function to parse loose JSON (JS Object) as models often output unquoted keys
+            const parseLoose = (str: string) => new Function('return ' + str)();
+            const parsed = parseLoose(cleanConfig);
             return { option: parsed, error: null };
         } catch (e) {
             return { option: null, error: "Invalid JSON Configuration" };
