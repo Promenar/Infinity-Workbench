@@ -24,9 +24,10 @@ export const EChartsBlock: React.FC<EChartsBlockProps> = ({ config }) => {
 
     if (error) {
         return (
-            <div className="p-4 border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 rounded-lg flex items-center gap-2 text-red-600 dark:text-red-400">
-                <AlertCircle size={18} />
-                <span className="text-sm font-medium">{error}</span>
+            <div className="p-4 border border-blue-100 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                <span className="text-sm font-medium">
+                    {config.length > 20 ? "Generating chart..." : "..."}
+                </span>
             </div>
         );
     }

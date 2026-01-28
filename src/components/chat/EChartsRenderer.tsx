@@ -17,18 +17,21 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
     const { isDark } = useTheme();
     const [height, setHeight] = useState(350); // 默认高度
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    // 解析 JSON (每次渲染重新计算，不使用 state 以避免流式传输时的中间态锁定)
+    let chartOption = null;
+    let parseError = false;
 
-    // 尝试解析 JSON，如果失败则显示错误
-    let chartOption = {};
     try {
         const cleanContent = content
             .replace(/^```echarts\n?/, '')
             .replace(/```$/, '')
             .trim();
-        chartOption = JSON.parse(cleanContent);
+        // 只有当有内容时才尝试解析
+        if (cleanContent) {
+            chartOption = JSON.parse(cleanContent);
+        }
     } catch (e) {
-        if (!error) setError("Invalid JSON configuration");
+        parseError = true;
     }
 
     const generateHtml = (isFull = false) => `
@@ -73,12 +76,14 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
     </html>
   `;
 
-    if (error) {
+    // 如果解析失败或没有 Option，显示加载状态或错误
+    if (!chartOption || parseError) {
         return (
-            <View style={[styles.container, styles.errorContainer, { borderColor: isDark ? '#3f3f46' : '#e4e4e7' }]}>
-                <AlertCircle size={24} color="#ef4444" />
-                <Text style={[styles.errorText, { color: isDark ? '#ef4444' : '#ef4444' }]}>图表配置错误</Text>
-                <Text style={[styles.errorDetail, { color: isDark ? '#a1a1aa' : '#71717a' }]}>无法解析 JSON 数据</Text>
+            <View style={[styles.container, styles.errorContainer, { borderColor: isDark ? '#3f3f46' : '#e4e4e7', minHeight: 100 }]}>
+                {/* 在流式传输过程中，JSON 解析失败是正常的，显示加载指示器 */}
+                <Text style={[styles.errorDetail, { color: isDark ? '#a1a1aa' : '#71717a' }]}>
+                    {content.length > 20 ? "正在生成图表数据..." : "..."}
+                </Text>
             </View>
         );
     }
