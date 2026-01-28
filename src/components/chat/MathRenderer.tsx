@@ -303,8 +303,8 @@ interface LazySVGRendererProps {
  * 懒加载 SVG 渲染器
  * 默认隐藏，点击眼睛显示，支持全屏
  */
-export const LazySVGRenderer: React.FC<LazySVGRendererProps> = ({ svgContent, isDark }) => { // Removed isDark explicit prop usage for theme hook
-  const { isDark: themeIsDark } = useTheme(); // Use hook for consistency
+export const LazySVGRenderer: React.FC<LazySVGRendererProps> = ({ svgContent, isDark }) => {
+  const { isDark: themeIsDark, colors } = useTheme();
   const dark = isDark ?? themeIsDark;
 
   const [isVisible, setIsVisible] = useState(false);
@@ -342,10 +342,10 @@ export const LazySVGRenderer: React.FC<LazySVGRendererProps> = ({ svgContent, is
             }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
           >
-            <Eye size={16} color={isVisible ? '#6366f1' : (dark ? '#a1a1aa' : '#71717a')} />
+            <Eye size={16} color={isVisible ? (colors?.[500] || '#6366f1') : (dark ? '#a1a1aa' : '#71717a')} />
             <Text style={{
               fontSize: 12,
-              color: isVisible ? '#6366f1' : (dark ? '#a1a1aa' : '#71717a')
+              color: isVisible ? (colors?.[500] || '#6366f1') : (dark ? '#a1a1aa' : '#71717a')
             }}>
               {isVisible ? '隐藏' : '查看'}
             </Text>

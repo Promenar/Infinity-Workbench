@@ -39,3 +39,23 @@ DO NOT use code interpreters or write HTML files for charts.
         }
     }
 };
+
+export const RenderMermaidSkill: Skill = {
+    id: 'render_mermaid',
+    name: 'Mermaid Renderer',
+    description: `Render a flowchart, sequence diagram, or other Mermaid visualization.
+Use this tool whenever you need to visualize logic flows, data structures, or processes.
+DO NOT use code interpreters for diagrams.
+`,
+    schema: z.object({
+        code: z.string().describe('The Mermaid diagram source code.')
+    }),
+    execute: async (args: any, context: SkillContext): Promise<ToolResult> => {
+        const code = args.code || '';
+        return {
+            id: 'success',
+            content: `✅ Diagram rendered to UI successfully.\n\n\`\`\`mermaid\n${code}\n\`\`\``,
+            status: 'success'
+        };
+    }
+};

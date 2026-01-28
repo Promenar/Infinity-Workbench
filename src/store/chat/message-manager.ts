@@ -32,6 +32,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
         tool_calls?: ToolCall[];
         executionSteps?: ExecutionStep[];
         pendingApprovalToolIds?: string[];
+        toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[];
     }>();
 
     const throttleTimers = new Map<string, NodeJS.Timeout>();
@@ -137,6 +138,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                 planningTask: pending.taskState,
                 executionSteps: pending.executionSteps,
                 pendingApprovalToolIds: pending.pendingApprovalToolIds,
+                toolResults: pending.toolResults,
                 // Phase 4c: DeepSeek Consistency - save tool_calls if pending
                 ...(pending.tool_calls && { tool_calls: pending.tool_calls })
             });
@@ -162,6 +164,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                                         ...(pending.tool_calls && { tool_calls: pending.tool_calls }),
                                         ...(pending.executionSteps && { executionSteps: pending.executionSteps }),
                                         ...(pending.pendingApprovalToolIds && { pendingApprovalToolIds: pending.pendingApprovalToolIds }),
+                                        ...(pending.toolResults && { toolResults: pending.toolResults }),
                                         // 🔑 Phase 4c: Fix Potential Stale Overwrite of Tool Calls
                                         // If pending doesn't have tool_calls, do we keep existing ones? Yes, spread ...m does that.
                                         // But if we are about to overwrite msg with new tool_calls via another setter, we must ensure
@@ -223,7 +226,8 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             taskState?: TaskState,
             tool_calls?: ToolCall[],
             executionSteps?: ExecutionStep[],
-            pendingApprovalToolIds?: string[]
+            pendingApprovalToolIds?: string[],
+            toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[]
         ) => {
             const key = `${sessionId}:${messageId}`;
             const currentPending = pendingUpdates.get(key) || { content };
@@ -243,6 +247,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                 ...(tool_calls !== undefined && { tool_calls }),
                 ...(executionSteps !== undefined && { executionSteps }),
                 ...(pendingApprovalToolIds !== undefined && { pendingApprovalToolIds }),
+                ...(toolResults !== undefined && { toolResults }),
             });
 
             // If no timer active, schedule flush (Leading Edge + Trailing Edge logic)

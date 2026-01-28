@@ -178,7 +178,8 @@ export interface ChatState {
     planningTask?: TaskState, // ✅ Added for Message-Scoped Tasks
     tool_calls?: ToolCall[], // ✅ Added for DeepSeek Consistency
     executionSteps?: ExecutionStep[],
-    pendingApprovalToolIds?: string[]
+    pendingApprovalToolIds?: string[],
+    toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[] // 🆕 Added
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
@@ -1018,6 +1019,10 @@ export const useChatStore = create<ChatState>()(
               const targetMsg = latestSession?.messages.find(m => m.id === currentAssistantMsgId);
               if (!targetMsg) break;
 
+              // 🔄 关键修复：从最新消息状态同步累积内容变量。
+              // 这防止了背景任务（如图表注入）修改 Store 后，流式循环因持有旧内容副本而导致内容“回退”或截断。
+              accumulatedContent = targetMsg.content || '';
+
               let toolCalls: ToolCall[] | undefined;
               let turnThoughtSignature = '';
 
@@ -1339,64 +1344,38 @@ export const useChatStore = create<ChatState>()(
                 }
               );
 
-              // 🏁 强制最后一次同步，确保内容完整性
-              const finalDisplayContent = accumulatedContent.replace(/<plan>[\s\S]*?<\/plan>/gi, '').trim();
-              get().updateMessageContent(
-                sessionId,
-                currentAssistantMsgId,
-                finalDisplayContent,
-                accumulatedUsage,
-                undefined, // reasoning
-                undefined, // citations
-                undefined, // ragReferences
-                undefined, // ragReferencesLoading
-                undefined, // ragMetadata
-                turnThoughtSignature, // thought_signature
-                undefined, // taskState
-                toolCalls // 🔑 Phase 4c: Ensure final toolCalls are saved
-              );
-
-              // Flush remaining content buffer if any
+              // 🏁 关键修复：冲刷缓冲区残余内容
+              // 如果流式循环结束时缓冲区仍有内容（未触发 200ms 的定期同步），
+              // 必须在这里手动合并，否则最终同步时会发生截断。
               if (contentBuffer.length > 0) {
                 const tailContent = contentBuffer.join('');
                 accumulatedContent += tailContent;
                 turnContent += tailContent;
                 contentBuffer = [];
-                get().updateMessageContent(
-                  sessionId,
-                  currentAssistantMsgId,
-                  accumulatedContent,
-                  accumulatedUsage
-                );
               }
 
-              // Flush final reasoning to timeline
-              if (reasoningFromThisTurn) {
-                const stepId = `think_turn_${loopCount}`;
-                updateSteps({
-                  id: stepId,
-                  type: 'thinking',
-                  content: reasoningFromThisTurn,
-                  timestamp: Date.now()
-                });
-              }
+              // 🏁 Turn Termination: Ensure all content and tool calls are synchronized to the Store
+              // We calculate the final text (removing thinking tags) and perform a blocking flush.
+              const finalDisplayContent = accumulatedContent.replace(/<plan>[\s\S]*?<\/plan>/gi, '').trim();
 
-              if (reasoningFromThisTurn || turnThoughtSignature) {
-                get().updateMessageContent(
-                  sessionId,
-                  currentAssistantMsgId,
-                  finalDisplayContent,
-                  accumulatedUsage,
-                  reasoningFromThisTurn,
-                  undefined, // citations
-                  undefined, // ragReferences
-                  undefined, // ragReferencesLoading
-                  undefined, // ragMetadata
-                  turnThoughtSignature,
-                  undefined, // taskState
-                  toolCalls // 🔑 Phase 4c: Ensure toolCalls are saved with reasoning update
-                );
+              get().updateMessageContent(
+                sessionId,
+                currentAssistantMsgId,
+                finalDisplayContent,
+                accumulatedUsage,
+                reasoningFromThisTurn,
+                undefined, // citations
+                undefined, // ragReferences
+                undefined, // ragReferencesLoading
+                undefined, // ragMetadata
+                turnThoughtSignature,
+                undefined, // taskState
+                toolCalls // 🔑 Correctly persist tool_calls at turn end
+              );
 
+              // ✅ Mandatory Flush: ensure UI & background tasks see the latest state immediately
+              if (get().flushMessageUpdates) {
+                get().flushMessageUpdates(sessionId, currentAssistantMsgId);
               }
 
               // ✅ Phase 4c: 竞态条件修复 - 强制刷新消息状态

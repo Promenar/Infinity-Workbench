@@ -234,21 +234,39 @@ Please STOP trying to use tools and answer the user's request directly using you
                 }
 
                 // 🌟 SPECIAL FEATURE: Direct Rendering Injection
-                // If the tool is 'render_echarts' and it succeeded, we immediately inject
-                // a synthetic Assistant message containing the chart.
-                // This saves tokens (Model doesn't need to copy-paste) and improves UX (Instant feedback).
-                if (tcName === 'render_echarts' && result.status === 'success') {
-                    // Extract Markdown from content (result.content usually contains the block)
-                    const markdownMatch = result.content.match(/```echarts[\s\S]*?```/);
+                // If the tool is a rendering tool and it succeeded, we immediately inject
+                // the content into the CALLING assistant message as a structured artifact.
+                if ((tcName === 'render_echarts' || tcName === 'render_mermaid') && result.status === 'success') {
+                    const artifactType = tcName === 'render_echarts' ? 'echarts' : 'mermaid';
+                    const regex = tcName === 'render_echarts' ? /```echarts[\s\S]*?```/ : /```mermaid[\s\S]*?```/;
+                    const markdownMatch = result.content.match(regex);
+
                     if (markdownMatch) {
-                        console.log('[ToolExecutor] Injecting synthetic chart message');
-                        await get().addMessage(sessionId, {
-                            id: `chart_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                            role: 'assistant',
-                            content: markdownMatch[0], // Only the chart block
-                            createdAt: Date.now() + 10, // Ensure it appears after the tool result
-                            modelId: agent.defaultModel // Attribution
-                        });
+                        console.log(`[ToolExecutor] Adding ${artifactType} artifact to parent assistant message`);
+                        const currentMsg = session.messages.find(m => m.id === targetMsgId);
+                        if (currentMsg) {
+                            const newToolResults = [
+                                ...(currentMsg.toolResults || []),
+                                { type: artifactType as any, content: markdownMatch[0], name: tcName }
+                            ];
+                            get().updateMessageContent(
+                                sessionId,
+                                targetMsgId!,
+                                currentMsg.content || '',
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                undefined,
+                                newToolResults
+                            );
+                        }
                     }
                 }
             }

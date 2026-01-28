@@ -58,6 +58,7 @@ export const createTables = async () => {
         is_archived INTEGER DEFAULT 0,
         vectorization_status TEXT, -- 'processing' | 'success' | 'error'
         layout_height REAL,
+        tool_results TEXT, -- JSON: ToolResult artifact items
         created_at INTEGER NOT NULL,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       );
@@ -118,6 +119,13 @@ export const createTables = async () => {
     // Migration: ensure is_global exists
     try {
       await db.execute('ALTER TABLE documents ADD COLUMN is_global INTEGER DEFAULT 0;');
+    } catch (e) {
+      // Column likely exists
+    }
+
+    // Migration: ensure messages.tool_results exists
+    try {
+      await db.execute('ALTER TABLE messages ADD COLUMN tool_results TEXT;');
     } catch (e) {
       // Column likely exists
     }

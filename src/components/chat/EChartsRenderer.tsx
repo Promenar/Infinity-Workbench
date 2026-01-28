@@ -1,9 +1,27 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Dimensions, TouchableOpacity, Text, Modal } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Modal, SafeAreaView, StatusBar, Platform, Dimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Maximize2, X, AlertCircle } from 'lucide-react-native';
+import { Maximize2, X, BarChart3, PieChart, LineChart, Activity } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import Svg, { Path, Rect, G } from 'react-native-svg';
+import * as ScreenOrientation from 'expo-screen-orientation';
+
+const PhoneRotateIcon = ({ size, color }: { size: number; color: string }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        {/* Curved arrows representing rotation */}
+        <Path d="M3.5 12C3.5 7.30558 7.30558 3.5 12 3.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        <Path d="M20.5 12C20.5 16.6944 16.6944 20.5 12 20.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        <Path d="M12 3.5H15M12 3.5V6.5" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="M12 20.5H9M12 20.5V17.5" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Smartphone shape at an angle */}
+        <G transform="rotate(45, 12, 12)">
+            <Rect x="8" y="5" width="8" height="14" rx="1.5" stroke={color} strokeWidth="2" />
+            <Path d="M11 16H13" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+        </G>
+    </Svg>
+);
 
 interface EChartsRendererProps {
     content: string; // JSON string configuration
@@ -11,15 +29,16 @@ interface EChartsRendererProps {
 
 /**
  * ECharts 图表渲染组件
- * 解析 JSON 配置并通过 WebView 使用 ECharts 渲染
+ * 解析 JSON 配置并显示优质卡片，点击全屏渲染
  */
 export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => {
-    const { isDark } = useTheme();
-    const [title, setTitle] = useState("ECharts Visualization");
-    const [chartType, setChartType] = useState<string>("bar");
+    const { isDark, colors } = useTheme();
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isLandscape, setIsLandscape] = useState(false);
 
-    // 解析 JSON (每次渲染重新计算，不使用 state 以避免流式传输时的中间态锁定)
+    // Derived metadata
+    let title = "ECharts Visualization";
+    let chartType = "bar";
     let chartOption = null;
     let parseError = false;
 
@@ -28,23 +47,15 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
             .replace(/^```echarts\n?/, '')
             .replace(/```$/, '')
             .trim();
-        // 只有当有内容时才尝试解析
         if (cleanContent) {
-            // 使用 new Function 来支持宽松的 JSON (JS Object) 解析，
-            // 因为模型经常输出不带引号的键名 (如 { title: ... })
-            // 注意：这是运行在 RN JS 线程，相对安全
             const parseLoose = (str: string) => new Function('return ' + str)();
             chartOption = parseLoose(cleanContent);
 
-            // Extract Metadata for Card
             if (chartOption) {
-                if (chartOption.title?.text) setTitle(chartOption.title.text);
+                if (chartOption.title?.text) title = chartOption.title.text;
 
-                // Infer type
-                if (chartOption.series && chartOption.series[0]?.type) {
-                    setChartType(chartOption.series[0].type);
-                } else if (chartOption.series && chartOption.series.length > 0) {
-                    setChartType(chartOption.series[0].type || 'mixed');
+                if (chartOption.series && Array.isArray(chartOption.series)) {
+                    chartType = chartOption.series[0]?.type || 'bar';
                 }
             }
         }
@@ -70,7 +81,7 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         #chart-container {
           flex: 1;
           width: 100%;
-          min-height: ${isFull ? '100%' : '300px'};
+          min-height: 100%;
         }
       </style>
     </head>
@@ -81,163 +92,257 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         const myChart = echarts.init(chartDom, '${isDark ? 'dark' : 'light'}');
         const option = ${JSON.stringify(chartOption)};
         
-        option.backgroundColor = 'transparent'; // 让背景透明以适配父容器
+        if (option.title) {
+             if (typeof option.title === 'object' && !Array.isArray(option.title)) {
+                 option.title.show = false; 
+             } else if (Array.isArray(option.title)) {
+                 option.title.forEach(t => t.show = false);
+             }
+        }
 
+        if (option.toolbox && typeof option.toolbox === 'object' && !Array.isArray(option.toolbox)) {
+             option.toolbox.show = true;
+             option.toolbox.top = 0; 
+             option.toolbox.right = 10;
+        }
+        
+        if (option.legend && typeof option.legend === 'object' && !Array.isArray(option.legend)) {
+             option.legend.top = 60; // Deeper to avoid native title bubble
+        }
+
+        if (option.grid) {
+            if (typeof option.grid === 'object' && !Array.isArray(option.grid)) {
+                option.grid.top = option.grid.top || 130;
+            } else if (Array.isArray(option.grid)) {
+                option.grid.forEach(g => g.top = g.top || 130);
+            }
+        } else {
+            option.grid = { top: 130, left: '10%', right: '10%', bottom: '12%', containLabel: true };
+        }
+
+        option.backgroundColor = 'transparent';
         myChart.setOption(option);
-
-        // 监听窗口大小变化
-        window.addEventListener('resize', () => {
-          myChart.resize();
-        });
+        window.addEventListener('resize', () => myChart.resize());
       </script>
     </body>
     </html>
   `;
 
-    // 如果解析失败或没有 Option，显示加载状态或错误
     if (!chartOption || parseError) {
         return (
-            <View style={[styles.container, styles.errorContainer, { borderColor: isDark ? '#3f3f46' : '#e4e4e7', minHeight: 100 }]}>
-                {/* 在流式传输过程中，JSON 解析失败是正常的，显示加载指示器 */}
-                <Text style={[styles.errorDetail, { color: isDark ? '#a1a1aa' : '#71717a' }]}>
-                    {content.length > 20 ? "正在生成图表数据..." : "..."}
+            <View style={[styles.errorContainer, { borderColor: isDark ? '#333' : '#e5e7eb' }]}>
+                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 13 }}>
+                    {content.length > 20 ? "数据生成中..." : "加载中..."}
                 </Text>
             </View>
         );
     }
 
-    // 🎨 Card UI Render (Lightweight Placeholder)
     const getIcon = () => {
-        // Simple mapping, can be expanded
-        return <Maximize2 size={24} color={isDark ? '#a1a1aa' : '#71717a'} />;
+        const iconSize = 22;
+        const color = colors?.[500] || (isDark ? '#a78bfa' : '#7c3aed');
+        switch (chartType) {
+            case 'pie': return <PieChart size={iconSize} color={color} />;
+            case 'line': return <LineChart size={iconSize} color={color} />;
+            case 'bar': return <BarChart3 size={iconSize} color={color} />;
+            default: return <Activity size={iconSize} color={color} />;
+        }
+    };
+
+    const toggleOrientation = async () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        const nextLandscape = !isLandscape;
+        setIsLandscape(nextLandscape);
+
+        if (nextLandscape) {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
+        } else {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
+    };
+
+    const handleClose = async () => {
+        await ScreenOrientation.unlockAsync();
+        setIsFullscreen(false);
+        setIsLandscape(false);
     };
 
     return (
-        <View style={{ width: '100%', alignItems: 'flex-start', marginVertical: 8 }}>
+        <View style={styles.outerContainer}>
             <TouchableOpacity
-                activeOpacity={0.7}
+                activeOpacity={0.85}
                 onPress={() => {
-                    Haptics.selectionAsync();
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setIsFullscreen(true);
                 }}
                 style={[styles.card, {
-                    backgroundColor: isDark ? '#27272a' : '#fff',
-                    borderColor: isDark ? '#3f3f46' : '#e4e4e7'
+                    backgroundColor: isDark ? '#1c1c1e' : '#f9fafb',
+                    borderColor: isDark ? '#2c2c2e' : '#e5e7eb'
                 }]}
             >
-                {/* Left: Icon/Preview Placeholder */}
-                <View style={[styles.iconBox, { backgroundColor: isDark ? '#3f3f46' : '#f4f4f5' }]}>
+                <View style={[styles.iconContainer, { backgroundColor: isDark ? '#2c2c2e' : (colors?.opacity20 || '#ede9fe') }]}>
                     {getIcon()}
                 </View>
 
-                {/* Right: Info */}
-                <View style={styles.infoBox}>
-                    <Text style={[styles.cardTitle, { color: isDark ? '#fff' : '#18181b' }]} numberOfLines={1}>
+                <View style={styles.contentContainer}>
+                    <Text style={[styles.cardTitle, { color: isDark ? '#f4f4f5' : '#111827' }]} numberOfLines={1}>
                         {title}
                     </Text>
-                    <Text style={[styles.cardSubtitle, { color: isDark ? '#a1a1aa' : '#71717a' }]}>
-                        交互式 {chartType} 图表 • 点击查看详情
-                    </Text>
+                    <View style={styles.badgeContainer}>
+                        <View style={[styles.badge, { backgroundColor: isDark ? '#334155' : (colors?.opacity30 || '#e2e8f0') }]}>
+                            <Text style={[styles.badgeText, { color: isDark ? '#cbd5e1' : (colors?.[500] || '#475569') }]}>
+                                {chartType.toUpperCase()}
+                            </Text>
+                        </View>
+                        <Text style={[styles.hintText, { color: isDark ? '#71717a' : '#9ca3af' }]}>
+                            点击全屏交互
+                        </Text>
+                    </View>
                 </View>
 
-                {/* Arrow */}
-                <Maximize2 size={16} color={isDark ? '#52525b' : '#d4d4d8'} style={{ marginLeft: 'auto', marginRight: 4 }} />
+                <View style={styles.actionIcon}>
+                    <Maximize2 size={18} color={isDark ? '#52525b' : '#9ca3af'} />
+                </View>
             </TouchableOpacity>
 
-            {/* 全屏模态框 (Only mount heavy WebView here) */}
-            <Modal visible={isFullscreen} animationType="slide" onRequestClose={() => setIsFullscreen(false)}>
-                <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}>
-                    <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#27272a' : '#e4e4e7' }]}>
-                        <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#000' }]}>{title}</Text>
+            <Modal
+                visible={isFullscreen}
+                animationType="fade"
+                presentationStyle="fullScreen"
+                onRequestClose={handleClose}
+            >
+                <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff', paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0 }}>
+                    <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#1c1c1e' : '#f3f4f6' }]}>
+                        <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#000' }]} numberOfLines={1}>
+                            {title}
+                        </Text>
                         <TouchableOpacity
-                            style={[styles.closeButton, { backgroundColor: isDark ? '#27272a' : '#f4f4f5' }]}
-                            onPress={() => setIsFullscreen(false)}
+                            style={[styles.closeIconButton, { backgroundColor: isDark ? '#1c1c1e' : '#f3f4f6' }]}
+                            onPress={handleClose}
                         >
-                            <X size={20} color={isDark ? '#fff' : '#000'} />
+                            <X size={20} color={isDark ? '#fff' : '#666'} />
                         </TouchableOpacity>
                     </View>
 
-                    <WebView
-                        source={{ html: generateHtml(true) }}
-                        style={{ flex: 1, backgroundColor: 'transparent' }}
-                        javaScriptEnabled={true}
-                        androidLayerType="software"
-                    />
-                </View>
+                    <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}>
+                        <WebView
+                            key={`webview_${isLandscape}_${isFullscreen}`}
+                            source={{ html: generateHtml(true) }}
+                            style={{ flex: 1, backgroundColor: 'transparent' }}
+                            javaScriptEnabled={true}
+                            androidLayerType="hardware"
+                            bounces={false}
+                        />
+                    </View>
+
+                    {/* 🔄 Landscape Toggle FAB */}
+                    <TouchableOpacity
+                        style={[styles.fab, {
+                            backgroundColor: colors?.[500] || (isDark ? '#2c2c2e' : '#7c3aed'),
+                            shadowColor: colors?.[500] || '#000'
+                        }]}
+                        onPress={toggleOrientation}
+                    >
+                        <PhoneRotateIcon size={28} color="#fff" />
+                    </TouchableOpacity>
+                </SafeAreaView>
             </Modal>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
+    outerContainer: {
         width: '100%',
+        marginVertical: 4,
     },
     card: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: 12,
-        borderRadius: 12,
+        borderRadius: 16,
         borderWidth: 1,
-        width: '100%', // Ensure typical message width logic applies or full width
-        maxWidth: 320, // Limit width to look like a card attachment
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 2,
+        width: '100%',
+        alignSelf: 'center',
     },
-    iconBox: {
-        width: 48,
-        height: 48,
-        borderRadius: 8,
+    iconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
     },
-    infoBox: {
+    contentContainer: {
         flex: 1,
         justifyContent: 'center',
     },
     cardTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 2,
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 4,
     },
-    cardSubtitle: {
-        fontSize: 12,
-    },
-    modalHeader: {
-        height: 60,
+    badgeContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    badge: {
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginRight: 8,
+    },
+    badgeText: {
+        fontSize: 10,
+        fontWeight: '800',
+    },
+    hintText: {
+        fontSize: 11,
+    },
+    actionIcon: {
+        padding: 4,
+    },
+    modalHeader: {
+        height: 56,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         paddingHorizontal: 16,
+        borderBottomWidth: 1,
     },
     modalTitle: {
-        fontSize: 16,
-        fontWeight: '600',
+        fontSize: 17,
+        fontWeight: '700',
+        flex: 1,
+        marginRight: 40,
     },
-    closeButton: {
-        position: 'absolute',
-        right: 16,
-        padding: 8,
-        borderRadius: 20,
+    closeIconButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     errorContainer: {
-        padding: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        borderRadius: 12,
+        padding: 16,
         borderWidth: 1,
+        borderRadius: 12,
+        alignItems: 'center',
+        borderStyle: 'dashed',
     },
-    errorText: {
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    errorDetail: {
-        fontSize: 12,
+    fab: {
+        position: 'absolute',
+        bottom: 24,
+        right: 24,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 6,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4.65,
     }
 });

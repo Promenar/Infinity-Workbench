@@ -3,7 +3,7 @@ import { useSettingsStore } from '../../store/settings-store';
 import { coreSkills } from './definitions';
 import { ShowDebugToastSkill } from './core/debug';
 import { TaskManagementSkill } from './core/task';
-import { RenderChartSkill } from './core/rendering'; // ✅ New Import
+import { RenderChartSkill, RenderMermaidSkill } from './core/rendering'; // ✅ New Import
 
 class SkillRegistry {
     private skills: Map<string, Skill> = new Map();
@@ -19,8 +19,9 @@ class SkillRegistry {
         // Register Task Management Skill
         this.register(TaskManagementSkill);
 
-        // Register Rendering Skill
+        // Register Rendering Skills
         this.register(RenderChartSkill);
+        this.register(RenderMermaidSkill);
     }
 
     public static getInstance(): SkillRegistry {

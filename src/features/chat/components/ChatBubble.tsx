@@ -21,6 +21,7 @@ import { EChartsRenderer } from '../../../components/chat/EChartsRenderer';
 import { MemoryManager } from '../../../lib/rag/memory-manager';
 import { graphExtractor } from '../../../lib/rag/graph-extractor';
 import { RagOmniIndicator } from './RagOmniIndicator';
+import { ToolArtifacts } from './ToolArtifacts'; // 🆕 新增
 import { ContextManager } from '../utils/ContextManager';
 import { useRagStore } from '../../../store/rag-store'; // ✅ 显式导入
 import { Typography, ContextMenu } from '../../../components/ui';
@@ -1132,6 +1133,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
       )}
 
+      {/* ✅ Tool Produced Artifacts (Standalone rendering) */}
+      {message.toolResults && message.toolResults.length > 0 && (
+        <View style={{ marginBottom: 12 }}>
+          <ToolArtifacts artifacts={message.toolResults} />
+        </View>
+      )}
+
       {!isUser && message.planningTask && (
         <TaskFinalResult
           task={message.planningTask}
@@ -1384,6 +1392,8 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
   if (prev.message.executionSteps !== next.message.executionSteps) return false;
   // @ts-ignore
   if (prev.message.planningTask !== next.message.planningTask) return false;
+  // @ts-ignore
+  if (prev.message.toolResults !== next.message.toolResults) return false;
 
   return true;
 });

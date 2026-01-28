@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   TextInput,
@@ -312,18 +312,35 @@ const ThinkingLevelButton = ({ sessionId, isDark, activeModelId }: { sessionId: 
   const session = useChatStore((s) => s.sessions.find((sk) => sk.id === sessionId));
   const agent = useAgentStore((s) => s.agents.find((a) => a.id === session?.agentId));
   const updateSessionOptions = useChatStore((s) => s.updateSessionOptions);
-
+  const providers = useApiStore((s) => s.providers);
   const [visible, setVisible] = useState(false);
+
+  // 🔍 Robust Model Identification
+  const modelConfig = useMemo(() => {
+    if (!activeModelId) return null;
+    for (const p of providers) {
+      const m = p.models.find(mod => mod.uuid === activeModelId || mod.id === activeModelId);
+      if (m) return m;
+    }
+    return null;
+  }, [providers, activeModelId]);
+
   const { supportsThinkingConfig } = require('../../../lib/llm/model-utils');
-
-  // Use passed prop as Source of Truth
   const isSupported = supportsThinkingConfig(activeModelId);
-
 
   if (!session || !activeModelId || !isSupported) return null;
 
   const level = session.options?.thinkingLevel || 'high';
-  const isPro = activeModelId.toLowerCase().includes('pro');
+
+  const identifier = (modelConfig?.id || modelConfig?.name || activeModelId || '').toLowerCase();
+
+  // 🛡️ Logic Refinement: 
+  // 'Pro' models are restricted ONLY if they don't contain 'flash'.
+  // We check ID and Display Name to catch all variants (e.g. "Gemini 1.5 Pro").
+  const isPro = identifier.includes('pro') && !identifier.includes('flash');
+
+  // DEBUG LOG (Visible in terminal for diagnosis)
+  // console.log(`[ThinkingButton] ID: ${activeModelId} | Found: ${modelConfig?.id} | isPro: ${isPro}`);
 
   const options = [
     { value: 'minimal', label: '极速', desc: '限制模型最大限度地少用 token 进行思考 (仅限 Flash)。', disabled: isPro },

@@ -1,4 +1,21 @@
 import { MODEL_SPECS } from './model-specs';
+import { useApiStore } from '../../store/api-store';
+
+/**
+ * 辅助函数：从 Store 中查找模型配置
+ */
+function findStoreConfig(modelId: string) {
+  try {
+    const providers = useApiStore.getState().providers;
+    for (const provider of providers) {
+      const model = provider.models.find(m => m.uuid === modelId || m.id === modelId);
+      if (model) return model;
+    }
+  } catch (e) {
+    console.warn('[ModelUtils] Failed to access ApiStore:', e);
+  }
+  return undefined;
+}
 
 /**
  * 根据模型 ID 查找完整的模型规格信息
@@ -8,6 +25,19 @@ import { MODEL_SPECS } from './model-specs';
 export function findModelSpec(modelId: string) {
   const normalizedId = modelId.toLowerCase();
 
+  // 1. 优先尝试从 Store 中获取（SSOT: 尊重用户在“模型管理”中的手动设置）
+  const storeModel = findStoreConfig(modelId);
+  if (storeModel) {
+    return {
+      pattern: storeModel.id,
+      contextLength: storeModel.contextLength || 4096,
+      type: storeModel.type,
+      capabilities: storeModel.capabilities,
+      icon: 'api', // Default icon for dynamic models
+    };
+  }
+
+  // 2. 回退到静态规格库
   for (const spec of MODEL_SPECS) {
     if (typeof spec.pattern === 'string') {
       if (normalizedId.includes(spec.pattern.toLowerCase())) {
@@ -40,9 +70,9 @@ export function isForcedReasoningModel(modelId: string): boolean {
 export function supportsThinkingConfig(modelId: string): boolean {
   const lowerId = modelId.toLowerCase();
 
-  // 1. Explicitly check for Flash Thinking or any Gemini 2.0+ models
-  // Gemini 2.0 Flash/Pro often have implicit reasoning or dedicated thinking modes
-  if (lowerId.includes('flash-thinking') || lowerId.includes('thinking') || lowerId.includes('gemini-2.0') || lowerId.includes('gemini-3')) {
+  // 1. Explicitly check for Flash Thinking or any Gemini 1.5/2.0+ models
+  // Gemini series often have implicit reasoning or dedicated thinking modes
+  if (lowerId.includes('flash-thinking') || lowerId.includes('thinking') || lowerId.includes('gemini-1.5') || lowerId.includes('gemini-2.0') || lowerId.includes('gemini-3')) {
     return true;
   }
 
