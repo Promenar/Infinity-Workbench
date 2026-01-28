@@ -316,6 +316,7 @@ const ThinkingLevelButton = ({ sessionId, isDark, activeModelId }: { sessionId: 
   const [visible, setVisible] = useState(false);
 
   // 🔍 Robust Model Identification
+
   const modelConfig = useMemo(() => {
     if (!activeModelId) return null;
     for (const p of providers) {
@@ -564,6 +565,47 @@ export function ChatInput({
   const draftTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const isSendingRef = React.useRef(false); // 🆕 防止发送后的 setText('') 触发草稿保存
 
+  // 🛡️ User Intervention Check
+  // Check if the session is paused and waiting for user input
+  const pendingIntervention = session?.pendingIntervention;
+  const isInterventionRequired = session?.loopStatus === 'paused' && !!pendingIntervention;
+
+  const placeholderText = useMemo(() => {
+    if (isInterventionRequired) return "请回复以继续任务...";
+    // Default fallback
+    return "发送消息...";
+  }, [activeModelId, isInterventionRequired]);
+
+  // If intervention is required, we can show a banner above the input
+  const InterventionBanner = () => {
+    if (!isInterventionRequired) return null;
+    return (
+      <View style={{
+        position: 'absolute',
+        top: -40,
+        left: 20,
+        right: 20,
+        backgroundColor: isDark ? '#3f3f46' : '#f4f4f5',
+        borderRadius: 12,
+        padding: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: '#eab308',
+        zIndex: 100,
+        ...Platform.select({
+          ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+          android: { elevation: 3 }
+        })
+      }}>
+        <Typography variant="label" style={{ color: '#ca8a04', fontWeight: 'bold', fontSize: 12 }}>
+          ⏸️ {pendingIntervention}
+        </Typography>
+      </View>
+    );
+  };
+
   // Load draft on mount
   useEffect(() => {
     if (session?.draft) {
@@ -780,6 +822,8 @@ export function ChatInput({
         }),
       ]}
     >
+      <InterventionBanner />
+
       {/* ✅ 编辑模式横条 Banner */}
       {editingMessageId && (
         <TouchableOpacity
@@ -982,7 +1026,7 @@ export function ChatInput({
                     ? 'Add a caption...'
                     : isInterventionMode
                       ? 'Steer the agent...'
-                      : 'Message...'
+                      : placeholderText
                 }
                 placeholderTextColor="#94a3b8"
                 underlineColorAndroid="transparent"

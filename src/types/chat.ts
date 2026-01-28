@@ -147,6 +147,7 @@ export interface Session {
     reasoning?: boolean;
     thinkingLevel?: 'low' | 'medium' | 'high' | 'minimal'; // ✅ Gemini 3 Flash Thinking Mode
     toolsEnabled?: boolean; // New option
+    loopCount?: number; // ✅ Manually specified loop count
   };
   ragOptions?: {
     enableMemory?: boolean; // 启用长期记忆

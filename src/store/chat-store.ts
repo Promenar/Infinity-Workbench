@@ -1001,8 +1001,32 @@ export const useChatStore = create<ChatState>()(
             const isInfiniteMode = maxLoops >= 100;
             const effectiveMaxLoops = isInfiniteMode ? 9999 : (maxLoops + continuationBudget);
 
+            // 🔄 Loop Entry Point
+            // Reset loop counter if starting fresh or continuing manually
+            if ((options as any)?.loopCount !== undefined) {
+              get().updateSession(sessionId, { currentLoopCount: (options as any).loopCount });
+            } else if (get().getSession(sessionId)?.loopStatus !== 'paused') {
+              // Only reset if NOT resuming from a pause
+              get().updateSession(sessionId, { currentLoopCount: 0 });
+            }
+
+            // 🛡️ RECOVERY: Check for pending intervention
+            // Declaring session here again, but using let if needed, or just reusing
+            // We need to be careful about shadowing 'session' variable from upper scope?
+            // Actually 'session' is defined in line 1018. Let's use get().getSession(sessionId) directly to avoid confusion.
+            const initialSession = get().getSession(sessionId);
+            if (initialSession?.loopStatus === 'paused' && initialSession.pendingIntervention) {
+              // If the user has just replied (which triggers generateMessage), 
+              // we should clear the pause and intervention flags and continue.
+              console.log('[AgentLoop] Resuming form PAUSED state due to user input');
+              get().updateSession(sessionId, {
+                loopStatus: 'running',
+                pendingIntervention: undefined
+              });
+            }
+
             // 🛡️ 逻辑修复：从 session 获取已执行轮数，支持续杯后的连续性
-            let loopCount = session?.currentLoopCount || 0;
+            let loopCount = initialSession?.currentLoopCount || 0;
 
             // 🆕 Phase 4: 死循环检测机制
             // 追踪连续相同工具调用，若超过阈值则自动中断
@@ -1489,7 +1513,7 @@ export const useChatStore = create<ChatState>()(
                     const funcName = nameMatch[1].trim();
                     const args: Record<string, any> = {};
 
-                    // Parse key-value parameters: <parameter><key>x</key><value>y</value></parameter>
+                    // Parse key-value parameters: <parameter>\s*<key>([\s\S]*?)<\/key>\s*<value>([\s\S]*?)<\/value>\s*<\/parameter>
                     const paramRegex = /<parameter>\s*<key>([\s\S]*?)<\/key>\s*<value>([\s\S]*?)<\/value>\s*<\/parameter>/gi;
                     let paramMatch;
                     while ((paramMatch = paramRegex.exec(xmlBlock)) !== null) {
@@ -1849,9 +1873,6 @@ export const useChatStore = create<ChatState>()(
                     await get().executeTools(sessionId, lowRiskCalls, currentAssistantMsgId);
                   }
 
-                  // ✅ 虚拟拆分架构：不注入占位文本，保持内容纯净
-                  // 审批信息完全由Timeline显示
-
                   // 确定需要审批的工具列表
                   const toolsNeedingApproval = executionMode === 'manual' ? toolCalls : highRiskCalls;
 
@@ -1865,7 +1886,7 @@ export const useChatStore = create<ChatState>()(
                     reason: `Action requires approval in ${executionMode} mode.`
                   });
                   get().setLoopStatus(sessionId, 'waiting_for_approval');
-                  // Add intervention required step to timeline
+
                   const interventionStep: any = {
                     id: `int_${Date.now()}`,
                     type: 'intervention_required',
@@ -1891,7 +1912,8 @@ export const useChatStore = create<ChatState>()(
                     [...(targetMsg.executionSteps || []), interventionStep],
                     pendingApprovalToolIds
                   );
-                  return; // Break loop and function
+
+                  break; // Auto-exit to wait for user action
                 }
 
                 // 🆕 Phase 4: 死循环检测

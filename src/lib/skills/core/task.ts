@@ -10,7 +10,7 @@ IMPORTANT: You should ALWAYS call this tool to "create" a plan BEFORE starting a
 CRITICAL: Each step MUST have a descriptive 'title'.
 Self-Correction: If you forget the 'action' parameter, I will try to infer it based on context (defaulting to 'update').`,
     schema: z.object({
-        action: z.enum(['create', 'update', 'complete', 'fail']).optional().describe('The action to perform. Defaults to "update" if omitted but steps are provided.'),
+        action: z.enum(['create', 'update', 'complete', 'fail', 'ask_user']).optional().describe('The action to perform. Defaults to "update" if omitted but steps are provided.'),
         title: z.string().optional().describe('Title of the entire task (required for "create"). Must be descriptive.'),
         steps: z.array(z.object({
             id: z.string().optional().describe('Unique ID for the step. If omitted, will be auto-generated or matched by title.'),
@@ -19,7 +19,8 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
             description: z.string().optional().describe('Optional detailed description')
         })).optional().describe('List of steps to create or update.'),
         progress: z.number().min(0).max(100).optional().describe('Override overall progress percentage (0-100).'),
-        final_summary: z.string().optional().describe('REQUIRED when action="complete". The FINAL DELIVERABLE or ANSWER requested by the user. Do NOT describe the process or what you did; just provide the result.')
+        final_summary: z.string().optional().describe('REQUIRED when action="complete". The FINAL DELIVERABLE or ANSWER requested by the user. Do NOT describe the process or what you did; just provide the result.'),
+        question: z.string().optional().describe('REQUIRED when action="ask_user". The question to ask the user to proceed.')
     }),
     execute: async (args: any, context: SkillContext): Promise<ToolResult> => {
         const { sessionId } = context;
@@ -261,10 +262,36 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                 if (!activeTask) return { id: 'error', content: 'No active task found to fail.', status: 'error' };
                 activeTask = { ...activeTask, status: 'failed', updatedAt: Date.now() };
             }
+            else if (taskArgs.action === 'ask_user') {
+                if (!activeTask) return { id: 'error', content: 'No active task found. create a task first.', status: 'error' };
+
+                if (!taskArgs.question) {
+                    return {
+                        id: 'error',
+                        content: 'Missing "question". usage: { action: "ask_user", question: "..." }',
+                        status: 'error'
+                    }
+                }
+
+                // ⏸️ PAUSE MECHANISM
+                // We update the session to 'paused' and store the question.
+                // The Agent Loop will see this status and exit gracefully.
+                store.updateSession(sessionId, {
+                    loopStatus: 'paused',
+                    pendingIntervention: taskArgs.question
+                });
+
+                return {
+                    id: 'success',
+                    content: `⏸️ Task Paused. Waiting for user input: "${taskArgs.question}"`,
+                    status: 'success',
+                    data: activeTask
+                };
+            }
             else {
                 return {
                     id: 'error',
-                    content: `Invalid action "${taskArgs.action}". Allowed: create, update, complete, fail.`,
+                    content: `Invalid action "${taskArgs.action}". Allowed: create, update, complete, fail, ask_user.`,
                     status: 'error'
                 };
             }
