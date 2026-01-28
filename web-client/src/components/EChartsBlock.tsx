@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { Maximize2, X, AlertCircle } from 'lucide-react';
+import { Maximize2, X } from 'lucide-react';
 
 interface EChartsBlockProps {
     config: string;

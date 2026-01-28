@@ -212,8 +212,8 @@ export function getOutputFormatGuidance(family: ModelFamily): string {
 - **渲染能力增强**:
   - **流程图**: 使用 \`\`\`mermaid 代码块
   - **交互图表**: **必须** 使用 \`\`\`echarts 代码块 (内容为纯 JSON 配置)。
-    - ❌ **严禁** 生成 HTML 文件或使用 \`\`\`html 代码块来绘制图表。
-    - ❌ **严禁** 使用 Python 或 JavaScript 代码来生成图表。
+    - ❌ **仅在需要绘制图表时**，严禁使用 HTML / JS / Python 生成图片。
+    - ✅ **允许** 在其他场景（如网页开发任务）中生成常规 HTML 代码。
   - **代码**: 支持语法高亮，请注明语言类型 (如 \`\`\`python)`;
 
         case 'gemini':
