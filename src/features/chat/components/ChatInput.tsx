@@ -576,35 +576,7 @@ export function ChatInput({
     return "发送消息...";
   }, [activeModelId, isInterventionRequired]);
 
-  // If intervention is required, we can show a banner above the input
-  const InterventionBanner = () => {
-    if (!isInterventionRequired) return null;
-    return (
-      <View style={{
-        position: 'absolute',
-        top: -40,
-        left: 20,
-        right: 20,
-        backgroundColor: isDark ? '#3f3f46' : '#f4f4f5',
-        borderRadius: 12,
-        padding: 8,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#eab308',
-        zIndex: 100,
-        ...Platform.select({
-          ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
-          android: { elevation: 3 }
-        })
-      }}>
-        <Typography variant="label" style={{ color: '#ca8a04', fontWeight: 'bold', fontSize: 12 }}>
-          ⏸️ {pendingIntervention}
-        </Typography>
-      </View>
-    );
-  };
+
 
   // Load draft on mount
   useEffect(() => {
@@ -822,7 +794,7 @@ export function ChatInput({
         }),
       ]}
     >
-      <InterventionBanner />
+
 
       {/* ✅ 编辑模式横条 Banner */}
       {editingMessageId && (

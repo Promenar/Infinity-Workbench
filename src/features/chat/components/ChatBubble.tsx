@@ -1117,6 +1117,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         <TaskMonitor
           sessionId={sessionId}
           task={message.planningTask}
+          // ✅ UI Optimization: Pass context for history & intervention handling
+          isLatest={isLastAssistantMessage}
+          pendingIntervention={isLastAssistantMessage ? sessionData?.pendingIntervention : undefined}
           containerStyle={{
             marginLeft: -15,
             marginRight: -12, // Exact match with Timeline (-12)

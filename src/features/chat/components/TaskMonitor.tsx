@@ -20,15 +20,32 @@ interface RequestProps {
     sessionId: string;
     containerStyle?: ViewStyle;
     task?: TaskState; // ✅ Added optional task prop
+    // ✅ UI Optimization Props
+    isLatest?: boolean;
+    pendingIntervention?: string;
 }
 
-export const TaskMonitor = ({ sessionId, containerStyle, task }: RequestProps) => {
+export const TaskMonitor = ({ sessionId, containerStyle, task, isLatest = true, pendingIntervention }: RequestProps) => {
     const { isDark, colors } = useTheme();
     const dismissActiveTask = useChatStore(s => s.dismissActiveTask);
     const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
     const activeTask = task || session?.activeTask; // ✅ Prioritize passed task
 
-    const [expanded, setExpanded] = useState(false);
+    // ✅ Intelligent Expansion:
+    // 1. Expand if intervention is needed (CRITICAL)
+    // 2. Expand if it's the latest task AND in progress
+    // 3. Collapse if it's history
+    const [expanded, setExpanded] = useState(
+        !!pendingIntervention || (isLatest && activeTask?.status === 'in-progress')
+    );
+
+    // ✅ Sync expansion with intervention
+    useEffect(() => {
+        if (pendingIntervention) {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setExpanded(true);
+        }
+    }, [pendingIntervention]);
 
     if (!activeTask) return null;
 
@@ -98,8 +115,12 @@ export const TaskMonitor = ({ sessionId, containerStyle, task }: RequestProps) =
                     backgroundColor: isDark ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.4)',
                     borderTopWidth: 0.5,
                     borderBottomWidth: 0.5,
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                    borderColor: pendingIntervention
+                        ? (isDark ? '#ca8a04' : '#eab308') // 🚨 Intervention: Amber Border
+                        : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'), // Normal
                     borderRadius: 16,
+                    // 📉 History Mode: Dim opacity if not latest
+                    opacity: isLatest ? 1 : 0.6,
                 }}
             >
                 <TouchableOpacity
@@ -147,6 +168,26 @@ export const TaskMonitor = ({ sessionId, containerStyle, task }: RequestProps) =
                             </View>
                         </View>
                     </View>
+
+                    {/* 🚨 Intervention Card (Decision Required) */}
+                    {pendingIntervention && (
+                        <Animated.View entering={FadeInDown.springify()} className="mt-4 mb-2 p-3 bg-amber-500/10 dark:bg-amber-500/20 rounded-xl border border-amber-500/30">
+                            <View className="flex-row items-center mb-2">
+                                <Loader2 size={14} color="#eab308" className="animate-spin mr-2" />
+                                <Text className="text-amber-600 dark:text-amber-400 font-bold text-xs uppercase tracking-wider">
+                                    Decision Required
+                                </Text>
+                            </View>
+                            <Text className="text-zinc-800 dark:text-zinc-200 text-[13px] leading-5 font-medium">
+                                {pendingIntervention}
+                            </Text>
+                            <View className="mt-2 flex-row items-center">
+                                <Text className="text-zinc-500 dark:text-zinc-400 text-[11px]">
+                                    Please reply to continue...
+                                </Text>
+                            </View>
+                        </Animated.View>
+                    )}
 
 
                     {/* Expanded Content: Step List Only */}
