@@ -222,7 +222,8 @@ export function getCapabilitiesGuidance(family: ModelFamily): string {
 - 你 **不** 需要使用 \`run_javascript\` 或 Python 来生成图表图片。
 - **严禁** 调用代码解释器 (Code Interpreter) 来绘制 ECharts 或 Matplotlib 图表。
 - 你 **不** 需要生成 HTML 文件来展示图表。
-- **请直接输出** 相应的 Markdown 代码块，UI 会自动捕获并渲染交互式组件。`;
+- 推荐使用 \`render_echarts\` 工具进行绘制，只需传入 JSON 配置即可。
+- 或者直接输出 \`\`\`echarts 格式的 Markdown 代码块。`;
 
         case 'gemini':
         case 'openai':
