@@ -95,6 +95,15 @@ class SkillRegistry {
 
 
     /**
+     * Remove skills belonging to a specific MCP server
+     */
+    public removeSkillsByServer(serverId: string) {
+        const skillsToDelete = this.getAllSkills().filter(s => s.mcpServerId === serverId);
+        skillsToDelete.forEach(s => this.skills.delete(s.id));
+        console.log(`[SkillRegistry] Removed ${skillsToDelete.length} skills for server ${serverId}`);
+    }
+
+    /**
      * Get enabled skills based on user configuration.
      * Currently returns all skills, but ready for future filtering.
      */

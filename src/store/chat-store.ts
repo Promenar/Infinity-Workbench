@@ -208,6 +208,8 @@ export interface ChatState {
   // Internal Helper (exposed for loop and resume)
   executeTools: (sessionId: string, toolCalls: ToolCall[], targetMessageId?: string) => Promise<void>;
   resumeGeneration: (sessionId: string, approved?: boolean, intervention?: string) => Promise<void>;
+  toggleMcpServer: (sessionId: string, serverId: string) => void;
+  toggleSkill: (sessionId: string, skillId: string) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -298,6 +300,9 @@ export const useChatStore = create<ChatState>()(
         executeTools: toolExecutor.executeTools,
 
         resumeGeneration: approvalManager.resumeGeneration,
+
+        toggleMcpServer: sessionManager.toggleMcpServer,
+        toggleSkill: sessionManager.toggleSkill,
 
         generateMessage: async (sessionId, content, options) => {
           const session = get().getSession(sessionId);

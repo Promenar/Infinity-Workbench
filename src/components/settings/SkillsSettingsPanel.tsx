@@ -1,23 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, Text, TextInput } from 'react-native';
+import { Switch } from '../ui/Switch';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { Typography } from '../ui/Typography';
-import { Switch } from '../ui/Switch';
+import { useI18n } from '../../lib/i18n';
 import { skillRegistry } from '../../lib/skills/registry';
 import { Skill } from '../../types/skills';
 import { useSettingsStore } from '../../store/settings-store';
-import { useI18n } from '../../lib/i18n';
-import { Minus, Plus, Check } from 'lucide-react-native';
+import { Minus, Plus, Check, Server, RefreshCw, Trash2, Globe, AlertTriangle, ChevronRight, HardDrive, Cpu, Database } from 'lucide-react-native';
+import { Marquee } from '../ui/Marquee';
 import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from '../../lib/haptics';
 import { SettingsSection } from '../../features/settings/components/SettingsSection';
-import { SettingsItem } from '../../features/settings/components/SettingsItem';
 import { Colors } from '../../theme/colors';
 import { FloatingCodeEditorModal } from '../ui/FloatingCodeEditorModal';
+import { useMcpStore } from '../../store/mcp-store';
+import { McpBridge } from '../../lib/mcp/mcp-bridge';
 
 export const SkillsSettingsPanel: React.FC = () => {
     const { t } = useI18n();
-    const { colors, isDark } = useTheme();
+    const { isDark } = useTheme();
     const themeColors = isDark ? Colors.dark : Colors.light;
 
     const {
@@ -25,32 +27,39 @@ export const SkillsSettingsPanel: React.FC = () => {
         setSkillEnabled,
         maxLoopCount,
         setMaxLoopCount,
-        executionMode,
-        setExecutionMode,
-        alphaVantageApiKey, // 🔑
-        setAlphaVantageApiKey // 🔑
     } = useSettingsStore();
 
-    // ⚡ Local State for Performance (Debounced Persistence)
+    // ⚡ Local State for Performance
     const [localCount, setLocalCount] = useState(maxLoopCount || 20);
-    // 🧠 Ref to track latest value synchronously for stopAdjusting closure safety
     const localCountRef = React.useRef(maxLoopCount || 20);
     const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
     const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
-    // Tab Animation Local State
+    // Tab Animation
+    const [activeTab, setActiveTab] = useState<'preset' | 'user' | 'mcp'>('preset');
     const [containerWidth, setContainerWidth] = useState(0);
     const tabProgress = useSharedValue(0);
 
     const animatedIndicatorStyle = useAnimatedStyle(() => {
-        const halfWidth = containerWidth ? (containerWidth - 8) / 2 : 0;
+        const tabWidth = containerWidth ? (containerWidth - 8) / 3 : 0;
         return {
-            transform: [{ translateX: tabProgress.value * halfWidth }],
-            width: halfWidth,
+            transform: [{ translateX: tabProgress.value * (tabWidth * 2) }],
+            width: tabWidth,
         };
     });
 
-    // Sync from store only when store updates externally
+    useEffect(() => {
+        let progress = 0;
+        if (activeTab === 'user') progress = 0.5;
+        else if (activeTab === 'mcp') progress = 1;
+
+        tabProgress.value = withTiming(progress, {
+            duration: 300,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        });
+    }, [activeTab]);
+
+    // Loop config logic
     useEffect(() => {
         if (maxLoopCount !== undefined) {
             setLocalCount(maxLoopCount);
@@ -58,21 +67,11 @@ export const SkillsSettingsPanel: React.FC = () => {
         }
     }, [maxLoopCount]);
 
-    // Clean up timers
-    useEffect(() => {
-        return () => {
-            if (intervalRef.current) clearInterval(intervalRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        };
-    }, []);
-
     const adjustValue = (delta: number) => {
         const prev = localCountRef.current;
         let newVal = prev + delta;
-
-        if (newVal > 100) newVal = 100; // Cap at 100 (∞)
+        if (newVal > 100) newVal = 100;
         if (newVal < 1) newVal = 1;
-
         if (newVal !== prev) {
             localCountRef.current = newVal;
             setLocalCount(newVal);
@@ -81,71 +80,38 @@ export const SkillsSettingsPanel: React.FC = () => {
     };
 
     const startAdjusting = (delta: number) => {
-        // 1. Immediate trigger
         adjustValue(delta);
-
-        // 2. Setup rapid fire delay
         timeoutRef.current = setTimeout(() => {
-            intervalRef.current = setInterval(() => {
-                adjustValue(delta);
-            }, 80); // 80ms interval for smooth fast-forward
-        }, 400); // 400ms hold delay before rapid fire
+            intervalRef.current = setInterval(() => adjustValue(delta), 80);
+        }, 400);
     };
 
     const stopAdjusting = () => {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         if (intervalRef.current) clearInterval(intervalRef.current);
-
-        // ⚡ Commit to store (Persistence) using the latest Ref value
         setMaxLoopCount(localCountRef.current);
     };
 
     const [skills, setSkills] = useState<Skill[]>([]);
-
-    useEffect(() => {
-        const allSkills = skillRegistry.getAllSkills();
-        setSkills(allSkills);
-    }, []);
-
-    const handleToggleSkill = (id: string, value: boolean) => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setSkillEnabled(id, value);
-    };
-
-    // Use localCount for logic instead of store value
-    const isInfinite = localCount >= 100;
-
-    const [activeTab, setActiveTab] = useState<'preset' | 'user'>('preset');
-
-    useEffect(() => {
-        tabProgress.value = withTiming(activeTab === 'preset' ? 0 : 1, {
-            duration: 300,
-            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-        });
-    }, [activeTab]);
     const [editorVisible, setEditorVisible] = useState(false);
     const [configModalVisible, setConfigModalVisible] = useState(false);
     const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
     const [editingCode, setEditingCode] = useState('');
     const [editingConfig, setEditingConfig] = useState('');
 
-    // Dynamic refresh
-    const refreshSkills = async () => {
-        const allSkills = skillRegistry.getAllSkills();
-        setSkills([...allSkills]); // Force new reference
+    useEffect(() => {
+        setSkills(skillRegistry.getAllSkills());
+    }, []);
+
+    const refreshSkills = () => setSkills([...skillRegistry.getAllSkills()]);
+
+    const handleToggleSkill = (id: string, value: boolean) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSkillEnabled(id, value);
     };
-
-    // Subscribe to registry in some way? Or just poll/refresh on focus?
-    // For now, refresh on mount and deletions.
-
-    const filteredSkills = skills.filter(s => {
-        if (activeTab === 'preset') return !s.category || s.category === 'preset';
-        return s.category === 'user' || s.category === 'model';
-    });
 
     const handleDeleteSkill = async (id: string) => {
         const { UserSkillsStorage } = require('../../lib/skills/storage');
-        const { skillRegistry } = require('../../lib/skills/registry');
         await UserSkillsStorage.deleteSkill(id);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await skillRegistry.reloadUserSkills();
@@ -154,8 +120,8 @@ export const SkillsSettingsPanel: React.FC = () => {
 
     const handleEditSkill = async (id: string) => {
         const { UserSkillsStorage } = require('../../lib/skills/storage');
-        const storedSkills = await UserSkillsStorage.loadSkills();
-        const target = storedSkills.find((s: any) => s.id === id);
+        const stored = await UserSkillsStorage.loadSkills();
+        const target = stored.find((s: any) => s.id === id);
         if (target) {
             setEditingSkillId(id);
             setEditingCode(target.code);
@@ -165,8 +131,8 @@ export const SkillsSettingsPanel: React.FC = () => {
 
     const handleConfigureSkill = async (id: string) => {
         const { UserSkillsStorage } = require('../../lib/skills/storage');
-        const storedSkills = await UserSkillsStorage.loadSkills();
-        const target = storedSkills.find((s: any) => s.id === id);
+        const stored = await UserSkillsStorage.loadSkills();
+        const target = stored.find((s: any) => s.id === id);
         if (target) {
             setEditingSkillId(id);
             setEditingConfig(target.configJson || '{\n  "apiKey": ""\n}');
@@ -174,325 +140,254 @@ export const SkillsSettingsPanel: React.FC = () => {
         }
     };
 
-    const handleSaveCode = async (newCode: string) => {
+    const handleSaveCode = async (code: string) => {
         if (!editingSkillId) return;
         const { UserSkillsStorage } = require('../../lib/skills/storage');
-        const { skillRegistry } = require('../../lib/skills/registry');
-
-        const storedSkills = await UserSkillsStorage.loadSkills();
-        const target = storedSkills.find((s: any) => s.id === editingSkillId);
-
+        const stored = await UserSkillsStorage.loadSkills();
+        const target = stored.find((s: any) => s.id === editingSkillId);
         if (target) {
-            await UserSkillsStorage.saveSkill({
-                ...target,
-                code: newCode
-            });
+            await UserSkillsStorage.saveSkill({ ...target, code });
             await skillRegistry.reloadUserSkills();
             refreshSkills();
             setEditorVisible(false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
     };
 
-    const handleSaveConfig = async (newConfig: string) => {
+    const handleSaveConfig = async (configJson: string) => {
         if (!editingSkillId) return;
-
-        // Validate JSON
-        try {
-            JSON.parse(newConfig);
-        } catch (e) {
-            alert('Invalid JSON');
-            // In a better world we use a Toast or inline error. 
-            // For now, let's just let the modal stay open or handle it? 
-            // The Modal implementation might not handle validation blockage.
-            // But let's assume the user knows JSON.
-            // Actually, let's just save. The storage safely ignores bad JSON on load.
-        }
-
         const { UserSkillsStorage } = require('../../lib/skills/storage');
-        const { skillRegistry } = require('../../lib/skills/registry');
-
-        const storedSkills = await UserSkillsStorage.loadSkills();
-        const target = storedSkills.find((s: any) => s.id === editingSkillId);
-
+        const stored = await UserSkillsStorage.loadSkills();
+        const target = stored.find((s: any) => s.id === editingSkillId);
         if (target) {
-            await UserSkillsStorage.saveSkill({
-                ...target,
-                configJson: newConfig
-            });
+            await UserSkillsStorage.saveSkill({ ...target, configJson });
             await skillRegistry.reloadUserSkills();
             refreshSkills();
             setConfigModalVisible(false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
     };
 
+    const isInfinite = localCount >= 100;
+    const filteredSkills = skills.filter(s => {
+        if (activeTab === 'preset') return !s.category || s.category === 'preset';
+        if (activeTab === 'user') return s.category === 'user';
+        // MCP 标签页由 McpServerManagement 处理，但如果不处理，这里也不应该返回工具给 user Tab
+        return false;
+    });
+
     return (
         <View className="flex-1">
-            {/* Logic Control Group */}
             <SettingsSection title={t.settings.skillsSettings.title}>
-                {/* Loop Limit */}
                 <View className="flex-col px-4 py-4 border-b border-gray-100 dark:border-zinc-800 gap-3">
                     <View className="flex-row justify-between items-center">
                         <View className="flex-1 mr-4">
-                            <Typography variant="h3" className="text-gray-900 dark:text-white text-sm font-bold">
-                                {t.settings.skillsSettings.loopLimit}
-                            </Typography>
-                            <Typography variant="caption" className="text-gray-500 dark:text-gray-400 mt-1 text-[10px]">
-                                {t.settings.skillsSettings.loopLimitDesc}
-                            </Typography>
+                            <Typography variant="h3" className="text-sm font-bold">{t.settings.skillsSettings.loopLimit}</Typography>
+                            <Typography variant="caption" color="secondary" className="text-[10px]">{t.settings.skillsSettings.loopLimitDesc}</Typography>
                         </View>
-
-                        <View
-                            className="flex-row items-center rounded-2xl px-1 py-1"
-                            style={{ backgroundColor: isDark ? '#27272a' : '#f3f4f6' }}
-                        >
-                            <TouchableOpacity
-                                onPressIn={() => startAdjusting(-1)}
-                                onPressOut={stopAdjusting}
-                                className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
-                                style={{ opacity: localCount <= 1 ? 0.4 : 1 }}
-                                disabled={localCount <= 1}
-                            >
+                        <View className="flex-row items-center rounded-2xl px-1 py-1 bg-gray-100 dark:bg-zinc-800">
+                            <TouchableOpacity onPressIn={() => startAdjusting(-1)} onPressOut={stopAdjusting} className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700">
                                 <Minus size={18} color={isDark ? '#fff' : '#000'} />
                             </TouchableOpacity>
-
-                            <Text style={{
-                                marginHorizontal: 16,
-                                minWidth: 24,
-                                textAlign: 'center',
-                                fontSize: 18,
-                                fontWeight: '700',
-                                color: isInfinite ? '#ef4444' : (isDark ? '#fff' : '#000') // 红色强调无限
-                            }}>
+                            <Text style={{ marginHorizontal: 16, fontSize: 18, fontWeight: '700', color: isInfinite ? '#ef4444' : (isDark ? '#fff' : '#000') }}>
                                 {isInfinite ? '∞' : localCount}
                             </Text>
-
-                            <TouchableOpacity
-                                onPressIn={() => startAdjusting(1)}
-                                onPressOut={stopAdjusting}
-                                className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700 shadow-sm"
-                                style={{ opacity: isInfinite ? 0.4 : 1 }}
-                                disabled={isInfinite}
-                            >
+                            <TouchableOpacity onPressIn={() => startAdjusting(1)} onPressOut={stopAdjusting} className="w-10 h-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-700">
                                 <Plus size={18} color={isDark ? '#fff' : '#000'} />
                             </TouchableOpacity>
                         </View>
                     </View>
-
-                    {/* ⚠️ Infinite Warning */}
                     {isInfinite && (
                         <View className="bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg border border-red-100 dark:border-red-900/50">
-                            <Typography className="text-xs text-red-600 dark:text-red-400 font-medium">
-                                ⚠️ 警告：无限模式可能导致 Token 消耗激增。请确保您的 API 额度充足，并密切关注任务状态。
-                            </Typography>
-                        </View>
-                    )}
-
-                    {/* ⚠️ Low Limit Warning */}
-                    {localCount < 10 && (
-                        <View className="bg-yellow-50 dark:bg-yellow-900/20 px-3 py-2 rounded-lg border border-yellow-100 dark:border-yellow-900/50">
-                            <Typography className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">
-                                ⚠️ 注意：过低的思考轮数限制 ({localCount}) 可能导致复杂任务非正常中断。建议至少设置为 10。
-                            </Typography>
+                            <Typography className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ 警告：无限模式可能导致 Token 消耗激增。</Typography>
                         </View>
                     )}
                 </View>
-
             </SettingsSection>
 
-            {/* Individual Skills */}
             <SettingsSection title={t.settings.agentSkills.title}>
-                {/* Segmented Control Tab */}
-                {/* Segmented Control Tab (Reanimated) */}
-                <View
-                    className="mx-4 mb-4"
-                    onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
-                    style={{
-                        flexDirection: 'row',
-                        backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#f3f4f6', // zinc-900/gray-100 with opacity
-                        padding: 4,
-                        borderRadius: 16,
-                        position: 'relative',
-                        height: 48,
-                    }}
-                >
-                    {/* Animated Indicator */}
-                    <Animated.View
-                        style={[
-                            {
-                                position: 'absolute',
-                                top: 4,
-                                left: 4,
-                                bottom: 4,
-                                borderRadius: 12,
-                                backgroundColor: isDark ? 'rgba(63, 63, 70, 0.8)' : '#ffffff', // zinc-700 / white
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 1 },
-                                shadowOpacity: isDark ? 0 : 0.05,
-                                shadowRadius: 2,
-                            },
-                            animatedIndicatorStyle
-                        ]}
-                    />
-
-                    <TouchableOpacity
-                        onPress={() => {
-                            setActiveTab('preset');
-                            Haptics.selectionAsync();
-                        }}
-                        style={{
-                            flex: 1,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 1,
-                        }}
-                    >
-                        <Text style={{
-                            fontSize: 14,
-                            fontWeight: activeTab === 'preset' ? '700' : '500',
-                            color: activeTab === 'preset' ? (isDark ? '#fff' : '#000') : (isDark ? '#a1a1aa' : '#6b7280'), // zinc-400 / gray-500
-                        }}>
-                            {t.settings.agentSkills.preset || '预设技能'}
-                        </Text>
+                <View className="mx-4 mb-4 flex-row p-1 rounded-2xl bg-gray-100 dark:bg-zinc-900/60 relative" onLayout={e => setContainerWidth(e.nativeEvent.layout.width)}>
+                    <Animated.View style={[{ position: 'absolute', top: 4, left: 4, bottom: 4, borderRadius: 12, backgroundColor: isDark ? 'rgba(63, 63, 70, 0.8)' : '#fff' }, animatedIndicatorStyle]} />
+                    <TouchableOpacity onPress={() => { setActiveTab('preset'); Haptics.selectionAsync(); }} className="flex-1 items-center justify-center h-10 z-10">
+                        <Text style={{ fontSize: 12, fontWeight: activeTab === 'preset' ? '700' : '500', color: activeTab === 'preset' ? (isDark ? '#fff' : '#000') : (isDark ? '#a1a1aa' : '#6b7280') }}>{t.settings.agentSkills.preset || '预设'}</Text>
                     </TouchableOpacity>
-
-                    <TouchableOpacity
-                        onPress={() => {
-                            setActiveTab('user');
-                            Haptics.selectionAsync();
-                        }}
-                        style={{
-                            flex: 1,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 1,
-                        }}
-                    >
-                        <Text style={{
-                            fontSize: 14,
-                            fontWeight: activeTab === 'user' ? '700' : '500',
-                            color: activeTab === 'user' ? (isDark ? '#fff' : '#000') : (isDark ? '#a1a1aa' : '#6b7280'),
-                        }}>
-                            {t.settings.agentSkills.user || '自定义'}
-                        </Text>
+                    <TouchableOpacity onPress={() => { setActiveTab('user'); Haptics.selectionAsync(); }} className="flex-1 items-center justify-center h-10 z-10">
+                        <Text style={{ fontSize: 12, fontWeight: activeTab === 'user' ? '700' : '500', color: activeTab === 'user' ? (isDark ? '#fff' : '#000') : (isDark ? '#a1a1aa' : '#6b7280') }}>{t.settings.agentSkills.user || '自定义'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setActiveTab('mcp'); Haptics.selectionAsync(); }} className="flex-1 items-center justify-center h-10 z-10">
+                        <Text style={{ fontSize: 12, fontWeight: activeTab === 'mcp' ? '700' : '500', color: activeTab === 'mcp' ? (isDark ? '#fff' : '#000') : (isDark ? '#a1a1aa' : '#6b7280') }}>MCP</Text>
                     </TouchableOpacity>
                 </View>
 
-                {filteredSkills.map((skill, index) => {
-                    const isEnabled = skillsConfig[skill.id] !== false;
-                    const isLast = index === filteredSkills.length - 1;
-                    const isHighRisk = skill.isHighRisk;
-                    const isUser = skill.category === 'user' || skill.category === 'model';
+                {activeTab === 'mcp' ? (
+                    <McpServerManagement />
+                ) : (
+                    <>
+                        {filteredSkills.map((skill, index) => {
+                            const isEnabled = skillsConfig[skill.id] !== false;
+                            const isLast = index === filteredSkills.length - 1;
+                            const isUser = skill.category === 'user' || skill.category === 'model';
+                            const locName = (!isUser && t.skills.names[skill.id as keyof typeof t.skills.names]) || skill.name;
+                            const locDesc = (!isUser && t.skills.descriptions[skill.id as keyof typeof t.skills.descriptions]) || skill.description;
 
-                    const localizedName = (!isUser && t.skills.names[skill.id as keyof typeof t.skills.names]) || skill.name;
-                    const localizedDesc = (!isUser && t.skills.descriptions[skill.id as keyof typeof t.skills.descriptions]) || skill.description;
-
-                    return (
-                        <View
-                            key={skill.id}
-                            style={[
-                                { padding: 12 },
-                                !isLast && { borderBottomWidth: 1, borderBottomColor: themeColors.borderDefault }
-                            ]}
-                        >
-                            <View className="flex-row justify-between items-center mb-1">
-                                <View className="flex-1 mr-4">
-                                    <View className="flex-row items-center gap-2">
-                                        <Text style={{
-                                            fontSize: 14,
-                                            fontWeight: '700',
-                                            color: themeColors.textPrimary
-                                        }}>
-                                            {localizedName}
-                                        </Text>
-
-                                        {/* Tags */}
-                                        <View className="bg-gray-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
-                                            <Text style={{
-                                                fontSize: 9,
-                                                fontFamily: 'monospace',
-                                                color: themeColors.textTertiary
-                                            }}>
-                                                {skill.id}
-                                            </Text>
-                                        </View>
-
-                                        {isHighRisk && (
-                                            <View className="bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded">
-                                                <Text style={{ fontSize: 9, color: isDark ? '#f87171' : '#dc2626' }}>HIGH RISK</Text>
+                            return (
+                                <View key={skill.id} style={[{ padding: 12 }, !isLast && { borderBottomWidth: 1, borderBottomColor: themeColors.borderDefault }]}>
+                                    <View className="flex-row justify-between items-center mb-1">
+                                        <View className="flex-1 mr-4">
+                                            <View className="flex-row items-center gap-2">
+                                                <Text style={{ fontSize: 14, fontWeight: '700', color: themeColors.textPrimary }}>{locName}</Text>
+                                                <View className="bg-gray-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                                                    <Text style={{ fontSize: 9, fontFamily: 'monospace', color: themeColors.textTertiary }}>{skill.id}</Text>
+                                                </View>
                                             </View>
-                                        )}
+                                        </View>
+                                        <Switch value={isEnabled} onValueChange={v => handleToggleSkill(skill.id, v)} />
                                     </View>
+                                    <Typography variant="caption" color="secondary" className="text-[10px]">{locDesc}</Typography>
+                                    {isUser && (
+                                        <View className="flex-row gap-3 mt-2">
+                                            <TouchableOpacity onPress={() => handleEditSkill(skill.id)}><Text className="text-xs text-blue-600">编辑</Text></TouchableOpacity>
+                                            <TouchableOpacity onPress={() => handleConfigureSkill(skill.id)}><Text className="text-xs text-purple-600">配置</Text></TouchableOpacity>
+                                            <TouchableOpacity onPress={() => handleDeleteSkill(skill.id)}><Text className="text-xs text-red-600">删除</Text></TouchableOpacity>
+                                        </View>
+                                    )}
                                 </View>
-                                <Switch
-                                    value={isEnabled}
-                                    onValueChange={(val) => handleToggleSkill(skill.id, val)}
-                                />
-                            </View>
-
-                            <Text style={{
-                                fontSize: 10,
-                                color: themeColors.textSecondary,
-                                lineHeight: 14,
-                                marginBottom: 4
-                            }}>
-                                {localizedDesc}
-                            </Text>
-
-                            {/* User Skill Actions */}
-                            {isUser && (
-                                <View className="flex-row gap-3 mt-2">
-                                    <TouchableOpacity
-                                        onPress={() => handleEditSkill(skill.id)}
-                                        className="bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-md"
-                                    >
-                                        <Text className="text-xs font-semibold text-blue-600 dark:text-blue-400">编辑代码</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        onPress={() => handleConfigureSkill(skill.id)}
-                                        className="bg-gray-100 dark:bg-zinc-800 px-3 py-1.5 rounded-md"
-                                    >
-                                        <Text className="text-xs font-semibold text-purple-600 dark:text-purple-400">配置参数</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        onPress={() => handleDeleteSkill(skill.id)}
-                                        className="bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-md"
-                                    >
-                                        <Text className="text-xs font-semibold text-red-600 dark:text-red-400">删除</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                        </View>
-                    );
-                })}
-
-                {filteredSkills.length === 0 && (
-                    <View className="items-center py-10">
-                        <Typography color="secondary">当前分类下暂无技能。</Typography>
-                    </View>
+                            );
+                        })}
+                        {filteredSkills.length === 0 && <View className="items-center py-10"><Typography color="secondary">暂无技能</Typography></View>}
+                    </>
                 )}
             </SettingsSection>
 
-            {/* Code Editor Modal */}
-            <FloatingCodeEditorModal
-                visible={editorVisible}
-                initialContent={editingCode}
-                title={`编辑: ${editingSkillId}`}
-                onClose={() => setEditorVisible(false)}
-                onSave={handleSaveCode}
-                warningMessage="修改工具代码可能导致功能异常。请确保返回有效的结果对象。"
-            />
+            <FloatingCodeEditorModal visible={editorVisible} initialContent={editingCode} title={`编辑: ${editingSkillId}`} onClose={() => setEditorVisible(false)} onSave={handleSaveCode} warningMessage="修改代码可能导致异常。" />
+            <FloatingCodeEditorModal visible={configModalVisible} initialContent={editingConfig} title={`配置: ${editingSkillId}`} onClose={() => setConfigModalVisible(false)} onSave={handleSaveConfig} warningMessage="请填入 JSON 参数。" />
+        </View>
+    );
+};
 
-            {/* Config Editor Modal */}
-            <FloatingCodeEditorModal
-                visible={configModalVisible}
-                initialContent={editingConfig}
-                title={`配置: ${editingSkillId}`}
-                onClose={() => setConfigModalVisible(false)}
-                onSave={handleSaveConfig}
-                warningMessage="请填入 JSON 格式的默认参数（例如 API Key）。这些参数将在运行时自动合并。"
-            />
+const McpServerManagement: React.FC = () => {
+    const { isDark, colors } = useTheme();
+    const { t } = useI18n();
+    const themeColors = isDark ? Colors.dark : Colors.light;
+    const { servers, addServer, removeServer, updateServer } = useMcpStore();
+    const [newUrl, setNewUrl] = useState('');
+    const [newName, setNewName] = useState('');
+
+    const handleAdd = () => {
+        if (!newUrl || !newName) return;
+        addServer({ id: Date.now().toString(), name: newName, url: newUrl, enabled: true, defaultIncluded: true });
+        setNewUrl(''); setNewName('');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    };
+
+    const placeholderColor = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)';
+
+    return (
+        <View className="px-4 py-4">
+            <View className="mb-6 p-4 rounded-3xl bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800">
+                <Typography variant="h3" className="mb-4 text-xs opacity-50 uppercase tracking-widest font-bold">{t.settings.skillsSettings.addServer}</Typography>
+
+                <TextInput
+                    value={newName}
+                    onChangeText={setNewName}
+                    placeholder={t.settings.skillsSettings.serverName}
+                    className="mb-3 p-4 rounded-2xl bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 border border-transparent focus:border-indigo-500"
+                />
+
+                <TextInput
+                    value={newUrl}
+                    onChangeText={setNewUrl}
+                    placeholder={t.settings.skillsSettings.serverUrl}
+                    className="mb-4 p-4 rounded-2xl bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 border border-transparent focus:border-indigo-500"
+                />
+
+                <TouchableOpacity
+                    onPress={handleAdd}
+                    disabled={!newName || !newUrl}
+                    className="w-full bg-sky-500 p-4 rounded-2xl items-center shadow-sm active:opacity-80"
+                    style={{ opacity: (!newName || !newUrl) ? 0.5 : 1 }}
+                >
+                    <Text className="text-white font-black text-sm uppercase tracking-tighter">{t.settings.skillsSettings.confirmAdd}</Text>
+                </TouchableOpacity>
+            </View>
+
+            {servers.map(server => (
+                <View key={server.id} className="mb-4 p-5 rounded-3xl bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 shadow-sm">
+                    <View className="flex-row justify-between items-center mb-4">
+                        <View className="flex-row items-center flex-1 mr-3">
+                            <View style={{ padding: 8, borderRadius: 12, backgroundColor: server.status === 'connected' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }}>
+                                <Server size={18} color={server.status === 'connected' ? '#10b981' : '#ef4444'} />
+                            </View>
+                            <View className="flex-1 ml-3">
+                                <Typography variant="body" className="font-bold dark:text-zinc-100" numberOfLines={1}>{server.name}</Typography>
+                                <Marquee
+                                    text={server.url}
+                                    className="text-[10px] dark:text-zinc-400 font-medium"
+                                    duration={5000}
+                                    style={{ height: 16, marginTop: 2, opacity: 0.8 }}
+                                />
+                            </View>
+                        </View>
+                        <View className="flex-row gap-1">
+                            <TouchableOpacity onPress={() => McpBridge.syncServer(server.id)} className="p-2 bg-gray-50 dark:bg-zinc-800 rounded-xl">
+                                <RefreshCw size={18} color={colors[500]} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => removeServer(server.id)} className="p-2 bg-red-50 dark:bg-red-900/10 rounded-xl">
+                                <Trash2 size={18} color="#ef4444" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    {server.error && (
+                        <View className="bg-red-50 dark:bg-red-950/40 p-3 rounded-2xl mb-3 border border-red-100 dark:border-red-900/30">
+                            <Typography className="text-[11px] text-red-600 dark:text-red-300 font-bold">ERROR: {server.error}</Typography>
+                        </View>
+                    )}
+
+                    {/* 🆕 工具列表展示 */}
+                    {server.status === 'connected' && (
+                        <View className="mb-4">
+                            <View className="flex-row items-center mb-2 gap-1.5">
+                                <Cpu size={12} color={isDark ? '#a1a1aa' : '#71717a'} />
+                                <Typography className="text-[10px] font-bold opacity-60 uppercase tracking-tighter">已发现工具</Typography>
+                            </View>
+                            <View className="flex-row flex-wrap gap-1.5">
+                                {skillRegistry.getAllSkills()
+                                    .filter(s => s.mcpServerId === server.id)
+                                    .map(s => (
+                                        <View key={s.id} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-gray-200/50 dark:border-zinc-700/50">
+                                            <Text style={{ fontSize: 9, fontWeight: '600', color: themeColors.textSecondary }}>{s.name}</Text>
+                                        </View>
+                                    ))
+                                }
+                                {skillRegistry.getAllSkills().filter(s => s.mcpServerId === server.id).length === 0 && (
+                                    <Typography className="text-[10px] opacity-40 italic">暂无可用工具</Typography>
+                                )}
+                            </View>
+                        </View>
+                    )}
+
+                    <View className="flex-row justify-between items-center bg-gray-50 dark:bg-zinc-800/50 p-3 rounded-2xl">
+                        <View className="flex-row items-center gap-4">
+                            <View className="flex-row items-center gap-1.5">
+                                <Switch value={server.enabled} onValueChange={val => updateServer(server.id, { enabled: val })} />
+                                <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.enabled}</Typography>
+                            </View>
+                            <View className="flex-row items-center gap-1.5">
+                                <Switch value={server.defaultIncluded} onValueChange={val => updateServer(server.id, { defaultIncluded: val })} />
+                                <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.default}</Typography>
+                            </View>
+                        </View>
+                        <View className="flex-row items-center px-2 py-1 rounded-lg bg-green-50 dark:bg-green-900/10">
+                            <Typography className="text-[9px] font-bold text-green-600 dark:text-green-500 uppercase">
+                                {(() => {
+                                    const statusKey = `status${server.status.charAt(0).toUpperCase() + server.status.slice(1)}` as keyof typeof t.settings.skillsSettings;
+                                    const val = t.settings.skillsSettings[statusKey];
+                                    return typeof val === 'string' ? val : server.status.toUpperCase();
+                                })()}
+                            </Typography>
+                        </View>
+                    </View>
+                </View>
+            ))}
         </View>
     );
 };

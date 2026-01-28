@@ -14,6 +14,7 @@ export interface Skill {
     // Safety & Metadata
     isHighRisk?: boolean; // 🚨 High Risk Action (Sensitive tools requiring approval)
     category?: 'preset' | 'user' | 'model'; // Tool Category
+    mcpServerId?: string; // 🌐 来源 MCP 服务器 ID (用于会话级过滤)
     author?: string;      // Creator identifier (e.g., 'user', 'model', 'system')
     createdAt?: number;
     updatedAt?: number;

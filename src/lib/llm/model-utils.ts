@@ -1,10 +1,10 @@
 import { MODEL_SPECS } from './model-specs';
-import { useApiStore } from '../../store/api-store';
+import { useApiStore, ModelConfig } from '../../store/api-store';
 
 /**
  * 辅助函数：从 Store 中查找模型配置
  */
-function findStoreConfig(modelId: string) {
+function findStoreConfig(modelId: string): ModelConfig | undefined {
   try {
     const providers = useApiStore.getState().providers;
     for (const provider of providers) {
@@ -25,29 +25,43 @@ function findStoreConfig(modelId: string) {
 export function findModelSpec(modelId: string) {
   const normalizedId = modelId.toLowerCase();
 
-  // 1. 优先尝试从 Store 中获取（SSOT: 尊重用户在“模型管理”中的手动设置）
+  // 1. 获取 Store 配置（但不立即返回，以便后续与 Spec 合并）
   const storeModel = findStoreConfig(modelId);
+
+  // 2. 回退到静态规格库
+  for (const spec of MODEL_SPECS) {
+    const isMatched = typeof spec.pattern === 'string'
+      ? normalizedId.includes(spec.pattern.toLowerCase())
+      : spec.pattern.test(modelId);
+
+    if (isMatched) {
+      // 如果 Store 中没有完整能力，可以尝试从 Spec 中继承
+      if (storeModel) {
+        return {
+          ...spec,
+          pattern: storeModel.id,
+          contextLength: storeModel.contextLength || spec.contextLength || 4096,
+          type: storeModel.type || spec.type || 'chat',
+          capabilities: {
+            ...spec.capabilities,
+            ...storeModel.capabilities,
+          },
+          icon: storeModel.icon || spec.icon || 'api',
+        };
+      }
+      return spec;
+    }
+  }
+
+  // 3. 如果没匹配到，返回 Store 配置（如果存在）
   if (storeModel) {
     return {
       pattern: storeModel.id,
       contextLength: storeModel.contextLength || 4096,
-      type: storeModel.type,
-      capabilities: storeModel.capabilities,
-      icon: 'api', // Default icon for dynamic models
+      type: storeModel.type || 'chat',
+      capabilities: storeModel.capabilities || {},
+      icon: storeModel.icon || 'api',
     };
-  }
-
-  // 2. 回退到静态规格库
-  for (const spec of MODEL_SPECS) {
-    if (typeof spec.pattern === 'string') {
-      if (normalizedId.includes(spec.pattern.toLowerCase())) {
-        return spec;
-      }
-    } else {
-      if (spec.pattern.test(modelId)) {
-        return spec;
-      }
-    }
   }
 
   return undefined;
@@ -72,11 +86,20 @@ export function supportsThinkingConfig(modelId: string): boolean {
 
   // 1. Explicitly check for Flash Thinking or any Gemini 1.5/2.0+ models
   // Gemini series often have implicit reasoning or dedicated thinking modes
-  if (lowerId.includes('flash-thinking') || lowerId.includes('thinking') || lowerId.includes('gemini-1.5') || lowerId.includes('gemini-2.0') || lowerId.includes('gemini-3')) {
-    return true;
+  const isGemini = lowerId.includes('flash-thinking') || lowerId.includes('thinking') || lowerId.includes('gemini-1.5') || lowerId.includes('gemini-2.0') || lowerId.includes('gemini-3');
+
+  if (isGemini) return true;
+
+  // 2. Robust Check: Try to resolve the actual Model ID if input is a UUID
+  const spec = findModelSpec(modelId);
+  if (spec) {
+    const slug = (typeof spec.pattern === 'string' ? spec.pattern : spec.pattern.toString()).toLowerCase();
+    if (slug.includes('gemini') || spec.capabilities?.reasoning) {
+      return true;
+    }
   }
 
-  // 2. Check if the model spec has reasoning capability
+  // 3. Check capabilities directly
   const caps = getModelCapabilities(modelId);
   if (caps.reasoning) return true;
 

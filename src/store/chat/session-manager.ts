@@ -8,16 +8,25 @@ import type { ManagerContext, SessionManager } from './types';
 import type { Session, SessionId, InferenceParams } from '../../types/chat';
 import { SessionRepository } from '../../lib/db/session-repository';
 
+import { useMcpStore } from '../../store/mcp-store';
+
 export const createSessionManager = (context: ManagerContext): SessionManager => {
     const { get, set } = context;
 
     return {
         addSession: async (session: Session) => {
             // 🔑 Phase 4b: 双写模式
-            const enrichedSession = {
+            // 🔑 MCP Initialization: Inherit default included servers
+            const defaultMcpServers = useMcpStore.getState().servers
+                .filter(s => s.enabled && s.defaultIncluded)
+                .map(s => s.id);
+
+            const enrichedSession: Session = {
                 ...session,
                 executionMode: session.executionMode || 'semi',
                 loopStatus: session.loopStatus || 'completed',
+                activeMcpServerIds: session.activeMcpServerIds || defaultMcpServers,
+                activeSkillIds: session.activeSkillIds || [],
             };
 
             // 1. 写入 SQLite
@@ -208,5 +217,35 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
             // 注意：此方法操作的是 activeKGExtractions 状态，需通过 context 访问
             // 暂时返回空实现，待 chat-store 层面处理
         },
+
+        toggleMcpServer: async (sessionId: SessionId, serverId: string) => {
+            const session = get().sessions.find(s => s.id === sessionId);
+            if (!session) return;
+
+            const current = session.activeMcpServerIds || [];
+            const next = current.includes(serverId)
+                ? current.filter(id => id !== serverId)
+                : [...current, serverId];
+
+            await SessionRepository.update(sessionId, { activeMcpServerIds: next });
+            set(state => ({
+                sessions: state.sessions.map(s => s.id === sessionId ? { ...s, activeMcpServerIds: next } : s)
+            }));
+        },
+
+        toggleSkill: async (sessionId: SessionId, skillId: string) => {
+            const session = get().sessions.find(s => s.id === sessionId);
+            if (!session) return;
+
+            const current = session.activeSkillIds || [];
+            const next = current.includes(skillId)
+                ? current.filter(id => id !== skillId)
+                : [...current, skillId];
+
+            await SessionRepository.update(sessionId, { activeSkillIds: next });
+            set(state => ({
+                sessions: state.sessions.map(s => s.id === sessionId ? { ...s, activeSkillIds: next } : s)
+            }));
+        }
     };
 };

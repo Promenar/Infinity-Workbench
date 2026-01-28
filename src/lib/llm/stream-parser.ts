@@ -48,7 +48,8 @@ export class StreamParser {
 
             if (this.state === 'IDLE') {
                 // Scan for any known start tag
-                const tagRegex = /<(think|thought|plan|tool_code|tool_calls|tools|tool_call|call)(\s|>)/i;
+                // Updated to include <!--
+                const tagRegex = /<(think|thought|plan|tool_code|tool_calls|tools|tool_call|call|!--)(\s|>)/i;
                 const match = tagRegex.exec(this.buffer);
 
                 if (!match) {
@@ -71,7 +72,33 @@ export class StreamParser {
                     const tagName = match[1].toLowerCase();
                     this.startTag = tagName;
 
-                    if (tagName === 'think' || tagName === 'thought') {
+                    // If it's <!--, check if it's THINKING_START
+                    if (tagName === '!--') {
+                        const START_MARKER = '<!-- THINKING_START -->';
+                        if (this.buffer.includes(START_MARKER)) {
+                            const markerIdx = this.buffer.indexOf(START_MARKER);
+                            // Prefix text before the tag
+                            const prefix = this.buffer.substring(0, markerIdx);
+                            if (prefix) outputContent += prefix;
+
+                            this.state = 'IN_THINK';
+                            this.buffer = this.buffer.substring(markerIdx + START_MARKER.length);
+                            // Continue processing in the next loop iteration
+                            continue;
+                        } else {
+                            // Partial match of <!--, wait for more data
+                            // If the buffer ends with a partial comment tag, don't consume it yet
+                            const partialCommentMatch = /<!--?(\s?T?H?I?N?K?I?N?G?_?S?T?A?R?T?)?$/i.exec(this.buffer);
+                            if (partialCommentMatch) {
+                                outputContent += this.buffer.substring(0, partialCommentMatch.index);
+                                this.buffer = this.buffer.substring(partialCommentMatch.index);
+                            } else {
+                                outputContent += this.buffer;
+                                this.buffer = '';
+                            }
+                            break;
+                        }
+                    } else if (tagName === 'think' || tagName === 'thought') {
                         this.state = 'IN_THINK';
                         const closeBracket = this.buffer.indexOf('>');
                         if (closeBracket !== -1) {
@@ -90,21 +117,29 @@ export class StreamParser {
                     }
                 }
             } else if (this.state === 'IN_THINK') {
-                // ... Existing IN_THINK logic ...
-                const endRegex = /<\/(think|thought)>/i;
+                // Standard XML tags or HTML comment marker
+                const endRegex = /(<\/think>|<\/thought>|<!-- THINKING_END -->)/i;
                 const match = endRegex.exec(this.buffer);
+
                 if (match) {
-                    outputReasoning += this.buffer.slice(0, match.index);
-                    this.buffer = this.buffer.slice(match.index + match[0].length);
+                    const endIdx = match.index;
+                    const endTag = match[0];
+                    outputReasoning += this.buffer.substring(0, endIdx);
+                    this.buffer = this.buffer.substring(endIdx + endTag.length);
                     this.state = 'IDLE';
                 } else {
-                    const lastOpen = this.buffer.lastIndexOf('<');
-                    if (lastOpen !== -1 && lastOpen > this.buffer.length - 10) {
-                        outputReasoning += this.buffer.slice(0, lastOpen);
-                        this.buffer = this.buffer.slice(lastOpen);
-                    } else {
-                        outputReasoning += this.buffer;
-                        this.buffer = '';
+                    // No end tag yet, check for partial end tag at the end of buffer
+                    // (to prevent splitting the tag across chunks)
+                    const partialMatch = /<(\/?t?h?i?n?k?)?$/i.exec(this.buffer);
+                    const partialComment = /<!?-?-?\s?T?H?I?N?K?I?N?G?_?E?N?D?\s?-?-?>?$/i.exec(this.buffer);
+
+                    let safeLength = this.buffer.length;
+                    if (partialMatch) safeLength = partialMatch.index;
+                    else if (partialComment) safeLength = partialComment.index;
+
+                    if (safeLength > 0) {
+                        outputReasoning += this.buffer.substring(0, safeLength);
+                        this.buffer = this.buffer.substring(safeLength);
                     }
                     break;
                 }

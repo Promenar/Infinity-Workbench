@@ -106,6 +106,8 @@ export interface SessionManager {
     getSessionsByAgent: (agentId: string) => Session[];
     dismissActiveTask: (sessionId: SessionId) => void;
     setKGExtractionStatus: (sessionId: SessionId, isExtracting: boolean) => void;
+    toggleMcpServer: (sessionId: SessionId, serverId: string) => void;
+    toggleSkill: (sessionId: SessionId, skillId: string) => void;
 }
 
 // ===== 工具执行接口 =====

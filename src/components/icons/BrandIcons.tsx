@@ -1,5 +1,6 @@
 import React from 'react';
 import Svg, { Path, Circle, Defs, LinearGradient, Stop, G } from 'react-native-svg';
+import { SvgUri } from 'react-native-svg';
 
 interface IconProps {
   size?: number;
@@ -51,48 +52,65 @@ export const BrandIcon = {
     </Svg>
   ),
 
-  // DeepSeek (Whale Tail / Fin)
+  // DeepSeek - Fallback
   DeepSeek: ({ size = 24 }: IconProps) => (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"
-        fill="#4B68FF"
-      />
-      <Path
-        d="M12 6c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"
-        fill="#4B68FF"
-        fillOpacity="0.5"
-      />
-      <Path d="M12 8c-2.21 0-4 1.79-4 4h8c0-2.21-1.79-4-4-4z" fill="#4B68FF" />
+      <Path d="M12 2L2 12L12 22L22 12L12 2Z" fill="#4B68FF" />
     </Svg>
   ),
 
-  // Zhipu AI (GLM) - Stylized Geometric Node
+  // Zhipu - Fallback
   Zhipu: ({ size = 24 }: IconProps) => (
-    <Svg width={size} height={size} viewBox="0 0 1024 1024" fill="none">
-      <Path
-        d="M512 0L87 245.4v490.8L512 981.6l425-245.4V245.4L512 0zm346.5 700.1L512 900.2 165.5 700.1V323.9L512 123.8l346.5 200.1v376.2z"
-        fill="#3D45E4"
-      />
-      <Path
-        d="M512 245.4L245.4 399.2v225.6L512 778.6l266.6-153.8v-225.6L512 245.4z"
-        fill="#3D45E4"
-      />
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2L4 7V17L12 22L20 17V7L12 2Z" fill="#3D45E4" />
     </Svg>
   ),
 
-  // Moonshot AI (Kimi) - Stylized Planet/Ring
+  // Moonshot - Fallback
   Moonshot: ({ size = 24 }: IconProps) => (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Circle cx="12" cy="12" r="8" fill="#F43F5E" />
-      <Path
-        d="M4 12c0-4.418 3.582-8 8-8s8 3.582 8 8"
-        stroke="#fff"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.6"
-      />
-      <Path d="M12 4v4m0 8v4M4 12h4m8 0h4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+      <Circle cx="12" cy="12" r="10" fill="#F43F5E" />
     </Svg>
   ),
+
+  // Ali Qwen - Fallback
+  Qwen: ({ size = 24 }: IconProps) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2L2 12L12 22L22 12L12 2Z" fill="#6A1B9A" />
+    </Svg>
+  ),
+
+  /**
+   * 动态加载 LobeHub 图标
+   * @param slug 图标标识符 (如 'openai', 'deepseek')
+   */
+  ModelLogo: ({ slug, size = 24 }: IconProps & { slug: string }) => {
+    // 映射一些别名到 LobeHub 官方 Slug
+    const slugMap: Record<string, string> = {
+      claude: 'claude',
+      gemini: 'gemini',
+      glm: 'zhipu',
+      chatglm: 'zhipu',
+      kimi: 'moonshot',
+      ernie: 'wenxin',
+      'llama-3': 'meta',
+      'llama-2': 'meta',
+    };
+
+    const normalizedSlug = slugMap[slug.toLowerCase()] || slug.toLowerCase();
+
+    // 绝大多数 AI 品牌在 LobeHub 中都有 -color 变体
+    // 排除已知只有基础版本的品牌 (OpenAI, Anthropic 厂商图标)
+    // 注意：moonshot 官方包中没有 moonshot-color.svg，直接用 moonshot.svg 就是彩色的
+    const baseOnlySlugs = ['openai', 'anthropic', 'moonshot'];
+
+    // 特殊处理：有些品牌默认就是彩色的，有些需要添加 -color 后缀
+    // 经调研，大部分主流品牌如 deepseek, qwen, baichuan, minimax, google, gemini, claude 等均有 -color
+    const finalSlug = baseOnlySlugs.includes(normalizedSlug) ? normalizedSlug : `${normalizedSlug}-color`;
+
+    // 使用 npmmirror 以确保在国内环境的稳定性
+    const uri = `https://registry.npmmirror.com/@lobehub/icons-static-svg/latest/files/icons/${finalSlug}.svg`;
+
+    return <SvgUri width={size} height={size} uri={uri} />;
+  },
 };

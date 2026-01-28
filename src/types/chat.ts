@@ -167,6 +167,8 @@ export interface Session {
   pendingIntervention?: string; // 待注入的用户指令
   continuationBudget?: number;   // ✅ 新增：续杯额度（+10轮 累加）
   autoLoopLimit?: number;        // ✅ 新增：自动执行轮数上限
+  activeMcpServerIds?: string[]; // ✅ 新增：该会话激活的 MCP 服务器 ID (SSOT)
+  activeSkillIds?: string[];     // ✅ 新增：该会话独立激活的技能 ID (排除内置默认)
   approvalRequest?: {          // 待批准的操作详情
     type?: 'tool_approval' | 'continuation'; // ✅ 新增：区分请求类型
     toolName: string;

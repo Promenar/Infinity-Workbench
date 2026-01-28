@@ -178,6 +178,7 @@ export class ModelService {
       zhipu: 'https://open.bigmodel.cn/api/paas/v4',
       siliconflow: 'https://api.siliconflow.cn/v1',
       github: 'https://models.inference.ai.azure.com',
+      gemini: 'https://generativelanguage.googleapis.com',
       'openai-compatible': '', // Left to user input
     };
     return mapping[type] || '';
@@ -189,6 +190,7 @@ export class ModelService {
       openai: ['gpt-4o', 'gpt-4o-mini', 'o1-preview', 'o1-mini'],
       deepseek: ['deepseek-chat', 'deepseek-reasoner'],
       google: ['gemini-2.0-flash-thinking-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+      gemini: ['gemini-2.0-flash-thinking-exp', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
       moonshot: ['moonshot-v1-8k', 'moonshot-v1-32k'],
       zhipu: ['glm-4', 'glm-4-flash', 'glm-4-plus', 'glm-4.7'],
       siliconflow: [

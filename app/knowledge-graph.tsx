@@ -12,7 +12,15 @@ import { useAgentStore } from '../src/store/agent-store'; // Import agent store
 export default function KnowledgeGraphScreen() {
   const { isDark } = useTheme();
   const router = useRouter();
-  const params = useLocalSearchParams();
+
+  // 🔑 加固：防御性解构路由参数
+  let params: any = {};
+  try {
+    params = useLocalSearchParams() || {};
+  } catch (e) {
+    console.warn('[KnowledgeGraph] Failed to get search params', e);
+  }
+
   const docId = params.docId as string | undefined;
   const folderId = params.folderId as string | undefined;
   const sessionId = params.sessionId as string | undefined;
@@ -20,6 +28,11 @@ export default function KnowledgeGraphScreen() {
 
   let title = '全量知识图谱 (Beta)';
   let subtitle = '知识库全网可视化';
+
+  // 🛡️ 环境守卫：如果没有关键上下文且未处于加载中，提供基本回退
+  if (!params && !docId && !folderId && !sessionId && !agentId) {
+    return <PageLayout safeArea={false} className="bg-white dark:bg-black"><View /></PageLayout>;
+  }
 
   // State filtering logic
   let activeDocIds: string[] | undefined = undefined;

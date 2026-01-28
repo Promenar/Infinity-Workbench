@@ -84,12 +84,12 @@ export const MODEL_SPECS: ModelSpec[] = [
   {
     pattern: 'claude-3-5-sonnet',
     contextLength: 200000,
-    icon: 'anthropic',
+    icon: 'claude',
     note: 'Claude 3.5 Sonnet',
   },
-  { pattern: 'claude-3-5', contextLength: 200000, icon: 'anthropic', note: 'Claude 3.5' },
-  { pattern: 'claude-3', contextLength: 200000, icon: 'anthropic', note: 'Claude 3' },
-  { pattern: 'claude', contextLength: 100000, icon: 'anthropic', note: 'Claude Generic' },
+  { pattern: 'claude-3-5', contextLength: 200000, icon: 'claude', note: 'Claude 3.5' },
+  { pattern: 'claude-3', contextLength: 200000, icon: 'claude', note: 'Claude 3' },
+  { pattern: 'claude', contextLength: 100000, icon: 'claude', note: 'Claude Generic' },
   { pattern: 'anthropic', contextLength: 100000, icon: 'anthropic', note: 'Anthropic Generic' },
 
   // ==================== Google Gemini ====================
@@ -98,7 +98,7 @@ export const MODEL_SPECS: ModelSpec[] = [
     contextLength: 1000000,
     type: 'reasoning',
     capabilities: { reasoning: true },
-    icon: 'google',
+    icon: 'gemini',
     note: 'Gemini 2.0 Flash Thinking',
   },
   {
@@ -106,7 +106,7 @@ export const MODEL_SPECS: ModelSpec[] = [
     contextLength: 1000000,
     type: 'chat',
     capabilities: { vision: true, reasoning: true },
-    icon: 'google',
+    icon: 'gemini',
     note: 'Gemini 2.0',
   },
   {
@@ -114,7 +114,7 @@ export const MODEL_SPECS: ModelSpec[] = [
     contextLength: 2000000,
     type: 'chat',
     capabilities: { vision: true, reasoning: true },
-    icon: 'google',
+    icon: 'gemini',
     note: 'Gemini 1.5 Pro',
   },
   {
@@ -122,7 +122,7 @@ export const MODEL_SPECS: ModelSpec[] = [
     contextLength: 1000000,
     type: 'chat',
     capabilities: { vision: true, reasoning: true },
-    icon: 'google',
+    icon: 'gemini',
     note: 'Gemini 1.5 Flash',
   },
   {
@@ -130,10 +130,10 @@ export const MODEL_SPECS: ModelSpec[] = [
     contextLength: 1000000,
     type: 'chat',
     capabilities: { reasoning: true },
-    icon: 'google',
+    icon: 'gemini',
     note: 'Gemini 1.5',
   },
-  { pattern: 'gemini', contextLength: 1000000, type: 'chat', icon: 'google', note: 'Gemini' },
+  { pattern: 'gemini', contextLength: 1000000, type: 'chat', icon: 'gemini', note: 'Gemini' },
   { pattern: 'google', contextLength: 32768, icon: 'google', note: 'Google Generic' },
 
   // ==================== DeepSeek (深度求索) ====================
@@ -214,59 +214,59 @@ export const MODEL_SPECS: ModelSpec[] = [
   { pattern: 'moonshot', contextLength: 128000, icon: 'moonshot' },
 
   // ==================== 百川智能 (Baichuan) ====================
-  { pattern: /baichuan-4/i, contextLength: 32768, note: 'Baichuan 4' },
-  { pattern: /baichuan-3-turbo/i, contextLength: 32768, note: 'Baichuan 3 Turbo' },
-  { pattern: /baichuan-2-turbo/i, contextLength: 32768, note: 'Baichuan 2 Turbo' },
-  { pattern: /baichuan/i, contextLength: 32768, note: 'Baichuan' },
+  { pattern: /baichuan-4/i, contextLength: 32768, icon: 'baichuan', note: 'Baichuan 4' },
+  { pattern: /baichuan-3-turbo/i, contextLength: 32768, icon: 'baichuan', note: 'Baichuan 3 Turbo' },
+  { pattern: /baichuan-2-turbo/i, contextLength: 32768, icon: 'baichuan', note: 'Baichuan 2 Turbo' },
+  { pattern: /baichuan/i, contextLength: 32768, icon: 'baichuan', note: 'Baichuan' },
 
   // ==================== 阿里通义千问 (Qwen) ====================
-  { pattern: /qwen-max/i, contextLength: 8000, note: 'Qwen Max' },
-  { pattern: /qwen-plus/i, contextLength: 32768, note: 'Qwen Plus' },
-  { pattern: /qwen-turbo/i, contextLength: 8000, note: 'Qwen Turbo' },
-  { pattern: /qwen2\.5-72b/i, contextLength: 131072, note: 'Qwen2.5 72B' },
-  { pattern: /qwen2\.5-32b/i, contextLength: 131072, note: 'Qwen2.5 32B' },
-  { pattern: /qwen2\.5-14b/i, contextLength: 131072, note: 'Qwen2.5 14B' },
-  { pattern: /qwen2\.5-7b/i, contextLength: 131072, note: 'Qwen2.5 7B' },
-  { pattern: /qwen2-72b/i, contextLength: 32768, note: 'Qwen2 72B' },
-  { pattern: /qwen/i, contextLength: 8000, note: 'Qwen' },
+  { pattern: /qwen-max/i, contextLength: 8000, icon: 'qwen', note: 'Qwen Max' },
+  { pattern: /qwen-plus/i, contextLength: 32768, icon: 'qwen', note: 'Qwen Plus' },
+  { pattern: /qwen-turbo/i, contextLength: 8000, icon: 'qwen', note: 'Qwen Turbo' },
+  { pattern: /qwen2\.5-72b/i, contextLength: 131072, icon: 'qwen', note: 'Qwen2.5 72B' },
+  { pattern: /qwen2\.5-32b/i, contextLength: 131072, icon: 'qwen', note: 'Qwen2.5 32B' },
+  { pattern: /qwen2\.5-14b/i, contextLength: 131072, icon: 'qwen', note: 'Qwen2.5 14B' },
+  { pattern: /qwen2\.5-7b/i, contextLength: 131072, icon: 'qwen', note: 'Qwen2.5 7B' },
+  { pattern: /qwen2-72b/i, contextLength: 32768, icon: 'qwen', note: 'Qwen2 72B' },
+  { pattern: /qwen/i, contextLength: 8000, icon: 'qwen', note: 'Qwen' },
 
   // ==================== 百度文心一言 (ERNIE) ====================
-  { pattern: /ernie-4\.0/i, contextLength: 8192, note: 'ERNIE 4.0' },
-  { pattern: /ernie-3\.5/i, contextLength: 8192, note: 'ERNIE 3.5' },
-  { pattern: /ernie-turbo/i, contextLength: 8192, note: 'ERNIE Turbo' },
-  { pattern: /ernie-speed/i, contextLength: 8192, note: 'ERNIE Speed' },
-  { pattern: /ernie/i, contextLength: 8192, note: 'ERNIE' },
+  { pattern: /ernie-4\.0/i, contextLength: 8192, icon: 'wenxin', note: 'ERNIE 4.0' },
+  { pattern: /ernie-3\.5/i, contextLength: 8192, icon: 'wenxin', note: 'ERNIE 3.5' },
+  { pattern: /ernie-turbo/i, contextLength: 8192, icon: 'wenxin', note: 'ERNIE Turbo' },
+  { pattern: /ernie-speed/i, contextLength: 8192, icon: 'wenxin', note: 'ERNIE Speed' },
+  { pattern: /ernie/i, contextLength: 8192, icon: 'wenxin', note: 'ERNIE' },
 
   // ==================== 字节豆包 (Doubao) ====================
-  { pattern: /doubao-pro-32k/i, contextLength: 32768, note: 'Doubao Pro 32K' },
-  { pattern: /doubao-pro-4k/i, contextLength: 4096, note: 'Doubao Pro 4K' },
-  { pattern: /doubao-lite-32k/i, contextLength: 32768, note: 'Doubao Lite 32K' },
-  { pattern: /doubao/i, contextLength: 32768, note: 'Doubao' },
+  { pattern: /doubao-pro-32k/i, contextLength: 32768, icon: 'doubao', note: 'Doubao Pro 32K' },
+  { pattern: /doubao-pro-4k/i, contextLength: 4096, icon: 'doubao', note: 'Doubao Pro 4K' },
+  { pattern: /doubao-lite-32k/i, contextLength: 32768, icon: 'doubao', note: 'Doubao Lite 32K' },
+  { pattern: /doubao/i, contextLength: 32768, icon: 'doubao', note: 'Doubao' },
 
   // ==================== 零一万物 (Yi) ====================
-  { pattern: /yi-large/i, contextLength: 32768, note: 'Yi Large' },
-  { pattern: /yi-medium/i, contextLength: 16384, note: 'Yi Medium' },
-  { pattern: /yi-34b-chat/i, contextLength: 200000, note: 'Yi 34B Chat 200K' },
-  { pattern: /yi-6b/i, contextLength: 4096, note: 'Yi 6B' },
-  { pattern: /yi-/i, contextLength: 4096, note: 'Yi series' },
+  { pattern: /yi-large/i, contextLength: 32768, icon: 'yi', note: 'Yi Large' },
+  { pattern: /yi-medium/i, contextLength: 16384, icon: 'yi', note: 'Yi Medium' },
+  { pattern: /yi-34b-chat/i, contextLength: 200000, icon: 'yi', note: 'Yi 34B Chat 200K' },
+  { pattern: /yi-6b/i, contextLength: 4096, icon: 'yi', note: 'Yi 6B' },
+  { pattern: /yi-/i, contextLength: 4096, icon: 'yi', note: 'Yi series' },
 
   // ==================== MiniMax ====================
-  { pattern: /abab6\.5/i, contextLength: 245760, note: 'ABAB 6.5 (245K)' },
-  { pattern: /abab6/i, contextLength: 8192, note: 'ABAB 6' },
-  { pattern: /abab5\.5/i, contextLength: 8192, note: 'ABAB 5.5' },
+  { pattern: /abab6\.5/i, contextLength: 245760, icon: 'minimax', note: 'ABAB 6.5 (245K)' },
+  { pattern: /abab6/i, contextLength: 8192, icon: 'minimax', note: 'ABAB 6' },
+  { pattern: /abab5\.5/i, contextLength: 8192, icon: 'minimax', note: 'ABAB 5.5' },
 
   // ==================== 其他开源模型 ====================
-  { pattern: /llama-3\.1-405b/i, contextLength: 128000, note: 'Llama 3.1 405B' },
-  { pattern: /llama-3\.1-70b/i, contextLength: 128000, note: 'Llama 3.1 70B' },
-  { pattern: /llama-3\.1/i, contextLength: 128000, note: 'Llama 3.1' },
-  { pattern: /llama-3-70b/i, contextLength: 8192, note: 'Llama 3 70B' },
-  { pattern: /llama-3/i, contextLength: 8192, note: 'Llama 3' },
-  { pattern: /llama-2-70b/i, contextLength: 4096, note: 'Llama 2 70B' },
-  { pattern: /llama-2/i, contextLength: 4096, note: 'Llama 2' },
-  { pattern: /mistral-large/i, contextLength: 128000, note: 'Mistral Large' },
-  { pattern: /mistral-medium/i, contextLength: 32000, note: 'Mistral Medium' },
-  { pattern: /mistral-small/i, contextLength: 32000, note: 'Mistral Small' },
-  { pattern: /mixtral-8x7b/i, contextLength: 32000, note: 'Mixtral 8x7B' },
+  { pattern: /llama-3\.1-405b/i, contextLength: 128000, icon: 'meta', note: 'Llama 3.1 405B' },
+  { pattern: /llama-3\.1-70b/i, contextLength: 128000, icon: 'meta', note: 'Llama 3.1 70B' },
+  { pattern: /llama-3\.1/i, contextLength: 128000, icon: 'meta', note: 'Llama 3.1' },
+  { pattern: /llama-3-70b/i, contextLength: 8192, icon: 'meta', note: 'Llama 3 70B' },
+  { pattern: /llama-3/i, contextLength: 8192, icon: 'meta', note: 'Llama 3' },
+  { pattern: /llama-2-70b/i, contextLength: 4096, icon: 'meta', note: 'Llama 2 70B' },
+  { pattern: /llama-2/i, contextLength: 4096, icon: 'meta', note: 'Llama 2' },
+  { pattern: /mistral-large/i, contextLength: 128000, icon: 'mistral', note: 'Mistral Large' },
+  { pattern: /mistral-medium/i, contextLength: 32000, icon: 'mistral', note: 'Mistral Medium' },
+  { pattern: /mistral-small/i, contextLength: 32000, icon: 'mistral', note: 'Mistral Small' },
+  { pattern: /mixtral-8x7b/i, contextLength: 32000, icon: 'mistral', note: 'Mixtral 8x7B' },
 
   // ==================== Rerank Models (重排序) ====================
   {

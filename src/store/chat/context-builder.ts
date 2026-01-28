@@ -238,7 +238,27 @@ export function buildSystemPrompt(
     let finalSystemPrompt = prioritizedState + agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
 
     // 注入工具描述
-    const skillsToUse = availableSkills ?? skillRegistry.getEnabledSkills();
+    // 🔑 增强过滤逻辑：双层过滤 (全局启用 + 会话活跃)
+    const globallyEnabledSkills = skillRegistry.getEnabledSkills();
+    const activeMcpIds = session.activeMcpServerIds || [];
+    const activeSkillIds = session.activeSkillIds || [];
+    const settingsStore = useSettingsStore.getState();
+
+    const skillsToUse = availableSkills ?? globallyEnabledSkills.filter(s => {
+        // 1. MCP 工具：必须全局启用服务器 (已在 mcBridge 同步时处理) + 会话活跃
+        if (s.mcpServerId) {
+            return activeMcpIds.includes(s.mcpServerId);
+        }
+
+        // 2. 自定义技能：必须在会话中显式启用
+        if (s.category === 'user') {
+            return activeSkillIds.includes(s.id);
+        }
+
+        // 3. 预设技能：直接受全局配置控制 (已在 getEnabledSkills 中过滤)
+        return true;
+    });
+
     if (skillsToUse.length > 0) {
         const toolsDesc = skillsToUse.map(s => {
             let argsDesc = 'No arguments';

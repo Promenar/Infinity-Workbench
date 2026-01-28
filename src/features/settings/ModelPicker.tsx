@@ -184,7 +184,7 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
           }}
         >
           <ModelIconRenderer
-            icon={findModelSpec(item.id)?.icon}
+            icon={findModelSpec(item.id)?.icon || findModelSpec(item.name)?.icon}
             size={22}
             color={isSelected ? colors[500] : '#6b7280'}
           />

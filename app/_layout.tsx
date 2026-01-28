@@ -109,6 +109,12 @@ export default function RootLayout() {
         // 🔑 恢复中断的向量化任务 (Checkpoint Recovery)
         setTimeout(async () => {
           try {
+            // 同步 MCP 工具
+            const { McpBridge } = require('../src/lib/mcp/mcp-bridge');
+            McpBridge.syncAll().catch((err: any) => {
+              logger.warn('App', 'Initial MCP sync failed', { error: err.message });
+            });
+
             const { useRagStore } = require('../src/store/rag-store');
             const queue = useRagStore.getState()._getQueue?.();
             if (queue) {

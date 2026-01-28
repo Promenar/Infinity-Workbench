@@ -19,47 +19,22 @@ export const ModelIconRenderer: React.FC<ModelIconRendererProps> = ({
   // Normalize icon key
   const iconKey = icon?.toLowerCase();
 
-  let IconComponent;
+  // 如果定义了 icon，优先处理
+  let content;
 
-  switch (iconKey) {
-    case 'openai':
-      IconComponent = BrandIcon.OpenAI;
-      break;
-    case 'anthropic':
-    case 'claude':
-      IconComponent = BrandIcon.Anthropic;
-      break;
-    case 'google':
-    case 'gemini':
-      IconComponent = BrandIcon.Google;
-      break;
-    case 'deepseek':
-      IconComponent = BrandIcon.DeepSeek;
-      break;
-    case 'zhipu':
-    case 'glm':
-    case 'chatglm':
-      IconComponent = BrandIcon.Zhipu;
-      break;
-    case 'moonshot':
-    case 'kimi':
-      IconComponent = BrandIcon.Moonshot;
-      break;
-    case 'reasoning': // Generic reasoning icon
-      IconComponent = BrandIcon.Attention;
-      break;
-    default:
-      // Fallback for unknown brands
-      return (
-        <View style={style}>
-          <Sparkles size={size} color={color} />
-        </View>
-      );
+  if (iconKey === 'reasoning') {
+    content = <BrandIcon.Attention size={size} color={color} />;
+  } else if (iconKey) {
+    // 强制使用动态 CDN 图标库（LobeHub 高保真官方 Logo）
+    content = <BrandIcon.ModelLogo slug={iconKey} size={size} />;
+  } else {
+    // 兜底逻辑
+    content = (
+      <View style={{ opacity: 0.5 }}>
+        <Sparkles size={size} color={color} />
+      </View>
+    );
   }
 
-  return (
-    <View style={style}>
-      <IconComponent size={size} color={color} />
-    </View>
-  );
+  return <View style={style}>{content}</View>;
 };

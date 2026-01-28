@@ -37,6 +37,7 @@ export interface ModelConfig {
   capabilities: ModelCapabilities;
   enabled: boolean;
   isAutoFetched?: boolean;
+  icon?: string;
 }
 
 // 服务商配置接口
