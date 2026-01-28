@@ -60,6 +60,8 @@ echo "✅ Injection Complete. Signing config is active."
 # 5. Build
 echo -e "\033[36m🚀 Starting Release Build...\033[0m"
 cd android
+echo "🧹 Performing Deep Clean (.cxx, .gradle, build)..."
+rm -rf .cxx .gradle build app/build
 ./gradlew clean assembleRelease
 BUILD_EXIT_CODE=$?
 cd ..
