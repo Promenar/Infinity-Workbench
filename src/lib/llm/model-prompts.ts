@@ -197,15 +197,54 @@ Use function calling. ${searchNoteEnglish}`;
 }
 
 /**
- * 获取输出格式指导
+ * 获取环境能力声明 (Capabilities Declaration)
+ * 明确告知模型当前 UI 支持哪些原生渲染能力，从而抑制其"自己造轮子"的倾向。
  */
-export function getOutputFormatGuidance(family: ModelFamily): string {
+export function getCapabilitiesGuidance(family: ModelFamily): string {
+    const commonCaps = [
+        '- **Native Mermaid Renderer**: Can render flowcharts, sequence diagrams, etc. via ```mermaid blocks.',
+        '- **Native ECharts Renderer**: Can render interactive charts via ```echarts blocks (JSON).',
+        '- **Syntax Highlighting**: Supports all major programming languages.'
+    ];
+
     switch (family) {
+        case 'deepseek-reasoner':
         case 'deepseek':
         case 'qwen':
-        case 'moonshot':
-        case 'glm':
-            return `[输出格式要求]
+            return `## 客户端环境能力 (Client Capabilities)
+当前对话运行在 **Nexara Rich Chat UI** 环境中，内置了以下原生渲染引擎：
+1. **Mermaid 图表**: 直接输出 \`\`\`mermaid 代码块即可渲染。
+2. **ECharts 图表**: 直接输出 \`\`\`echarts JSON 配置即可渲染。
+3. **代码高亮**: 支持所有主流语言。
+
+⚠️ **重要提示**:
+- 你 **不** 需要使用 \`run_javascript\` 或 Python 来生成图表图片。
+- 你 **不** 需要生成 HTML 文件来展示图表。
+- **请直接输出** 相应的 Markdown 代码块，UI 会自动捕获并渲染交互式组件。`;
+
+        case 'gemini':
+        case 'openai':
+        case 'anthropic':
+            return `[ENVIRONMENT CAPABILITIES]
+The user is chatting via **Nexara Rich Chat UI**, which has NATIVE support for:
+${commonCaps.join('\n')}
+
+IMPORTANT:
+- You do NOT need to write HTML/JS to render charts.
+- You do NOT need to execute code to generate visualizations.
+- SIMPLY output the standard Markdown blocks, and the Client UI will render them interactively.`;
+
+        default:
+            return '';
+    }
+}
+
+switch (family) {
+    case 'deepseek':
+    case 'qwen':
+    case 'moonshot':
+    case 'glm':
+        return `[输出格式要求]
 - **思考过程**（如果需要）: 包裹在 \`<!-- THINKING_START -->\` 和 \`<!-- THINKING_END -->\` 之间
 - **最终回复**: 清晰、用户友好的自然语言，不包含思考标记
 - **任务总结**: 多步任务完成后，必须包含一段核心成果总结
@@ -216,10 +255,10 @@ export function getOutputFormatGuidance(family: ModelFamily): string {
     - ✅ **允许** 在其他场景（如网页开发任务）中生成常规 HTML 代码。
   - **代码**: 支持语法高亮，请注明语言类型 (如 \`\`\`python)`;
 
-        case 'gemini':
-        case 'openai':
-        case 'anthropic':
-            return `[OUTPUT FORMAT]
+    case 'gemini':
+    case 'openai':
+    case 'anthropic':
+        return `[OUTPUT FORMAT]
 - Wrap reasoning in <!-- THINKING_START --> and <!-- THINKING_END -->
 - Final answers should be clean, user-facing text
 - After completing a multi-step task, output a summary:
@@ -231,9 +270,9 @@ export function getOutputFormatGuidance(family: ModelFamily): string {
   - **Charts**: Use \`\`\`echarts code blocks (content must be a valid JSON option object)
   - **Code**: Syntax highlighting is supported, always specify language (e.g., \`\`\`javascript)`;
 
-        default:
-            return '';
-    }
+    default:
+        return '';
+}
 }
 
 /**
@@ -257,6 +296,8 @@ export function getModelSpecificEnhancements(
 
     const outputGuidance = getOutputFormatGuidance(family);
     if (outputGuidance) {
+        // 将能力声明置于输出格式之前，确保模型先理解"能做什么"
+        parts.push(getCapabilitiesGuidance(family));
         parts.push(outputGuidance);
     }
 
