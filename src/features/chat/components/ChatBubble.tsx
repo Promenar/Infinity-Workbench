@@ -14,6 +14,10 @@ import {
   Dimensions,
   Pressable, // ✅ Import Pressable
 } from 'react-native';
+import SyntaxHighlighter from 'react-native-syntax-highlighter';
+import { atomOneDark, atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { MermaidRenderer } from '../../../components/chat/MermaidRenderer';
+import { EChartsRenderer } from '../../../components/chat/EChartsRenderer';
 import { MemoryManager } from '../../../lib/rag/memory-manager';
 import { graphExtractor } from '../../../lib/rag/graph-extractor';
 import { RagOmniIndicator } from './RagOmniIndicator';
@@ -691,7 +695,25 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         const content = node.content?.trim() || '';
         const language = node.sourceInfo?.toLowerCase() || '';
 
-        // 检测 LaTeX块级公式 (```latex 或 ```math)
+        // 1. Mermaid Flowcharts
+        if (language === 'mermaid') {
+          return (
+            <View key={node.key} style={{ marginVertical: 12, width: '100%' }}>
+              <MermaidRenderer content={content} />
+            </View>
+          );
+        }
+
+        // 2. ECharts JSON Configuration
+        if (language === 'echarts') {
+          return (
+            <View key={node.key} style={{ marginVertical: 12, width: '100%' }}>
+              <EChartsRenderer content={content} />
+            </View>
+          );
+        }
+
+        // 3. LaTeX Block Formulas
         if (language === 'latex' || language === 'math') {
           return (
             <View key={node.key} collapsable={false} style={{ marginVertical: 12, width: '100%' }}>
@@ -700,13 +722,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           );
         }
 
-        // 检测 SVG：优先检查语言标签或尝试内容匹配
+        // 4. SVG Content
         if (
           language === 'svg' ||
           content.startsWith('<svg') ||
           (content.includes('<svg') && content.includes('</svg>'))
         ) {
-          // 1. 语法预检：捕获底层库必然崩溃的模式 (dM, fill#, fillred 等)
+          // Syntax check for obvious errors
           const hasObviousSyntaxErrors =
             /<path[^>]*\s+d[A-Z0-9]/.test(content) ||
             /<rect[^>]*\s+x[A-Z0-9]/.test(content) ||
@@ -728,40 +750,24 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                   borderColor: isDark ? '#3f3f46' : '#fecaca',
                 }}
               >
-                <Typography
-                  selectable={true}
-                  style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}
-                >
+                <Typography style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}>
                   {t.svgErrorTitle}
                 </Typography>
-                <Typography
-                  selectable={true}
-                  variant="caption"
-                  style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}
-                >
+                <Typography variant="caption" style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}>
                   {t.svgBlockedDesc}
                 </Typography>
               </View>
             );
           }
 
-          // 检测是否包含动画标签（CSS 动画、SMIL 动画）
-          // 恢复动画检测：交由 InteractiveSVGRenderer 处理（默认静态，点击播放）
-          // 检测是否包含动画标签（CSS 动画、SMIL 动画）
-          // 统一使用 LazySVGRenderer 处理所有 SVG，包括动画和静态
-          // 移除了手动检测动画逻辑，全部通过 LazySVGRenderer 实现懒加载和全屏
-
           return (
-            <View
-              key={node.key + '-svg'}
-              collapsable={false}
-              style={{ marginVertical: 12, width: '100%' }}
-            >
+            <View key={node.key + '-svg'} collapsable={false} style={{ marginVertical: 12, width: '100%' }}>
               <LazySVGRenderer svgContent={content} isDark={isDark} />
             </View>
           );
         }
 
+        // 5. Standard Code Blocks with Syntax Highlighting
         const handleCopyCode = async () => {
           await Clipboard.setStringAsync(content);
           setTimeout(() => {
@@ -769,7 +775,6 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           }, 10);
         };
 
-        // 普通代码块：添加复制按钮
         return (
           <View key={node.key} style={[styles.fence, { padding: 0, overflow: 'hidden' }]}>
             <View
@@ -784,10 +789,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)',
               }}
             >
-              <Typography
-                variant="caption"
-                style={{ color: isDark ? '#a1a1aa' : '#71717a', fontWeight: '600' }}
-              >
+              <Typography variant="caption" style={{ color: isDark ? '#a1a1aa' : '#71717a', fontWeight: '600' }}>
                 {language.toUpperCase() || 'CODE'}
               </Typography>
               <TouchableOpacity
@@ -797,21 +799,27 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 <Copy size={14} color={isDark ? '#a1a1aa' : '#71717a'} />
               </TouchableOpacity>
             </View>
-            <View style={{ padding: 12 }}>
-              <Text
-                selectable={true}
-                style={{
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                  fontSize: 13,
-                  color: isDark ? '#ffffff' : '#27272a',
+            <View style={{ padding: 0 }}>
+              <SyntaxHighlighter
+                language={language || 'text'}
+                style={isDark ? atomOneDark : atomOneLight}
+                highlighter={'hljs'}
+                fontSize={13}
+                fontFamily={Platform.OS === 'ios' ? 'Menlo' : 'monospace'}
+                customStyle={{
+                  padding: 12,
+                  backgroundColor: 'transparent',
                 }}
+                CodeTag={Text}
+                PreTag={View}
               >
                 {content}
-              </Text>
+              </SyntaxHighlighter>
             </View>
           </View>
         );
       },
+
       image: (node: any, children: any, parent: any, styles: any) => {
         const { src, alt } = node.attributes;
         return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} />;

@@ -25,7 +25,8 @@ export const InferenceSettings: React.FC<Props> = ({ params, onUpdate, agentDefa
   };
 
   const temperature = getValue('temperature', 0.7);
-  const topP = getValue('topP', 1.0);
+  const rawTopP = getValue('topP', 1.0);
+  const topP = typeof rawTopP === 'number' ? rawTopP : 1.0;
   const maxTokens = getValue('maxTokens', 4096);
 
 

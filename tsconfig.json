@@ -5,6 +5,8 @@
   },
   "exclude": [
     "node_modules",
-    "_reference_ui"
+    "_reference_ui",
+    "worktrees",
+    "web-client"
   ]
 }

@@ -8,6 +8,8 @@ import clsx from 'clsx';
 import type { ChatMessage } from '../types/chat';
 import { CodeBlock } from './CodeBlock';
 import { ReasoningBlock } from './ReasoningBlock';
+import { MermaidBlock } from './MermaidBlock';
+import { EChartsBlock } from './EChartsBlock';
 import { SearchSourcesBlock } from './SearchSourcesBlock';
 import { RagReferencesList } from './RagReferencesList';
 import { useI18n } from '../lib/i18n';
@@ -199,6 +201,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 const content = String(children).replace(/\n$/, '');
 
                                 if (!inline) {
+                                    if (language === 'mermaid') {
+                                        return <MermaidBlock chart={content} />;
+                                    }
+                                    if (language === 'echarts') {
+                                        return <EChartsBlock config={content} />;
+                                    }
                                     if (language === 'svg') {
                                         return (
                                             <div className="my-6 p-6 bg-white/5 rounded-2xl border border-white/10 overflow-x-auto flex justify-center shadow-inner">

@@ -208,7 +208,11 @@ export function getOutputFormatGuidance(family: ModelFamily): string {
             return `[输出格式要求]
 - **思考过程**（如果需要）: 包裹在 \`<!-- THINKING_START -->\` 和 \`<!-- THINKING_END -->\` 之间
 - **最终回复**: 清晰、用户友好的自然语言，不包含思考标记
-- **任务总结**: 多步任务完成后，必须包含一段核心成果总结`;
+- **任务总结**: 多步任务完成后，必须包含一段核心成果总结
+- **渲染能力增强**:
+  - **流程图**: 使用 \`\`\`mermaid 代码块
+  - **交互图表**: 使用 \`\`\`echarts 代码块 (内容为 JSON 配置对象)
+  - **代码**: 支持语法高亮，请注明语言类型 (如 \`\`\`python)`;
 
         case 'gemini':
         case 'openai':
@@ -219,7 +223,11 @@ export function getOutputFormatGuidance(family: ModelFamily): string {
 - After completing a multi-step task, output a summary:
   1. What was accomplished
   2. Key results or findings
-  3. Relevant details for the user`;
+  3. Relevant details for the user
+- **Rendering Capabilities**:
+  - **Diagrams**: Use \`\`\`mermaid code blocks
+  - **Charts**: Use \`\`\`echarts code blocks (content must be a valid JSON option object)
+  - **Code**: Syntax highlighting is supported, always specify language (e.g., \`\`\`javascript)`;
 
         default:
             return '';
