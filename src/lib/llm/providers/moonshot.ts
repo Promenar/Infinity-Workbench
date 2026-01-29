@@ -194,10 +194,7 @@ export class MoonshotClient implements LlmClient {
                                                 parsedArgs = safeJsonParse(argsStr);
                                             }
                                             return { ...tc, arguments: parsedArgs };
-                                        }).filter(tc => {
-                                            const argsStr = tc.arguments ? JSON.stringify(tc.arguments) : '{}';
-                                            return argsStr !== '{}';
-                                        });
+                                        }).filter(tc => !!(tc.id && tc.name));
                                     }
 
                                     if (content || reasoning || usage || (safeToolCalls && safeToolCalls.length > 0)) {

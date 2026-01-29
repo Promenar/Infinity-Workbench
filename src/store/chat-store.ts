@@ -1053,7 +1053,9 @@ export const useChatStore = create<ChatState>()(
               get().updateSession(sessionId, { currentLoopCount: loopCount });
 
               const latestSession = get().getSession(sessionId);
-              const targetMsg = latestSession?.messages.find(m => m.id === currentAssistantMsgId);
+              if (!latestSession) break;
+
+              const targetMsg = latestSession.messages.find(m => m.id === currentAssistantMsgId);
               if (!targetMsg) break;
 
               // 🔄 关键修复：从最新消息状态同步累积内容变量。
@@ -1131,7 +1133,7 @@ export const useChatStore = create<ChatState>()(
               // 4. Get Enabled Skills (🆕 Phase 4: 全链路工具控制)
               // 整合全局开关 (Master Toggle) + 会话级开关 (Session Toolbox) + 模型能力 (Native Search)
               const isNativeWebSearchProvider = provider.type === 'gemini' || provider.type === 'google';
-              const availableSkills = skillRegistry.getEnabledSkillsForSession(session, {
+              const availableSkills = skillRegistry.getEnabledSkillsForSession(latestSession, {
                 nativeWebSearch: isNativeWebSearchProvider
               });
 
@@ -1370,8 +1372,8 @@ export const useChatStore = create<ChatState>()(
                 (error) => { console.warn('Stream error', error); },
                 {
                   skills: availableSkills,
-                  webSearch: options?.webSearch ?? session.options?.webSearch,
-                  reasoning: options?.reasoning ?? session.options?.reasoning,
+                  webSearch: options?.webSearch ?? latestSession.options?.webSearch,
+                  reasoning: options?.reasoning ?? latestSession.options?.reasoning,
                   inferenceParams: {
                     temperature: agent.params?.temperature || 0.7,
                     maxTokens: agent.params?.maxTokens,
@@ -1409,13 +1411,13 @@ export const useChatStore = create<ChatState>()(
                 currentAssistantMsgId,
                 finalDisplayContent,
                 accumulatedUsage,
-                undefined, // 🔑 Don't overwrite the reasoning field if we already moved it to timeline
+                undefined, // reasoning
                 undefined, // citations
                 undefined, // ragReferences
                 undefined, // ragReferencesLoading
                 undefined, // ragMetadata
-                turnThoughtSignature,
-                undefined, // taskState
+                turnThoughtSignature || targetMsg.thought_signature,
+                latestSession.activeTask, // 🔑 保持任务状态同步
                 toolCalls, // 🔑 Correctly persist tool_calls at turn end
                 loopExecutionSteps // 🔑 Pass the full accumulated steps list to avoid race conditions
               );
@@ -1629,7 +1631,9 @@ export const useChatStore = create<ChatState>()(
                 }
 
                 if (extractedCalls.length > 0) {
-                  console.log(`[AgentLoop] Fallback Parser found ${extractedCalls.length} calls:`, extractedCalls.map(c => c.name));
+                  console.log(`[AgentLoop] Fallback Parser found ${extractedCalls.length} calls:`,
+                    extractedCalls.map(c => `${c.name}(${typeof c.arguments === 'string' ? 'str' : 'obj'})`)
+                  );
                   toolCalls = extractedCalls;
                 }
               }
@@ -1760,11 +1764,11 @@ export const useChatStore = create<ChatState>()(
                 }
 
                 // 🔑 检测 manage_task create（任务创建，必须继续执行）
-                // DeepSeek已知问题：工具调用时content可能为空，导致循环误判为final answer
-                // 解决方案：检测到任务创建后，强制继续循环
-                const isTaskCreate = toolCalls.some(tc =>
-                  tc.name === 'manage_task' && tc.arguments?.action === 'create'
-                );
+                const isTaskCreate = toolCalls.some(tc => {
+                  if (tc.name !== 'manage_task') return false;
+                  const args = typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments;
+                  return args?.action === 'create';
+                });
 
                 if (isTaskCreate) {
                   console.log('[AgentLoop] Task created, will execute and rebuild messages before continuing');
@@ -2220,8 +2224,9 @@ export const useChatStore = create<ChatState>()(
               useTokenStatsStore.getState().trackUsage({ modelId, usage: billingUsage });
             } catch (e) { }
 
-            if (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation') {
-              get().updateSessionTitle(sessionId, content.substring(0, 30) + (content.length > 30 ? '...' : ''));
+            if (sessionId !== 'super_assistant' && (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation')) {
+              const titleLimit = 15;
+              get().updateSessionTitle(sessionId, content.substring(0, titleLimit) + (content.length > titleLimit ? '...' : ''));
             }
 
           } catch (e: any) {
@@ -2318,7 +2323,7 @@ export const useChatStore = create<ChatState>()(
               .slice(-4)
               .map((m: { role: any; content: any; }) => `${m.role}: ${m.content}`)
               .join('\n');
-            const prompt = `Based on the conversation content, summarize a very concise title (less than 6 Chinese characters). DO NOT include quotation marks or phrases like "Title: ". Output the title directly.\n\nConversation content:\n${recentMessages}`;
+            const prompt = `Based on the conversation content, summarize an extremely concise title (NO MORE THAN 5 Chinese characters or 2 words). DO NOT include quotation marks, "Title:", or any extra text. Output the raw title only.\n\nConversation:\n${recentMessages}`;
 
             let generatedTitle = '';
             await new Promise<void>((resolve, reject) => {
@@ -2339,8 +2344,9 @@ export const useChatStore = create<ChatState>()(
             const title = generatedTitle.trim().replace(/^["']|["']$/g, '');
 
             if (title) {
-              get().updateSessionTitle(sessionId, title);
-              return title;
+              const sanitizedTitle = title.substring(0, 15);
+              get().updateSessionTitle(sessionId, sanitizedTitle);
+              return sanitizedTitle;
             }
           } catch (error) {
             console.error('Failed to generate title:', error);

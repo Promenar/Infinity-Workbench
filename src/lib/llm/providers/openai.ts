@@ -279,12 +279,7 @@ export class OpenAiClient implements LlmClient {
                       }
 
                       return { ...tc, arguments: parsedArgs };
-                    }).filter(tc => {
-                      // 只有当参数包含实际内容，或者我们确定这不是一个误发时才发送
-                      // DeepSeek 早期会发一个 id 但没 args，这会导致 chat-store 立即触发 tool 执行
-                      const argsStr = tc.arguments ? JSON.stringify(tc.arguments) : '{}';
-                      return argsStr !== '{}';
-                    });
+                    }).filter(tc => !!(tc.id && tc.name));
                   }
 
                   if (content || reasoning || usage || (safeToolCalls && safeToolCalls.length > 0)) {

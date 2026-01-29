@@ -45,8 +45,13 @@ class SkillRegistry {
         this.skills.set(skill.id, skill);
     }
 
-    public getSkill(id: string): Skill | undefined {
-        return this.skills.get(id);
+    public getSkill(idOrName: string): Skill | undefined {
+        // 1. Try direct ID lookup
+        const skill = this.skills.get(idOrName);
+        if (skill) return skill;
+
+        // 2. Fallback: Search by name (for MCP tools where ID != name)
+        return this.getAllSkills().find(s => s.name === idOrName);
     }
 
     public getAllSkills(): Skill[] {

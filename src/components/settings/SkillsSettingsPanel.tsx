@@ -347,14 +347,19 @@ const McpServerManagement: React.FC = () => {
                         <View className="mb-4">
                             <View className="flex-row items-center mb-2 gap-1.5">
                                 <Cpu size={12} color={isDark ? '#a1a1aa' : '#71717a'} />
-                                <Typography className="text-[10px] font-bold opacity-60 uppercase tracking-tighter">已发现工具</Typography>
+                                <Typography
+                                    className="text-[10px] font-bold uppercase tracking-tighter"
+                                    style={{ color: themeColors.textSecondary }}
+                                >
+                                    已发现工具
+                                </Typography>
                             </View>
                             <View className="flex-row flex-wrap gap-1.5">
                                 {skillRegistry.getAllSkills()
                                     .filter(s => s.mcpServerId === server.id)
                                     .map(s => (
                                         <View key={s.id} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-gray-200/50 dark:border-zinc-700/50">
-                                            <Text style={{ fontSize: 9, fontWeight: '600', color: themeColors.textSecondary }}>{s.name}</Text>
+                                            <Text style={{ fontSize: 9, fontWeight: '600', color: themeColors.textPrimary }}>{s.name}</Text>
                                         </View>
                                     ))
                                 }

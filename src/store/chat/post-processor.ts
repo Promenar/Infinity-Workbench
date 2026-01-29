@@ -199,8 +199,9 @@ export function updateStats(params: PostProcessorParams): void {
         useTokenStatsStore.getState().trackUsage({ modelId, usage: billingUsage });
     }).catch(() => { });
 
-    // 自动生成标题
-    if (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation') {
-        updateSessionTitle(sessionId, userContent.substring(0, 30) + (userContent.length > 30 ? '...' : ''));
+    // 自动生成标题 (排除超级助手)
+    if (sessionId !== 'super_assistant' && (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation')) {
+        const titleLimit = 15;
+        updateSessionTitle(sessionId, userContent.substring(0, titleLimit) + (userContent.length > titleLimit ? '...' : ''));
     }
 }

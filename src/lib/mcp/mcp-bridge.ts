@@ -115,8 +115,72 @@ export class McpBridge {
 
     /**
      * 简单的 JSON Schema 到 Zod 转换
+     * 🔑 增强：实现递归转换，支持嵌套对象、数组和基础类型描述
      */
     private static jsonSchemaToZod(schema: any): z.ZodSchema<any> {
-        return z.any().describe(JSON.stringify(schema));
+        if (!schema || typeof schema !== 'object') return z.any();
+
+        // 递归处理逻辑
+        const convert = (s: any): z.ZodSchema<any> => {
+            if (!s || typeof s !== 'object') return z.any();
+
+            const description = s.description;
+            let zodSchema: z.ZodSchema<any>;
+
+            switch (s.type) {
+                case 'string':
+                    if (s.enum && Array.isArray(s.enum) && s.enum.length > 0) {
+                        zodSchema = z.enum(s.enum as [string, ...string[]]);
+                    } else {
+                        zodSchema = z.string();
+                    }
+                    break;
+                case 'number':
+                case 'integer':
+                    zodSchema = z.number();
+                    break;
+                case 'boolean':
+                    zodSchema = z.boolean();
+                    break;
+                case 'array':
+                    zodSchema = z.array(convert(s.items));
+                    break;
+                case 'object':
+                    if (s.properties) {
+                        const shape: Record<string, z.ZodSchema<any>> = {};
+                        const required = s.required || [];
+
+                        for (const [key, prop] of Object.entries(s.properties)) {
+                            let propSchema = convert(prop);
+                            if (!required.includes(key)) {
+                                propSchema = propSchema.optional();
+                            }
+                            shape[key] = propSchema;
+                        }
+                        zodSchema = z.object(shape);
+                    } else {
+                        zodSchema = z.record(z.string(), z.any());
+                    }
+                    if (s.additionalProperties === false && (zodSchema as any).strict) {
+                        zodSchema = (zodSchema as any).strict();
+                    }
+                    break;
+                default:
+                    zodSchema = z.any();
+            }
+
+            if (description && (zodSchema as any).describe) {
+                zodSchema = (zodSchema as any).describe(description);
+            }
+
+            return zodSchema;
+        };
+
+        try {
+            return convert(schema);
+        } catch (e) {
+            console.warn('[McpBridge] Zod conversion failed, falling back to any:', e);
+            return z.any().describe(JSON.stringify(schema));
+        }
     }
 }

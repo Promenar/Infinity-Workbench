@@ -120,15 +120,22 @@ export class McpClient {
         const url = this.baseUrl;
 
         const executeCall = async (targetUrl: string) => {
+            const body = {
+                jsonrpc: '2.0',
+                id: `call-${Date.now()}-${name}`,
+                method: 'tools/call',
+                params: {
+                    name,
+                    arguments: args || {} // 🔑 保证 arguments 至少是个空对象，防止服务端崩溃
+                }
+            };
+
+            console.log(`[McpClient] Calling tool '${name}' at ${targetUrl}`, JSON.stringify(body, null, 2));
+
             return await fetch(targetUrl, {
                 method: 'POST',
                 headers: this.getHeaders(),
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: `call-${Date.now()}-${name}`,
-                    method: 'tools/call',
-                    params: { name, arguments: args }
-                })
+                body: JSON.stringify(body)
             });
         };
 
@@ -146,11 +153,16 @@ export class McpClient {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 100)}`);
+                // 🔑 增强：记录 500 错误的完整详情
+                console.error(`[McpClient] Tool call failed with ${response.status}:`, errorText);
+                throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
             }
 
             const data = await response.json();
-            if (data.error) throw new Error(data.error.message || 'Unknown MCP error');
+            if (data.error) {
+                console.error(`[McpClient] JSON-RPC Error:`, data.error);
+                throw new Error(data.error.message || 'Unknown MCP error');
+            }
 
             return data.result;
         } catch (error) {
