@@ -572,45 +572,7 @@ export function ChatInput({
         </TouchableOpacity>
       )}
 
-      {/* ✅ 长程任务指示器 (Passive Loop Indicator) */}
-      {session?.isLongRunning && !editingMessageId && (
-        <View
-          style={{
-            position: 'absolute',
-            top: -24,
-            left: 0,
-            right: 0,
-            zIndex: 90, // Lower than editing banner
-            alignItems: 'center',
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: isDark ? 'rgba(99, 102, 241, 0.9)' : 'rgba(99, 102, 241, 0.9)',
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.2)',
-              shadowColor: '#6366f1',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.3,
-              shadowRadius: 8,
-              elevation: 4,
-            }}
-          >
-            <Animated.View style={animatedCircleStyle}>
-              <Zap size={12} color="white" fill="white" />
-            </Animated.View>
-            <Typography style={{ color: 'white', fontSize: 11, fontWeight: '700' }}>
-              自动迭代中 ({session.currentLoopCount}步)
-            </Typography>
-          </View>
-        </View>
-      )}
+
       <BlurView
         intensity={isDark ? 80 : 120}
         tint={isDark ? 'dark' : 'light'}

@@ -256,10 +256,16 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
     }, [step.throttledUntil, step.type]);
 
     React.useEffect(() => {
-        if (step.type === 'thinking' || step.type === 'tool_result') {
+        // 🔑 自动展开/折叠逻辑：
+        // 1. 如果是正在进行的思考步骤 (isLast && isMessageGenerating)，则自动展开
+        // 2. 否则 (生成完成或其他类型步骤)，保持折叠
+        if (step.type === 'thinking') {
+            const isActiveThinking = !!(isLast && isMessageGenerating);
+            setExpanded(isActiveThinking);
+        } else {
             setExpanded(false);
         }
-    }, [step.type]);
+    }, [step.type, isLast, isMessageGenerating]);
 
     const getPreview = () => {
         if (step.type === 'tool_call') {
@@ -580,15 +586,10 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                     <View className="flex-row items-center flex-1">
                         <Brain size={14} color={isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.4)"} />
                         <Typography className="text-[11px] font-bold ml-2.5 opacity-80" style={{ color: isDark ? '#fff' : '#000' }}>
-                            {isCollapsed ? (
-                                <>
-                                    {thoughtsCount > 0 && `已思考 ${thoughtsCount} 轮`}
-                                    {thoughtsCount > 0 && toolsCount > 0 && "，"}
-                                    {toolsCount > 0 && `已调用工具 ${toolsCount} 轮`}
-                                </>
-                            ) : (
-                                t.skills.timeline.executionDetails
-                            )}
+                            {thoughtsCount > 0 && `已思考 ${thoughtsCount} 轮`}
+                            {thoughtsCount > 0 && toolsCount > 0 && "，"}
+                            {toolsCount > 0 && `已调用工具 ${toolsCount} 轮`}
+                            {thoughtsCount === 0 && toolsCount === 0 && (isCollapsed ? "暂无执行详情" : t.skills.timeline.executionDetails)}
                         </Typography>
                     </View>
                     <View>
