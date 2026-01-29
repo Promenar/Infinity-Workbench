@@ -19,12 +19,13 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
     const { isDark, colors } = useTheme();
     const { t } = useI18n();
     const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
-    const { setExecutionMode, toggleMcpServer, toggleSkill } = useChatStore();
+    const { setExecutionMode, toggleMcpServer, toggleSkill, updateSessionOptions } = useChatStore();
     const { servers } = useMcpStore();
     const [visible, setVisible] = useState(false);
 
     if (!session) return null;
     const mode = session.executionMode || 'semi';
+    const toolsEnabled = session.options?.toolsEnabled ?? true;
 
     const renderModeButton = (m: 'auto' | 'semi' | 'manual', label: string, Icon: any) => {
         const isActive = mode === m;
@@ -50,6 +51,7 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
 
     const activeMcpIds = session.activeMcpServerIds || [];
     const activeSkillIds = session.activeSkillIds || [];
+    const hasActiveTools = activeMcpIds.length > 0 || activeSkillIds.length > 0;
 
     return (
         <>
@@ -60,11 +62,18 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                 }}
                 className="flex-row items-center bg-zinc-100 dark:bg-zinc-800/60 px-3 py-1.5 rounded-full gap-2 border border-transparent dark:border-zinc-700/50"
             >
-                {mode === 'auto' && <Zap size={14} color={colors[500]} strokeWidth={2.5} />}
-                {mode === 'semi' && <Shield size={14} color="#d97706" strokeWidth={2.5} />}
-                {mode === 'manual' && <PlayCircle size={14} color="#059669" strokeWidth={2.5} />}
+                {!toolsEnabled ? (
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#71717a' }} />
+                ) : (
+                    <>
+                        {mode === 'auto' && <Zap size={14} color={colors[500]} strokeWidth={2.5} />}
+                        {mode === 'semi' && <Shield size={14} color="#d97706" strokeWidth={2.5} />}
+                        {mode === 'manual' && <PlayCircle size={14} color="#059669" strokeWidth={2.5} />}
+                    </>
+                )}
+
                 <Typography variant="caption" className="font-black text-[10px] text-zinc-600 dark:text-zinc-300">
-                    {mode.toUpperCase()}
+                    {toolsEnabled ? mode.toUpperCase() : 'OFF'}
                 </Typography>
                 <ChevronDown size={12} color={isDark ? '#a1a1aa' : '#71717a'} />
             </TouchableOpacity>
@@ -80,8 +89,49 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60 }}
                 >
-                    {/* Execution Mode Selection */}
-                    <View className="mb-10">
+                    {/* 1. Master Toggle: Enable/Disable Capabilities */}
+                    <View className="mb-8">
+                        <View className="flex-row items-center gap-2 mb-4">
+                            <Wrench size={14} color={colors[500]} />
+                            <Typography variant="h3" className="text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">
+                                {t.agent.modelConfig} {/* Reuse 'Model Config' or similar? Or hardcode 'CAPABILITIES' */}
+                                CAPABILITIES
+                            </Typography>
+                        </View>
+
+                        <View
+                            className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
+                            style={{
+                                backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'
+                            }}
+                        >
+                            <View className="flex-1 mr-4">
+                                <Typography variant="body" className="font-bold dark:text-zinc-100">
+                                    {t.settings.skillsSettings.enabled /* reused 'Enabled' */}
+                                    {t.settings.agentSkills.title /* 'Agent Skills' */}
+                                </Typography>
+                                <Typography variant="caption" className="text-[10px] opacity-60 dark:text-zinc-400 mt-0.5">
+                                    {toolsEnabled
+                                        ? t.settings.skillsSettings.modeDescriptions.auto /* Reuse 'Fully automated...' text or generic 'Tools are active' */
+                                        : t.settings.skillsSettings.description /* 'Disable to...' */
+                                    }
+                                    {/* Let's use hardcoded English/Chinese fallback for specificity if specific keys missing */}
+                                    {toolsEnabled ? 'Tools & Skills are active.' : 'All tool calls are disabled for this session.'}
+                                </Typography>
+                            </View>
+                            <Switch
+                                value={toolsEnabled}
+                                onValueChange={(v) => {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    updateSessionOptions(sessionId, { toolsEnabled: v });
+                                }}
+                            />
+                        </View>
+                    </View>
+
+                    {/* Execution Mode Selection (Only show if enabled) */}
+                    <View className="mb-10" style={{ opacity: toolsEnabled ? 1 : 0.4, pointerEvents: toolsEnabled ? 'auto' : 'none' }}>
                         <Typography variant="h3" className="mb-4 text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">{t.settings.toolbox.executionMode}</Typography>
                         <View className="flex-row gap-3">
                             {renderModeButton('auto', 'Auto', Zap)}
@@ -92,7 +142,7 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
 
                     {/* MCP Servers Selection */}
                     {servers.filter(s => s.enabled).length > 0 && (
-                        <View className="mb-10">
+                        <View className="mb-10" style={{ opacity: toolsEnabled ? 1 : 0.4, pointerEvents: toolsEnabled ? 'auto' : 'none' }}>
                             <View className="flex-row items-center gap-2 mb-4">
                                 <Server size={14} color={colors[500]} />
                                 <Typography variant="h3" className="text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">{t.settings.toolbox.activeMcp}</Typography>
@@ -106,7 +156,7 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                                             onPress={() => toggleMcpServer(sessionId, server.id)}
                                             className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
                                             style={{
-                                                backgroundColor: isActive ? (isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)') : (isDark ? 'rgba(255,255,255,0.02)' : '#fff'),
+                                                backgroundColor: isActive ? (isDark ? 'rgba(99, 102, 241, 0.1)' : '#ffffff') : (isDark ? 'rgba(255,255,255,0.02)' : '#fff'),
                                                 borderColor: isActive ? colors[500] : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)')
                                             }}
                                         >
@@ -127,7 +177,7 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
 
                     {/* User Skills Selection */}
                     {skillRegistry.getAllSkills().filter(s => s.category === 'user').length > 0 && (
-                        <View className="mb-4">
+                        <View className="mb-4" style={{ opacity: toolsEnabled ? 1 : 0.4, pointerEvents: toolsEnabled ? 'auto' : 'none' }}>
                             <View className="flex-row items-center gap-2 mb-4">
                                 <Wrench size={14} color="#ec4899" />
                                 <Typography variant="h3" className="text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">{t.settings.toolbox.sessionSkills}</Typography>
@@ -141,7 +191,7 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                                             onPress={() => toggleSkill(sessionId, skill.id)}
                                             className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
                                             style={{
-                                                backgroundColor: isActive ? (isDark ? 'rgba(236, 72, 153, 0.1)' : 'rgba(236, 72, 153, 0.05)') : (isDark ? 'rgba(255,255,255,0.02)' : '#fff'),
+                                                backgroundColor: isActive ? (isDark ? 'rgba(236, 72, 153, 0.1)' : '#ffffff') : (isDark ? 'rgba(255,255,255,0.02)' : '#fff'),
                                                 borderColor: isActive ? '#ec4899' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)')
                                             }}
                                         >
@@ -159,6 +209,8 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                             </View>
                         </View>
                     )}
+
+                    {/* Explicit Close Button REMOVED as per user request */}
                 </ScrollView>
             </GlassBottomSheet>
         </>

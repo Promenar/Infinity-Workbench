@@ -14,19 +14,25 @@ export class McpClient {
 
     /**
      * 构建鲁棒的 URL 路径拼接
+     * 🔑 框架增强：实现路径自适应。如果 baseUrl 已经包含了特定端点（如 /mcp），
+     * 则后续的 JSON-RPC 请求应优先尝试发送到该根路径，而非盲目拼接。
      */
     private buildUrl(path: string): string {
         try {
             const urlObj = new URL(this.baseUrl);
-            // 确保 path 以 / 开头
-            const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-            // 🔑 关键修复：URL 构造函数会自动处理 base 为带查询参数的情况
-            // 将 path 拼接到 pathname 后，同时维持原来的 searchParams
+            // 如果 baseUrl 本身已经指向了一个深层路径（如 .../mcp）， 
+            // 且该路径暗示它是一个单一 RPC 端点，则不应强制拼接 /tools 或 /tools/call
+            // 在通用框架下，我们将 baseUrl 视为首选 RPC 入口
+            if (urlObj.pathname !== '/' && urlObj.pathname !== '') {
+                // 如果路径以常见 RPC 端点结尾，或者调用方请求的是标准子路径，进行智能融合
+                return this.baseUrl;
+            }
+
+            const normalizedPath = path.startsWith('/') ? path : `/${path}`;
             const fullUrl = new URL(urlObj.origin + urlObj.pathname.replace(/\/+$/, '') + normalizedPath + urlObj.search);
             return fullUrl.toString();
         } catch (e) {
-            // 如果不是合法 URL（可能是相对路径或特殊配置），回退到简单拼接
             const base = this.baseUrl.replace(/\/+$/, '');
             const sub = path.startsWith('/') ? path : `/${path}`;
             return `${base}${sub}`;
@@ -34,39 +40,58 @@ export class McpClient {
     }
 
     /**
+     * 获取标准 HTTP 头部
+     */
+    private getHeaders(): Record<string, string> {
+        return {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/event-stream, */*',
+            'User-Agent': 'Nexara/1.2.0 (MCP-Generic-Client)'
+        };
+    }
+
+    /**
      * 初始化并获取工具列表
      * 遵循 MCP JSON-RPC 2.0 规范，优先尝试 tools/list
      */
     async listTools(): Promise<McpTool[]> {
-        const url = this.buildUrl('/tools');
-        console.log(`[McpClient] Syncing tools from: ${url}`);
+        // 🔑 框架增强：优先尝试根路径 POST，这是 MCP-over-HTTP 的最标准做法
+        const url = this.baseUrl;
+        console.log(`[McpClient] Syncing tools from (adaptive): ${url}`);
 
         try {
-            // 🔑 增强：同时尝试 GET (REST) 与 POST (JSON-RPC) 兼容多种服务器实现
             const response = await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getHeaders(),
                 body: JSON.stringify({
                     jsonrpc: '2.0',
-                    id: 'list-tools-1',
+                    id: `list-${Date.now()}`,
                     method: 'tools/list',
                     params: {}
                 })
             });
 
-            if (!response.ok && response.status === 405) {
-                // 如果 POST 不被允许，尝试回退到 GET
-                const getResponse = await fetch(url, { method: 'GET' });
-                if (!getResponse.ok) throw new Error(`HTTP error! status: ${getResponse.status}`);
-                const data = await getResponse.json();
-                return this.extractTools(data);
+            // 🔑 容错逻辑：如果根路径 POST 失败（404/405），回退到传统 /tools 子路径尝试
+            if (!response.ok) {
+                const fallbackUrl = this.buildUrl('/tools');
+                if (fallbackUrl !== url) {
+                    const fallbackRes = await fetch(fallbackUrl, {
+                        method: 'POST',
+                        headers: this.getHeaders(),
+                        body: JSON.stringify({ jsonrpc: '2.0', id: 'list-fallback', method: 'tools/list', params: {} })
+                    });
+                    if (fallbackRes.ok) {
+                        const data = await fallbackRes.json();
+                        return this.extractTools(data);
+                    }
+                }
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
             return this.extractTools(data);
         } catch (error) {
-            console.error(`[McpClient] Failed to list tools from ${url}:`, error);
+            console.error(`[McpClient] Failed to list tools:`, error);
             throw error;
         }
     }
@@ -90,25 +115,43 @@ export class McpClient {
      * 调用指定工具
      */
     async callTool(name: string, args: any): Promise<any> {
-        const url = this.buildUrl('/tools/call');
-        try {
-            const response = await fetch(url, {
+        // 🔑 框架增强：通用请求端点解析
+        // 很多 MCP 服务器仅在根端点监听 RPC，并不区分 /tools/call 路径
+        const url = this.baseUrl;
+
+        const executeCall = async (targetUrl: string) => {
+            return await fetch(targetUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getHeaders(),
                 body: JSON.stringify({
                     jsonrpc: '2.0',
-                    id: Date.now().toString(),
+                    id: `call-${Date.now()}-${name}`,
                     method: 'tools/call',
                     params: { name, arguments: args }
                 })
             });
+        };
 
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        try {
+            let response = await executeCall(url);
+
+            // 🔑 路径自适应：如果根路径返回 404/405/403，尝试标准子路径
+            if (!response.ok && [404, 405, 403].includes(response.status)) {
+                const fallbackUrl = this.buildUrl('/tools/call');
+                if (fallbackUrl !== url) {
+                    console.log(`[McpClient] Retrying with sub-path fallback: ${fallbackUrl}`);
+                    response = await executeCall(fallbackUrl);
+                }
+            }
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 100)}`);
+            }
 
             const data = await response.json();
             if (data.error) throw new Error(data.error.message || 'Unknown MCP error');
 
-            // 标准结果在 data.result.content 中
             return data.result;
         } catch (error) {
             console.error(`[McpClient] Tool call failed (${name}):`, error);

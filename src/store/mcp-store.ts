@@ -12,6 +12,8 @@ export interface McpServerConfig {
     lastSync?: number;
     status: 'connected' | 'disconnected' | 'error' | 'loading';
     error?: string;
+    callInterval?: number; // 🆕 调用间隔 (秒)
+    lastCallTimestamp?: number; // 🆕 上次调用时间戳 (ms)
 }
 
 interface McpState {

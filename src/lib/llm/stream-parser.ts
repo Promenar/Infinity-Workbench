@@ -1,5 +1,6 @@
 import { ToolCall } from '../../types/skills';
 import { ProviderType } from './response-normalizer';
+import { LLM_STRUCTURED_BLOCK_REGEX } from './patterns';
 
 export interface ParseResult {
     content: string;
@@ -48,8 +49,9 @@ export class StreamParser {
 
             if (this.state === 'IDLE') {
                 // Scan for any known start tag
-                // Updated to include <!--
-                const tagRegex = /<(think|thought|plan|tool_code|tool_calls|tools|tool_call|call|!--)(\s|>)/i;
+                // UpdatedRegex: Matches <tag followed by space/> OR <!-- (start of comment)
+                // We don't force space after !-- because <!--THINKING is valid
+                const tagRegex = /<(?:(think|thought|plan|tool_code|tool_calls|tools|tool_call|call)(?=[\s>])|!--)/i;
                 const match = tagRegex.exec(this.buffer);
 
                 if (!match) {
@@ -69,34 +71,69 @@ export class StreamParser {
                         this.buffer = this.buffer.slice(tagIdx);
                     }
 
-                    const tagName = match[1].toLowerCase();
+                    // Determine detected tag name
+                    // match[1] is the tag name if it's not !--, match[0] is !-- if match[1] undefined
+                    let tagName = match[1] ? match[1].toLowerCase() : '!--';
+
                     this.startTag = tagName;
 
                     // If it's <!--, check if it's THINKING_START
                     if (tagName === '!--') {
-                        const START_MARKER = '<!-- THINKING_START -->';
-                        if (this.buffer.includes(START_MARKER)) {
-                            const markerIdx = this.buffer.indexOf(START_MARKER);
-                            // Prefix text before the tag
-                            const prefix = this.buffer.substring(0, markerIdx);
-                            if (prefix) outputContent += prefix;
+                        // More flexible detection for <!-- THINKING_START --> allowing variable spaces
+                        // We check if the buffer *starts* with a thinking block marker
+                        // We need enough buffer to decide.
 
+                        // Regex to confirm this comment IS a thinking block
+                        // Matches <!-- followed by optional space, then THINKING_START
+                        const thinkStartRegex = /^<!--\s*THINKING_START/i;
+                        const potentialMatch = thinkStartRegex.exec(this.buffer);
+
+                        if (potentialMatch) {
+                            // We found it!
                             this.state = 'IN_THINK';
-                            this.buffer = this.buffer.substring(markerIdx + START_MARKER.length);
-                            // Continue processing in the next loop iteration
+                            // Advance buffer past the marker tag
+                            // We need to find closer of the opening tag? Usually -->
+                            const closeCommentIdx = this.buffer.indexOf('-->');
+                            if (closeCommentIdx !== -1) {
+                                // Standard <!-- THINKING_START -->
+                                this.buffer = this.buffer.slice(closeCommentIdx + 3);
+                            } else {
+                                // Wait for closing --> of the start tag? 
+                                // Actually usually users write <!-- THINKING_START --> content...
+                                // But if we are strict, we might just consume the match length?
+                                // Let's just consume the matched prefix "<!-- THINKING_START" 
+                                // and assume the "-->" is part of the tag or immediately follows?
+                                // To be safe, if we see "<!--THINKING_START-->", we strip it.
+                                // If "-->" is missing, we wait?
+
+                                // Simpler approach: if we match the keyword, we enter IN_THINK mode.
+                                // We remove the marker from buffer if it exists fully.
+
+                                const fullStartTagRegex = /^<!--\s*THINKING_START\s*(-->)?/i;
+                                const fullMatch = fullStartTagRegex.exec(this.buffer);
+                                if (fullMatch) {
+                                    this.buffer = this.buffer.slice(fullMatch[0].length);
+                                } else {
+                                    // Should not happen if check passed
+                                    this.buffer = this.buffer.slice(potentialMatch[0].length);
+                                }
+                            }
                             continue;
                         } else {
-                            // Partial match of <!--, wait for more data
-                            // If the buffer ends with a partial comment tag, don't consume it yet
-                            const partialCommentMatch = /<!--?(\s?T?H?I?N?K?I?N?G?_?S?T?A?R?T?)?$/i.exec(this.buffer);
-                            if (partialCommentMatch) {
-                                outputContent += this.buffer.substring(0, partialCommentMatch.index);
-                                this.buffer = this.buffer.substring(partialCommentMatch.index);
+                            // It is a comment, but NOT a thinking start (or partial).
+                            // Check for partial
+                            const partialMatch = /^<!--\s*T?H?I?N?K?I?N?G?_?S?T?A?R?T?$/i.exec(this.buffer);
+                            if (partialMatch) {
+                                // Wait for more data
+                                break;
                             } else {
-                                outputContent += this.buffer;
-                                this.buffer = '';
+                                // It's a normal comment (e.g. <!-- hello -->), treat as text
+                                // We consumed nothing, but we need to advance to avoid infinite loop
+                                // Just output the '<' and continue
+                                outputContent += '<';
+                                this.buffer = this.buffer.slice(1);
+                                continue;
                             }
-                            break;
                         }
                     } else if (tagName === 'think' || tagName === 'thought') {
                         this.state = 'IN_THINK';
@@ -118,7 +155,7 @@ export class StreamParser {
                 }
             } else if (this.state === 'IN_THINK') {
                 // Standard XML tags or HTML comment marker
-                const endRegex = /(<\/think>|<\/thought>|<!-- THINKING_END -->)/i;
+                const endRegex = /(<\/think>|<\/thought>|<!--\s*THINKING_END\s*-->)/i;
                 const match = endRegex.exec(this.buffer);
 
                 if (match) {
@@ -312,29 +349,9 @@ export class StreamParser {
      * @returns 清理后的纯文本内容
      */
     getCleanContent(rawContent: string): string {
-        let cleaned = rawContent;
-
-        // Provider特定清理逻辑
-        switch (this.provider) {
-            case 'zhipu':    // GLM
-            case 'deepseek':
-                // 移除完整的tool_call XML块
-                cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
-                // 移除孤立的tool_calls/tools标签对
-                cleaned = cleaned.replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '');
-                cleaned = cleaned.replace(/<tools>[\s\S]*?<\/tools>/gi, '');
-                break;
-
-            case 'moonshot':  // KIMI
-                // KIMI目前基本兼容，暂无特殊清理需求
-                break;
-
-            default:
-                // OpenAI等其他模型通常不会输出XML
-                break;
-        }
-
-        return cleaned.trim();
+        // Use the shared robust regex to remove ALL tool/thinking blocks
+        // regardless of provider. This is the safest way to ensure clean UI.
+        return rawContent.replace(LLM_STRUCTURED_BLOCK_REGEX, '').trim();
     }
 
     /**
@@ -344,3 +361,4 @@ export class StreamParser {
         return content;
     }
 }
+

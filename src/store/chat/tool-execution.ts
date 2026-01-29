@@ -96,37 +96,48 @@ Please STOP trying to use tools and answer the user's request directly using you
 
             if (hasIncompleteCall) return;
 
-            // 辅助函数：更新执行步骤
-            const updateSteps = (newStep: ExecutionStep) => {
-                set(state => {
-                    const session = state.sessions.find(s => s.id === sessionId);
-                    if (!session) return {};
-                    const currentMsg = session.messages.find(m => m.id === targetMsgId);
-                    if (!currentMsg) return {};
+            // 🔑 统一更新路径：确保原子化更新步骤列表
+            // 解决缓冲竞争导致的指令步骤消失问题
+            const appendStep = (newStep: ExecutionStep) => {
+                const state = get();
 
-                    const currentSteps = currentMsg.executionSteps || [];
-                    const index = currentSteps.findIndex(s => s.id === newStep.id);
-                    let updatedSteps = [...currentSteps];
+                // 🛡️ 关键修复：在读取前强制冲刷该消息的缓冲区，确保 currentSteps 是最新的
+                if (state.flushMessageUpdates) {
+                    state.flushMessageUpdates(sessionId, targetMsgId);
+                }
 
-                    if (index > -1) {
-                        updatedSteps[index] = newStep;
-                    } else {
-                        updatedSteps.push(newStep);
-                    }
+                const updatedSession = get().getSession(sessionId);
+                if (!updatedSession) return;
+                const currentMsg = updatedSession.messages.find(m => m.id === targetMsgId);
+                if (!currentMsg) return;
 
-                    // 🔑 Fix Persistence: Immediately save steps to DB
-                    // Fire-and-forget to avoid blocking UI
-                    SessionRepository.updateMessage(sessionId, targetMsgId!, {
-                        executionSteps: updatedSteps
-                    }).catch(e => console.warn('[ToolExecutor] Failed to persist steps:', e));
+                const currentSteps = currentMsg.executionSteps || [];
+                // 查找并更新现有步骤，或追加新步骤
+                const index = currentSteps.findIndex(s => s.id === newStep.id || (newStep.toolCallId && s.toolCallId === newStep.toolCallId && s.type === newStep.type));
 
-                    return {
-                        sessions: state.sessions.map(s => s.id === sessionId ? {
-                            ...s,
-                            messages: s.messages.map(m => m.id === targetMsgId ? { ...m, executionSteps: updatedSteps } : m)
-                        } : s)
-                    };
-                });
+                let updatedSteps = [...currentSteps];
+                if (index > -1) {
+                    updatedSteps[index] = { ...updatedSteps[index], ...newStep };
+                } else {
+                    updatedSteps.push(newStep);
+                }
+
+                // 通过缓冲区更新
+                get().updateMessageContent(
+                    sessionId,
+                    targetMsgId,
+                    currentMsg.content || '',
+                    undefined, // tokens
+                    undefined, // reasoning
+                    undefined, // citations
+                    undefined, // ragReferences
+                    undefined, // ragReferencesLoading
+                    undefined, // ragMetadata
+                    undefined, // thought_signature
+                    undefined, // taskState
+                    undefined, // tool_calls
+                    updatedSteps
+                );
             };
 
             console.log('[ToolExecutor] executing tools:', toolCalls.length);
@@ -152,14 +163,93 @@ Please STOP trying to use tools and answer the user's request directly using you
                     }
                 }
 
-                updateSteps({
-                    id: stepId,
-                    type: 'tool_call',
-                    toolName: tcName,
-                    toolArgs: finalArgs,
-                    toolCallId: tc.id,
-                    timestamp: Date.now()
-                });
+                if (skill?.mcpServerId) {
+                    // 🛡️ 运行时过滤：检查 MCP 服务器在当前会话中是否启用
+                    const activeMcpIds = session.activeMcpServerIds || [];
+                    if (!activeMcpIds.includes(skill.mcpServerId)) {
+                        console.warn(`[ToolExecutor] Blocking call to disabled MCP tool: ${tcName}`);
+                        const result: ToolResult = {
+                            id: tc.id,
+                            status: 'error',
+                            content: `[SYSTEM ERROR]: Tool "${tcName}" is currently DISABLED for this session. 
+Please DO NOT try to call it again. Instead:
+1. Use an alternative tool if available (e.g., 'search_internet').
+2. If this was a necessary step, update the task plan to mark it as blocked or failed, then propose a different route.
+3. Answer based on your existing knowledge if possible.`
+                        };
+
+                        appendStep({
+                            id: `res_${stepId}`,
+                            type: 'error',
+                            toolName: tcName,
+                            toolCallId: tc.id,
+                            content: result.content,
+                            timestamp: Date.now()
+                        });
+
+                        await get().addMessage(sessionId, {
+                            id: `tool_block_${Date.now()}_${tc.id}`,
+                            role: 'tool',
+                            tool_call_id: tc.id,
+                            content: result.content,
+                            name: tcName,
+                            createdAt: Date.now(),
+                            thought_signature: targetMsg.thought_signature
+                        });
+                        continue;
+                    }
+
+                    const mcpStore = (await import('../../store/mcp-store')).useMcpStore.getState();
+                    const server = mcpStore.servers.find(s => s.id === skill.mcpServerId);
+
+                    if (server?.callInterval && server.callInterval > 0) {
+                        const now = Date.now();
+                        const lastCall = server.lastCallTimestamp || 0;
+                        const waitMs = (server.callInterval * 1000) - (now - lastCall);
+
+                        if (waitMs > 0) {
+                            console.log(`[ToolExecutor] Rate limit hit for MCP '${server.name}'. Waiting ${waitMs}ms...`);
+
+                            // 更新步骤为挂起倒计时状态
+                            appendStep({
+                                id: stepId,
+                                type: 'throttled',
+                                toolName: tcName,
+                                toolArgs: finalArgs,
+                                toolCallId: tc.id,
+                                timestamp: now,
+                                throttledUntil: now + waitMs
+                            });
+
+                            // 执行挂起
+                            await new Promise(resolve => setTimeout(resolve, waitMs));
+
+                            // 恢复后切换回常规 call 状态
+                            appendStep({
+                                id: stepId,
+                                type: 'tool_call',
+                                toolName: tcName,
+                                toolArgs: finalArgs,
+                                toolCallId: tc.id,
+                                timestamp: Date.now()
+                            });
+                        }
+                    }
+
+                    // 通用：更新该服务器的最后调用时间戳
+                    (await import('../../store/mcp-store')).useMcpStore.getState().updateServer(server!.id, {
+                        lastCallTimestamp: Date.now()
+                    });
+                } else {
+                    appendStep({
+                        id: stepId,
+                        type: 'tool_call',
+                        toolName: tcName,
+                        toolArgs: finalArgs,
+                        toolCallId: tc.id,
+                        timestamp: Date.now()
+                    });
+                }
 
                 let result: ToolResult;
                 try {
@@ -183,7 +273,7 @@ Please STOP trying to use tools and answer the user's request directly using you
                     console.log('[ToolExecutor] Interceptor: Added reflection hint to error result');
                 }
 
-                updateSteps({
+                appendStep({
                     id: `res_${stepId}`,
                     type: result.status === 'success' ? 'tool_result' : 'error',
                     toolName: tcName,

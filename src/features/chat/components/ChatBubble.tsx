@@ -68,6 +68,7 @@ import { TaskFinalResult } from './TaskFinalResult';
 
 import { parseMarkdownContent } from '../../../lib/markdown-parser';
 import { SafeUserImage } from './SafeUserImage';
+import { StreamingCardList } from './StreamingCardList';
 import { useI18n } from '../../../lib/i18n';
 import {
   Copy,
@@ -870,6 +871,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           </React.Fragment>
         );
       },
+      // ✅ Force newlines for soft breaks
+      softbreak: (node: any, children: any, parent: any, styles: any) => (
+        <Text key={node.key}>{'\n'}</Text>
+      ),
     }),
     [isDark],
   );
@@ -1233,12 +1238,21 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             </View>
           ) : (
             <>
-              <Markdown
-                style={{
+              {/* ✅ Replaced monolithic Markdown with StreamingCardList */}
+              <StreamingCardList
+                content={(() => {
+                  // Extract AI-generated images
+                  const { cleanContent, images } = extractImagesFromMarkdown(processedContent || '');
+                  // Store extracted images for rendering below
+                  (React as any)._aiImages = images;
+                  return cleanContent;
+                })()}
+                markdownRules={markdownRules}
+                markdownStyles={{
                   body: {
                     color: isDark ? Colors.dark.textPrimary : '#27272A',
-                    fontSize: 15, // Reduced 16 -> 15
-                    lineHeight: 26, // Reduced 28 -> 26
+                    fontSize: 15,
+                    lineHeight: 26,
                   },
                   text: {
                     color: isDark ? Colors.dark.textPrimary : '#27272A',
@@ -1250,69 +1264,60 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     borderRadius: 4,
                     paddingHorizontal: 4,
                     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                    fontSize: 13, // Reduced 14 -> 13
+                    fontSize: 13,
                     fontWeight: '500',
                   },
                   fence: {
                     backgroundColor: isDark ? '#080911' : '#f8fafc',
                     borderColor: isDark ? Colors.dark.borderDefault : '#e2e8f0',
                     borderWidth: 1,
-                    borderRadius: 12, // Reduced 16 -> 12
-                    marginVertical: 8, // Reduced 12 -> 8
+                    borderRadius: 12,
+                    marginVertical: 8,
                     padding: 0,
                   },
                   blockquote: {
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                    borderLeftWidth: 3, // Reduced 4 -> 3
+                    borderLeftWidth: 3,
                     borderLeftColor: agentColor,
-                    paddingHorizontal: 12, // Reduced 16 -> 12
-                    paddingVertical: 8, // Reduced 12 -> 8
-                    borderRadius: 8, // Reduced 12 -> 8
-                    marginVertical: 8, // Reduced 12 -> 8
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 8,
+                    marginVertical: 8,
                   },
-                  list_item: { marginVertical: 4 }, // Reduced 6 -> 4
-                  bullet_list: { marginVertical: 6 }, // Reduced 10 -> 6
-                  ordered_list: { marginVertical: 6 }, // Reduced 10 -> 6
+                  // Lists need less margin inside cards
+                  list_item: { marginVertical: 2 },
+                  bullet_list: { marginVertical: 4 },
+                  ordered_list: { marginVertical: 4 },
                   heading1: {
-                    marginTop: 20, // Reduced 28 -> 20
-                    marginBottom: 10, // Reduced 14 -> 10
+                    marginTop: 16,
+                    marginBottom: 8,
                     fontWeight: '800',
-                    fontSize: 22, // Reduced 24 -> 22
+                    fontSize: 22,
                     color: isDark ? '#fff' : '#000',
                   },
                   heading2: {
-                    marginTop: 18, // Reduced 24 -> 18
-                    marginBottom: 8, // Reduced 12 -> 8
+                    marginTop: 14,
+                    marginBottom: 6,
                     fontWeight: '700',
-                    fontSize: 18, // Reduced 20 -> 18
+                    fontSize: 18,
                     color: isDark ? '#fff' : '#000',
                   },
                   heading3: {
-                    marginTop: 14, // Reduced 20 -> 14
-                    marginBottom: 6, // Reduced 10 -> 6
+                    marginTop: 10,
+                    marginBottom: 4,
                     fontWeight: '700',
-                    fontSize: 16, // Reduced 18 -> 16
+                    fontSize: 16,
                     color: isDark ? '#fff' : '#000',
                   },
-                  paragraph: { marginVertical: 6 }, // Reduced 10 -> 6
+                  paragraph: { marginVertical: 0 }, // Let cards handle spacing
                 }}
-                {...({ selectable: true } as any)}
-                rules={markdownRules}
-              >
-                {(() => {
-                  // Extract AI-generated images
-                  const { cleanContent, images } = extractImagesFromMarkdown(processedContent || '');
-                  // Store extracted images for rendering below
-                  (React as any)._aiImages = images;
-                  return cleanContent;
-                })()}
-              </Markdown>
+              />
+
               {/* Render extracted AI-generated images */}
               {!isUser &&
                 (() => {
                   const images = (React as any)._aiImages || [];
                   if (images.length === 0) return null;
-
                   return (
                     <View style={{ marginTop: 12, gap: 12 }}>
                       {images.map((img: { src: string; alt: string }, index: number) => (
@@ -1335,7 +1340,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       {/* Message Meta (模型名称 + 时间戳) */}
       <View
         style={{
-          marginTop: 2, // 进一步减少间距：4 -> 2
+          marginTop: 2,
         }}
       >
         <MessageMeta

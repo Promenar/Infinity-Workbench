@@ -112,12 +112,23 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                     title: taskArgs.title,
                     status: 'in-progress',
                     progress: 0,
-                    steps: taskArgs.steps.map((s: any, idx: number) => ({
-                        id: s.id || `${taskUid}-step-${idx + 1}`, // 🧠 1-based indexing for Model Alignment
-                        title: s.title || s.description || `Step ${idx + 1}`,
-                        status: s.status || 'pending',
-                        description: s.description
-                    })),
+                    steps: taskArgs.steps.map((s: any, idx: number) => {
+                        // 🧠 Robustness: If s is just a string, treat it as the title
+                        if (typeof s === 'string') {
+                            return {
+                                id: `${taskUid}-step-${idx + 1}`,
+                                title: s,
+                                status: 'pending'
+                            };
+                        }
+
+                        return {
+                            id: s.id || `${taskUid}-step-${idx + 1}`, // 🧠 1-based indexing for Model Alignment
+                            title: s.title || s.description || `Step ${idx + 1}`,
+                            status: s.status || 'pending',
+                            description: s.description
+                        };
+                    }),
                     createdAt: Date.now(),
                     updatedAt: Date.now()
                 } as any;
@@ -324,7 +335,12 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                 if (activeTask) {
                     const nextStep = activeTask.steps.find((s: any) => s.status === 'pending');
                     if (nextStep) {
-                        resultContent += `\n\n⚠️ WAIT: The next step is "${nextStep.title}" (ID: ${nextStep.id}).\n Have you explicitly EXECUTED the action for it? If not, DO NOT mark it as completed yet. Perform the action now.`;
+                        resultContent += `\n\n⚠️ WAIT: The next step is "${nextStep.title}" (ID: ${nextStep.id}).
+If you have NOT executed this action yet, please DO NOT mark it as completed. 
+If the required tool is failing or unavailable, please:
+1. Update the task to mark this step as 'failed' or 'skipped'.
+2. Explain the roadblock and propose an alternative plan.
+3. Use 'search_internet' or internal knowledge to find workarounds.`;
                     }
                 }
             }

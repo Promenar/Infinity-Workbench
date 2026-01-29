@@ -119,26 +119,60 @@ class SkillRegistry {
     }
 
     /**
-     * 🆕 Phase 3: 基于模型能力的动态工具路由
-     * 
-     * @param options.nativeWebSearch - 模型是否支持原生联网（Gemini/Google Vertex）
-     * @returns 过滤后的技能列表
-     * 
-     * 设计决策：
-     * - 对于支持原生联网的模型，**无条件**移除 search_internet 工具
-     * - 因为这些模型可以自主判断何时需要联网，使用其内置 Grounding 能力
-     * - 对于其他模型，保留 search_internet 让模型通过工具调用进行搜索
+     * 🆕 Phase 4: 获取会话感知的可用技能列表
+     * 融合全局禁用控制 (Settings) + 会话级路由控制 (Session Toolbox)
      */
+    public getEnabledSkillsForSession(
+        session: {
+            activeMcpServerIds?: string[];
+            activeSkillIds?: string[];
+            options?: { toolsEnabled?: boolean; webSearch?: boolean };
+        },
+        options: {
+            nativeWebSearch?: boolean;
+        } = {}
+    ): Skill[] {
+        // 1. 全局开关检查 (Master Toggle)
+        const toolsEnabled = session.options?.toolsEnabled ?? true;
+        if (!toolsEnabled) return [];
+
+        // 2. 获取全局启用的基础技能 (Settings 控制)
+        const baseSkills = this.getEnabledSkills();
+
+        // 3. 应用会话级路由规则
+        const activeMcpIds = session.activeMcpServerIds || [];
+        const activeSkillIds = session.activeSkillIds || [];
+
+        const sessionSkills = baseSkills.filter(s => {
+            // A. MCP 工具：必须隶属于当前会话已激活的服务器
+            if (s.mcpServerId) {
+                return activeMcpIds.includes(s.mcpServerId);
+            }
+
+            // B. 自定义技能 (User Category)：必须在当前会话激活
+            if (s.category === 'user') {
+                return activeSkillIds.includes(s.id);
+            }
+
+            // C. 内置技能 (Preset)：直接受全局 Settings 控制 (baseSkills 已经处理)
+            return true;
+        });
+
+        // 4. 动态工具路由 (针对原生联网优化)
+        if (options.nativeWebSearch) {
+            return sessionSkills.filter(skill => skill.id !== 'search_internet');
+        }
+
+        return sessionSkills;
+    }
+
     public getEnabledSkillsForModel(options: {
         nativeWebSearch?: boolean;
     } = {}): Skill[] {
         const baseSkills = this.getEnabledSkills();
         const { nativeWebSearch } = options;
 
-        // 🔑 核心逻辑：如果模型支持原生联网，则从工具列表中移除 search_internet
-        // 模型将使用其内置的 Grounding 能力自主搜索
         if (nativeWebSearch) {
-            console.log('[SkillRegistry] Native web search provider detected, removing search_internet tool');
             return baseSkills.filter(skill => skill.id !== 'search_internet');
         }
 

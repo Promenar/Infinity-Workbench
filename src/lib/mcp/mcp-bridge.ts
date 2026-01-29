@@ -76,7 +76,22 @@ export class McpBridge {
                     author: `mcp:${server.id}`,
                     schema: McpBridge.jsonSchemaToZod(t.inputSchema),
                     execute: async (params, context) => {
-                        const result = await client.callTool(t.name, params);
+                        // 🔑 框架增强：通用参数强制转换 (Schema-driven Coercion)
+                        // 遍历 Schema 定义，如果某字段要求 string 但传入了 object，自动序列化
+                        const processedParams = { ...params };
+                        const inputSchema = t.inputSchema || {};
+
+                        if (inputSchema.properties) {
+                            for (const [key, value] of Object.entries(inputSchema.properties as Record<string, any>)) {
+                                const currentParam = processedParams[key];
+                                if (value.type === 'string' && typeof currentParam === 'object' && currentParam !== null) {
+                                    console.log(`[McpBridge] Coercing param '${key}' from object to string for tool '${t.name}'`);
+                                    processedParams[key] = JSON.stringify(currentParam);
+                                }
+                            }
+                        }
+
+                        const result = await client.callTool(t.name, processedParams);
                         return {
                             id: `mcp_exec_${Date.now()}`,
                             content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),

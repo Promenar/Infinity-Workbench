@@ -815,7 +815,8 @@ export const useChatStore = create<ChatState>()(
             const virtualSplitAssistantToolPairs = (
               rawSegment: any[],
               parser: any,
-              accumulatedContent: string
+              accumulatedContent: string,
+              allowedSkillIds: string[]
             ): any[] => {
               const virtualSegment: any[] = [];
               let isFirstAssistant = true;
@@ -847,6 +848,13 @@ export const useChatStore = create<ChatState>()(
                     // 有tool_calls，拆分成多个assistant+tool对
                     for (let tcIdx = 0; tcIdx < toolCalls.length; tcIdx++) {
                       const tc = toolCalls[tcIdx];
+
+                      // 🛡️ 历史过滤：如果该工具在当前轮次中已禁用，则跳过该 call-response 对
+                      // 防止模型通过历史记忆“破解”禁用限制
+                      if (!allowedSkillIds.includes(tc.name)) {
+                        console.log(`[VirtualSplit] Filtering disabled tool from history: ${tc.name}`);
+                        continue;
+                      }
 
                       // ✅ 创建虚拟assistant（只包含单个tool_call）
                       const virtualAssistant: any = {
@@ -1120,18 +1128,15 @@ export const useChatStore = create<ChatState>()(
                 get().setPendingIntervention(sessionId, undefined);
               }
 
-              // 4. Get Enabled Skills (🆕 Phase 3: 动态工具路由)
-              // 判断模型是否支持原生联网（Gemini/Google Vertex）
-              // 对于这些模型，无条件移除 search_internet 工具，模型将使用原生 Grounding 自主搜索
+              // 4. Get Enabled Skills (🆕 Phase 4: 全链路工具控制)
+              // 整合全局开关 (Master Toggle) + 会话级开关 (Session Toolbox) + 模型能力 (Native Search)
               const isNativeWebSearchProvider = provider.type === 'gemini' || provider.type === 'google';
-              const toolsEnabled = options?.toolsEnabled ?? session.options?.toolsEnabled ?? true;
-
-              const availableSkills = toolsEnabled ? skillRegistry.getEnabledSkillsForModel({
-                nativeWebSearch: isNativeWebSearchProvider,
-              }) : [];
+              const availableSkills = skillRegistry.getEnabledSkillsForSession(session, {
+                nativeWebSearch: isNativeWebSearchProvider
+              });
 
               console.log('[AgentLoop] Available Skills:', availableSkills.map(s => s.id),
-                { nativeWebSearch: isNativeWebSearchProvider, toolsEnabled });
+                { nativeWebSearch: isNativeWebSearchProvider, total: availableSkills.length });
 
 
               // 5. Stream Chat
@@ -1146,6 +1151,8 @@ export const useChatStore = create<ChatState>()(
               // 🧠 Optimization: Use Array Buffer for Content to reduce GC pressure
               let contentBuffer: string[] = [];
               let turnContent = ''; // RE-ADDED: Sync with contentBuffer for history persistence
+
+              const allowedSkillIds = availableSkills.map(s => s.id);
 
               // 🧠 StreamParser for incremental parsing
               const parser = new StreamParser(provider.type as any);
@@ -1347,13 +1354,15 @@ export const useChatStore = create<ChatState>()(
                       timestamp: Date.now()
                     });
 
-                    // Clear bubble reasoning if we show it in timeline
+                    // Clear bubble reasoning if we show it in timeline to avoid redundancy
                     get().updateMessageContent(
                       sessionId,
                       currentAssistantMsgId,
                       accumulatedContent,
                       token.usage,
-                      ''
+                      undefined // 🔑 Use undefined to RETAIN current value unless we specifically want to clear it? 
+                      // Wait, if we want to move it to timeline, we SHOULD clear it from bubble.
+                      // Let's keep it '';
                     );
                     lastTimelineUpdateTime = now;
                   }
@@ -1374,13 +1383,21 @@ export const useChatStore = create<ChatState>()(
               );
 
               // 🏁 关键修复：冲刷缓冲区残余内容
-              // 如果流式循环结束时缓冲区仍有内容（未触发 200ms 的定期同步），
-              // 必须在这里手动合并，否则最终同步时会发生截断。
               if (contentBuffer.length > 0) {
                 const tailContent = contentBuffer.join('');
                 accumulatedContent += tailContent;
                 turnContent += tailContent;
                 contentBuffer = [];
+              }
+
+              // 🏁 关键修复：冲刷最后的思考记录到 Timeline，防止因 500ms 节流导致的截断
+              if (reasoningFromThisTurn) {
+                updateSteps({
+                  id: `think_turn_${loopCount}`,
+                  type: 'thinking',
+                  content: reasoningFromThisTurn,
+                  timestamp: Date.now()
+                });
               }
 
               // 🏁 Turn Termination: Ensure all content and tool calls are synchronized to the Store
@@ -1392,15 +1409,26 @@ export const useChatStore = create<ChatState>()(
                 currentAssistantMsgId,
                 finalDisplayContent,
                 accumulatedUsage,
-                reasoningFromThisTurn,
+                undefined, // 🔑 Don't overwrite the reasoning field if we already moved it to timeline
                 undefined, // citations
                 undefined, // ragReferences
                 undefined, // ragReferencesLoading
                 undefined, // ragMetadata
                 turnThoughtSignature,
                 undefined, // taskState
-                toolCalls // 🔑 Correctly persist tool_calls at turn end
+                toolCalls, // 🔑 Correctly persist tool_calls at turn end
+                loopExecutionSteps // 🔑 Pass the full accumulated steps list to avoid race conditions
               );
+
+              // 🛡️ 关键修复：刷新本地步骤列表，确保下一轮循环能看到工具执行结果
+              if (get().flushMessageUpdates) {
+                get().flushMessageUpdates(sessionId, currentAssistantMsgId);
+                const refreshedMsg = get().getSession(sessionId)?.messages.find(m => m.id === currentAssistantMsgId);
+                if (refreshedMsg?.executionSteps) {
+                  loopExecutionSteps = refreshedMsg.executionSteps;
+                  console.log('[AgentLoop] Synchronized loopExecutionSteps from Store:', loopExecutionSteps.length);
+                }
+              }
 
               // ✅ Mandatory Flush: ensure UI & background tasks see the latest state immediately
               if (get().flushMessageUpdates) {
@@ -1790,7 +1818,8 @@ export const useChatStore = create<ChatState>()(
                         const virtualNewSegment = virtualSplitAssistantToolPairs(
                           newSegment,
                           parser,
-                          accumulatedContent
+                          accumulatedContent,
+                          allowedSkillIds
                         );
 
                         // ✅ 追加到currentMessages（不是替换）
@@ -2026,7 +2055,8 @@ export const useChatStore = create<ChatState>()(
                     const virtualNewSegment = virtualSplitAssistantToolPairs(
                       newSegment,
                       parser,
-                      accumulatedContent
+                      accumulatedContent,
+                      allowedSkillIds
                     );
 
                     // ✅ 追加到currentMessages（不是替换）

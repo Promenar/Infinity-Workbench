@@ -121,11 +121,11 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                                     height: 36,
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
                                     borderRadius: 18,
                                 }}
                             >
-                                <X size={18} color={isDark ? '#fff' : '#4b5563'} />
+                                <X size={18} color={isDark ? '#fff' : '#000'} />
                             </TouchableOpacity>
                         </View>
 

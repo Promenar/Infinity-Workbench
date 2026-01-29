@@ -365,25 +365,62 @@ const McpServerManagement: React.FC = () => {
                         </View>
                     )}
 
-                    <View className="flex-row justify-between items-center bg-gray-50 dark:bg-zinc-800/50 p-3 rounded-2xl">
-                        <View className="flex-row items-center gap-4">
-                            <View className="flex-row items-center gap-1.5">
-                                <Switch value={server.enabled} onValueChange={val => updateServer(server.id, { enabled: val })} />
-                                <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.enabled}</Typography>
+                    <View className="mb-4 bg-gray-50 dark:bg-zinc-800/50 p-4 rounded-2xl">
+                        <View className="flex-row justify-between items-center mb-3">
+                            <View>
+                                <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.callInterval}</Typography>
+                                <Typography className="text-[9px] opacity-40 dark:text-zinc-500">仅限该服务器 (0 = 不启用)</Typography>
                             </View>
-                            <View className="flex-row items-center gap-1.5">
-                                <Switch value={server.defaultIncluded} onValueChange={val => updateServer(server.id, { defaultIncluded: val })} />
-                                <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.default}</Typography>
+                            <View className="flex-row items-center rounded-xl px-1 py-1 bg-white dark:bg-zinc-700 border border-gray-100 dark:border-zinc-600">
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        const current = server.callInterval || 0;
+                                        if (current > 0) updateServer(server.id, { callInterval: current - 1 });
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    }}
+                                    className="w-7 h-7 items-center justify-center rounded-lg"
+                                >
+                                    <Minus size={14} color={isDark ? '#fff' : '#000'} />
+                                </TouchableOpacity>
+                                <View className="px-3 items-center min-w-[40px]">
+                                    <Text style={{ fontSize: 13, fontWeight: '700', color: (server.callInterval || 0) > 0 ? colors[500] : (isDark ? '#fff' : '#000') }}>
+                                        {server.callInterval || 0}
+                                    </Text>
+                                    <Text className="text-[8px] opacity-50 dark:text-zinc-400 font-bold uppercase">{t.settings.skillsSettings.callIntervalUnit}</Text>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        const current = server.callInterval || 0;
+                                        updateServer(server.id, { callInterval: current + 1 });
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    }}
+                                    className="w-7 h-7 items-center justify-center rounded-lg"
+                                >
+                                    <Plus size={14} color={isDark ? '#fff' : '#000'} />
+                                </TouchableOpacity>
                             </View>
                         </View>
-                        <View className="flex-row items-center px-2 py-1 rounded-lg bg-green-50 dark:bg-green-900/10">
-                            <Typography className="text-[9px] font-bold text-green-600 dark:text-green-500 uppercase">
-                                {(() => {
-                                    const statusKey = `status${server.status.charAt(0).toUpperCase() + server.status.slice(1)}` as keyof typeof t.settings.skillsSettings;
-                                    const val = t.settings.skillsSettings[statusKey];
-                                    return typeof val === 'string' ? val : server.status.toUpperCase();
-                                })()}
-                            </Typography>
+
+                        <View className="flex-row justify-between items-center pt-2 border-t border-gray-100 dark:border-zinc-700/50">
+                            <View className="flex-row items-center gap-4">
+                                <View className="flex-row items-center gap-1.5">
+                                    <Switch value={server.enabled} onValueChange={val => updateServer(server.id, { enabled: val })} />
+                                    <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.enabled}</Typography>
+                                </View>
+                                <View className="flex-row items-center gap-1.5">
+                                    <Switch value={server.defaultIncluded} onValueChange={val => updateServer(server.id, { defaultIncluded: val })} />
+                                    <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.default}</Typography>
+                                </View>
+                            </View>
+                            <View className="flex-row items-center px-2 py-1 rounded-lg bg-green-50 dark:bg-green-900/10">
+                                <Typography className="text-[9px] font-bold text-green-600 dark:text-green-500 uppercase">
+                                    {(() => {
+                                        const statusKey = `status${server.status.charAt(0).toUpperCase() + server.status.slice(1)}` as keyof typeof t.settings.skillsSettings;
+                                        const val = t.settings.skillsSettings[statusKey];
+                                        return typeof val === 'string' ? val : server.status.toUpperCase();
+                                    })()}
+                                </Typography>
+                            </View>
                         </View>
                     </View>
                 </View>

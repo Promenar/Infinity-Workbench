@@ -10,7 +10,7 @@ import { useRagStore } from '../rag-store';
 import { performWebSearch } from '../../features/chat/utils/web-search';
 import { MemoryManager } from '../../lib/rag/memory-manager';
 import { skillRegistry } from '../../lib/skills/registry';
-import { inferModelFamily, getTaskPlanningGuidance, getToolUsageGuidance, getOutputFormatGuidance } from '../../lib/llm/model-prompts'; // 🆕 模型特定提示词
+import { inferModelFamily, getModelSpecificEnhancements } from '../../lib/llm/model-prompts'; // 🆕 模型特定提示词
 import type { Session, Message, RagReference, GeneratedImageData } from '../../types/chat';
 
 export interface ContextBuilderParams {
@@ -238,25 +238,9 @@ export function buildSystemPrompt(
     let finalSystemPrompt = prioritizedState + agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
 
     // 注入工具描述
-    // 🔑 增强过滤逻辑：双层过滤 (全局启用 + 会话活跃)
-    const globallyEnabledSkills = skillRegistry.getEnabledSkills();
-    const activeMcpIds = session.activeMcpServerIds || [];
-    const activeSkillIds = session.activeSkillIds || [];
-    const settingsStore = useSettingsStore.getState();
-
-    const skillsToUse = availableSkills ?? globallyEnabledSkills.filter(s => {
-        // 1. MCP 工具：必须全局启用服务器 (已在 mcBridge 同步时处理) + 会话活跃
-        if (s.mcpServerId) {
-            return activeMcpIds.includes(s.mcpServerId);
-        }
-
-        // 2. 自定义技能：必须在会话中显式启用
-        if (s.category === 'user') {
-            return activeSkillIds.includes(s.id);
-        }
-
-        // 3. 预设技能：直接受全局配置控制 (已在 getEnabledSkills 中过滤)
-        return true;
+    // 🔑 增强过滤逻辑：统一使用 SkillRegistry 的会话感知过滤
+    const skillsToUse = availableSkills ?? skillRegistry.getEnabledSkillsForSession(session, {
+        nativeWebSearch: isNativeWebSearchProvider
     });
 
     if (skillsToUse.length > 0) {
@@ -276,22 +260,22 @@ export function buildSystemPrompt(
             return `### ${s.name} (ID: ${s.id})\n${s.description}\nArguments:\n${argsDesc}`;
         }).join('\n\n');
 
-        // 🆕 根据模型类型生成特定的任务规划和工具使用指导
-        const modelFamily = inferModelFamily(provider.type, session.modelId);
-        const taskGuidance = getTaskPlanningGuidance(modelFamily);
-        const toolGuidance = getToolUsageGuidance(modelFamily, isNativeWebSearchProvider);
-        const outputGuidance = getOutputFormatGuidance(modelFamily);
+        // 🆕 使用新架构：获取系统级增强 (Protocol, Capability, Renderer)
+        const systemEnhancements = getModelSpecificEnhancements(
+            provider.type,
+            session.modelId,
+            {
+                hasTools: true,
+                hasNativeSearch: isNativeWebSearchProvider
+            }
+        );
 
         const toolInstruction = `\n\n[AVAILABLE TOOLS]
 You have access to the following skills:
 
 ${toolsDesc}
 
-${taskGuidance}
-
-${toolGuidance}
-
-${outputGuidance}
+${systemEnhancements}
 
 [EXECUTION RULES]
 1. NATIVE TOOL CALLS ONLY. Use the JSON schema provided.
@@ -299,12 +283,6 @@ ${outputGuidance}
 3. 🚫 NO INTRODUCTORY TEXT before tool calls.
 4. PROVIDE ALL REQUIRED PARAMETERS.
 5. Trigger tools immediately.
-
-[TASK MANAGEMENT IRON RULES]
-1. 🔒 IMMUTABLE PLAN: Once a task is created (manage_task:create), you CANNOT add, remove, or rename steps.
-2. ⛓️ SEQUENTIAL EXECUTION: Steps MUST be completed in strict order (1->2->3...). You cannot mark Step N as done until Step N-1 is done.
-3. 🚥 STATUS ONLY: Use 'manage_task:update' ONLY to advance the status of the CURRENT step. Do not try to change descriptions or titles.
-4. 🏁 RESULT REQUIRED: The 'final_summary' in 'manage_task:complete' MUST be the ACTUAL ANSWER/DELIVERABLE (e.g., "The weather is 25°C"), NOT a process report (e.g., "I have checked the weather").
 `;
 
 
@@ -338,11 +316,16 @@ TOOLS ARE DISABLED. You cannot use any tools. Do not output tool calls.
 If you see tool calls in the history, do not repeat them.
 Answer the user's request directly using your internal knowledge.`;
 
-        const modelFamily = inferModelFamily(provider.type, session.modelId);
-        const outputGuidance = getOutputFormatGuidance(modelFamily);
-        if (outputGuidance) {
-            finalSystemPrompt += `\n\n${outputGuidance}`;
-        }
+        // 🆕 使用新架构：获取基础协议 (Protocol - Thinking, Formatting)
+        const systemEnhancements = getModelSpecificEnhancements(
+            provider.type,
+            session.modelId,
+            {
+                hasTools: false,
+                hasNativeSearch: false
+            }
+        );
+        finalSystemPrompt += `\n\n${systemEnhancements}`;
     }
 
     // 注入 RAG 上下文

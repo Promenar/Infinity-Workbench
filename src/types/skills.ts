@@ -62,11 +62,12 @@ export interface ToolCall {
  */
 export interface ExecutionStep {
     id: string;
-    type: 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'plan_item' | 'intervention_required' | 'intervention_result' | 'native_search' | 'native_search_result';
+    type: 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'plan_item' | 'intervention_required' | 'intervention_result' | 'native_search' | 'native_search_result' | 'throttled';
     content?: string; // Markdown content or JSON string
     toolName?: string;
     toolArgs?: any;
     toolCallId?: string; // 🔑 Added for precise context reconstruction
     data?: any; // Structured data from SkillResult
     timestamp: number;
+    throttledUntil?: number; // 🆕 倒计时结束时间戳
 }

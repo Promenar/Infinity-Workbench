@@ -51,10 +51,11 @@ const StepIcon = ({ type, toolName }: { type: string, toolName?: string }) => {
     }
     if (type === 'intervention_result') return <User size={16} color="#10b981" />;
 
-    // 🆕 原生搜索调用与结果：使用紫色 Globe 图标区分
     if (type === 'native_search' || type === 'native_search_result') {
         return <Globe size={16} color="#a855f7" />; // 紫色，区别于工具调用的蓝色
     }
+
+    if (type === 'throttled') return <RotateCw size={14} color="#3b82f6" strokeWidth={3} />;
 
     // Tool Icons
     if (toolName === 'search_internet') return <Globe size={16} color="#4F8EF7" />;
@@ -237,8 +238,22 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
             // 🆕 原生搜索类型
             case 'native_search': return '正在使用 原生网络搜索';
             case 'native_search_result': return '已获取执行结果';
+            case 'throttled': return '调用频率受限 (等待中)';
         }
     };
+
+    // 🆕 倒计时逻辑
+    const [timeLeft, setTimeLeft] = useState(0);
+    useEffect(() => {
+        if (step.type === 'throttled' && step.throttledUntil) {
+            const timer = setInterval(() => {
+                const diff = Math.max(0, Math.ceil((step.throttledUntil! - Date.now()) / 1000));
+                setTimeLeft(diff);
+                if (diff <= 0) clearInterval(timer);
+            }, 500);
+            return () => clearInterval(timer);
+        }
+    }, [step.throttledUntil, step.type]);
 
     React.useEffect(() => {
         if (step.type === 'thinking' || step.type === 'tool_result') {
@@ -271,6 +286,10 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
         // 🆕 原生搜索结果预览
         if (step.type === 'native_search_result' && step.data?.sources) {
             return `${step.data.sources.length} source(s) (Google)`;
+        }
+
+        if (step.type === 'throttled') {
+            return `倒计时: ${timeLeft} 秒`;
         }
 
         return (step.content || '').substring(0, 60) + '...';
@@ -308,6 +327,9 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
 
     return (
         <Animated.View layout={Layout.springify()} className="flex-row">
+            {step.type === 'throttled' && (
+                <Animated.View entering={FadeIn} exiting={FadeOut} className="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/10 rounded-2xl -m-1" />
+            )}
             {imageUri && (
                 <ImageView
                     images={[{ uri: imageUri }]}

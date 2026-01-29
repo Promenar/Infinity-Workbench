@@ -348,6 +348,8 @@ export const translations = {
         statusDisconnected: '未连接',
         statusError: '连接错误',
         statusLoading: '连接中...',
+        callInterval: '调用频率限制',
+        callIntervalUnit: '秒',
       },
       toolbox: {
         title: '会话工具箱',
@@ -681,6 +683,7 @@ export const translations = {
     },
     common: {
       ragSection: '高级RAG配置',
+      close: '关闭',
       cancel: '取消',
       confirm: '确认',
       back: '返回',
@@ -1287,6 +1290,8 @@ export const translations = {
         statusDisconnected: 'Disconnected',
         statusError: 'Error',
         statusLoading: 'Loading...',
+        callInterval: 'Call Interval',
+        callIntervalUnit: 'sec',
       },
       toolbox: {
         title: 'Session Toolbox',
@@ -1621,6 +1626,7 @@ export const translations = {
     },
     common: {
       ragSection: 'Advanced RAG Configuration',
+      close: '关闭',
       cancel: 'Cancel',
       confirm: 'Confirm',
       back: 'Back',
