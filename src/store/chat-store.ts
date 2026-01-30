@@ -1166,7 +1166,7 @@ export const useChatStore = create<ChatState>()(
               // Timeline: 500ms (2fps) - 思考过程不需要极高频刷新
               let lastContentUpdateTime = 0;
               let lastTimelineUpdateTime = 0;
-              const CONTENT_UPDATE_INTERVAL = 200;
+              const CONTENT_UPDATE_INTERVAL = 33;
               const TIMELINE_UPDATE_INTERVAL = 500;
 
               await client.streamChat(
