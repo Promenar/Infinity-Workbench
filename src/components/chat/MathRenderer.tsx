@@ -73,6 +73,8 @@ const sizeCache = new Map<string, { width: number; height: number }>();
  */
 export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, isBlock = false }) => {
   const { isDark } = useTheme();
+  const webViewRef = React.useRef<WebView>(null);
+  const [isWebViewReady, setIsWebViewReady] = React.useState(false);
 
   // 1. 尝试从缓存获取初始尺寸
   const cachedSize = sizeCache.get(content);
@@ -83,8 +85,20 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
   const backgroundColor = isDark ? '#000000' : '#ffffff';
   const textColor = isDark ? '#e4e4e7' : '#27272a';
 
+  // 渲染函数：通过 injectJavaScript 调用
+  const injectRender = React.useCallback((latex: string, block: boolean) => {
+    if (!webViewRef.current || !isWebViewReady) return;
+
+    const js = `
+      if (window.updateMath) {
+        window.updateMath(${JSON.stringify(latex)}, ${block});
+      }
+    `;
+    webViewRef.current.injectJavaScript(js);
+  }, [isWebViewReady]);
+
   React.useEffect(() => {
-    // 内容变化时，如果缓存没有，重置状态
+    // 内容变化时，如果缓存没有，重置状态并尝试注入渲染
     const newCached = sizeCache.get(content);
     if (newCached) {
       setSize(newCached);
@@ -93,7 +107,12 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
       measuredRef.current = false;
       setSize(null);
     }
-  }, [content, isBlock]);
+
+    // 如果 WebView 已经准备好，立即尝试渲染新内容
+    if (isWebViewReady) {
+      injectRender(content, isBlock);
+    }
+  }, [content, isBlock, isWebViewReady, injectRender]);
 
   // 预估尺寸作为兜底
   const initialEstimate = useMemo(() => {
@@ -107,7 +126,8 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
   // 最终使用的布局尺寸
   const currentSize = size || initialEstimate;
 
-  const html = useMemo(() => `
+  // 基础环境 HTML：只在主题变化时重载，不随内容变化
+  const baseHtml = useMemo(() => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -124,6 +144,7 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
             justify-content: ${isBlock ? 'center' : 'flex-start'};
             align-items: center;
             overflow: hidden;
+            height: 100vh;
         }
         .katex { font-size: 15px !important; }
         .katex-display { margin: 0 !important; }
@@ -136,35 +157,42 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
 <body>
     <div id="math-container"></div>
     <script>
-        function render() {
+        window.updateMath = function(latex, block) {
             try {
                 const container = document.getElementById('math-container');
-                katex.render(${JSON.stringify(content)}, container, {
+                document.body.style.justifyContent = block ? 'center' : 'flex-start';
+                
+                katex.render(latex, container, {
                     throwOnError: false,
-                    displayMode: ${isBlock ? 'true' : 'false'},
+                    displayMode: block,
                     trust: true,
                     strict: false
                 });
                 
-                // 发送尺寸
+                // 测量并回传
                 setTimeout(() => {
                     const rect = container.getBoundingClientRect();
                     const width = Math.ceil(rect.width + 4);
                     const height = Math.ceil(rect.height + 2);
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ width, height }));
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ 
+                      type: 'size', 
+                      content: latex,
+                      width, 
+                      height 
+                    }));
                 }, 10);
             } catch (e) {
-                window.ReactNativeWebView.postMessage(JSON.stringify({ error: e.message }));
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: e.message }));
             }
-        }
-        if (document.readyState === 'complete') render();
-        else window.addEventListener('load', render);
+        };
+        
+        // 标记环境就绪
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
     </script>
 </body>
 </html>
-  `, [content, isBlock, backgroundColor, textColor]);
+  `, [backgroundColor, textColor, isBlock]); // 注意：isBlock 虽影响对齐，但尽量保持 baseHtml 稳定
 
-  // Case (One-Shot Measure)
   return (
     <View
       style={[
@@ -178,7 +206,8 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
       ]}
     >
       <WebView
-        source={{ html }}
+        ref={webViewRef}
+        source={{ html: baseHtml }}
         originWhitelist={['*']}
         javaScriptEnabled={true}
         domStorageEnabled={true}
@@ -188,15 +217,18 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
         androidLayerType="hardware"
         style={{ backgroundColor: 'transparent' }}
         onMessage={(event) => {
-          if (measuredRef.current) return;
           try {
             const data = JSON.parse(event.nativeEvent.data);
-            if (data.width && data.height) {
-              // 1. 写入缓存
-              sizeCache.set(content, { width: data.width, height: data.height });
-              // 2. 更新状态
-              measuredRef.current = true;
-              setSize({ width: data.width, height: data.height });
+
+            if (data.type === 'ready') {
+              setIsWebViewReady(true);
+            } else if (data.type === 'size') {
+              // 只有当内容匹配且尚未锁定尺寸时才更新
+              if (data.content === content && !measuredRef.current) {
+                sizeCache.set(content, { width: data.width, height: data.height });
+                measuredRef.current = true;
+                setSize({ width: data.width, height: data.height });
+              }
             }
           } catch (e) { }
         }}
