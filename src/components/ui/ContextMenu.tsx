@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Modal, TouchableWithoutFeedback, View, TouchableOpacity, Dimensions, GestureResponderEvent } from 'react-native';
+import { Modal, TouchableWithoutFeedback, View, TouchableOpacity, Dimensions, GestureResponderEvent, Pressable } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -99,19 +99,22 @@ export function ContextMenu({ children, items, triggerOnPress = false }: Context
   return (
     <>
       <View ref={triggerRef} collapsable={false}>
-        <TouchableOpacity
-          onPress={(e) => {
+        <Pressable
+          onPress={(e: GestureResponderEvent) => {
             if (triggerOnPress) {
-              // 确保在这里捕获的是当前点击的坐标
               handleOpen(e);
             }
           }}
-          onLongPress={(e) => handleOpen(e)}
+          onLongPress={(e: GestureResponderEvent) => handleOpen(e)}
           delayLongPress={250}
-          activeOpacity={0.7}
+          // 移除 activeOpacity 效果，防止滚动时闪烁
+          // 如果需要长按反馈，可以通过 style={({ pressed }) => ...} 自定义，但目前以无视觉干扰为优
+          style={({ pressed }: { pressed: boolean }) => [
+            pressed && triggerOnPress ? { opacity: 0.7 } : null
+          ]}
         >
           {children}
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
