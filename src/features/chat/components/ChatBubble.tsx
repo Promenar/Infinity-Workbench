@@ -832,7 +832,12 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       paragraph: (node: any, children: any, parent: any, styles: any) => (
         <View
           key={node.key}
-          style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginVertical: 8 }}
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            alignItems: 'baseline', // 使用 baseline 对齐文本和公式
+            marginVertical: 8,
+          }}
         >
           {children}
         </View>
@@ -854,7 +859,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 // Remove $ delimiters
                 const math = part.slice(1, -1);
                 return (
-                  <View key={index} style={{ marginHorizontal: 2 }}>
+                  <View
+                    key={index}
+                    style={{
+                      marginHorizontal: 3,
+                      flexShrink: 0, // 防止公式被压缩
+                    }}
+                  >
                     <MathRenderer content={math} isBlock={false} />
                   </View>
                 );
@@ -871,6 +882,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           </React.Fragment>
         );
       },
+
       // ✅ Force newlines for soft breaks
       softbreak: (node: any, children: any, parent: any, styles: any) => (
         <Text key={node.key}>{'\n'}</Text>

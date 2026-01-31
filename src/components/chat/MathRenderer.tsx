@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, Dimensions, TouchableOpacity, Text, Platform, Modal, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SvgXml } from 'react-native-svg';
@@ -11,19 +11,103 @@ interface MathRendererProps {
   isBlock?: boolean; // true for $$..$$, false for $...$
 }
 
+// 预估行内公式的宽度（基于内容长度）
+const estimateInlineWidth = (content: string): number => {
+  // 🔑 大幅增加系数以避免裁剪
+  const baseWidth = content.length * 14; // 从 12 增加到 14
+  // LaTeX 命令如 \frac, \sqrt 等占用更多空间
+  const commandCount = (content.match(/\\[a-zA-Z]+/g) || []).length;
+  const commandExtra = commandCount * 35; // 从 25 增加到 35
+  // 上下标占用额外空间
+  const superSubCount = (content.match(/[_^]/g) || []).length;
+  const superSubExtra = superSubCount * 15; // 从 10 增加到 15
+  // 花括号内的内容
+  const braceCount = (content.match(/\{[^}]+\}/g) || []).length;
+  const braceExtra = braceCount * 20;
+
+  const total = baseWidth + commandExtra + superSubExtra + braceExtra;
+  // 最小 60px，最大屏幕宽度的 95%
+  return Math.min(Math.max(total, 60), Dimensions.get('window').width * 0.95);
+};
+
+// 预估行内公式高度
+const estimateInlineHeight = (content: string): number => {
+  // 基础高度
+  let height = 30;
+  // 如果有分数、根号、求和、积分等，增加高度
+  if (content.includes('\\frac') || content.includes('\\sqrt') ||
+    content.includes('\\sum') || content.includes('\\int') ||
+    content.includes('\\lim') || content.includes('\\prod')) {
+    height = 55;
+  }
+  // 如果有上下标，增加高度
+  if (content.includes('_') || content.includes('^')) {
+    height = Math.max(height, 36);
+  }
+  return height;
+};
+
+
 /**
  * LaTeX 数学公式渲染组件
  * 使用 KaTeX 通过 WebView 渲染
+ * 
+ * 🔑 关键设计决策：
+ * - 行内公式使用预估的固定尺寸，彻底避免动态测量导致的抖动
+ * - 块级公式允许有限的高度自适应
  */
-export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = false }) => {
+/**
+ * 全局尺寸缓存
+ * key: content (formula string)
+ * value: { width, height }
+ */
+const sizeCache = new Map<string, { width: number; height: number }>();
+
+/**
+ * LaTeX 数学公式渲染组件
+ * 使用 KaTeX 通过 WebView 渲染
+ * 
+ * 🔑 关键设计决策 (v4.0 - Global Cache):
+ * - 引入 sizeCache 防止布局抖动导致的无限重试
+ * - 分离 layout size 和 visual visibility
+ */
+export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, isBlock = false }) => {
   const { isDark } = useTheme();
-  const [dimensions, setDimensions] = useState({ height: isBlock ? 80 : 30, width: isBlock ? '100%' : 100 });
+
+  // 1. 尝试从缓存获取初始尺寸
+  const cachedSize = sizeCache.get(content);
+  const [size, setSize] = React.useState<{ width: number; height: number } | null>(cachedSize || null);
+
+  const measuredRef = React.useRef(!!cachedSize);
 
   const backgroundColor = isDark ? '#000000' : '#ffffff';
   const textColor = isDark ? '#e4e4e7' : '#27272a';
 
-  // KaTeX CDN HTML
-  const html = `
+  React.useEffect(() => {
+    // 内容变化时，如果缓存没有，重置状态
+    const newCached = sizeCache.get(content);
+    if (newCached) {
+      setSize(newCached);
+      measuredRef.current = true;
+    } else {
+      measuredRef.current = false;
+      setSize(null);
+    }
+  }, [content, isBlock]);
+
+  // 预估尺寸作为兜底
+  const initialEstimate = useMemo(() => {
+    if (isBlock) return { width: Dimensions.get('window').width - 32, height: 80 };
+    return {
+      width: Math.min(content.length * 12 + 20, Dimensions.get('window').width * 0.8),
+      height: 30
+    };
+  }, [content, isBlock]);
+
+  // 最终使用的布局尺寸
+  const currentSize = size || initialEstimate;
+
+  const html = useMemo(() => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -31,104 +115,96 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, isBlock = f
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <style>
-        * {
+        body {
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-        }
-        body {
             background-color: ${backgroundColor};
             color: ${textColor};
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: ${isBlock ? '18px' : '16px'};
-            line-height: 1.6;
-            padding: ${isBlock ? '12px 0' : '2px 0'};
-            overflow: hidden;
             display: flex;
-            align-items: center;
             justify-content: ${isBlock ? 'center' : 'flex-start'};
+            align-items: center;
+            overflow: hidden;
         }
-        .katex {
-            font-size: 1em !important;
-        }
-        .katex-display {
-            margin: 0 !important;
-            ${isBlock ? 'text-align: center;' : ''}
-        }
+        .katex { font-size: 15px !important; }
+        .katex-display { margin: 0 !important; }
         #math-container {
-            ${isBlock ? 'width: 100%; text-align: center;' : 'display: inline-block;'}
+            display: inline-block;
+            white-space: nowrap;
         }
     </style>
 </head>
 <body>
     <div id="math-container"></div>
     <script>
-        try {
-            const container = document.getElementById('math-container');
-            katex.render(${JSON.stringify(content)}, container, {
-                throwOnError: false,
-                displayMode: ${isBlock ? 'true' : 'false'},
-                trust: true,
-                strict: false,
-                output: 'html'
-            });
-        } catch (error) {
-            document.body.innerHTML = '<span style="color: #ef4444;">LaTeX Error: ' + error.message + '</span>';
+        function render() {
+            try {
+                const container = document.getElementById('math-container');
+                katex.render(${JSON.stringify(content)}, container, {
+                    throwOnError: false,
+                    displayMode: ${isBlock ? 'true' : 'false'},
+                    trust: true,
+                    strict: false
+                });
+                
+                // 发送尺寸
+                setTimeout(() => {
+                    const rect = container.getBoundingClientRect();
+                    const width = Math.ceil(rect.width + 4);
+                    const height = Math.ceil(rect.height + 2);
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ width, height }));
+                }, 10);
+            } catch (e) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ error: e.message }));
+            }
         }
+        if (document.readyState === 'complete') render();
+        else window.addEventListener('load', render);
     </script>
 </body>
 </html>
-    `;
+  `, [content, isBlock, backgroundColor, textColor]);
 
+  // Case (One-Shot Measure)
   return (
-    <View style={[styles.container, isBlock ? styles.blockContainer : styles.inlineContainer, !isBlock && { width: dimensions.width as number, height: dimensions.height }]}>
+    <View
+      style={[
+        isBlock ? styles.blockContainer : styles.inlineContainer,
+        {
+          width: isBlock ? '100%' : currentSize.width,
+          height: currentSize.height,
+          // 只有当有真实尺寸时才显示，避免预估尺寸导致的布局跳动
+          opacity: size ? 1 : 0,
+        }
+      ]}
+    >
       <WebView
         source={{ html }}
         originWhitelist={['*']}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        startInLoadingState={false} // Avoid flashing loading spinner for small math
-        style={[
-          styles.webview,
-          { backgroundColor },
-          isBlock ? styles.blockWebview : { height: dimensions.height, width: dimensions.width as number },
-        ]}
         scrollEnabled={false}
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
-        androidLayerType="software"
-        onError={(syntheticEvent) => {
-          const { nativeEvent } = syntheticEvent;
-          console.warn('LaTeX WebView error:', nativeEvent);
-        }}
-        injectedJavaScript={`
-                    setTimeout(() => {
-                        const height = document.body.scrollHeight;
-                        const width = document.body.scrollWidth;
-                        window.ReactNativeWebView.postMessage(JSON.stringify({ height, width }));
-                    }, 100);
-                    true;
-                `}
+        androidLayerType="hardware"
+        style={{ backgroundColor: 'transparent' }}
         onMessage={(event) => {
+          if (measuredRef.current) return;
           try {
-            const { height, width } = JSON.parse(event.nativeEvent.data);
-            if (!isBlock) {
-              const currentWidth = dimensions.width as number;
-              if (Math.abs(width - currentWidth) > 5 || Math.abs(height - dimensions.height) > 5) {
-                setDimensions({ height: height + 10, width: width + 10 }); // Add padding
-              }
-            } else {
-              // For block math, update height if significantly different
-              if (Math.abs(height - dimensions.height) > 10) {
-                setDimensions({ ...dimensions, height: height + 24 });
-              }
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.width && data.height) {
+              // 1. 写入缓存
+              sizeCache.set(content, { width: data.width, height: data.height });
+              // 2. 更新状态
+              measuredRef.current = true;
+              setSize({ width: data.width, height: data.height });
             }
           } catch (e) { }
         }}
       />
     </View>
   );
-};
+});
+
 
 interface AnimatedSVGRendererProps {
   svgContent: string;
@@ -154,7 +230,7 @@ export const AnimatedSVGRenderer: React.FC<AnimatedSVGRendererProps> = ({
 }) => {
   const { isDark } = useTheme();
   const backgroundColor = isDark ? '#000000' : '#ffffff';
-  const [webViewHeight, setWebViewHeight] = useState(initialHeight);
+  const [webViewHeight, setWebViewHeight] = React.useState(initialHeight);
 
   // 注入脚本以获取内容高度
   const injectedJS = `
@@ -307,8 +383,8 @@ export const LazySVGRenderer: React.FC<LazySVGRendererProps> = ({ svgContent, is
   const { isDark: themeIsDark, colors } = useTheme();
   const dark = isDark ?? themeIsDark;
 
-  const [isVisible, setIsVisible] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isVisible, setIsVisible] = React.useState(false);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   return (
     <View style={[styles.svgContainer, {
@@ -377,7 +453,7 @@ export const LazySVGRenderer: React.FC<LazySVGRendererProps> = ({ svgContent, is
           borderStyle: 'dashed',
         }}>
           <Text style={{ fontSize: 12, color: dark ? '#52525b' : '#a1a1aa' }}>
-            点击上方“查看”按钮加载图表
+            点击上方"查看"按钮加载图表
           </Text>
         </View>
       )}
