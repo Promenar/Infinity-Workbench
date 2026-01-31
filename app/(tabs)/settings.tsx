@@ -625,6 +625,7 @@ export default function SettingsScreen() {
                 }}
               />
 
+
               <SettingsItem
                 icon={Info}
                 title={t.settings.about}
