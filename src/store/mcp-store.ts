@@ -6,7 +6,8 @@ import { produce } from 'immer';
 export interface McpServerConfig {
     id: string;
     name: string;
-    url: string; // SSE Endpoint
+    url: string; // SSE Endpoint or Base URL
+    type: 'http' | 'sse'; // 🆕 Transport type, defaults to 'sse' for new, 'http' for migration
     enabled: boolean;
     defaultIncluded: boolean; // 是否默认包含在新会话中
     lastSync?: number;

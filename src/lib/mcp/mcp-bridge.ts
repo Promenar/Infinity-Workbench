@@ -51,9 +51,10 @@ export class McpBridge {
             return;
         }
 
+        let client: McpClient | null = null;
         try {
             setServerStatus(server.id, 'loading');
-            const client = new McpClient(server.url);
+            client = new McpClient(server);
             const tools = await client.listTools();
 
             // 🔑 覆盖式同步：同步前先清理该服务器的旧工具
@@ -91,13 +92,23 @@ export class McpBridge {
                             }
                         }
 
-                        const result = await client.callTool(t.name, processedParams);
-                        return {
-                            id: `mcp_exec_${Date.now()}`,
-                            content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-                            status: 'success',
-                            data: result
-                        };
+                        // 为了调用工具，我们需要重新创建客户端（因为 SSE 可能已断开）或者保持连接
+                        // 对于简单的原子执行，建立即时连接是可接受的
+                        const executionClient = new McpClient(server);
+                        try {
+                            // 🔑 优化：建立连接执行工具调用，并在完成后立即断开
+                            // 这是一个无状态的执行模式
+                            await executionClient.connect();
+                            const result = await executionClient.callTool(t.name, processedParams);
+                            return {
+                                id: `mcp_exec_${Date.now()}`,
+                                content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+                                status: 'success',
+                                data: result
+                            };
+                        } finally {
+                            await executionClient.disconnect();
+                        }
                     }
                 };
             });
@@ -110,6 +121,10 @@ export class McpBridge {
         } catch (error: any) {
             setServerStatus(server.id, 'error', error.message);
             console.error(`[McpBridge] Failed to sync ${server.name}:`, error);
+        } finally {
+            if (client) {
+                await client.disconnect();
+            }
         }
     }
 

@@ -270,10 +270,11 @@ const McpServerManagement: React.FC = () => {
     const { servers, addServer, removeServer, updateServer } = useMcpStore();
     const [newUrl, setNewUrl] = useState('');
     const [newName, setNewName] = useState('');
+    const [newType, setNewType] = useState<'http' | 'sse'>('sse'); // Default to SSE for better compatibility
 
     const handleAdd = () => {
         if (!newUrl || !newName) return;
-        addServer({ id: Date.now().toString(), name: newName, url: newUrl, enabled: true, defaultIncluded: true });
+        addServer({ id: Date.now().toString(), name: newName, url: newUrl, type: newType, enabled: true, defaultIncluded: true });
         setNewUrl(''); setNewName('');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     };
@@ -298,6 +299,21 @@ const McpServerManagement: React.FC = () => {
                     placeholder={t.settings.skillsSettings.serverUrl}
                     className="mb-4 p-4 rounded-2xl bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 border border-transparent focus:border-indigo-500"
                 />
+
+                <View className="flex-row mb-4 gap-2">
+                    <TouchableOpacity
+                        onPress={() => setNewType('sse')}
+                        className={`flex-1 p-3 rounded-xl border ${newType === 'sse' ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800' : 'bg-white border-gray-100 dark:bg-zinc-800 dark:border-zinc-700'}`}
+                    >
+                        <Text className={`text-center text-xs font-bold ${newType === 'sse' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-zinc-400'}`}>SSE (Stream/Push)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => setNewType('http')}
+                        className={`flex-1 p-3 rounded-xl border ${newType === 'http' ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800' : 'bg-white border-gray-100 dark:bg-zinc-800 dark:border-zinc-700'}`}
+                    >
+                        <Text className={`text-center text-xs font-bold ${newType === 'http' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-zinc-400'}`}>HTTP (Stateless)</Text>
+                    </TouchableOpacity>
+                </View>
 
                 <TouchableOpacity
                     onPress={handleAdd}
@@ -416,6 +432,15 @@ const McpServerManagement: React.FC = () => {
                                     <Switch value={server.defaultIncluded} onValueChange={val => updateServer(server.id, { defaultIncluded: val })} />
                                     <Typography className="text-[11px] font-bold opacity-70 dark:text-zinc-300">{t.settings.skillsSettings.default}</Typography>
                                 </View>
+                                <View className="h-4 w-[1px] bg-gray-200 dark:bg-zinc-700 mx-1" />
+                                <TouchableOpacity
+                                    onPress={() => updateServer(server.id, { type: server.type === 'sse' ? 'http' : 'sse' })}
+                                    className={`px-2 py-1 rounded-lg border ${server.type === 'sse' ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800' : 'bg-gray-50 border-gray-200 dark:bg-zinc-800 dark:border-zinc-700'}`}
+                                >
+                                    <Text className={`text-[10px] font-bold uppercase ${server.type === 'sse' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-zinc-500'}`}>
+                                        {server.type === 'sse' ? 'SSE' : 'HTTP'}
+                                    </Text>
+                                </TouchableOpacity>
                             </View>
                             <View className="flex-row items-center px-2 py-1 rounded-lg bg-green-50 dark:bg-green-900/10">
                                 <Typography className="text-[9px] font-bold text-green-600 dark:text-green-500 uppercase">
