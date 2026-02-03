@@ -66,10 +66,12 @@ export default function DemoPage() {
                         </TouchableOpacity>
                     </View>
                 </View>
+
             </ScrollView>
         </View>
     );
 }
+
 
 const localStyles = StyleSheet.create({
     button: {

@@ -574,8 +574,9 @@ export function ChatInput({
 
 
       <BlurView
-        intensity={isDark ? 80 : 120}
-        tint={isDark ? 'dark' : 'light'}
+        intensity={isDark ? 50 : 80}
+        tint={isDark ? 'dark' : 'default'}
+        experimentalBlurMethod='dimezisBlurView'
         style={[
           styles.blurContainer,
           {
@@ -599,8 +600,8 @@ export function ChatInput({
           style={[
             styles.overlay,
             {
-              // 正常模式背景
-              backgroundColor: isDark ? 'rgba(10, 10, 12, 0.8)' : 'rgba(255, 255, 255, 0.3)',
+              // 正常模式背景 - 降低不透明度以配合高斯模糊
+              backgroundColor: isDark ? 'rgba(10, 10, 12, 0.4)' : 'rgba(255, 255, 255, 0.2)',
             },
           ]}
         />

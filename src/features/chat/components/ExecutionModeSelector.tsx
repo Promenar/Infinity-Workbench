@@ -10,6 +10,7 @@ import { GlassBottomSheet } from '../../../components/ui/GlassBottomSheet';
 import { useI18n } from '../../../lib/i18n';
 import { Zap, Shield, PlayCircle, Server, Wrench, ChevronDown } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, interpolateColor } from 'react-native-reanimated';
 
 interface ExecutionModeSelectorProps {
     sessionId: string;
@@ -22,10 +23,32 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
     const { setExecutionMode, toggleMcpServer, toggleSkill, updateSessionOptions } = useChatStore();
     const { servers } = useMcpStore();
     const [visible, setVisible] = useState(false);
-
+    const [containerWidth, setContainerWidth] = useState(0);
     if (!session) return null;
     const mode = session.executionMode || 'semi';
     const toolsEnabled = session.options?.toolsEnabled ?? true;
+
+    const modes: ('auto' | 'semi' | 'manual')[] = ['auto', 'semi', 'manual'];
+    const activeIndex = modes.indexOf(mode as any);
+    const translateX = useSharedValue(activeIndex);
+
+    React.useEffect(() => {
+        translateX.value = withSpring(activeIndex, {
+            damping: 20,
+            stiffness: 150,
+            mass: 0.8
+        });
+    }, [activeIndex]);
+
+    const animatedIndicatorStyle = useAnimatedStyle(() => {
+        if (containerWidth === 0) return { opacity: 0 };
+        const buttonWidth = (containerWidth - 8) / 3; // 8 is p-1 (4px * 2)
+        return {
+            transform: [{ translateX: translateX.value * buttonWidth }],
+            width: buttonWidth,
+            opacity: 1
+        };
+    });
 
     const renderModeButton = (m: 'auto' | 'semi' | 'manual', label: string, Icon: any) => {
         const isActive = mode === m;
@@ -181,31 +204,44 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
 
                         {/* Segmented Control */}
                         <View
-                            className="flex-row p-1 rounded-2xl"
+                            onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+                            className="flex-row p-1 rounded-2xl relative"
                             style={{
                                 backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
                             }}
                         >
-                            {['auto', 'semi', 'manual'].map((m) => {
+                            {/* Animated Background Indicator */}
+                            <Animated.View
+                                style={[
+                                    {
+                                        position: 'absolute',
+                                        top: 4,
+                                        bottom: 4,
+                                        left: 4,
+                                        borderRadius: 12,
+                                        backgroundColor: isDark ? colors[500] : '#fff',
+                                        shadowColor: '#000',
+                                        shadowOffset: { width: 0, height: 2 },
+                                        shadowOpacity: 0.1,
+                                        shadowRadius: 4,
+                                        elevation: 2
+                                    },
+                                    animatedIndicatorStyle
+                                ]}
+                            />
+
+                            {modes.map((m) => {
                                 const isActive = mode === m;
-                                const localizedLabel = t.settings.skillsSettings.modes[m as 'auto' | 'semi' | 'manual'];
+                                const localizedLabel = t.settings.skillsSettings.modes[m];
 
                                 return (
                                     <TouchableOpacity
                                         key={m}
                                         onPress={() => {
                                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                            setExecutionMode(sessionId, m as any);
+                                            setExecutionMode(sessionId, m);
                                         }}
-                                        className={'flex-1 items-center justify-center py-2.5 rounded-xl'}
-                                        style={{
-                                            backgroundColor: isActive ? (isDark ? '#6366f1' : '#fff') : 'transparent',
-                                            shadowColor: isActive ? '#000' : 'transparent',
-                                            shadowOffset: { width: 0, height: 2 },
-                                            shadowOpacity: isActive ? 0.1 : 0,
-                                            shadowRadius: 4,
-                                            elevation: isActive ? 2 : 0
-                                        }}
+                                        className={'flex-1 items-center justify-center py-2.5 z-10'}
                                     >
                                         <Text style={{
                                             fontSize: 13,

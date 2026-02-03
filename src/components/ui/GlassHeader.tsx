@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, ViewStyle } from 'react-native';
+import { View, TouchableOpacity, ViewStyle, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -90,8 +90,9 @@ export function GlassHeader({
 
     return (
         <BlurView
-            intensity={intensity}
-            tint={isDark ? 'dark' : 'light'}
+            intensity={Platform.OS === 'android' ? 50 : intensity}
+            tint={isDark ? 'dark' : 'default'}
+            experimentalBlurMethod='dimezisBlurView'
             style={[
                 {
                     position: 'absolute',
@@ -113,8 +114,8 @@ export function GlassHeader({
                     right: 0,
                     bottom: 0,
                     backgroundColor: isDark
-                        ? `rgba(0, 0, 0, ${overlayOpacity})`
-                        : `rgba(255, 255, 255, ${overlayOpacity})`,
+                        ? `rgba(0, 0, 0, ${overlayOpacity * 0.5})` // 降低一半遮罩浓度
+                        : `rgba(255, 255, 255, ${overlayOpacity * 0.5})`,
                 }}
             />
 

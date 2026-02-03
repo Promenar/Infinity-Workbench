@@ -78,9 +78,10 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                     }}
                 >
                     <BlurView
-                        intensity={isDark ? 30 : 50}
+                        intensity={isDark ? 30 : 25}
                         style={{ flex: height === 'auto' ? undefined : 1, paddingTop: 24 }}
-                        tint={isDark ? 'dark' : 'light'}
+                        tint={isDark ? 'dark' : 'default'}
+                        experimentalBlurMethod='dimezisBlurView'
                     >
                         <View
                             style={{
