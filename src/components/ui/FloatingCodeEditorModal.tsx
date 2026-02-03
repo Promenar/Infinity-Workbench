@@ -20,6 +20,7 @@ import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
 import { X, Check } from 'lucide-react-native';
+import { Glass } from '../../theme/glass';
 
 interface FloatingCodeEditorModalProps {
     visible: boolean;
@@ -120,8 +121,10 @@ export const FloatingCodeEditorModal: React.FC<FloatingCodeEditorModalProps> = (
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                         <Animated.View
                             style={[
+
+
                                 {
-                                    backgroundColor: isDark ? 'rgba(15, 17, 26, 0.85)' : 'rgba(255, 255, 255, 0.9)',
+                                    backgroundColor: `rgba(${isDark ? Glass.Sheet.baseColor.dark : Glass.Sheet.baseColor.light}, ${isDark ? Glass.Sheet.opacity.dark : Glass.Sheet.opacity.light})`,
                                     borderRadius: 16,
                                     padding: 20,
                                     width: MODAL_WIDTH,
@@ -139,8 +142,8 @@ export const FloatingCodeEditorModal: React.FC<FloatingCodeEditorModalProps> = (
                             ]}
                         >
                             <BlurView
-                                intensity={isDark ? 50 : 80}
-                                tint={isDark ? 'dark' : 'light'}
+                                intensity={isDark ? Glass.Sheet.intensity : Glass.Sheet.intensity}
+                                tint={isDark ? Glass.Sheet.tint.dark : Glass.Sheet.tint.light}
                                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
                             />
 
@@ -255,7 +258,7 @@ export const FloatingCodeEditorModal: React.FC<FloatingCodeEditorModalProps> = (
                         </Animated.View>
                     </TouchableWithoutFeedback>
                 </View>
-            </TouchableWithoutFeedback>
-        </Modal>
+            </TouchableWithoutFeedback >
+        </Modal >
     );
 };

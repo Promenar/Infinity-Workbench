@@ -2,6 +2,7 @@ import { View, ViewProps, TouchableOpacity, TouchableOpacityProps } from 'react-
 import { twMerge } from 'tailwind-merge';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../../theme/ThemeProvider';
+import { Glass } from '../../theme/glass';
 
 interface CardProps extends ViewProps {
   variant?: 'default' | 'elevated' | 'glass';
@@ -32,12 +33,14 @@ export function Card({ variant = 'default', onPress, className, children, style,
     <>
       {variant === 'glass' && (
         <BlurView
-          intensity={isDark ? 30 : 60}
-          tint={isDark ? 'dark' : 'light'}
+          intensity={isDark ? Glass.Overlay.intensity : Glass.Overlay.intensity}
+          tint={isDark ? Glass.Overlay.tint.dark : Glass.Overlay.tint.light}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         />
       )}
-      <View style={variant === 'glass' ? { backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(255, 255, 255, 0.8)' } : null}>
+      <View style={variant === 'glass' ? {
+        backgroundColor: `rgba(${isDark ? Glass.Overlay.baseColor.dark : Glass.Overlay.baseColor.light}, ${isDark ? Glass.Overlay.opacity.dark : Glass.Overlay.opacity.light})`
+      } : null}>
         {children}
       </View>
     </>

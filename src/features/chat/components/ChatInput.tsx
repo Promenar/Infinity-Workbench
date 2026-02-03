@@ -48,6 +48,7 @@ import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
 import { useApiStore } from '../../../store/api-store';
 import { useAgentStore } from '../../../store/agent-store';
 import { ANIMATION_DURATION } from '../../../theme/animations';
+import { Glass } from '../../../theme/glass';
 
 import { ExecutionModeSelector } from './ExecutionModeSelector';
 
@@ -574,8 +575,8 @@ export function ChatInput({
 
 
       <BlurView
-        intensity={isDark ? 50 : 80}
-        tint={isDark ? 'dark' : 'default'}
+        intensity={isDark ? Glass.Header.intensity : Glass.Header.intensity} // Consistent intensity
+        tint={isDark ? Glass.Header.tint.dark : Glass.Header.tint.light}
         experimentalBlurMethod='dimezisBlurView'
         style={[
           styles.blurContainer,
@@ -600,8 +601,10 @@ export function ChatInput({
           style={[
             styles.overlay,
             {
-              // 正常模式背景 - 降低不透明度以配合高斯模糊
-              backgroundColor: isDark ? 'rgba(10, 10, 12, 0.4)' : 'rgba(255, 255, 255, 0.2)',
+              // 统一使用 Glass.Header 的透明度
+              backgroundColor: isDark
+                ? `rgba(0, 0, 0, ${Glass.Header.opacity.dark})`
+                : `rgba(255, 255, 255, ${Glass.Header.opacity.light})`,
             },
           ]}
         />
@@ -768,37 +771,39 @@ export function ChatInput({
       </BlurView>
 
       {/* Attachment Menu - Moved outside BlurView to prevent clipping due to overflow:hidden */}
-      {showAttachmentMenu && (
-        <View
-          style={[
-            styles.attachmentMenu,
-            {
-              backgroundColor: isDark ? 'rgba(39, 39, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={styles.attachmentMenuItem}
-            onPress={() => handlePickImage('camera')}
+      {
+        showAttachmentMenu && (
+          <View
+            style={[
+              styles.attachmentMenu,
+              {
+                backgroundColor: isDark ? 'rgba(39, 39, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+              },
+            ]}
           >
-            <Camera size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
-            <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-              {t.chat.takePhoto}
-            </Typography>
-          </TouchableOpacity>
-          <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e5e7eb' }} />
-          <TouchableOpacity
-            style={styles.attachmentMenuItem}
-            onPress={() => handlePickImage('library')}
-          >
-            <ImageIcon size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
-            <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-              {t.chat.selectFromGallery}
-            </Typography>
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity
+              style={styles.attachmentMenuItem}
+              onPress={() => handlePickImage('camera')}
+            >
+              <Camera size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
+              <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+                {t.chat.takePhoto}
+              </Typography>
+            </TouchableOpacity>
+            <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e5e7eb' }} />
+            <TouchableOpacity
+              style={styles.attachmentMenuItem}
+              onPress={() => handlePickImage('library')}
+            >
+              <ImageIcon size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
+              <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+                {t.chat.selectFromGallery}
+              </Typography>
+            </TouchableOpacity>
+          </View>
+        )
+      }
 
       <ConfirmDialog
         visible={confirmState.visible}
@@ -807,7 +812,7 @@ export function ChatInput({
         onConfirm={confirmState.onConfirm}
         onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
       />
-    </View>
+    </View >
   );
 }
 

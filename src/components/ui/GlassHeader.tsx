@@ -6,6 +6,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Typography } from './Typography';
 import * as Haptics from '../../lib/haptics';
 import { preventDoubleTap } from '../../lib/navigation-utils';
+import { Glass } from '../../theme/glass';
 
 export interface GlassHeaderAction {
     icon: React.ReactNode;
@@ -90,8 +91,8 @@ export function GlassHeader({
 
     return (
         <BlurView
-            intensity={Platform.OS === 'android' ? 50 : intensity}
-            tint={isDark ? 'dark' : 'default'}
+            intensity={intensity === 100 ? Glass.Header.intensity : intensity} // Keep custom override if needed, but default to Glass.Header
+            tint={isDark ? Glass.Header.tint.dark : Glass.Header.tint.light}
             experimentalBlurMethod='dimezisBlurView'
             style={[
                 {
@@ -114,8 +115,8 @@ export function GlassHeader({
                     right: 0,
                     bottom: 0,
                     backgroundColor: isDark
-                        ? `rgba(0, 0, 0, ${overlayOpacity * 0.5})` // 降低一半遮罩浓度
-                        : `rgba(255, 255, 255, ${overlayOpacity * 0.5})`,
+                        ? `rgba(0, 0, 0, ${overlayOpacity === 0.3 ? Glass.Header.opacity.dark : overlayOpacity})`
+                        : `rgba(255, 255, 255, ${overlayOpacity === 0.3 ? Glass.Header.opacity.light : overlayOpacity})`,
                 }}
             />
 
