@@ -449,8 +449,15 @@ const TimelineItemComponent = ({ step, isLast, isMessageGenerating, sessionId }:
                                             body: {
                                                 color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)',
                                                 fontSize: 13,
-                                                lineHeight: 18,
+                                                lineHeight: 20, // 增加行高优化阅读体验
                                             },
+                                            // 强制限制标题大小，防止排版错乱
+                                            heading1: { fontSize: 15, fontWeight: 'bold', marginVertical: 6, lineHeight: 22, color: isDark ? '#fff' : '#000' },
+                                            heading2: { fontSize: 14, fontWeight: 'bold', marginVertical: 5, lineHeight: 20, color: isDark ? '#fff' : '#000' },
+                                            heading3: { fontSize: 13, fontWeight: 'bold', marginVertical: 4, lineHeight: 18, color: isDark ? '#fff' : '#000' },
+                                            heading4: { fontSize: 13, fontWeight: 'bold', marginVertical: 4, color: isDark ? '#fff' : '#000' },
+                                            heading5: { fontSize: 13, fontWeight: 'bold', marginVertical: 4, color: isDark ? '#fff' : '#000' },
+                                            heading6: { fontSize: 13, fontWeight: 'bold', marginVertical: 4, color: isDark ? '#fff' : '#000' },
                                             blockquote: {
                                                 backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
                                                 borderLeftColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
@@ -519,12 +526,15 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
     const { isDark } = useTheme();
     const { t } = useI18n();
 
-    // 🔑 自动追踪新步骤
+    // 计算最后一步的内容长度，用于触发自动滚动
+    const lastStepContentLength = steps.length > 0 ? (steps[steps.length - 1].content?.length || 0) : 0;
+
+    // 🔑 自动追踪新步骤及内容更新
     useEffect(() => {
         if (isAutoScrollEnabled && stepsCount > 0) {
             scrollViewRef.current?.scrollToEnd({ animated: true });
         }
-    }, [stepsCount, isAutoScrollEnabled]);
+    }, [stepsCount, isAutoScrollEnabled, lastStepContentLength]);
 
     // 🔑 自动折叠/展开逻辑：仅在用户未手动干预时生效
     useEffect(() => {

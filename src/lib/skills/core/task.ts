@@ -267,9 +267,11 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                     };
                 }
 
-                // 🛡️ Auto-complete pending steps
+                // 🛡️ Auto-complete pending steps (Robust Fallback)
+                // 修复：不仅检查 pending/in-progress，而是将所有非终态步骤（未失败/未跳过）一律标记为已完成
+                // 这确保了即使步骤状态有细微偏差，一旦任务完成，所有步骤都会正确的“变绿”
                 const completedSteps = activeTask.steps.map((step: any) => {
-                    if (step.status === 'pending' || step.status === 'in-progress') {
+                    if (step.status !== 'completed' && step.status !== 'failed' && step.status !== 'skipped') {
                         return { ...step, status: 'completed' };
                     }
                     return step;

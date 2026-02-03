@@ -67,6 +67,8 @@ export const TaskMonitor = ({ sessionId, containerStyle, task, isLatest = true, 
             case 'in-progress': return <Loader2 size={15} color={colors[500]} strokeWidth={3} className="animate-spin" />;
             case 'failed': return <XCircle size={15} color="#ef4444" />;
             case 'skipped': return <SkipForward size={15} color="#fbbf24" />;
+            case 'skipped': return <SkipForward size={15} color="#fbbf24" />;
+            case 'pending': return <Circle size={15} color={isDark ? '#52525b' : '#d4d4d8'} />;
             default: return <Circle size={15} color={isDark ? '#52525b' : '#d4d4d8'} />;
         }
     };
