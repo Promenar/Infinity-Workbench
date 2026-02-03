@@ -59,7 +59,6 @@ import { LargeTitleHeader } from '../../src/components/ui/LargeTitleHeader';
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
 import { ProviderList } from '../../src/features/settings/components/ProviderList';
 import { Card } from '../../src/components/ui/Card';
-import { ModelSettingsModal } from '../../src/features/settings/ModelSettingsModal';
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
 import { GlobalRagConfigPanel } from '../../src/features/settings/components/GlobalRagConfigPanel';
 import * as Haptics from '../../src/lib/haptics';
@@ -91,7 +90,7 @@ export default function SettingsScreen() {
   const [containerWidth, setContainerWidth] = useState(0);
   const [eggCount, setEggCount] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
-  const [modelModalVisible, setModelModalVisible] = useState(false);
+
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerConfig, setPickerConfig] = useState<{
     title: string;
@@ -105,9 +104,6 @@ export default function SettingsScreen() {
   }>({ title: '', key: 'defaultSummaryModel' });
 
   const [editingProvider, setEditingProvider] = useState<ProviderConfig | null>(null);
-  const [activeProviderForModels, setActiveProviderForModels] = useState<ProviderConfig | null>(
-    null,
-  );
 
   // 1. Transition Shared Value: 0 = app, 1 = providers
   const tabProgress = useSharedValue(0);
@@ -698,8 +694,10 @@ export default function SettingsScreen() {
                 showToast(t.settings.providerDeleted, 'success');
               }}
               onManageModels={(provider) => {
-                setActiveProviderForModels(provider);
-                setModelModalVisible(true);
+                router.push({
+                  pathname: '/settings/provider-models' as any,
+                  params: { providerId: provider.id }
+                });
               }}
             />
           </Animated.View>
@@ -727,17 +725,6 @@ export default function SettingsScreen() {
           }
         }}
         editingProvider={editingProvider}
-      />
-
-      <ModelSettingsModal
-        visible={modelModalVisible}
-        provider={activeProviderForModels}
-        onClose={() => setModelModalVisible(false)}
-        onUpdateModels={(newModels) => {
-          if (activeProviderForModels) {
-            updateProvider(activeProviderForModels.id, { models: newModels });
-          }
-        }}
       />
 
       <ModelPicker
