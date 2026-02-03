@@ -353,10 +353,18 @@ export const translations = {
       },
       toolbox: {
         title: '会话工具箱',
-        subtitle: '管理执行模式与活跃工具',
+        subtitle: '配置执行模式与扩展能力',
+        capabilities: '模型扩展能力',
+        agentSkills: '智能技能',
+        agentSkillsDesc: '允许模型自动调用已激活的各类工具',
         executionMode: '执行模式',
         activeMcp: '活跃 MCP 服务器',
-        sessionSkills: '当前会话技能',
+        strictMode: '严格模式',
+        strictModeDesc: '强制单步执行以防幻觉',
+        timeAwareness: '时间感知',
+        timeAwarenessDesc: '注入系统时间至上下文',
+        sessionSkills: '会话专用技能',
+
       },
       agentSkills: {
         title: '智能体技能',
@@ -1295,10 +1303,18 @@ export const translations = {
       },
       toolbox: {
         title: 'Session Toolbox',
-        subtitle: 'Manage execution mode & active tools',
+        subtitle: 'Modify execution mode and capabilities',
+        capabilities: 'Model Capabilities',
+        agentSkills: 'Agent Skills',
+        agentSkillsDesc: 'Allow model to use various activated tools',
         executionMode: 'Execution Mode',
         activeMcp: 'Active MCP Servers',
+        strictMode: 'Strict Order Check',
+        strictModeDesc: 'Enforce one step per action',
+        timeAwareness: 'Time Awareness',
+        timeAwarenessDesc: 'Inject system time into context',
         sessionSkills: 'Session Skills',
+
       },
       agentSkills: {
         title: 'Agent Skills',

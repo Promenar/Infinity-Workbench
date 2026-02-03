@@ -91,60 +91,141 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                 >
                     {/* 1. Master Toggle: Enable/Disable Capabilities */}
                     <View className="mb-8">
-                        <View className="flex-row items-center gap-2 mb-4">
-                            <Wrench size={14} color={colors[500]} />
+                        <View className="mb-4">
                             <Typography variant="h3" className="text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">
-                                {t.agent.modelConfig} {/* Reuse 'Model Config' or similar? Or hardcode 'CAPABILITIES' */}
-                                CAPABILITIES
+                                {t.settings.toolbox.capabilities}
                             </Typography>
                         </View>
 
-                        <View
-                            className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
-                            style={{
-                                backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
-                                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'
-                            }}
-                        >
-                            <View className="flex-1 mr-4">
-                                <Typography variant="body" className="font-bold dark:text-zinc-100">
-                                    {t.settings.skillsSettings.enabled /* reused 'Enabled' */}
-                                    {t.settings.agentSkills.title /* 'Agent Skills' */}
-                                </Typography>
-                                <Typography variant="caption" className="text-[10px] opacity-60 dark:text-zinc-400 mt-0.5">
-                                    {toolsEnabled
-                                        ? t.settings.skillsSettings.modeDescriptions.auto /* Reuse 'Fully automated...' text or generic 'Tools are active' */
-                                        : t.settings.skillsSettings.description /* 'Disable to...' */
-                                    }
-                                    {/* Let's use hardcoded English/Chinese fallback for specificity if specific keys missing */}
-                                    {toolsEnabled ? 'Tools & Skills are active.' : 'All tool calls are disabled for this session.'}
-                                </Typography>
-                            </View>
-                            <Switch
-                                value={toolsEnabled}
-                                onValueChange={(v) => {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                    updateSessionOptions(sessionId, { toolsEnabled: v });
+                        <View className="gap-3">
+                            {/* Agent Skills Toggle */}
+                            <View
+                                className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
+                                style={{
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'
                                 }}
-                            />
+                            >
+                                <View className="flex-1 mr-4">
+                                    <Typography variant="body" className="font-bold dark:text-zinc-100">
+                                        {t.settings.toolbox.agentSkills}
+                                    </Typography>
+                                    <Typography variant="caption" className="text-[10px] opacity-60 dark:text-zinc-400 mt-0.5">
+                                        {t.settings.toolbox.agentSkillsDesc}
+                                    </Typography>
+                                </View>
+                                <Switch
+                                    value={toolsEnabled}
+                                    onValueChange={(v) => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        updateSessionOptions(sessionId, { toolsEnabled: v });
+                                    }}
+                                />
+                            </View>
+
+                            {/* Strict Mode Toggle */}
+                            <View
+                                className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
+                                style={{
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                    opacity: toolsEnabled ? 1 : 0.4
+                                }}
+                                pointerEvents={toolsEnabled ? 'auto' : 'none'}
+                            >
+                                <View className="flex-1 mr-4">
+                                    <Typography variant="body" className="font-bold dark:text-zinc-100">{t.settings.toolbox.strictMode}</Typography>
+                                    <Typography variant="caption" className="text-[10px] opacity-60 dark:text-zinc-400 mt-0.5">
+                                        {t.settings.toolbox.strictModeDesc}
+                                    </Typography>
+                                </View>
+                                <Switch
+                                    value={session.options?.strictMode ?? false}
+                                    onValueChange={(v) => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        updateSessionOptions(sessionId, { strictMode: v });
+                                    }}
+                                />
+                            </View>
+
+                            {/* Time Injection Toggle */}
+                            <View
+                                className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
+                                style={{
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                    opacity: toolsEnabled ? 1 : 0.4
+                                }}
+                                pointerEvents={toolsEnabled ? 'auto' : 'none'}
+                            >
+                                <View className="flex-1 mr-4">
+                                    <Typography variant="body" className="font-bold dark:text-zinc-100">{t.settings.toolbox.timeAwareness}</Typography>
+                                    <Typography variant="caption" className="text-[10px] opacity-60 dark:text-zinc-400 mt-0.5">
+                                        {t.settings.toolbox.timeAwarenessDesc}
+                                    </Typography>
+                                </View>
+                                <Switch
+                                    value={session.options?.enableTimeInjection ?? true}
+                                    onValueChange={(v) => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        updateSessionOptions(sessionId, { enableTimeInjection: v });
+                                    }}
+                                />
+                            </View>
                         </View>
                     </View>
 
                     {/* Execution Mode Selection (Only show if enabled) */}
                     <View className="mb-10" style={{ opacity: toolsEnabled ? 1 : 0.4, pointerEvents: toolsEnabled ? 'auto' : 'none' }}>
                         <Typography variant="h3" className="mb-4 text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">{t.settings.toolbox.executionMode}</Typography>
-                        <View className="flex-row gap-3">
-                            {renderModeButton('auto', 'Auto', Zap)}
-                            {renderModeButton('semi', 'Semi', Shield)}
-                            {renderModeButton('manual', 'Manual', PlayCircle)}
+
+                        {/* Segmented Control */}
+                        <View
+                            className="flex-row p-1 rounded-2xl"
+                            style={{
+                                backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                            }}
+                        >
+                            {['auto', 'semi', 'manual'].map((m) => {
+                                const isActive = mode === m;
+                                const localizedLabel = t.settings.skillsSettings.modes[m as 'auto' | 'semi' | 'manual'];
+
+                                return (
+                                    <TouchableOpacity
+                                        key={m}
+                                        onPress={() => {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            setExecutionMode(sessionId, m as any);
+                                        }}
+                                        className={'flex-1 items-center justify-center py-2.5 rounded-xl'}
+                                        style={{
+                                            backgroundColor: isActive ? (isDark ? '#6366f1' : '#fff') : 'transparent',
+                                            shadowColor: isActive ? '#000' : 'transparent',
+                                            shadowOffset: { width: 0, height: 2 },
+                                            shadowOpacity: isActive ? 0.1 : 0,
+                                            shadowRadius: 4,
+                                            elevation: isActive ? 2 : 0
+                                        }}
+                                    >
+                                        <Text style={{
+                                            fontSize: 13,
+                                            fontWeight: isActive ? '700' : '500',
+                                            color: isActive
+                                                ? (isDark ? '#fff' : '#000')
+                                                : (isDark ? '#a1a1aa' : '#6b7280')
+                                        }}>
+                                            {localizedLabel.includes(' ') ? localizedLabel.split(' ')[1] : localizedLabel}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     </View>
 
                     {/* MCP Servers Selection */}
                     {servers.filter(s => s.enabled).length > 0 && (
                         <View className="mb-10" style={{ opacity: toolsEnabled ? 1 : 0.4, pointerEvents: toolsEnabled ? 'auto' : 'none' }}>
-                            <View className="flex-row items-center gap-2 mb-4">
-                                <Server size={14} color={colors[500]} />
+                            <View className="mb-4">
                                 <Typography variant="h3" className="text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">{t.settings.toolbox.activeMcp}</Typography>
                             </View>
                             <View className="gap-3">
@@ -177,9 +258,8 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
 
                     {/* User Skills Selection */}
                     {skillRegistry.getAllSkills().filter(s => s.category === 'user').length > 0 && (
-                        <View className="mb-4" style={{ opacity: toolsEnabled ? 1 : 0.4, pointerEvents: toolsEnabled ? 'auto' : 'none' }}>
-                            <View className="flex-row items-center gap-2 mb-4">
-                                <Wrench size={14} color="#ec4899" />
+                        <View className="mb-10" style={{ opacity: toolsEnabled ? 1 : 0.4, pointerEvents: toolsEnabled ? 'auto' : 'none' }}>
+                            <View className="mb-4">
                                 <Typography variant="h3" className="text-xs opacity-60 dark:text-zinc-400 uppercase tracking-widest font-bold">{t.settings.toolbox.sessionSkills}</Typography>
                             </View>
                             <View className="gap-3">

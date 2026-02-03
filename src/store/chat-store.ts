@@ -161,6 +161,8 @@ export interface ChatState {
       };
       toolsEnabled?: boolean; // New option
       thinkingLevel?: 'low' | 'medium' | 'high' | 'minimal';
+      strictMode?: boolean; // ✅ Enforce one-step-at-a-time task execution
+      enableTimeInjection?: boolean; // ✅ Inject system time into context
     },
   ) => void;
   updateSessionScrollOffset: (id: SessionId, offset: number) => void;
@@ -1140,6 +1142,32 @@ export const useChatStore = create<ChatState>()(
               console.log('[AgentLoop] Available Skills:', availableSkills.map(s => s.id),
                 { nativeWebSearch: isNativeWebSearchProvider, total: availableSkills.length });
 
+              // 🆕 Architecture Upgrade: Dynamic System Prompt Injection
+              // Rebuild System Prompt at the start of each turn to reflect latest Task State and Tools
+              const dynamicSystemPrompt = buildSystemPrompt(
+                agent,
+                latestSession, // Uses fresh session state (including activeTask)
+                ragContext,    // Keep static for now (efficiency)
+                searchContext, // Keep static
+                provider,
+                isNativeWebSearchProvider,
+                availableSkills // Uses fresh skills (including newly registered ones)
+              );
+
+              // Update the System Message (Index 0) in currentMessages
+              // NOTE: currentMessages is initialized outside loop, but we must update it
+              if (currentMessages.length > 0 && currentMessages[0].role === 'system') {
+                // If searchContext exists, it was appended. We should preserve it.
+                // See lines 628-634:
+                // content: finalSystemPrompt + '\n\n' + searchContext
+                let newContent = dynamicSystemPrompt;
+                if (searchContext) {
+                  newContent += '\n\n' + searchContext;
+                }
+                currentMessages[0].content = newContent;
+                console.log('[AgentLoop] Dynamic System Prompt updated with fresh state');
+              }
+
 
               // 5. Stream Chat
               let reasoningFromThisTurn = '';
@@ -1698,6 +1726,40 @@ export const useChatStore = create<ChatState>()(
                 // 3. 🔑 任务收尾与审批流逻辑
                 if (isTaskComplete) {
                   console.log('[AgentLoop] Task marked as complete, stopping loop');
+
+                  // 🧠 Auto-Injection: If final_summary exists in tool args but not in content, append it
+                  const completeTool = toolCalls.find(tc =>
+                    ((tc as any).name || (tc as any).function?.name) === 'manage_task' &&
+                    (tc.arguments?.action === 'complete' || (tc as any).function?.arguments?.action === 'complete')
+                  );
+
+                  if (completeTool) {
+                    const args = typeof completeTool.arguments === 'string'
+                      ? JSON.parse(completeTool.arguments)
+                      : (completeTool.arguments || (completeTool as any).function?.arguments);
+
+                    if (args?.final_summary && !accumulatedContent.includes(args.final_summary)) {
+                      console.log('[AgentLoop] Injecting final_summary into message content');
+                      const summaryText = `\n\n**Mission Accomplished**\n${args.final_summary}`;
+                      accumulatedContent += summaryText;
+                      // Update immediately before breaking
+                      get().updateMessageContent(
+                        sessionId,
+                        currentAssistantMsgId,
+                        accumulatedContent,
+                        accumulatedUsage,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        turnThoughtSignature || targetMsg.thought_signature,
+                        undefined,
+                        toolCalls
+                      );
+                    }
+                  }
+
                   const executionMode = session.executionMode || 'auto';
 
                   if (executionMode !== 'auto') {

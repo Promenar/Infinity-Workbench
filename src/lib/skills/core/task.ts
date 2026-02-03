@@ -22,7 +22,7 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
         steps: z.array(z.object({
             id: z.string().optional().describe('Unique ID for the step. If omitted, will be auto-generated or matched by title.'),
             title: z.string().describe('REQUIRED: Descriptive title of the step.'),
-            status: z.enum(['pending', 'in-progress', 'completed', 'failed', 'skipped']).optional().describe('Status of the step'),
+            status: z.enum(['pending', 'completed', 'failed', 'skipped']).optional().describe('Status of the step'),
             description: z.string().optional().describe('Optional detailed description')
         })).optional().describe('List of steps to create or update.'),
         progress: z.number().min(0).max(100).optional().describe('Override overall progress percentage (0-100).'),
@@ -39,6 +39,7 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
 
         let activeTask = session.activeTask;
         let taskArgs = args;
+        let isBatchCompletion = false;
 
         // 🛡️ 智能参数展平 (Universal Parameter Flattening)
         if (args && typeof args === 'object') {
@@ -116,14 +117,14 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                         // 🧠 Robustness: If s is just a string, treat it as the title
                         if (typeof s === 'string') {
                             return {
-                                id: `${taskUid}-step-${idx + 1}`,
+                                id: `${idx + 1}`, // Simple ID: "1", "2"
                                 title: s,
                                 status: 'pending'
                             };
                         }
 
                         return {
-                            id: s.id || `${taskUid}-step-${idx + 1}`, // 🧠 1-based indexing for Model Alignment
+                            id: s.id || `${idx + 1}`, // Simple ID: "1", "2"
                             title: s.title || s.description || `Step ${idx + 1}`,
                             status: s.status || 'pending',
                             description: s.description
@@ -145,19 +146,26 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
                 const updatedSteps = [...activeTask.steps];
 
                 if (taskArgs.steps) {
-                    // 🛡️ Strict Mode: Immutable Plan & Sequential Execution
-                    // Feature: Atomic Completion (Zero-Tolerance for Rapids-Fire Completion)
+                    // 🛡️ Strict Mode Handling
+                    // Feature: Atomic Completion (Zero-Tolerance for Rapids-Fire Completion) IF Strict Mode is ON
+                    const strictMode = session.options?.strictMode ?? false;
+
                     let completionCount = 0;
                     for (const s of taskArgs.steps) {
                         if (s.status === 'completed') completionCount++;
                     }
+
                     if (completionCount > 1) {
-                        return {
-                            id: 'error',
-                            content: `⛔ STRICT MODE REJECTION: You are attempting to complete ${completionCount} steps at once.\n\n⚠️ RULE: To prevent hallucination, you can only complete ONE step per tool call.\n👉 FIX: Mark ONLY the first completed step as 'completed'. Then, EXECUTE the actions for the next step. Then, mark the next step.`,
-                            status: 'error',
-                            data: activeTask
-                        };
+                        if (strictMode) {
+                            return {
+                                id: 'error',
+                                content: `⛔ STRICT MODE REJECTION: You are attempting to complete ${completionCount} steps at once.\n\n⚠️ RULE: To prevent hallucination, you can only complete ONE step per tool call.\n👉 FIX: Mark ONLY the first completed step as 'completed'. Then, EXECUTE the actions for the next step. Then, mark the next step.`,
+                                status: 'error',
+                                data: activeTask
+                            };
+                        } else {
+                            isBatchCompletion = true;
+                        }
                     }
 
                     for (const newStep of taskArgs.steps) {
@@ -323,26 +331,32 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
             const finalProgress = activeTask ? activeTask.progress : 0;
             const finalTitle = activeTask ? activeTask.title : 'Untitled';
 
-            // 🧠 Enhanced Contextual Feedback
-            let resultContent = `Task "${finalTitle}" updated. Status: ${finalStatus}, Progress: ${finalProgress}%`;
+            // 🧠 Minimal Delta Feedback (Token Efficient)
+            let resultContent = '';
 
             if (taskArgs.action === 'create') {
-                resultContent = `✅ Task "${finalTitle}" created.\n\n👉 NEXT: Execute the first step immediately.`;
+                resultContent = `Task Created. Steps: ${activeTask!.steps.length}. Status: In Progress.`;
             } else if (taskArgs.action === 'complete') {
-                resultContent = `🎉 Task "${finalTitle}" completed. Please provide a final summary to the user.`;
+                resultContent = `Task Completed. Final Summary recorded.`;
             } else if (taskArgs.action === 'update') {
-                // Anti-Hallucination: Find next pending step
-                if (activeTask) {
-                    const nextStep = activeTask.steps.find((s: any) => s.status === 'pending');
-                    if (nextStep) {
-                        resultContent += `\n\n⚠️ WAIT: The next step is "${nextStep.title}" (ID: ${nextStep.id}).
-If you have NOT executed this action yet, please DO NOT mark it as completed. 
-If the required tool is failing or unavailable, please:
-1. Update the task to mark this step as 'failed' or 'skipped'.
-2. Explain the roadblock and propose an alternative plan.
-3. Use 'search_internet' or internal knowledge to find workarounds.`;
-                    }
+                const changedSteps = activeTask!.steps.filter((s: any, i: number) => {
+                    // Compare with PREVIOUS state (approximation, or just report current status of touched steps)
+                    // Since we don't have deep diff here easily, we just report the steps mentioned in args
+                    return taskArgs.steps?.some((argStep: any) => argStep.id === s.id || argStep.title === s.title);
+                });
+
+                if (changedSteps.length > 0) {
+                    const changes = changedSteps.map((s: any) => `Step ${s.id} (${s.status})`).join(', ');
+                    resultContent = `Updated: ${changes}. Progress: ${activeTask!.progress}%.`;
+                } else {
+                    resultContent = `Task Updated. Progress: ${activeTask!.progress}%.`;
                 }
+
+                if (isBatchCompletion) {
+                    resultContent += ' [Batch Update Detected]';
+                }
+            } else if (taskArgs.action === 'fail') {
+                resultContent = 'Task marked as FAILED.';
             }
 
             return {

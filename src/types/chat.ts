@@ -148,6 +148,8 @@ export interface Session {
     thinkingLevel?: 'low' | 'medium' | 'high' | 'minimal'; // ✅ Gemini 3 Flash Thinking Mode
     toolsEnabled?: boolean; // New option
     loopCount?: number; // ✅ Manually specified loop count
+    strictMode?: boolean; // ✅ Enforce one-step-at-a-time task execution
+    enableTimeInjection?: boolean; // ✅ Inject system time into context
   };
   ragOptions?: {
     enableMemory?: boolean; // 启用长期记忆

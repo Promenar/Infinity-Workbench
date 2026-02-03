@@ -200,9 +200,29 @@ export function buildSystemPrompt(
     // 在系统提示词的最顶部建立“锚点”，防止模型迷失
     let prioritizedState = '';
 
+    // 🕒 Time Injection (Default: ON)
+    const enableTimeInjection = session.options?.enableTimeInjection ?? true;
+    if (enableTimeInjection) {
+        const now = new Date();
+        const timeString = now.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            weekday: 'long',
+            hour12: false
+        });
+
+        prioritizedState += `[SYSTEM METADATA]\nCurrent System Time: ${timeString}\n\n`;
+    }
+
     if (session.activeTask && session.activeTask.status === 'in-progress') {
         const task = session.activeTask;
-        const currentStepIndex = task.steps.findIndex(s => s.status === 'in-progress');
+        // 🧠 Logic Update: Since 'in-progress' status is removed for steps, 
+        // the current step is the FIRST 'pending' step.
+        const currentStepIndex = task.steps.findIndex(s => s.status === 'pending');
         const currentStep = task.steps[currentStepIndex];
         const totalSteps = task.steps.length;
 
@@ -228,10 +248,10 @@ export function buildSystemPrompt(
             }
         }
 
-        prioritizedState = `### [PRIORITIZED STATE - READ THIS FIRST]
-- **Current Task**: "${task.title}" (Step ${currentStepIndex !== -1 ? currentStepIndex + 1 : '?'}/${totalSteps}: ${currentStep?.status === 'in-progress' ? 'Running' : 'Pending'})
+        prioritizedState += `### [PRIORITIZED STATE - READ THIS FIRST]
+- **Current Task**: "${task.title}" (Step ${currentStepIndex !== -1 ? currentStepIndex + 1 : 'All Completed'}/${totalSteps}: ${currentStep ? 'Pending' : 'Done'})
 - **Last Action**: ${lastAction}
-- **Immediate Goal**: ${currentStep ? (currentStep.description || currentStep.title) : 'Proceed with task'}
+- **Immediate Goal**: ${currentStep ? (currentStep.description || currentStep.title) : 'Review and Complete Task'}
 \n**CRITICAL INSTRUCTION**: If Last Action indicates a tool completed, **DO NOT REPEAT IT**. Use the result in history to advance the task (update status or proceed to next step).\n\n`;
     }
 

@@ -40,7 +40,7 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
     return (
         <Modal visible={visible} animationType="none" transparent={true} onRequestClose={onClose}>
             <View
-                style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: Math.max(insets.bottom, 16) }}
+                style={{ flex: 1, justifyContent: 'flex-end' }}
             >
                 <Animated.View
                     entering={FadeIn.duration(200)}
@@ -62,6 +62,7 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                     exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.quad))}
                     style={{
                         marginHorizontal: 12,
+                        marginBottom: Math.max(insets.bottom, 16),
                         height: height === 'auto' ? undefined : height,
                         minHeight: height === 'auto' ? 100 : undefined,
                         backgroundColor: isDark ? 'rgba(24, 24, 27, 0.92)' : 'rgba(255, 255, 255, 0.92)',
