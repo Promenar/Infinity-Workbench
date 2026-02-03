@@ -821,7 +821,7 @@ export function ModelSettingsModal({
       onRequestClose={onClose}
       statusBarTranslucent={true}
     >
-      <View style={{ flex: 1, backgroundColor: isDark ? '#09090b' : '#f9fafb' }}>
+      <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(9, 9, 11, 0.9)' : 'rgba(249, 250, 251, 0.9)' }}>
         <GlassHeader
           title={provider?.name || ''}
           subtitle={t.settings.modelSettings.title}
@@ -829,7 +829,7 @@ export function ModelSettingsModal({
             icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
             onPress: onClose,
           }}
-          intensity={isDark ? 0 : 60} // Disable blur in dark mode to avoid gray overlay
+          intensity={100}
         />
         <View style={{ flex: 1 }}>
 

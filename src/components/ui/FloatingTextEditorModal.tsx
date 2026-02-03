@@ -151,9 +151,10 @@ export const FloatingTextEditorModal: React.FC<FloatingTextEditorModalProps> = (
                             ]}
                         >
                             <BlurView
-                                intensity={isDark ? 30 : 60}
-                                tint={isDark ? 'dark' : 'light'}
-                                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                                intensity={isDark ? 50 : 80}
+                                tint={isDark ? 'dark' : 'default'}
+                                experimentalBlurMethod='dimezisBlurView'
+                                style={StyleSheet.absoluteFill}
                             />
 
                             {/* Header */}
