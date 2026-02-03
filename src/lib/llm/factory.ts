@@ -2,6 +2,7 @@ import { LlmClient } from './types';
 import { OpenAiClient } from './providers/openai';
 import { DeepSeekClient } from './providers/deepseek'; // 🔑 DeepSeek专用Client
 import { MoonshotClient } from './providers/moonshot'; // 🔑 Moonshot专用Client
+import { OpenAiCompatibleClient } from './providers/openai-compatible'; // 🔑 通用兼容Client
 import { VertexAiClient } from './providers/vertexai';
 import { GeminiClient } from './providers/gemini';
 import { LocalLlmClient } from './providers/local-llm';
@@ -27,10 +28,18 @@ export const createLlmClient = (config: ExtendedModelConfig): LlmClient => {
     case 'github':
     case 'cloudflare':
     case 'github-copilot':
-    case 'openai-compatible':
       return new OpenAiClient(
         config.apiKey,
         config.id, // 使用模型 API ID
+        config.temperature || 0.7,
+        config.baseUrl || 'https://api.openai.com/v1',
+        { isEmbedding: config.type === 'embedding' },
+      );
+
+    case 'openai-compatible':
+      return new OpenAiCompatibleClient(
+        config.apiKey,
+        config.id,
         config.temperature || 0.7,
         config.baseUrl || 'https://api.openai.com/v1',
         { isEmbedding: config.type === 'embedding' },
