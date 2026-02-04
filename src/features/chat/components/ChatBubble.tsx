@@ -123,8 +123,8 @@ interface ChatBubbleProps {
 
 // SVGErrorBoundary removed as we use WebView now
 // 生成图片组件 - 独立组件避免在 Markdown rules 中使用 hooks
-const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: any }> = React.memo(
-  ({ src, alt, isDark, t }) => {
+const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: any, onImagePress?: (uri: string) => void }> = React.memo(
+  ({ src, alt, isDark, t, onImagePress }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [hasError, setHasError] = useState(false);
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -132,7 +132,28 @@ const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: 
     const handleDownload = async () => {
       try {
         if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(src);
+          // 如果是缩略图，尝试分享原图
+          let shareSrc = src;
+          try {
+            // 动态 import 避免循环引用
+            const { getOriginalFromThumbnail } = require('../../../lib/image-utils');
+            // 尝试解析原图，如果解析失败（比如不是缩略图格式）则回退到 src
+            const original = getOriginalFromThumbnail(src);
+            // 简单的存在性检查（可选，但考虑到作为分享，只分享存在的）
+            // 这里直接尝试分享原图路径，如果不存，Sharing 可能会报错，或者我们需要先 checkInfo
+            // 为了用户体验，我们假定原图存在（因为是我们生成的）。
+            // 如果是 data uri (出错回退), getOriginalFromThumbnail 会返回原串
+            if (original && original !== src && !original.startsWith('data:')) {
+              const info = await FileSystem.getInfoAsync(original);
+              if (info.exists) {
+                shareSrc = original;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to resolve original for share', e);
+          }
+
+          await Sharing.shareAsync(shareSrc);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else {
           alert('Sharing is not available on this platform');
@@ -159,71 +180,89 @@ const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: 
             borderColor: isDark ? '#3f3f46' : '#e4e4e7',
           }}
         >
-          {isLoading && (
-            <View style={{ position: 'absolute', zIndex: 10 }}>
-              <ActivityIndicator size="large" color={isDark ? '#a1a1aa' : '#6b7280'} />
-            </View>
-          )}
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={{ width: '100%', alignItems: 'center' }}
+            onPress={() => {
+              // Proper handler with fallback
+              if (onImagePress) {
+                try {
+                  const { getOriginalFromThumbnail } = require('../../../lib/image-utils');
+                  const original = getOriginalFromThumbnail(src);
+                  onImagePress(original || src);
+                } catch {
+                  onImagePress(src);
+                }
+              }
+            }}
+          >
 
-          {hasError ? (
-            <View style={{ alignItems: 'center', padding: 20 }}>
-              <AlertCircle size={32} color="#ef4444" />
-              <Typography
-                variant="caption"
-                style={{ color: '#ef4444', marginTop: 8, textAlign: 'center' }}
-              >
-                {t.agent.imageLoadError}
-              </Typography>
-              <Typography
-                variant="caption"
-                style={{ color: isDark ? '#71717a' : '#a1a1aa', marginTop: 4, fontSize: 11 }}
-              >
-                {src.startsWith('data:') ? t.agent.imageTooLarge : t.agent.imagePathError}
-              </Typography>
-            </View>
-          ) : (
-            <Image
-              source={{ uri: src }}
-              style={{
-                width: '100%',
-                height: dimensions
-                  ? (dimensions.height / dimensions.width) * Dimensions.get('window').width * 0.9
-                  : 300,
-                maxHeight: 600,
-              }}
-              resizeMode="contain"
-              accessibilityLabel={alt}
-              onLoad={(e) => {
-                const { width, height } = e.nativeEvent.source;
-                setDimensions({ width, height });
-                setIsLoading(false);
-              }}
-              onError={(e) => {
-                // Use warn to avoid RedBox on dev
-                console.warn('Image load error:', e.nativeEvent.error);
-                setHasError(true);
-                setIsLoading(false);
-              }}
-            />
-          )}
+            {isLoading && (
+              <View style={{ position: 'absolute', zIndex: 10 }}>
+                <ActivityIndicator size="large" color={isDark ? '#a1a1aa' : '#6b7280'} />
+              </View>
+            )}
 
-          {!hasError && !isLoading && (
-            <TouchableOpacity
-              onPress={handleDownload}
-              style={{
-                position: 'absolute',
-                bottom: 12,
-                right: 12,
-                backgroundColor: 'rgba(0,0,0,0.7)',
-                padding: 10,
-                borderRadius: 20,
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.3)',
-              }}
-            >
-              <Download size={18} color="#fff" />
-            </TouchableOpacity>
-          )}
+            {hasError ? (
+              <View style={{ alignItems: 'center', padding: 20 }}>
+                <AlertCircle size={32} color="#ef4444" />
+                <Typography
+                  variant="caption"
+                  style={{ color: '#ef4444', marginTop: 8, textAlign: 'center' }}
+                >
+                  {t.agent.imageLoadError}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  style={{ color: isDark ? '#71717a' : '#a1a1aa', marginTop: 4, fontSize: 11 }}
+                >
+                  {src.startsWith('data:') ? t.agent.imageTooLarge : t.agent.imagePathError}
+                </Typography>
+              </View>
+            ) : (
+              <Image
+                source={{ uri: src }}
+                style={{
+                  width: '100%',
+                  height: dimensions
+                    ? (dimensions.height / dimensions.width) * Dimensions.get('window').width * 0.9
+                    : 300,
+                  maxHeight: 600,
+                }}
+                resizeMode="contain"
+                accessibilityLabel={alt}
+                onLoad={(e) => {
+                  const { width, height } = e.nativeEvent.source;
+                  setDimensions({ width, height });
+                  setIsLoading(false);
+                }}
+                onError={(e) => {
+                  // Use warn to avoid RedBox on dev
+                  console.warn('Image load error:', e.nativeEvent.error);
+                  setHasError(true);
+                  setIsLoading(false);
+                }}
+              />
+            )}
+
+            {!hasError && !isLoading && (
+              <TouchableOpacity
+                onPress={handleDownload}
+                style={{
+                  position: 'absolute',
+                  bottom: 12,
+                  right: 12,
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  padding: 10,
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.3)',
+                }}
+              >
+                <Download size={18} color="#fff" />
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -826,7 +865,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
       image: (node: any, children: any, parent: any, styles: any) => {
         const { src, alt } = node.attributes;
-        return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} />;
+        return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} onImagePress={setViewImageUri} />;
       },
       // ✅ Allow inline text + math mixing
       paragraph: (node: any, children: any, parent: any, styles: any) => (
@@ -1339,6 +1378,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                           alt={img.alt}
                           isDark={isDark}
                           t={t}
+                          onImagePress={setViewImageUri}
                         />
                       ))}
                     </View>

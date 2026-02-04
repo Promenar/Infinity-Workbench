@@ -186,6 +186,91 @@ export async function cleanupOldCache(maxAgeMs: number = 7 * 24 * 60 * 60 * 1000
   }
 }
 
+
+/**
+ * 保存 AI 生成图片并建立关联 (Deterministic Naming)
+ * @returns { thumbnailUri, originalUri }
+ */
+export async function saveGeneratedImage(
+  base64: string,
+  mimeType: string = 'image/png'
+): Promise<{ thumbnailUri: string; originalUri: string }> {
+  try {
+    const fs = FileSystem as any;
+    const cacheDir = fs.cacheDirectory || fs.documentDirectory;
+
+    await FileSystem.makeDirectoryAsync(`${cacheDir}images/originals/`, { intermediates: true });
+    await FileSystem.makeDirectoryAsync(`${cacheDir}images/processed/`, { intermediates: true });
+
+    // Generate deterministic ID
+    const id = `gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Save Original
+    const ext = mimeType.split('/')[1] || 'png';
+    const originalUri = `${cacheDir}images/originals/${id}.${ext}`;
+    await FileSystem.writeAsStringAsync(originalUri, base64, {
+      encoding: (FileSystem as any).EncodingType?.Base64 || 'base64',
+    });
+
+    // Generate Thumbnail
+    // We must generate it from the file we just saved
+    const thumbResult = await generateThumbnail(originalUri, { maxWidth: 512, compress: 0.7 });
+
+    // Move/Copy thumbnail to enforce our naming convention
+    // generateThumbnail usually returns a random temp or processed file
+    // We want it at .../images/processed/${id}_thumb.jpg
+    const thumbUri = `${cacheDir}images/processed/${id}_thumb.jpg`;
+
+    // Check if generateThumbnail returned the original (fallback) or a new file
+    if (thumbResult !== originalUri) {
+      await FileSystem.copyAsync({ from: thumbResult, to: thumbUri });
+    } else {
+      // Fallback: Use original as thumbnail if generation failed
+      await FileSystem.copyAsync({ from: originalUri, to: thumbUri });
+    }
+
+    return { thumbnailUri: thumbUri, originalUri };
+  } catch (error) {
+    console.error('[ImageUtils] Save generated image failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * 根据缩略图 URI 推断原图 URI
+ */
+export function getOriginalFromThumbnail(thumbnailUri: string): string {
+  if (!thumbnailUri) return '';
+  try {
+    // Expected: .../images/processed/gen_123_abc_thumb.jpg
+    // Target: .../images/originals/gen_123_abc.png (or .jpg)
+
+    // 1. Check pattern
+    if (thumbnailUri.includes('_thumb.')) {
+      // Replace dir
+      let original = thumbnailUri.replace('/processed/', '/originals/');
+      // Remove suffix
+      original = original.replace('_thumb', '');
+      // Extension fix: Thumbnails are usually JPG, originals might be PNG or JPG.
+      // Since we force .png default in saveGeneratedImage (or whatever MIME was passed),
+      // this is slightly tricky if we support multiple extensions.
+      // Phase 3 simplification: Assume .png for AI originals if currently .jpg
+      if (original.endsWith('.jpg')) {
+        // Check if we initialized with png. 
+        // For now, let's look for matching file? No, async check in UI is slow.
+        // Protocol: saveGeneratedImage forces extension based on MIME. 
+        // Gemini usually returns PNG.
+        // Let's try to map extension strictly or just replace.
+        return original.replace(/\.jpg$/, '.png');
+      }
+      return original;
+    }
+  } catch (e) {
+    console.warn('Failed to resolve original URI', e);
+  }
+  return thumbnailUri;
+}
+
 /**
  * 获取缓存统计信息
  */

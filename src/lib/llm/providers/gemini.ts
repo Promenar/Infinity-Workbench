@@ -558,9 +558,8 @@ Available tools: ${toolListDesc} + Native Web Search (built-in).`
 
     // Persist to file to avoid lag
     try {
-      const { saveBase64ToFile, generateThumbnail } = require('../../image-utils');
-      const originalUri = await saveBase64ToFile(base64Data, 'originals', mimeType);
-      const thumbnailUri = await generateThumbnail(originalUri, { maxWidth: 1024, compress: 0.8 });
+      const { saveGeneratedImage } = require('../../image-utils');
+      const { thumbnailUri } = await saveGeneratedImage(base64Data, mimeType);
       return { url: thumbnailUri };
     } catch (e) {
       console.warn('[Gemini] Failed to save image to file, falling back to data URI', e);

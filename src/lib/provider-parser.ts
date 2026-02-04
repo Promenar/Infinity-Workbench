@@ -77,12 +77,20 @@ export class ModelService {
     try {
       console.log(`[ModelService] Fetching from: ${endpoint}`);
 
+      // Special handling for Gemini: Use x-goog-api-key header or query param
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (type === 'gemini') {
+        headers['x-goog-api-key'] = apiKey;
+      } else {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
       const response = await fetch(endpoint, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -178,7 +186,7 @@ export class ModelService {
       zhipu: 'https://open.bigmodel.cn/api/paas/v4',
       siliconflow: 'https://api.siliconflow.cn/v1',
       github: 'https://models.inference.ai.azure.com',
-      gemini: 'https://generativelanguage.googleapis.com',
+      gemini: 'https://generativelanguage.googleapis.com/v1beta',
       'openai-compatible': '', // Left to user input
     };
     return mapping[type] || '';

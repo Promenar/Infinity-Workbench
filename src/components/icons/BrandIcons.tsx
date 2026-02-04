@@ -1,6 +1,7 @@
 import React from 'react';
 import Svg, { Path, Circle, Defs, LinearGradient, Stop, G } from 'react-native-svg';
 import { SvgUri } from 'react-native-svg';
+import { CachedSvgUri } from '../ui/CachedSvgUri';
 
 interface IconProps {
   size?: number;
@@ -111,6 +112,6 @@ export const BrandIcon = {
     // 使用 npmmirror 以确保在国内环境的稳定性
     const uri = `https://registry.npmmirror.com/@lobehub/icons-static-svg/latest/files/icons/${finalSlug}.svg`;
 
-    return <SvgUri width={size} height={size} uri={uri} />;
+    return <CachedSvgUri width={size} height={size} uri={uri} />;
   },
 };

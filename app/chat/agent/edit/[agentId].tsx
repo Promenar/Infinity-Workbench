@@ -80,10 +80,19 @@ export default function AgentEditScreen() {
 
   const displayModelName = React.useMemo(() => {
     if (!formData.defaultModel) return t.agent.selectModel;
+
+    // 1. Priority: Strict UUID Match (Unique across all providers)
     for (const provider of providers) {
-      const model = provider.models.find(m => m.uuid === formData.defaultModel || m.id === formData.defaultModel);
+      const model = provider.models.find(m => m.uuid === formData.defaultModel);
       if (model) return model.name;
     }
+
+    // 2. Fallback: Legacy ID Match (May be ambiguous)
+    for (const provider of providers) {
+      const model = provider.models.find(m => m.id === formData.defaultModel);
+      if (model) return model.name;
+    }
+
     return formData.defaultModel;
   }, [providers, formData.defaultModel]);
 
@@ -520,6 +529,7 @@ export default function AgentEditScreen() {
           visible={showModelPicker}
           title={t.agent.selectModel}
           selectedUuid={formData.defaultModel}
+          filterType="chat"
           onSelect={(uuid) => {
             setFormData({ ...formData, defaultModel: uuid });
             setTimeout(() => {
