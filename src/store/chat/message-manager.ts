@@ -359,8 +359,8 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             if (!session) return;
             const message = session.messages.find((m) => m.id === messageId);
 
-            // 只有当高度未设置，或高度差异超过 2px 时才更新，避免微小抖动导致的频繁写入
-            if (message && (!message.layoutHeight || Math.abs(message.layoutHeight - height) > 2)) {
+            // 只有当高度未设置，或高度差异超过 10px 时才更新，避免微小抖动导致的频繁写入
+            if (message && (!message.layoutHeight || Math.abs(message.layoutHeight - height) > 10)) {
                 // 布局高度更新不写 DB（高频且可重计算）
                 set((state) => ({
                     sessions: state.sessions.map((s) =>

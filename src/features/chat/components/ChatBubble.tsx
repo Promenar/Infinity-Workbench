@@ -889,7 +889,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           return <Text key={node.key} style={styles.text}>{content}</Text>;
         }
 
-        const parts = content.split(/(\$[^\$]+\$)/g);
+        // Fix: Currency vs Math. Ignore $ followed by digit (e.g. $10).
+        // Only match $ if NOT followed by a digit.
+        const parts = content.split(/(\$(?!\d)[^\$]+\$)/g);
 
         return (
           <React.Fragment key={node.key}>
@@ -946,7 +948,6 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         key={message.id} // Added key to prevent Reanimated glitch during list recycling
         entering={isRecent ? FadeIn.duration(300) : undefined}
         exiting={FadeOut.duration(300)}
-        layout={LinearTransition.duration(200)}
         style={{
           flexDirection: 'row',
           justifyContent: 'flex-end',
@@ -1102,7 +1103,6 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       key={message.id} // Added key to prevent Reanimated glitch during list recycling
       entering={isRecent ? FadeIn.duration(300) : undefined}
       exiting={FadeOut.duration(300)}
-      layout={LinearTransition.duration(200)}
       style={{ marginBottom: 24, width: '100%', paddingHorizontal: 20 }} // Reduced 40 -> 24
       ref={bubbleRef}
       collapsable={false}
