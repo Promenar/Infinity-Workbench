@@ -1,6 +1,6 @@
 {
   "name": "nexara",
-  "version": "1.2.16",
+  "version": "1.2.17",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
