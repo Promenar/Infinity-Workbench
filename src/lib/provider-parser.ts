@@ -154,7 +154,7 @@ export class ModelService {
     const spec = findModelSpec(modelId);
 
     return {
-      uuid: modelId, // 暂时使用 ID 作为 uuid
+      uuid: `${modelId}-${Math.random().toString(36).substr(2, 9)}`, // 确保 UUID 全局唯一，避免不同服务商同名模型冲突
       id: modelId,
       name: modelId, // 暂时使用 ID 作为名称，UI层可能会进一步格式化
       type: spec?.type || 'chat',

@@ -429,10 +429,18 @@ export default function ProviderModelsScreen() {
     useEffect(() => {
         if (provider) {
             const task = setTimeout(() => {
-                // 对没有 uuid 的旧数据进行迁移
+                // 对没有 uuid 或 uuid 与 id 冲突（导致Shadowing）的旧数据进行迁移
                 const initialModels = (provider.models || []).map((m) =>
-                    m.uuid ? m : { ...m, uuid: m.id + '-' + Math.random().toString(36).substr(2, 9) },
+                    (m.uuid && m.uuid !== m.id) ? m : { ...m, uuid: m.id + '-' + Math.random().toString(36).substr(2, 9) },
                 );
+
+                // Auto-save if migration occurred to make it persistent across app restarts
+                // use JSON.stringify for deep comparison to avoid infinite loops
+                if (JSON.stringify(initialModels) !== JSON.stringify(provider.models)) {
+                    console.log('[ProviderModels] Auto-migrating model UUIDs for uniqueness');
+                    onUpdateModels(initialModels);
+                }
+
                 setModels(initialModels);
                 setIsReady(true);
             }, 0); // Immediate execution but next tick
