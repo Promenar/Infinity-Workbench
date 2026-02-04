@@ -98,21 +98,16 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
   }, [isWebViewReady]);
 
   React.useEffect(() => {
-    // 内容变化时，如果缓存没有，重置状态并尝试注入渲染
+    // 内容变化时，如果缓存没有，重置状态
     const newCached = sizeCache.get(content);
     if (newCached) {
       setSize(newCached);
       measuredRef.current = true;
     } else {
       measuredRef.current = false;
-      setSize(null);
+      setSize(null); // Keep null to hide until measured (prevents partial render flash)
     }
-
-    // 如果 WebView 已经准备好，立即尝试渲染新内容
-    if (isWebViewReady) {
-      injectRender(content, isBlock);
-    }
-  }, [content, isBlock, isWebViewReady, injectRender]);
+  }, [content]); // Removed injectRender dependency as it's handled by HTML embed now
 
   // 预估尺寸作为兜底
   const initialEstimate = useMemo(() => {
@@ -126,8 +121,13 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
   // 最终使用的布局尺寸
   const currentSize = size || initialEstimate;
 
-  // 基础环境 HTML：只在主题变化时重载，不随内容变化
-  const baseHtml = useMemo(() => `
+  // 基础环境 HTML：直接嵌入内容，消除 "Empty -> Render" 的闪烁
+  const htmlSource = useMemo(() => {
+    // 安全转义 LaTeX 内容，防止 JS 注入破坏结构
+    const safeContent = JSON.stringify(content);
+
+    return {
+      html: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -157,14 +157,18 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
 <body>
     <div id="math-container"></div>
     <script>
-        window.updateMath = function(latex, block) {
-            try {
+        // 立即渲染，无需等待 native 注入
+        const latex = ${safeContent};
+        const block = ${isBlock};
+        
+        window.updateMath = function(l, b) {
+             try {
                 const container = document.getElementById('math-container');
-                document.body.style.justifyContent = block ? 'center' : 'flex-start';
+                document.body.style.justifyContent = b ? 'center' : 'flex-start';
                 
-                katex.render(latex, container, {
+                katex.render(l, container, {
                     throwOnError: false,
-                    displayMode: block,
+                    displayMode: b,
                     trust: true,
                     strict: false
                 });
@@ -176,22 +180,26 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
                     const height = Math.ceil(rect.height + 2);
                     window.ReactNativeWebView.postMessage(JSON.stringify({ 
                       type: 'size', 
-                      content: latex,
+                      content: l,
                       width, 
                       height 
                     }));
-                }, 10);
+                }, 0); // Immediate
             } catch (e) {
                 window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: e.message }));
             }
-        };
+        }
+
+        // Initial Render
+        window.updateMath(latex, block);
         
-        // 标记环境就绪
+        // 标记环境就绪 (Optional now)
         window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
     </script>
 </body>
 </html>
-  `, [backgroundColor, textColor, isBlock]); // 注意：isBlock 虽影响对齐，但尽量保持 baseHtml 稳定
+  `};
+  }, [backgroundColor, textColor, isBlock, content]); // Depend on content now
 
   return (
     <View
@@ -207,7 +215,7 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
     >
       <WebView
         ref={webViewRef}
-        source={{ html: baseHtml }}
+        source={htmlSource}
         originWhitelist={['*']}
         javaScriptEnabled={true}
         domStorageEnabled={true}
