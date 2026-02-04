@@ -1202,17 +1202,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         </View>
       )}
 
-      {!isUser && message.planningTask && (
-        <TaskFinalResult
-          task={message.planningTask}
-          containerStyle={{
-            marginLeft: -15,
-            marginRight: -12,
-            marginTop: 2,
-            marginBottom: 4
-          }}
-        />
-      )}
+
 
       {/* Main Content (No indentation) */}
       <ContextMenu
@@ -1361,6 +1351,30 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     color: isDark ? '#fff' : '#000',
                   },
                   paragraph: { marginVertical: 0 }, // Let cards handle spacing
+                  // ✅ Fix Table Visibility in Dark Mode
+                  table: {
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(255,255,255,0.3)' : '#e2e8f0', // Increased opacity 0.1 -> 0.3
+                    borderRadius: 8,
+                    marginVertical: 12,
+                    overflow: 'hidden',
+                  },
+                  tr: {
+                    borderBottomWidth: 1,
+                    borderColor: isDark ? 'rgba(255,255,255,0.3)' : '#e2e8f0', // Increased opacity 0.1 -> 0.3
+                    flexDirection: 'row',
+                  },
+                  th: {
+                    padding: 12,
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                    color: isDark ? '#fff' : '#000',
+                    fontWeight: '700',
+                  },
+                  td: {
+                    padding: 12,
+                    borderRightWidth: 0, // Simplified style
+                    color: isDark ? '#e4e4e7' : '#374151',
+                  },
                 }}
               />
 
