@@ -32,6 +32,7 @@ export interface PostProcessorParams {
     setVectorizationStatus: (sessionId: string, messageIds: string[], status: 'processing' | 'success' | 'error') => void;
     setKGExtractionStatus: (sessionId: string, isExtracting: boolean) => void;
     updateSessionTitle: (sessionId: string, title: string) => void;
+    generateSessionTitle?: (sessionId: string) => Promise<string | undefined>; // ✅ Phase 4b: Support AI-powered title generation
 }
 
 /**
@@ -199,9 +200,34 @@ export function updateStats(params: PostProcessorParams): void {
         useTokenStatsStore.getState().trackUsage({ modelId, usage: billingUsage });
     }).catch(() => { });
 
-    // 自动生成标题 (排除超级助手)
-    if (sessionId !== 'super_assistant' && (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation')) {
-        const titleLimit = 15;
-        updateSessionTitle(sessionId, userContent.substring(0, titleLimit) + (userContent.length > titleLimit ? '...' : ''));
+    // 自动生成标题 (排除超级助手 - 根据ID或AgentID双重判定)
+    const isSuperAssistant = sessionId === 'super_assistant' || session.agentId === 'super_assistant';
+
+    // 🔑 Phase 4b: Upgrade to AI Auto-Title
+    // Case 1: Session just started (messages <= 1 after this new message) OR title is default
+    const isDefaultTitle = session.title === agent.name || session.title === 'New Conversation';
+
+    // Check if we should auto-title
+    if (!isSuperAssistant && (session.messages.length <= 1 || isDefaultTitle)) {
+        // Option A: Use AI generator if available (Preferred)
+        if (params.generateSessionTitle) {
+            console.log(`[PostProcessor] Triggering AI Auto-Title for session ${sessionId}...`);
+            // Fire and forget - don't await to avoid blocking UI
+            params.generateSessionTitle(sessionId)
+                .then(title => {
+                    if (title) console.log(`[PostProcessor] AI Auto-Title success: "${title}"`);
+                })
+                .catch(err => {
+                    console.warn('[PostProcessor] AI Auto-Title failed, falling back to truncation:', err);
+                    // Fallback to truncation if AI fails
+                    const titleLimit = 15;
+                    updateSessionTitle(sessionId, userContent.substring(0, titleLimit) + (userContent.length > titleLimit ? '...' : ''));
+                });
+        }
+        // Option B: Fallback to dumb truncation if generator not provided
+        else {
+            const titleLimit = 15;
+            updateSessionTitle(sessionId, userContent.substring(0, titleLimit) + (userContent.length > titleLimit ? '...' : ''));
+        }
     }
 }

@@ -1,23 +1,12 @@
 import React from 'react';
 import { View, TouchableOpacity } from 'react-native';
-import { Typography, Switch } from '../../../components/ui';
+import { Typography, Switch, SettingsCard, SettingsSectionHeader } from '../../../components/ui';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useI18n } from '../../../lib/i18n';
 import { ThemedSlider } from '../../../components/ui/Slider';
 
-// 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
-  const { colors } = useTheme();
-  return (
-    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-      <View style={{ backgroundColor: colors[500] }} className="w-1 h-3 rounded-full mr-2" />
-      <Typography className="text-xs font-bold text-gray-900 dark:text-white tracking-tight uppercase">
-        {title}
-      </Typography>
-    </View>
-  );
-};
+
 
 export const AdvancedRetrievalPanel: React.FC = () => {
   const { isDark, colors } = useTheme();
@@ -27,8 +16,8 @@ export const AdvancedRetrievalPanel: React.FC = () => {
   return (
     <View>
       {/* 检索配置 */}
-      <SectionHeader title={t.rag.retrievalSettings} mt={0} />
-      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
+      <SettingsSectionHeader title={t.rag.retrievalSettings} className="mt-0" />
+      <SettingsCard className="mb-4">
         <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
           {t.rag.memoryRetrieval}
         </Typography>
@@ -168,11 +157,11 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             step={0.05}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* Rerank配置 */}
-      <SectionHeader title={t.rag.rerankSection} />
-      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
+      <SettingsSectionHeader title={t.rag.rerankSection} />
+      <SettingsCard className="mb-4">
         {/* 启用Rerank */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -242,11 +231,11 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             step={1}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* 查询重写配置 */}
-      <SectionHeader title={t.rag.queryRewrite} />
-      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
+      <SettingsSectionHeader title={t.rag.queryRewrite} />
+      <SettingsCard className="mb-4">
         {/* 启用查询重写 */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -319,11 +308,11 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             step={1}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* 混合检索配置 */}
-      <SectionHeader title={t.rag.hybridSearch} />
-      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
+      <SettingsSectionHeader title={t.rag.hybridSearch} />
+      <SettingsCard className="mb-4">
         {/* 启用混合检索 */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -393,11 +382,11 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             step={0.1}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* 可观测性配置 */}
-      <SectionHeader title={t.rag.observability} />
-      <View className="bg-gray-50/50 dark:bg-zinc-900/60 rounded-[32px] p-4 border border-indigo-50 dark:border-indigo-500/10 mb-4">
+      <SettingsSectionHeader title={t.rag.observability} />
+      <SettingsCard className="mb-4">
         {/* 显示检索进度 */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">
@@ -449,7 +438,7 @@ export const AdvancedRetrievalPanel: React.FC = () => {
             onValueChange={(val) => updateGlobalRagConfig({ trackRetrievalMetrics: val })}
           />
         </View>
-      </View>
+      </SettingsCard>
     </View>
   );
 };

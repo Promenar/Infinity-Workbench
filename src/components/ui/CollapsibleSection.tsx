@@ -1,105 +1,135 @@
-import React, { useState } from 'react';
-import { View, TouchableOpacity, StyleSheet, LayoutChangeEvent, Text } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, TouchableOpacity, StyleSheet, LayoutChangeEvent } from 'react-native';
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
-    withSpring,
     withTiming,
-    interpolate,
-    useDerivedValue,
-    runOnUI,
-    measure,
-    useAnimatedRef,
+    Easing,
+    runOnJS,
 } from 'react-native-reanimated';
-import { ChevronDown } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
+import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Colors } from '../../theme/colors';
-import * as Haptics from '../../lib/haptics';
+import * as Haptics from 'expo-haptics';
 
 interface CollapsibleSectionProps {
     title: string;
     children: React.ReactNode;
+    defaultOpen?: boolean;
+    rightElement?: React.ReactNode;
     icon?: React.ReactNode;
-    defaultExpanded?: boolean;
-    containerStyle?: any;
+    style?: any;
+    contentContainerStyle?: any;
 }
 
 export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     title,
     children,
+    defaultOpen = false,
+    rightElement,
     icon,
-    defaultExpanded = false,
-    containerStyle,
+    style,
+    contentContainerStyle,
 }) => {
-    const { isDark, colors } = useTheme();
-    const [expanded, setExpanded] = useState(defaultExpanded);
-    const [bodyHeight, setBodyHeight] = useState(0);
+    const { colors, isDark } = useTheme();
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    const [contentHeight, setContentHeight] = useState(0);
 
-    // Animation values
-    const open = useSharedValue(defaultExpanded ? 1 : 0);
+    // Animated values
+    const height = useSharedValue(defaultOpen ? 1 : 0); // 0 to 1 progress
+    const rotation = useSharedValue(defaultOpen ? 90 : 0);
 
-    // ⚡ Faster, smooth timing-based animations (no bounce)
-    const rotation = useDerivedValue(() => withTiming(open.value * 180, { duration: 250 }));
-
-    const toggle = () => {
-        const nextState = !expanded;
-        setExpanded(nextState);
-
-        // Add light haptics for consistency with other settings
+    const toggleOpen = () => {
+        // Native bridge safety delay
         setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            const nextState = !isOpen;
+            setIsOpen(nextState);
+            height.value = withTiming(nextState ? 1 : 0, {
+                duration: 300,
+                easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            });
+            rotation.value = withTiming(nextState ? 90 : 0, { duration: 300 });
         }, 10);
-
-        open.value = withTiming(nextState ? 1 : 0, { duration: 250 });
     };
 
-    const animatedBodyStyle = useAnimatedStyle(() => {
+    const animatedContentStyle = useAnimatedStyle(() => {
+        // If contentHeight is 0 (not measured yet), don't show or animate weirdly
+        // But initially we might want to show if defaultOpen.
+        const actualHeight = contentHeight > 0 ? contentHeight : (defaultOpen ? 'auto' : 0);
+
         return {
-            height: bodyHeight > 0
-                ? withTiming(open.value * bodyHeight, { duration: 250 })
-                : undefined,
-            opacity: withTiming(open.value, { duration: 250 }),
+            height: contentHeight === 0
+                ? undefined // Let it auto-layout first to measure
+                : (height.value * contentHeight),
+            opacity: height.value,
+            overflow: 'hidden',
         };
     });
 
-    const animatedChevronStyle = useAnimatedStyle(() => ({
+    const iconStyle = useAnimatedStyle(() => ({
         transform: [{ rotate: `${rotation.value}deg` }],
     }));
 
+    const onLayout = (event: LayoutChangeEvent) => {
+        const h = event.nativeEvent.layout.height;
+        if (h > 0 && h !== contentHeight) {
+            setContentHeight(h);
+        }
+    };
+
     return (
-        <View style={[styles.container, containerStyle]}>
+        <View
+            className="rounded-3xl overflow-hidden mb-3 border"
+            style={[{
+                borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF', // matches border-indigo-50 / dark:border-indigo-500/10
+                backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(249, 250, 251, 0.8)' // bg-gray-50/80 dark:bg-zinc-900/60
+            }, style]}
+        >
             <TouchableOpacity
-                onPress={toggle}
+                onPress={toggleOpen}
                 activeOpacity={0.7}
-                style={[
-                    styles.header,
-                    {
-                        borderBottomColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                        borderBottomWidth: expanded ? 0 : 1,
-                    }
-                ]}
+                className="flex-row items-center justify-between p-3"
             >
-                <View style={styles.headerLeft}>
-                    {icon && <View style={styles.iconContainer}>{icon}</View>}
-                    <Text
-                        style={{
-                            fontSize: 15,
-                            fontWeight: '600',
-                            letterSpacing: -0.2,
-                            color: isDark ? Colors.dark.textPrimary : Colors.light.textPrimary,
-                        }}
-                    >
+                <View className="flex-row items-center flex-1 mr-4">
+                    {icon && <View className="mr-3">{icon}</View>}
+                    <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
                         {title}
-                    </Text>
+                    </Typography>
                 </View>
-                <Animated.View style={animatedChevronStyle}>
-                    <ChevronDown size={18} color={isDark ? Colors.dark.textTertiary : Colors.light.textTertiary} />
-                </Animated.View>
+
+                <View className="flex-row items-center gap-3">
+                    {/* Fade out right element when opening (optional, or keep it?) 
+                Plan said: Preview of selected icon/color shown in header.
+                Ideally this stays visible or fades out if it duplicates content.
+                Let's keep it visible for now as a "summary".
+            */}
+                    {!isOpen && rightElement && (
+                        <View style={{ opacity: isOpen ? 0 : 1 }}>
+                            {rightElement}
+                        </View>
+                    )}
+                    <Animated.View style={iconStyle}>
+                        <ChevronRight size={20} color={isDark ? '#9ca3af' : '#6b7280'} />
+                    </Animated.View>
+                </View>
             </TouchableOpacity>
 
-            <Animated.View style={[styles.bodyContainer, animatedBodyStyle, { overflow: 'hidden' }]}>
-                <View onLayout={(e) => setBodyHeight(e.nativeEvent.layout.height)} style={styles.innerBody}>
+            {/* 
+         Measurement Strategy:
+         Render children in a hidden absolute view to measure height, 
+         then drive the animated view with that height.
+      */}
+            <View style={{ position: 'absolute', opacity: 0, zIndex: -100, width: '100%', padding: 12 }} pointerEvents="none" onLayout={onLayout}>
+                <View style={contentContainerStyle}>
+                    {children}
+                </View>
+            </View>
+
+            <Animated.View
+                style={[animatedContentStyle, { borderTopWidth: 1, borderTopColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF' }]}
+            >
+                <View className="p-3" style={contentContainerStyle}>
                     {children}
                 </View>
             </Animated.View>
@@ -107,43 +137,4 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        overflow: 'hidden',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 11,
-        minHeight: 44,
-    },
-    headerLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    iconContainer: {
-        width: 22,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 14,
-    },
-    bodyContainer: {
-        // Height animated
-    },
-    innerBody: {
-        position: 'absolute',
-        width: '100%',
-        top: 0,
-    }
-});
-
-// Fix: The absolute positioning of innerBody might prevent it from taking space if we rely on flow.
-// Correct "Accordion" pattern with Reanimated:
-// 1. Render content in a wrapper. 
-// 2. Wrapper A (Outer) `overflow: hidden`, `height: animated`.
-// 3. Wrapper B (Inner) `position: absolute` so it doesn't constrain height? No, Wrapper B should retain height so we can measure it.
-// Actually, if Inner is not absolute, it pushes Outer to expand. We want to FORCE Outer height.
-// So Inner needs to be `position: absolute` so it doesn't influence layout, BUT we need its height.
-// Yes, `position: absolute` + `onLayout` is the way. 
+export default CollapsibleSection;

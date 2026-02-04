@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, TextInput } from 'react-native';
-import { Typography, ConfirmDialog, Switch } from '../../../components/ui';
+import { Typography, ConfirmDialog, Switch, SettingsCard, SettingsSectionHeader } from '../../../components/ui';
 import { ThemedSlider as Slider } from '../../../components/ui/Slider';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useI18n } from '../../../lib/i18n';
@@ -16,33 +16,7 @@ interface Props {
   onUpdate: (updates: Partial<Agent>) => void;
 }
 
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 12 }) => {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={{
-        marginTop: mt,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-        paddingHorizontal: 4,
-      }}
-    >
-      <View
-        style={{
-          width: 4,
-          height: 12,
-          borderRadius: 999,
-          marginRight: 8,
-          backgroundColor: colors[500],
-        }}
-      />
-      <Typography className="text-xs font-bold uppercase tracking-widest text-gray-900 dark:text-white">
-        {title}
-      </Typography>
-    </View>
-  );
-};
+
 
 import { RAG_PRESETS } from '../../../lib/rag/constants';
 
@@ -86,43 +60,41 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
   return (
     <View>
       {/* 状态标签 */}
-      <SectionHeader title={t.rag.configStatus} mt={0} />
-      <Card variant="glass" className="mb-3">
-        <View className="p-3 flex-row items-center justify-between">
-          <View>
-            <Typography className="text-sm font-bold text-gray-900 dark:text-white mb-1">
-              {t.rag.configMode}
-            </Typography>
-            <Typography
-              className="text-xs font-medium"
-              style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
-            >
-              {isUsingGlobal ? t.rag.modeInherit : t.rag.modeCustom}
-            </Typography>
-          </View>
-          {!isUsingGlobal && (
-            <TouchableOpacity
-              onPress={() => {
-                setTimeout(() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setShowResetDialog(true);
-                }, 10);
-              }}
-              activeOpacity={0.7}
-              style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-              className="flex-row items-center px-4 py-2 rounded-2xl border"
-            >
-              <RefreshCw size={14} color={colors[600]} />
-              <Typography style={{ color: colors[600] }} className="ml-2 text-sm font-bold">
-                {t.rag.reset}
-              </Typography>
-            </TouchableOpacity>
-          )}
+      <SettingsSectionHeader title={t.rag.configStatus} className="mt-0" />
+      <SettingsCard className="flex-row items-center justify-between">
+        <View>
+          <Typography className="text-sm font-bold text-gray-900 dark:text-white mb-1">
+            {t.rag.configMode}
+          </Typography>
+          <Typography
+            className="text-xs font-medium"
+            style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
+          >
+            {isUsingGlobal ? t.rag.modeInherit : t.rag.modeCustom}
+          </Typography>
         </View>
-      </Card>
+        {!isUsingGlobal && (
+          <TouchableOpacity
+            onPress={() => {
+              setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowResetDialog(true);
+              }, 10);
+            }}
+            activeOpacity={0.7}
+            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+            className="flex-row items-center px-4 py-2 rounded-2xl border"
+          >
+            <RefreshCw size={14} color={colors[600]} />
+            <Typography style={{ color: colors[600] }} className="ml-2 text-sm font-bold">
+              {t.rag.reset}
+            </Typography>
+          </TouchableOpacity>
+        )}
+      </SettingsCard>
 
       {/* 预设快捷选择 */}
-      <SectionHeader title={t.rag.quickPresets} />
+      <SettingsSectionHeader title={t.rag.quickPresets} />
       <View className="flex-row mb-3 gap-2">
         {Object.entries(RAG_PRESETS).map(([key, preset]) => {
           const Icon = preset.icon;
@@ -135,24 +107,42 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             currentConfig.contextWindow === preset.config.contextWindow;
 
           return (
-            <Card
+            <SettingsCard
               key={key}
-              variant="glass"
-              onPress={() => applyPreset(key)}
-              className="flex-1 p-0"
+              // SettingsCard is View, need Touchable if clickable? SettingsCard passes props to View. 
+              // Wait, SettingsCard returns View. If I want Touchable, I should wrap children or make SettingsCard accept onPress? 
+              // ViewProps doesn't have onPress. 
+              // I should wrap SettingsCard in TouchableOpacity or keep Card implementation for clickable cards.
+              // Existing Card accepts onPress.
+              // I will use TouchableOpacity wrapping SettingsCard content or just use SettingsCard as visual and wrap it.
+              // OR better: keep using `Card` for clickable grids IF `SettingsCard` doesn't support it, 
+              // BUT `SettingsCard` was requested for standard style.
+              // Let's modify SettingsCard usage.
+              // Actually, I can just use SettingsCard style but wrap in Touchable.
+              // Or better, since `Card` component is generic, maybe I should just update `Card` variant="glass" to match SettingsCard style globally?
+              // No, user specifically asked for standardization in these pages.
+              // I'll make the preset cards SettingsCards. 
+              // Since SettingsCard is a View, I will wrap the content in TouchableOpacity inside SettingsCard? 
+              // No, the Card itself is clickable.
+              // I will wrap SettingsCard in TouchableOpacity.
+              // <TouchableOpacity onPress={...}><SettingsCard ... pointerEvents="box-only"?/></TouchableOpacity>
+              // SettingsCard has mb-3.
+              // Flex row container.
+              className="flex-1 mb-0" // override mb-3 since they are in a row container
               style={
                 isActive
                   ? {
                     borderColor: colors[500],
                     borderWidth: 1.5,
-                    overflow: 'hidden',
-                    borderRadius: 20,
                   }
-                  : { overflow: 'hidden', borderRadius: 20 }
+                  : {}
               }
+              noPadding
             >
-              <View
-                className="p-4 items-center w-full rounded-[20px]"
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => applyPreset(key)}
+                className="p-4 items-center w-full"
                 style={{
                   backgroundColor: isActive
                     ? (isDark ? `${colors[500]}15` : `${colors[500]}08`)
@@ -166,16 +156,16 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
                 >
                   {presetName}
                 </Typography>
-              </View>
-            </Card>
+              </TouchableOpacity>
+            </SettingsCard>
           );
         })}
       </View>
 
       {/* 自动摘要设置 */}
-      <SectionHeader title={t.rag.summarySettings} />
-      <Card variant="glass" className="mb-3">
-        <View className="p-3">
+      <SettingsSectionHeader title={t.rag.summarySettings} />
+      <SettingsCard>
+        <View>
           <View className="mb-2">
             <View className="flex-row items-center justify-between mb-1">
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
@@ -280,7 +270,7 @@ export const AgentRagConfigPanel: React.FC<Props> = ({ agent, onUpdate }) => {
             </View>
           </View>
         </View>
-      </Card>
+      </SettingsCard>
 
       <FloatingTextEditorModal
         visible={isEditorVisible}

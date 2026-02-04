@@ -2268,28 +2268,28 @@ export const useChatStore = create<ChatState>()(
               }
             } catch (e) { console.error('[RAG] Summarization failed', e); }
 
-            // 4. Stats & Title
-            const latestMsg = get().getSession(sessionId)?.messages.find((m) => m.id === assistantMsgId);
-            let finalUsage = accumulatedUsage || latestMsg?.tokens;
-
-            const billingUsage = {
-              chatInput: { count: finalUsage ? finalUsage.input : totalContextTokens, isEstimated: !finalUsage },
-              chatOutput: { count: finalUsage ? finalUsage.output : estimateTokens(finalContent), isEstimated: !finalUsage }, // ✅ Use finalContent
-              ragSystem: ragUsage ? { count: ragUsage.ragSystem, isEstimated: ragUsage.isEstimated } : { count: 0, isEstimated: false },
-              total: (finalUsage ? finalUsage.total : totalContextTokens + estimateTokens(finalContent)) + (ragUsage?.ragSystem || 0)
-            };
-
-            get().updateSession(sessionId, { stats: { totalTokens: billingUsage.total, billing: billingUsage } });
-
-            try {
-              const { useTokenStatsStore } = await import('./token-stats-store');
-              useTokenStatsStore.getState().trackUsage({ modelId, usage: billingUsage });
-            } catch (e) { }
-
-            if (sessionId !== 'super_assistant' && (session.messages.length <= 1 || session.title === agent.name || session.title === 'New Conversation')) {
-              const titleLimit = 15;
-              get().updateSessionTitle(sessionId, content.substring(0, titleLimit) + (content.length > titleLimit ? '...' : ''));
-            }
+            // 4. Stats & Title (Delegated to shared PostProcessor for consistency)
+            updateStats({
+              sessionId,
+              assistantMsgId,
+              userMsgId: userMsg.id,
+              userContent: content,
+              assistantContent: finalContent,
+              agent,
+              session: get().getSession(sessionId) || session,
+              ragEnabled: finalRagOptions.enableMemory !== false,
+              ragUsage,
+              accumulatedUsage,
+              totalContextTokens,
+              modelId,
+              getSession: get().getSession,
+              updateSession: get().updateSession,
+              updateMessageProgress: get().updateMessageProgress,
+              setVectorizationStatus: get().setVectorizationStatus,
+              setKGExtractionStatus: get().setKGExtractionStatus,
+              updateSessionTitle: get().updateSessionTitle,
+              generateSessionTitle: get().generateSessionTitle, // ✅ Phase 4b: Support AI-powered title generation
+            });
 
           } catch (e: any) {
             // ✅ 错误处理优化：

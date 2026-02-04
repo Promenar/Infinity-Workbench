@@ -8,7 +8,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { PageLayout, Typography, GlassHeader, ConfirmDialog } from '../../../../src/components/ui';
+import { PageLayout, Typography, GlassHeader, ConfirmDialog, SettingsCard, SettingsSectionHeader, SettingsInput } from '../../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ChevronLeft,
@@ -39,6 +39,7 @@ import { useDebounce } from '../../../../src/hooks/useDebounce';
 import { PRESET_COLORS } from '../../../../src/types/super-assistant';
 import { InferencePresets } from '../../../../src/components/chat/InferencePresets';
 import { ColorPickerPanel } from '../../../../src/components/ui/ColorPickerPanel';
+import CollapsibleSection from '../../../../src/components/ui/CollapsibleSection';
 
 const PRESET_ICONS = [
   'MessageSquare',
@@ -204,17 +205,7 @@ export default function AgentEditScreen() {
     });
   };
 
-  const SectionHeader = ({ title }: { title: string }) => {
-    const { colors } = useTheme();
-    return (
-      <View className="flex-row items-center mb-4 mt-2">
-        <View style={{ backgroundColor: colors[500] }} className="w-1 h-4 rounded-full mr-2" />
-        <Typography className="text-base font-bold text-gray-900 dark:text-gray-100">
-          {title}
-        </Typography>
-      </View>
-    );
-  };
+
 
   if (!agent) return null;
 
@@ -246,109 +237,135 @@ export default function AgentEditScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Agent Avatar Group */}
-          <SectionHeader title={t.agent.avatar || '助手头像'} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8 items-center">
-            <View className="relative mb-6">
-              <AgentAvatar
-                id={agentId}
-                name={formData.name}
-                avatar={formData.avatar}
-                color={formData.color}
-                size={100}
-              />
-              <TouchableOpacity
-                onPress={handlePickImage}
-                style={{ backgroundColor: colors[600] }}
-                className="absolute bottom-0 right-0 p-2.5 rounded-full border-4 border-gray-50 dark:border-zinc-900 shadow-md"
-              >
-                {isProcessingImage ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <ImageIcon size={18} color="white" />
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View className="flex-row flex-wrap justify-center gap-2">
-              {PRESET_ICONS.map((iconName) => (
-                <TouchableOpacity
-                  key={iconName}
-                  onPress={() => {
-                    setFormData({ ...formData, avatar: iconName });
-                    setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-                  }}
-                  className={clsx(
-                    'w-10 h-10 rounded-xl items-center justify-center border-2',
-                    formData.avatar === iconName
-                      ? 'border-transparent'
-                      : 'bg-white dark:bg-black border-transparent',
-                  )}
-                  style={formData.avatar === iconName ? {
-                    backgroundColor: colors.opacity10,
-                    borderColor: colors[500]
-                  } : {}}
-                >
-                  <AgentAvatar
-                    id={agentId}
-                    name={formData.name}
-                    avatar={iconName}
-                    color={formData.color}
-                    size={24}
-                  />
-                  {formData.avatar === iconName && (
-                    <View style={{ backgroundColor: colors[500] }} className="absolute -top-1 -right-1 rounded-full p-0.5">
-                      <Check size={6} color="white" />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
           {/* Basic Info Group */}
-          <SectionHeader title={t.agent.basicInfo} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
+          <SettingsSectionHeader title={t.agent.basicInfo} />
+          <SettingsCard>
             <Typography className="text-gray-900 dark:text-white font-bold mb-2">
               {t.agent.name}
             </Typography>
-            <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-indigo-50 dark:border-indigo-500/10 mb-4"
+            <SettingsInput
               value={formData.name}
               onChangeText={(text) => setFormData({ ...formData, name: text })}
               placeholder={t.agent.namePlaceholder}
-              placeholderTextColor="#94a3b8"
             />
 
             <Typography className="text-gray-900 dark:text-white font-bold mb-2">
               {t.agent.description}
             </Typography>
-            <TextInput
-              className="text-gray-600 dark:text-gray-300 bg-white dark:bg-black p-3 rounded-xl border border-indigo-50 dark:border-indigo-500/10"
+            <SettingsInput
               multiline
               numberOfLines={2}
               value={formData.description}
               onChangeText={(text) => setFormData({ ...formData, description: text })}
               placeholder={t.agent.descriptionPlaceholder}
-              placeholderTextColor="#94a3b8"
+              className="mb-0" // Reset margin for last item
             />
-          </View>
+          </SettingsCard>
 
-          {/* Theme Color Group */}
-          <View className="mb-0">
-            <ColorPickerPanel
-              color={formData.color}
-              onColorChange={(color) => {
-                setFormData({ ...formData, color: color });
-                setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
-              }}
-              title={t.common.color.title}
-            />
-          </View>
+          {/* Appearance Group (Collapsible) */}
+          <SettingsSectionHeader title={t.settings.appearance || '外观'} />
+          <CollapsibleSection
+            title={t.settings.personalization || '个性化外观'}
+            defaultOpen={false}
+            icon={<Sparkles size={20} color={formData.color} />}
+            rightElement={
+              <View className="flex-row items-center gap-2">
+                <View
+                  style={{ backgroundColor: formData.color + '20' }}
+                  className="w-8 h-8 rounded-full items-center justify-center border border-white/10"
+                >
+                  <AgentAvatar
+                    id={agentId}
+                    name={formData.name}
+                    avatar={formData.avatar}
+                    color={formData.color}
+                    size={20}
+                  />
+                </View>
+                <View
+                  style={{ backgroundColor: formData.color }}
+                  className="w-4 h-4 rounded-full border-2 border-white dark:border-zinc-800"
+                />
+              </View>
+            }
+            style={{ marginBottom: 12 }}
+            contentContainerStyle={{ padding: 12 }}
+          >
+            {/* Agent Avatar Group */}
+            <View className="items-center mb-3">
+              <View className="relative mb-6">
+                <AgentAvatar
+                  id={agentId}
+                  name={formData.name}
+                  avatar={formData.avatar}
+                  color={formData.color}
+                  size={100}
+                />
+                <TouchableOpacity
+                  onPress={handlePickImage}
+                  style={{ backgroundColor: colors[600] }}
+                  className="absolute bottom-0 right-0 p-2.5 rounded-full border-4 border-gray-50 dark:border-zinc-900 shadow-md"
+                >
+                  {isProcessingImage ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <ImageIcon size={18} color="white" />
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <View className="flex-row flex-wrap justify-center gap-2">
+                {PRESET_ICONS.map((iconName) => (
+                  <TouchableOpacity
+                    key={iconName}
+                    onPress={() => {
+                      setFormData({ ...formData, avatar: iconName });
+                      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                    }}
+                    className={clsx(
+                      'w-10 h-10 rounded-xl items-center justify-center border-2',
+                      formData.avatar === iconName
+                        ? 'border-transparent'
+                        : 'bg-white dark:bg-black border-transparent',
+                    )}
+                    style={formData.avatar === iconName ? {
+                      backgroundColor: colors.opacity10,
+                      borderColor: colors[500]
+                    } : {}}
+                  >
+                    <AgentAvatar
+                      id={agentId}
+                      name={formData.name}
+                      avatar={iconName}
+                      color={formData.color}
+                      size={24}
+                    />
+                    {formData.avatar === iconName && (
+                      <View style={{ backgroundColor: colors[500] }} className="absolute -top-1 -right-1 rounded-full p-0.5">
+                        <Check size={6} color="white" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Theme Color Group */}
+            <View className="mb-0">
+              <ColorPickerPanel
+                color={formData.color}
+                onColorChange={(color) => {
+                  setFormData({ ...formData, color: color });
+                  setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                }}
+                title={t.common.color.title}
+              />
+            </View>
+          </CollapsibleSection>
 
           {/* Personality Group */}
-          <SectionHeader title={t.agent.personality} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl p-5 border border-indigo-50 dark:border-indigo-500/10 mb-8">
+          <SettingsSectionHeader title={t.agent.personality} />
+          <SettingsCard>
             <View className={`rounded-xl border border-dashed p-4 ${isDark ? 'bg-zinc-900/50 border-zinc-700' : 'bg-gray-50 border-gray-300'}`}>
               <View className="flex-row items-center justify-between mb-2">
                 <View className="flex-row items-center">
@@ -384,7 +401,7 @@ export default function AgentEditScreen() {
                 </Typography>
               </TouchableOpacity>
             </View>
-          </View>
+          </SettingsCard>
 
           <FloatingTextEditorModal
             visible={isPromptEditorVisible}
@@ -399,15 +416,15 @@ export default function AgentEditScreen() {
           />
 
           {/* Model Configuration Group */}
-          <SectionHeader title={t.agent.modelConfig} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl border border-indigo-50 dark:border-indigo-500/10 mb-8">
+          <SettingsSectionHeader title={t.agent.modelConfig} />
+          <SettingsCard noPadding>
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {
                   setShowModelPicker(true);
                 }, 10);
               }}
-              className="flex-row items-center justify-between p-5"
+              className="flex-row items-center justify-between p-3"
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
@@ -420,7 +437,7 @@ export default function AgentEditScreen() {
               <ChevronRight size={20} color="#94a3b8" />
             </TouchableOpacity>
 
-            <View className="border-t border-indigo-50 dark:border-indigo-500/10 p-5">
+            <View className="border-t border-indigo-50 dark:border-indigo-500/10 p-3">
               <Typography className="text-gray-900 dark:text-white font-bold mb-3">
                 {t.agent.creativity}
               </Typography>
@@ -438,11 +455,11 @@ export default function AgentEditScreen() {
                 }}
               />
             </View>
-          </View>
+          </SettingsCard>
 
           {/* RAG 配置入口 */}
-          <SectionHeader title={t.agent.ragConfigTitle} />
-          <View className="bg-gray-50/80 dark:bg-zinc-900/60 rounded-3xl border border-indigo-50 dark:border-indigo-500/10 mb-8">
+          <SettingsSectionHeader title={t.agent.ragConfigTitle} />
+          <SettingsCard noPadding>
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {
@@ -450,7 +467,7 @@ export default function AgentEditScreen() {
                   router.push(`/chat/agent/edit/rag-config/${agentId}` as any);
                 }, 10);
               }}
-              className="flex-row items-center justify-between p-5"
+              className="flex-row items-center justify-between p-3"
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
@@ -472,7 +489,7 @@ export default function AgentEditScreen() {
                   router.push(`/chat/agent/edit/advanced-retrieval/${agentId}` as any);
                 }, 10);
               }}
-              className="flex-row items-center justify-between p-5"
+              className="flex-row items-center justify-between p-3"
             >
               <View className="flex-1">
                 <Typography className="text-gray-900 dark:text-white font-bold mb-1">
@@ -484,11 +501,11 @@ export default function AgentEditScreen() {
               </View>
               <ChevronRight size={20} color="#9ca3af" />
             </TouchableOpacity>
-          </View>
+          </SettingsCard>
 
           {/* Danger Zone */}
-          <SectionHeader title={t.common.dangerZone} />
-          <View className="bg-red-50 dark:bg-red-900/10 rounded-3xl p-5 border border-red-100 dark:border-red-900/20 mb-10">
+          <SettingsSectionHeader title={t.common.dangerZone} />
+          <SettingsCard className="bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/20 mb-8">
             <TouchableOpacity
               onPress={handleDelete}
               className="flex-row items-center justify-between"
@@ -508,7 +525,7 @@ export default function AgentEditScreen() {
               </View>
               <ChevronRight size={20} color="#ef4444" />
             </TouchableOpacity>
-          </View>
+          </SettingsCard>
         </ScrollView>
       </KeyboardAvoidingView>
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity } from 'react-native';
-import { Typography, ConfirmDialog, Switch } from '../../../components/ui';
+import { Typography, ConfirmDialog, Switch, SettingsCard, SettingsSectionHeader } from '../../../components/ui';
 import { ThemedSlider as Slider } from '../../../components/ui/Slider';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useI18n } from '../../../lib/i18n';
@@ -14,34 +14,7 @@ interface Props {
   onUpdate: (updates: Partial<Agent>) => void;
 }
 
-// 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 16 }) => {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={{
-        marginTop: mt,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-        paddingHorizontal: 4,
-      }}
-    >
-      <View
-        style={{
-          width: 4,
-          height: 12,
-          borderRadius: 999,
-          marginRight: 8,
-          backgroundColor: colors[500],
-        }}
-      />
-      <Typography className="text-xs font-bold uppercase tracking-widest text-gray-900 dark:text-white">
-        {title}
-      </Typography>
-    </View>
-  );
-};
+
 
 export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }) => {
   const { t } = useI18n();
@@ -63,44 +36,42 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
   return (
     <View>
       {/* 状态标签 */}
-      <SectionHeader title={t.rag.configStatus} mt={0} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Typography className="text-base font-bold text-gray-900 dark:text-white mb-1">
-              {t.rag.configMode}
-            </Typography>
-            <Typography
-              className="text-sm font-medium"
-              style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
-            >
-              {isUsingGlobal ? t.rag.modeInherit : t.rag.modeCustom}
-            </Typography>
-          </View>
-          {!isUsingGlobal && (
-            <TouchableOpacity
-              onPress={() => {
-                setTimeout(() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setShowResetDialog(true);
-                }, 10);
-              }}
-              activeOpacity={0.7}
-              style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
-              className="flex-row items-center px-4 py-2 rounded-2xl border"
-            >
-              <RefreshCw size={14} color={colors[600]} />
-              <Typography style={{ color: colors[600] }} className="ml-2 text-sm font-bold">
-                {t.rag.reset}
-              </Typography>
-            </TouchableOpacity>
-          )}
+      <SettingsSectionHeader title={t.rag.configStatus} className="mt-0" />
+      <SettingsCard className="flex-row items-center justify-between">
+        <View>
+          <Typography className="text-base font-bold text-gray-900 dark:text-white mb-1">
+            {t.rag.configMode}
+          </Typography>
+          <Typography
+            className="text-sm font-medium"
+            style={{ color: isUsingGlobal ? (isDark ? '#34d399' : '#059669') : colors[500] }}
+          >
+            {isUsingGlobal ? t.rag.modeInherit : t.rag.modeCustom}
+          </Typography>
         </View>
-      </View>
+        {!isUsingGlobal && (
+          <TouchableOpacity
+            onPress={() => {
+              setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowResetDialog(true);
+              }, 10);
+            }}
+            activeOpacity={0.7}
+            style={{ backgroundColor: colors.opacity10, borderColor: colors.opacity20 }}
+            className="flex-row items-center px-4 py-2 rounded-2xl border"
+          >
+            <RefreshCw size={14} color={colors[600]} />
+            <Typography style={{ color: colors[600] }} className="ml-2 text-sm font-bold">
+              {t.rag.reset}
+            </Typography>
+          </TouchableOpacity>
+        )}
+      </SettingsCard>
 
       {/* 检索配置 (从 RAG 设置页面移入) */}
-      <SectionHeader title={t.rag.retrievalSettings} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      <SettingsSectionHeader title={t.rag.retrievalSettings} />
+      <SettingsCard>
         <Typography className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">
           {t.rag.memoryRetrieval}
         </Typography>
@@ -240,11 +211,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             step={0.05}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* Rerank配置 */}
-      <SectionHeader title={t.rag.rerankSection} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      < SettingsSectionHeader title={t.rag.rerankSection} />
+      <SettingsCard>
         {/* 启用Rerank */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -314,11 +285,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             step={1}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* 查询重写配置 */}
-      <SectionHeader title={t.rag.queryRewrite} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      < SettingsSectionHeader title={t.rag.queryRewrite} />
+      <SettingsCard>
         {/* 启用查询重写 */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -395,11 +366,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             step={1}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* 混合检索配置 */}
-      <SectionHeader title={t.rag.hybridSearch} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      < SettingsSectionHeader title={t.rag.hybridSearch} />
+      <SettingsCard>
         {/* 启用混合检索 */}
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-1 mr-4">
@@ -469,11 +440,11 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             step={0.1}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* 可观测性配置 */}
-      <SectionHeader title={t.rag.observability} />
-      <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[24px] p-5 border border-indigo-50 dark:border-indigo-500/10 mb-4 shadow-sm">
+      < SettingsSectionHeader title={t.rag.observability} />
+      <SettingsCard>
         {/* 显示检索进度 */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-1 mr-4">
@@ -525,7 +496,7 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
             onValueChange={(val) => handleChange({ trackRetrievalMetrics: val })}
           />
         </View>
-      </View>
+      </SettingsCard>
 
       {/* 重置确认对话框 */}
       <ConfirmDialog
@@ -544,6 +515,6 @@ export const AgentAdvancedRetrievalPanel: React.FC<Props> = ({ agent, onUpdate }
         onCancel={() => setShowResetDialog(false)}
         isDestructive
       />
-    </View>
+    </View >
   );
 };

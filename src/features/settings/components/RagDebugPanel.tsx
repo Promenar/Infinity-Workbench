@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Typography, ConfirmDialog } from '../../../components/ui';
+import { Typography, ConfirmDialog, SettingsCard, SettingsSectionHeader } from '../../../components/ui';
 import { useToast } from '../../../components/ui/Toast';
 import { VectorStatsService, VectorStats } from '../../../lib/rag/vector-stats';
 import { vectorStore } from '../../../lib/rag/vector-store';
@@ -9,18 +9,7 @@ import { useTheme } from '../../../theme/ThemeProvider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '../../../lib/i18n';
 
-// 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
-  const { colors } = useTheme();
-  return (
-    <View style={{ marginTop: mt }} className="flex-row items-center mb-4 px-1">
-      <View style={{ backgroundColor: colors[500] }} className="w-1.5 h-4 rounded-full mr-3" />
-      <Typography className="text-sm font-bold text-gray-900 dark:text-white tracking-tight uppercase">
-        {title}
-      </Typography>
-    </View>
-  );
-};
+
 
 export const RagDebugPanel: React.FC = () => {
   const { t } = useI18n();
@@ -107,8 +96,8 @@ export const RagDebugPanel: React.FC = () => {
       {stats && (
         <>
           {/* 总览卡片 */}
-          <SectionHeader title={t.settings.vectorStats.overview} mt={0} />
-          <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8">
+          <SettingsSectionHeader title={t.settings.vectorStats.overview} className="mt-0" />
+          <SettingsCard className="mb-8">
             <Typography style={{ color: colors[600] }} className="text-sm font-bold mb-2">
               {t.settings.vectorStats.totalVectors}
             </Typography>
@@ -121,11 +110,11 @@ export const RagDebugPanel: React.FC = () => {
                 stats.storageSize.toFixed(1),
               )}
             </Typography>
-          </View>
+          </SettingsCard>
 
           {/* 类型分布 */}
-          <SectionHeader title={t.settings.dimensionAnalysis} mt={0} />
-          <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8">
+          <SettingsSectionHeader title={t.settings.dimensionAnalysis} />
+          <SettingsCard className="mb-8">
             <View className="flex-row items-center justify-around py-2">
               <View className="items-center">
                 <Typography className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -145,11 +134,11 @@ export const RagDebugPanel: React.FC = () => {
                 </Typography>
               </View>
             </View>
-          </View>
+          </SettingsCard>
 
           {/* 存储健康度 */}
-          <SectionHeader title={t.settings.storageHealth} />
-          <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8">
+          <SettingsSectionHeader title={t.settings.storageHealth} />
+          <SettingsCard className="mb-8">
             <View className="flex-row items-center justify-between mb-4">
               <View>
                 <Typography className="text-sm font-bold text-gray-900 dark:text-white">
@@ -184,13 +173,13 @@ export const RagDebugPanel: React.FC = () => {
                 )}
               </TouchableOpacity>
             )}
-          </View>
+          </SettingsCard>
 
           {/* 按会话统计 */}
           {stats.bySession.length > 0 && (
             <>
-              <SectionHeader title={t.settings.topSessions} />
-              <View className="bg-white/80 dark:bg-zinc-900/60 rounded-[32px] p-6 border border-indigo-50 dark:border-indigo-500/10 mb-8">
+              <SettingsSectionHeader title={t.settings.topSessions} />
+              <SettingsCard className="mb-8">
                 {stats.bySession.map((item, idx) => (
                   <View
                     key={idx}
@@ -224,7 +213,7 @@ export const RagDebugPanel: React.FC = () => {
                     </View>
                   </View>
                 ))}
-              </View>
+              </SettingsCard>
             </>
           )}
         </>

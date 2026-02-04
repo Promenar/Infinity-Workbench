@@ -118,9 +118,9 @@ export default function RagAdvancedSettings() {
         className="flex-1"
       >
         <ScrollView
-          className="flex-1 px-4"
+          className="flex-1 px-6"
           contentContainerStyle={{
-            paddingTop: 100, // Compact: 110 -> 100
+            paddingTop: 74 + insets.top,
             paddingBottom: 40,
           }}
           showsVerticalScrollIndicator={false}
@@ -154,7 +154,7 @@ export default function RagAdvancedSettings() {
 
           {/* 1. 策略选择 */}
           <SettingsSection title={t.rag.kg.costStrategyTitle}>
-            <Card variant="glass" className="p-3 bg-transparent border-0">
+            <View className="p-3">
               <View className="flex-row items-center mb-4">
                 <DollarSign size={20} color={colors[500]} style={{ marginRight: 8 }} />
                 <View style={{ flex: 1 }}>
@@ -226,7 +226,7 @@ export default function RagAdvancedSettings() {
                   </View>
                 </TouchableOpacity>
               ))}
-            </Card>
+            </View>
           </SettingsSection>
 
           {/* 2. 本地优化开关 */}
@@ -250,7 +250,7 @@ export default function RagAdvancedSettings() {
 
           {/* 3. 提示词配置 */}
           <SettingsSection title={t.rag.kg.extractionPrompt}>
-            <Card variant="glass" className="p-3">
+            <View className="p-3">
               <View className="flex-row justify-between items-center mb-4">
                 <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
                   {t.rag.kg.entityRelationPrompt}
@@ -306,7 +306,7 @@ export default function RagAdvancedSettings() {
                   {t.rag.kg.promptWarning}
                 </Typography>
               </View>
-            </Card>
+            </View>
           </SettingsSection>
 
           <FloatingTextEditorModal
@@ -325,11 +325,11 @@ export default function RagAdvancedSettings() {
               onPress={() => router.push('/knowledge-graph')}
               activeOpacity={0.8}
             >
-              <Card variant="glass" className="p-3 items-center justify-center bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-500/20">
+              <View className="p-3 items-center justify-center bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-500/20 rounded-xl">
                 <Typography style={{ color: colors[500] }} className="font-bold">
                   {t.rag.kg.viewFullGraph}
                 </Typography>
-              </Card>
+              </View>
             </TouchableOpacity>
           </SettingsSection>
 

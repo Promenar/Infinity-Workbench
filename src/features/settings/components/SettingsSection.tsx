@@ -1,8 +1,6 @@
-import { View, Text, StyleSheet } from 'react-native';
-import { useTheme } from '../../../theme/ThemeProvider';
-import { Colors } from '../../../theme/colors';
-import { Card } from '../../../components/ui/Card';
-import { Typography } from '../../../components/ui/Typography';
+import { View } from 'react-native';
+import { SettingsCard } from '../../../components/ui/SettingsCard';
+import { SettingsSectionHeader } from '../../../components/ui/SettingsSectionHeader';
 
 interface SettingsSectionProps {
   title?: string;
@@ -11,45 +9,12 @@ interface SettingsSectionProps {
 }
 
 export function SettingsSection({ title, children, containerStyle }: SettingsSectionProps) {
-  const { isDark, colors } = useTheme();
-
   return (
-    <View style={[styles.section, containerStyle]}>
-      {title && (
-        <View style={styles.headerContainer}>
-          <View style={[styles.pill, { backgroundColor: colors[500] }]} />
-          <Typography style={[styles.sectionTitle, { color: isDark ? 'white' : '#111827' }]}>
-            {title}
-          </Typography>
-        </View>
-      )}
-      <Card variant="glass">
+    <View style={containerStyle}>
+      {title && <SettingsSectionHeader title={title} />}
+      <SettingsCard>
         {children}
-      </Card>
+      </SettingsCard>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  section: {
-    marginBottom: 8, // Ultra Compact: 12 -> 8
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-  },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  pill: {
-    width: 4,
-    height: 12,
-    borderRadius: 999,
-    marginRight: 8,
-  },
-});

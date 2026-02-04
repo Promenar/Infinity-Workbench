@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, TouchableOpacity, TextInput, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Typography, Switch, useToast } from '../../../components/ui';
+import { Typography, Switch, useToast, SettingsCard, SettingsSectionHeader } from '../../../components/ui';
 import { ThemedSlider as Slider } from '../../../components/ui/Slider';
 import { useSettingsStore } from '../../../store/settings-store';
 import { useRagStore } from '../../../store/rag-store';
@@ -13,36 +13,7 @@ import * as Haptics from '../../../lib/haptics';
 import { vectorStore } from '../../../lib/rag/vector-store';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { FloatingTextEditorModal } from '../../../components/ui/FloatingTextEditorModal';
-import { Card } from '../../../components/ui/Card';
 
-// 装饰性的小标题组件
-const SectionHeader: React.FC<{ title: string; mt?: number }> = ({ title, mt = 32 }) => {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={{
-        marginTop: mt,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8, // Compact: 16 -> 8
-        paddingHorizontal: 4,
-      }}
-    >
-      <View
-        style={{
-          width: 4, // Compact: 6 -> 4
-          height: 12, // Compact: 16 -> 12
-          borderRadius: 999,
-          marginRight: 8, // Compact: 12 -> 8
-          backgroundColor: colors[500],
-        }}
-      />
-      <Typography className="text-xs font-bold uppercase tracking-widest text-gray-900 dark:text-white">
-        {title}
-      </Typography>
-    </View>
-  );
-};
 
 // 预设配置
 const PRESETS = {
@@ -206,7 +177,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
   return (
     <View>
       {/* 预设选择 */}
-      <SectionHeader title={t.rag.quickPresets} mt={0} />
+      <SettingsSectionHeader title={t.rag.quickPresets} className="mt-0" />
       <View className="flex-row mb-6 gap-3">
         {Object.entries(RAG_PRESETS).map(([key, preset]) => {
           const Icon = preset.icon;
@@ -217,24 +188,22 @@ export const GlobalRagConfigPanel: React.FC = () => {
           const name = (t.rag[preset.name.split('.')[1] as keyof typeof t.rag] as any) || preset.name;
 
           return (
-            <Card
+            <SettingsCard
               key={key}
-              variant="glass"
-              onPress={() => applyPreset(key)}
-              className="flex-1 p-0" // Remove padding from card to let inner view fill
+              className="flex-1 mb-0"
               style={
                 isActive
                   ? {
                     borderColor: preset.color,
                     borderWidth: 1.5,
-                    overflow: 'hidden',
-                    borderRadius: 20,
                   }
-                  : { overflow: 'hidden', borderRadius: 20 }
+                  : {}
               }
+              noPadding
             >
-              <View
-                className="p-4 items-center w-full rounded-[20px]"
+              <TouchableOpacity
+                onPress={() => applyPreset(key)}
+                className="p-4 items-center w-full"
                 style={{
                   backgroundColor: isActive
                     ? (isDark ? `${preset.color}15` : `${preset.color}08`)
@@ -248,16 +217,16 @@ export const GlobalRagConfigPanel: React.FC = () => {
                 >
                   {name}
                 </Typography>
-              </View>
-            </Card>
+              </TouchableOpacity>
+            </SettingsCard>
           );
         })}
       </View>
 
       {/* 文档分块设置 */}
-      <SectionHeader title={t.rag.docChunkSettings} />
-      <Card variant="glass" className="mb-4">
-        <View className="p-4">
+      <SettingsSectionHeader title={t.rag.docChunkSettings} />
+      <SettingsCard className="mb-4">
+        <View>
           <View className="mb-2">
             <View className="flex-row items-center justify-between mb-1">
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
@@ -310,12 +279,12 @@ export const GlobalRagConfigPanel: React.FC = () => {
             />
           </View>
         </View>
-      </Card>
+      </SettingsCard>
 
       {/* 对话记忆分块设置 */}
-      <SectionHeader title={t.rag.memorySettings} />
-      <Card variant="glass" className="mb-4">
-        <View className="p-4">
+      <SettingsSectionHeader title={t.rag.memorySettings} />
+      <SettingsCard className="mb-4">
+        <View>
           <View className="mb-2">
             <View className="flex-row items-center justify-between mb-1">
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
@@ -341,12 +310,12 @@ export const GlobalRagConfigPanel: React.FC = () => {
             />
           </View>
         </View>
-      </Card>
+      </SettingsCard>
 
       {/* 摘要设置 (上下文窗口) */}
-      <SectionHeader title={t.rag.summarySettings} />
-      <Card variant="glass" className="mb-4">
-        <View className="p-4">
+      <SettingsSectionHeader title={t.rag.summarySettings} />
+      <SettingsCard className="mb-4">
+        <View>
           <View className="mb-2">
             <View className="flex-row items-center justify-between mb-1">
               <Typography className="text-sm font-bold text-gray-900 dark:text-gray-100">
@@ -447,12 +416,12 @@ export const GlobalRagConfigPanel: React.FC = () => {
             </View>
           </View>
         </View>
-      </Card>
+      </SettingsCard>
 
       {/* 知识图谱与高级配置 */}
-      <SectionHeader title={t.rag.advancedRagConfig || '高级配置'} />
-      <Card variant="glass" onPress={handleNavigateToAdvanced} className="mb-4">
-        <View className="p-4 flex-row items-center justify-between">
+      <SettingsSectionHeader title={t.rag.advancedRagConfig || '高级配置'} />
+      <SettingsCard className="mb-4" noPadding>
+        <TouchableOpacity onPress={handleNavigateToAdvanced} className="p-4 flex-row items-center justify-between">
           <View className="flex-row items-center gap-3">
             <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
               <Zap size={20} color={colors[500]} />
@@ -469,13 +438,13 @@ export const GlobalRagConfigPanel: React.FC = () => {
           <Typography style={{ color: colors[600] }} className="text-xs font-bold">
             {t.rag.details || '详情'} &gt;
           </Typography>
-        </View>
-      </Card>
+        </TouchableOpacity>
+      </SettingsCard>
 
       {/* 统计信息看板 */}
-      <SectionHeader title={t.rag.viewVectorStats} />
-      <Card variant="glass" className="mb-6">
-        <View className="p-4">
+      <SettingsSectionHeader title={t.rag.viewVectorStats} />
+      <SettingsCard className="mb-6">
+        <View>
           <View className="flex-row justify-between items-center mb-6">
             <View className="flex-row items-center gap-3">
               <View style={{ backgroundColor: colors.opacity10 }} className="w-10 h-10 rounded-full items-center justify-center">
@@ -550,7 +519,7 @@ export const GlobalRagConfigPanel: React.FC = () => {
             </Typography>
           </TouchableOpacity>
         </View>
-      </Card>
+      </SettingsCard>
 
       {/* Modals */}
       <ConfirmDialog

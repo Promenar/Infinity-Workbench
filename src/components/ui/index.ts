@@ -18,3 +18,6 @@ export * from '../../features/settings/components/SettingsSection';
 export * from './AnimatedSearchBar';
 export * from './AnimatedInput';
 export * from './CollapsibleSection';
+export * from './SettingsCard';
+export * from './SettingsSectionHeader';
+export * from './SettingsInput';
