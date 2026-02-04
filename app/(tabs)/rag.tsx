@@ -54,6 +54,7 @@ export default function RagScreen() {
   const [TagCapsuleComponent, setTagCapsuleComponent] = useState<any>(null);
   const [TagManagerSheetComponent, setTagManagerSheetComponent] = useState<any>(null);
   const [TagAssignmentSheetComponent, setTagAssignmentSheetComponent] = useState<any>(null);
+
   const [ImagePreviewModalComponent, setImagePreviewModalComponent] = useState<any>(null);
 
   useEffect(() => {
@@ -68,7 +69,10 @@ export default function RagScreen() {
       setTagCapsuleComponent(() => TagCapsule);
       setTagManagerSheetComponent(() => TagManagerSheet);
       setTagAssignmentSheetComponent(() => TagAssignmentSheet);
+
       setImagePreviewModalComponent(() => ImagePreviewModal);
+
+      setImagePreviewModalComponent(() => ImagePreviewModalComponent);
 
       // Initialize processor with ref is done in effect below or render?
       // Better to do it in a separate effect when ref changes or component mounts.
@@ -213,10 +217,9 @@ export default function RagScreen() {
   const [assignmentDocId, setAssignmentDocId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Editor State
-  const [showEditor, setShowEditor] = useState(false);
-  const [editingDocId, setEditingDocId] = useState<string>('');
-  const [editingDocTitle, setEditingDocTitle] = useState<string>('');
+
+
+  // Refresh State
   const [refreshing, setRefreshing] = useState(false);
 
   // 确认弹窗状态
@@ -993,9 +996,7 @@ export default function RagScreen() {
                         }
                         onExtractGraph={(s) => handleExtractDoc(doc.id, s)}
                         onEdit={() => {
-                          setEditingDocId(doc.id);
-                          setEditingDocTitle(doc.title);
-                          setShowEditor(true);
+                          router.push({ pathname: '/rag/editor', params: { docId: doc.id, title: doc.title } });
                         }}
                         onShare={() => handleExportDoc(doc.id)}
                         onPress={() => {
@@ -1005,9 +1006,7 @@ export default function RagScreen() {
                             setPreviewImage(doc.thumbnailPath);
                           } else {
                             // Default action for docs: Open Editor
-                            setEditingDocId(doc.id);
-                            setEditingDocTitle(doc.title);
-                            setShowEditor(true);
+                            router.push({ pathname: '/rag/editor', params: { docId: doc.id, title: doc.title } });
                           }
                         }}
                       />
@@ -1107,24 +1106,7 @@ export default function RagScreen() {
               />
             )}
 
-            {showEditor && (
-              <FileEditorModal
-                visible={showEditor}
-                docId={editingDocId}
-                docTitle={editingDocTitle}
-                onClose={() => setShowEditor(false)}
-                onSave={async (content) => {
-                  try {
-                    await updateDocumentContent(editingDocId, content);
-                    showToast(t.common.save + t.common.success, 'success');
-                    setShowEditor(false);
-                    loadDocuments(); // Refresh to show potential status change (if re-vectorized)
-                  } catch (e) {
-                    showToast(t.common.save + t.common.error, 'error');
-                  }
-                }}
-              />
-            )}
+
           </Animated.View>
         </View>
       </DragDropContentView>
@@ -1285,85 +1267,6 @@ export default function RagScreen() {
         onConfirm={confirmState.onConfirm}
         onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
       />
-    </PageLayout>
+    </PageLayout >
   );
 }
-
-// 文档编辑器分量
-interface FileEditorModalProps {
-  visible: boolean;
-  docId: string;
-  docTitle: string;
-  onClose: () => void;
-  onSave: (content: string) => Promise<void>;
-}
-
-const FileEditorModal = ({ visible, docId, docTitle, onClose, onSave }: FileEditorModalProps) => {
-  const { isDark, colors } = useTheme();
-  const [content, setContent] = useState('');
-  const [loading, setLoading] = useState(true);
-  const insets = useSafeAreaInsets();
-  const { t } = useI18n();
-
-  const { getDocumentContent } = useRagStore.getState();
-
-  useEffect(() => {
-    if (visible && docId) {
-      loadFile();
-    }
-  }, [visible, docId]);
-
-  const loadFile = async () => {
-    setLoading(true);
-    try {
-      const text = await getDocumentContent(docId);
-      setContent(text);
-    } catch (e) {
-      console.error('Failed to load doc content:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (!visible) return null;
-
-  return (
-    <Modal visible={visible} animationType="slide">
-      <View className="flex-1 bg-white dark:bg-black">
-        <GlassHeader
-          title={docTitle}
-          subtitle="编辑文档内容"
-          leftAction={{
-            icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
-            onPress: onClose
-          }}
-          rightAction={{
-            icon: loading ? <ActivityIndicator size="small" /> : (
-              <Check size={24} color={isDark ? '#fff' : '#000'} />
-            ),
-            onPress: () => onSave(content)
-          }}
-        />
-        <View style={{ paddingTop: 100 + insets.top, paddingHorizontal: 20 }} className="flex-1">
-          {loading ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator size="large" color={colors[500]} />
-            </View>
-          ) : (
-            <TextInput
-              value={content}
-              onChangeText={setContent}
-              multiline
-              textAlignVertical="top"
-              autoFocus
-              className="flex-1 text-gray-900 dark:text-gray-100 text-base"
-              placeholder="开始输入内容..."
-              placeholderTextColor="#94a3b8"
-              style={{ lineHeight: 24 }}
-            />
-          )}
-        </View>
-      </View>
-    </Modal>
-  );
-};
