@@ -4,7 +4,7 @@ import Markdown, { MarkdownProps } from 'react-native-markdown-display';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Colors } from '../../../theme/colors';
 import { LLM_STRUCTURED_BLOCK_REGEX, LLM_TAG_START_REGEX } from '../../../lib/llm/patterns';
-import { FlashList } from '@shopify/flash-list';
+
 
 interface StreamingCardListProps {
     content: string;
@@ -41,7 +41,7 @@ function splitContentIntoCards(content: string): string[] {
 
 import { Typography } from '../../../components/ui/Typography';
 
-const FlashListAny = FlashList as any;
+
 
 const CardItem = React.memo(({ item, index, colors, markdownRules, markdownStyles, showIndex }: any) => {
     return (
@@ -92,23 +92,17 @@ export const StreamingCardList: React.FC<StreamingCardListProps> = ({
 
     return (
         <View style={styles.container}>
-            <FlashListAny
-                data={cards}
-                renderItem={({ item, index }: any) => (
-                    <CardItem
-                        item={item}
-                        index={index}
-                        colors={colors}
-                        markdownRules={markdownRules}
-                        markdownStyles={markdownStyles}
-                        showIndex={showIndex}
-                    />
-                )}
-                estimatedItemSize={100}
-                keyExtractor={(item: any, index: any) => `card-${index}`}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-            />
+            {cards.map((item, index) => (
+                <CardItem
+                    key={`card-${index}`}
+                    item={item}
+                    index={index}
+                    colors={colors}
+                    markdownRules={markdownRules}
+                    markdownStyles={markdownStyles}
+                    showIndex={showIndex}
+                />
+            ))}
         </View>
     );
 };

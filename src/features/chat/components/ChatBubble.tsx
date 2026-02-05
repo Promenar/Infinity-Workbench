@@ -669,6 +669,19 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   const handleShare = async () => {
     if (!bubbleRef.current) return;
     try {
+      // 🔑 等待视图渲染完全稳定后再截图
+      // 1. 使用 InteractionManager 确保动画和交互完成
+      // 2. 额外延迟确保复杂 Markdown（表格等）渲染完成
+      const { InteractionManager } = require('react-native');
+      await new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => {
+          setTimeout(resolve, 100); // 额外延迟确保视图树稳定
+        });
+      });
+
+      // 确保 ref 仍然有效（用户可能已离开）
+      if (!bubbleRef.current) return;
+
       const uri = await captureRef(bubbleRef.current, {
         format: 'png',
         quality: 0.9,
@@ -676,6 +689,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Snapshot failed', error);
+      // 用户友好提示
+      const { Alert } = require('react-native');
+      Alert.alert('分享失败', '无法捕获消息截图，请稍后重试');
     }
   };
 
@@ -1419,7 +1435,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
       <SelectTextModal
         isVisible={isModalVisible}
-        content={message.content || ''}
+        content={processedContent || message.content || ''}
         onClose={() => setModalVisible(false)}
         isDark={isDark}
         t={t}

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { PageLayout, Typography, GlassHeader } from '../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { FlashList } from '@shopify/flash-list';
+import { FlatList } from 'react-native'; // 替代 FlashList，详见下方注释
 import { ChevronLeft, Settings, ChevronDown } from 'lucide-react-native';
 import * as Haptics from '../../src/lib/haptics';
 import { useChatStore } from '../../src/store/chat-store';
@@ -43,9 +43,20 @@ import { graphExtractor } from '../../src/lib/rag/graph-extractor'; // ✅
 import * as Clipboard from 'expo-clipboard'; // ✅
 import { Platform as RNPlatform, Alert } from 'react-native'; // ✅
 import { emitToast } from '../../src/lib/utils/toast-emitter'; // ✅
-
-
-const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
+/**
+ * 🔑 架构决策：使用 FlatList 而非 FlashList
+ * 
+ * 原因：FlashList 在复杂 Markdown 内容（表格等）的场景下存在滚动回弹 bug，
+ * 这是一个已知的上游问题（@shopify/flash-list）。
+ * 
+ * 权衡：
+ * - FlatList 在文本为主的聊天场景下性能完全足够（100 条消息仅占 ~10MB）
+ * - FlashList 的 Cell 回收优势在文本场景下收益有限
+ * - 用户体验稳定性优先于理论性能
+ * 
+ * 相关文档：.agent/docs/archive/2026-02-05-flashlist-deprecation.md
+ */
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 
 export default function ChatDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -79,6 +90,7 @@ export default function ChatDetailScreen() {
   const { messages, sendMessage, loading, stop } = useChat(id);
   const listRef = useRef<any>(null);
   const scrollY = useSharedValue(0);
+
 
   // Title & Model editing state
   const [showTitleEditor, setShowTitleEditor] = React.useState(false);
@@ -442,7 +454,7 @@ export default function ChatDetailScreen() {
           }
 
           return (
-            <AnimatedFlashList
+            <AnimatedFlatList
               ref={listRef}
               inverted={false}
               data={messages}
@@ -494,26 +506,11 @@ export default function ChatDetailScreen() {
                   modelName={modelConfig?.name}
                   isLastAssistantMessage={index === lastAssistantIdx} // ✅ Correct logic
                   globalPendingIntervention={session?.pendingIntervention}
-                  onLayout={(event) => {
-                    const { height } = event.nativeEvent.layout;
-                    if (height > 0) {
-                      useChatStore.getState().updateMessageLayout(id, item.id, height);
-                    }
-                  }}
                 />
               )}
-
-              estimatedItemSize={400}
-              overrideItemLayout={(layout: { size?: number; span?: number }, item: Message) => {
-                if (item.layoutHeight) {
-                  layout.size = item.layoutHeight;
-                }
-              }}
-              onEndReachedThreshold={0.5}
-              drawDistance={2000}
-              overflowSize={500}
-              removeClippedSubviews={Platform.OS === 'android'}
-              getItemType={(item: any) => item.role}
+              keyExtractor={(item: Message) => item.id}
+              // 🔑 FlatList 对比测试：移除 FlashList 专属 props
+              removeClippedSubviews={false}
               contentContainerStyle={{
                 paddingTop: insets.top + 64 + 12,
                 paddingBottom: insets.bottom + 80,
