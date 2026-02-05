@@ -251,7 +251,16 @@ export default function ChatDetailScreen() {
   };
 
   const handleContentSizeChange = (_w: number, h: number) => {
+    // 🔑 记录上一次的高度，用于分批渲染检测
+    const previousHeight = contentHeightRef.current;
     contentHeightRef.current = h;
+
+    // 1. 如果还在初始加载阶段（分批渲染中），且用户从未打断，强制钉在底部
+    if (isInitialLoad && !userScrolledAway.value) {
+      scrollToBottom(false);
+      lastMessageCount.current = messages.length;
+      return;
+    }
 
     // 检测是否有新消息
     if (messages.length > lastMessageCount.current) {
@@ -269,9 +278,17 @@ export default function ChatDetailScreen() {
           scrollToBottom(false);
         }
       }
-    } else if (loading) {
-      // 🔑 Content updating: Only scroll if user hasn't scrolled away
-      if (!userScrolledAway.value) {
+    } else {
+      // 🔑 关键修复：处理分批渲染和流式输出
+      // 当 FlatList 分批渲染旧消息时，messages.length 不变，但 height 增加
+      // 此时如果用户本就在底部（未打断），应该保持在底部
+      const isGrowing = h > previousHeight;
+
+      if (isGrowing && !userScrolledAway.value && isAtBottom.value) {
+        // 只有当实际上是"在底部"的状态下，内容增长才需要自动跟随
+        scrollToBottom(false);
+      } else if (loading && !userScrolledAway.value) {
+        // AI 生成内容更新
         scrollToBottom(false);
       }
     }

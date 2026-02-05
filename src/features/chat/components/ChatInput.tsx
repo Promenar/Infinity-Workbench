@@ -464,18 +464,32 @@ export function ChatInput({
 
       if (!result.canceled) {
         const newImages: string[] = [];
-        // Ensure directory exists - using makeDirectoryAsync with intermediates: true handles existence check
+        // Ensure directory exists
         const imgDir = (FileSystem.documentDirectory || '') + 'images/';
-        await FileSystem.makeDirectoryAsync(imgDir, { intermediates: true });
+        try {
+          await FileSystem.makeDirectoryAsync(imgDir, { intermediates: true });
+        } catch (e) {
+          console.warn('[ChatInput] Failed to create image directory, using cache dir or original uri');
+        }
 
         for (const asset of result.assets) {
-          const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-          const dest = imgDir + filename;
-          await FileSystem.copyAsync({
-            from: asset.uri,
-            to: dest,
-          });
-          newImages.push(dest);
+          // 🔑 Fallback Strategy:
+          // Try to copy to internal storage for persistence.
+          // If execution fails (common in Release builds due to permissions/paths),
+          // fallback to using the original asset.uri directly.
+          try {
+            const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+            const dest = imgDir + filename;
+            await FileSystem.copyAsync({
+              from: asset.uri,
+              to: dest,
+            });
+            newImages.push(dest);
+          } catch (copyError) {
+            console.warn('[ChatInput] Copy failed, using original URI:', copyError);
+            // ✅ Fallback: Use original URI
+            newImages.push(asset.uri);
+          }
         }
 
         if (newImages.length > 0) {
@@ -488,7 +502,8 @@ export function ChatInput({
       setConfirmState({
         visible: true,
         title: t.chat.imageSelectionError,
-        message: t.chat.imageSelectionErrorMessage,
+        // ✅ Show actual error message for debugging
+        message: `${t.chat.imageSelectionErrorMessage}\n\nDebug Info: ${(e as Error).message}`,
         onConfirm: () => setConfirmState((prev) => ({ ...prev, visible: false })),
       });
     }
