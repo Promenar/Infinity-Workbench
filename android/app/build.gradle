@@ -81,7 +81,27 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// 🔑 根据任务动态获取 ABI 列表
+// 规则：发行版 (Release) 仅保留 arm64-v8a 以最小化体积；开发/调试版保留 arm64-v8a + x86_64 (兼容模拟器)
+def getAbiList() {
+    def taskNames = project.gradle.startParameter.taskNames.toString().toLowerCase()
+    if (taskNames.contains("release")) {
+        return ["arm64-v8a"]
+    }
+    return ["arm64-v8a", "x86_64"]
+}
+
 android {
+    // 🔑 ABI Split 优化：减小 APK 尺寸
+    splits {
+        abi {
+            enable true
+            reset()
+            def abiList = getAbiList()
+            abiList.each { include it }
+            universalApk false // 不生成通用 APK
+        }
+    }
 
         applicationVariants.all { variant ->
             variant.outputs.all { output ->
@@ -103,7 +123,11 @@ android {
                     }
                 }
                 
-                def newName = "Nexara-v${versionName}-${typeLabel}${signLabel}-${date}.apk"
+                // 🔑 ABI Split: 添加架构后缀
+                def abiFilter = output.getFilter(com.android.build.OutputFile.ABI)
+                def abiLabel = abiFilter ? "-${abiFilter}" : ""
+                
+                def newName = "Nexara-v${versionName}-${typeLabel}${signLabel}${abiLabel}-${date}.apk"
                 outputFileName = newName
             }
         }

@@ -538,10 +538,10 @@ export default function SettingsScreen() {
             </SettingsSection>
 
 
-            <SettingsSection title={t.settings.workbench.title}>
+            <SettingsSection title={`${t.settings.workbench.title} 🧪`}>
               <SettingsItem
                 icon={Monitor}
-                title={t.settings.workbench.title}
+                title={`${t.settings.workbench.title} 🧪`}
                 subtitle={t.settings.workbench.subtitle}
                 showChevron
                 isLast
@@ -549,7 +549,7 @@ export default function SettingsScreen() {
               />
             </SettingsSection>
 
-            <SettingsSection title={t.settings.intelligenceSection}>
+            <SettingsSection title={`${t.settings.intelligenceSection} 🧪`}>
               <SettingsItem
                 icon={Sparkles}
                 title={t.settings.agentSkills.title}
@@ -560,7 +560,7 @@ export default function SettingsScreen() {
               />
               <SettingsItem
                 icon={Cpu}
-                title={t.settings.localModels.title}
+                title={`${t.settings.localModels.title} 🧪`}
                 subtitle={t.settings.localModels.subtitle}
                 showChevron
                 isLast

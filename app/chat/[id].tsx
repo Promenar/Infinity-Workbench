@@ -285,11 +285,11 @@ export default function ChatDetailScreen() {
     if (loading) {
       // 🤖 AI开始生成/正在生成
 
-      // 🆕 如果是刚开始生成（或者恢复生成），且当前在底部，强制重置打断状态
-      // 这解决了"开始流式输出后没有自动追踪"的问题
-      if (isAtBottom.value) {
-        userScrolledAway.value = false;
-      }
+      // 🔑 AI 开始生成时，强制重置打断状态并滚动到底部
+      // 这解决了 FlatList 版本 "开始流式输出后没有自动追踪" 的问题
+      userScrolledAway.value = false;
+      isAtBottom.value = true;
+      listRef.current?.scrollToEnd({ animated: false });
 
       if (messages.length > 0) {
         const lastMessage = messages[messages.length - 1];
@@ -513,7 +513,7 @@ export default function ChatDetailScreen() {
               removeClippedSubviews={false}
               contentContainerStyle={{
                 paddingTop: insets.top + 64 + 12,
-                paddingBottom: insets.bottom + 80,
+                paddingBottom: insets.bottom + 120, // 🔑 增加底部间距，避免模型戳紧贴输入栏
               }}
               onLayout={() => setIsListReady(true)}
               onContentSizeChange={handleContentSizeChange}
