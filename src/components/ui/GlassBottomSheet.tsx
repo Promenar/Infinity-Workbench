@@ -68,7 +68,7 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                         minHeight: height === 'auto' ? 100 : undefined,
 
 
-                        backgroundColor: `rgba(${isDark ? Glass.Sheet.baseColor.dark : Glass.Sheet.baseColor.light}, ${isDark ? Glass.Sheet.opacity.dark : Glass.Sheet.opacity.light})`,
+                        backgroundColor: 'transparent', // ✅ Changed: Removed specific background color
                         borderRadius: 32,
                         overflow: 'hidden',
                         borderWidth: 1,
@@ -81,11 +81,21 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                     }}
                 >
                     <BlurView
-                        intensity={isDark ? Glass.Sheet.intensity : Glass.Sheet.intensity}
+                        intensity={isDark ? Glass.Header.intensity : Glass.Header.intensity} // ✅ Changed: Use Header intensity (stronger)
                         style={{ flex: height === 'auto' ? undefined : 1, paddingTop: 24 }}
-                        tint={isDark ? Glass.Sheet.tint.dark : Glass.Sheet.tint.light}
+                        tint={isDark ? Glass.Header.tint.dark : Glass.Header.tint.light} // ✅ Changed: Use Header tint
                         experimentalBlurMethod='dimezisBlurView'
                     >
+                        {/* ✅ Added: Internal Overlay for consistent "frosted" look */}
+                        <View
+                            style={{
+                                ...StyleSheet.absoluteFillObject,
+                                backgroundColor: isDark
+                                    ? `rgba(0, 0, 0, ${Glass.Header.opacity.dark})`
+                                    : `rgba(255, 255, 255, ${Glass.Header.opacity.light})`,
+                            }}
+                        />
+
                         <View
                             style={{
                                 flexDirection: 'row',

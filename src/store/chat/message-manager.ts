@@ -202,14 +202,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
 
     return {
         addMessage: async (sessionId: string, message: Message) => {
-            // 🔑 Phase 4b: 先写 SQLite
-            try {
-                await SessionRepository.addMessage(sessionId, message);
-            } catch (e) {
-                console.warn('[MessageManager] DB addMessage failed:', e);
-            }
-
-            // 更新 Zustand
+            // 1. Optimistic Update (Zustand) - 立即更新 UI
             set((state) => ({
                 sessions: state.sessions.map((s) => {
                     if (s.id === sessionId) {
@@ -224,6 +217,16 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                     return s;
                 }),
             }));
+
+            // 2. Async Persistence (SQLite) - 后台写入
+            try {
+                // 不阻塞 UI，但仍需等待完成以保证数据一致性（如果后续逻辑依赖 DB）
+                // 由于 generateMessage 不 await addMessage，这里 await 只会影响 addMessage 本身的 Promise 状态，不会阻塞主线程
+                await SessionRepository.addMessage(sessionId, message);
+            } catch (e) {
+                console.warn('[MessageManager] DB addMessage failed:', e);
+                // TODO: 如果因为 DB 失败导致回滚 UI？目前暂不处理，依赖后续刷新或错误提示
+            }
         },
 
         updateMessageContent: (

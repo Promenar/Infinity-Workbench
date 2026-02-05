@@ -56,8 +56,10 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
         return (
             <TouchableOpacity
                 onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setExecutionMode(sessionId, m);
+                    setTimeout(() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setExecutionMode(sessionId, m);
+                    }, 10);
                 }}
                 className={'flex-1 flex-col items-center justify-center p-4 rounded-2xl'}
                 style={{
@@ -80,8 +82,10 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
         <>
             <TouchableOpacity
                 onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setVisible(true);
+                    setTimeout(() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setVisible(true);
+                    }, 10);
                 }}
                 className="flex-row items-center bg-zinc-100 dark:bg-zinc-800/60 px-3 py-1.5 rounded-full gap-2 border border-transparent dark:border-zinc-700/50"
             >
@@ -121,6 +125,31 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                         </View>
 
                         <View className="gap-3">
+                            {/* Time Injection Toggle */}
+                            <View
+                                className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
+                                style={{
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'
+                                }}
+                            >
+                                <View className="flex-1 mr-4">
+                                    <Typography variant="body" className="font-bold dark:text-zinc-100">{t.settings.toolbox.timeAwareness}</Typography>
+                                    <Typography variant="caption" className="text-[10px] opacity-60 dark:text-zinc-400 mt-0.5">
+                                        {t.settings.toolbox.timeAwarenessDesc}
+                                    </Typography>
+                                </View>
+                                <Switch
+                                    value={session.options?.enableTimeInjection ?? true}
+                                    onValueChange={(v) => {
+                                        setTimeout(() => {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            updateSessionOptions(sessionId, { enableTimeInjection: v });
+                                        }, 10);
+                                    }}
+                                />
+                            </View>
+
                             {/* Agent Skills Toggle */}
                             <View
                                 className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
@@ -140,8 +169,10 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                                 <Switch
                                     value={toolsEnabled}
                                     onValueChange={(v) => {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        updateSessionOptions(sessionId, { toolsEnabled: v });
+                                        setTimeout(() => {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            updateSessionOptions(sessionId, { toolsEnabled: v });
+                                        }, 10);
                                     }}
                                 />
                             </View>
@@ -165,33 +196,10 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                                 <Switch
                                     value={session.options?.strictMode ?? false}
                                     onValueChange={(v) => {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        updateSessionOptions(sessionId, { strictMode: v });
-                                    }}
-                                />
-                            </View>
-
-                            {/* Time Injection Toggle */}
-                            <View
-                                className={'flex-row items-center justify-between p-5 rounded-3xl border shadow-sm'}
-                                style={{
-                                    backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
-                                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                                    opacity: toolsEnabled ? 1 : 0.4
-                                }}
-                                pointerEvents={toolsEnabled ? 'auto' : 'none'}
-                            >
-                                <View className="flex-1 mr-4">
-                                    <Typography variant="body" className="font-bold dark:text-zinc-100">{t.settings.toolbox.timeAwareness}</Typography>
-                                    <Typography variant="caption" className="text-[10px] opacity-60 dark:text-zinc-400 mt-0.5">
-                                        {t.settings.toolbox.timeAwarenessDesc}
-                                    </Typography>
-                                </View>
-                                <Switch
-                                    value={session.options?.enableTimeInjection ?? true}
-                                    onValueChange={(v) => {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        updateSessionOptions(sessionId, { enableTimeInjection: v });
+                                        setTimeout(() => {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            updateSessionOptions(sessionId, { strictMode: v });
+                                        }, 10);
                                     }}
                                 />
                             </View>
@@ -238,8 +246,10 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                                     <TouchableOpacity
                                         key={m}
                                         onPress={() => {
-                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                            setExecutionMode(sessionId, m);
+                                            setTimeout(() => {
+                                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                                setExecutionMode(sessionId, m);
+                                            }, 10);
                                         }}
                                         className={'flex-1 items-center justify-center py-2.5 z-10'}
                                     >
