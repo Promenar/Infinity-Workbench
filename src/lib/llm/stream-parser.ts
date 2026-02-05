@@ -27,7 +27,11 @@ export class StreamParser {
 
     // Buffers for specific blocks
     private startTag: string = ''; // Stores which tag started the block
-    private bracketCount: number = 0; // 🧠 Bracket Counting for JSON optimization
+
+    // 🧠 Context Awareness State
+    private inFence: boolean = false;
+    private inInlineCode: boolean = false;
+    private fenceMarker: string = ''; // e.g. "```" or "`"
 
     constructor(provider: ProviderType = 'openai') {
         this.provider = provider;
@@ -47,89 +51,177 @@ export class StreamParser {
             // Break if buffer empty
             if (this.buffer.length === 0) break;
 
+            // =================================================================================
+            // State 1: IDLE (Scanning for Tags OR Code Starts)
+            // =================================================================================
             if (this.state === 'IDLE') {
-                // Scan for any known start tag
-                // UpdatedRegex: Matches <tag followed by space/> OR <!-- (start of comment)
-                // We don't force space after !-- because <!--THINKING is valid
-                const tagRegex = /<(?:(think|thought|plan|tool_code|tool_calls|tools|tool_call|call)(?=[\s>])|!--)/i;
-                const match = tagRegex.exec(this.buffer);
 
-                if (!match) {
+                // 🛡️ SUB-STATE: Inside Code Block (Fence)
+                if (this.inFence) {
+                    // Look for the closing fence
+                    // It must allow newlines before it (usually)
+                    // We just look for the marker string literally
+                    const closeIdx = this.buffer.indexOf(this.fenceMarker);
+
+                    if (closeIdx !== -1) {
+                        // Found it!
+                        // Consume everything up to and including the marker as CONTENT
+                        const segment = this.buffer.slice(0, closeIdx + this.fenceMarker.length);
+                        outputContent += segment;
+                        this.buffer = this.buffer.slice(closeIdx + this.fenceMarker.length);
+
+                        // Reset state
+                        this.inFence = false;
+                        this.fenceMarker = '';
+                        continue;
+                    } else {
+                        // Not found yet.
+                        // Safe optimization: consume strictly everything except the last few chars 
+                        // that *might* form the start of the marker.
+                        // But finding the marker is fast.
+                        // We must NOT consume the whole buffer unless we are sure the marker isn't split.
+                        // Let's keep a small window or just keep the buffer?
+                        // If buffer gets too large (e.g. > 1KB) and no fence, we can dump some?
+                        // For safety/simplicity, we just output everything but leave a tail overlapping window?
+                        // Actually, if we just break, the next chunk appends.
+                        // To allow streaming output of the code block:
+                        if (this.buffer.length > 20) {
+                            const safeLen = this.buffer.length - 10; // Keep 10 chars for safety overlap
+                            outputContent += this.buffer.slice(0, safeLen);
+                            this.buffer = this.buffer.slice(safeLen);
+                        }
+                        break;
+                    }
+                }
+
+                // 🛡️ SUB-STATE: Inside Inline Code
+                if (this.inInlineCode) {
+                    const closeIdx = this.buffer.indexOf(this.fenceMarker); // usually "`" or "``"
+                    if (closeIdx !== -1) {
+                        outputContent += this.buffer.slice(0, closeIdx + this.fenceMarker.length);
+                        this.buffer = this.buffer.slice(closeIdx + this.fenceMarker.length);
+                        this.inInlineCode = false;
+                        this.fenceMarker = '';
+                        continue;
+                    } else {
+                        // Streaming optimization
+                        if (this.buffer.length > 20) {
+                            const safeLen = this.buffer.length - 10;
+                            outputContent += this.buffer.slice(0, safeLen);
+                            this.buffer = this.buffer.slice(safeLen);
+                        }
+                        break;
+                    }
+                }
+
+                // 🛡️ NORMAL: Look for Tags OR Code Starts
+                // We must find which one happens FIRST.
+
+                // 1. Tag Regex from before
+                const tagRegex = /<(?:(think|thought|plan|tool_code|tool_calls|tools|tool_call|call)(?=[\s>])|!--)/i;
+                const tagMatch = tagRegex.exec(this.buffer);
+
+                // 2. Code Start Regex
+                // Matches "```", "~~~" (blocks) OR "`" (inline)
+                // Note: We need to capture the exact marker to match closing.
+                // We prefer "```" over "`" if both start at same index.
+                const codeRegex = /(`{3,}|~{3,}|`{1,2})/;
+                const codeMatch = codeRegex.exec(this.buffer);
+
+                const tagIdx = tagMatch ? tagMatch.index : -1;
+                const codeIdx = codeMatch ? codeMatch.index : -1;
+
+                // Decision: Who wins?
+                let winner: 'tag' | 'code' | 'none' = 'none';
+
+                if (tagIdx !== -1 && codeIdx !== -1) {
+                    winner = tagIdx < codeIdx ? 'tag' : 'code';
+                } else if (tagIdx !== -1) {
+                    winner = 'tag';
+                } else if (codeIdx !== -1) {
+                    winner = 'code';
+                }
+
+                // -- NO MATCH --
+                if (winner === 'none') {
+                    // Check for partials (trailing '<' or trailing '`')
+                    // If buffer ends with '<' or '`', wait for more.
+                    // Otherwise output content.
+
                     const lastOpen = this.buffer.lastIndexOf('<');
-                    if (lastOpen !== -1 && lastOpen > this.buffer.length - 15) {
-                        outputContent += this.buffer.slice(0, lastOpen);
-                        this.buffer = this.buffer.slice(lastOpen);
+                    const lastBacktick = this.buffer.lastIndexOf('`');
+                    const lastTilde = this.buffer.lastIndexOf('~');
+
+                    const dangerZone = Math.max(lastOpen, lastBacktick, lastTilde);
+
+                    if (dangerZone !== -1 && dangerZone > this.buffer.length - 10) {
+                        // We are close to end, keep safe buffer
+                        outputContent += this.buffer.slice(0, dangerZone);
+                        this.buffer = this.buffer.slice(dangerZone);
                     } else {
                         outputContent += this.buffer;
                         this.buffer = '';
                     }
                     break;
-                } else {
-                    const tagIdx = match.index;
-                    if (tagIdx > 0) {
-                        outputContent += this.buffer.slice(0, tagIdx);
-                        this.buffer = this.buffer.slice(tagIdx);
+                }
+
+                // -- CODE WINNER --
+                if (winner === 'code' && codeMatch) {
+                    // Output text before code
+                    outputContent += this.buffer.slice(0, codeIdx);
+                    this.buffer = this.buffer.slice(codeIdx);
+
+                    // Determine type
+                    const marker = codeMatch[0];
+                    if (marker.length >= 3) {
+                        this.inFence = true;
+                    } else {
+                        this.inInlineCode = true;
                     }
+                    this.fenceMarker = marker; // "`" or "```" or "~~~~"
 
+                    // Consume marker
+                    // Note: We don't output marker yet? 
+                    // Wait, we SHOULD output the marker as content! Code blocks are content.
+                    outputContent += marker;
+                    this.buffer = this.buffer.slice(marker.length);
+                    continue;
+                }
+
+                // -- TAG WINNER --
+                if (winner === 'tag' && tagMatch) {
+                    // Output text before tag
+                    outputContent += this.buffer.slice(0, tagIdx);
+                    this.buffer = this.buffer.slice(tagIdx);
+
+                    // (Reuse existing logic below)
                     // Determine detected tag name
-                    // match[1] is the tag name if it's not !--, match[0] is !-- if match[1] undefined
-                    let tagName = match[1] ? match[1].toLowerCase() : '!--';
-
+                    let tagName = tagMatch[1] ? tagMatch[1].toLowerCase() : '!--';
                     this.startTag = tagName;
 
-                    // If it's <!--, check if it's THINKING_START
+                    // ... [Logic for !-- THINKING check] ...
                     if (tagName === '!--') {
-                        // More flexible detection for <!-- THINKING_START --> allowing variable spaces
-                        // We check if the buffer *starts* with a thinking block marker
-                        // We need enough buffer to decide.
-
-                        // Regex to confirm this comment IS a thinking block
-                        // Matches <!-- followed by optional space, then THINKING_START
                         const thinkStartRegex = /^<!--\s*THINKING_START/i;
                         const potentialMatch = thinkStartRegex.exec(this.buffer);
 
                         if (potentialMatch) {
-                            // We found it!
                             this.state = 'IN_THINK';
-                            // Advance buffer past the marker tag
-                            // We need to find closer of the opening tag? Usually -->
-                            const closeCommentIdx = this.buffer.indexOf('-->');
-                            if (closeCommentIdx !== -1) {
-                                // Standard <!-- THINKING_START -->
-                                this.buffer = this.buffer.slice(closeCommentIdx + 3);
+                            // Consume marker if possible
+                            const fullStartTagRegex = /^<!--\s*THINKING_START\s*(-->)?/i;
+                            const fullMatch = fullStartTagRegex.exec(this.buffer);
+                            if (fullMatch) {
+                                this.buffer = this.buffer.slice(fullMatch[0].length);
                             } else {
-                                // Wait for closing --> of the start tag? 
-                                // Actually usually users write <!-- THINKING_START --> content...
-                                // But if we are strict, we might just consume the match length?
-                                // Let's just consume the matched prefix "<!-- THINKING_START" 
-                                // and assume the "-->" is part of the tag or immediately follows?
-                                // To be safe, if we see "<!--THINKING_START-->", we strip it.
-                                // If "-->" is missing, we wait?
-
-                                // Simpler approach: if we match the keyword, we enter IN_THINK mode.
-                                // We remove the marker from buffer if it exists fully.
-
-                                const fullStartTagRegex = /^<!--\s*THINKING_START\s*(-->)?/i;
-                                const fullMatch = fullStartTagRegex.exec(this.buffer);
-                                if (fullMatch) {
-                                    this.buffer = this.buffer.slice(fullMatch[0].length);
-                                } else {
-                                    // Should not happen if check passed
-                                    this.buffer = this.buffer.slice(potentialMatch[0].length);
-                                }
+                                this.buffer = this.buffer.slice(potentialMatch[0].length);
                             }
                             continue;
                         } else {
-                            // It is a comment, but NOT a thinking start (or partial).
-                            // Check for partial
+                            // Partial check
                             const partialMatch = /^<!--\s*T?H?I?N?K?I?N?G?_?S?T?A?R?T?$/i.exec(this.buffer);
-                            if (partialMatch) {
-                                // Wait for more data
-                                break;
-                            } else {
-                                // It's a normal comment (e.g. <!-- hello -->), treat as text
-                                // We consumed nothing, but we need to advance to avoid infinite loop
-                                // Just output the '<' and continue
+                            if (partialMatch) break; // Wait
+                            else {
+                                // Not our special comment, normal comment. Treat as content.
+                                // We consume just the '<' to advance
                                 outputContent += '<';
                                 this.buffer = this.buffer.slice(1);
                                 continue;
@@ -149,11 +241,16 @@ export class StreamParser {
                         } else { break; }
                     } else {
                         this.state = 'IN_TOOL_XML';
-                        this.bracketCount = 0; // Reset counter
+                        // this.bracketCount = 0; 
                         break;
                     }
                 }
-            } else if (this.state === 'IN_THINK') {
+
+            }
+            // =================================================================================
+            // State: IN_THINK / IN_PLAN / IN_TOOL_XML (Unchanged)
+            // =================================================================================
+            else if (this.state === 'IN_THINK') {
                 // Standard XML tags or HTML comment marker
                 const endRegex = /(<\/think>|<\/thought>|<!--\s*THINKING_END\s*-->)/i;
                 const match = endRegex.exec(this.buffer);
@@ -165,8 +262,6 @@ export class StreamParser {
                     this.buffer = this.buffer.substring(endIdx + endTag.length);
                     this.state = 'IDLE';
                 } else {
-                    // No end tag yet, check for partial end tag at the end of buffer
-                    // (to prevent splitting the tag across chunks)
                     const partialMatch = /<(\/?t?h?i?n?k?)?$/i.exec(this.buffer);
                     const partialComment = /<!?-?-?\s?T?H?I?N?K?I?N?G?_?E?N?D?\s?-?-?>?$/i.exec(this.buffer);
 
@@ -194,11 +289,6 @@ export class StreamParser {
                 const match = closeRegex.exec(this.buffer);
                 if (match) {
                     const fullBlock = this.buffer.slice(0, match.index + match[0].length);
-
-                    // 🧠 OPTIMIZATION: Bracket Counting could go here if we were parsing incrementally,
-                    // but we are extracting specific blocks. 
-                    // However, for generic JSON tools, checking valid JSON structure avoids heavy regex on malformed data.
-
                     const tools = this.parseTools(fullBlock);
                     if (tools.length > 0) outputToolCalls.push(...tools);
 
