@@ -25,6 +25,8 @@ export const createTables = async () => {
         active_task TEXT, -- JSON
         stats TEXT, -- JSON (billing usage)
         options TEXT, -- JSON (webSearch, reasoning, toolsEnabled)
+        active_mcp_server_ids TEXT, -- JSON Array
+        active_skill_ids TEXT, -- JSON Array
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );

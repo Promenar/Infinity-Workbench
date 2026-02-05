@@ -132,9 +132,6 @@ export default function ChatDetailScreen() {
     if (isLocal && isCurrentlyEnabled) {
       console.log('[ChatDetail] Auto-disabling tools for local model');
       useChatStore.getState().updateSessionOptions(id, { toolsEnabled: false });
-    } else if (!isLocal && !isCurrentlyEnabled) {
-      console.log('[ChatDetail] Auto-enabling tools for cloud model');
-      useChatStore.getState().updateSessionOptions(id, { toolsEnabled: true });
     }
   }, [currentProvider?.type, id]);
 

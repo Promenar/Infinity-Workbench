@@ -287,4 +287,32 @@ export const migrateDatabase = async () => {
     console.error('[DB Migration] Migration failed:', error);
     // Don't throw, just log. We don't want to crash app on startup for non-critical migration failures
   }
+
+  // Migration 10: Add active_mcp/skill_ids to sessions
+  try {
+    const sessionCols = (await db.execute('PRAGMA table_info(sessions)')).rows?.map((row: any) => row.name as string) || [];
+
+    if (!sessionCols.includes('active_mcp_server_ids')) {
+      console.log('[DB Migration] Adding active_mcp_server_ids to sessions...');
+      await db.execute('ALTER TABLE sessions ADD COLUMN active_mcp_server_ids TEXT');
+    }
+
+    if (!sessionCols.includes('active_skill_ids')) {
+      console.log('[DB Migration] Adding active_skill_ids to sessions...');
+      await db.execute('ALTER TABLE sessions ADD COLUMN active_skill_ids TEXT');
+    }
+
+    // 🔍 修复：强制检查 options 和 rag_options，防止 Migration 4.5 漏网
+    if (!sessionCols.includes('options')) {
+      console.log('[DB Migration] Recovering missing options column in sessions...');
+      await db.execute('ALTER TABLE sessions ADD COLUMN options TEXT');
+    }
+
+    if (!sessionCols.includes('rag_options')) {
+      console.log('[DB Migration] Recovering missing rag_options column in sessions...');
+      await db.execute('ALTER TABLE sessions ADD COLUMN rag_options TEXT');
+    }
+  } catch (e) {
+    console.warn('[DB Migration] Migration 10 failed:', e);
+  }
 };

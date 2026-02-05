@@ -18,8 +18,8 @@ export async function createSession(session: Session): Promise<void> {
       id, agent_id, title, last_message, time, unread, model_id, custom_prompt,
       is_pinned, scroll_offset, draft, execution_mode, loop_status,
       pending_intervention, approval_request, rag_options, inference_params,
-      active_task, stats, options, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      active_task, stats, options, active_mcp_server_ids, active_skill_ids, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             session.id,
             session.agentId,
@@ -41,6 +41,8 @@ export async function createSession(session: Session): Promise<void> {
             session.activeTask ? JSON.stringify(session.activeTask) : null,
             session.stats ? JSON.stringify(session.stats) : null,
             session.options ? JSON.stringify(session.options) : null,
+            session.activeMcpServerIds ? JSON.stringify(session.activeMcpServerIds) : null,
+            session.activeSkillIds ? JSON.stringify(session.activeSkillIds) : null,
             now,
             now,
         ]
@@ -91,6 +93,8 @@ export async function updateSession(id: string, updates: Partial<Session>): Prom
     if (updates.activeTask !== undefined) { setClauses.push('active_task = ?'); values.push(updates.activeTask ? JSON.stringify(updates.activeTask) : null); }
     if (updates.stats !== undefined) { setClauses.push('stats = ?'); values.push(updates.stats ? JSON.stringify(updates.stats) : null); }
     if (updates.options !== undefined) { setClauses.push('options = ?'); values.push(updates.options ? JSON.stringify(updates.options) : null); }
+    if (updates.activeMcpServerIds !== undefined) { setClauses.push('active_mcp_server_ids = ?'); values.push(updates.activeMcpServerIds ? JSON.stringify(updates.activeMcpServerIds) : null); }
+    if (updates.activeSkillIds !== undefined) { setClauses.push('active_skill_ids = ?'); values.push(updates.activeSkillIds ? JSON.stringify(updates.activeSkillIds) : null); }
 
     if (setClauses.length === 0) return;
 
@@ -98,7 +102,49 @@ export async function updateSession(id: string, updates: Partial<Session>): Prom
     values.push(Date.now());
     values.push(id);
 
-    await db.execute(`UPDATE sessions SET ${setClauses.join(', ')} WHERE id = ?`, values);
+    const sql = `UPDATE sessions SET ${setClauses.join(', ')} WHERE id = ?`;
+
+    try {
+        await db.execute(sql, values);
+    } catch (e: any) {
+        // 🛡️ Self-healing: 自动修复缺失字段 (Schema Drift Auto-Fix)
+        const errorStr = String(e);
+        if (errorStr.includes('no such column')) {
+            console.warn('[SessionRepository] Schema drift detected, attempting self-repair...', errorStr);
+
+            try {
+                // 1. 获取当前表结构
+                const result = await db.execute('PRAGMA table_info(sessions)');
+                const columns = ((result.rows as any)._array || (result.rows as any) || [])
+                    .map((row: any) => row.name);
+
+                // 2. 补全可能缺失的列
+                const missingCols: string[] = [];
+                if (updates.options !== undefined && !columns.includes('options')) missingCols.push('options');
+                if (updates.ragOptions !== undefined && !columns.includes('rag_options')) missingCols.push('rag_options');
+                if (updates.activeMcpServerIds !== undefined && !columns.includes('active_mcp_server_ids')) missingCols.push('active_mcp_server_ids');
+                if (updates.activeSkillIds !== undefined && !columns.includes('active_skill_ids')) missingCols.push('active_skill_ids');
+                if (updates.stats !== undefined && !columns.includes('stats')) missingCols.push('stats');
+                if (updates.activeTask !== undefined && !columns.includes('active_task')) missingCols.push('active_task');
+
+                for (const col of missingCols) {
+                    console.log(`[SessionRepository] Auto-creating missing column: ${col}`);
+                    await db.execute(`ALTER TABLE sessions ADD COLUMN ${col} TEXT`);
+                }
+
+                // 3. 重试更新
+                if (missingCols.length > 0) {
+                    await db.execute(sql, values);
+                    console.log('[SessionRepository] Self-repair successful, update retried.');
+                    return;
+                }
+            } catch (repairError) {
+                console.error('[SessionRepository] Self-repair failed:', repairError);
+            }
+        }
+        // 如果修复失败或非 Schema 错误，重新抛出
+        throw e;
+    }
 }
 
 /**
@@ -284,6 +330,8 @@ function rowToSession(row: any): Session {
         activeTask: row.active_task ? JSON.parse(row.active_task) : undefined,
         stats: row.stats ? JSON.parse(row.stats) : undefined,
         options: row.options ? JSON.parse(row.options) : undefined,
+        activeMcpServerIds: row.active_mcp_server_ids ? JSON.parse(row.active_mcp_server_ids) : undefined,
+        activeSkillIds: row.active_skill_ids ? JSON.parse(row.active_skill_ids) : undefined,
     };
 }
 
