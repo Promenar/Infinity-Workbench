@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput } from 'react-native';
 import { ScrollView, NativeSyntheticEvent, NativeScrollEvent, Platform } from 'react-native';
 import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
@@ -520,8 +520,10 @@ const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
     const scrollViewRef = React.useRef<ScrollView>(null);
     const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
-    const [isCollapsed, setIsCollapsed] = useState(!isMessageGenerating); // 🆕 初始状态：生成中展开，非生成中折叠
+    const [isCollapsed, setIsCollapsed] = useState(!isMessageGenerating); // 生成中展开，非生成中折叠
     const [hasManuallyToggled, setHasManuallyToggled] = useState(false);
+    // 🔑 追踪此 Timeline 是否曾经处于生成状态（用于区分老消息和当前生成中的消息）
+    const wasEverGenerating = useRef(isMessageGenerating);
     const stepsCount = steps.length;
     const { isDark } = useTheme();
     const { t } = useI18n();
@@ -536,19 +538,32 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
         }
     }, [stepsCount, isAutoScrollEnabled, lastStepContentLength]);
 
-    // 🔑 自动折叠/展开逻辑：仅在用户未手动干预时生效
+    // 🔑 自动折叠/展开逻辑：仅对「曾经生成过」的消息生效
     useEffect(() => {
         if (hasManuallyToggled) return;
 
+        // 🔑 记录此 Timeline 是否曾处于生成状态
         if (isMessageGenerating) {
-            setIsCollapsed(false); // 正在生成时自动展开
+            wasEverGenerating.current = true;
+        }
+
+        // 🔑 如果此 Timeline 从未处于生成状态（老消息），不做任何自动状态变更
+        // 这可防止新消息生成时，老消息的 Timeline 意外展开再折叠
+        if (!wasEverGenerating.current) return;
+
+        if (isMessageGenerating) {
+            // ⏳ DEBOUNCE START: 延迟展开以过滤竞态抖动 (如用户发送消息瞬间)
+            // 只有当生成状态持续超过 150ms 时才展开，这足以让 User 消息上屏并修正 isGenerating 判定
+            const timer = setTimeout(() => {
+                setIsCollapsed(false);
+            }, 150);
+            return () => clearTimeout(timer);
         } else {
-            // 生成结束或处于非生成状态时，如果已有步骤，则将其闭合
+            // 生成结束，延迟折叠
             if (stepsCount > 0) {
-                // ⏳ DEBOUNCE: 延迟闭合以防止状态闪烁导致的误折叠
                 const timer = setTimeout(() => {
                     setIsCollapsed(true);
-                }, 1000); // 1秒缓冲期，确保真正结束后再折叠
+                }, 1000);
                 return () => clearTimeout(timer);
             }
         }

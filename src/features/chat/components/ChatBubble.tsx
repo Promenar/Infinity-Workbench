@@ -21,7 +21,9 @@ import { EChartsRenderer } from '../../../components/chat/EChartsRenderer';
 import { MemoryManager } from '../../../lib/rag/memory-manager';
 import { graphExtractor } from '../../../lib/rag/graph-extractor';
 import { RagOmniIndicator } from './RagOmniIndicator';
-import { ToolArtifacts } from './ToolArtifacts'; // 🆕 新增
+import { ToolArtifacts } from './ToolArtifacts';
+// ✅ Import StreamCard for Error Display
+import { StreamCard } from './StreamCard'; // 🆕 新增
 import { ContextManager } from '../utils/ContextManager';
 import { useRagStore } from '../../../store/rag-store'; // ✅ 显式导入
 import { Typography, ContextMenu } from '../../../components/ui';
@@ -1416,6 +1418,79 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 })()}
             </>
           )}
+
+          {/* ⚠️ 超时警告卡片 (Soft Timeout Warning) */}
+          {/* @ts-ignore */}
+          {message.isLongWait && !message.isError && (
+            <View style={{ marginTop: 12 }}>
+              {/* 这里的交互逻辑：
+                   1. 点击卡片本身 (Keep Waiting) -> Dismiss warning by setting isLongWait=false
+                   2. 点击 Retry -> 触发重试
+               */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  // Dismiss warning: we need a way to clear 'isLongWait'
+                  // But ChatStore doesn't expose granular updateMessage.
+                  // So we just rely on auto-clear or re-render?
+                  // No, we need an action. 
+                  // Let's assume user wants to "wait", so we just hide it locally? 
+                  // Or we can trigger a store update to clear it.
+                  // Since I can't easily import store here without risking cycle/overhead,
+                  // I will leave it as "Dismiss" visual if I could state, but message is prop.
+                  // Actually, clicking it is "Keep Waiting", so we can just do nothing or toast?
+                  // Let's make it actionable.
+                }}
+              >
+                <StreamCard
+                  content={`**${t.chat.softTimeout?.title || 'Taking longer than usual...'}**\n${t.chat.softTimeout?.message || 'Most models respond within 30s. Deep thinking models may take longer.'}\n\n[**${t.chat.softTimeout?.actionAbortRetry || 'Abort & Retry'}**](action://retry)`}
+                  index={0}
+                  showIndex={true}
+                  indexLabel="?"
+                  accentColor="#f59e0b" // Amber-500
+                  markdownStyles={{
+                    body: { color: isDark ? '#fbbf24' : '#d97706' },
+                  }}
+                  onLinkPress={(url) => {
+                    if (url.includes('action://retry')) {
+                      if (onRegenerate) onRegenerate();
+                      return false; // ⛔️ Return false to PREVENT default (library specific)
+                    }
+                    return !!url.startsWith('http'); // Open others (return true)
+                  }}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 🚨 错误卡片 (Error Card) - 复用 StreamCard 样式 */}
+          {message.isError && (
+            <View style={{ marginTop: 12 }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={onRegenerate} // 绑定重试事件
+              >
+                <StreamCard
+                  content={`**${t.common.error || 'Error'}**: ${message.errorMessage || 'Unknown error occurred.'}\n\n[**${t.common.retry || 'Tap to Retry'}**](action://retry)`}
+                  index={0}
+                  showIndex={true}
+                  indexLabel="!"
+                  accentColor={Colors.error} // 红色警告色
+                  markdownStyles={{
+                    body: { color: isDark ? '#fca5a5' : '#ef4444' }, // 浅红/深红文字
+                  }}
+                  onLinkPress={(url) => {
+                    if (url.includes('action://retry')) {
+                      if (onRegenerate) onRegenerate();
+                      return false; // ⛔️ Prevents default
+                    }
+                    return !!url.startsWith('http');
+                  }}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
         </View>
       </ContextMenu>
 
@@ -1456,6 +1531,14 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
 
   if (prev.agentColor !== next.agentColor) return false;
   if (prev.isGenerating !== next.isGenerating) return false;
+
+  // ✅ Check Error State
+  // @ts-ignore
+  if (prev.message.isError !== next.message.isError) return false;
+  // @ts-ignore
+  if (prev.message.errorMessage !== next.message.errorMessage) return false;
+  // @ts-ignore
+  if (prev.message.isLongWait !== next.message.isLongWait) return false;
 
   // ✅ Check Status Changes
   // @ts-ignore

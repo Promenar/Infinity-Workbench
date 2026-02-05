@@ -21,6 +21,11 @@ export const translations = {
       imageSelectionErrorMessage: '无法读取所选图片，请重试。',
       takePhoto: '拍照',
       selectFromGallery: '从相册选择',
+      softTimeout: {
+        title: '响应时间较长...',
+        message: '大部分模型会在 30 秒内响应。深度思考模型可能需要更久。',
+        actionAbortRetry: '中止并重试',
+      },
     },
     library: {
       title: '知识库',
@@ -691,6 +696,7 @@ export const translations = {
     },
     common: {
       ragSection: '高级RAG配置',
+      retry: '重试',
       close: '关闭',
       cancel: '取消',
       confirm: '确认',
@@ -968,6 +974,11 @@ export const translations = {
       imageSelectionErrorMessage: 'Unable to read the selected image, please try again.',
       takePhoto: 'Take Photo',
       selectFromGallery: 'Pick from Gallery',
+      softTimeout: {
+        title: 'Taking longer than usual...',
+        message: 'Most models respond within 30s. Deep thinking models may take longer.',
+        actionAbortRetry: 'Abort & Retry',
+      },
     },
     library: {
       title: 'Library',
@@ -1641,8 +1652,9 @@ export const translations = {
       clickToEditPrompt: 'Click to edit prompt',
     },
     common: {
-      ragSection: 'Advanced RAG Configuration',
-      close: '关闭',
+      ragSection: 'Advanced RAG',
+      retry: 'Retry',
+      close: 'Close',
       cancel: 'Cancel',
       confirm: 'Confirm',
       back: 'Back',

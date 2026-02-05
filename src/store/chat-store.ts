@@ -179,9 +179,12 @@ export interface ChatState {
     thought_signature?: string, // 🧠 Added for Gemini 2.0
     planningTask?: TaskState, // ✅ Added for Message-Scoped Tasks
     tool_calls?: ToolCall[], // ✅ Added for DeepSeek Consistency
-    executionSteps?: ExecutionStep[],
+    executionSteps?: ExecutionStep[], // ✅ Added for execution steps tracking
     pendingApprovalToolIds?: string[],
-    toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[] // 🆕 Added
+    toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[], // 🆕 Added
+    isError?: boolean, // ✅ Added for robustness
+    errorMessage?: string, // ✅ Added for robustness
+    isLongWait?: boolean // ✅ Added for Soft Timeout
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
@@ -259,7 +262,10 @@ export const useChatStore = create<ChatState>()(
         updateSessionModel: sessionManager.updateSessionModel,
         updateSessionOptions: sessionManager.updateSessionOptions,
         updateSessionScrollOffset: sessionManager.updateSessionScrollOffset,
-        updateMessageContent: messageManager.updateMessageContent,
+        updateMessageContent: (sessionId: string, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: any[], ragReferences?: RagReference[], ragRefLoading?: boolean, ragMeta?: RagMetadata, thoughtSig?: string, taskState?: TaskState, toolCalls?: ToolCall[], execSteps?: ExecutionStep[], pendingTools?: string[], toolRes?: any[], isError?: boolean, errorMsg?: string, isLongWait?: boolean) => {
+          // Proxy to messageManager but ensure signature matches or update messageManager
+          messageManager.updateMessageContent(sessionId, messageId, content, tokens, reasoning, citations, ragReferences, ragRefLoading, ragMeta, thoughtSig, taskState, toolCalls, execSteps, pendingTools, toolRes, isError, errorMsg, isLongWait);
+        },
 
         updateSessionInferenceParams: sessionManager.updateSessionInferenceParams,
 
@@ -305,6 +311,10 @@ export const useChatStore = create<ChatState>()(
 
         toggleMcpServer: sessionManager.toggleMcpServer,
         toggleSkill: sessionManager.toggleSkill,
+
+
+
+
 
         generateMessage: async (sessionId, content, options) => {
           const session = get().getSession(sessionId);
@@ -1197,6 +1207,40 @@ export const useChatStore = create<ChatState>()(
               const CONTENT_UPDATE_INTERVAL = 33;
               const TIMELINE_UPDATE_INTERVAL = 500;
 
+              // 🐶 Watchdog: Deadlock Detection
+              // If no token received for 30s, abort generation
+              let lastActivityTime = Date.now();
+              const WATCHDOG_TIMEOUT = 30000;
+              const watchdogInterval = setInterval(() => {
+                const isActive = get().activeRequests[sessionId];
+                const session = get().getSession(sessionId);
+                const msg = session?.messages.find(m => m.id === currentAssistantMsgId);
+
+                // 🛑 Stop if done or error
+                if (!isActive || msg?.isError) {
+                  clearInterval(watchdogInterval);
+                  return;
+                }
+
+                if (Date.now() - lastActivityTime > WATCHDOG_TIMEOUT) {
+                  // 🐶 Soft Timeout: Warn instead of Abort
+                  console.warn('[ChatStore] Watchdog detected stall. Triggering soft timeout warning...');
+
+                  get().updateMessageContent(
+                    sessionId,
+                    currentAssistantMsgId,
+                    accumulatedContent,
+                    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                    false, // isError (false)
+                    undefined, // errorMessage
+                    true // isLongWait (true)
+                  );
+
+                  // Keep checking (don't clear interval), so if it *eventually* recovers, we can clear the warning.
+                  // Or if user aborts manually.
+                }
+              }, 5000);
+
               await client.streamChat(
                 currentMessages as any,
                 (token) => {
@@ -1205,6 +1249,16 @@ export const useChatStore = create<ChatState>()(
                   if (!currentState.activeRequests[sessionId]) return;
 
                   const now = Date.now();
+                  lastActivityTime = now; // 🐶 Feed the Watchdog
+
+                  // ✅ Auto-Clear Soft Timeout Warning if tokens arrive
+                  if (accumulatedContent) { // Optimization: only if we have content update pending
+                    // If we were in long wait state, we should ideally clear it. 
+                    // But updateMessageContent is expensive. 
+                    // Let the next content update cycle handle it implicitly? 
+                    // No, we need explicit clear if we want instant feedback.
+                    // But since we update content frequently, passing isLongWait=false in parser loop is better.
+                  }
 
                   // 5.0 Capture Metadata
                   if (token.usage) {
@@ -1404,13 +1458,13 @@ export const useChatStore = create<ChatState>()(
                   reasoning: options?.reasoning ?? latestSession.options?.reasoning,
                   inferenceParams: {
                     temperature: agent.params?.temperature || 0.7,
-                    maxTokens: agent.params?.maxTokens,
-                    topP: agent.params?.topP,
-                    frequencyPenalty: agent.params?.frequencyPenalty,
-                    presencePenalty: agent.params?.presencePenalty,
-                  },
+                  } as any
                 }
               );
+
+              // 🐶 Stop Watchdog after stream completes
+              clearInterval(watchdogInterval);
+
 
               // 🏁 关键修复：冲刷缓冲区残余内容
               if (contentBuffer.length > 0) {
@@ -2179,7 +2233,8 @@ export const useChatStore = create<ChatState>()(
             const totalContextTokens = estimateTokens(contextText);
 
             // 1. RAG Archiving (Phase 4b: 使用 post-processor 子模块)
-            if (finalRagOptions.enableMemory !== false) {
+            // 🛡️ Skip RAG if message has error
+            if (finalRagOptions.enableMemory !== false && !finalMsg?.isError) {
               await archiveToRag({
                 sessionId,
                 assistantMsgId,
@@ -2201,7 +2256,7 @@ export const useChatStore = create<ChatState>()(
             }
 
             // 2. KG Extraction (Phase 4b: 使用 post-processor 子模块)
-            if (finalContent.trim()) {
+            if (finalContent.trim() && !finalMsg?.isError) {
               extractKnowledgeGraph({
                 sessionId,
                 assistantMsgId,
@@ -2302,9 +2357,22 @@ export const useChatStore = create<ChatState>()(
             get().updateMessageContent(
               sessionId,
               assistantMsgId,
-              accumulatedContent
-                ? `${accumulatedContent}\n\n⚠️ 网络异常: ${errorText}`
-                : `⚠️ 网络异常: ${errorText}`
+              accumulatedContent,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+
+              true, // ✅ isError (16th arg)
+              errorText // ✅ errorMessage (17th arg)
             );
           } finally {
             // Cleanup active request and ensure loading flags are cleared

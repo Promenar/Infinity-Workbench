@@ -47,7 +47,11 @@ export interface MessageManager {
         taskState?: TaskState,
         tool_calls?: ToolCall[],
         executionSteps?: ExecutionStep[],
-        pendingApprovalToolIds?: string[]
+        pendingApprovalToolIds?: string[],
+        toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[],
+        isError?: boolean,
+        errorMessage?: string,
+        isLongWait?: boolean
     ) => void;
 
     deleteMessage: (sessionId: string, messageId: string) => Promise<void>;

@@ -74,10 +74,19 @@ export default function ChatDetailScreen() {
   const currentModelId = session?.modelId || agent?.defaultModel;
   const { modelConfig, currentProvider } = useMemo(() => {
     if (!currentModelId) return { modelConfig: undefined, currentProvider: undefined };
+
+    // 1. Priority: Exact UUID match (Unique)
     for (const p of providers) {
-      const found = p.models.find((m) => m.uuid === currentModelId || m.id === currentModelId);
+      const found = p.models.find((m) => m.uuid === currentModelId);
       if (found) return { modelConfig: found, currentProvider: p };
     }
+
+    // 2. Fallback: ID match (Ambiguous - takes first available)
+    for (const p of providers) {
+      const found = p.models.find((m) => m.id === currentModelId);
+      if (found) return { modelConfig: found, currentProvider: p };
+    }
+
     return { modelConfig: undefined, currentProvider: undefined };
   }, [providers, currentModelId]);
 
@@ -138,6 +147,9 @@ export default function ChatDetailScreen() {
   // 🔑 用户打断检测
   const userScrolledAway = useSharedValue(false);
   const lastReasoningState = useRef<boolean>(false);
+  // 🔑 内容高度追踪（用于精确滚动计算）
+  const contentHeightRef = useRef<number>(0);
+  const listHeightRef = useRef<number>(0);
 
   // Loading State
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -231,7 +243,16 @@ export default function ChatDetailScreen() {
     },
   });
 
-  const handleContentSizeChange = () => {
+  // 🔑 精确滚动到底部（考虑 paddingBottom）
+  const scrollToBottom = (animated = false) => {
+    const paddingBottom = insets.bottom + 120;
+    const targetOffset = Math.max(0, contentHeightRef.current - listHeightRef.current + paddingBottom);
+    listRef.current?.scrollToOffset({ offset: targetOffset, animated });
+  };
+
+  const handleContentSizeChange = (_w: number, h: number) => {
+    contentHeightRef.current = h;
+
     // 检测是否有新消息
     if (messages.length > lastMessageCount.current) {
       const lastMessage = messages[messages.length - 1];
@@ -241,21 +262,17 @@ export default function ChatDetailScreen() {
         // 用户发送新消息，强制滚动到底部
         userScrolledAway.value = false;
         isAtBottom.value = true;
-        // User message added: Animate strictly
-        listRef.current?.scrollToEnd({ animated: true });
+        scrollToBottom(true);
       } else if (!userScrolledAway.value) {
         // 🔑 AI生成的第一帧：如果用户之前就在底部（未打断），则开始追踪
-        // Use animated: false for instant snap-to-bottom
         if (isAtBottom.value || loading) {
-          listRef.current?.scrollToEnd({ animated: false });
+          scrollToBottom(false);
         }
       }
     } else if (loading) {
       // 🔑 Content updating: Only scroll if user hasn't scrolled away
-      // Strict check: if userScrolledAway is true, DO NOT SCROLL even if loading
       if (!userScrolledAway.value) {
-        // Use animated: false for stream following
-        listRef.current?.scrollToEnd({ animated: false });
+        scrollToBottom(false);
       }
     }
     lastMessageCount.current = messages.length;
@@ -268,7 +285,7 @@ export default function ChatDetailScreen() {
     if (isListReady) {
       // Standard List: Scroll to bottom (latest messages) on initial load
       setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: false });
+        scrollToBottom(false);
         listOpacity.value = withTiming(1, { duration: 250 });
         isReadyToDisplay.value = true;
 
@@ -289,7 +306,7 @@ export default function ChatDetailScreen() {
       // 这解决了 FlatList 版本 "开始流式输出后没有自动追踪" 的问题
       userScrolledAway.value = false;
       isAtBottom.value = true;
-      listRef.current?.scrollToEnd({ animated: false });
+      scrollToBottom(false);
 
       if (messages.length > 0) {
         const lastMessage = messages[messages.length - 1];
@@ -299,7 +316,7 @@ export default function ChatDetailScreen() {
         if (lastReasoningState.current && !hasReasoning) {
           if (!userScrolledAway.value) {
             // 折叠reasoning并滚动到正文
-            listRef.current?.scrollToEnd({ animated: false });
+            scrollToBottom(false);
           }
         }
         lastReasoningState.current = hasReasoning;
@@ -322,7 +339,7 @@ export default function ChatDetailScreen() {
       // 不再检查 isAtBottom.value，原因同上
       const timer = setTimeout(() => {
         // Use animated: false to avoid animation stack lag
-        listRef.current?.scrollToEnd({ animated: false });
+        scrollToBottom(false);
       }, 50);
       return () => clearTimeout(timer);
     }
@@ -466,7 +483,7 @@ export default function ChatDetailScreen() {
                   agentColor={agentColor}
                   agentName={agent.name}
                   sessionId={id}
-                  isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && index === lastAssistantIdx} // Use computed index
+                  isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && index === lastAssistantIdx && index === messages.length - 1} // Strict check
                   onDelete={() => handleDeleteMessage(item.id)}
                   onExtractGraph={() => handleExtractGraph(item)}
                   onVectorize={() => handleManualVectorize(item.id)}
@@ -513,9 +530,12 @@ export default function ChatDetailScreen() {
               removeClippedSubviews={false}
               contentContainerStyle={{
                 paddingTop: insets.top + 64 + 12,
-                paddingBottom: insets.bottom + 120, // 🔑 增加底部间距，避免模型戳紧贴输入栏
+                paddingBottom: insets.bottom + 160, // 🔑 增加底部间距，确保错误卡片不被遮挡 (+40px)
               }}
-              onLayout={() => setIsListReady(true)}
+              onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
+                listHeightRef.current = e.nativeEvent.layout.height;
+                setIsListReady(true);
+              }}
               onContentSizeChange={handleContentSizeChange}
               onScroll={onScroll}
               onMomentumScrollEnd={handleScrollEnd}
@@ -600,7 +620,7 @@ export default function ChatDetailScreen() {
             userScrolledAway.value = false;
             isAtBottom.value = true;
             setTimeout(() => {
-              listRef.current?.scrollToEnd({ animated: true });
+              scrollToBottom(true);
             }, 100);
           }}
           onStop={stop}
@@ -644,7 +664,7 @@ export default function ChatDetailScreen() {
           activeOpacity={0.8}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            listRef.current?.scrollToEnd({ animated: true });
+            scrollToBottom(true);
           }}
           style={{
             width: 36,

@@ -126,6 +126,16 @@ export const createTables = async () => {
     // Migration: ensure messages.tool_results exists
     try {
       await db.execute('ALTER TABLE messages ADD COLUMN tool_results TEXT;');
+      await db.execute('ALTER TABLE messages ADD COLUMN is_error INTEGER DEFAULT 0;');
+      await db.execute('ALTER TABLE messages ADD COLUMN error_message TEXT;');
+    } catch (e) {
+      // Column likely exists
+    }
+
+    // 🔑 Migration: ensure messages.is_error and error_message exist (Soft Timeout Persistence)
+    try {
+      await db.execute('ALTER TABLE messages ADD COLUMN is_error INTEGER DEFAULT 0;');
+      await db.execute('ALTER TABLE messages ADD COLUMN error_message TEXT;');
     } catch (e) {
       // Column likely exists
     }

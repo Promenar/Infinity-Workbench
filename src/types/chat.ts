@@ -102,6 +102,9 @@ export interface Message {
   createdAt: number;
   modelId?: string; // ✅ 恢复：模型ID
   status?: 'sending' | 'sent' | 'error' | 'streaming';
+  isError?: boolean; // ✅ 新增：标记是否为错误状态
+  errorMessage?: string; // ✅ 新增：错误详情描述
+  isLongWait?: boolean; // ✅ 新增：标记是否等待过久（软超时）
   references?: RagReference[]; // RAG 引用来源
   ragProgress?: RagProgress; // ✅ 新增：检索进度
   ragMetadata?: RagMetadata; // ✅ 新增：检索元数据
