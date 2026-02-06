@@ -642,8 +642,12 @@ export default function SuperAssistantSettingsScreen() {
             </TouchableOpacity>
           </SettingsSection>
 
-          {/* 上下文管理 (Self-contained headers) */}
-          <ContextManagementPanel sessionId={SPA_SESSION_ID} />
+          {/* 上下文管理 */}
+          <SettingsSection title={t.rag.contextManagement}>
+            <View className="px-4 pb-4">
+              <ContextManagementPanel sessionId={SPA_SESSION_ID} />
+            </View>
+          </SettingsSection>
 
 
 
