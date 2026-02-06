@@ -327,40 +327,43 @@ export default function ChatDetailScreen() {
     }
   }, [isListReady]);
 
-  // 🔑 规则5: Reasoning追踪 + 生成结束重置打断状态
+  // 🔑 Effect A: 仅在生成状态**改变**时触发 (Start/End)
+  // 职责：初始化追踪状态，或在生成结束时清理状态
   React.useEffect(() => {
     if (loading) {
-      // 🤖 AI开始生成/正在生成
-
-      // 🔑 AI 开始生成时，强制重置打断状态并滚动到底部
-      // 这解决了 FlatList 版本 "开始流式输出后没有自动追踪" 的问题
+      // 🤖 AI开始生成
+      // 🔑 仅在开始的那一刻，强制重置打断状态并钉在底部
       userScrolledAway.value = false;
       isAtBottom.value = true;
       scrollToBottom(false);
-
-      if (messages.length > 0) {
-        const lastMessage = messages[messages.length - 1];
-        const hasReasoning = !!lastMessage?.reasoning;
-
-        // Reasoning刚结束，切换到正文
-        if (lastReasoningState.current && !hasReasoning) {
-          if (!userScrolledAway.value) {
-            // 折叠reasoning并滚动到正文
-            scrollToBottom(false);
-          }
-        }
-        lastReasoningState.current = hasReasoning;
-      }
     } else {
       // 🏁 生成结束
       // 🔑 规则4: 生成结束，重置打断状态（为下一轮做准备）
-      // 注意：不强制滚动到底部，尊重用户位置
       if (isAtBottom.value) {
         userScrolledAway.value = false;
       }
       lastReasoningState.current = false;
     }
-  }, [loading, messages, isListReady]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]); // ⚠️ 核心修复：移除 messages 依赖，防止每帧重置状态
+
+  // 🔑 Effect B: 仅在内容更新时触发
+  // 职责：处理思维链折叠微调，绝不重置 userScrolledAway
+  React.useEffect(() => {
+    if (loading && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      const hasReasoning = !!lastMessage?.reasoning;
+
+      // Reasoning刚结束，切换到正文
+      if (lastReasoningState.current && !hasReasoning) {
+        // 只有用户当前乖乖跟着底部时，才执行"微调滚动"
+        if (!userScrolledAway.value) {
+          scrollToBottom(false);
+        }
+      }
+      lastReasoningState.current = hasReasoning;
+    }
+  }, [messages, loading]); // 依赖 messages 以检测思维链状态变化
 
   // 🔑 流式输出追踪：监听消息内容变化
   React.useEffect(() => {
