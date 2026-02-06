@@ -125,6 +125,7 @@ export interface Message {
   name?: string; // ✅ 新增：工具名称 (用于 role: tool)
   thought_signature?: string; // ✅ 新增：思维签名 (仅限 Gemini 2.0 Thinking 模型)
   planningTask?: TaskState; // ✅ 新增：Message-Scoped Task Snapshot
+  loopCount?: number; // ✅ 新增：该消息产生时的循环轮数 (显式化)
 }
 
 export interface Session {
@@ -138,7 +139,7 @@ export interface Session {
   modelId?: string; // Override agent's default model for this session
   customPrompt?: string; // Additional prompt specific to this session (appended to agent's systemPrompt)
   currentLoopCount?: number; // 🆕 追踪当前执行轮数（支持跨续杯连续计数）
-  isLongRunning?: boolean;   // ✅ 新增：标记是否处于长程自动迭代状态（>20步）
+  isLongRunning?: boolean;   // ✅ 新增：标记是否于长程自动迭代状态（>20步）
   isPinned?: boolean;
   stats?: {
     totalTokens: number; // 兼容现有字段 (保留用于向后兼容)

@@ -6,6 +6,7 @@ import { vectorStore } from '../../../lib/rag/vector-store';
 import { useApiStore } from '../../../store/api-store';
 import { EmbeddingClient } from '../../../lib/rag/embedding';
 import { useSettingsStore } from '../../../store/settings-store';
+import { getFullMessageContent } from './message-utils';
 
 export interface ContextConfig {
   maxMessages: number; // Max messages in active window (e.g., 20)
@@ -191,7 +192,7 @@ export class ContextManager {
       throw new Error('No enabled AI provider found.');
     }
 
-    const transcript = messages.map((m) => `${m.role}: ${m.content}`).join('\n');
+    const transcript = messages.map((m) => `${m.role}: ${getFullMessageContent(m)}`).join('\n');
 
     // 使用用户定义的 Prompt 或回退到默认
     const basePrompt =
@@ -200,13 +201,15 @@ export class ContextManager {
     const prompt = `${basePrompt}\n\n${transcript}`;
 
     try {
-      // Find a suitable model: Prefer 'chat' capable models
-      const summaryModel =
-        provider.models.find((m) => m.enabled && (!m.type || m.type === 'chat')) ||
-        provider.models[0];
+      // ✅ Fix: Use configured Summary Model (Fast Model) from Settings Store
+      const settings = useSettingsStore.getState();
+      const configuredModelId = settings.defaultSummaryModel;
 
-      // Critical Fix: Use `model.id` (API string) not `model.uuid` (Internal React Key)
-      const summaryModelName = summaryModel?.id || 'gpt-3.5-turbo';
+      // Default fallback logic if no specific summary model is set
+      const fallbackModel = provider.models.find((m) => m.enabled && (!m.type || m.type === 'chat')) || provider.models[0];
+
+      // Effective Model ID
+      const summaryModelName = configuredModelId || fallbackModel?.id || 'gpt-3.5-turbo';
 
       const config = {
         ...provider,

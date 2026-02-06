@@ -12,6 +12,7 @@ import { graphExtractor } from '../../lib/rag/graph-extractor';
 import { ContextManager } from '../../features/chat/utils/ContextManager';
 import { estimateTokens } from '../../features/chat/utils/token-counter';
 import type { Message, Session } from '../../types/chat';
+import { getFullMessageContent } from '../../features/chat/utils/message-utils'; // Added import
 
 export interface PostProcessorParams {
     sessionId: string;
@@ -42,7 +43,8 @@ export async function archiveToRag(params: PostProcessorParams): Promise<void> {
     const {
         sessionId, assistantMsgId, userMsgId,
         userContent, assistantContent,
-        setVectorizationStatus
+        setVectorizationStatus,
+        getSession // Added to get full message object
     } = params;
 
     setVectorizationStatus(sessionId, [userMsgId, assistantMsgId], 'processing');
@@ -62,7 +64,13 @@ export async function archiveToRag(params: PostProcessorParams): Promise<void> {
         }, assistantMsgId);
 
         await new Promise((resolve) => setTimeout(resolve, 0));
-        await MemoryManager.addTurnToMemory(sessionId, userContent, assistantContent, userMsgId, assistantMsgId);
+
+        // Get the full assistant message content including thinking steps
+        const session = getSession(sessionId);
+        const assistantMessage = session?.messages.find(m => m.id === assistantMsgId);
+        const fullAssistantContent = assistantMessage ? getFullMessageContent(assistantMessage) : assistantContent;
+
+        await MemoryManager.addTurnToMemory(sessionId, userContent, fullAssistantContent, userMsgId, assistantMsgId);
 
         const elapsed = Date.now() - archiveStartTime;
         if (elapsed < 800) await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));

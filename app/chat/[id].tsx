@@ -28,6 +28,7 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   withTiming,
+  useAnimatedKeyboard,
 } from 'react-native-reanimated';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { KeyboardAvoidingView, KeyboardStickyView } from 'react-native-keyboard-controller';
@@ -240,10 +241,23 @@ export default function ChatDetailScreen() {
     },
   });
 
-  // 🔑 精确滚动到底部（考虑 paddingBottom）
+  // 🔑 键盘高度追踪 (Reanimated)
+  const { height: reanimatedKeyboardHeight } = useAnimatedKeyboard();
+
+  // 🔑 精确滚动到底部（考虑 paddingBottom + Keyboard）
   const scrollToBottom = (animated = false) => {
-    const paddingBottom = insets.bottom + 120;
-    const targetOffset = Math.max(0, contentHeightRef.current - listHeightRef.current + paddingBottom);
+    // 基础底部内边距 (Footer + Insets)
+    const basePadding = insets.bottom + 120;
+
+    // 动态计算由于键盘弹起需要的额外偏移
+    // 注意：AnimatedFlatList 没有被 KeyboardAvoidingView 压缩高度，
+    // 需要手动补偿键盘高度带来的可视区域缩减。
+    const currentKeyboardHeight = reanimatedKeyboardHeight?.value || 0;
+
+    // 只有当键盘升起高度超过底部安全区时才需要补偿
+    const extraOffset = currentKeyboardHeight > insets.bottom ? currentKeyboardHeight - insets.bottom : 0;
+
+    const targetOffset = Math.max(0, contentHeightRef.current - listHeightRef.current + basePadding + extraOffset);
     listRef.current?.scrollToOffset({ offset: targetOffset, animated });
   };
 
@@ -271,8 +285,9 @@ export default function ChatDetailScreen() {
         scrollToBottom(true);
       } else if (!userScrolledAway.value) {
         // 🔑 AI生成的第一帧：如果用户之前就在底部（未打断），则开始追踪
+        // Use true for animated scroll to prevent jarring jump, but keep it tight
         if (isAtBottom.value || loading) {
-          scrollToBottom(false);
+          scrollToBottom(true);
         }
       }
     } else {
@@ -285,7 +300,8 @@ export default function ChatDetailScreen() {
         // 只有当实际上是"在底部"的状态下，内容增长才需要自动跟随
         scrollToBottom(false);
       } else if (loading && !userScrolledAway.value) {
-        // AI 生成内容更新
+        // AI 生成内容更新 (Streaming)
+        // 保持无动画以确保跟手性和性能
         scrollToBottom(false);
       }
     }
@@ -547,8 +563,21 @@ export default function ChatDetailScreen() {
                 paddingBottom: insets.bottom + 160, // 🔑 增加底部间距，确保错误卡片不被遮挡 (+40px)
               }}
               onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
-                listHeightRef.current = e.nativeEvent.layout.height;
+                const height = e.nativeEvent.layout.height;
+                const prevHeight = listHeightRef.current;
+                listHeightRef.current = height;
                 setIsListReady(true);
+
+                // 🔑 键盘收起时，List高度变大。如果此时我们应该在底部，强制重新贴底。
+                // 这解决了"键盘收起导致内容悬空，随后AI消息出现导致瞬间跳变"的问题。
+                // 阈值设为 20px 防止微小布局抖动触发
+                if (prevHeight > 0 && height > prevHeight + 20) {
+                  if (isAtBottom.value || !userScrolledAway.value) {
+                    // 使用无动画(animated: false)来确保每一帧都紧贴底部，
+                    // 形成视觉上的"跟随输入栏下落"效果。
+                    scrollToBottom(false);
+                  }
+                }
               }}
               onContentSizeChange={handleContentSizeChange}
               onScroll={onScroll}
@@ -633,9 +662,8 @@ export default function ChatDetailScreen() {
             }
             userScrolledAway.value = false;
             isAtBottom.value = true;
-            setTimeout(() => {
-              scrollToBottom(true);
-            }, 100);
+            // 🔑 立即触发滚动，不需等待
+            scrollToBottom(true);
           }}
           onStop={stop}
           sessionId={id}

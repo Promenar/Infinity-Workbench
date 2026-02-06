@@ -447,7 +447,31 @@ const MessageMeta: React.FC<{
   modelName?: string;
   timestamp?: number;
   isDark: boolean;
-}> = ({ modelName, timestamp, isDark }) => {
+  loopCount?: number;
+}> = ({ modelName, timestamp, isDark, loopCount }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (showTooltip) {
+      opacity.value = withSequence(
+        withTiming(1, { duration: 200 }),
+        withTiming(1, { duration: 2000 }), // Stay visible for 2s
+        withTiming(0, { duration: 300 }, (finished) => {
+          if (finished) runOnJS(setShowTooltip)(false);
+        })
+      );
+    }
+  }, [showTooltip]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [
+      { translateX: -55 }, // Half of minWidth (110) to center it
+      { translateY: withTiming(showTooltip ? 0 : 6) }
+    ],
+  }));
+
   // 智能时间显示：同天只显示时间，跨天显示日期+时间
   const getTimeStr = (ts: number) => {
     const date = new Date(ts);
@@ -482,12 +506,12 @@ const MessageMeta: React.FC<{
     <View style={{
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 2, // 进一步减少间距：4 -> 2
-      gap: 5, // 进一步减少间距：6 -> 5
+      marginTop: 2,
+      gap: 5,
     }}>
       {modelName && (
         <Text style={{
-          fontSize: 10, // 稍微缩小：11 -> 10
+          fontSize: 10,
           color: isDark ? '#52525b' : '#d4d4d8',
           fontWeight: '500',
           textTransform: 'uppercase',
@@ -512,6 +536,74 @@ const MessageMeta: React.FC<{
         }}>
           {timeStr}
         </Text>
+      )}
+
+      {/* 🟢 Round Counter Indicator */}
+      {loopCount !== undefined && loopCount > 0 && (
+        <>
+          <Text style={{
+            fontSize: 10,
+            color: isDark ? '#3f3f46' : '#e4e4e7',
+            ...insetShadowStyle,
+          }}>·</Text>
+
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                setShowTooltip(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+              hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
+            >
+              <Text style={{
+                fontSize: 10,
+                color: isDark ? '#52525b' : '#d4d4d8',
+                fontWeight: '500',
+                textTransform: 'uppercase',
+                letterSpacing: 0.8,
+                textAlign: 'center', // Center text
+                ...insetShadowStyle
+              }}>
+                {loopCount}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Tooltip Popup */}
+            {showTooltip && (
+              <Animated.View style={[
+                {
+                  position: 'absolute',
+                  bottom: 14,
+                  left: '50%', // Move to center of parent
+                  backgroundColor: isDark ? '#27272a' : '#1f2937',
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: 6,
+                  width: 110, // Fixed width
+                  borderWidth: 1,
+                  borderColor: isDark ? '#3f3f46' : '#374151',
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 3.84,
+                  elevation: 5,
+                  zIndex: 9999
+                },
+                animatedStyle
+              ]}>
+                <Text style={{
+                  color: '#fff',
+                  fontSize: 10,
+                  textAlign: 'center',
+                  fontWeight: '500'
+                }}>
+                  自动化执行轮数: {loopCount}
+                </Text>
+              </Animated.View>
+            )}
+          </View>
+        </>
       )}
     </View>
   );
@@ -1504,6 +1596,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           modelName={modelName}
           timestamp={message.createdAt}
           isDark={isDark}
+          loopCount={message.loopCount} // ✅ Pass loopCount
         />
       </View>
 
@@ -1573,6 +1666,9 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
 
   if (prev.isLastAssistantMessage !== next.isLastAssistantMessage) return false;
   if (prev.globalPendingIntervention !== next.globalPendingIntervention) return false;
+
+  // @ts-ignore
+  if (prev.message.loopCount !== next.message.loopCount) return false; // ✅ Check loopCount changes
 
   return true;
 });

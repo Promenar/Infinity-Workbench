@@ -51,7 +51,8 @@ export interface MessageManager {
         toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[],
         isError?: boolean,
         errorMessage?: string,
-        isLongWait?: boolean
+        isLongWait?: boolean,
+        loopCount?: number // ✅ 新增：显式化轮数
     ) => void;
 
     deleteMessage: (sessionId: string, messageId: string) => Promise<void>;

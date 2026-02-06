@@ -184,7 +184,8 @@ export interface ChatState {
     toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[], // 🆕 Added
     isError?: boolean, // ✅ Added for robustness
     errorMessage?: string, // ✅ Added for robustness
-    isLongWait?: boolean // ✅ Added for Soft Timeout
+    isLongWait?: boolean, // ✅ Added for Soft Timeout
+    loopCount?: number // ✅ Added for Transparency
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
@@ -262,9 +263,9 @@ export const useChatStore = create<ChatState>()(
         updateSessionModel: sessionManager.updateSessionModel,
         updateSessionOptions: sessionManager.updateSessionOptions,
         updateSessionScrollOffset: sessionManager.updateSessionScrollOffset,
-        updateMessageContent: (sessionId: string, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: any[], ragReferences?: RagReference[], ragRefLoading?: boolean, ragMeta?: RagMetadata, thoughtSig?: string, taskState?: TaskState, toolCalls?: ToolCall[], execSteps?: ExecutionStep[], pendingTools?: string[], toolRes?: any[], isError?: boolean, errorMsg?: string, isLongWait?: boolean) => {
+        updateMessageContent: (sessionId: string, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: any[], ragReferences?: RagReference[], ragRefLoading?: boolean, ragMeta?: RagMetadata, thoughtSig?: string, taskState?: TaskState, toolCalls?: ToolCall[], execSteps?: ExecutionStep[], pendingTools?: string[], toolRes?: any[], isError?: boolean, errorMsg?: string, isLongWait?: boolean, loopCount?: number) => {
           // Proxy to messageManager but ensure signature matches or update messageManager
-          messageManager.updateMessageContent(sessionId, messageId, content, tokens, reasoning, citations, ragReferences, ragRefLoading, ragMeta, thoughtSig, taskState, toolCalls, execSteps, pendingTools, toolRes, isError, errorMsg, isLongWait);
+          messageManager.updateMessageContent(sessionId, messageId, content, tokens, reasoning, citations, ragReferences, ragRefLoading, ragMeta, thoughtSig, taskState, toolCalls, execSteps, pendingTools, toolRes, isError, errorMsg, isLongWait, loopCount);
         },
 
         updateSessionInferenceParams: sessionManager.updateSessionInferenceParams,
@@ -1051,7 +1052,10 @@ export const useChatStore = create<ChatState>()(
             }
 
             // 🛡️ 逻辑修复：从 session 获取已执行轮数，支持续杯后的连续性
-            let loopCount = initialSession?.currentLoopCount || 0;
+            // 🛡️ 逻辑修复：仅在续杯模式下继承轮数，否则新消息重置为 0
+            let loopCount = (options?.isResumption && initialSession?.currentLoopCount)
+              ? initialSession.currentLoopCount
+              : 0;
 
             // 🆕 Phase 4: 死循环检测机制
             // 追踪连续相同工具调用，若超过阈值则自动中断
@@ -1127,7 +1131,12 @@ export const useChatStore = create<ChatState>()(
                   undefined,
                   toolCalls,
                   [...(targetMsg.executionSteps || []), interventionStep],
-                  undefined // pendingApprovalToolIds
+                  undefined, // pendingApprovalToolIds
+                  undefined, // toolResults
+                  undefined, // isError
+                  undefined, // errorMessage
+                  undefined, // isLongWait
+                  loopCount // ✅ 显式化轮数
                 );
 
                 break;
@@ -1233,7 +1242,8 @@ export const useChatStore = create<ChatState>()(
                     undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
                     false, // isError (false)
                     undefined, // errorMessage
-                    true // isLongWait (true)
+                    true, // isLongWait (true)
+                    loopCount
                   );
 
                   // Keep checking (don't clear interval), so if it *eventually* recovers, we can clear the warning.
@@ -1370,7 +1380,8 @@ export const useChatStore = create<ChatState>()(
                         false,
                         undefined,
                         undefined,
-                        newActiveTask // Pass planning task
+                        newActiveTask, // Pass planning task
+                        undefined, undefined, undefined, undefined, undefined, undefined, undefined, loopCount
                       );
 
                       // ✅ Sync to Message Level immediately
@@ -1385,7 +1396,8 @@ export const useChatStore = create<ChatState>()(
                         false,
                         undefined,
                         undefined,
-                        newActiveTask // Pass planning task
+                        newActiveTask, // Pass planning task
+                        undefined, undefined, undefined, undefined, undefined, undefined, undefined, loopCount
                       );
 
                       // Update Timeline
@@ -1423,7 +1435,8 @@ export const useChatStore = create<ChatState>()(
                       undefined, // ragMetadata
                       undefined, // thought_signature
                       undefined, // taskState
-                      token.toolCalls
+                      token.toolCalls,
+                      undefined, undefined, undefined, undefined, undefined, undefined, loopCount
                     );
                     lastContentUpdateTime = now;
                   }
@@ -1501,7 +1514,8 @@ export const useChatStore = create<ChatState>()(
                 turnThoughtSignature || targetMsg.thought_signature,
                 latestSession.activeTask, // 🔑 保持任务状态同步
                 toolCalls, // 🔑 Correctly persist tool_calls at turn end
-                loopExecutionSteps // 🔑 Pass the full accumulated steps list to avoid race conditions
+                loopExecutionSteps, // 🔑 Pass the full accumulated steps list to avoid race conditions
+                undefined, undefined, undefined, undefined, undefined, loopCount
               );
 
               // 🛡️ 关键修复：刷新本地步骤列表，确保下一轮循环能看到工具执行结果
