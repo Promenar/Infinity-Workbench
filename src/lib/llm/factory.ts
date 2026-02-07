@@ -33,7 +33,10 @@ export const createLlmClient = (config: ExtendedModelConfig): LlmClient => {
         config.id, // 使用模型 API ID
         config.temperature || 0.7,
         config.baseUrl || 'https://api.openai.com/v1',
-        { isEmbedding: config.type === 'embedding' },
+        {
+          isEmbedding: config.type === 'embedding',
+          provider: config.provider // 🗝️ Pass provider for specific clamping logic
+        },
       );
 
     case 'openai-compatible':

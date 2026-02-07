@@ -65,6 +65,7 @@ import {
   LazySVGRenderer,
 } from '../../../components/chat/MathRenderer';
 import { extractImagesFromMarkdown } from '../utils/markdown-utils';
+import { formatDeepSeekOutput } from '../utils/deepseek-formatter';
 import { TaskMonitor } from './TaskMonitor';
 import { TaskFinalResult } from './TaskFinalResult';
 
@@ -807,6 +808,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     }
 
     if (!content) return '';
+
+    // ✅ DeepSeek/Local LLM 格式修复 (Pre-processing)
+    // 仅针对 DeepSeek 系列模型启用，避免误伤其他正常模型 (如 "May 12. 2024" 这种日期格式被误断行)
+    const isDeepSeek = message.modelId?.toLowerCase().includes('deepseek');
+    if (isDeepSeek) {
+      content = formatDeepSeekOutput(content);
+    }
 
     // 替换块级公式 $$...$$
     // 1. 临时保护代码块中的 $$（如果已有）- 简化处理，假设用户不会在代码块里写 $$ 作为文本

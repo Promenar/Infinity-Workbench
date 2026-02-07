@@ -60,8 +60,11 @@ You are outputting to a Streaming Markdown Renderer.
 
 1. **Double Line Breaks**: You MUST use \`\\n\\n\` to separate paragraphs. Single line breaks are fused by the renderer.
 2. **No "Walls of Text"**: Break long explanations into bullet points or short paragraphs.
-3. **Structured Sequence**:
+3. **Headers & Lists**: 
+       - Always add a blank line BEFORE and AFTER a Header (e.g. \`\\n\\n# Title\\n\\n\`).
+       - Always add a blank line BEFORE a List (e.g. \`\\n\\n- Item 1\`).
+4. **Structured Sequence**:
    [Thinking Block] -> [Tool Call] -> [Observation] -> [Natural Language Response]
-4. **Final Summary**: When a task is complete, always provide a concise, user-facing summary of what was achieved.`;
+5. **Final Summary**: When a task is complete, always provide a concise, user-facing summary of what was achieved.`;
   }
 };

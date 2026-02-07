@@ -12,19 +12,23 @@ export class OpenAiClient implements LlmClient {
   private activeXhr: XMLHttpRequest | null = null;
   private isEmbedding: boolean = false;
 
+  private provider?: string;
+
   constructor(
     apiKey: string,
     model: string,
     temperature: number,
     baseUrl: string = 'https://api.openai.com/v1',
-    options?: { isEmbedding?: boolean },
+    options?: { isEmbedding?: boolean; provider?: string },
   ) {
     this.apiKey = apiKey;
     this.baseUrl = baseUrl;
     this.model = model;
     this.temperature = temperature;
     this.isEmbedding = options?.isEmbedding ?? false;
+    this.provider = options?.provider;
   }
+
 
   async streamChat(
     messages: ChatMessage[],
@@ -427,7 +431,11 @@ export class OpenAiClient implements LlmClient {
 
             return msg;
           }),
-          temperature: options?.inferenceParams?.temperature ?? this.temperature,
+          // 🌡️ Zhipu (GLM) requires temperature < 1.0 (strict)
+          // We clamp it here to prevent 400 errors
+          temperature: (this.provider === 'zhipu')
+            ? Math.min(options?.inferenceParams?.temperature ?? this.temperature, 0.99)
+            : (options?.inferenceParams?.temperature ?? this.temperature),
           top_p: options?.inferenceParams?.topP,
           max_tokens: options?.inferenceParams?.maxTokens,
           frequency_penalty: options?.inferenceParams?.frequencyPenalty,

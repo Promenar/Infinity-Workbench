@@ -313,7 +313,9 @@ export class MoonshotClient implements LlmClient {
 
                         return msg;
                     }),
-                    temperature: options?.inferenceParams?.temperature ?? this.temperature,
+                    // 🌡️ Moonshot requires temperature <= 1.0 (strict)
+                    // We clamp it here to prevent 400 errors if user setting is > 1.0
+                    temperature: Math.min(options?.inferenceParams?.temperature ?? this.temperature, 1.0),
                     top_p: options?.inferenceParams?.topP,
                     max_tokens: options?.inferenceParams?.maxTokens,
                     tools: (skills && skills.length > 0) ? this.mapSkillsToOpenAITools(skills) : undefined,
