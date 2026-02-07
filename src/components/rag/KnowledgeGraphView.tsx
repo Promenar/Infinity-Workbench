@@ -8,7 +8,7 @@ import { Typography } from '../ui';
 import { KGNodeEditModal } from './KGNodeEditModal';
 import { KGEdgeEditModal } from './KGEdgeEditModal';
 import { Plus, Link as LinkIcon, Unlink } from 'lucide-react-native';
-import { TouchableOpacity } from 'react-native';
+import { TouchableOpacity, Alert } from 'react-native';
 import * as Haptics from '../../lib/haptics';
 import { useI18n } from '../../lib/i18n';
 
@@ -111,9 +111,11 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           setLinkSourceId(null);
           loadData(); // Refresh
-        } catch (e) {
+          // Optional: Toast success?
+        } catch (e: any) {
           console.error(e);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          Alert.alert(t.common.error, `${t.rag.kg.linkCreateFailed || 'Failed to create link'}: ${e.message || 'Unknown error'}`);
         }
       }
       return;

@@ -119,7 +119,10 @@ export class GraphStore {
         ],
       );
       return id;
-    } catch (e) {
+    } catch (e: any) {
+      if (e.message && (e.message.includes('UNIQUE constraint failed') || e.message.includes('SQLITE_CONSTRAINT'))) {
+        throw e;
+      }
       console.error('Failed to upsert KG node:', e);
       throw e;
     }
@@ -149,7 +152,11 @@ export class GraphStore {
       params.push(id);
 
       await db.execute(query, params);
-    } catch (e) {
+    } catch (e: any) {
+      // Suppress logging for known handled errors
+      if (e.message && (e.message.includes('UNIQUE constraint failed') || e.message.includes('SQLITE_CONSTRAINT'))) {
+        throw e;
+      }
       console.error('Failed to update KG node:', e);
       throw e;
     }
@@ -164,6 +171,83 @@ export class GraphStore {
       await db.execute('DELETE FROM kg_nodes WHERE id = ?', [id]);
     } catch (e) {
       console.error('Failed to delete KG node:', e);
+      throw e;
+    }
+  }
+
+  /**
+   * Merge source node into target node (by name).
+   * Moves all edges from source to target, merges metadata, and deletes source.
+   */
+  async mergeNodes(sourceId: string, targetName: string): Promise<void> {
+    try {
+      // 1. Get target node
+      const targetRes = await db.execute('SELECT * FROM kg_nodes WHERE name = ?', [targetName]);
+      if (!targetRes.rows || targetRes.rows.length === 0) {
+        throw new Error(`Target node '${targetName}' not found`);
+      }
+      const targetNode = (targetRes.rows as any)[0];
+      const targetId = targetNode.id;
+
+      if (sourceId === targetId) return; // Same node
+
+      console.log(`[GraphStore] Merging node ${sourceId} into ${targetId} (${targetName})`);
+
+      // 2. Move Edges
+      // Update edges where source is the FROM node
+      await db.execute(
+        'UPDATE kg_edges SET source_id = ? WHERE source_id = ?',
+        [targetId, sourceId]
+      );
+      // Update edges where source is the TO node
+      await db.execute(
+        'UPDATE kg_edges SET target_id = ? WHERE target_id = ?',
+        [targetId, sourceId]
+      );
+
+      // Note: This might create self-loops or duplicate edges.
+      // For now we allow them, or the UI visualization handles them.
+      // Ideally we should cleanup duplicates here, but it requires complex query.
+
+      // 3. Merge Metadata
+      const sourceRes = await db.execute('SELECT * FROM kg_nodes WHERE id = ?', [sourceId]);
+      if (sourceRes.rows && sourceRes.rows.length > 0) {
+        const sourceNode = (sourceRes.rows as any)[0];
+
+        let sourceMeta = {};
+        let targetMeta = {};
+        try { sourceMeta = sourceNode.metadata ? JSON.parse(sourceNode.metadata) : {}; } catch (e) { }
+        try { targetMeta = targetNode.metadata ? JSON.parse(targetNode.metadata) : {}; } catch (e) { }
+
+        const mergedMeta = { ...targetMeta };
+
+        // Simple merge strategy: append arrays, keep existing target values for scalars
+        Object.keys(sourceMeta).forEach((key) => {
+          const sourceVal = (sourceMeta as any)[key];
+          const targetVal = (mergedMeta as any)[key];
+
+          if (Array.isArray(sourceVal)) {
+            const existingArr = Array.isArray(targetVal) ? targetVal : [];
+            // Combine and dedup
+            const combined = [...existingArr, ...sourceVal];
+            (mergedMeta as any)[key] = Array.from(new Set(combined.map((i) => JSON.stringify(i)))).map((s) => JSON.parse(s));
+          } else if (targetVal === undefined || targetVal === null) {
+            // Only fill if missing in target
+            (mergedMeta as any)[key] = sourceVal;
+          }
+        });
+
+        await db.execute(
+          'UPDATE kg_nodes SET metadata = ?, updated_at = ? WHERE id = ?',
+          [JSON.stringify(mergedMeta), Date.now(), targetId]
+        );
+      }
+
+      // 4. Delete Source Node
+      await db.execute('DELETE FROM kg_nodes WHERE id = ?', [sourceId]);
+
+    } catch (e) {
+      console.error('Failed to merge KG nodes:', e);
       throw e;
     }
   }

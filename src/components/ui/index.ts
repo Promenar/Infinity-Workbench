@@ -1,3 +1,4 @@
+export * from './GlassAlert';
 export * from './Typography';
 export * from './Button';
 export * from './Card';
