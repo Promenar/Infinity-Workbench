@@ -15,6 +15,11 @@ INTERACTIVE PAUSE & USER FEEDBACK:
 - Use this aggressively for: Confirmation, Ambiguity Resolution, or Next-Step Guidance.
 - Do NOT just print a question; you MUST call this tool.
 
+
+USER CANCELLATION:
+- If the user says "stop", "cancel", or "terminate", you MUST call this tool with action='fail'.
+- This ensures the UI reflects the cancelled state.
+
 Self-Correction: If you forget the 'action' parameter, I will try to infer it based on context (defaulting to 'update').`,
     schema: z.object({
         action: z.enum(['create', 'update', 'complete', 'fail', 'ask_user']).optional().describe('The action to perform. Defaults to "update" if omitted but steps are provided.'),

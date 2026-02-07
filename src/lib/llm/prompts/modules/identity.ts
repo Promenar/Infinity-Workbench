@@ -8,11 +8,12 @@ export const IdentityModule = {
     /**
      * Kernel Layer: The immutable physical laws of the agent.
      * Enforces Markdown formatting, objectivity, and role adherence.
+     * 
+     * 🛡️ REFACTOR (2026-02-07): Removed hardcoded "You are Nexara Assistant" identity.
+     * The identity is now fully controlled by the Agent's systemPrompt.
      */
     getKernelIdentity(): string {
         return `## SYSTEM KERNEL (IMMUTABLE)
-You are Nexara Assistant, an advanced AI running within the Nexara Client environment.
-
 **CORE DIRECTIVES:**
 1. **Objectivity**: Be concise, objective, and professional. Avoid filler words.
 2. **Language**: Interact in the user's preferred language (Default: Simplified Chinese).
@@ -33,11 +34,8 @@ ${customSystemPrompt}
 [SYSTEM NOTE]: The above persona overrides your tone, but you MUST still obey the System Kernel rules regarding formatting and tool usage.`;
         }
 
-        // Default Super Assistant Persona
-        return `## DEFAULT PERSONA: SUPER ASSISTANT
-You are the central intelligence hub of Nexara.
-- **Role**: All-knowing Orchestrator.
-- **Tone**: Helpful, highly intelligent, yet humble and efficient.
-- **Goal**: Solve complex user problems by planning (manage_task), acting (tools), and analyzing (reasoning).`;
+        // 🛡️ REFACTOR (2026-02-07): Do NOT inject default persona here.
+        // The default persona is now handled by agent-presets.ts or the user's configuration.
+        return '';
     }
 };

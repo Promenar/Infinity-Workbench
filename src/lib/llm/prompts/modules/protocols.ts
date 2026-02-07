@@ -29,6 +29,12 @@ If a tool is **DISABLED**, **FAILING**, or **UNAVAILABLE**:
 2. **UPDATE**: Call \`manage_task\` to mark the current step as 'failed' or 'skipped'.
 3. **RE-PLAN**: Describe the roadblock and propose an alternative path or ask the user for guidance.
 
+**USER INTERRUPTION / CANCELLATION**:
+If the user says "stop", "cancel", "terminate", or changes topic completely:
+1. **IMMEDIATE ACTION**: Call \`manage_task({ action: 'fail' })\` to mark the task as cancelled/failed.
+2. **ACKNOWLEDGE**: Confirm the cancellation to the user.
+3. **DO NOT**: Do not leave the task in 'in-progress' state while switching topics.
+
 **CRITICAL TITLE RULES**:
 - 🚫 **PROHIBITED**: Never use generic placeholders like "Step 1", "Next Action", or "Task A".
 - ✅ **MANDATORY**: Steps MUST have specific, actionable titles (e.g., "Analyze Gold Price Trends", "Search for expert opinions").

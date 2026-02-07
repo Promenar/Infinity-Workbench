@@ -1066,7 +1066,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           paddingHorizontal: 20, // Keep padding horizontal
         }}
       >
-        <View style={{ maxWidth: '80%' }}>
+        <View style={{ width: '90%' }}>
           <ContextMenu
             items={[
               {

@@ -27,7 +27,6 @@ interface RequestProps {
 
 export const TaskMonitor = ({ sessionId, containerStyle, task, isLatest = true, pendingIntervention }: RequestProps) => {
     const { isDark, colors } = useTheme();
-    const dismissActiveTask = useChatStore(s => s.dismissActiveTask);
     const session = useChatStore(s => s.sessions.find(sk => sk.id === sessionId));
     const activeTask = task || session?.activeTask; // ✅ Prioritize passed task
 
@@ -55,11 +54,7 @@ export const TaskMonitor = ({ sessionId, containerStyle, task, isLatest = true, 
         setExpanded(!expanded);
     };
 
-    const handleDismiss = (e: any) => {
-        e.stopPropagation();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        dismissActiveTask(sessionId);
-    };
+
 
     const getStatusIcon = (status: TaskStep['status']) => {
         switch (status) {
@@ -157,14 +152,7 @@ export const TaskMonitor = ({ sessionId, containerStyle, task, isLatest = true, 
                         </View>
 
                         <View className="flex-row items-center space-x-3 ml-2">
-                            <TouchableOpacity
-                                onPress={handleDismiss}
-                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                className="opacity-30 active:opacity-100"
-                            >
-                                <X size={14} color={isDark ? '#fff' : '#000'} />
-                            </TouchableOpacity>
-                            <View style={{ width: 1, height: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+
                             <View>
                                 {expanded ? <ChevronUp size={14} color={isDark ? '#aaa' : '#666'} /> : <ChevronDown size={14} color={isDark ? '#aaa' : '#666'} />}
                             </View>
