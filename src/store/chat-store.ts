@@ -1436,7 +1436,7 @@ export const useChatStore = create<ChatState>()(
                       undefined, // thought_signature
                       undefined, // taskState
                       token.toolCalls,
-                      undefined, undefined, undefined, undefined, undefined, undefined, loopCount
+                      undefined, undefined, undefined, undefined, undefined, false, loopCount
                     );
                     lastContentUpdateTime = now;
                   }
@@ -1515,7 +1515,7 @@ export const useChatStore = create<ChatState>()(
                 latestSession.activeTask, // 🔑 保持任务状态同步
                 toolCalls, // 🔑 Correctly persist tool_calls at turn end
                 loopExecutionSteps, // 🔑 Pass the full accumulated steps list to avoid race conditions
-                undefined, undefined, undefined, undefined, undefined, loopCount
+                undefined, undefined, undefined, undefined, false, loopCount
               );
 
               // 🛡️ 关键修复：刷新本地步骤列表，确保下一轮循环能看到工具执行结果

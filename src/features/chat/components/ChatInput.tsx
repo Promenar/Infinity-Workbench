@@ -53,7 +53,7 @@ import { Glass } from '../../../theme/glass';
 import { ExecutionModeSelector } from './ExecutionModeSelector';
 
 // ✅ 思考等级切换器 (Gemini 3 Flash Thinking Mode)
-const ThinkingLevelButton = ({ sessionId, isDark, activeModelId }: { sessionId: string; isDark: boolean; activeModelId?: string }) => {
+const ThinkingLevelButton = ({ sessionId, isDark, activeModelId, displayName }: { sessionId: string; isDark: boolean; activeModelId?: string; displayName?: string }) => {
   const session = useChatStore((s) => s.sessions.find((sk) => sk.id === sessionId));
   const agent = useAgentStore((s) => s.agents.find((a) => a.id === session?.agentId));
   const updateSessionOptions = useChatStore((s) => s.updateSessionOptions);
@@ -78,20 +78,18 @@ const ThinkingLevelButton = ({ sessionId, isDark, activeModelId }: { sessionId: 
 
   const level = session.options?.thinkingLevel || 'high';
 
-  const identifier = (modelConfig?.id || modelConfig?.name || activeModelId || '').toLowerCase();
-
-  // 🛡️ Logic Refinement: 
-  // 'Pro' models are restricted ONLY if they don't contain 'flash'.
-  // We check ID and Display Name to catch all variants (e.g. "Gemini 1.5 Pro").
-  const isPro = identifier.includes('pro') && !identifier.includes('flash');
+  // 🛡️ User Request: Strictly check DISPLAY NAME for "Gemini" AND "Flash"
+  // API ID is ignored for this check to allow Vertex AI aliases to work naturally.
+  const nameToCheck = (displayName || modelConfig?.name || '').toLowerCase();
+  const isFlash = nameToCheck.includes('gemini') && nameToCheck.includes('flash');
 
   // DEBUG LOG (Visible in terminal for diagnosis)
-  // console.log(`[ThinkingButton] ID: ${activeModelId} | Found: ${modelConfig?.id} | isPro: ${isPro}`);
+  // console.log(`[ThinkingButton] ID: ${activeModelId} | isFlash: ${isFlash}`);
 
   const options = [
-    { value: 'minimal', label: '极速', desc: '限制模型最大限度地少用 token 进行思考 (仅限 Flash)。', disabled: isPro },
+    { value: 'minimal', label: '极速', desc: '限制模型最大限度地少用 token 进行思考 (仅限 Flash)。', disabled: !isFlash },
     { value: 'low', label: '轻量', desc: '限制模型使用较少的 token 进行思考，适合不需要进行大量推理的简单任务。' },
-    { value: 'medium', label: '均衡', desc: '提供了一种均衡方法，适合中等复杂程度的任务 (仅限 Flash)。', disabled: isPro },
+    { value: 'medium', label: '均衡', desc: '提供了一种均衡方法，适合中等复杂程度的任务 (仅限 Flash)。', disabled: !isFlash },
     { value: 'high', label: '深度', desc: '允许模型使用更多的 token 进行思考，适合需要深度推理的复杂提示。' },
   ];
 
@@ -667,7 +665,7 @@ export function ChatInput({
           {/* ✅ 执行模式切换器（替换原联网搜索和深度思考按钮） */}
           <View style={{ paddingRight: 12, flexDirection: 'row', alignItems: 'center' }}>
             {/* ✅ 思考等级切换器 */}
-            <ThinkingLevelButton sessionId={sessionId} isDark={isDark} activeModelId={activeModelId} />
+            <ThinkingLevelButton sessionId={sessionId} isDark={isDark} activeModelId={activeModelId} displayName={currentModel} />
             <ExecutionModeSelector sessionId={sessionId} />
           </View>
         </View>
