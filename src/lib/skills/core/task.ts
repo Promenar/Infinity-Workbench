@@ -293,7 +293,21 @@ Self-Correction: If you forget the 'action' parameter, I will try to infer it ba
             }
             else if (taskArgs.action === 'fail') {
                 if (!activeTask) return { id: 'error', content: 'No active task found to fail.', status: 'error' };
-                activeTask = { ...activeTask, status: 'failed', updatedAt: Date.now() };
+
+                // 🛡️ Auto-skip pending steps for cleaner UI
+                const skippedSteps = activeTask.steps.map((step: any) => {
+                    if (step.status === 'pending' || step.status === 'in-progress') {
+                        return { ...step, status: 'skipped' };
+                    }
+                    return step;
+                });
+
+                activeTask = {
+                    ...activeTask,
+                    steps: skippedSteps,
+                    status: 'failed',
+                    updatedAt: Date.now()
+                };
             }
             else if (taskArgs.action === 'ask_user') {
                 if (!activeTask) return { id: 'error', content: 'No active task found. create a task first.', status: 'error' };
