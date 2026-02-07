@@ -1034,9 +1034,12 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         );
       },
 
-      // ✅ Force newlines for soft breaks
+      // ✅ Force newlines for soft breaks & hard breaks
       softbreak: (node: any, children: any, parent: any, styles: any) => (
-        <Text key={node.key}>{'\n'}</Text>
+        <View key={node.key} style={{ width: '100%', height: 0 }} />
+      ),
+      hardbreak: (node: any, children: any, parent: any, styles: any) => (
+        <View key={node.key} style={{ width: '100%', height: 0 }} />
       ),
     }),
     [isDark],
