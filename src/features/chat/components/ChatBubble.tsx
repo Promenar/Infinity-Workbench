@@ -25,9 +25,11 @@ import { ToolArtifacts } from './ToolArtifacts';
 // ✅ Import StreamCard for Error Display
 import { StreamCard } from './StreamCard'; // 🆕 新增
 import { ContextManager } from '../utils/ContextManager';
+import { smartFormatModelOutput } from '../utils/smart-formatter'; // ✅ New Import
 import { useRagStore } from '../../../store/rag-store'; // ✅ 显式导入
 import { Typography, ContextMenu } from '../../../components/ui';
-import { useChatStore } from '../../../store/chat-store';
+import { useChatStore } from '../../../store/chat-store'; // ✅ 显式导入
+import { useApiStore } from '../../../store/api-store'; // ✅ Explicit Import
 import { Message } from '../../../types/chat';
 import { db } from '../../../lib/db'; // ✅ 导入db
 import * as Clipboard from 'expo-clipboard';
@@ -667,6 +669,24 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   globalPendingIntervention, // ✅ 新增：Fallback pending intervention text
 }) => {
   const { t } = useI18n();
+  const { providers } = useApiStore(); // ✅ Import ApiStore for model name resolution
+
+  // 🔑 Fix: Resolve Model Name Independently (SSOT: message.modelId)
+  // Previously relied on 'modelName' prop which forced current session model on all bubbles
+  const resolvedModelName = useMemo(() => {
+    // 1. Identify Target ID (Message > Session)
+    const targetId = message.modelId || modelId;
+    if (!targetId) return modelName;
+
+    // 2. Resolve from Store (Best Effort)
+    for (const p of providers) {
+      const match = p.models.find(m => m.uuid === targetId || m.id === targetId);
+      if (match) return match.name;
+    }
+
+    // 3. Fallback
+    return modelName || targetId;
+  }, [message.modelId, modelId, modelName, providers]);
 
   const { isDark, colors } = useTheme();
   const { processingState, updateProcessingState, processingHistory } = useRagStore();
@@ -808,6 +828,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     }
 
     if (!content) return '';
+
+    // ✅ Smart Format: Fix "Wall of Text" for non-Gemini models
+    // Detects structural headers and enforces newlines
+    const isGemini = message.modelId?.toLowerCase().includes('gemini');
+    if (!isGemini) {
+      content = smartFormatModelOutput(content);
+    }
 
     // ✅ DeepSeek/Local LLM 格式修复 (Pre-processing)
     // 仅针对 DeepSeek 系列模型启用，避免误伤其他正常模型 (如 "May 12. 2024" 这种日期格式被误断行)
@@ -1004,7 +1031,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         const content = node.content;
         // Simple optimization: check for possible math delimiter before splitting
         if (!content.includes('$')) {
-          return <Text key={node.key} style={styles.text}>{content}</Text>;
+          return <Text key={node.key} style={styles.text} textBreakStrategy="simple">{content}</Text>;
         }
 
         // Fix: Currency vs Math. Ignore $ followed by digit (e.g. $10).
@@ -1033,7 +1060,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
               if (!part) return null;
 
               return (
-                <Text key={index} style={styles.text}>
+                <Text key={index} style={styles.text} textBreakStrategy="simple">
                   {part}
                 </Text>
               );
@@ -1604,7 +1631,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         }}
       >
         <MessageMeta
-          modelName={modelName}
+          modelName={resolvedModelName} // ✅ Use resolved name
           timestamp={message.createdAt}
           isDark={isDark}
           loopCount={message.loopCount} // ✅ Pass loopCount
@@ -1677,6 +1704,10 @@ export const ChatBubble = React.memo(ChatBubbleComponent, (prev, next) => {
 
   if (prev.isLastAssistantMessage !== next.isLastAssistantMessage) return false;
   if (prev.globalPendingIntervention !== next.globalPendingIntervention) return false;
+
+  // ✅ Check Model Props (Fix for fallback updates)
+  if (prev.modelName !== next.modelName) return false;
+  if (prev.modelId !== next.modelId) return false;
 
   // @ts-ignore
   if (prev.message.loopCount !== next.message.loopCount) return false; // ✅ Check loopCount changes
