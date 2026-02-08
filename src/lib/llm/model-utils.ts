@@ -137,3 +137,37 @@ export function getModelIcon(modelId: string): string | undefined {
   const spec = findModelSpec(modelId);
   return spec?.icon;
 }
+
+/**
+ * 统一模型名称解析器 (Standardized Model Name Resolver)
+ * 解决 ChatBubble 与 ChatInput/PageTitle 显示不一致的核心逻辑
+ *
+ * 优先级策略：
+ * 1. 优先匹配 UUID (唯一且稳定)
+ * 2. 其次匹配 API ID (可能在不同 Provider 间重复，取第一个找到的)
+ * 3. 搜索范围覆盖所有 Provider (包括已禁用的)，以确保历史消息能解析出名称
+ * 4. 兜底返回原 ID
+ *
+ * @param modelId 需要解析的模型标识 (可能为 uuid 或 api-id)
+ * @returns 模型的显示名称 (name)，或原 ID
+ */
+export function resolveModelIdToName(modelId: string): string {
+  if (!modelId) return '';
+  // Avoid re-fetching store if not needed, but ensure fresh state
+  const providers = useApiStore.getState().providers;
+
+  // 1. Priority: Exact UUID match (Unique)
+  for (const p of providers) {
+    const found = p.models.find(m => m.uuid === modelId);
+    if (found) return found.name;
+  }
+
+  // 2. Priority: API ID match (Ambiguous - takes first matching provider)
+  for (const p of providers) {
+    const found = p.models.find(m => m.id === modelId);
+    if (found) return found.name;
+  }
+
+  // 3. Fallback: Return original ID
+  return modelId;
+}

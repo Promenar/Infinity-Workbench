@@ -127,11 +127,9 @@ export class MemoryManager {
       (isGlobal || enableMemory || (authorizedDocIds && authorizedDocIds.size > 0));
 
     if (shouldRewrite) {
-      onProgress?.('rewriting', 5, 'INTENT'); // 子阶段：意图分析
+      onProgress?.('rewriting', 5, 'INTENT');
+      console.log('[MemoryManager] STAGE: Query Rewrite START');
       try {
-        // 🔑 模型选择优先级：
-        // 1. RAG配置的 queryRewriteModel（如需单独指定）
-        // 2. 全局的 defaultSummaryModel（Query Rewrite和Summary共用快速模型）
         const modelId = effectiveRagConfig.queryRewriteModel || settings.defaultSummaryModel;
         const provider = apiStore.providers.find(
           (p) => p.enabled && p.models.some((m) => m.uuid === modelId || m.id === modelId),
@@ -139,8 +137,6 @@ export class MemoryManager {
 
         if (provider && modelId) {
           const { createLlmClient } = await import('../llm/factory');
-          // Construct ExtendedModelConfig if needed or just pass config
-          // Factory expects ExtendedModelConfig.
           const modelConfig = provider.models.find((m) => m.uuid === modelId || m.id === modelId)!;
 
           const llmClient = createLlmClient({
@@ -159,34 +155,29 @@ export class MemoryManager {
             effectiveRagConfig.queryRewriteStrategy as any,
           );
 
-          // 🔑 添加超时控制：15秒内必须完成，否则降级为原始查询
+          // 15s timeout
           const timeoutPromise = new Promise<{ variants: string[]; usage?: any }>((_, reject) => {
             setTimeout(() => reject(new Error('Query rewrite timeout')), 15000);
           });
 
-          onProgress?.('rewriting', 10, 'API_TX'); // 子阶段：发送请求
+          onProgress?.('rewriting', 10, 'API_TX');
           const rewritePromise = rewriter.rewrite(query, effectiveRagConfig.queryRewriteCount || 3);
 
           try {
             const { variants, usage } = await Promise.race([rewritePromise, timeoutPromise]);
-            onProgress?.('rewriting', 15, 'API_RX'); // 子阶段：接收响应
+            onProgress?.('rewriting', 15, 'API_RX');
 
-            // Accumulate usage for billing
             if (usage) {
               rewriteTokenUsage += usage.total;
             }
 
             if (variants.length > 0) {
               queryVariants = variants;
-              // Limit total variants to avoid explosion
               if (queryVariants.length > 5) queryVariants = queryVariants.slice(0, 5);
             }
+            console.log('[MemoryManager] STAGE: Query Rewrite END');
           } catch (timeoutError) {
-            console.warn(
-              '[MemoryManager] Query rewrite timeout or error, using original query:',
-              timeoutError,
-            );
-            // Fallback: use original query
+            console.error('[MemoryManager] STAGE: Query Rewrite TIMEOUT/ERROR:', timeoutError);
             queryVariants = [query];
           }
         }
@@ -241,22 +232,31 @@ export class MemoryManager {
 
       if (!provider || !modelId) return [];
 
+      console.log('[MemoryManager] STAGE: Embedding START');
       let queryEmbedding: number[] | null = null;
       try {
         const client = new EmbeddingClient(provider, modelId);
-        const result = await client.embedQuery(currentQuery);
+
+        // 15s timeout for embedding
+        const embedTimeoutPromise = new Promise<any>((_, reject) => {
+          setTimeout(() => reject(new Error('Embedding stage timeout')), 15000);
+        });
+
+        const result = await Promise.race([client.embedQuery(currentQuery), embedTimeoutPromise]);
         queryEmbedding = result.embedding;
 
-        // Capture usage
         if (result.usage) {
-          rewriteTokenUsage += result.usage.total_tokens; // Accumulate to total RAG usage
+          rewriteTokenUsage += result.usage.total_tokens;
         } else {
           rewriteTokenUsage += estimateTokens(currentQuery);
         }
+        console.log('[MemoryManager] STAGE: Embedding END');
       } catch (e) {
-        console.warn('[MemoryManager] Embedding failed:', e);
+        console.error('[MemoryManager] STAGE: Embedding TIMEOUT/ERROR:', e);
         return [];
       }
+
+      if (!queryEmbedding) return [];
 
       const results: SearchResult[] = [];
 
@@ -333,9 +333,20 @@ export class MemoryManager {
         }
       }
 
-      // 🔑 并行执行所有搜索任务
-      const searchResults = await Promise.all(searchTasks);
-      searchResults.forEach(r => results.push(...r));
+      // 🔑 并行执行所有搜索任务 (15s timeout)
+      console.log('[MemoryManager] STAGE: Parallel Vector Search START');
+      const vectorSearchTimeoutPromise = new Promise<any>((_, reject) => {
+        setTimeout(() => reject(new Error('Vector search stage timeout')), 15000);
+      });
+
+      try {
+        const searchResults = await Promise.race([Promise.all(searchTasks), vectorSearchTimeoutPromise]);
+        searchResults.forEach((r: any) => results.push(...r));
+        console.log('[MemoryManager] STAGE: Parallel Vector Search END');
+      } catch (e) {
+        console.error('[MemoryManager] STAGE: Parallel Vector Search TIMEOUT/ERROR:', e);
+        // Continue with what we have
+      }
 
       return results;
     });
@@ -387,11 +398,19 @@ export class MemoryManager {
           keywordOptions.excludeDocs = true;
         }
 
-        const keywordResults = await keywordSearch.search(
-          query,
-          effectiveRagConfig.rerankTopK || 30, // 使用配置的初召回深度
-          keywordOptions
-        );
+        console.log('[MemoryManager] STAGE: Hybrid Search START');
+        const hybridSearchTimeoutPromise = new Promise<any>((_, reject) => {
+          setTimeout(() => reject(new Error('Hybrid search stage timeout')), 10000);
+        });
+
+        const keywordResults = await Promise.race([
+          keywordSearch.search(
+            query,
+            effectiveRagConfig.rerankTopK || 30, // 使用配置的初召回深度
+            keywordOptions
+          ),
+          hybridSearchTimeoutPromise
+        ]);
 
         if (keywordResults.length > 0 || allResults.length > 0) {
           const rrfK = 60;
@@ -448,8 +467,9 @@ export class MemoryManager {
           fusedResults.sort((a, b) => b.similarity - a.similarity);
           allResults = fusedResults;
         }
+        console.log('[MemoryManager] STAGE: Hybrid Search END');
       } catch (e) {
-        console.error('[MemoryManager] Hybrid search failed:', e);
+        console.error('[MemoryManager] STAGE: Hybrid Search TIMEOUT/ERROR:', e);
       }
     }
 

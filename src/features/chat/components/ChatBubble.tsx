@@ -14,6 +14,7 @@ import {
   Dimensions,
   Pressable, // ✅ Import Pressable
 } from 'react-native';
+
 import SyntaxHighlighter from 'react-native-syntax-highlighter';
 import { atomOneDark, atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import { MermaidRenderer } from '../../../components/chat/MermaidRenderer';
@@ -25,7 +26,7 @@ import { ToolArtifacts } from './ToolArtifacts';
 // ✅ Import StreamCard for Error Display
 import { StreamCard } from './StreamCard'; // 🆕 新增
 import { ContextManager } from '../utils/ContextManager';
-import { smartFormatModelOutput } from '../utils/smart-formatter'; // ✅ New Import
+import { preprocessMarkdown, markdownStyles as commonMarkdownStyles } from '../../../lib/markdown/markdown-utils'; // ✅ New Import
 import { useRagStore } from '../../../store/rag-store'; // ✅ 显式导入
 import { Typography, ContextMenu } from '../../../components/ui';
 import { useChatStore } from '../../../store/chat-store'; // ✅ 显式导入
@@ -60,7 +61,7 @@ import { RagReferencesList } from './RagReferences';
 import { ProcessingIndicatorDetails } from './ProcessingIndicator';
 import { ToolExecutionTimeline } from '../../../components/skills/ToolExecutionTimeline';
 
-import { findModelSpec } from '../../../lib/llm/model-utils';
+import { findModelSpec, resolveModelIdToName } from '../../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
 import {
   MathRenderer,
@@ -678,15 +679,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     const targetId = message.modelId || modelId;
     if (!targetId) return modelName;
 
-    // 2. Resolve from Store (Best Effort)
-    for (const p of providers) {
-      const match = p.models.find(m => m.uuid === targetId || m.id === targetId);
-      if (match) return match.name;
-    }
-
-    // 3. Fallback
-    return modelName || targetId;
-  }, [message.modelId, modelId, modelName, providers]);
+    // 2. Use Standardized Resolver
+    return resolveModelIdToName(targetId);
+  }, [message.modelId, modelId, modelName]);
 
   const { isDark, colors } = useTheme();
   const { processingState, updateProcessingState, processingHistory } = useRagStore();
@@ -829,19 +824,10 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
     if (!content) return '';
 
-    // ✅ Smart Format: Fix "Wall of Text" for non-Gemini models
-    // Detects structural headers and enforces newlines
-    const isGemini = message.modelId?.toLowerCase().includes('gemini');
-    if (!isGemini) {
-      content = smartFormatModelOutput(content);
-    }
-
-    // ✅ DeepSeek/Local LLM 格式修复 (Pre-processing)
-    // 仅针对 DeepSeek 系列模型启用，避免误伤其他正常模型 (如 "May 12. 2024" 这种日期格式被误断行)
-    const isDeepSeek = message.modelId?.toLowerCase().includes('deepseek');
-    if (isDeepSeek) {
-      content = formatDeepSeekOutput(content);
-    }
+    // ✅ Smart Format: Fix CJK Layout & "Wall of Text" using Cherry Studio's approach
+    // 1. CJK Friendly: Remove single newlines between CJK characters
+    // 2. LaTeX Protection: Convert \[ ... \] to $$ ... $$
+    content = preprocessMarkdown(content);
 
     // 替换块级公式 $$...$$
     // 1. 临时保护代码块中的 $$（如果已有）- 简化处理，假设用户不会在代码块里写 $$ 作为文本
@@ -875,6 +861,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
   // User requirement: "Default open, auto collapse".
   // I can assume if it's the *last* message of the list, it *might* be loading.
   // But I don't know index here.
+
+  // ✅ Resolved Model Name (Robust Logic)
+
 
   // Custom Markdown Rules to fix separate key warning in React 19 + FitImage + SVG Support + LaTeX Support
   const markdownRules = useMemo(
@@ -1013,14 +1002,15 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} onImagePress={setViewImageUri} />;
       },
       // ✅ Allow inline text + math mixing
+      // ✅ Allow inline text + math mixing
       paragraph: (node: any, children: any, parent: any, styles: any) => (
         <View
           key={node.key}
           style={{
             flexDirection: 'row',
             flexWrap: 'wrap',
-            alignItems: 'baseline', // 使用 baseline 对齐文本和公式
-            marginVertical: 8,
+            alignItems: 'baseline',
+            marginBottom: 8,
           }}
         >
           {children}
@@ -1069,13 +1059,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         );
       },
 
-      // ✅ Force newlines for soft breaks & hard breaks
-      softbreak: (node: any, children: any, parent: any, styles: any) => (
-        <View key={node.key} style={{ width: '100%', height: 0 }} />
-      ),
-      hardbreak: (node: any, children: any, parent: any, styles: any) => (
-        <View key={node.key} style={{ width: '100%', height: 0 }} />
-      ),
+
     }),
     [isDark],
   );
@@ -1159,20 +1143,18 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 rules={markdownRules}
                 style={{
                   body: {
+                    ...commonMarkdownStyles.body,
                     color: isDark ? '#fafafa' : '#18181b',
-                    fontSize: 15,
-                    lineHeight: 24,
-                    fontWeight: '600',
-                    letterSpacing: 0.2,
+                    fontSize: 15, // Keep 15px for mobile
                     textAlign: 'left',
                   },
                   text: {
                     color: isDark ? '#ffffff' : '#18181b',
                     fontSize: 15,
-                    lineHeight: 24,
-                    fontWeight: '600',
+                    lineHeight: commonMarkdownStyles.body.lineHeight,
+                    fontWeight: '500', // Reduced from 600 for better reading
                   },
-                  paragraph: { marginVertical: 0, paddingVertical: 0, textAlign: 'left' },
+                  paragraph: { ...commonMarkdownStyles.paragraph, textAlign: 'left' },
                   blockquote: {
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                     borderLeftWidth: 3,
@@ -1182,6 +1164,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     borderRadius: 8,
                     marginVertical: 8,
                   },
+                  heading1: { ...commonMarkdownStyles.heading1, color: isDark ? '#fff' : '#000' },
+                  heading2: { ...commonMarkdownStyles.heading2, color: isDark ? '#fff' : '#000' },
+                  list_item: commonMarkdownStyles.list_item,
                 }}
                 {...({ selectable: true } as any)}
               >
@@ -1439,14 +1424,14 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 markdownRules={markdownRules}
                 markdownStyles={{
                   body: {
+                    ...commonMarkdownStyles.body,
                     color: isDark ? Colors.dark.textPrimary : '#27272A',
                     fontSize: 15,
-                    lineHeight: 26,
                   },
                   text: {
                     color: isDark ? Colors.dark.textPrimary : '#27272A',
                     fontSize: 15,
-                    lineHeight: 26,
+                    lineHeight: commonMarkdownStyles.body.lineHeight,
                   },
                   code_inline: {
                     backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -1473,24 +1458,11 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     borderRadius: 8,
                     marginVertical: 8,
                   },
-                  // Lists need less margin inside cards
-                  list_item: { marginVertical: 2 },
+                  list_item: commonMarkdownStyles.list_item,
                   bullet_list: { marginVertical: 4 },
                   ordered_list: { marginVertical: 4 },
-                  heading1: {
-                    marginTop: 16,
-                    marginBottom: 8,
-                    fontWeight: '800',
-                    fontSize: 22,
-                    color: isDark ? '#fff' : '#000',
-                  },
-                  heading2: {
-                    marginTop: 14,
-                    marginBottom: 6,
-                    fontWeight: '700',
-                    fontSize: 18,
-                    color: isDark ? '#fff' : '#000',
-                  },
+                  heading1: { ...commonMarkdownStyles.heading1, color: isDark ? '#fff' : '#000' },
+                  heading2: { ...commonMarkdownStyles.heading2, color: isDark ? '#fff' : '#000' },
                   heading3: {
                     marginTop: 10,
                     marginBottom: 4,
@@ -1498,7 +1470,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     fontSize: 16,
                     color: isDark ? '#fff' : '#000',
                   },
-                  paragraph: { marginVertical: 0 }, // Let cards handle spacing
+                  paragraph: commonMarkdownStyles.paragraph,
                   // ✅ Fix Table Visibility in Dark Mode
                   table: {
                     borderWidth: 1,

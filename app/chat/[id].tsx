@@ -559,8 +559,7 @@ export default function ChatDetailScreen() {
                 />
               )}
               keyExtractor={(item: Message) => item.id}
-              // 🔑 FlatList 对比测试：移除 FlashList 专属 props
-              removeClippedSubviews={false}
+              // Reverted performance optimizations to fix auto-scroll issues
               contentContainerStyle={{
                 paddingTop: insets.top + 64 + 12,
                 paddingBottom: insets.bottom + 160, // 🔑 增加底部间距，确保错误卡片不被遮挡 (+40px)

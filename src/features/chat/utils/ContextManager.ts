@@ -8,6 +8,7 @@ import { EmbeddingClient } from '../../../lib/rag/embedding';
 import { useSettingsStore } from '../../../store/settings-store';
 import { getFullMessageContent } from './message-utils';
 
+
 export interface ContextConfig {
   maxMessages: number; // Max messages in active window (e.g., 20)
   summarizeThreshold: number; // Trigger summary when unsummarized messages exceed this (e.g., 30)
@@ -186,8 +187,24 @@ export class ContextManager {
     usageDetails?: { input: number; output: number; total: number; isEstimated: boolean };
   } | null> {
     const apiStore = useApiStore.getState();
-    // Use a lightweight model if possible, or the current active provider
-    const provider = apiStore.providers.find((p) => p.enabled);
+    const settings = useSettingsStore.getState();
+    const configuredModelId = settings.defaultSummaryModel;
+
+    // 💡 Smarter selection: Find the provider that actually has this model enabled
+    let provider = apiStore.providers.find((p: any) =>
+      p.enabled && p.models.some((m: any) => m.id === configuredModelId || m.uuid === configuredModelId)
+    );
+
+    // Fallback to first enabled chat-capable provider
+    if (!provider) {
+      provider = apiStore.providers.find((p: any) => p.enabled && p.models.some((m: any) => m.enabled && (!m.type || m.type === 'chat')));
+    }
+
+    // Absolute fallback
+    if (!provider) {
+      provider = apiStore.providers.find((p: any) => p.enabled);
+    }
+
     if (!provider) {
       throw new Error('No enabled AI provider found.');
     }
@@ -201,71 +218,127 @@ export class ContextManager {
     const prompt = `${basePrompt}\n\n${transcript}`;
 
     try {
-      // ✅ Fix: Use configured Summary Model (Fast Model) from Settings Store
-      const settings = useSettingsStore.getState();
-      const configuredModelId = settings.defaultSummaryModel;
-
-      // Default fallback logic if no specific summary model is set
-      const fallbackModel = provider.models.find((m) => m.enabled && (!m.type || m.type === 'chat')) || provider.models[0];
-
       // Effective Model ID
-      const summaryModelName = configuredModelId || fallbackModel?.id || 'gpt-3.5-turbo';
+      let summaryModelName = configuredModelId;
 
-      const config = {
-        ...provider,
-        provider: provider.type,
-        id: summaryModelName, // CORRECT: override provider.id with model.id for the factory
-        modelName: summaryModelName,
-        apiKey: provider.apiKey,
-        baseUrl: provider.baseUrl,
-      };
+      // ✅ Resilience Fix: If the configured model doesn't exist in the provider (local state), fallback
+      // At this point provider is guaranteed to be defined due to the check above
+      const modelExists = provider.models.some((m: any) => (m.id === summaryModelName || m.uuid === summaryModelName) && m.enabled);
 
-      const client = createLlmClient(config as any);
-      // Capture API usage if available
-      let apiUsage: { input: number; output: number; total: number } | undefined;
-      let fullResponse = '';
+      console.log(`[ContextManager] Summary Attempt: Provider=${provider.name}, Configured=${summaryModelName}, ExistsLocally=${modelExists}`);
 
-      await new Promise<void>((resolve, reject) => {
-        client
-          .streamChat(
-            [{ role: 'user', content: prompt }],
-            (chunk) => {
-              if (chunk.content) fullResponse += chunk.content;
-              if (chunk.usage) apiUsage = chunk.usage;
-            },
-            (err) => reject(err),
-          )
-          .then(() => resolve())
-          .catch(reject);
-      });
+      // 🔍 Special Case: If we know a model ID is problematic (like the one reported by user), force fallback if locally it says it exists
+      const isKnownBroken = summaryModelName === 'qwen3_32b_free_q4:latest-so3ff0ii6';
 
-      // ✅ 计算/获取 token 使用量
-      let tokenUsage = 0;
-      let usageDetails:
-        | { input: number; output: number; total: number; isEstimated: boolean }
-        | undefined;
-
-      if (apiUsage) {
-        tokenUsage = apiUsage.total;
-        usageDetails = { ...apiUsage, isEstimated: false };
-      } else {
-        const { estimateTokens } = await import('./token-counter');
-        const inputTokens = estimateTokens(prompt);
-        const outputTokens = estimateTokens(fullResponse);
-        tokenUsage = inputTokens + outputTokens;
-        usageDetails = {
-          input: inputTokens,
-          output: outputTokens,
-          total: tokenUsage,
-          isEstimated: true,
-        };
+      if (!summaryModelName || !modelExists || isKnownBroken) {
+        const fallbackModel = provider.models.find((m: any) => m.enabled && (!m.type || m.type === 'chat')) || provider.models[0];
+        summaryModelName = fallbackModel?.id || 'gpt-3.5-turbo';
+        console.log(`[ContextManager] FALLBACK TRIGGERED -> ${summaryModelName} (Reason: ${!summaryModelName ? 'No model set' : !modelExists ? 'Model not in provider list' : 'Known broken model ID'})`);
       }
+      // 🔍 Correct ID Resolution & Runtime Fallback Loop
+      const MAX_RETRIES = 1;
+      let attempt = 0;
+      let lastError: any;
+      let currentModelId = summaryModelName;
 
-      return {
-        summary: fullResponse,
-        tokenUsage: tokenUsage,
-        usageDetails, // Return detailed usage for stats store
-      };
+      while (attempt <= MAX_RETRIES) {
+        try {
+          // 1. Resolve API ID from UUID/Config ID
+          // Must re-resolve inside loop in case we switched models
+          const targetModelConfig = provider.models.find(
+            (m: any) => (m.id === currentModelId || m.uuid === currentModelId)
+          );
+
+          // CRITICAL FIX: Use the API ID if available, otherwise fallback to currentModelId
+          // This fixes the "model_not_found" error caused by sending UUIDs to the API
+          const apiModelId = targetModelConfig?.id || currentModelId;
+
+          console.log(`[ContextManager] Attempt ${attempt + 1}: UUID=${currentModelId} -> API_ID=${apiModelId}`);
+
+          const config = {
+            ...provider,
+            provider: provider.type,
+            id: apiModelId, // ✅ Use resolved API ID
+            modelName: apiModelId,
+            apiKey: provider.apiKey,
+            baseUrl: provider.baseUrl,
+          };
+
+          const client = createLlmClient(config as any);
+          const response = await client.chatCompletion([
+            { role: 'user', content: prompt }
+          ]);
+
+          const fullResponse = response.content;
+          const apiUsage = response.usage;
+
+          // ✅ 计算/获取 token 使用量
+          let tokenUsage = 0;
+          let usageDetails:
+            | { input: number; output: number; total: number; isEstimated: boolean }
+            | undefined;
+
+          if (apiUsage) {
+            tokenUsage = apiUsage.total;
+            usageDetails = {
+              input: apiUsage.input ?? 0,
+              output: apiUsage.output ?? 0,
+              total: apiUsage.total,
+              isEstimated: false
+            };
+          } else {
+            const { estimateTokens: localEstimate } = await import('./token-counter');
+            const inputTokens = localEstimate(prompt);
+            const outputTokens = localEstimate(fullResponse);
+            tokenUsage = inputTokens + outputTokens;
+            usageDetails = {
+              input: inputTokens,
+              output: outputTokens,
+              total: tokenUsage,
+              isEstimated: true,
+            };
+          }
+
+          return {
+            summary: fullResponse,
+            tokenUsage: tokenUsage,
+            usageDetails, // Return detailed usage for stats store
+          };
+
+        } catch (e: any) {
+          lastError = e;
+          const isModelNotFoundError =
+            e.status === 404 ||
+            e.status === 503 ||
+            e.message?.includes('model_not_found') ||
+            e.message?.includes('无可用渠道');
+
+          if (isModelNotFoundError && attempt < MAX_RETRIES) {
+            console.warn(`[ContextManager] Runtime Error (503/404) on ${currentModelId}. Switching to fallback...`);
+
+            // Switch to absolute fallback for next attempt
+            // Try to find a standard model in the same provider first
+            const fallbackModel = provider.models.find((m: any) =>
+              m.enabled && (!m.type || m.type === 'chat') && m.id !== currentModelId
+            );
+
+            // If local provider fails, try to find ANY provider with gpt-3.5
+            if (!fallbackModel) {
+              // Too complex to switch providers here, just fail safely or try a hardcoded string
+              currentModelId = 'gpt-3.5-turbo';
+            } else {
+              currentModelId = fallbackModel.id;
+            }
+
+            attempt++;
+            continue;
+          }
+
+          // If not retryable or out of retries, throw
+          throw e;
+        }
+      }
+      throw lastError || new Error('Summarization failed after retries');
     } catch (e) {
       console.error('[ContextManager] LLM call failed:', e);
       throw e; // Re-throw to let UI handle it

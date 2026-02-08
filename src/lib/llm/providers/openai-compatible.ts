@@ -456,11 +456,36 @@ export class OpenAiCompatibleClient implements LlmClient {
                     stream_options: stream ? { include_usage: true } : undefined,
                 };
 
-                // Detailed Logging (only to internal logger)
-                // console.log('[OpenAiCompatibleClient] Full Payload:', JSON.stringify(payload, null, 2));
-                apiLogger.logRequest('openai-compatible', url, payload);
+                // 🛡️ Payload Hardening: Deep sanitization for maximum compatibility
+                const cleanPayload: any = {
+                    model: payload.model,
+                    messages: payload.messages.map((m: any) => ({
+                        role: m.role,
+                        content: m.content ?? '', // Never send null content
+                        ...(m.name ? { name: m.name } : {}),
+                        ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+                        ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+                    })),
+                    stream: payload.stream,
+                };
 
-                xhr.send(JSON.stringify(payload));
+                // Add optional parameters ONLY if they are defined and non-default
+                if (payload.temperature !== undefined) cleanPayload.temperature = payload.temperature;
+                if (payload.top_p !== undefined && payload.top_p < 1) cleanPayload.top_p = payload.top_p;
+                if (payload.max_tokens !== undefined) cleanPayload.max_tokens = payload.max_tokens;
+                if (payload.presence_penalty !== undefined && payload.presence_penalty !== 0) cleanPayload.presence_penalty = payload.presence_penalty;
+                if (payload.frequency_penalty !== undefined && payload.frequency_penalty !== 0) cleanPayload.frequency_penalty = payload.frequency_penalty;
+
+                if (payload.stream_options && payload.stream) cleanPayload.stream_options = payload.stream_options;
+                if (payload.tools && payload.tools.length > 0) {
+                    cleanPayload.tools = payload.tools;
+                    cleanPayload.tool_choice = payload.tool_choice || 'auto';
+                }
+
+                // 🚨 AGGRESSIVE DEBUGGING removed
+                apiLogger.logRequest('openai-compatible', url, cleanPayload);
+
+                xhr.send(JSON.stringify(cleanPayload));
 
             } catch (e) {
                 onError(e as Error);
@@ -530,6 +555,12 @@ export class OpenAiCompatibleClient implements LlmClient {
             message: `API Error: ${xhr.status} ${xhr.statusText}\n${xhr.responseText}`,
             response: xhr.responseText,
         };
+
+        // 🚨 AGGRESSIVE DEBUGGING: Log raw response
+        console.error('[OpenAiCompatibleClient] RAW ERROR RESPONSE:', {
+            status: xhr.status,
+            response: xhr.responseText
+        });
 
         const normalized = ErrorNormalizer.normalize(rawError, 'openai');
         const err = new Error(normalized.message);

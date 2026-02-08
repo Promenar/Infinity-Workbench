@@ -4,6 +4,7 @@ import Markdown from 'react-native-markdown-display';
 import { Typography } from '../../../components/ui/Typography';
 import { useTheme } from '../../../theme/ThemeProvider';
 
+
 interface StreamCardProps {
     content: string;
     index?: number;
@@ -70,6 +71,7 @@ export const StreamCard = React.memo(({
                     rules={markdownRules}
                     style={markdownStyles}
                     onLinkPress={onLinkPress}
+
                 >
                     {content}
                 </Markdown>

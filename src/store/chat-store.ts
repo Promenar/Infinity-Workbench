@@ -550,16 +550,24 @@ export const useChatStore = create<ChatState>()(
                 // RAG retrieval involves heavy SQLite ops which can block the JS thread preventing navigation
                 await new Promise(resolve => setTimeout(resolve, 0));
 
+                // 🔑 CRITICAL FIX: Add safe timeout (30s) to prevent infinite hanging
+                // If DB is locked or logic hangs, this ensures the UI recovers
+                const retrievalPromise = MemoryManager.retrieveContext(
+                  apiMessage.content,
+                  sessionId,
+                  effectiveRagOptions,
+                );
+
+                const timeoutPromise = new Promise<any>((_, reject) =>
+                  setTimeout(() => reject(new Error('RAG Retrieval Timeout (30s)')), 30000)
+                );
+
                 const {
                   context: retrievedContext,
                   references,
                   metadata,
                   billingUsage,
-                } = await MemoryManager.retrieveContext(
-                  apiMessage.content,
-                  sessionId,
-                  effectiveRagOptions,
-                );
+                } = await Promise.race([retrievalPromise, timeoutPromise]);
 
                 // Store for stats tracking
                 if (billingUsage) {
@@ -598,6 +606,8 @@ export const useChatStore = create<ChatState>()(
                   chunks: ragReferences.map(r => r.content || '')
                 }, assistantMsgId);
               } catch (e) {
+                // ✅ 故障容错：立即清理处理状态，防止指示器卡死在检索中
+                useRagStore.getState().updateProcessingState({ status: 'idle' }, assistantMsgId);
                 console.error('RAG Retrieval failed:', e);
                 get().updateMessageContent(
                   sessionId,
@@ -609,8 +619,6 @@ export const useChatStore = create<ChatState>()(
                   [],
                   false,
                 );
-                // ✅ 故障容错：确保检索失败后清理处理状态，防止指示器卡死在检索中
-                useRagStore.getState().updateProcessingState({ status: 'idle' }, assistantMsgId);
               }
             } else {
               console.log('[RAG DEBUG] RAG已禁用，跳过检索');
@@ -2365,6 +2373,9 @@ export const useChatStore = create<ChatState>()(
             // 1. 不创建新的错误气泡，而是更新当前 assistant 消息
             // 2. 只打印警告日志，不触发红屏崩溃
             console.warn('[ChatStore] Agent loop failed:', e.message || e);
+
+            // ✅ 故障容错：确保 RAG 状态被重置（如果是在检索过程中挂掉的）
+            useRagStore.getState().updateProcessingState({ status: 'idle' }, assistantMsgId);
 
             // 更新当前 assistant 消息显示错误（而非创建新气泡）
             const errorText = e.message || 'Unknown error';
