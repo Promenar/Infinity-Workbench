@@ -588,6 +588,7 @@ export default function ChatDetailScreen() {
               overScrollMode="never"
               decelerationRate="normal"
               scrollEventThrottle={16}
+              removeClippedSubviews={false} // 🔑 FIX: Prevent crash in release build (java.lang.IllegalStateException: Required value was null at ReactViewGroup.isViewClipped)
             />
           );
         })()}
