@@ -259,7 +259,7 @@ export async function deleteMessagesAfter(sessionId: string, timestamp: number):
 
 
 /**
- * 获取会话的所有消息
+ * 获取会话的所有消息 (Standard)
  */
 export async function getMessages(sessionId: string, limit?: number, offset?: number): Promise<Message[]> {
     let sql = 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC';
@@ -277,6 +277,39 @@ export async function getMessages(sessionId: string, limit?: number, offset?: nu
     const result = await db.execute(sql, params);
     const rows = (result.rows as any)._array || (result.rows as any) || [];
     return rows.map(rowToMessage);
+}
+
+/**
+ * 获取指定时间之前的消息 (Offset Pagination via Cursor)
+ * 用于倒序/上拉加载更多
+ */
+export async function getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 20): Promise<Message[]> {
+    const sql = 'SELECT * FROM messages WHERE session_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?';
+    const params = [sessionId, beforeTimestamp, limit];
+
+    const result = await db.execute(sql, params);
+    const rows = (result.rows as any)._array || (result.rows as any) || [];
+
+    // 数据库查出来是 DESC (最新到最旧)，但前端通常需要 ASC (旧到新) 来渲染
+    // 既然是 getMessagesBefore，我们需要的是“历史片段”。
+    // 为了保持一致性，返回时按 ASC 排序。
+    return rows.map(rowToMessage).reverse();
+}
+
+/**
+ * 获取最新的 N 条消息
+ * 用于进入会话时的初始加载
+ */
+export async function getLatestMessages(sessionId: string, limit: number = 20): Promise<Message[]> {
+    // 先按 DESC 取最新的 N 条
+    const sql = 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?';
+    const params = [sessionId, limit];
+
+    const result = await db.execute(sql, params);
+    const rows = (result.rows as any)._array || (result.rows as any) || [];
+
+    // 反转回 ASC 顺序
+    return rows.map(rowToMessage).reverse();
 }
 
 /**
@@ -379,6 +412,8 @@ export const SessionRepository = {
     deleteMessage,
     deleteMessagesAfter,
     getMessages,
+    getMessagesBefore,
+    getLatestMessages,
 
     // Full
     getFullSession,

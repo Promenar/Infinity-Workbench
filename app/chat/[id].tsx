@@ -97,7 +97,8 @@ export default function ChatDetailScreen() {
   }, [agent]);
 
   // @ts-ignore
-  const { messages, sendMessage, loading, stop } = useChat(id);
+  // @ts-ignore
+  const { messages, sendMessage, loading, stop, loadMore, hasMore } = useChat(id);
   const listRef = useRef<any>(null);
   const scrollY = useSharedValue(0);
 
@@ -192,32 +193,19 @@ export default function ChatDetailScreen() {
       scrollY.value = event.contentOffset.y;
       scrollOffset.value = event.contentOffset.y;
       const offset = event.contentOffset.y;
-      const visibleHeight = event.layoutMeasurement.height;
-      const totalHeight = event.contentSize.height;
 
-      // Update isAtBottom state
-      const isBottom = totalHeight - (offset + visibleHeight) < 150;
-      isAtBottom.value = isBottom;
-
-      // ❌ REMOVED: Do NOT resume tracking here.
-      // Doing so causes the list to fight the user while they are dragging up from the bottom.
+      // With inverted list, offset 0 is the bottom.
+      // So isAtBottom is true when offset is small.
+      isAtBottom.value = offset < 50;
     },
     onBeginDrag: () => {
       'worklet';
-      // User interaction intentionally breaks auto-scroll
       userScrolledAway.value = true;
     },
     onEndDrag: (event) => {
       'worklet';
-      // Resume tracking ONLY if user releases and is at the bottom
       const offset = event.contentOffset.y;
-      const visibleHeight = event.layoutMeasurement.height;
-      const totalHeight = event.contentSize.height;
-
-      // 🔑 Stricter threshold: Resume tracking only if within 20px of bottom
-      const isBottom = totalHeight - (offset + visibleHeight) < 20;
-
-      if (isBottom) {
+      if (offset < 20) {
         userScrolledAway.value = false;
       }
     },
@@ -227,15 +215,8 @@ export default function ChatDetailScreen() {
     },
     onMomentumEnd: (event) => {
       'worklet';
-      // Resume tracking if momentum stops at bottom
       const offset = event.contentOffset.y;
-      const visibleHeight = event.layoutMeasurement.height;
-      const totalHeight = event.contentSize.height;
-
-      // 🔑 Stricter threshold
-      const isBottom = totalHeight - (offset + visibleHeight) < 20;
-
-      if (isBottom) {
+      if (offset < 20) {
         userScrolledAway.value = false;
       }
     },
@@ -246,63 +227,19 @@ export default function ChatDetailScreen() {
 
   // 🔑 精确滚动到底部（考虑 paddingBottom + Keyboard）
   const scrollToBottom = (animated = false) => {
-    // 基础底部内边距 (Footer + Insets)
-    const basePadding = insets.bottom + 120;
-
-    // 动态计算由于键盘弹起需要的额外偏移
-    // 注意：AnimatedFlatList 没有被 KeyboardAvoidingView 压缩高度，
-    // 需要手动补偿键盘高度带来的可视区域缩减。
-    const currentKeyboardHeight = reanimatedKeyboardHeight?.value || 0;
-
-    // 只有当键盘升起高度超过底部安全区时才需要补偿
-    const extraOffset = currentKeyboardHeight > insets.bottom ? currentKeyboardHeight - insets.bottom : 0;
-
-    const targetOffset = Math.max(0, contentHeightRef.current - listHeightRef.current + basePadding + extraOffset);
-    listRef.current?.scrollToOffset({ offset: targetOffset, animated });
+    // With inverted list, bottom is offset 0.
+    listRef.current?.scrollToOffset({ offset: 0, animated });
   };
 
   const handleContentSizeChange = (_w: number, h: number) => {
-    // 🔑 记录上一次的高度，用于分批渲染检测
-    const previousHeight = contentHeightRef.current;
+    // For inverted list, logic is simpler.
+    // If we are adding message to the "bottom" (index 0), inverted list handles it naturally.
     contentHeightRef.current = h;
 
-    // 1. 如果还在初始加载阶段（分批渲染中），且用户从未打断，强制钉在底部
-    if (isInitialLoad && !userScrolledAway.value) {
-      scrollToBottom(false);
-      lastMessageCount.current = messages.length;
-      return;
-    }
-
-    // 检测是否有新消息
+    // Auto-scroll if new message arrives (length check)
     if (messages.length > lastMessageCount.current) {
-      const lastMessage = messages[messages.length - 1];
-      const isNewUserMessage = lastMessage?.role === 'user';
-
-      if (isNewUserMessage) {
-        // 用户发送新消息，强制滚动到底部
-        userScrolledAway.value = false;
-        isAtBottom.value = true;
+      if (!userScrolledAway.value) {
         scrollToBottom(true);
-      } else if (!userScrolledAway.value) {
-        // 🔑 AI生成的第一帧：如果用户之前就在底部（未打断），则开始追踪
-        // Use true for animated scroll to prevent jarring jump, but keep it tight
-        if (isAtBottom.value || loading) {
-          scrollToBottom(true);
-        }
-      }
-    } else {
-      // 🔑 关键修复：处理分批渲染和流式输出
-      // 当 FlatList 分批渲染旧消息时，messages.length 不变，但 height 增加
-      // 此时如果用户本就在底部（未打断），应该保持在底部
-      const isGrowing = h > previousHeight;
-
-      if (isGrowing && !userScrolledAway.value && isAtBottom.value) {
-        // 只有当实际上是"在底部"的状态下，内容增长才需要自动跟随
-        scrollToBottom(false);
-      } else if (loading && !userScrolledAway.value) {
-        // AI 生成内容更新 (Streaming)
-        // 保持无动画以确保跟手性和性能
-        scrollToBottom(false);
       }
     }
     lastMessageCount.current = messages.length;
@@ -493,30 +430,31 @@ export default function ChatDetailScreen() {
 
       <Animated.View style={[{ flex: 1 }, listContainerStyle]}>
         {(() => {
-          // ✅ FIX: Calculate latest assistant message index strictly (ignoring tool messages)
-          // Find the last index where role is 'assistant'
-          let lastAssistantIdx = -1;
-          for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].role === 'assistant') {
-              lastAssistantIdx = i;
-              break;
-            }
-          }
+          // ✅ FIX: Calculate latest assistant message index correctly for Inverted List
+          // Inverted means messages are ordered Newest first.
+          // So we look for the FIRST assistant message in the reversed array.
+          const reversedMessages = useMemo(() => messages.slice().reverse(), [messages]);
+
+          const latestAssistantIndex = useMemo(() => {
+            return reversedMessages.findIndex(m => m.role === 'assistant');
+          }, [reversedMessages]);
 
           return (
             <AnimatedFlatList
               ref={listRef}
-              inverted={false}
-              data={messages}
+              inverted={true} // ✅ Switch to inverted
+              data={reversedMessages} // ✅ Use memoized reversed data
               renderItem={({ item, index }: { item: any; index: number }) => (
                 <ChatBubble
+                  key={item.id}
                   message={item}
                   agentId={agent.id}
                   agentAvatar={agent.avatar}
                   agentColor={agentColor}
                   agentName={agent.name}
                   sessionId={id}
-                  isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && index === lastAssistantIdx && index === messages.length - 1} // Strict check
+                  // isGenerating: Only show if it's the very latest message (index 0) AND it's assistant
+                  isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && item.role === 'assistant' && index === 0}
                   onDelete={() => handleDeleteMessage(item.id)}
                   onExtractGraph={() => handleExtractGraph(item)}
                   onVectorize={() => handleManualVectorize(item.id)}
@@ -554,32 +492,38 @@ export default function ChatDetailScreen() {
                   }
                   modelId={session?.modelId}
                   modelName={modelConfig?.name}
-                  isLastAssistantMessage={index === lastAssistantIdx} // ✅ Correct logic
+                  isLastAssistantMessage={index === latestAssistantIndex} // ✅ Correct logic
                   globalPendingIntervention={session?.pendingIntervention}
                 />
               )}
               keyExtractor={(item: Message) => item.id}
-              // Reverted performance optimizations to fix auto-scroll issues
               contentContainerStyle={{
-                paddingTop: insets.top + 64 + 12,
-                paddingBottom: insets.bottom + 160, // 🔑 增加底部间距，确保错误卡片不被遮挡 (+40px)
+                paddingTop: insets.bottom + 160, // Reversed: Top is Bottom.
+                paddingBottom: insets.top + 64 + 12, // Reversed: Bottom is Top.
               }}
-              onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
-                const height = e.nativeEvent.layout.height;
-                const prevHeight = listHeightRef.current;
-                listHeightRef.current = height;
-                setIsListReady(true);
-
-                // 🔑 键盘收起时，List高度变大。如果此时我们应该在底部，强制重新贴底。
-                // 这解决了"键盘收起导致内容悬空，随后AI消息出现导致瞬间跳变"的问题。
-                // 阈值设为 20px 防止微小布局抖动触发
-                if (prevHeight > 0 && height > prevHeight + 20) {
-                  if (isAtBottom.value || !userScrolledAway.value) {
-                    // 使用无动画(animated: false)来确保每一帧都紧贴底部，
-                    // 形成视觉上的"跟随输入栏下落"效果。
-                    scrollToBottom(false);
-                  }
+              onEndReached={() => {
+                if (hasMore) {
+                  loadMore();
                 }
+              }}
+              onEndReachedThreshold={0.5}
+              // Footer is now Header (Top of screen)
+              ListFooterComponent={
+                hasMore ? (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color={agentColor} />
+                  </View>
+                ) : (
+                  // Spacer for top (visually)
+                  <View style={{ height: 20 }} />
+                )
+              }
+              // Header is now Footer (Bottom of screen)
+              // We don't really need a footer since input is sticky.
+
+              onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
+                // Simplified layout logic
+                setIsListReady(true);
               }}
               onContentSizeChange={handleContentSizeChange}
               onScroll={onScroll}
@@ -588,7 +532,7 @@ export default function ChatDetailScreen() {
               overScrollMode="never"
               decelerationRate="normal"
               scrollEventThrottle={16}
-              removeClippedSubviews={false} // 🔑 FIX: Prevent crash in release build (java.lang.IllegalStateException: Required value was null at ReactViewGroup.isViewClipped)
+              removeClippedSubviews={false}
             />
           );
         })()}

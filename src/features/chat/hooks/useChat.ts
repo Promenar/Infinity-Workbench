@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useChatStore } from '../../../store/chat-store';
 
 export function useChat(sessionId: string) {
@@ -13,6 +13,24 @@ export function useChat(sessionId: string) {
   const isGenerating = useChatStore(
     useCallback((state) => state.currentGeneratingSessionId === sessionId, [sessionId]),
   );
+
+  // Auto-load messages on mount if empty
+  const hasMessages = session?.messages && session.messages.length > 0;
+  const loadSessionMessages = useChatStore(state => state.loadSessionMessages);
+
+  useEffect(() => {
+    // Only load if session exists, no messages, and we haven't reached end (or undefined meaning not loaded)
+    if (sessionId && (!session || (!hasMessages && session.hasMore !== false))) {
+      loadSessionMessages(sessionId, 5);
+    }
+  }, [sessionId, hasMessages, session?.hasMore, session, loadSessionMessages]);
+
+  // Initial Load Effect
+  // We use a flag to ensure we don't spam load
+  // Actually, if we use SWR or query it handles this, but here we do manual.
+  if (session && !hasMessages && session.hasMore !== false) {
+    // This is bad practice in render. Use useEffect.
+  }
 
   const messages = session?.messages || [];
 
@@ -57,11 +75,41 @@ export function useChat(sessionId: string) {
     [sessionId, session, generateMessage],
   );
 
+  // Pagination Load More
+  const loadMore = useCallback(async () => {
+    if (!session || !session.messages.length) return;
+    // Prevent loading if no more history
+    if (session.hasMore === false) return;
+
+    const oldestMessage = session.messages[0]; // Assuming messages are chronological (ASC)
+    // Actually, store stores them ASC.
+    // So messages[0] is the oldest.
+    await useChatStore.getState().loadSessionMessages(sessionId, 5, oldestMessage.createdAt);
+  }, [sessionId, session]);
+
+  // Initial Load (if empty)
+  // This ensures we load messages when entering the chat
+  // if they were not loaded (since loadSessions is now metadata-only)
+  // Or if we want to ensure freshness.
+  // We use a ref or effect to trigger this once.
+  // Actually, we can just check if messages is empty array AND hasMore is undefined (meaning never loaded?)
+  // Or just always try to load if empty.
+  const hasLoaded = session?.messages && session.messages.length > 0;
+
+  if (session && !hasLoaded && session.hasMore !== false) {
+    // Trigger load on next tick or effect?
+    // Better to do in useEffect in component, or here?
+    // Doing it here might cause loop if not careful.
+    // Let's expose a method to trigger initial load or do it in useEffect.
+  }
+
   return {
     messages,
     loading: isGenerating,
     sendMessage,
     stop,
     sessionStats: session?.stats,
+    loadMore,
+    hasMore: session?.hasMore ?? false,
   };
 }

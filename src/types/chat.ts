@@ -138,6 +138,7 @@ export interface Session {
   messages: Message[];
   modelId?: string; // Override agent's default model for this session
   customPrompt?: string; // Additional prompt specific to this session (appended to agent's systemPrompt)
+  hasMore?: boolean; // ✅ 新增：分页标记，指示是否还有更多历史消息未加载
   currentLoopCount?: number; // 🆕 追踪当前执行轮数（支持跨续杯连续计数）
   isLongRunning?: boolean;   // ✅ 新增：标记是否于长程自动迭代状态（>20步）
   isPinned?: boolean;
