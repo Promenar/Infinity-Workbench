@@ -1059,6 +1059,12 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         );
       },
 
+      // ✅ Soft Line Break Configuration (User Request)
+      // Force soft breaks to be rendered as actual newlines
+      softbreak: (node: any, children: any, parent: any, styles: any) => (
+        <Text key={node.key}>{"\n"}</Text>
+      ),
+
 
     }),
     [isDark],

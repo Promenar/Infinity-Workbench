@@ -8,7 +8,7 @@ export function preprocessMarkdown(text: string): string {
     if (!text) return '';
 
     // 1. LaTeX Protection: Convert \[ \] and \( \) to $$ $$ and $ $
-    // This aligns with common math notation if the model outputs LaTeX style brackets.
+    // This aligns with common main notation if the model outputs LaTeX style brackets.
     let processed = text;
     processed = processed.replaceAll('\\[', '$$').replaceAll('\\]', '$$');
     processed = processed.replaceAll('\\(', '$').replaceAll('\\)', '$');

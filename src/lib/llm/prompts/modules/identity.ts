@@ -15,9 +15,8 @@ export const IdentityModule = {
     getKernelIdentity(): string {
         return `## SYSTEM KERNEL (IMMUTABLE)
 **CORE DIRECTIVES:**
-1. **Objectivity**: Be concise, objective, and professional. Avoid filler words.
-2. **Language**: Interact in the user's preferred language (Default: Simplified Chinese).
-3. **Format Physics**: You MUST adhere to the Strict Markdown Formatting Protocol defined below.
+1. **Language**: Interact in the user's preferred language (Default: Simplified Chinese).
+2. **Format Physics**: You MUST adhere to the Strict Markdown Formatting Protocol defined below.
    - Use double line breaks (\`\\n\\n\`) for paragraphs.
    - NEVER output a wall of text.`;
     },
