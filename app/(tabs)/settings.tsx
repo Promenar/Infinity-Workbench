@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform, TextInput } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -25,6 +25,8 @@ import { clsx } from 'clsx';
 import { SettingsSection } from '../../src/features/settings/components/SettingsSection';
 import { SettingsItem } from '../../src/features/settings/components/SettingsItem';
 import { Colors } from '../../src/theme/colors';
+import { AnimatedInput } from '../../src/components/ui/AnimatedInput';
+import { Marquee } from '../../src/components/ui/Marquee';
 import {
   ChevronRight,
   Globe,
@@ -53,7 +55,10 @@ import {
   Settings as SettingsIcon,
   Palette,
   Image as ImageIcon,
+  User, // New Icon
 } from 'lucide-react-native';
+import { AgentAvatar } from '../../src/components/chat/AgentAvatar';
+import * as ImagePicker from 'expo-image-picker';
 
 import { LargeTitleHeader } from '../../src/components/ui/LargeTitleHeader';
 import { ProviderModal } from '../../src/features/settings/ProviderModal';
@@ -82,6 +87,9 @@ export default function SettingsScreen() {
     setHapticsEnabled,
     loggingEnabled,
     setLoggingEnabled,
+    userAvatar,
+    userName,
+    updateUserProfile,
   } = useSettingsStore();
 
   const { providers, deleteProvider, addProvider, updateProvider } = useApiStore();
@@ -90,7 +98,8 @@ export default function SettingsScreen() {
   const [containerWidth, setContainerWidth] = useState(0);
   const [eggCount, setEggCount] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
-
+  // const [avatarPickerVisible, setAvatarPickerVisible] = useState(false); // Removed
+  const [isEditingName, setIsEditingName] = useState(false); // ✅ New State
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerConfig, setPickerConfig] = useState<{
     title: string;
@@ -279,6 +288,131 @@ export default function SettingsScreen() {
             pointerEvents={activeTab === 'app' ? 'auto' : 'none'}
           >
             <SettingsSection title={t.settings.basicSettings}>
+              {/* User Profile Section */}
+              <View style={{ marginBottom: 24, paddingHorizontal: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      // 1. Request Permission
+                      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                      if (permissionResult.granted === false) {
+                        alert('Permission to access media library is required!');
+                        return;
+                      }
+
+                      // 2. Launch Picker
+                      const result = await ImagePicker.launchImageLibraryAsync({
+                        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                        allowsEditing: true,
+                        aspect: [1, 1],
+                        quality: 0.5,
+                      });
+
+                      if (!result.canceled) {
+                        updateUserProfile({ avatar: result.assets[0].uri });
+                      }
+                    }}
+                  >
+                    <AgentAvatar
+                      id="user"
+                      name={userName || 'User'}
+                      avatar={userAvatar}
+                      size={64}
+                      className="mr-4"
+                    />
+                    <View style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      right: 16,
+                      backgroundColor: colors[500],
+                      borderRadius: 12,
+                      padding: 4,
+                      borderWidth: 2,
+                      borderColor: isDark ? '#18181b' : '#ffffff',
+                    }}>
+                      <Edit2 size={12} color="white" />
+                    </View>
+                  </TouchableOpacity>
+
+                  <View style={{ flex: 1 }}>
+                    {/* Label */}
+                    <Text style={{
+                      fontSize: 12,
+                      color: isDark ? '#a1a1aa' : '#71717a',
+                      marginBottom: 4,
+                      marginLeft: 4,
+                      fontWeight: '600'
+                    }}>
+                      {(t.settings && (t.settings as any).userName) || '用户名称'}
+                    </Text>
+
+                    {/* Editor Container */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {!isEditingName ? (
+                        <TouchableOpacity
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setIsEditingName(true);
+                          }}
+                          style={{
+                            flex: 1,
+                            backgroundColor: isDark ? '#27272a' : '#f4f4f5',
+                            borderRadius: 12,
+                            paddingHorizontal: 12,
+                            paddingVertical: 10,
+                            borderWidth: 1,
+                            borderColor: isDark ? '#3f3f46' : '#e4e4e7',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            minHeight: 46, // Ensure consistent height
+                          }}
+                        >
+                          <Marquee
+                            text={userName || 'User'}
+                            className={`font-bold text-base ${isDark ? 'text-white' : 'text-black'}`}
+                            style={{ flex: 1 }}
+                            textProps={{
+                              style: {
+                                fontSize: 16,
+                                color: isDark ? '#fff' : '#000',
+                              }
+                            }}
+                          />
+                        </TouchableOpacity>
+                      ) : (
+                        <AnimatedInput
+                          value={userName}
+                          autoFocus
+                          onChangeText={(text) => updateUserProfile({ name: text })}
+                          onBlur={() => setIsEditingName(false)}
+                          containerStyle={{
+                            flex: 1,
+                            height: 46,
+                          }}
+                          inputStyle={{
+                            fontSize: 16,
+                            fontWeight: 'bold',
+                            paddingVertical: 0,
+                            color: isDark ? '#fff' : '#000',
+                          }}
+                          placeholder="User"
+                        />
+                      )}
+
+                      <TouchableOpacity
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setIsEditingName(!isEditingName);
+                        }}
+                        style={{ padding: 8 }}
+                      >
+                        <Edit2 size={16} color={isDark ? '#52525b' : '#a1a1aa'} style={{ opacity: 0.5 }} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
               <SettingsItem
                 icon={Globe}
                 title={t.settings.language}
@@ -748,6 +882,8 @@ export default function SettingsScreen() {
           showToast('默认模型已更新', 'success');
         }}
       />
+
+
     </PageLayout>
   );
 }

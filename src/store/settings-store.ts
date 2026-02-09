@@ -11,6 +11,11 @@ interface SettingsState {
   language: Language;
   setLanguage: (lang: Language) => void;
 
+  // User Profile
+  userAvatar?: string;
+  userName?: string;
+  updateUserProfile: (profile: { avatar?: string; name?: string }) => void;
+
   // Haptics
   hapticsEnabled: boolean;
   setHapticsEnabled: (enabled: boolean) => void;
@@ -72,6 +77,14 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       language: 'zh',
       setLanguage: (lang) => set({ language: lang }),
+
+      userAvatar: undefined,
+      userName: undefined,
+      updateUserProfile: (profile) =>
+        set((state) => ({
+          userAvatar: profile.avatar ?? state.userAvatar,
+          userName: profile.name ?? state.userName,
+        })),
 
       hasLaunched: false,
       setHasLaunched: (hasLaunched) => set({ hasLaunched }),
@@ -197,6 +210,8 @@ export const useSettingsStore = create<SettingsState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         language: state.language,
+        userAvatar: state.userAvatar,
+        userName: state.userName,
         hapticsEnabled: state.hapticsEnabled,
         defaultSummaryModel: state.defaultSummaryModel,
         defaultTempSessionModel: state.defaultTempSessionModel,

@@ -31,6 +31,7 @@ import { useRagStore } from '../../../store/rag-store'; // ✅ 显式导入
 import { Typography, ContextMenu } from '../../../components/ui';
 import { useChatStore } from '../../../store/chat-store'; // ✅ 显式导入
 import { useApiStore } from '../../../store/api-store'; // ✅ Explicit Import
+import { useSettingsStore } from '../../../store/settings-store';
 import { Message } from '../../../types/chat';
 import { db } from '../../../lib/db'; // ✅ 导入db
 import * as Clipboard from 'expo-clipboard';
@@ -671,6 +672,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 }) => {
   const { t } = useI18n();
   const { providers } = useApiStore(); // ✅ Import ApiStore for model name resolution
+  const { userAvatar, userName } = useSettingsStore();
 
   // 🔑 Fix: Resolve Model Name Independently (SSOT: message.modelId)
   // Previously relied on 'modelName' prop which forced current session model on all bubbles
@@ -1087,14 +1089,45 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         entering={isRecent ? FadeIn.duration(300) : undefined}
         exiting={FadeOut.duration(300)}
         style={{
-          flexDirection: 'row',
-          justifyContent: 'flex-end',
-          marginBottom: 20, // Reduced 32 -> 20
+          flexDirection: 'column', // Changed to column for full width layout
+          alignItems: 'flex-end', // Align content to right
+          marginBottom: 24, // Increased spacing
           width: '100%',
-          paddingHorizontal: 20, // Keep padding horizontal
-        }}
+          paddingHorizontal: 20,
+        }
+        }
       >
-        <View style={{ width: '90%' }}>
+        {/* User Header: Name + Avatar */}
+        < View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          marginBottom: 8,
+          width: '100%'
+        }}>
+          <Text style={{
+            fontSize: 12,
+            fontWeight: '600',
+            color: isDark ? '#a1a1aa' : '#71717a',
+            marginRight: 8
+          }}>
+            {userName || 'User'}
+          </Text>
+          <AgentAvatar
+            id="user"
+            name={userName || 'User'}
+            avatar={userAvatar}
+            size={24}
+          />
+        </View >
+
+        <View style={{
+          width: '100%',
+          backgroundColor: isDark ? 'rgba(39, 39, 42, 0.4)' : 'rgba(244, 244, 245, 0.6)', // Subtle background
+          borderRadius: 16,
+          borderTopRightRadius: 4, // Distinctive corner
+          padding: 16,
+        }}>
           <ContextMenu
             items={[
               {
@@ -1229,7 +1262,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             />
           )}
         </View>
-      </Animated.View>
+      </Animated.View >
     );
   }
 
