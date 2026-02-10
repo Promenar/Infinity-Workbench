@@ -166,8 +166,8 @@ export async function addMessage(sessionId: string, message: Message): Promise<v
       images, tokens, citations, rag_references, rag_progress, rag_metadata,
       rag_references_loading, execution_steps, tool_calls, pending_approval_tool_ids,
       tool_call_id, name, planning_task, is_archived, vectorization_status,
-      layout_height, tool_results, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      layout_height, tool_results, files, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             message.id,
             sessionId,
@@ -194,6 +194,7 @@ export async function addMessage(sessionId: string, message: Message): Promise<v
             message.vectorizationStatus || null,
             message.layoutHeight || null,
             message.toolResults ? JSON.stringify(message.toolResults) : null,
+            message.files ? JSON.stringify(message.files) : null,
             message.createdAt,
         ]
     );
@@ -228,6 +229,7 @@ export async function updateMessage(sessionId: string, messageId: string, update
     if (updates.vectorizationStatus !== undefined) { setClauses.push('vectorization_status = ?'); values.push(updates.vectorizationStatus); }
     if (updates.layoutHeight !== undefined) { setClauses.push('layout_height = ?'); values.push(updates.layoutHeight); }
     if (updates.toolResults !== undefined) { setClauses.push('tool_results = ?'); values.push(updates.toolResults ? JSON.stringify(updates.toolResults) : null); }
+    if (updates.files !== undefined) { setClauses.push('files = ?'); values.push(updates.files ? JSON.stringify(updates.files) : null); }
 
     if (setClauses.length === 0) return;
 
@@ -395,6 +397,7 @@ function rowToMessage(row: any): Message {
         vectorizationStatus: row.vectorization_status || undefined,
         layoutHeight: row.layout_height || undefined,
         toolResults: row.tool_results ? JSON.parse(row.tool_results) : undefined,
+        files: row.files ? JSON.parse(row.files) : undefined,
     };
 }
 

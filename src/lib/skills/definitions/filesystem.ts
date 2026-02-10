@@ -96,7 +96,7 @@ export const WriteFileSkill: Skill = {
                         await store.addDocument(
                             params.path,    // Title (relative path)
                             params.content,
-                            params.content.length,
+                            new Blob([params.content]).size, // 使用字节数而非字符数
                             'text',         // Type
                             workspaceFolder.id,
                             undefined       // Thumbnail

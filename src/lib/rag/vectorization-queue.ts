@@ -22,6 +22,9 @@ import { estimateTokens } from '../../features/chat/utils/token-counter';
 export class VectorizationQueue {
   private queue: VectorizationTask[] = [];
   private isProcessing = false;
+  /** 🔑 每个任务的网络重试计数 (taskId → count) */
+  private retryCountMap = new Map<string, number>();
+  private static MAX_RETRIES = 3;
   private onStateChange?: (
     queue: VectorizationTask[],
     currentTask: VectorizationTask | null,
@@ -38,7 +41,13 @@ export class VectorizationQueue {
   /**
    * 将文档加入向量化队列
    */
-  async enqueueDocument(docId: string, docTitle: string, content: string, kgStrategy?: 'full' | 'summary-first' | 'on-demand') {
+  async enqueueDocument(
+    docId: string,
+    docTitle: string,
+    content: string,
+    kgStrategy?: 'full' | 'summary-first' | 'on-demand',
+    skipVectorization: boolean = false
+  ) {
     const task: VectorizationTask = {
       id: generateId(),
       type: 'document',
@@ -49,14 +58,17 @@ export class VectorizationQueue {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       kgStrategy,
+      skipVectorization,
     };
 
     this.queue.push(task);
     await this.saveTaskToDb(task); // 🔑 持久化任务
     this.notifyStateChange();
 
-    // 标记文档为"处理中"
-    await db.execute('UPDATE documents SET vectorized = 1 WHERE id = ?', [docId]);
+    // 标记文档为"处理中" (如果是纯提取任务，不修改 vectorization 状态)
+    if (!skipVectorization) {
+      await db.execute('UPDATE documents SET vectorized = 1 WHERE id = ?', [docId]);
+    }
 
     if (!this.isProcessing) {
       this.processNext();
@@ -172,31 +184,52 @@ export class VectorizationQueue {
         await this.processSessionKGTask(task);
       }
 
-      task.status = 'completed';
+      // 🔑 任务完成：若 KG 阶段未标记 warning，则标记为 completed
+      // (TS 窄化认为此处 status 仍是 'vectorizing'，但 processDocumentTask 可能已修改为 'warning')
+      if ((task.status as VectorizationTask['status']) !== 'warning') {
+        task.status = 'completed';
+      }
+      this.retryCountMap.delete(task.id);
       task.progress = 100;
       await this.removeTaskFromDb(task.id); // 🔑 完成后删除持久化记录
       const taskLabel = task.type === 'document' ? task.docTitle
         : task.type === 'session-kg' ? `SessionKG-${task.sessionId}`
           : `Memory-${task.sessionId}`;
-      console.log(`[VectorizationQueue] Finished: ${taskLabel}`);
+      console.log(`[VectorizationQueue] Finished: ${taskLabel} (status: ${task.status})`);
 
     } catch (error) {
       const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
 
-      if (msg.includes('local model not loaded') || msg.includes('context is predicting')) {
-        console.warn(`[VectorizationQueue] Busy/Not Ready (${msg}), retrying in 3s...`);
+      // 🔑 可重试条件：本地模型繁忙 OR 网络类瞬态错误
+      const isRetryable = msg.includes('local model not loaded')
+        || msg.includes('context is predicting')
+        || msg.includes('network')
+        || msg.includes('timeout')
+        || msg.includes('fetch failed')
+        || msg.includes('aborted')
+        || /\b5\d{2}\b/.test(msg); // 5xx 服务端错误
+
+      const currentRetries = this.retryCountMap.get(task.id) || 0;
+
+      if (isRetryable && currentRetries < VectorizationQueue.MAX_RETRIES) {
+        this.retryCountMap.set(task.id, currentRetries + 1);
+        const delay = Math.min(3000 * Math.pow(2, currentRetries), 15000); // 指数退避: 3s, 6s, 12s
+        console.warn(`[VectorizationQueue] 可重试错误 (${currentRetries + 1}/${VectorizationQueue.MAX_RETRIES}): ${msg}, ${delay}ms 后重试...`);
+        task.subStatus = `重试中 (${currentRetries + 1}/${VectorizationQueue.MAX_RETRIES})...`;
         skipShift = true;
-        await this.saveTaskToDb(task); // 🔑 保存重试状态
-        setTimeout(() => this.processNext(), 3000);
+        await this.saveTaskToDb(task);
+        this.notifyStateChange();
+        setTimeout(() => this.processNext(), delay);
       } else {
+        // 🔑 重试耗尽或不可重试错误
+        this.retryCountMap.delete(task.id);
         console.error('[VectorizationQueue] Error:', error);
         task.status = 'failed';
         const errObj = error instanceof Error ? error : new Error(String(error));
         task.error = this.getFriendlyErrorMessage(errObj);
-        await this.saveTaskToDb(task); // 🔑 保存失败状态
+        await this.saveTaskToDb(task);
 
-        // 仅文档任务需要更新数据库状态
-        if (task.type === 'document' && task.docId) {
+        if (task.type === 'document' && task.docId && !task.skipVectorization) {
           await db.execute('UPDATE documents SET vectorized = -1 WHERE id = ?', [task.docId]);
         }
       }
@@ -238,15 +271,18 @@ export class VectorizationQueue {
 
     // 0. 增量哈希检查 (Incremental Hash)
     const contentHash = this.simpleHash(content);
-    const existingHashResult = await db.execute('SELECT content_hash, vectorized FROM documents WHERE id = ?', [task.docId]);
-    const existingHash = existingHashResult.rows?.[0]?.content_hash;
-    const existingVectorized = existingHashResult.rows?.[0]?.vectorized;
+    // 🔑 Skip hash check if we are forcibly running KG extraction only
+    if (!task.skipVectorization) {
+      const existingHashResult = await db.execute('SELECT content_hash, vectorized FROM documents WHERE id = ?', [task.docId]);
+      const existingHash = existingHashResult.rows?.[0]?.content_hash;
+      const existingVectorized = existingHashResult.rows?.[0]?.vectorized;
 
-    if (ragConfig.enableIncrementalHash && existingHash === contentHash && existingVectorized === 2) {
-      console.log(`[VectorizationQueue] Skip: Content hash matched for ${task.docTitle}`);
-      task.status = 'completed';
-      task.progress = 100;
-      return;
+      if (ragConfig.enableIncrementalHash && existingHash === contentHash && existingVectorized === 2) {
+        console.log(`[VectorizationQueue] Skip: Content hash matched for ${task.docTitle}`);
+        task.status = 'completed';
+        task.progress = 100;
+        return;
+      }
     }
 
     // 0.1 本地预处理
@@ -267,85 +303,112 @@ export class VectorizationQueue {
     const chunks = await splitter.splitText(processedContent);
     task.totalChunks = chunks.length;
 
-    // 2. 获取 Provider
-    task.status = 'vectorizing';
-    task.progress = 20;
-    this.notifyStateChange();
-
-    const { provider, modelId } = this.getEmbeddingProvider();
-    if (!provider || !modelId) throw new Error('No embedding provider available');
-    console.log(`[VectorizationQueue] Using Provider: ${provider.name}, Model: ${modelId}`);
-
-    // 3. 向量提取
-    const embeddingClient = new EmbeddingClient(provider, modelId);
-    const batchSize = provider.type === 'local' ? 1 : 10;
-    const allEmbeddings: number[][] = [];
-    console.log(`[VectorizationQueue] Processing ${chunks.length} chunks with batch size ${batchSize}`);
-
-    const startIndex = task.lastChunkIndex || 0; // 支持断点续传
-    for (let i = startIndex; i < chunks.length; i += batchSize) {
-      const batch = chunks.slice(i, i + batchSize);
-      const result = await embeddingClient.embedDocuments(batch);
-      allEmbeddings.push(...result.embeddings);
-
-      const completedChunks = Math.min(i + batchSize, chunks.length);
-      task.progress = 20 + (completedChunks / chunks.length) * 60;
-      task.lastChunkIndex = completedChunks;
-      task.updatedAt = Date.now(); // 心跳更新
-      console.log(`[VectorizationQueue] Progress: ${task.progress.toFixed(1)}% (${completedChunks}/${chunks.length})`);
+    // 🔑 Skip Vectorization if requested
+    if (!task.skipVectorization) {
+      // 2. 获取 Provider
+      task.status = 'vectorizing';
+      task.progress = 20;
       this.notifyStateChange();
-      await new Promise(resolve => setTimeout(resolve, 0)); // Yield
+
+      const { provider, modelId } = this.getEmbeddingProvider();
+      if (!provider || !modelId) throw new Error('No embedding provider available');
+      console.log(`[VectorizationQueue] Using Provider: ${provider.name}, Model: ${modelId}`);
+
+      // 3. 向量提取
+      const embeddingClient = new EmbeddingClient(provider, modelId);
+      const batchSize = provider.type === 'local' ? 1 : 10;
+      const allEmbeddings: number[][] = [];
+      console.log(`[VectorizationQueue] Processing ${chunks.length} chunks with batch size ${batchSize}`);
+
+      const startIndex = task.lastChunkIndex || 0; // 支持断点续传
+      for (let i = startIndex; i < chunks.length; i += batchSize) {
+        const batch = chunks.slice(i, i + batchSize);
+        const result = await embeddingClient.embedDocuments(batch);
+        allEmbeddings.push(...result.embeddings);
+
+        const completedChunks = Math.min(i + batchSize, chunks.length);
+        task.progress = 20 + (completedChunks / chunks.length) * 60;
+        task.lastChunkIndex = completedChunks;
+        task.subStatus = `向量化 ${completedChunks}/${chunks.length} 块`;
+        task.updatedAt = Date.now(); // 心跳更新
+        console.log(`[VectorizationQueue] Progress: ${task.progress.toFixed(1)}% (${completedChunks}/${chunks.length})`);
+        this.notifyStateChange();
+        await new Promise(resolve => setTimeout(resolve, 0)); // Yield
+      }
+
+      // 4. 存储向量
+      task.status = 'saving';
+      task.progress = 85;
+      this.notifyStateChange();
+
+      const vectors = chunks.map((chunk, index) => ({
+        docId: task.docId,
+        content: chunk,
+        embedding: allEmbeddings[index],
+        metadata: { source: 'import', type: 'doc', chunkIndex: index },
+      }));
+
+      await vectorStore.addVectors(vectors);
+      await db.execute('UPDATE documents SET vectorized = 2, vector_count = ?, content_hash = ? WHERE id = ?', [
+        vectors.length,
+        contentHash,
+        task.docId,
+      ]);
+    } else {
+      console.log(`[VectorizationQueue] Skipping vectorization for ${task.docTitle} (KG Only)`);
+      task.progress = 85; // Jump to KG phase
     }
 
-    // 4. 存储向量
-    task.status = 'saving';
-    task.progress = 85;
-    this.notifyStateChange();
-
-    const vectors = chunks.map((chunk, index) => ({
-      docId: task.docId,
-      content: chunk,
-      embedding: allEmbeddings[index],
-      metadata: { source: 'import', type: 'doc', chunkIndex: index },
-    }));
-
-    await vectorStore.addVectors(vectors);
-    await db.execute('UPDATE documents SET vectorized = 2, vector_count = ?, content_hash = ? WHERE id = ?', [
-      vectors.length,
-      contentHash,
-      task.docId,
-    ]);
-
     // 5. 知识图谱 (可选)
-    if (ragConfig.enableKnowledgeGraph) {
+    // 🔑 Force KG if skipVectorization is true
+    if (task.skipVectorization || ragConfig.enableKnowledgeGraph) {
       task.status = 'extracting';
       task.progress = 85; // 🔑 KG 抽取阶段起始进度
       this.notifyStateChange();
       const { graphExtractor } = require('./graph-extractor');
       const strategy = task.kgStrategy || ragConfig.costStrategy || 'on-demand';
 
+      let kgHasError = false;
+
       if (strategy === 'full') {
         // 🔑 Full 策略：逐 chunk 抽取，细粒度进度
         for (let k = 0; k < chunks.length; k++) {
-          await graphExtractor.extractAndSave(chunks[k], task.docId);
-          // 进度从 85% 到 100%，按 chunk 比例分配
+          const kgResult = await graphExtractor.extractAndSave(chunks[k], task.docId, undefined, (status: string) => {
+            task.subStatus = status;
+            task.updatedAt = Date.now();
+            this.notifyStateChange();
+          });
+          if (kgResult.error) kgHasError = true;
           task.progress = 85 + ((k + 1) / chunks.length) * 15;
+          task.subStatus = `图谱抽取 ${k + 1}/${chunks.length} 块`;
           task.updatedAt = Date.now();
           this.notifyStateChange();
           await new Promise(resolve => setTimeout(resolve, 50));
         }
       } else if (strategy === 'summary-first') {
-        // 🔑 Summary-first 策略：3 个采样点，33%/66%/100% 进度
+        // 🔑 Summary-first 策略：3 个采样点
         const sample = [chunks[0], chunks[Math.floor(chunks.length / 2)], chunks[chunks.length - 1]].filter(Boolean);
 
         for (let s = 0; s < sample.length; s++) {
-          await graphExtractor.extractAndSave(sample[s], task.docId);
-          // 进度: 85% + (s+1)/3 * 15% = 90%, 95%, 100%
+          const kgResult = await graphExtractor.extractAndSave(sample[s], task.docId, undefined, (status: string) => {
+            task.subStatus = status;
+            task.updatedAt = Date.now();
+            this.notifyStateChange();
+          });
+          if (kgResult.error) kgHasError = true;
           task.progress = 85 + ((s + 1) / sample.length) * 15;
+          task.subStatus = `图谱抽取 ${s + 1}/${sample.length} 块 (摘要)`;
           task.updatedAt = Date.now();
           this.notifyStateChange();
           await new Promise(resolve => setTimeout(resolve, 50));
         }
+      }
+
+      // 🔑 KG 阶段如有错误，标记 warning（向量化已成功，仅图谱部分异常）
+      if (kgHasError) {
+        task.status = 'warning';
+        task.subStatus = '向量化成功，图谱提取部分失败';
+        this.notifyStateChange();
       }
     }
   }
@@ -465,16 +528,26 @@ export class VectorizationQueue {
     task.updatedAt = Date.now();
     this.notifyStateChange();
 
-    await graphExtractor.extractAndSave(combinedText, undefined, {
+    const kgResult = await graphExtractor.extractAndSave(combinedText, undefined, {
       sessionId: task.sessionId,
-      messageId: task.kgMessageIds?.[task.kgMessageIds.length - 1], // 使用最后一条消息 ID 关联 UI
+      messageId: task.kgMessageIds?.[task.kgMessageIds.length - 1],
+    }, (status: string) => {
+      task.subStatus = status;
+      task.updatedAt = Date.now();
+      this.notifyStateChange();
     });
 
     task.progress = 90;
     task.updatedAt = Date.now();
-    this.notifyStateChange();
 
-    console.log(`[VectorizationQueue] Session KG batch completed for session ${task.sessionId}`);
+    // 🔑 检测 KG 错误
+    if (kgResult.error) {
+      task.status = 'warning';
+      task.subStatus = `会话图谱提取失败: ${kgResult.error}`;
+    }
+
+    this.notifyStateChange();
+    console.log(`[VectorizationQueue] Session KG batch ${kgResult.error ? 'WARNING' : 'completed'} for session ${task.sessionId}`);
   }
 
   // ==================== 辅助方法 ====================

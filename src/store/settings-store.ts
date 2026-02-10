@@ -114,7 +114,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       globalRagConfig: {
         // 切块配置
-        docChunkSize: 800,
+        docChunkSize: 2000,
         memoryChunkSize: 1000,
         chunkOverlap: 100,
 

@@ -3,6 +3,7 @@ import { KJUR } from 'jsrsasign';
 import { Skill, ToolCall, ToolResult } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
 import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
+import * as FileSystem from 'expo-file-system/legacy'; // ✅ SDK54: 使用 legacy API 兼容 readAsStringAsync
 
 // Add global polyfill for TextEncoder if missing (RN environment)
 if (typeof TextEncoder === 'undefined') {
@@ -278,7 +279,7 @@ export class VertexAiClient implements LlmClient {
         xhr.setRequestHeader('Authorization', `Bearer ${validToken}`);
 
         // 3. Prepare Payload
-        const formatContentPart = (m: ChatMessage) => {
+        const formatContentPart = async (m: ChatMessage) => { // ✅ Changed to async
           // 1. 处理工具执行结果 (Role: tool)
           if (m.role === 'tool') {
             const part: any = {
@@ -371,6 +372,29 @@ export class VertexAiClient implements LlmClient {
             });
           }
 
+
+
+          // 4. ✅ Handle Native Files (Async)
+          if (m.files && m.files.length > 0) {
+            for (const file of m.files) {
+              try {
+                // Ensure URI is accessible (handle potential issues with cached/picker URIs)
+                const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: 'base64' });
+                parts.push({
+                  inlineData: {
+                    mimeType: file.mimeType,
+                    data: base64
+                  }
+                });
+                console.log(`[VertexAI] Attached file: ${file.name} (${file.mimeType})`);
+              } catch (e) {
+                console.error(`[VertexAI] Failed to read file ${file.uri}:`, e);
+                // Fallback: append error text so model knows something went wrong
+                parts.push({ text: `[System Error: Failed to load file ${file.name}]` });
+              }
+            }
+          }
+
           return parts;
         };
 
@@ -427,11 +451,12 @@ Available tools: ${toolListDesc} + Native Web Search (built-in).`
         // 🔑 CRITICAL: Vertex AI requiring strict alternating user/model turns.
         const normalizedTurns: { role: 'user' | 'model', parts: any[] }[] = [];
 
-        messages.forEach((m) => {
-          if (m.role === 'system') return; // Skip, already handled in systemInstruction
+        // ✅ Async iteration for file reading
+        for (const m of messages) {
+          if (m.role === 'system') continue; // Skip, already handled in systemInstruction
 
-          const currentParts = formatContentPart(m);
-          if (currentParts.length === 0) return;
+          const currentParts = await formatContentPart(m); // ✅ Await async format
+          if (currentParts.length === 0) continue; // ✅ 跳过空消息，不终止整个循环
 
           if (m.role === 'user' || m.role === 'tool') {
             const lastTurn = normalizedTurns[normalizedTurns.length - 1];
@@ -460,7 +485,7 @@ Available tools: ${toolListDesc} + Native Web Search (built-in).`
               normalizedTurns.push({ role: 'model', parts: currentParts });
             }
           }
-        });
+        }
 
         // 🛡️ Ensure contents starts with 'user'
         if (normalizedTurns.length > 0 && normalizedTurns[0].role === 'model') {

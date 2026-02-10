@@ -15,6 +15,8 @@ import { useRagStore } from '../../store/rag-store';
 import { Typography } from '../ui/Typography';
 import {
   Database,
+  Network,
+  AlertTriangle,
   FileText,
   Loader2,
   Save,
@@ -95,7 +97,7 @@ export function RagStatusIndicator() {
       case 'vectorizing':
         return {
           icon: <Database size={16} color="#3b82f6" />,
-          text: '生成向量嵌入',
+          text: currentTask.subStatus || '生成向量嵌入',
           color: '#3b82f6',
           glow: 'rgba(59, 130, 246, 0.4)',
         };
@@ -112,6 +114,20 @@ export function RagStatusIndicator() {
           text: '执行出错',
           color: '#ef4444',
           glow: 'rgba(239, 68, 68, 0.4)',
+        };
+      case 'extracting':
+        return {
+          icon: <Network size={16} color="#8b5cf6" />,
+          text: currentTask.subStatus || '构建知识图谱',
+          color: '#8b5cf6',
+          glow: 'rgba(139, 92, 246, 0.4)',
+        };
+      case 'warning':
+        return {
+          icon: <AlertTriangle size={16} color="#f59e0b" />,
+          text: currentTask.subStatus || '处理完成（部分警告）',
+          color: '#f59e0b',
+          glow: 'rgba(245, 158, 11, 0.4)',
         };
       default:
         return {

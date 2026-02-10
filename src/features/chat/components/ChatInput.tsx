@@ -30,6 +30,11 @@ import { useI18n } from '../../../lib/i18n';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
+import { PdfExtractor, PdfExtractorRef } from '../../../components/rag/PdfExtractor';
+import { documentProcessor } from '../../../lib/rag/document-processor';
+import { documentService } from '../../../lib/file/document-service';
+import { ChatAttachment } from '../../../types/chat';
+import { FileText, File } from 'lucide-react-native'; // Icon
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -127,7 +132,9 @@ const ThinkingLevelButton = ({ sessionId, isDark, activeModelId, displayName }: 
     <>
       <TouchableOpacity
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }, 10);
           setVisible(true);
         }}
         activeOpacity={0.6}
@@ -225,7 +232,7 @@ const ThinkingLevelButton = ({ sessionId, isDark, activeModelId, displayName }: 
 interface ChatInputProps {
   onSendMessage: (
     text: string,
-    options?: { webSearch?: boolean; reasoning?: boolean; images?: string[] },
+    options?: { webSearch?: boolean; reasoning?: boolean; images?: string[]; files?: ChatAttachment[] },
   ) => void;
   onStop?: () => void;
   sessionId: string;
@@ -275,7 +282,20 @@ export function ChatInput({
   const rotation = useSharedValue(0);
   const [text, setText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<ChatAttachment[]>([]);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const pdfExtractorRef = React.useRef<PdfExtractorRef>(null);
+
+  // Register PDF Extractor
+  useEffect(() => {
+    // Delay registration to ensure ref is mounted
+    const timer = setTimeout(() => {
+      if (pdfExtractorRef.current) {
+        documentProcessor.setPdfExtractor(pdfExtractorRef.current);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // ✅ 编辑模式：当进入编辑模式时，设置初始文本
   useEffect(() => {
@@ -395,7 +415,7 @@ export function ChatInput({
       return;
     }
 
-    if ((!text.trim() && selectedImages.length === 0) || disabled || loading) return;
+    if ((!text.trim() && selectedImages.length === 0 && selectedFiles.length === 0) || disabled || loading) return;
 
     setTimeout(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -414,10 +434,12 @@ export function ChatInput({
         webSearch: webSearchEnabled,
         reasoning: reasoningEnabled,
         images: selectedImages.length > 0 ? selectedImages : undefined,
+        files: selectedFiles.length > 0 ? selectedFiles : undefined,
       });
       setText('');
       updateSessionDraft(sessionId, ''); // Clear draft immediately IN DB
       setSelectedImages([]);
+      setSelectedFiles([]);
     }, 0);
 
   };
@@ -492,7 +514,9 @@ export function ChatInput({
 
         if (newImages.length > 0) {
           setSelectedImages((prev) => [...prev, ...newImages]);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setTimeout(() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }, 10);
         }
       }
     } catch (e) {
@@ -507,9 +531,31 @@ export function ChatInput({
     }
   };
 
+  const handlePickFile = async () => {
+    setShowAttachmentMenu(false);
+    const file = await documentService.pickDocument();
+    if (file) {
+      setSelectedFiles((prev) => [...prev, file]);
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }, 10);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    setTimeout(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, 10);
+  };
+
+
+
   const removeImage = (index: number) => {
     setSelectedImages((prev) => prev.filter((_, i) => i !== index));
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, 10);
   };
 
   const handleModelPress = () => {
@@ -704,6 +750,31 @@ export function ChatInput({
                 ))}
               </ScrollView>
             )}
+
+            {/* File Preview */}
+            {selectedFiles.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.previewContainer}
+                contentContainerStyle={{ paddingHorizontal: 4 }}
+              >
+                {selectedFiles.map((file, index) => (
+                  <View key={file.id} style={[styles.previewItem, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' }]}>
+                    <FileText size={24} color={isDark ? '#e4e4e7' : '#4b5563'} />
+                    <Typography numberOfLines={1} style={{ fontSize: 9, marginTop: 4, width: '90%', textAlign: 'center', color: isDark ? '#e4e4e7' : '#4b5563' }}>
+                      {file.name}
+                    </Typography>
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => removeFile(index)}
+                    >
+                      <X size={12} color="white" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
             <View style={styles.inputWrapper}>
               {/* The line `onSendMessage={(content, options) => {` was removed as it was syntactically incorrect here. */}
               <TextInput
@@ -712,7 +783,7 @@ export function ChatInput({
                   { color: isDark ? '#fff' : '#000', backgroundColor: 'transparent' },
                 ]}
                 placeholder={
-                  selectedImages.length > 0
+                  selectedImages.length > 0 || selectedFiles.length > 0
                     ? 'Add a caption...'
                     : isInterventionMode
                       ? 'Steer the agent...'
@@ -760,7 +831,7 @@ export function ChatInput({
                 styles.sendButton,
                 {
                   backgroundColor:
-                    text.trim() || selectedImages.length > 0 || loading
+                    text.trim() || selectedImages.length > 0 || selectedFiles.length > 0 || loading
                       ? isInterventionMode
                         ? '#f59e0b' // Amber for intervention
                         : agentColor === '#6366f1'
@@ -769,7 +840,7 @@ export function ChatInput({
                       : isDark
                         ? '#3f3f46'
                         : '#cbd5e1',
-                  opacity: text.trim() || selectedImages.length > 0 || loading ? 1 : 0.4,
+                  opacity: text.trim() || selectedImages.length > 0 || selectedFiles.length > 0 || loading ? 1 : 0.4,
                 },
               ]}
             >
@@ -812,6 +883,16 @@ export function ChatInput({
               <ImageIcon size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
               <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
                 {t.chat.selectFromGallery}
+              </Typography>
+            </TouchableOpacity>
+            <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e5e7eb' }} />
+            <TouchableOpacity
+              style={styles.attachmentMenuItem}
+              onPress={handlePickFile}
+            >
+              <FileText size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
+              <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+                {t.common?.document || 'Document'}
               </Typography>
             </TouchableOpacity>
           </View>

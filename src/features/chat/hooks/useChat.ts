@@ -43,10 +43,10 @@ export function useChat(sessionId: string) {
   const sendMessage = useCallback(
     async (
       content: string,
-      options?: { webSearch?: boolean; reasoning?: boolean; images?: string[] },
+      options?: { webSearch?: boolean; reasoning?: boolean; images?: string[]; files?: any[] },
     ) => {
       if (
-        (!content.trim() && (!options?.images || options.images.length === 0)) ||
+        (!content.trim() && (!options?.images || options.images.length === 0) && (!options?.files || options.files.length === 0)) ||
         !sessionId ||
         !session
       )
@@ -57,6 +57,7 @@ export function useChat(sessionId: string) {
         webSearch: options?.webSearch ?? session.options?.webSearch,
         reasoning: options?.reasoning ?? session.options?.reasoning,
         images: options?.images,
+        files: options?.files, // ✅ Pass files
         ragOptions: session.ragOptions,
       };
 

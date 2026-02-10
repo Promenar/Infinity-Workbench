@@ -557,7 +557,9 @@ const MessageMeta: React.FC<{
               activeOpacity={0.7}
               onPress={() => {
                 setShowTooltip(true);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setTimeout(() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }, 10);
               }}
               hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
             >
@@ -755,24 +757,29 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
     // Only check if message is old enough (> 2s) to avoid race conditions with creation
     if (Date.now() - message.createdAt < 2000) return;
 
-    const checkArchiveStatus = async () => {
-      if (message.role === 'system') return;
-      try {
-        const result = await db.execute(
-          'SELECT 1 FROM vectors WHERE (start_message_id = ? OR end_message_id = ?) AND session_id = ? LIMIT 1',
-          [message.id, message.id, sessionId],
-        );
-        const hasRecord =
-          result.rows &&
-          ((result.rows as any)._array?.length > 0 ||
-            (result.rows as any).length > 0 ||
-            (result.rows as any)[0]);
-        if (hasRecord) setIsArchived(true);
-      } catch (e) {
-        console.error('[ChatBubble] Failed to check archive status:', e);
-      }
-    };
-    checkArchiveStatus();
+    // 🛡️ 延迟至交互完成后再执行 DB 查询，防止快速滚动时密集桥调用
+    const { InteractionManager } = require('react-native');
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+      const checkArchiveStatus = async () => {
+        if (message.role === 'system') return;
+        try {
+          const result = await db.execute(
+            'SELECT 1 FROM vectors WHERE (start_message_id = ? OR end_message_id = ?) AND session_id = ? LIMIT 1',
+            [message.id, message.id, sessionId],
+          );
+          const hasRecord =
+            result.rows &&
+            ((result.rows as any)._array?.length > 0 ||
+              (result.rows as any).length > 0 ||
+              (result.rows as any)[0]);
+          if (hasRecord) setIsArchived(true);
+        } catch (e) {
+          console.error('[ChatBubble] Failed to check archive status:', e);
+        }
+      };
+      checkArchiveStatus();
+    });
+    return () => interactionHandle.cancel();
   }, [message.id, sessionId, message.isArchived, message.vectorizationStatus, isGenerating, isProcessing]);
 
   // Auto-collapse reasoning when done
@@ -1135,7 +1142,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 icon: <Copy />,
                 onPress: () => {
                   Clipboard.setStringAsync(message.content);
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  setTimeout(() => {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }, 10);
                 },
               },
               {
@@ -1163,7 +1172,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 icon: <Trash2 />,
                 destructive: true,
                 onPress: () => {
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                  setTimeout(() => {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                  }, 10);
                   onDelete?.();
                 },
               },
@@ -1227,6 +1238,58 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                       onPress={() => setViewImageUri(img.thumbnail)}
                       isDark={isDark}
                     />
+                  ))}
+                </View>
+              )}
+              {message.files && message.files.length > 0 && (
+                <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {message.files.map((file, idx) => (
+                    <View
+                      key={idx}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                        padding: 8,
+                        borderRadius: 12,
+                        maxWidth: '100%',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginRight: 8,
+                        }}
+                      >
+                        <FileText size={18} color={isDark ? '#e4e4e7' : '#4b5563'} />
+                      </View>
+                      <View style={{ flex: 1, maxWidth: 200 }}>
+                        <Typography
+                          numberOfLines={1}
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '600',
+                            color: isDark ? '#e4e4e7' : '#374151',
+                          }}
+                        >
+                          {file.name}
+                        </Typography>
+                        <Typography
+                          numberOfLines={1}
+                          style={{
+                            fontSize: 11,
+                            color: isDark ? '#a1a1aa' : '#6b7280',
+                          }}
+                        >
+                          {file.size ? (file.size / 1024).toFixed(1) + ' KB' : 'Unknown Size'}
+                        </Typography>
+                      </View>
+                    </View>
                   ))}
                 </View>
               )}
@@ -1384,7 +1447,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             icon: <Copy />,
             onPress: () => {
               Clipboard.setStringAsync(message.content);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              setTimeout(() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              }, 10);
             },
           },
           {
@@ -1434,7 +1499,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             icon: <Trash2 />,
             destructive: true,
             onPress: () => {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              setTimeout(() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              }, 10);
               onDelete?.();
             },
           },

@@ -61,6 +61,7 @@ export const createTables = async () => {
         vectorization_status TEXT, -- 'processing' | 'success' | 'error'
         layout_height REAL,
         tool_results TEXT, -- JSON: ToolResult artifact items
+        files TEXT, -- JSON: ChatAttachment[] (文件附件持久化)
         created_at INTEGER NOT NULL,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       );
@@ -130,6 +131,13 @@ export const createTables = async () => {
       await db.execute('ALTER TABLE messages ADD COLUMN tool_results TEXT;');
       await db.execute('ALTER TABLE messages ADD COLUMN is_error INTEGER DEFAULT 0;');
       await db.execute('ALTER TABLE messages ADD COLUMN error_message TEXT;');
+    } catch (e) {
+      // Column likely exists
+    }
+
+    // 🔑 Migration: ensure messages.files exists (文件附件持久化)
+    try {
+      await db.execute('ALTER TABLE messages ADD COLUMN files TEXT;');
     } catch (e) {
       // Column likely exists
     }

@@ -10,7 +10,8 @@ import { useRagStore } from '../rag-store';
 import { performWebSearch } from '../../features/chat/utils/web-search';
 import { MemoryManager } from '../../lib/rag/memory-manager';
 import { skillRegistry } from '../../lib/skills/registry';
-import { inferModelFamily, getModelSpecificEnhancements } from '../../lib/llm/model-prompts'; // 🆕 模型特定提示词
+import { inferModelFamily, getModelSpecificEnhancements } from '../../lib/llm/model-prompts';
+import { getPrompts, getPromptLang } from '../../lib/llm/prompts/i18n';
 import type { Session, Message, RagReference, GeneratedImageData } from '../../types/chat';
 
 export interface ContextBuilderParams {
@@ -196,6 +197,10 @@ export function buildSystemPrompt(
     isNativeWebSearchProvider: boolean, // 🆕 通过参数注入
     availableSkills?: any[] // 🆕 允许外部传入已筛选的工具列表
 ): string {
+    // 🌐 I18N: 在函数顶部获取语言和 Prompt 字典
+    const lang = getPromptLang();
+    const p = getPrompts(lang);
+
     // 🔑 Phase 1: Context Anchoring - 优先状态注入
     // 在系统提示词的最顶部建立“锚点”，防止模型迷失
     let prioritizedState = '';
@@ -204,7 +209,9 @@ export function buildSystemPrompt(
     const enableTimeInjection = session.options?.enableTimeInjection ?? true;
     if (enableTimeInjection) {
         const now = new Date();
-        const timeString = now.toLocaleString('zh-CN', {
+        // 根据语言选择日期格式
+        const locale = lang === 'zh' ? 'zh-CN' : 'en-US';
+        const timeString = now.toLocaleString(locale, {
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
@@ -215,7 +222,7 @@ export function buildSystemPrompt(
             hour12: false
         });
 
-        prioritizedState += `[SYSTEM METADATA]\nCurrent System Time: ${timeString}\n\n`;
+        prioritizedState += p.context.systemMetadata(timeString) + '\n';
     }
 
     if (session.activeTask && session.activeTask.status === 'in-progress') {
@@ -227,32 +234,33 @@ export function buildSystemPrompt(
         const totalSteps = task.steps.length;
 
         // 分析 Last Action (简单启发式：找最近的 tool 或者是 assistant 的 tool_calls)
-        let lastAction = 'None';
+        const ts = p.context.taskStatus;
+        let lastAction = ts.noAction;
         const msgs = session.messages;
         if (msgs.length > 0) {
             for (let i = msgs.length - 1; i >= 0; i--) {
                 const m = msgs[i];
                 if (m.role === 'tool') {
-                    lastAction = `✅ Tool Execution ('${m.name}') COMPLETED -> Result is in History`;
+                    lastAction = ts.toolCompleted(m.name || 'unknown');
                     break;
                 }
                 if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
                     const names = m.tool_calls.map((t: any) => t.name).join(', ');
-                    lastAction = `⏳ Tool Request ('${names}') -> Waiting for Output`;
+                    lastAction = ts.toolWaiting(names);
                     break;
                 }
                 if (m.role === 'user') {
-                    lastAction = `👤 User Input`;
+                    lastAction = ts.userInput;
                     break;
                 }
             }
         }
 
-        prioritizedState += `### [PRIORITIZED STATE - READ THIS FIRST]
-- **Current Task**: "${task.title}" (Step ${currentStepIndex !== -1 ? currentStepIndex + 1 : 'All Completed'}/${totalSteps}: ${currentStep ? 'Pending' : 'Done'})
-- **Last Action**: ${lastAction}
-- **Immediate Goal**: ${currentStep ? (currentStep.description || currentStep.title) : 'Review and Complete Task'}
-\n**CRITICAL INSTRUCTION**: If Last Action indicates a tool completed, **DO NOT REPEAT IT**. Use the result in history to advance the task (update status or proceed to next step).\n\n`;
+        prioritizedState += `${ts.header}
+- **${ts.currentTask}**: "${task.title}" (${ts.stepProgress(currentStepIndex !== -1 ? String(currentStepIndex + 1) : ts.allCompleted, totalSteps)}: ${currentStep ? 'Pending' : 'Done'})
+- **${ts.lastAction}**: ${lastAction}
+- **${ts.immediateGoal}**: ${currentStep ? (currentStep.description || currentStep.title) : 'Review and Complete Task'}
+\n${ts.criticalInstruction}\n\n`;
     }
 
     let finalSystemPrompt = prioritizedState + agent.systemPrompt + (session.customPrompt ? `\n\n${session.customPrompt}` : '');
@@ -290,19 +298,14 @@ export function buildSystemPrompt(
             }
         );
 
-        const toolInstruction = `\n\n[AVAILABLE TOOLS]
-You have access to the following skills:
+        const toolInstruction = `\n\n${p.context.tools.header}
+${p.context.tools.intro}
 
 ${toolsDesc}
 
 ${systemEnhancements}
 
-[EXECUTION RULES]
-1. NATIVE TOOL CALLS ONLY. Use the JSON schema provided.
-2. 🚫 NO PARAMETER WRAPPING: DO NOT wrap arguments in a "parameters" key.
-3. 🚫 NO INTRODUCTORY TEXT before tool calls.
-4. PROVIDE ALL REQUIRED PARAMETERS.
-5. Trigger tools immediately.
+${p.context.tools.executionRules}
 `;
 
 
@@ -317,7 +320,7 @@ ${systemEnhancements}
                 `${idx + 1}. [${s.status.toUpperCase()}] ${s.title}${s.description ? ` (${s.description})` : ''}`
             ).join('\n');
 
-            const taskContext = `\n\n[CURRENT TASK STATUS]
+            const taskContext = `\n\n${p.context.taskContext.header}
 Task ID: ${task.id || 'N/A'}
 Title: ${task.title}
 Status: ${task.status}
@@ -325,16 +328,13 @@ Progress: ${task.progress}%
 Steps:
 ${formattedSteps}
  
-IMPORTANT: You are currently working on this task. Use 'manage_task' with the correct taskId to update steps.`;
+${p.context.taskContext.important}`;
             finalSystemPrompt += taskContext;
         }
     } else {
         // 🆕 Case: No tools enabled, but we still need Output Guidance (Thinking tags)
         // 🛡️ Explicitly warn model that tools are disabled to prevent hallucinations
-        finalSystemPrompt += `\n\n[TOOL USAGE: DISABLED]
-TOOLS ARE DISABLED. You cannot use any tools. Do not output tool calls.
-If you see tool calls in the history, do not repeat them.
-Answer the user's request directly using your internal knowledge.`;
+        finalSystemPrompt += `\n\n${p.context.toolsDisabled}`;
 
         // 🆕 使用新架构：获取基础协议 (Protocol - Thinking, Formatting)
         const systemEnhancements = getModelSpecificEnhancements(

@@ -43,12 +43,14 @@ export interface VectorizationTask {
   kgBatchContent?: string[];  // 累积的消息内容
   kgMessageIds?: string[];    // 关联的消息 ID
   // 通用字段
-  status: 'pending' | 'reader' | 'chunking' | 'vectorizing' | 'saving' | 'extracting' | 'completed' | 'failed';
+  status: 'pending' | 'reader' | 'chunking' | 'vectorizing' | 'saving' | 'extracting' | 'completed' | 'warning' | 'failed';
   progress: number; // 0-100
+  subStatus?: string; // 🔑 动态子状态描述 (中文)
   error?: string;
   createdAt: number;
   updatedAt?: number; // 🔑 心跳时间戳
   kgStrategy?: 'full' | 'summary-first' | 'on-demand';
+  skipVectorization?: boolean; // 🔑 新增：仅执行 KG 抽取，跳过向量化
   // 🔑 检查点字段 (Checkpoint)
   lastChunkIndex?: number;
   totalChunks?: number;

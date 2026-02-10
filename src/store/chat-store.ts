@@ -13,6 +13,7 @@ import {
   RagProgress,
   RagMetadata,
   TaskState, // ✅ Added
+  ChatAttachment, // ✅ Added
 } from '../types/chat';
 import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
@@ -140,6 +141,7 @@ export interface ChatState {
       skipUserMessage?: boolean; // ✅ 重新发送时跳过创建用户消息
       toolsEnabled?: boolean; // ✅ Override for tool usage
       isContinuationApproval?: boolean; // 🆕 续杯批准标志（用于生成模型特定的提示词）
+      files?: ChatAttachment[]; // ✅ Added for file upload
     },
   ) => Promise<void>;
   generateSessionTitle: (sessionId: SessionId) => Promise<string | undefined>;
@@ -433,8 +435,63 @@ export const useChatStore = create<ChatState>()(
             }
           }
 
+          // 2.1 Process Files (Hybrid Strategy)
+          // Strategy: Native Support vs Text Extraction
+          // Regex-based capability check (Forward Compatible)
+          const isNativeDocModel = /^(gemini-|claude-)/i.test(modelConfig.id);
+          const processedFiles: ChatAttachment[] = [];
+          let fileContext = '';
+
+          if (options?.files && options.files.length > 0) {
+            for (const file of options.files) {
+              // Strategy A: Native Support (Gemini/Claude)
+              if (isNativeDocModel) {
+                // Pass directly to model (File URI will be handled by adapter)
+                // We might need to read base64 here if adapter expects it, 
+                // but let's assume ChatStore prepares the message object and adapter handles actual I/O or we do it here.
+                // For now, valid 'files' in Message are enough for Native.
+                // However, we need to ensure the adapter knows how to read `file.uri`.
+                // For simplicity, we can read base64 here if needed, but let's stick to attaching metadata 
+                // and letting a helper 'formatContent' handle the heavy lifting.
+                processedFiles.push(file);
+              }
+              // Strategy B: Text Extraction (DeepSeek/OpenAI/Others)
+              else {
+                // If content is already extracted (by DocumentService), use it.
+                // Otherwise (should not happen if we use DocumentService properly), extract it.
+                // Assuming DocumentService fills 'content' field if possible, or we might need to extract here.
+                // But `DocumentService.pickDocument` returns `ChatAttachment` which *doesn't* have content by default?
+                // Wait, `ChatAttachment` interface has `content?: string`.
+                // We should ensure it's populated.
+
+                let text = file.content;
+                if (!text) {
+                  // Fallback: If no content, we can't do much for non-native models unless we read it now.
+                  // Since we are in an async function, we could try to read it.
+                  try {
+                    const { documentService } = await import('../lib/file/document-service');
+                    text = await documentService.extractText(file);
+                  } catch (e) {
+                    console.warn(`Failed to extract text from ${file.name}`, e);
+                    text = `[Error reading file: ${file.name}]`;
+                  }
+                }
+
+                if (text) {
+                  fileContext += `\n\n--- File: ${file.name} ---\n${text}\n----------------\n`;
+                }
+              }
+            }
+          }
+
+          // If we have extracted text, append to content
+          let finalContent = content;
+          if (fileContext) {
+            finalContent += fileContext;
+          }
+
           // 2. Add User Message
-          const promptTokens = estimateTokens(content);
+          const promptTokens = estimateTokens(finalContent);
           const normalizedImages: GeneratedImageData[] | undefined = options?.images?.map((img) => {
             if (typeof img === 'string') {
               return { thumbnail: img, original: img, mime: 'image/jpeg' };
@@ -445,10 +502,11 @@ export const useChatStore = create<ChatState>()(
           const userMsg: Message = {
             id: `msg_${Date.now()}`,
             role: 'user',
-            content,
+            content: finalContent, // Use content with appended files
             createdAt: Date.now(),
             tokens: { input: promptTokens, output: 0, total: promptTokens },
             images: normalizedImages,
+            files: processedFiles.length > 0 ? processedFiles : undefined, // Attach native files
           };
 
           // 重新发送/恢复时跳过创建用户消息
@@ -564,7 +622,11 @@ export const useChatStore = create<ChatState>()(
             };
 
             const isRagEnabled = finalRagOptions.enableMemory || finalRagOptions.enableDocs;
-            const apiMessage = { content, images: normalizedImages };
+            const apiMessage = {
+              content,
+              images: normalizedImages,
+              files: processedFiles.length > 0 ? processedFiles : undefined // ✅ Include files for LLM client
+            };
 
             if (isRagEnabled) {
               try {
@@ -849,7 +911,11 @@ export const useChatStore = create<ChatState>()(
 
             // ✅ 虚拟拆分架构关键修复：resumption模式下不添加空用户消息
             if (!options?.isResumption || apiMessage.content.trim()) {
-              contextMsgs.push({ role: 'user', content: await formatContent(apiMessage.content, apiMessage.images) });
+              contextMsgs.push({
+                role: 'user',
+                content: await formatContent(apiMessage.content, apiMessage.images),
+                files: apiMessage.files // ✅ Pass files to contextMsgs
+              });
             } else {
               console.log('[AgentLoop] Resumption: Skipping empty user message in contextMsgs');
             }
@@ -1443,22 +1509,6 @@ export const useChatStore = create<ChatState>()(
                           activeTask: newActiveTask
                         });
                       }
-
-                      // ✅ Sync to Message Level immediately
-                      get().updateMessageContent(
-                        sessionId,
-                        currentAssistantMsgId,
-                        accumulatedContent,
-                        undefined,
-                        undefined,
-                        undefined,
-                        undefined,
-                        false,
-                        undefined,
-                        undefined,
-                        newActiveTask, // Pass planning task
-                        undefined, undefined, undefined, undefined, undefined, undefined, undefined, loopCount
-                      );
 
                       // ✅ Sync to Message Level immediately
                       get().updateMessageContent(

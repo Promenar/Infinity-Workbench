@@ -86,6 +86,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
 
       setGraphData({ nodes, edges });
     } catch (e) {
+      console.error('[KnowledgeGraph] 图谱数据加载失败:', e);
     } finally {
       setLoading(false);
     }

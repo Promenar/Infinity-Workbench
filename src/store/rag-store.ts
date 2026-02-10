@@ -404,8 +404,10 @@ export const useRagStore = create<RagState>()(
           const doc = get().documents.find((d) => d.id === docId);
           if (!doc) return;
 
+          // 🛡️ 从 DB 获取完整内容（state 中 content 被排除为空字符串以节省内存）
+          const content = await get().getDocumentContent(docId);
           const queue = getQueue();
-          await queue.enqueue(docId, doc.title, doc.content);
+          await queue.enqueue(docId, doc.title, content);
         },
 
         extractDocumentGraph: async (docId: string, strategy: 'full' | 'summary-first') => {
@@ -413,8 +415,8 @@ export const useRagStore = create<RagState>()(
           if (!doc) return;
 
           const queue = getQueue();
-          // Enqueue with specific KG strategy
-          await queue.enqueue(docId, doc.title, doc.content, strategy);
+          // Enqueue with specific KG strategy and skipVectorization=true
+          await queue.enqueueDocument(docId, doc.title, doc.content, strategy, true);
         },
 
         toggleDocumentGlobal: async (docId: string) => {
@@ -448,6 +450,9 @@ export const useRagStore = create<RagState>()(
 
         deleteDocument: async (id: string) => {
           try {
+            // 🛡️ 在状态变更前缓存文档信息，防止 set 后 get 找不到
+            const doc = get().documents.find(d => d.id === id);
+
             // 删除文档记录
             await db.execute('DELETE FROM documents WHERE id = ?', [id]);
             // 删除对应的向量数据
@@ -465,8 +470,7 @@ export const useRagStore = create<RagState>()(
               documents: state.documents.filter((d: RagDocument) => d.id !== id),
             }));
 
-            // 🛡️ 删除物理文件
-            const doc = get().documents.find(d => d.id === id); // Use current snapshot
+            // 🛡️ 删除物理文件（使用预缓存的 doc 信息）
             if (doc) {
               const physicalDir = await get()._getPhysicalPath(doc.folderId);
               await FileSystem.deleteAsync(physicalDir + doc.title, { idempotent: true });
@@ -897,7 +901,7 @@ export const useRagStore = create<RagState>()(
 
         _updateQueueState: (queue: VectorizationTask[], current: VectorizationTask | null) => {
           const prevQueueLength = get().vectorizationQueue.length;
-          set({ vectorizationQueue: queue, currentTask: current });
+          set({ vectorizationQueue: queue, currentTask: current ? { ...current } : null });
 
           // ✅ 深度集成：将队列状态同步到 RAG 指示器
           if (current) {

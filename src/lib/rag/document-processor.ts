@@ -126,9 +126,11 @@ export class DocumentProcessor {
                 type: 'image'
             };
         } catch (e) {
-            console.warn('Image description failed', e);
+            console.warn('[DocumentProcessor] 图片描述失败，将跳过向量化:', e);
+            // 🛡️ 返回空内容，由调用方 (rag.tsx) 的 content.trim() 检查拦截
+            // 避免 "Description failed" 这类无信息量文本被向量化占用空间
             return {
-                content: `[Image: ${fileName}] - Description failed`,
+                content: '',
                 type: 'image'
             };
         }

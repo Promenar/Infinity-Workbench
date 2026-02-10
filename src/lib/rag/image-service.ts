@@ -3,6 +3,12 @@ import { useSettingsStore } from '../../store/settings-store';
 import { createLlmClient } from '../llm/factory';
 import { ChatMessage } from '../llm/types';
 
+// 根据用户语言选择描述 prompt，确保向量化后与用户查询语言一致
+const DESCRIPTION_PROMPTS: Record<string, string> = {
+  zh: '请详细描述这张图片的内容。描述将被用于语义搜索与知识检索。请包含关键对象、文字、人物、场景和氛围。请使用中文回答。',
+  en: 'Please describe this image in detail. The description will be used for searching and retrieval. Include key objects, text, people, setting, and mood.',
+};
+
 export class ImageDescriptionService {
   /**
    * Finds the best available Vision-enabled model
@@ -70,7 +76,7 @@ export class ImageDescriptionService {
         content: [
           {
             type: 'text',
-            text: 'Please describe this image in detail. The description will be used for searching and retrieval. Include key objects, text, people, setting, and mood.',
+            text: DESCRIPTION_PROMPTS[useSettingsStore.getState().language] || DESCRIPTION_PROMPTS.en,
           },
           { type: 'image_url', image_url: { url: imageUrl } },
         ],

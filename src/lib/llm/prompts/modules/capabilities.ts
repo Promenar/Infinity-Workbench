@@ -1,53 +1,36 @@
 
 /**
  * Capability Module
- * Defines what the agent CAN do (Tools, Rendering, Knowledge).
+ * 定义 Agent 的能力范围（工具、渲染、知识库）。
+ * 🌐 已国际化：所有能力描述通过 i18n 字典动态选择语言。
  */
+
+import { getPrompts, type PromptLang } from '../i18n';
 
 export const CapabilityModule = {
     /**
-     * Tool Registry: Dynamically injected tools.
-     * Note: The actual tool definitions are injected by the LLM Provider logic, 
-     * but here we define the philosophy.
+     * 工具注册表：动态注入的工具说明。
      */
-    getToolPhilosophy(hasNativeSearch: boolean = false): string {
+    getToolPhilosophy(hasNativeSearch: boolean = false, lang?: PromptLang): string {
+        const prompts = getPrompts(lang);
         const searchNote = hasNativeSearch
-            ? 'Use your NATIVE web search capability. DO NOT call search_internet tool.'
-            : 'Use search_internet tool when you need external information.';
+            ? prompts.capabilities.searchNoteNative
+            : prompts.capabilities.searchNoteManual;
 
-        return `## CAPABILITIES: TOOLS
-1. **Philosophy**: You are an agentic system. Do not just talk; ACT. Use tools to verify facts, write code, or manipulate files.
-2. **Native Search**: ${searchNote}
-3. **Registry**: You have access to the functions defined in the "tools" section.`;
+        return prompts.capabilities.toolPhilosophy(searchNote);
     },
 
     /**
-     * Renderer Strategy: Intelligent routing for visualizations.
-     * - Mermaid: Markdown preferred.
-     * - ECharts: Tool preferred (Security & Validation).
+     * 渲染策略：智能路由可视化（Mermaid vs ECharts）。
      */
-    getRendererCapabilities(): string {
-        return `## CAPABILITIES: RENDERING (SMART ROUTING)
-You are running in Nexara Rich UI. You can visualize data and logic using the following protocols:
-
-1. **Flowcharts & Diagrams (Mermaid)**: 
-   - **Protocol**: DIRECTLY output \`\`\`mermaid code blocks.
-   - **Why**: Lightweight, text-based, ideal for logic flows.
-
-2. **Data Charts (ECharts)**: 
-   - **Protocol**: You MUST use the \`render_echarts\` tool. 
-   - **Why**: The tool ensures strict JSON validation and security.
-   - **Format**: Call \`render_echarts({ config: { ... } })\`.
-   - 🚫 **PROHIBITED**: Do NOT try to write HTML/JS/Python to generate images for charts.`;
+    getRendererCapabilities(lang?: PromptLang): string {
+        return getPrompts(lang).capabilities.renderer;
     },
 
     /**
-     * Knowledge Strategy: RAG Context.
+     * 知识库策略：RAG 上下文注入说明。
      */
-    getKnowledgeContext(): string {
-        return `## CAPABILITIES: KNOWLEDGE BASE
-[SYSTEM]: Local knowledge snippets may be injected into your context.
-- **Protocol**: If you see [Context] blocks, prioritize this information.
-- **Citation**: If you guess based on context, mention "According to local knowledge base...".`;
+    getKnowledgeContext(lang?: PromptLang): string {
+        return getPrompts(lang).capabilities.knowledge;
     }
 };

@@ -602,6 +602,7 @@ export default function ChatDetailScreen() {
               // 触发新的生成（会创建新的用户消息和 AI 回复）
               await store.generateMessage(id, content, {
                 images: options?.images || editingMessage.images,
+                files: options?.files, // ✅ Pass files
               });
             } else {
               // 正常发送

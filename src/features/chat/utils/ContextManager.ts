@@ -7,6 +7,7 @@ import { useApiStore } from '../../../store/api-store';
 import { EmbeddingClient } from '../../../lib/rag/embedding';
 import { useSettingsStore } from '../../../store/settings-store';
 import { getFullMessageContent } from './message-utils';
+import { getPrompts, getPromptLang } from '../../../lib/llm/prompts/i18n';
 
 
 export interface ContextConfig {
@@ -211,10 +212,10 @@ export class ContextManager {
 
     const transcript = messages.map((m) => `${m.role}: ${getFullMessageContent(m)}`).join('\n');
 
-    // 使用用户定义的 Prompt 或回退到默认
+    // 使用用户定义的 Prompt 或回退到本地化默认值
     const basePrompt =
       customPrompt ||
-      'Summarize the following conversation segment concisely, capturing key facts, decisions, and context. Do not lose important details.';
+      getPrompts(getPromptLang()).rag.defaultSummaryPrompt;
     const prompt = `${basePrompt}\n\n${transcript}`;
 
     try {

@@ -2,6 +2,7 @@ import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { supportsThinkingConfig } from '../model-utils';
 import { Skill, ToolCall } from '../../../types/skills';
 import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
+import * as FileSystem from 'expo-file-system/legacy'; // ✅ SDK54: 使用 legacy API 兼容 readAsStringAsync
 
 export class GeminiClient implements LlmClient {
   private apiKey: string;
@@ -107,7 +108,7 @@ export class GeminiClient implements LlmClient {
     onError: (err: Error) => void,
     options?: ChatMessageOptions,
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         const cleanBase = this.baseUrl.replace(/\/v1$/, '').replace(/\/$/, '');
         const endpoint = `${cleanBase}/v1beta/models/${this.model}:streamGenerateContent?key=${this.apiKey}`;
@@ -118,7 +119,7 @@ export class GeminiClient implements LlmClient {
         xhr.open('POST', endpoint);
         xhr.setRequestHeader('Content-Type', 'application/json');
 
-        const formatMessage = (m: ChatMessage) => {
+        const formatMessage = async (m: ChatMessage) => {
           // Handle Tool Results (Role: tool)
           if (m.role === 'tool') {
             return {
@@ -133,9 +134,10 @@ export class GeminiClient implements LlmClient {
             };
           }
 
+          const parts: any[] = [];
+
           // Handle Assistant Messages with Tool Calls
           if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
-            const parts: any[] = [];
             // Some models require text to be first or accompanying tool calls
             const contentText = typeof m.content === 'string' ? m.content : '';
             const reasoningText = m.reasoning || '';
@@ -155,38 +157,60 @@ export class GeminiClient implements LlmClient {
                 }
               });
             });
-            return { parts };
           }
-
           // Normal Text/Image Messages
-          if (typeof m.content === 'string') {
+          else if (typeof m.content === 'string') {
             const contentText = m.content;
             const reasoningText = m.reasoning || '';
             const combinedText = [reasoningText, contentText].filter(Boolean).join('\n\n');
-            return { parts: [{ text: combinedText }] };
+            if (combinedText) parts.push({ text: combinedText });
           }
-          if (Array.isArray(m.content)) {
-            const parts = m.content
-              .map((c: any) => {
-                if (c.type === 'text') return { text: c.text };
-                if (c.type === 'image_url') {
-                  // Extract base64 from data URI
-                  const matches = (c.image_url.url as string).match(/^data:(.+);base64,(.+)$/);
-                  if (matches) {
-                    return {
-                      inline_data: {
-                        mime_type: matches[1],
-                        data: matches[2],
-                      },
-                    };
-                  }
+          else if (Array.isArray(m.content)) {
+            m.content.forEach((c: any) => {
+              if (c.type === 'text') parts.push({ text: c.text });
+              if (c.type === 'image_url') {
+                // Extract base64 from data URI
+                const matches = (c.image_url.url as string).match(/^data:(.+);base64,(.+)$/);
+                if (matches) {
+                  parts.push({
+                    inline_data: {
+                      mime_type: matches[1],
+                      data: matches[2],
+                    },
+                  });
                 }
-                return null;
-              })
-              .filter(Boolean);
-            return { parts };
+              }
+            });
           }
-          return { parts: [] };
+
+
+          // ✅ Handle Native Files (Async)
+          if (m.files && m.files.length > 0) {
+            console.log(`[GeminiClient] Found ${m.files.length} files to attach.`);
+            for (const file of m.files) {
+              try {
+                console.log(`[GeminiClient] Reading file: ${file.uri} (${file.mimeType})`);
+                const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: 'base64' });
+                console.log(`[GeminiClient] Read success, size: ${base64.length}`);
+
+                parts.push({
+                  inline_data: {
+                    mime_type: file.mimeType,
+                    data: base64
+                  }
+                });
+                console.log(`[GeminiClient] Attached file: ${file.name}`);
+              } catch (e) {
+                console.error(`[GeminiClient] Failed to read file ${file.uri}:`, e);
+                // Fallback: Add error message to parts so model knows
+                parts.push({ text: `[System Error: Could not read file ${file.name}]` });
+              }
+            }
+          } else {
+            // console.log('[GeminiClient] No files found in message.');
+          }
+
+          return { parts };
         };
 
         // Safety: Only enable thinking config if model supports it and user enabled reasoning
@@ -219,17 +243,21 @@ ${searchGuidance}
 Available tools: ${toolListDesc} + Native Web Search (built-in).`
           : undefined;
 
-        let body: any = {
-          contents: messages.map((m) => {
-            let role = m.role === 'assistant' ? 'model' : 'user';
-            // According to Google API, role can be 'user', 'model', or 'function' for results
-            if (m.role === 'tool') role = 'function';
+        // ✅ Async Message Processing
+        const processedContents = [];
+        for (const m of messages) {
+          let role = m.role === 'assistant' ? 'model' : 'user';
+          if (m.role === 'tool') role = 'function';
 
-            return {
-              role,
-              ...formatMessage(m),
-            };
-          }),
+          const formatted = await formatMessage(m);
+          processedContents.push({
+            role,
+            ...formatted
+          });
+        }
+
+        let body: any = {
+          contents: processedContents,
           safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },

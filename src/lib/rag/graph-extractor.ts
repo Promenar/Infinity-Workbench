@@ -2,7 +2,8 @@ import { useApiStore } from '../../store/api-store';
 import { useSettingsStore } from '../../store/settings-store';
 import { createLlmClient, ExtendedModelConfig } from '../llm/factory';
 import { graphStore } from './graph-store';
-import { DEFAULT_KG_PROMPT } from './defaults';
+import { getDefaultKgPrompt } from './defaults';
+import { getPrompts, getPromptLang } from '../llm/prompts/i18n';
 import { useRagStore } from '../../store/rag-store';
 
 interface ExtractionResult {
@@ -17,6 +18,8 @@ interface ExtractionResult {
     relation: string;
     weight?: number;
   }>;
+  /** 🔑 非空时表示提取过程遇到错误（但未抛出异常） */
+  error?: string;
 }
 
 export class GraphExtractor {
@@ -44,28 +47,68 @@ export class GraphExtractor {
       throw new Error('No available model for Knowledge Graph extraction');
     }
 
-    // 2. Find Provider & Config
+    // 2. Find all matching providers
+    const candidates: Array<{ provider: any; model: any }> = [];
+
     for (const provider of apiState.providers) {
       if (!provider.enabled) continue;
-
-      // Check if model exists in this provider (match by ID or UUID)
       const modelConfig = provider.models.find((m) => m.id === targetId || m.uuid === targetId);
-
       if (modelConfig) {
-        const extendedConfig: ExtendedModelConfig = {
-          ...modelConfig,
-          provider: provider.type,
-          apiKey: provider.apiKey,
-          baseUrl: provider.baseUrl,
-          vertexProject: provider.vertexProject,
-          vertexLocation: provider.vertexLocation,
-          vertexKeyJson: provider.vertexKeyJson,
-        };
-        return createLlmClient(extendedConfig);
+        candidates.push({ provider, model: modelConfig });
       }
     }
 
-    throw new Error(`Model '${targetId}' not found in any enabled provider`);
+    if (candidates.length === 0) {
+      console.error(`[GraphExtractor] Model resolution failed for ID: ${targetId}`);
+      const availableProviders = apiState.providers
+        .filter((p) => p.enabled)
+        .map((p) => `${p.name} (${p.models.length} models)`);
+      console.warn('[GraphExtractor] Available enabled providers:', availableProviders);
+      throw new Error(`Model '${targetId}' not found in any enabled provider`);
+    }
+
+    // 3. Select Best Provider (Heuristic Priority)
+    // If multiple providers support the same model ID, prioritize the "Native" or "Official" one.
+    let selected = candidates[0];
+
+    if (candidates.length > 1) {
+      console.log(`[GraphExtractor] Found ${candidates.length} candidates for ${targetId}. Applying heuristics...`);
+      const lowerId = targetId.toLowerCase();
+
+      const priorityMap: Record<string, string[]> = {
+        'gemini': ['google', 'gemini', 'vertex'], // Gemini models prefer Google/Vertex
+        'gpt': ['openai', 'github', 'azure'],     // GPT models prefer OpenAI/GitHub
+        'claude': ['anthropic'],                  // Claude models prefer Anthropic
+        'deepseek': ['deepseek'],                 // DeepSeek models prefer DeepSeek
+      };
+
+      // Find the key that matches the model ID start
+      const matchedKey = Object.keys(priorityMap).find(key => lowerId.includes(key));
+
+      if (matchedKey) {
+        const preferredTypes = priorityMap[matchedKey];
+        // Sort candidates so preferred ones come first
+        const bestCandidate = candidates.find(c => preferredTypes.includes(c.provider.type));
+        if (bestCandidate) {
+          selected = bestCandidate;
+          console.log(`[GraphExtractor] Priority Heuristic: Selected ${selected.provider.name} for ${targetId}`);
+        }
+      }
+    }
+
+    const { provider, model } = selected;
+    console.log(`[GraphExtractor] Using Provider: ${provider.name} (${provider.type}) for Model: ${targetId}`);
+
+    const extendedConfig: ExtendedModelConfig = {
+      ...model,
+      provider: provider.type,
+      apiKey: provider.apiKey,
+      baseUrl: provider.baseUrl,
+      vertexProject: provider.vertexProject,
+      vertexLocation: provider.vertexLocation,
+      vertexKeyJson: provider.vertexKeyJson,
+    };
+    return createLlmClient(extendedConfig);
   }
 
   private getSystemPrompt(): string {
@@ -85,18 +128,19 @@ export class GraphExtractor {
       if (customPrompt.includes('{entityTypes}')) {
         return customPrompt.replace('{entityTypes}', entityTypes.join(', '));
       } else {
-        // Fallback: Append expectation if user removed placeholder
-        return `${customPrompt}\n\nTarget Entity Types: ${entityTypes.join(', ')}\nEnsure output is valid JSON.`;
+        // Fallback: 用户删除了 placeholder，追加本地化的实体类型提示
+        const p = getPrompts(getPromptLang());
+        return `${customPrompt}${p.rag.kgFallback(entityTypes.join(', '))}`;
       }
     }
 
-    // Use default prompt from defaults.ts
-    // 确保默认 Prompt 也能正确替换
-    if (DEFAULT_KG_PROMPT && DEFAULT_KG_PROMPT.includes('{entityTypes}')) {
-      return DEFAULT_KG_PROMPT.replace('{entityTypes}', entityTypes.join(', '));
+    // 🌐 使用本地化默认 Prompt
+    const defaultPrompt = getDefaultKgPrompt();
+    if (defaultPrompt && defaultPrompt.includes('{entityTypes}')) {
+      return defaultPrompt.replace('{entityTypes}', entityTypes.join(', '));
     }
 
-    return DEFAULT_KG_PROMPT;
+    return defaultPrompt;
   }
 
   /**
@@ -106,6 +150,7 @@ export class GraphExtractor {
     text: string,
     docId?: string,
     scope?: { sessionId?: string; agentId?: string; messageId?: string },
+    onStatusUpdate?: (status: string) => void,
   ): Promise<ExtractionResult> {
     const targetId = scope?.messageId || scope?.sessionId; // 🔑 优先使用消息 ID 以关联 UI 指示器
     try {
@@ -126,10 +171,12 @@ export class GraphExtractor {
       }, targetId);
 
       // 1. Prepare Client
+      onStatusUpdate?.('正在预处理源文本...');
       const client = this.getClient();
       const systemPrompt = this.getSystemPrompt();
 
       // 2. Call LLM
+      onStatusUpdate?.('正在请求图谱模型 (发送中)...');
       const response = await client.chatCompletion([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: text },
@@ -138,10 +185,12 @@ export class GraphExtractor {
       const content = response.content;
       if (!content) {
         console.warn('[GraphExtractor] Empty response from LLM');
-        return { nodes: [], edges: [] };
+        useRagStore.getState().updateProcessingState({ kgStatus: 'error' }, targetId);
+        return { nodes: [], edges: [], error: '模型返回空响应' };
       }
 
       // 3. Parse JSON
+      onStatusUpdate?.('正在接收模型响应...');
       let jsonString = content.trim();
 
       // Better JSON extraction logic
@@ -170,13 +219,13 @@ export class GraphExtractor {
 
       let result: ExtractionResult;
       try {
+        onStatusUpdate?.('正在解析图谱结构...');
         result = JSON.parse(jsonString);
       } catch (parseError) {
         useRagStore.getState().updateProcessingState({ kgStatus: 'error' }, targetId);
-        // Use warn instead of error to prevent RedBox
         console.warn('[GraphExtractor] JSON Parse Error:', parseError);
         console.log('Raw output preview:', content.slice(0, 200) + '...');
-        return { nodes: [], edges: [] };
+        return { nodes: [], edges: [], error: '模型输出非合法 JSON' };
       }
 
       useRagStore.getState().updateProcessingState({
@@ -186,7 +235,8 @@ export class GraphExtractor {
 
       if (!result.nodes || !result.edges) {
         console.warn('[GraphExtractor] Invalid JSON structure');
-        return { nodes: [], edges: [] };
+        useRagStore.getState().updateProcessingState({ kgStatus: 'error' }, targetId);
+        return { nodes: [], edges: [], error: '模型输出缺少 nodes/edges 字段' };
       }
 
       // 4. Save to GraphStore
@@ -195,6 +245,7 @@ export class GraphExtractor {
       );
 
       // Save Nodes first
+      onStatusUpdate?.('正在写入图数据库 (节点)...');
       const nameToIdMap = new Map<string, string>();
 
       for (const node of result.nodes) {
@@ -209,6 +260,7 @@ export class GraphExtractor {
       }
 
       // Save Edges
+      onStatusUpdate?.('正在写入图数据库 (边)...');
       for (const edge of result.edges) {
         const sourceId = nameToIdMap.get(edge.source);
         const targetIdEdge = nameToIdMap.get(edge.target);
@@ -248,10 +300,11 @@ export class GraphExtractor {
       return result;
     } catch (error) {
       useRagStore.getState().updateProcessingState({ kgStatus: 'error' }, targetId);
-      console.warn('[GraphExtractor] Extraction failed (Silenced):', error);
-      // 🔥 CRITICAL: NEVER throw in a background background background task in React Native.
-      // Doing so triggers a global unhandled exception and a red screen.
-      return { nodes: [], edges: [] };
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.warn('[GraphExtractor] Extraction failed (Silenced):', errMsg);
+      // 🔥 CRITICAL: 绝不在 RN 后台任务中抛出异常，否则触发红屏崩溃。
+      // 通过 error 字段向调用方传递失败信号。
+      return { nodes: [], edges: [], error: `图谱提取失败: ${errMsg.substring(0, 80)}` };
     }
   }
 }

@@ -64,6 +64,16 @@ export interface GeneratedImageData {
   mime: string; // MIME 类型
 }
 
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  uri: string;
+  content?: string; // Extracted text content for fallback models
+  tokenCount?: number; // Estimated tokens
+}
+
 export interface RagReference {
   id: string; // 引用 ID
   content: string; // 片段内容
@@ -114,6 +124,7 @@ export interface Message {
   ragReferencesLoading?: boolean; // New flag for RAG search state
   tokens?: TokenUsage;
   images?: GeneratedImageData[]; // 图片数据（新格式，支持缩略图）
+  files?: ChatAttachment[]; // ✅ 新增：通用文件附件
   isArchived?: boolean; // ✅ 新增：归档状态
   vectorizationStatus?: 'processing' | 'success' | 'error'; // ✅ 新增：向量化状态
   layoutHeight?: number; // ✅ 新增：缓存布局高度，优化滚动性能

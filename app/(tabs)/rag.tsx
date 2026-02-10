@@ -4,7 +4,7 @@ import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, Glas
 import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive, Check } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../src/lib/haptics';
 import { BlurView } from 'expo-blur';
 import { SilkyGlow } from '../../src/components/ui/SilkyGlow';
 import * as DocumentPicker from 'expo-document-picker';
@@ -71,8 +71,6 @@ export default function RagScreen() {
       setTagAssignmentSheetComponent(() => TagAssignmentSheet);
 
       setImagePreviewModalComponent(() => ImagePreviewModal);
-
-      setImagePreviewModalComponent(() => ImagePreviewModalComponent);
 
       // Initialize processor with ref is done in effect below or render?
       // Better to do it in a separate effect when ref changes or component mounts.
@@ -433,7 +431,7 @@ export default function RagScreen() {
         await addDocument(
           fileName,
           content,
-          content.length,
+          file.size || new Blob([content]).size, // 使用原始磁盘字节数，而非 JS 字符数
           type,
           currentFolderId ?? undefined,
           thumbnailPath,
@@ -552,7 +550,19 @@ export default function RagScreen() {
           showToast(t.library.moveDocSuccess, 'success');
         } else if (movingFolderId) {
           // Prevent moving folder into itself or its children (simple check: validation logic needed ideally)
-          if (targetFolderId === movingFolderId) {
+          // 🛡️ 循环检测：遍历目标的所有祖先，防止移入自身或子树
+          const isDescendantOfMoving = (parentId: string | null): boolean => {
+            let currentId = parentId;
+            let depth = 0;
+            while (currentId && depth < 20) {
+              if (currentId === movingFolderId) return true;
+              const folder = folders.find(f => f.id === currentId);
+              currentId = folder?.parentId ?? null;
+              depth++;
+            }
+            return false;
+          };
+          if (targetFolderId === movingFolderId || isDescendantOfMoving(targetFolderId)) {
             showToast(t.library.moveSelfError, 'error');
             return;
           }
@@ -879,7 +889,7 @@ export default function RagScreen() {
           await addDocument(
             fileName,
             processResult.content,
-            processResult.content.length,
+            asset.fileSize || new Blob([processResult.content]).size, // 使用原始磁盘字节数
             processResult.type as any,
             currentFolderId ?? undefined,
           );

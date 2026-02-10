@@ -725,6 +725,7 @@ export const translations = {
       notSet: '未设置',
       sharingUnavailable: '分享功能在此设备上不可用',
       fileMissing: '文件缺失',
+      document: '文档', // Added for file upload
       exportFail: '导出失败',
       approve: '同意执行',
       reject: '拒绝执行',
@@ -1684,6 +1685,7 @@ export const translations = {
       error: 'Error',
       copied: 'Copied',
       languageChanged: 'Language switched to English',
+      document: 'Document', // Added for file upload
       save: 'Save',
       delete: 'Delete',
       add: 'Add',

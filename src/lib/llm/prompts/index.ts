@@ -2,10 +2,12 @@ import { PromptBuilder } from './assembler';
 import { IdentityModule } from './modules/identity';
 import { CapabilityModule } from './modules/capabilities';
 import { ProtocolModule } from './modules/protocols';
+import { getPromptLang, type PromptLang } from './i18n';
 
 /**
- * Main Assembler Function
- * Replaces the old "getModelSpecificEnhancements" spaghetti code.
+ * 主装配函数
+ * 替代旧的 "getModelSpecificEnhancements" 意面代码。
+ * 🌐 I18N (2026-02-11): 新增 lang 参数支持动态语言切换。
  */
 export function assembleSystemPrompt(
     modelFamily: string,
@@ -13,31 +15,33 @@ export function assembleSystemPrompt(
         hasTools?: boolean;
         hasNativeSearch?: boolean;
         customPersona?: string;
+        lang?: PromptLang;
     } = {}
 ): string {
     const builder = new PromptBuilder();
+    const lang = options.lang || getPromptLang();
 
     // 1. Identity (Kernel + Persona)
-    builder.addModule(IdentityModule.getKernelIdentity());
-    builder.addModule(IdentityModule.getPersona(options.customPersona));
+    builder.addModule(IdentityModule.getKernelIdentity(lang));
+    builder.addModule(IdentityModule.getPersona(options.customPersona, lang));
 
     // 2. Capability
     if (options.hasTools) {
-        builder.addModule(CapabilityModule.getToolPhilosophy(options.hasNativeSearch));
+        builder.addModule(CapabilityModule.getToolPhilosophy(options.hasNativeSearch, lang));
     }
-    builder.addModule(CapabilityModule.getRendererCapabilities());
-    builder.addModule(CapabilityModule.getKnowledgeContext());
+    builder.addModule(CapabilityModule.getRendererCapabilities(lang));
+    builder.addModule(CapabilityModule.getKnowledgeContext(lang));
 
     // 3. Protocol
-    builder.addModule(ProtocolModule.getThinkingProtocol());
+    builder.addModule(ProtocolModule.getThinkingProtocol(lang));
 
-    // Only inject Task Protocol if tools are enabled (which implies complex tasks)
+    // 仅在启用工具时注入任务协议（意味着复杂任务）
     if (options.hasTools) {
-        builder.addModule(ProtocolModule.getTaskProtocol(true));
+        builder.addModule(ProtocolModule.getTaskProtocol(true, lang));
     }
 
-    // Always inject Formatting Protocol
-    builder.addModule(ProtocolModule.getFormattingProtocol());
+    // 始终注入格式协议
+    builder.addModule(ProtocolModule.getFormattingProtocol(lang));
 
     return builder.build();
 }

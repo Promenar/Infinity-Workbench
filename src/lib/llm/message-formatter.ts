@@ -12,6 +12,7 @@ export interface ChatMessage {
     tool_call_id?: string;
     tool_calls?: ToolCall[];
     thought_signature?: string;
+    files?: Array<{ uri: string; mimeType: string; name?: string }>; // ✅ 文件附件透传
 }
 
 /**
@@ -80,6 +81,7 @@ export abstract class BaseMessageFormatter implements MessageFormatter {
             tool_call_id: (message as any).tool_call_id,
             tool_calls: (message as any).tool_calls,
             thought_signature: (message as any).thought_signature,
+            files: (message as any).files, // ✅ 透传文件附件
         };
     }
 }

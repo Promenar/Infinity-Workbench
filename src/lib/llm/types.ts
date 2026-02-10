@@ -10,6 +10,7 @@ export interface ChatMessage {
   tool_call_id?: string; // For tool responses (OpenAI style)
   tool_calls?: any[]; // For assistant messages containing tool calls
   thought_signature?: string; // For Gemini 2.0 Thinking models
+  files?: Array<{ uri: string; mimeType: string; name?: string }>; // ✅ Added for Native File Support
 }
 
 export interface StreamChunk {

@@ -7,6 +7,7 @@
  */
 
 import { assembleSystemPrompt } from './prompts';
+import { getPrompts, getPromptLang } from './prompts/i18n';
 
 // Export types re-used by other files
 export type ModelFamily = 'gemini' | 'deepseek' | 'deepseek-reasoner' | 'glm' | 'moonshot' | 'qwen' | 'openai' | 'anthropic' | 'local' | 'unknown';
@@ -50,14 +51,15 @@ export function inferModelFamily(providerType: string, modelName?: string): Mode
  * Get Continuation Prompt (Legacy / Compatibility)
  */
 export function getContinuationPrompt(family: ModelFamily): string {
+    const p = getPrompts(getPromptLang());
     switch (family) {
         case 'deepseek-reasoner':
-            return `[SYSTEM UPDATE]: The user has approved continuation. Continue logical execution immediately.`;
+            return p.continuation.reasoner;
         case 'deepseek':
         case 'qwen':
-            return `### 系统指令：继续执行\n用户已批准继续。请检查历史记录并继续执行下一步。`;
+            return p.continuation.standard;
         default:
-            return `[SYSTEM: User approved continuation. Continue executing the CURRENT task.]`;
+            return p.continuation.generic;
     }
 }
 
