@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput } from 'react-native';
+import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput, Dimensions } from 'react-native';
 import { ScrollView, NativeSyntheticEvent, NativeScrollEvent, Platform } from 'react-native';
 import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
@@ -600,7 +600,9 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                 {/* Unified Header Area */}
                 <TouchableOpacity
                     onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setTimeout(() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }, 10); // 🛡️ 规则 8.1：原生桥接延迟调用
                         setHasManuallyToggled(true); // 👈 标记用户已介入
                         setIsCollapsed(!isCollapsed);
                     }}
@@ -636,7 +638,7 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                             scrollEventThrottle={16}
                             showsVerticalScrollIndicator={false}
                             fadingEdgeLength={32}
-                            style={{ maxHeight: 350 }}
+                            style={{ maxHeight: Dimensions.get('window').height * 0.35 }}
                             contentContainerStyle={{ paddingLeft: 22, paddingRight: 12, paddingBottom: 16 }}
                         >
                             {steps.filter(s => s.type !== 'plan_item').map((step, index, arr) => (

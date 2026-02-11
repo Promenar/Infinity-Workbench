@@ -1356,7 +1356,7 @@ export const useChatStore = create<ChatState>()(
               let lastContentUpdateTime = 0;
               let lastTimelineUpdateTime = 0;
               const CONTENT_UPDATE_INTERVAL = 33;
-              const TIMELINE_UPDATE_INTERVAL = 500;
+              const TIMELINE_UPDATE_INTERVAL = 100; // 10fps — 与正文节流保持一致
 
               // 🐶 Watchdog: Deadlock Detection
               // If no token received for 30s, abort generation

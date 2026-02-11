@@ -146,6 +146,11 @@ export default function ChatDetailScreen() {
 
   // 🔑 用户打断检测
   const userScrolledAway = useSharedValue(false);
+  // 🛡️ JS 线程镜像：解决 SharedValue 在 useEffect 中的竞态问题
+  const userScrolledAwayRef = useRef(false);
+  const syncScrollAway = React.useCallback((val: boolean) => {
+    userScrolledAwayRef.current = val;
+  }, []);
   const lastReasoningState = useRef<boolean>(false);
   // 🔑 内容高度追踪（用于精确滚动计算）
   const contentHeightRef = useRef<number>(0);
@@ -204,23 +209,27 @@ export default function ChatDetailScreen() {
     onBeginDrag: () => {
       'worklet';
       userScrolledAway.value = true;
+      runOnJS(syncScrollAway)(true);
     },
     onEndDrag: (event) => {
       'worklet';
       const offset = event.contentOffset.y;
       if (offset < 20) {
         userScrolledAway.value = false;
+        runOnJS(syncScrollAway)(false);
       }
     },
     onMomentumBegin: () => {
       'worklet';
       userScrolledAway.value = true;
+      runOnJS(syncScrollAway)(true);
     },
     onMomentumEnd: (event) => {
       'worklet';
       const offset = event.contentOffset.y;
       if (offset < 20) {
         userScrolledAway.value = false;
+        runOnJS(syncScrollAway)(false);
       }
     },
   });
@@ -241,7 +250,7 @@ export default function ChatDetailScreen() {
 
     // Auto-scroll if new message arrives (length check)
     if (messages.length > lastMessageCount.current) {
-      if (!userScrolledAway.value) {
+      if (!userScrolledAwayRef.current) {
         scrollToBottom(true);
       }
     }
@@ -274,6 +283,7 @@ export default function ChatDetailScreen() {
       // 🤖 AI开始生成
       // 🔑 仅在开始的那一刻，强制重置打断状态并钉在底部
       userScrolledAway.value = false;
+      userScrolledAwayRef.current = false;
       isAtBottom.value = true;
       scrollToBottom(false);
     } else {
@@ -281,6 +291,7 @@ export default function ChatDetailScreen() {
       // 🔑 规则4: 生成结束，重置打断状态（为下一轮做准备）
       if (isAtBottom.value) {
         userScrolledAway.value = false;
+        userScrolledAwayRef.current = false;
       }
       lastReasoningState.current = false;
     }
@@ -307,16 +318,15 @@ export default function ChatDetailScreen() {
 
   // 🔑 流式输出追踪：监听消息内容变化
   React.useEffect(() => {
-    if (loading && messages.length > 0 && !userScrolledAway.value) {
+    if (loading && messages.length > 0 && !userScrolledAwayRef.current) {
       // 正在生成中，且用户未打断，持续追踪内容变化
-      // 不再检查 isAtBottom.value，原因同上
       const timer = setTimeout(() => {
         // Use animated: false to avoid animation stack lag
         scrollToBottom(false);
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [loading, messages, userScrolledAway]);
+  }, [loading, messages]);
 
   // 持久化滚动位置
   const saveScrollPosition = (offset: number) => {
@@ -615,6 +625,7 @@ export default function ChatDetailScreen() {
               sendMessage(content, options);
             }
             userScrolledAway.value = false;
+            userScrolledAwayRef.current = false;
             isAtBottom.value = true;
             // 🔑 立即触发滚动，不需等待
             scrollToBottom(true);
