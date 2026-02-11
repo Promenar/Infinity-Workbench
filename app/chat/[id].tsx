@@ -161,10 +161,12 @@ export default function ChatDetailScreen() {
     if (isGenerating) {
       activateKeepAwakeAsync();
     } else {
-      deactivateKeepAwake();
+      // 🛡️ 规则 8.1：原生桥接调用必须延迟，避免与状态更新竞态
+      setTimeout(() => deactivateKeepAwake(), 10);
     }
     return () => {
-      deactivateKeepAwake();
+      // 🛡️ 卸载时同样延迟原生调用，防止阻塞导航动画起始帧
+      setTimeout(() => deactivateKeepAwake(), 10);
     };
   }, [isGenerating]);
 
@@ -323,10 +325,13 @@ export default function ChatDetailScreen() {
     }
   };
 
-  // 组件卸载时保存
+  // 组件卸载时保存（延迟到导航动画完成后，避免在过渡期增加 JS 线程负载）
   React.useEffect(() => {
     return () => {
-      saveScrollPosition(scrollOffset.value);
+      const offset = scrollOffset.value;
+      InteractionManager.runAfterInteractions(() => {
+        saveScrollPosition(offset);
+      });
     };
   }, [id]);
 
@@ -439,126 +444,128 @@ export default function ChatDetailScreen() {
         }}
       />
 
-      <Animated.View style={[{ flex: 1 }, listContainerStyle]}>
-        {(() => {
-          // ✅ FIX: Calculate latest assistant message index correctly for Inverted List
-          // Inverted means messages are ordered Newest first.
-          // So we look for the FIRST assistant message in the reversed array.
-          const reversedMessages = useMemo(() => messages.slice().reverse(), [messages]);
+      <View style={{ flex: 1 }}>
+        <Animated.View style={[{ flex: 1 }, listContainerStyle]}>
+          {(() => {
+            // ✅ FIX: Calculate latest assistant message index correctly for Inverted List
+            // Inverted means messages are ordered Newest first.
+            // So we look for the FIRST assistant message in the reversed array.
+            const reversedMessages = useMemo(() => messages.slice().reverse(), [messages]);
 
-          const latestAssistantIndex = useMemo(() => {
-            return reversedMessages.findIndex(m => m.role === 'assistant');
-          }, [reversedMessages]);
+            const latestAssistantIndex = useMemo(() => {
+              return reversedMessages.findIndex(m => m.role === 'assistant');
+            }, [reversedMessages]);
 
-          return (
-            <AnimatedFlatList
-              ref={listRef}
-              inverted={true} // ✅ Switch to inverted
-              data={reversedMessages} // ✅ Use memoized reversed data
-              renderItem={({ item, index }: { item: any; index: number }) => (
-                <ChatBubble
-                  key={item.id}
-                  message={item}
-                  agentId={agent.id}
-                  agentAvatar={agent.avatar}
-                  agentColor={agentColor}
-                  agentName={agent.name}
-                  sessionId={id}
-                  // isGenerating: Only show if it's the very latest message (index 0) AND it's assistant
-                  isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && item.role === 'assistant' && index === 0}
-                  onDelete={() => handleDeleteMessage(item.id)}
-                  onExtractGraph={() => handleExtractGraph(item)}
-                  onVectorize={() => handleManualVectorize(item.id)}
-                  onSummarize={handleManualSummarize}
-                  onResend={
-                    item.role === 'user'
-                      ? () => {
-                        setTimeout(() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          setEditingMessage({
-                            id: item.id,
-                            content: item.content,
-                            images: item.images,
-                          });
-                        }, 10);
-                      }
-                      : undefined
+            return (
+              <AnimatedFlatList
+                ref={listRef}
+                inverted={true} // ✅ Switch to inverted
+                data={reversedMessages} // ✅ Use memoized reversed data
+                renderItem={({ item, index }: { item: any; index: number }) => (
+                  <ChatBubble
+                    key={item.id}
+                    message={item}
+                    agentId={agent.id}
+                    agentAvatar={agent.avatar}
+                    agentColor={agentColor}
+                    agentName={agent.name}
+                    sessionId={id}
+                    // isGenerating: Only show if it's the very latest message (index 0) AND it's assistant
+                    isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && item.role === 'assistant' && index === 0}
+                    onDelete={() => handleDeleteMessage(item.id)}
+                    onExtractGraph={() => handleExtractGraph(item)}
+                    onVectorize={() => handleManualVectorize(item.id)}
+                    onSummarize={handleManualSummarize}
+                    onResend={
+                      item.role === 'user'
+                        ? () => {
+                          setTimeout(() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            setEditingMessage({
+                              id: item.id,
+                              content: item.content,
+                              images: item.images,
+                            });
+                          }, 10);
+                        }
+                        : undefined
+                    }
+                    onRegenerate={
+                      item.role === 'user'
+                        ? () => {
+                          setTimeout(() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            setEditingMessage({
+                              id: item.id,
+                              content: item.content,
+                              images: item.images,
+                            });
+                          }, 10);
+                        }
+                        : async () => {
+                          setTimeout(() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          }, 10);
+                          await useChatStore.getState().regenerateMessage(id, item.id);
+                        }
+                    }
+                    modelId={session?.modelId}
+                    modelName={modelConfig?.name}
+                    isLastAssistantMessage={index === latestAssistantIndex} // ✅ Correct logic
+                    globalPendingIntervention={session?.pendingIntervention}
+                  />
+                )}
+                keyExtractor={(item: Message) => item.id}
+                contentContainerStyle={{
+                  paddingTop: insets.bottom + 160, // Reversed: Top is Bottom.
+                  paddingBottom: insets.top + 64 + 12, // Reversed: Bottom is Top.
+                }}
+                onEndReached={() => {
+                  if (hasMore) {
+                    loadMore();
                   }
-                  onRegenerate={
-                    item.role === 'user'
-                      ? () => {
-                        setTimeout(() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          setEditingMessage({
-                            id: item.id,
-                            content: item.content,
-                            images: item.images,
-                          });
-                        }, 10);
-                      }
-                      : async () => {
-                        setTimeout(() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                        }, 10);
-                        await useChatStore.getState().regenerateMessage(id, item.id);
-                      }
-                  }
-                  modelId={session?.modelId}
-                  modelName={modelConfig?.name}
-                  isLastAssistantMessage={index === latestAssistantIndex} // ✅ Correct logic
-                  globalPendingIntervention={session?.pendingIntervention}
-                />
-              )}
-              keyExtractor={(item: Message) => item.id}
-              contentContainerStyle={{
-                paddingTop: insets.bottom + 160, // Reversed: Top is Bottom.
-                paddingBottom: insets.top + 64 + 12, // Reversed: Bottom is Top.
-              }}
-              onEndReached={() => {
-                if (hasMore) {
-                  loadMore();
+                }}
+                onEndReachedThreshold={0.5}
+                // Footer is now Header (Top of screen)
+                ListFooterComponent={
+                  hasMore ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={agentColor} />
+                    </View>
+                  ) : (
+                    // Spacer for top (visually)
+                    <View style={{ height: 20 }} />
+                  )
                 }
-              }}
-              onEndReachedThreshold={0.5}
-              // Footer is now Header (Top of screen)
-              ListFooterComponent={
-                hasMore ? (
-                  <View style={{ padding: 20, alignItems: 'center' }}>
-                    <ActivityIndicator size="small" color={agentColor} />
-                  </View>
-                ) : (
-                  // Spacer for top (visually)
-                  <View style={{ height: 20 }} />
-                )
-              }
-              // Header is now Footer (Bottom of screen)
-              // We don't really need a footer since input is sticky.
+                // Header is now Footer (Bottom of screen)
+                // We don't really need a footer since input is sticky.
 
-              onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
-                // Simplified layout logic
-                setIsListReady(true);
-              }}
-              onContentSizeChange={handleContentSizeChange}
-              onScroll={onScroll}
-              onMomentumScrollEnd={handleScrollEnd}
-              onScrollEndDrag={handleScrollEnd}
-              overScrollMode="never"
-              decelerationRate="normal"
-              scrollEventThrottle={16}
-              removeClippedSubviews={false}
-            />
-          );
-        })()}
+                onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
+                  // Simplified layout logic
+                  setIsListReady(true);
+                }}
+                onContentSizeChange={handleContentSizeChange}
+                onScroll={onScroll}
+                onMomentumScrollEnd={handleScrollEnd}
+                onScrollEndDrag={handleScrollEnd}
+                overScrollMode="never"
+                decelerationRate="normal"
+                scrollEventThrottle={16}
+                removeClippedSubviews={false}
+              />
+            );
+          })()}
+        </Animated.View>
 
-        {/* 骨架屏加载态 */}
+        {/* 🔑 骨架屏加载态 - 提升至 listContainerStyle 动画容器之外，防止受 listOpacity 影响导致闪烁 */}
         {
           isInitialLoad && (
             <ChatSkeleton isDark={isDark} agentColor={agentColor} />
           )
         }
-      </Animated.View>
+      </View>
 
-      {/* Floating ChatInput */}
+      {/* Floating ChatInput - zIndex: 20 高于骨架屏(10)，低于 GlassHeader(50) */}
       <KeyboardStickyView
         offset={{ opened: 0, closed: 0 }}
         style={{
@@ -566,6 +573,7 @@ export default function ChatDetailScreen() {
           bottom: 0,
           left: 0,
           right: 0,
+          zIndex: 20,
         }}
       >
         <ChatInput

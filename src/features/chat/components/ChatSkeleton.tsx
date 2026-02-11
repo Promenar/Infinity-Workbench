@@ -106,12 +106,12 @@ const AssistantBubbleSkeleton: React.FC<{
     </View>
 );
 
-// 用户气泡骨架 - 右对齐
+// 用户气泡骨架 - 右对齐，支持多行
 const UserBubbleSkeleton: React.FC<{
     isDark: boolean;
     delayBase?: number;
-    width?: number;
-}> = ({ isDark, delayBase = 0, width = 55 }) => (
+    lines?: number[];
+}> = ({ isDark, delayBase = 0, lines = [55] }) => (
     <View style={styles.userRow}>
         <View
             style={[
@@ -123,19 +123,23 @@ const UserBubbleSkeleton: React.FC<{
                 },
             ]}
         >
-            <SkeletonBar
-                width={`${width}%`}
-                height={12}
-                isDark={isDark}
-                delay={delayBase}
-            />
+            {lines.map((widthPercent, i) => (
+                <SkeletonBar
+                    key={i}
+                    width={`${widthPercent}%`}
+                    height={12}
+                    isDark={isDark}
+                    delay={delayBase + i * 150}
+                />
+            ))}
         </View>
     </View>
 );
 
 /**
  * ChatSkeleton - 主组件
- * 模拟 2 轮对话，自底向上排列（与 inverted FlatList 视觉一致）
+ * 模拟 1.5 轮对话（用户短问题 → AI 大段回复 → 用户短问题 → AI 大段回复），
+ * 自底向上排列（与 inverted FlatList 视觉一致）
  */
 export const ChatSkeleton: React.FC<ChatSkeletonProps> = ({
     isDark,
@@ -156,22 +160,19 @@ export const ChatSkeleton: React.FC<ChatSkeletonProps> = ({
                     isDark={isDark}
                     agentColor={agentColor}
                     delayBase={0}
-                    lines={[90, 75, 50]}
+                    lines={[95, 85, 70, 90, 55, 88, 72, 94, 60, 80]}
                 />
 
                 {/* 第 1 轮：用户消息 */}
-                <UserBubbleSkeleton isDark={isDark} delayBase={200} width={60} />
+                <UserBubbleSkeleton isDark={isDark} delayBase={200} lines={[80, 50]} />
 
-                {/* 第 2 轮：AI 回复 */}
+                {/* 第 2 轮：AI 大段回复（最新一条） */}
                 <AssistantBubbleSkeleton
                     isDark={isDark}
                     agentColor={agentColor}
-                    delayBase={400}
-                    lines={[85, 65]}
+                    delayBase={350}
+                    lines={[92, 88, 75, 95, 82, 60, 90, 78, 94, 68, 85, 50]}
                 />
-
-                {/* 第 2 轮：用户消息 */}
-                <UserBubbleSkeleton isDark={isDark} delayBase={550} width={45} />
             </View>
         </Animated.View>
     );
@@ -184,13 +185,14 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: 999,
+        zIndex: 10, // 低于 GlassHeader(zIndex:50)，让导航栏始终可见
     },
     content: {
         flex: 1,
         justifyContent: 'flex-end',
         paddingHorizontal: 16,
-        paddingBottom: 100, // 为底部 ChatInput 留空间
+        paddingTop: 80, // 为顶部 GlassHeader 留出空间（64 + safeArea）
+        paddingBottom: 160, // 为底部 ChatInput 留足空间，与真实列表间距一致
         gap: 16,
     },
     // AI 气泡行
