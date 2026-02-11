@@ -66,7 +66,6 @@ export default function AgentExplorerScreen() {
   };
 
   const handleCreateAgent = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const newId = `agent_${Date.now()}`;
     const globalRagConfig = useSettingsStore.getState().globalRagConfig;
     const newAgent = {
@@ -83,7 +82,10 @@ export default function AgentExplorerScreen() {
     };
     // @ts-ignore
     useAgentStore.getState().addAgent(newAgent);
-    router.push(`/chat/agent/edit/${newId}`);
+    setTimeout(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      router.push(`/chat/agent/edit/${newId}`);
+    }, 10);
   };
 
   const renderItem = ({ item, index }: { item: Agent; index: number }) => {
@@ -94,8 +96,10 @@ export default function AgentExplorerScreen() {
           isDark={isDark}
           onPress={() => {
             preventDoubleTap(() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(`/chat/agent/${item.id}`);
+              setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(`/chat/agent/${item.id}`);
+              }, 10);
             });
           }}
           onPin={() => togglePin(item.id)}

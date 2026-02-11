@@ -161,13 +161,17 @@ const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: 
           }
 
           await Sharing.shareAsync(shareSrc);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setTimeout(() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }, 10);
         } else {
           alert('Sharing is not available on this platform');
         }
       } catch (e) {
         console.error('Save failed', e);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setTimeout(() => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }, 10);
       }
     };
 

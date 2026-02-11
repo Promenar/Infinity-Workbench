@@ -19,6 +19,7 @@ import { useAgentStore } from '../../src/store/agent-store';
 import { useApiStore } from '../../src/store/api-store';
 import { ChatBubble } from '../../src/features/chat/components/ChatBubble';
 import { ChatInput } from '../../src/features/chat/components/ChatInput';
+import { ChatSkeleton } from '../../src/features/chat/components/ChatSkeleton';
 import { ExecutionModeSelector } from '../../src/features/chat/components/ExecutionModeSelector';
 import { useChat } from '../../src/features/chat/hooks/useChat';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -344,12 +345,16 @@ export default function ChatDetailScreen() {
     if (!id || !editingTitle.trim()) return;
     useChatStore.getState().updateSessionTitle(id, editingTitle.trim());
     setShowTitleEditor(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }, 10);
   };
 
   const handleDeleteMessage = (messageId: string) => {
     useChatStore.getState().deleteMessage(id, messageId);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }, 10);
   };
 
   const handleExtractGraph = async (message: Message) => {
@@ -358,7 +363,9 @@ export default function ChatDetailScreen() {
 
     try {
       useChatStore.getState().setKGExtractionStatus(id, true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }, 10);
 
       InteractionManager.runAfterInteractions(async () => {
         try {
@@ -386,7 +393,9 @@ export default function ChatDetailScreen() {
 
   const handleManualVectorize = async (messageId: string) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }, 10);
       await useChatStore.getState().vectorizeMessage(id, messageId);
       if (RNPlatform.OS === 'android') {
         emitToast('消息已加入向量库', 'success');
@@ -399,7 +408,9 @@ export default function ChatDetailScreen() {
 
   const handleManualSummarize = async () => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }, 10);
       if (RNPlatform.OS === 'android') {
         emitToast('正在生成摘要...', 'info');
       }
@@ -486,7 +497,9 @@ export default function ChatDetailScreen() {
                         }, 10);
                       }
                       : async () => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        setTimeout(() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        }, 10);
                         await useChatStore.getState().regenerateMessage(id, item.id);
                       }
                   }
@@ -537,25 +550,10 @@ export default function ChatDetailScreen() {
           );
         })()}
 
-        {/* Loading Overlay */}
+        {/* 骨架屏加载态 */}
         {
           isInitialLoad && (
-            <View
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: isDark ? '#000' : '#fff',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 999,
-                opacity: 1,
-              }}
-            >
-              <ActivityIndicator size="large" color={agentColor} />
-            </View>
+            <ChatSkeleton isDark={isDark} agentColor={agentColor} />
           )
         }
       </Animated.View>
@@ -653,8 +651,10 @@ export default function ChatDetailScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            scrollToBottom(true);
+            setTimeout(() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              scrollToBottom(true);
+            }, 10);
           }}
           style={{
             width: 36,

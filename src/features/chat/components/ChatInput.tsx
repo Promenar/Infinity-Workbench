@@ -411,7 +411,7 @@ export function ChatInput({
       setTimeout(() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         onStop();
-      }, 0);
+      }, 10);
       return;
     }
 
@@ -440,7 +440,7 @@ export function ChatInput({
       updateSessionDraft(sessionId, ''); // Clear draft immediately IN DB
       setSelectedImages([]);
       setSelectedFiles([]);
-    }, 0);
+    }, 10);
 
   };
 
@@ -563,7 +563,7 @@ export function ChatInput({
       setTimeout(() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onModelPress();
-      }, 0);
+      }, 10);
     }
   };
 
@@ -572,7 +572,7 @@ export function ChatInput({
       setTimeout(() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onTokenPress();
-      }, 0);
+      }, 10);
     }
   };
 
