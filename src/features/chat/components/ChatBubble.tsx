@@ -69,11 +69,9 @@ import {
   LazySVGRenderer,
 } from '../../../components/chat/MathRenderer';
 import { extractImagesFromMarkdown } from '../utils/markdown-utils';
-import { formatDeepSeekOutput } from '../utils/deepseek-formatter';
 import { TaskMonitor } from './TaskMonitor';
 import { TaskFinalResult } from './TaskFinalResult';
 
-import { parseMarkdownContent } from '../../../lib/markdown-parser';
 import { SafeUserImage } from './SafeUserImage';
 import { StreamingCardList } from './StreamingCardList';
 import { useI18n } from '../../../lib/i18n';
@@ -837,9 +835,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
     if (!content) return '';
 
-    // ✅ Smart Format: Fix CJK Layout & "Wall of Text" using Cherry Studio's approach
-    // 1. CJK Friendly: Remove single newlines between CJK characters
-    // 2. LaTeX Protection: Convert \[ ... \] to $$ ... $$
+    // ✅ Markdown 预处理: LaTeX 分隔符转换 + 结构化间距修复（幂等）
     content = preprocessMarkdown(content);
 
     // 替换块级公式 $$...$$
