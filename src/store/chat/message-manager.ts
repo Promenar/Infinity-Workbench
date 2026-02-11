@@ -278,11 +278,11 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             });
 
             // If no timer active, schedule flush (Leading Edge + Trailing Edge logic)
-            // Implementation: We always delay 200ms. This is "Throttling" (capped at 5fps).
+            // Implementation: 100ms 节流 (10fps) — 平衡流式速度感与 Markdown 重渲染开销
             if (!throttleTimers.has(key)) {
                 const timer = setTimeout(() => {
                     flushUpdate(sessionId, messageId);
-                }, 200); // 5fps limit for Zustand
+                }, 100); // 10fps — 慢模型提速一倍，快模型无影响
                 throttleTimers.set(key, timer);
             }
         },
