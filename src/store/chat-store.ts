@@ -2354,6 +2354,14 @@ export const useChatStore = create<ChatState>()(
             get().setLoopStatus(sessionId, 'idle');
             get().setApprovalRequest(sessionId, undefined);  // 清除任何残留的审批请求
 
+            // 🔑 关键修复：先释放 UI 生成状态，再执行后处理
+            // 后处理（RAG归档/摘要生成）可能因网络或DB问题挂起，不应阻塞UI恢复
+            // finally 块中的同一逻辑是幂等的，重复执行无副作用
+            set((state: ChatState) => ({
+              currentGeneratingSessionId:
+                state.currentGeneratingSessionId === sessionId ? null : state.currentGeneratingSessionId,
+            }));
+
             // 🔑 最终同步：确保从 Store 中获取最新的内容（包括 ToolExecutor 提升的 final_summary）
             // 否则归档到 RAG 的内容可能是空的或旧的
             const finalMsg = get().getSession(sessionId)?.messages.find(m => m.id === currentAssistantMsgId);
@@ -2494,6 +2502,11 @@ export const useChatStore = create<ChatState>()(
 
             // ✅ 故障容错：确保 RAG 状态被重置（如果是在检索过程中挂掉的）
             useRagStore.getState().updateProcessingState({ status: 'idle' }, assistantMsgId);
+
+            // 🔑 补全：异常时也必须重置 loopStatus，防止状态泄漏
+            // 若异常发生在 loopStatus 被设为 'running' 之后，残留状态会导致 ChatInput 显示异常
+            get().setLoopStatus(sessionId, 'idle');
+            get().setApprovalRequest(sessionId, undefined);
 
             // 更新当前 assistant 消息显示错误（而非创建新气泡）
             const errorText = e.message || 'Unknown error';

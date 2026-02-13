@@ -631,26 +631,32 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                 {/* 2. 展开状态：完整列表 */}
                 {!isCollapsed && (
                     <Animated.View entering={FadeIn} exiting={FadeOut} className="relative">
-                        <GHScrollView
-                            ref={scrollViewRef as any}
-                            nestedScrollEnabled={true}
-                            onScroll={handleScroll}
-                            scrollEventThrottle={16}
-                            showsVerticalScrollIndicator={false}
-                            fadingEdgeLength={32}
-                            style={{ maxHeight: Dimensions.get('window').height * 0.35 }}
-                            contentContainerStyle={{ paddingLeft: 22, paddingRight: 12, paddingBottom: 16 }}
+                        {/* 🛡️ 手势隔离层：阻止展开区域的水平触摸冒泡到父 FlatList */}
+                        <View
+                            onStartShouldSetResponder={() => true}
+                            onMoveShouldSetResponder={() => true}
                         >
-                            {steps.filter(s => s.type !== 'plan_item').map((step, index, arr) => (
-                                <TimelineItem
-                                    key={step.id}
-                                    step={step}
-                                    isLast={index === arr.length - 1}
-                                    isMessageGenerating={isMessageGenerating}
-                                    sessionId={sessionId}
-                                />
-                            ))}
-                        </GHScrollView>
+                            <GHScrollView
+                                ref={scrollViewRef as any}
+                                nestedScrollEnabled={true}
+                                onScroll={handleScroll}
+                                scrollEventThrottle={16}
+                                showsVerticalScrollIndicator={false}
+                                fadingEdgeLength={32}
+                                style={{ maxHeight: Dimensions.get('window').height * 0.35 }}
+                                contentContainerStyle={{ paddingLeft: 22, paddingRight: 12, paddingBottom: 16 }}
+                            >
+                                {steps.filter(s => s.type !== 'plan_item').map((step, index, arr) => (
+                                    <TimelineItem
+                                        key={step.id}
+                                        step={step}
+                                        isLast={index === arr.length - 1}
+                                        isMessageGenerating={isMessageGenerating}
+                                        sessionId={sessionId}
+                                    />
+                                ))}
+                            </GHScrollView>
+                        </View>
                     </Animated.View>
                 )}
             </BlurView>

@@ -277,18 +277,17 @@ export default function ChatDetailScreen() {
   }, [isListReady]);
 
   // 🔑 Effect A: 仅在生成状态**改变**时触发 (Start/End)
-  // 职责：初始化追踪状态，或在生成结束时清理状态
+  // 职责：初始定位到底部，或在生成结束时清理状态
+  // ⚠️ 不重置 userScrolledAway：用户的滚动意图是 SSOT，由手势和"回到底部"按钮独立控制
   React.useEffect(() => {
     if (loading) {
-      // 🤖 AI开始生成
-      // 🔑 仅在开始的那一刻，强制重置打断状态并钉在底部
-      userScrolledAway.value = false;
-      userScrolledAwayRef.current = false;
-      isAtBottom.value = true;
-      scrollToBottom(false);
+      // 🤖 AI开始生成：仅在用户当前在底部时保持追踪，不强制覆盖打断标记
+      if (!userScrolledAwayRef.current) {
+        isAtBottom.value = true;
+        scrollToBottom(false);
+      }
     } else {
-      // 🏁 生成结束
-      // 🔑 规则4: 生成结束，重置打断状态（为下一轮做准备）
+      // 🏁 生成结束：重置打断状态（为下一轮做准备）
       if (isAtBottom.value) {
         userScrolledAway.value = false;
         userScrolledAwayRef.current = false;
@@ -672,6 +671,9 @@ export default function ChatDetailScreen() {
           onPress={() => {
             setTimeout(() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              // 🔑 恢复追踪：用户主动回到底部，重置打断标记
+              userScrolledAway.value = false;
+              userScrolledAwayRef.current = false;
               scrollToBottom(true);
             }, 10);
           }}

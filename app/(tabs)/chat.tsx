@@ -1,10 +1,9 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, FlatList } from 'react-native';
 import { PageLayout, Typography, LargeTitleHeader, AnimatedSearchBar } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Search, Plus, ChevronRight } from 'lucide-react-native';
 import * as Haptics from '../../src/lib/haptics';
-import { FlashList } from '@shopify/flash-list';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useI18n } from '../../src/lib/i18n';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -120,18 +119,6 @@ export default function AgentExplorerScreen() {
     };
   }, []);
 
-  const ListHeader = () => (
-    <View className="px-6 pb-6">
-      {/* Flat Modern Search Bar */}
-      <AnimatedSearchBar
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder={t.chat.searchPlaceholder}
-        inputRef={inputRef}
-      />
-    </View>
-  );
-
   return (
     <PageLayout safeArea={false} className="bg-white dark:bg-black">
       <Stack.Screen options={{ headerShown: false }} />
@@ -159,13 +146,20 @@ export default function AgentExplorerScreen() {
         }
       />
 
-      <FlashList
+      {/* 固定搜索栏：不跟随列表滚动 */}
+      <View style={{ paddingHorizontal: 24, paddingBottom: 12 }}>
+        <AnimatedSearchBar
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={t.chat.searchPlaceholder}
+          inputRef={inputRef}
+        />
+      </View>
+
+      <FlatList
         data={filteredAgents}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={ListHeader}
-        // @ts-ignore
-        estimatedItemSize={90}
         contentContainerStyle={{ paddingBottom: 160 }}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
