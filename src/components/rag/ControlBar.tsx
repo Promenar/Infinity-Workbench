@@ -2,7 +2,7 @@ import React from 'react';
 import { View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Typography } from '../ui';
 import { FolderPlus, Network } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
 

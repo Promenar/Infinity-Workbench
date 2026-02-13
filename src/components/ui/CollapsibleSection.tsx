@@ -10,7 +10,7 @@ import Animated, {
 import { ChevronRight } from 'lucide-react-native';
 import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 
 interface CollapsibleSectionProps {
     title: string;

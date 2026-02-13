@@ -17,7 +17,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../../theme/ThemeProvider';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSPAStore } from '../../store/spa-store';
 import { useChatStore } from '../../store/chat-store';

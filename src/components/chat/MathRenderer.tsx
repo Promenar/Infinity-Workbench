@@ -3,7 +3,7 @@ import { View, StyleSheet, Dimensions, TouchableOpacity, Text, Platform, Modal, 
 import { WebView } from 'react-native-webview';
 import { SvgXml } from 'react-native-svg';
 import { Play, Square, Eye, Maximize2, X, Minimize2 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 import { useTheme } from '../../theme/ThemeProvider';
 
 interface MathRendererProps {

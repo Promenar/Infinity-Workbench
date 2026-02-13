@@ -3,7 +3,7 @@ import { View, TouchableOpacity } from 'react-native';
 import { Typography, ContextMenu } from '../ui';
 import { Folder, FolderOpen, ChevronRight, MoreVertical, Network, FileSearch, Edit, FolderInput, Trash2 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 import Animated, {
   useAnimatedStyle,
   withSpring,

@@ -121,6 +121,7 @@ export const RagDocItem = memo(
                   onPress: onDelete,
                 },
               ]}
+              triggerOnPress
             >
               <View className="p-3 opacity-60">
                 <MoreVertical size={16} color={isSelected ? '#6366f1' : '#94a3b8'} />

@@ -4,7 +4,7 @@ import { View, TouchableOpacity } from 'react-native';
 import { Typography, ContextMenu } from '../ui';
 import { Brain, MoreVertical, Trash2, Clock } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS } from 'date-fns/locale';

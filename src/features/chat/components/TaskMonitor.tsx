@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, LayoutAnimation, Platform, UIManager, Vie
 import { BlurView } from 'expo-blur';
 import { ChevronDown, ChevronUp, Circle, CheckCircle2, Loader2, XCircle, SkipForward, X } from 'lucide-react-native';
 import Animated, { FadeInDown, Layout, FadeIn } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../../lib/haptics';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useChatStore } from '../../../store/chat-store';
 import { TaskStep, TaskState } from '../../../types/chat';

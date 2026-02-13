@@ -1276,8 +1276,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 onPress: () => {
                   setTimeout(() => {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                    onDelete?.();
                   }, 10);
-                  onDelete?.();
                 },
               },
             ].filter(Boolean) as any}
@@ -1603,8 +1603,8 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             onPress: () => {
               setTimeout(() => {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                onDelete?.();
               }, 10);
-              onDelete?.();
             },
           },
         ].filter(Boolean) as any}

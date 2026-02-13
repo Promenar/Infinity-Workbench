@@ -3,7 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Text, Modal, SafeAreaView, StatusBa
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Maximize2, X, Share2, Network } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '../../lib/haptics';
 import Svg, { Path, Rect, G } from 'react-native-svg';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
