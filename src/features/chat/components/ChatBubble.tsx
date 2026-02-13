@@ -321,6 +321,108 @@ const LoadingDots = ({ isDark, color }: { isDark: boolean; color?: string }) => 
   );
 };
 
+/**
+ * StreamingFadePulse - 流式输出对角线渐隐遮罩（持续模式）
+ * 
+ * 渐变方向：左上（透明）→ 右下（背景色），跟随文本流向。
+ * 
+ * 行为模式（"持续 + 空闲淡出"）：
+ * - token 到达时：渐变快速渐入（150ms）并持续显示
+ * - 连续有 token 时：渐变保持可见（计时器不断重置）
+ * - token 停顿超过 600ms：渐变平滑淡出（400ms）
+ * - 流式结束（contentTrigger → 0）：立即淡出
+ * 
+ * 适配所有模型速度：
+ * - 快模型（Gemini）：渐变持续可见，像 Gemini 原生效果
+ * - 慢模型（DeepSeek）：每批 token 渐变淡入，停顿时淡出，下一批再渐入
+ * 
+ * 使用 react-native-svg 对角线 LinearGradient，GPU 原生渲染。
+ */
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
+
+const FADE_PULSE_HEIGHT = 72;
+const IDLE_TIMEOUT_MS = 600;   // token 停顿多久后开始淡出
+const FADE_IN_MS = 150;        // 渐入时长
+const FADE_OUT_MS = 400;       // 淡出时长
+
+const StreamingFadePulse = React.memo(({ contentTrigger, isDark }: { contentTrigger: number; isDark: boolean }) => {
+  const maskOpacity = useSharedValue(0);
+  const prevTriggerRef = React.useRef(0);
+  const fadeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 清理定时器的辅助函数
+  const clearFadeTimer = React.useCallback(() => {
+    if (fadeTimerRef.current) {
+      clearTimeout(fadeTimerRef.current);
+      fadeTimerRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (contentTrigger > 0 && contentTrigger > prevTriggerRef.current) {
+      // token 到达：快速渐入（如果尚未可见）
+      maskOpacity.value = withTiming(1, { duration: FADE_IN_MS });
+
+      // 重置空闲计时器：停顿后才淡出
+      clearFadeTimer();
+      fadeTimerRef.current = setTimeout(() => {
+        maskOpacity.value = withTiming(0, { duration: FADE_OUT_MS });
+      }, IDLE_TIMEOUT_MS);
+    }
+
+    // 流式结束：立即淡出
+    if (contentTrigger === 0 && prevTriggerRef.current > 0) {
+      clearFadeTimer();
+      maskOpacity.value = withTiming(0, { duration: FADE_OUT_MS });
+    }
+
+    prevTriggerRef.current = contentTrigger;
+  }, [contentTrigger]);
+
+  // 组件卸载时清理
+  React.useEffect(() => {
+    return () => clearFadeTimer();
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: maskOpacity.value,
+  }));
+
+  const bgColor = isDark ? '#000000' : '#ffffff';
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: FADE_PULSE_HEIGHT,
+          zIndex: 10,
+        },
+        animatedStyle,
+      ]}
+    >
+      {/* 对角线渐变：左上(透明) → 右下(背景色)，跟随文本流向 */}
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <SvgLinearGradient id="streamFadeDiag" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={bgColor} stopOpacity="0" />
+            <Stop offset="0.35" stopColor={bgColor} stopOpacity="0.1" />
+            <Stop offset="0.65" stopColor={bgColor} stopOpacity="0.45" />
+            <Stop offset="1" stopColor={bgColor} stopOpacity="0.85" />
+          </SvgLinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#streamFadeDiag)" />
+      </Svg>
+    </Animated.View>
+  );
+});
+
+
+
 
 
 
@@ -1507,7 +1609,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           },
         ].filter(Boolean) as any}
       >
-        <View style={{ minHeight: 20 }}>
+        <View style={{ minHeight: 20, position: 'relative', overflow: 'hidden' }}>
           {isWaitingForContent ? (
             <View className="items-start py-2">
               <LoadingDots isDark={isDark} color={agentColor} />
@@ -1626,6 +1728,12 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 })()}
             </>
           )}
+
+          {/* 🌊 LobeHub 风格：流式输出渐隐脉冲 */}
+          <StreamingFadePulse
+            contentTrigger={!isUser && isGenerating && message.content ? message.content.length : 0}
+            isDark={isDark}
+          />
 
           {/* ⚠️ 超时警告卡片 (Soft Timeout Warning) */}
           {/* @ts-ignore */}
