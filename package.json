@@ -1,6 +1,6 @@
 {
   "name": "nexara",
-  "version": "1.2.46",
+  "version": "1.2.47",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -93,16 +93,20 @@
   "devDependencies": {
     "@react-native-community/cli": "^20.0.2",
     "@types/jest": "^30.0.0",
+    "@types/module-alias": "^2.0.4",
     "@types/react": "~19.1.0",
     "@types/react-native": "^0.72.8",
     "@types/react-test-renderer": "^19.1.0",
     "babel-preset-expo": "^54.0.9",
     "jest": "^30.2.0",
+    "module-alias": "^2.3.4",
     "patch-package": "^8.0.1",
     "prettier": "^3.7.4",
     "react-test-renderer": "^19.2.4",
     "ts-jest": "^29.4.6",
-    "typescript": "~5.9.2"
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.2",
+    "xhr2": "^0.2.1"
   },
   "op-sqlite": {
     "fts5": true

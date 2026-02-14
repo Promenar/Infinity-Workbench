@@ -48,15 +48,18 @@ export const CachedSvgUri: React.FC<CachedSvgUriProps> = ({ uri, width, height, 
 
                 // 4. 简单校验 (更宽松的校验)
                 const trimmed = content.trim();
-                // console.log('[CachedSvgUri] Content preview:', trimmed.substring(0, 50));
 
-                if (!trimmed || (!trimmed.toLowerCase().includes('<svg'))) {
-                    console.warn('[CachedSvgUri] Invalid SVG content (missing <svg> tag):', uri);
-                    // 尝试仍然渲染，也许只是 xml 声明在前面
+                // 增强校验：必须包含 <svg 且长度合理
+                if (!trimmed || !trimmed.toLowerCase().includes('<svg') || trimmed.length < 20) {
+                    console.warn('[CachedSvgUri] Invalid SVG content (missing <svg> tag or too short):', uri);
+                    // 标记错误，不设置 xmlContent，避免 SvgXml 崩溃
+                    if (isMounted) setError(true);
+                    return;
                 }
 
                 if (isMounted) {
                     setXmlContent(content);
+                    setError(false); // 重置错误状态
                 }
             } catch (e) {
                 console.warn('[CachedSvgUri] Failed to load icon:', uri, e);

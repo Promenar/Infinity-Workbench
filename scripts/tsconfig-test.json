@@ -1,0 +1,19 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "module": "commonjs",
+        "paths": {
+            "expo-file-system/legacy": [
+                "./mocks/expo-file-system.ts"
+            ],
+            "@react-native-async-storage/async-storage": [
+                "./mocks/async-storage.ts"
+            ]
+        }
+    },
+    "ts-node": {
+        "require": [
+            "tsconfig-paths/register"
+        ]
+    }
+}

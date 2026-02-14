@@ -2,7 +2,7 @@ import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { ErrorNormalizer } from '../error-normalizer';
 import { Skill, ToolCall } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
-import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 export class OpenAiClient implements LlmClient {
   private apiKey: string;
@@ -102,10 +102,15 @@ export class OpenAiClient implements LlmClient {
 
     return skills.map((skill) => {
       // 🧐 Force OpenAI/JSON Schema 7 compatibility
-      let schema = zodToJsonSchema(skill.schema as any, {
-        target: 'openApi3',
-        $refStrategy: 'none'
-      }) as any;
+      let schema: any;
+      if ((skill.schema as any)._def || typeof (skill.schema as any).safeParse === 'function') {
+        schema = zodToJsonSchema(skill.schema as any, {
+          target: 'openApi3',
+          $refStrategy: 'none'
+        });
+      } else {
+        schema = skill.schema;
+      }
 
       // Deep clone and clean
       schema = JSON.parse(JSON.stringify(schema));

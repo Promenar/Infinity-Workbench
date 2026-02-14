@@ -86,10 +86,19 @@ export const BrandIcon = {
    * @param slug 图标标识符 (如 'openai', 'deepseek')
    */
   ModelLogo: ({ slug, size = 24 }: IconProps & { slug: string }) => {
+    // 引入 Theme Hook (需确保组件在 ThemeProvider 内)
+    // Dynamic require/import to avoid circular dependency issues at top level if any, 
+    // but better to use the hook if available. 
+    // Assuming we can import hooks here. If this is a plain object, we need to make ModelLogo a proper component or use hooks inside it.
+    // Since it's used as <BrandIcon.ModelLogo />, it is a functional component.
+    const { useTheme } = require('../../theme/ThemeProvider');
+    const { isDark } = useTheme();
+    const { View } = require('react-native'); // Late import if needed, or add to top
+
     // 映射一些别名到 LobeHub 官方 Slug
     const slugMap: Record<string, string> = {
       claude: 'claude',
-      gemini: 'google', // Gemini often uses Google colors
+      gemini: 'google',
       vertex: 'google',
       google: 'google',
       glm: 'zhipu',
@@ -105,35 +114,53 @@ export const BrandIcon = {
       minimax: 'minimax',
       mistral: 'mistral',
       ollama: 'ollama',
-      // Fallback for SiliconFlow to OpenAI as requested
+      xai: 'xai',
+      grok: 'xai',
       siliconflow: 'openai',
-      // Local intelligence - assuming 'local' or 'rwkv' etc
       local: 'openai',
       rwkv: 'openai',
+      // Fix: openai-compatible 映射到有效的 openai 图标
+      'openai-compatible': 'openai',
     };
 
     const normalizedSlug = slugMap[slug.toLowerCase()] || slug.toLowerCase();
 
-    // 绝大多数 AI 品牌在 LobeHub 中都有 -color 变体
-    // 排除已知只有基础版本的品牌 (OpenAI, Anthropic 厂商图标)
-    // 注意：moonshot 官方包中没有 moonshot-color.svg，直接用 moonshot.svg 就是彩色的
-    // github, groq usually have black/white, but let's see if -color exists or stick to base.
-    // openai mapped from siliconflow should use base openai
-    const baseOnlySlugs = ['openai', 'anthropic', 'moonshot', 'github', 'vercel', 'groq', 'ollama'];
+    // 只有基础版本的品牌 (往往是单色/黑色)
+    // 只有基础版本的品牌 (往往是单色/黑色)
+    const baseOnlySlugs = ['openai', 'anthropic', 'moonshot', 'github', 'vercel', 'groq', 'ollama', 'xai', 'mistral'];
 
-    // Check if it's already updated to openai (e.g. siliconflow)
-    if (normalizedSlug === 'openai' && slug.toLowerCase() !== 'openai') {
-      // If mapped to openai from something else, return OpenAI component directly? 
-      // No, ModelIconRenderer handles Component return? No, this is BrandIcons.
-      // We are inside ModelLogo which returns CachedSvgUri.
-      // We should let it fetch openai.svg
-    }
+    // 以前的白名单已废弃，现在改为通用适配
+    // const needWhiteBackgroundInDark = ['github', 'ollama', 'xai', 'mistral', 'groq', 'vercel'];
 
     const finalSlug = baseOnlySlugs.includes(normalizedSlug) ? normalizedSlug : `${normalizedSlug}-color`;
 
-    // 使用 npmmirror 以确保在国内环境的稳定性
     const uri = `https://registry.npmmirror.com/@lobehub/icons-static-svg/latest/files/icons/${finalSlug}.svg`;
 
-    return <CachedSvgUri width={size} height={size} uri={uri} />;
+    const image = <CachedSvgUri width={size} height={size} uri={uri} />;
+
+    // Dark Mode 通用适配：
+    // 用户反馈白名单太笨，直接给所有图标在暗黑模式下加一个亮色背景，简单粗暴且有效。
+    // 这能同时解决黑色图标看不清和彩色图标在深色背景下不够突出的问题。
+    if (isDark) {
+      return (
+        <View
+          style={{
+            backgroundColor: '#e4e4e7', // zinc-200
+            borderRadius: size * 0.25, // 稍微大一点的圆角
+            padding: 2, // 内边距
+            width: size,
+            height: size,
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}
+        >
+          {/* 稍微缩小一点图标以适应容器 */}
+          <CachedSvgUri width={size * 0.85} height={size * 0.85} uri={uri} />
+        </View>
+      );
+    }
+
+    return image;
   },
 };
+

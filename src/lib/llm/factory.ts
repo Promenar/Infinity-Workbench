@@ -6,7 +6,7 @@ import { OpenAiCompatibleClient } from './providers/openai-compatible'; // 🔑 
 import { VertexAiClient } from './providers/vertexai';
 import { GeminiClient } from './providers/gemini';
 import { LocalLlmClient } from './providers/local-llm';
-import { ModelConfig } from '../../store/api-store';
+import { ModelConfig } from '../../store/api-types';
 
 // 扩展 ModelConfig 以便在工厂中使用带有 Provider 信息的配置
 export interface ExtendedModelConfig extends ModelConfig {

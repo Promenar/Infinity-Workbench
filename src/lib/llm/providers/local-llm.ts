@@ -2,7 +2,7 @@ import { LlmClient, ChatMessage, ChatMessageOptions, CompletionOptions } from '.
 import { useLocalModelStore } from '../../local-inference/LocalModelServer';
 import { RNLlamaOAICompatibleMessage } from 'llama.rn';
 import { Skill } from '../../../types/skills';
-import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 export class LocalLlmClient implements LlmClient {
     private model: string;

@@ -2,7 +2,7 @@ import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { ErrorNormalizer } from '../error-normalizer';
 import { Skill, ToolCall } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
-import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 export class OpenAiCompatibleClient implements LlmClient {
     private apiKey: string;

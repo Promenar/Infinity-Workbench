@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput, Dimensions } from 'react-native';
-import { ScrollView, NativeSyntheticEvent, NativeScrollEvent, Platform } from 'react-native';
+import { NativeSyntheticEvent, NativeScrollEvent, Platform } from 'react-native'; // Removed ScrollView
+import { ScrollView } from 'react-native-gesture-handler'; // Added ✅
 import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import Markdown from 'react-native-markdown-display';
@@ -631,11 +632,8 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                 {/* 2. 展开状态：完整列表 */}
                 {!isCollapsed && (
                     <Animated.View entering={FadeIn} exiting={FadeOut} className="relative">
-                        {/* 🛡️ 手势隔离层：阻止展开区域的水平触摸冒泡到父 FlatList */}
-                        <View
-                            onStartShouldSetResponder={() => true}
-                            onMoveShouldSetResponder={() => true}
-                        >
+                        {/* 🛡️ 手势隔离层：已移除拦截，改用 GH ScrollView 处理嵌套滚动 */}
+                        <View>
                             <GHScrollView
                                 ref={scrollViewRef as any}
                                 nestedScrollEnabled={true}

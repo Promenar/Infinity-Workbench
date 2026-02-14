@@ -1,7 +1,7 @@
 import { LlmClient, ChatMessage, ChatMessageOptions } from '../types';
 import { supportsThinkingConfig } from '../model-utils';
 import { Skill, ToolCall } from '../../../types/skills';
-import zodToJsonSchema from 'zod-to-json-schema/dist/cjs/index.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import * as FileSystem from 'expo-file-system/legacy'; // ✅ SDK54: 使用 legacy API 兼容 readAsStringAsync
 
 export class GeminiClient implements LlmClient {
