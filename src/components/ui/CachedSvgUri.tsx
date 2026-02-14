@@ -85,7 +85,10 @@ export const CachedSvgUri: React.FC<CachedSvgUriProps> = ({ uri, width, height, 
             style={style}
             onError={(e) => {
                 console.warn('[CachedSvgUri] XML Render Error:', e);
-                setError(true);
+                // Fix: Avoid setState during render
+                setTimeout(() => {
+                    setError(true);
+                }, 0);
             }}
         />
     );

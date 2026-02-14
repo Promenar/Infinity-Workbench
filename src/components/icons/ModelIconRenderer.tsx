@@ -28,12 +28,8 @@ export const ModelIconRenderer: React.FC<ModelIconRendererProps> = ({
     // 强制使用动态 CDN 图标库（LobeHub 高保真官方 Logo）
     content = <BrandIcon.ModelLogo slug={iconKey} size={size} />;
   } else {
-    // 兜底逻辑
-    content = (
-      <View style={{ opacity: 0.5 }}>
-        <Sparkles size={size} color={color} />
-      </View>
-    );
+    // 兜底逻辑：使用 OpenAI Logo
+    content = <BrandIcon.OpenAI size={size} color={color} />;
   }
 
   return <View style={style}>{content}</View>;

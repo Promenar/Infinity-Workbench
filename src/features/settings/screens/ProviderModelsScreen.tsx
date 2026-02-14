@@ -697,10 +697,31 @@ export default function ProviderModelsScreen() {
         ],
     );
 
-    const renderHeader = useCallback(
-        () => (
-            <View>
-                <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+
+
+    return (
+        <PageLayout safeArea={false} className="bg-white dark:bg-black">
+            <Stack.Screen options={{ headerShown: false }} />
+            <GlassHeader
+                title={provider?.name || ''}
+                subtitle={t.settings.modelSettings.title}
+                leftAction={{
+                    icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
+                    onPress: () => router.back(),
+                }}
+                intensity={100}
+            />
+            <View style={{ flex: 1 }}>
+                {/* Fixed Header Section (Search & Actions) */}
+                <View style={{
+                    paddingTop: insets.top + 64 + 16,
+                    paddingHorizontal: 16,
+                    paddingBottom: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                    backgroundColor: isDark ? '#000' : '#fff',
+                    zIndex: 10,
+                }}>
                     <AnimatedSearchBar
                         value={searchQuery}
                         onChangeText={setSearchQuery}
@@ -708,11 +729,9 @@ export default function ProviderModelsScreen() {
                         containerStyle={{ marginBottom: 12 }}
                         inputRef={inputRef}
                     />
-                </View>
 
-                <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
-                        {/* 自动拉取 */}
+                        {/* Auto Fetch */}
                         <TouchableOpacity
                             onPress={handleAutoFetch}
                             disabled={isFetching}
@@ -739,7 +758,7 @@ export default function ProviderModelsScreen() {
                             </Text>
                         </TouchableOpacity>
 
-                        {/* 手动添加 */}
+                        {/* Manual Add */}
                         <TouchableOpacity
                             onPress={handleManualAdd}
                             style={{
@@ -761,6 +780,7 @@ export default function ProviderModelsScreen() {
                             </Text>
                         </TouchableOpacity>
 
+                        {/* Disable All */}
                         <TouchableOpacity
                             onPress={handleDisableAll}
                             style={{
@@ -782,6 +802,7 @@ export default function ProviderModelsScreen() {
                             </Text>
                         </TouchableOpacity>
 
+                        {/* Delete All */}
                         <TouchableOpacity
                             onPress={handleDeleteAll}
                             style={{
@@ -804,34 +825,7 @@ export default function ProviderModelsScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
-            </View>
-        ),
-        [
-            isDark,
-            colors,
-            searchQuery,
-            isFetching,
-            t,
-            handleAutoFetch,
-            handleManualAdd,
-            handleDisableAll,
-            handleDeleteAll,
-        ],
-    );
 
-    return (
-        <PageLayout safeArea={false} className="bg-white dark:bg-black">
-            <Stack.Screen options={{ headerShown: false }} />
-            <GlassHeader
-                title={provider?.name || ''}
-                subtitle={t.settings.modelSettings.title}
-                leftAction={{
-                    icon: <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />,
-                    onPress: () => router.back(),
-                }}
-                intensity={100}
-            />
-            <View style={{ flex: 1 }}>
                 {isReady && provider ? (
                     <TypedFlashList
                         data={filteredModels}
@@ -841,9 +835,8 @@ export default function ProviderModelsScreen() {
                         keyExtractor={(item: ModelConfig) => item.uuid}
                         contentContainerStyle={{
                             paddingBottom: 450, // 💡 增加底部间距，允许用户手动向上滚动以避开键盘 (Rule 1)
-                            paddingTop: insets.top + 64 + 16,
+                            paddingTop: 16, // Change top padding since header is removed from list
                         }}
-                        ListHeaderComponent={renderHeader}
                         extraData={testResults}
                         getItemType={() => 'model'}
                         keyboardDismissMode="on-drag"

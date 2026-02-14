@@ -89,13 +89,27 @@ export const BrandIcon = {
     // 映射一些别名到 LobeHub 官方 Slug
     const slugMap: Record<string, string> = {
       claude: 'claude',
-      gemini: 'gemini',
+      gemini: 'google', // Gemini often uses Google colors
+      vertex: 'google',
+      google: 'google',
       glm: 'zhipu',
       chatglm: 'zhipu',
       kimi: 'moonshot',
       ernie: 'wenxin',
+      wenxin: 'wenxin',
       'llama-3': 'meta',
       'llama-2': 'meta',
+      llama: 'meta',
+      github: 'github',
+      groq: 'groq',
+      minimax: 'minimax',
+      mistral: 'mistral',
+      ollama: 'ollama',
+      // Fallback for SiliconFlow to OpenAI as requested
+      siliconflow: 'openai',
+      // Local intelligence - assuming 'local' or 'rwkv' etc
+      local: 'openai',
+      rwkv: 'openai',
     };
 
     const normalizedSlug = slugMap[slug.toLowerCase()] || slug.toLowerCase();
@@ -103,10 +117,18 @@ export const BrandIcon = {
     // 绝大多数 AI 品牌在 LobeHub 中都有 -color 变体
     // 排除已知只有基础版本的品牌 (OpenAI, Anthropic 厂商图标)
     // 注意：moonshot 官方包中没有 moonshot-color.svg，直接用 moonshot.svg 就是彩色的
-    const baseOnlySlugs = ['openai', 'anthropic', 'moonshot'];
+    // github, groq usually have black/white, but let's see if -color exists or stick to base.
+    // openai mapped from siliconflow should use base openai
+    const baseOnlySlugs = ['openai', 'anthropic', 'moonshot', 'github', 'vercel', 'groq', 'ollama'];
 
-    // 特殊处理：有些品牌默认就是彩色的，有些需要添加 -color 后缀
-    // 经调研，大部分主流品牌如 deepseek, qwen, baichuan, minimax, google, gemini, claude 等均有 -color
+    // Check if it's already updated to openai (e.g. siliconflow)
+    if (normalizedSlug === 'openai' && slug.toLowerCase() !== 'openai') {
+      // If mapped to openai from something else, return OpenAI component directly? 
+      // No, ModelIconRenderer handles Component return? No, this is BrandIcons.
+      // We are inside ModelLogo which returns CachedSvgUri.
+      // We should let it fetch openai.svg
+    }
+
     const finalSlug = baseOnlySlugs.includes(normalizedSlug) ? normalizedSlug : `${normalizedSlug}-color`;
 
     // 使用 npmmirror 以确保在国内环境的稳定性

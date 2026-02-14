@@ -1,6 +1,7 @@
 import React, { memo, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { Server, Edit2, Trash2, Cpu } from 'lucide-react-native';
+import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
 import { Card } from '../../../components/ui/Card';
 import { Marquee } from '../../../components/ui/Marquee';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -67,7 +68,11 @@ const ProviderListItem = memo(({
                             styles.iconContainer,
                             { backgroundColor: isDark ? 'rgba(39, 39, 42, 0.6)' : 'rgba(0, 0, 0, 0.05)' }
                         ]}>
-                            <Server size={20} color={colors[500]} />
+                            <ModelIconRenderer
+                                icon={provider.type}
+                                size={20}
+                                color={colors[500]}
+                            />
                         </View>
                         <View style={styles.textContainer}>
                             <Marquee

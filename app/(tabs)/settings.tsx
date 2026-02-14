@@ -61,7 +61,7 @@ import { AgentAvatar } from '../../src/components/chat/AgentAvatar';
 import * as ImagePicker from 'expo-image-picker';
 
 import { LargeTitleHeader } from '../../src/components/ui/LargeTitleHeader';
-import { ProviderModal } from '../../src/features/settings/ProviderModal';
+
 import { ProviderList } from '../../src/features/settings/components/ProviderList';
 import { Card } from '../../src/components/ui/Card';
 import { ModelPicker } from '../../src/features/settings/ModelPicker';
@@ -97,9 +97,8 @@ export default function SettingsScreen() {
   const [activeTab, setActiveTab] = useState<'app' | 'providers'>('app');
   const [containerWidth, setContainerWidth] = useState(0);
   const [eggCount, setEggCount] = useState(0);
-  const [modalVisible, setModalVisible] = useState(false);
-  // const [avatarPickerVisible, setAvatarPickerVisible] = useState(false); // Removed
-  const [isEditingName, setIsEditingName] = useState(false); // ✅ New State
+
+  const [isEditingName, setIsEditingName] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerConfig, setPickerConfig] = useState<{
     title: string;
@@ -111,10 +110,6 @@ export default function SettingsScreen() {
     | 'defaultImageModel';
     filterType?: 'chat' | 'reasoning' | 'image' | 'embedding' | 'rerank';
   }>({ title: '', key: 'defaultSummaryModel' });
-
-  const [editingProvider, setEditingProvider] = useState<ProviderConfig | null>(null);
-
-  // 1. Transition Shared Value: 0 = app, 1 = providers
   const tabProgress = useSharedValue(0);
 
   useEffect(() => {
@@ -792,13 +787,11 @@ export default function SettingsScreen() {
             style={[providerTabStyle]}
             pointerEvents={activeTab === 'providers' ? 'auto' : 'none'}
           >
-            {/* 添加服务商按钮 */}
             <TouchableOpacity
               onPress={() => {
                 setTimeout(() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setEditingProvider(null);
-                  setModalVisible(true);
+                  router.push('/settings/provider/form');
                 }, 10);
               }}
               style={{
@@ -820,8 +813,10 @@ export default function SettingsScreen() {
             <ProviderList
               providers={providers}
               onEdit={(provider) => {
-                setEditingProvider(provider);
-                setModalVisible(true);
+                router.push({
+                  pathname: '/settings/provider/form',
+                  params: { id: provider.id }
+                });
               }}
               onDelete={(id) => {
                 deleteProvider(id);
@@ -846,20 +841,7 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
-      <ProviderModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSave={(providerData) => {
-          if (editingProvider) {
-            updateProvider(editingProvider.id, providerData);
-            showToast('服务商已更新', 'success');
-          } else {
-            addProvider(providerData);
-            showToast('服务商已添加', 'success');
-          }
-        }}
-        editingProvider={editingProvider}
-      />
+
 
       <ModelPicker
         visible={pickerVisible}
