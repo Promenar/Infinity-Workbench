@@ -177,6 +177,9 @@ android {
             useLegacyPackaging enableLegacyPackaging.toBoolean()
             excludes += ['**/armeabi-v7a/**', '**/x86/**', '**/x86_64/**']
         }
+        resources {
+            excludes += ['lib/armeabi-v7a/**', 'lib/x86/**', 'lib/x86_64/**']
+        }
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
