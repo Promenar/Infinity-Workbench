@@ -304,7 +304,17 @@ export default function SettingsScreen() {
                       });
 
                       if (!result.canceled) {
-                        updateUserProfile({ avatar: result.assets[0].uri });
+                        try {
+                          // 导入文件处理工具函数
+                          const { copyToCache } = await import('../../src/lib/image-utils');
+                          // 将临时图片复制到持久化存储
+                          const persistentUri = await copyToCache(result.assets[0].uri, 'originals');
+                          updateUserProfile({ avatar: persistentUri });
+                        } catch (error) {
+                          console.error('Failed to save avatar:', error);
+                          // 降级：使用原始临时URI
+                          updateUserProfile({ avatar: result.assets[0].uri });
+                        }
                       }
                     }}
                   >
