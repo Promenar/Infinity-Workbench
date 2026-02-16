@@ -118,8 +118,8 @@ android {
         applicationId 'com.promenar.nexara'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 118
-        versionName "1.2.53"
+        versionCode 119
+        versionName "1.2.54"
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -175,6 +175,7 @@ android {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
+            excludes += ['**/armeabi-v7a/**', '**/x86/**', '**/x86_64/**']
         }
     }
     androidResources {
