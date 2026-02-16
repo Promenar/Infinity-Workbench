@@ -76,6 +76,8 @@ const CustomLightTheme = {
 };
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+// import { UnifiedExtensionCenter } from '../src/components/extension-framework/UnifiedExtensionCenter';
+// import { ExtensionPanel } from '../src/components/extension-framework/ExtensionPanel';
 
 export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
@@ -176,6 +178,8 @@ export default function RootLayout() {
                   <Stack.Screen name="demo/skills" />
                   <Stack.Screen name="welcome" options={{ headerShown: false, gestureEnabled: false }} />
                 </Stack>
+                {/* <UnifiedExtensionCenter style={{ position: 'absolute', top: 60, right: 16 }} /> */}
+                {/* <ExtensionPanel /> */}
               </NavThemeProvider>
             </ToastProvider>
           </KeyboardProvider>
