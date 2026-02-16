@@ -1,19 +1,36 @@
-import React from 'react';
-import { TouchableOpacity, ActivityIndicator, View, TouchableOpacityProps } from 'react-native';
+import React, { useCallback } from 'react';
+import { Pressable, ActivityIndicator, View, ViewStyle } from 'react-native';
 import { twMerge } from 'tailwind-merge';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { Typography } from './Typography';
 import * as Haptics from '../../lib/haptics';
-import { Colors } from '../../theme/colors';
 import { useTheme } from '../../theme/ThemeProvider';
 
-interface ButtonProps extends TouchableOpacityProps {
+interface ButtonProps {
   variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
-  label: string;
+  label?: string;
   icon?: React.ReactNode;
   textClassName?: string;
+  className?: string;
+  style?: ViewStyle;
+  disabled?: boolean;
+  onPress?: () => void;
+  children?: React.ReactNode;
 }
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+const SPRING_CONFIG = {
+  damping: 20,
+  stiffness: 400,
+  mass: 0.5,
+};
 
 export function Button({
   variant = 'primary',
@@ -23,21 +40,22 @@ export function Button({
   icon,
   className,
   textClassName,
+  style,
   disabled,
   onPress,
-  ...props
+  children,
 }: ButtonProps) {
   const { colors } = useTheme();
+  const scale = useSharedValue(1);
 
-  const baseStyle =
-    'flex-row items-center justify-center rounded-lg font-medium transition-all active:scale-[0.98]';
+  const baseStyle = 'flex-row items-center justify-center rounded-lg font-medium';
 
   const variants = {
-    primary: '', // Handled via style for dynamic color
-    secondary: 'bg-surface-secondary active:bg-surface-tertiary border border-border-default',
-    ghost: 'bg-transparent active:bg-surface-secondary',
-    outline: 'bg-transparent border border-border-default active:bg-surface-secondary',
-    danger: 'bg-red-50 active:bg-red-100 dark:bg-red-900/20',
+    primary: '',
+    secondary: 'bg-surface-secondary border border-border-default',
+    ghost: 'bg-transparent',
+    outline: 'bg-transparent border border-border-default',
+    danger: 'bg-red-50 dark:bg-red-900/20',
   };
 
   const sizes = {
@@ -68,34 +86,47 @@ export function Button({
     className,
   );
 
-  const handlePress = (e: any) => {
-    if (disabled || loading) return;
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.96, SPRING_CONFIG);
+  }, [scale]);
 
-    // Native Bridge Defensive Driving: Yield to UI thread before sending bridge commands
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, SPRING_CONFIG);
+  }, [scale]);
+
+  const handlePress = useCallback(() => {
+    if (disabled || loading) return;
     setTimeout(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onPress && onPress(e);
+      onPress?.();
     }, 10);
+  }, [disabled, loading, onPress]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const getBackgroundColor = (): string | undefined => {
+    if (variant !== 'primary') return undefined;
+    if (disabled || loading) return colors[300];
+    return colors[600];
   };
 
-  return (
-    <TouchableOpacity
-      className={containerClass}
-      disabled={disabled || loading}
-      activeOpacity={0.8}
-      onPress={handlePress}
-      style={[
-        variant === 'primary' && !disabled && !loading && { backgroundColor: colors[600] },
-        variant === 'primary' && (disabled || loading) && { backgroundColor: colors[300] },
-        props.style as any
-      ]}
-      {...props}
-    >
-      {loading ? (
+  const renderContent = () => {
+    if (children) {
+      return children;
+    }
+
+    if (loading) {
+      return (
         <ActivityIndicator size="small" color={variant === 'primary' ? 'white' : colors[500]} />
-      ) : (
-        <>
-          {icon && <View className="mr-2">{icon}</View>}
+      );
+    }
+
+    return (
+      <>
+        {icon && <View className="mr-2">{icon}</View>}
+        {label && (
           <Typography
             variant="body"
             className={twMerge(
@@ -105,8 +136,25 @@ export function Button({
           >
             {label}
           </Typography>
-        </>
-      )}
-    </TouchableOpacity>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <AnimatedPressable
+      className={containerClass}
+      disabled={disabled || loading}
+      onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[
+        { backgroundColor: getBackgroundColor() },
+        style,
+        animatedStyle,
+      ]}
+    >
+      {renderContent()}
+    </AnimatedPressable>
   );
 }

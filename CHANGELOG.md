@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.51] - 2026-02-17
+
+### Changed
+- **Button 组件重构**: 添加弹簧缩放点击反馈动画，支持 children 属性
+- **Card 组件重构**: 添加弹簧缩放点击反馈动画，优化可点击卡片交互手感
+- **AnimatedSearchBar 优化**: 图标透明度动画与容器动画同步，缩短动画时长至 250ms
+- **Switch 组件优化**: 关闭状态颜色适配动态主题，使用半透明色替代硬编码色值
+- **Toast 动画优化**: 缩短进入动画时长，优化弹簧参数提升轻盈感
+- **动画配置扩展**: 新增 SPRING_BUTTON、SPRING_CARD、SPRING_TOAST 专用配置
+  - 新增 ScaleIn/ScaleOut、ToastEnter/ToastExit、ListItemEnter/ListItemExit 预设
+
+### Fixed
+- **GlassAlert 触感反馈**: 添加 10ms 延迟保护，遵循 Native Bridge 防御规则
+
 ## [1.2.50] - 2026-02-17
 
 ### Changed

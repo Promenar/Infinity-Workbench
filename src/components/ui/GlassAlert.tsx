@@ -54,13 +54,17 @@ export const GlassAlert: React.FC<GlassAlertProps> = ({
     if (!visible) return null;
 
     const handleConfirm = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        if (onConfirm) onConfirm();
+        setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            if (onConfirm) onConfirm();
+        }, 10);
     };
 
     const handleCancel = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        if (onCancel) onCancel();
+        setTimeout(() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (onCancel) onCancel();
+        }, 10);
     };
 
     // Glass settings - Matching GlassBottomSheet exactly

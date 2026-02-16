@@ -11,20 +11,15 @@ import {
   LayoutAnimation,
 } from 'react-native-reanimated';
 
-/**
- * Global Animation Constants
- * Standardizes animation durations and curves across the app.
- */
 export const ANIMATION_DURATION = {
-  FAST: 120, // Micro-interactions, exits (20% faster)
-  NORMAL: 200, // Standard transitions, modals, fades (20% faster)
-  SLOW: 300, // Complex layout changes, heavy elements
-  EXTRA_SLOW: 450, // Loading states, emphasis
-  ROTATION_SLOW: 1500, // For loading spinners
+  FAST: 120,
+  NORMAL: 200,
+  SLOW: 300,
+  EXTRA_SLOW: 450,
+  ROTATION_SLOW: 1500,
 };
 
 export const ANIMATION_CONFIG = {
-  // Timing configs
   DEFAULT: {
     duration: ANIMATION_DURATION.NORMAL,
     easing: Easing.bezier(0.25, 0.1, 0.25, 1),
@@ -34,24 +29,24 @@ export const ANIMATION_CONFIG = {
     easing: Easing.bezier(0.25, 0.1, 0.25, 1),
   } as WithTimingConfig,
 
-  // Spring configs (iOS-like feel, tuned for Release smoothness)
   SPRING_DEFAULT: { damping: 26, stiffness: 120, mass: 1 } as WithSpringConfig,
   SPRING_BOUNCY: { damping: 18, stiffness: 120, mass: 1 } as WithSpringConfig,
-  SPRING_SNAPPY: { damping: 30, stiffness: 200, mass: 0.8 } as WithSpringConfig, // Very snappy, zero bounce
+  SPRING_SNAPPY: { damping: 30, stiffness: 200, mass: 0.8 } as WithSpringConfig,
 
-  // Silk config (Fluid, non-spring timing for heavy UI changes)
+  SPRING_BUTTON: { damping: 20, stiffness: 400, mass: 0.5 } as WithSpringConfig,
+  SPRING_CARD: { damping: 20, stiffness: 400, mass: 0.5 } as WithSpringConfig,
+  SPRING_TOAST: { damping: 20, stiffness: 180, mass: 0.8 } as WithSpringConfig,
+
   SILK: {
-    duration: 200, // Hardcoded to 200 for consistency with NORMAL
+    duration: 200,
     easing: Easing.bezier(0.4, 0, 0.2, 1),
   } as WithTimingConfig,
 };
 
-// Reanimated Layout Animation Presets
 export const LayoutAnimations = {
   FadeIn: FadeIn.duration(ANIMATION_DURATION.NORMAL),
   FadeOut: FadeOut.duration(ANIMATION_DURATION.FAST),
 
-  // Modals & Dialogs
   ModalEnter: FadeIn.duration(ANIMATION_DURATION.NORMAL)
     .springify()
     .damping(20)
@@ -64,4 +59,19 @@ export const LayoutAnimations = {
     .damping(20)
     .stiffness(150),
   SlideDownExit: SlideInDown.duration(ANIMATION_DURATION.FAST),
+
+  ScaleIn: ZoomIn.duration(ANIMATION_DURATION.NORMAL)
+    .springify()
+    .damping(20)
+    .stiffness(200),
+  ScaleOut: ZoomOut.duration(ANIMATION_DURATION.FAST),
+
+  ToastEnter: FadeIn.duration(ANIMATION_DURATION.NORMAL)
+    .springify()
+    .damping(20)
+    .stiffness(180),
+  ToastExit: FadeOut.duration(ANIMATION_DURATION.FAST),
+
+  ListItemEnter: FadeIn.duration(ANIMATION_DURATION.NORMAL),
+  ListItemExit: FadeOut.duration(ANIMATION_DURATION.FAST),
 };

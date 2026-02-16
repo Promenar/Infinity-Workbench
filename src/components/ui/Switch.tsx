@@ -75,8 +75,8 @@ export const Switch = React.memo(({ value, onValueChange, disabled = false }: Sw
         progress.value,
         [0, 1],
         isDark
-          ? ['#94a3b8', colors[500]]
-          : ['#cbd5e1', colors[500]],
+          ? ['rgba(255, 255, 255, 0.4)', colors[500]]
+          : ['rgba(0, 0, 0, 0.25)', colors[500]],
       ),
     };
   });

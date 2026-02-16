@@ -72,8 +72,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       >
         {toast && (
           <Animated.View
-            entering={FadeInUp.duration(400).springify().damping(18).stiffness(120)}
-            exiting={FadeOutUp.duration(200)}
+            entering={FadeInUp.duration(300).springify().damping(20).stiffness(180)}
+            exiting={FadeOutUp.duration(150)}
             className={`flex-row items-center px-6 py-3.5 rounded-full shadow-[0_25px_60px_rgba(0,0,0,0.3)] border border-white/30 dark:border-white/10
                             ${toast.type === 'error' ? 'bg-red-600' : ''}
                             ${toast.type === 'info' ? 'bg-zinc-900' : ''}
