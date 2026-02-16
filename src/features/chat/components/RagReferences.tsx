@@ -27,7 +27,7 @@ interface RagReferencesChipProps {
 /**
  * RAG 状态胶囊按钮 - 支持进度条显示和详情面板
  */
-export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
+export const RagReferencesChip = React.memo<RagReferencesChipProps>(({
   references,
   isDark,
   expanded,
@@ -198,7 +198,7 @@ export const RagReferencesChip: React.FC<RagReferencesChipProps> = ({
       />
     </Animated.View>
   );
-};
+});
 
 interface RagReferencesListProps {
   references: RagReference[];
@@ -208,7 +208,7 @@ interface RagReferencesListProps {
 /**
  * RAG 引用详情列表 - 优化视觉排版
  */
-export const RagReferencesList: React.FC<RagReferencesListProps> = ({ references, isDark }) => {
+export const RagReferencesList = React.memo<RagReferencesListProps>(({ references, isDark }) => {
   if (!references || references.length === 0) return null;
 
   return (
@@ -297,4 +297,4 @@ export const RagReferencesList: React.FC<RagReferencesListProps> = ({ references
       ))}
     </Animated.View>
   );
-};
+});

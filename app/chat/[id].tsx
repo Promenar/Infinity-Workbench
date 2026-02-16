@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -64,7 +64,7 @@ export default function ChatDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { getAgent } = useAgentStore();
   const { providers } = useApiStore();
   const { t } = useI18n();
@@ -93,13 +93,21 @@ export default function ChatDetailScreen() {
   }, [providers, currentModelId]);
 
   const headerSubtitle = useMemo(() => {
-    // ✅ 仅显示助手名称，不显示模型名称
     return agent?.name || '';
   }, [agent]);
 
   // @ts-ignore
   // @ts-ignore
   const { messages, sendMessage, loading, stop, loadMore, hasMore } = useChat(id);
+
+  // ✅ 提取到顶层：reversedMessages 和 latestAssistantIndex
+  const reversedMessages = useMemo(() => messages.slice().reverse(), [messages]);
+  const latestAssistantIndex = useMemo(() => {
+    return reversedMessages.findIndex(m => m.role === 'assistant');
+  }, [reversedMessages]);
+
+  const agentColor = useMemo(() => agent?.color || colors[500], [agent?.color, colors]);
+
   const listRef = useRef<any>(null);
   const scrollY = useSharedValue(0);
 
@@ -443,7 +451,60 @@ export default function ChatDetailScreen() {
     );
   }
 
-  const agentColor = agent.color || '#6366f1';
+  // ✅ 使用 useCallback 包裹 renderItem
+  const renderMessage = useCallback(({ item, index }: { item: Message; index: number }) => (
+    <ChatBubble
+      key={item.id}
+      message={item}
+      agentId={agent.id}
+      agentAvatar={agent.avatar}
+      agentColor={agentColor}
+      agentName={agent.name}
+      sessionId={id}
+      isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && item.role === 'assistant' && index === 0}
+      onDelete={() => handleDeleteMessage(item.id)}
+      onExtractGraph={() => handleExtractGraph(item)}
+      onVectorize={() => handleManualVectorize(item.id)}
+      onSummarize={handleManualSummarize}
+      onResend={
+        item.role === 'user'
+          ? () => {
+            setTimeout(() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setEditingMessage({
+                id: item.id,
+                content: item.content,
+                images: item.images,
+              });
+            }, 10);
+          }
+          : undefined
+      }
+      onRegenerate={
+        item.role === 'user'
+          ? () => {
+            setTimeout(() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setEditingMessage({
+                id: item.id,
+                content: item.content,
+                images: item.images,
+              });
+            }, 10);
+          }
+          : async () => {
+            setTimeout(() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            }, 10);
+            await useChatStore.getState().regenerateMessage(id, item.id);
+          }
+      }
+      modelId={session?.modelId}
+      modelName={modelConfig?.name}
+      isLastAssistantMessage={index === latestAssistantIndex}
+      globalPendingIntervention={session?.pendingIntervention}
+    />
+  ), [agent, agentColor, id, loading, session, modelConfig, latestAssistantIndex, handleDeleteMessage, handleExtractGraph, handleManualVectorize, handleManualSummarize]);
 
   return (
     <PageLayout safeArea={false}>
@@ -455,115 +516,43 @@ export default function ChatDetailScreen() {
 
       <View style={{ flex: 1 }}>
         <Animated.View style={[{ flex: 1 }, listContainerStyle]}>
-          {(() => {
-            // ✅ FIX: Calculate latest assistant message index correctly for Inverted List
-            // Inverted means messages are ordered Newest first.
-            // So we look for the FIRST assistant message in the reversed array.
-            const reversedMessages = useMemo(() => messages.slice().reverse(), [messages]);
-
-            const latestAssistantIndex = useMemo(() => {
-              return reversedMessages.findIndex(m => m.role === 'assistant');
-            }, [reversedMessages]);
-
-            return (
-              <AnimatedFlatList
-                ref={listRef}
-                inverted={true} // ✅ Switch to inverted
-                data={reversedMessages} // ✅ Use memoized reversed data
-                renderItem={({ item, index }: { item: any; index: number }) => (
-                  <ChatBubble
-                    key={item.id}
-                    message={item}
-                    agentId={agent.id}
-                    agentAvatar={agent.avatar}
-                    agentColor={agentColor}
-                    agentName={agent.name}
-                    sessionId={id}
-                    // isGenerating: Only show if it's the very latest message (index 0) AND it's assistant
-                    isGenerating={(loading || session?.loopStatus === 'waiting_for_approval') && item.role === 'assistant' && index === 0}
-                    onDelete={() => handleDeleteMessage(item.id)}
-                    onExtractGraph={() => handleExtractGraph(item)}
-                    onVectorize={() => handleManualVectorize(item.id)}
-                    onSummarize={handleManualSummarize}
-                    onResend={
-                      item.role === 'user'
-                        ? () => {
-                          setTimeout(() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                            setEditingMessage({
-                              id: item.id,
-                              content: item.content,
-                              images: item.images,
-                            });
-                          }, 10);
-                        }
-                        : undefined
-                    }
-                    onRegenerate={
-                      item.role === 'user'
-                        ? () => {
-                          setTimeout(() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                            setEditingMessage({
-                              id: item.id,
-                              content: item.content,
-                              images: item.images,
-                            });
-                          }, 10);
-                        }
-                        : async () => {
-                          setTimeout(() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                          }, 10);
-                          await useChatStore.getState().regenerateMessage(id, item.id);
-                        }
-                    }
-                    modelId={session?.modelId}
-                    modelName={modelConfig?.name}
-                    isLastAssistantMessage={index === latestAssistantIndex} // ✅ Correct logic
-                    globalPendingIntervention={session?.pendingIntervention}
-                  />
-                )}
-                keyExtractor={(item: Message) => item.id}
-                contentContainerStyle={{
-                  paddingTop: insets.bottom + 160, // Reversed: Top is Bottom.
-                  paddingBottom: insets.top + 64 + 12, // Reversed: Bottom is Top.
-                }}
-                onEndReached={() => {
-                  if (hasMore) {
-                    loadMore();
-                  }
-                }}
-                onEndReachedThreshold={0.5}
-                // Footer is now Header (Top of screen)
-                ListFooterComponent={
-                  hasMore ? (
-                    <View style={{ padding: 20, alignItems: 'center' }}>
-                      <ActivityIndicator size="small" color={agentColor} />
-                    </View>
-                  ) : (
-                    // Spacer for top (visually)
-                    <View style={{ height: 20 }} />
-                  )
-                }
-                // Header is now Footer (Bottom of screen)
-                // We don't really need a footer since input is sticky.
-
-                onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
-                  // Simplified layout logic
-                  setIsListReady(true);
-                }}
-                onContentSizeChange={handleContentSizeChange}
-                onScroll={onScroll}
-                onMomentumScrollEnd={handleScrollEnd}
-                onScrollEndDrag={handleScrollEnd}
-                overScrollMode="never"
-                decelerationRate="normal"
-                scrollEventThrottle={16}
-                removeClippedSubviews={false}
-              />
-            );
-          })()}
+          <AnimatedFlatList
+            ref={listRef}
+            inverted={true}
+            data={reversedMessages}
+            renderItem={renderMessage}
+            keyExtractor={(item: Message) => item.id}
+            contentContainerStyle={{
+              paddingTop: insets.bottom + 160,
+              paddingBottom: insets.top + 64 + 12,
+            }}
+            onEndReached={() => {
+              if (hasMore) {
+                loadMore();
+              }
+            }}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              hasMore ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={agentColor} />
+                </View>
+              ) : (
+                <View style={{ height: 20 }} />
+              )
+            }
+            onLayout={(e: { nativeEvent: { layout: { height: number } } }) => {
+              setIsListReady(true);
+            }}
+            onContentSizeChange={handleContentSizeChange}
+            onScroll={onScroll}
+            onMomentumScrollEnd={handleScrollEnd}
+            onScrollEndDrag={handleScrollEnd}
+            overScrollMode="never"
+            decelerationRate="normal"
+            scrollEventThrottle={16}
+            removeClippedSubviews={false}
+          />
         </Animated.View>
 
         {/* 🔑 骨架屏加载态 - 提升至 listContainerStyle 动画容器之外，防止受 listOpacity 影响导致闪烁 */}

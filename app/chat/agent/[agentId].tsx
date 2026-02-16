@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { View, TouchableOpacity, TextInput, Keyboard, FlatList } from 'react-native';
 import { PageLayout, Typography, GlassHeader, AnimatedSearchBar } from '../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../../src/theme/colors';
 import { SwipeableSessionItem } from '../../../src/features/chat/components/SwipeableSessionItem';
 
+const ITEM_HEIGHT = 72;
+
 export default function AgentSessionsScreen() {
   const { agentId } = useLocalSearchParams<{ agentId: string }>();
   const router = useRouter();
@@ -24,7 +26,6 @@ export default function AgentSessionsScreen() {
   const { getAgent } = useAgentStore();
   const { getSessionsByAgent, addSession, deleteSession, toggleSessionPin } = useChatStore();
 
-  // Subscribe to sessions to trigger re-renders when they change
   const allSessions = useChatStore((state) => state.sessions);
 
   const agent = useMemo(() => getAgent(agentId), [agentId, getAgent]);
@@ -45,9 +46,7 @@ export default function AgentSessionsScreen() {
     );
   }, [sessions, searchQuery]);
 
-  if (!agent) return null;
-
-  const handleCreateSession = () => {
+  const handleCreateSession = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const newSession: Session = {
       id: `session_${Date.now()}`,
@@ -60,16 +59,16 @@ export default function AgentSessionsScreen() {
       executionMode: 'semi',
       loopStatus: 'idle',
       ragOptions: {
-        enableKnowledgeGraph: false, // ✅ 默认关闭图谱抽取
+        enableKnowledgeGraph: false,
       },
     };
     addSession(newSession);
     setTimeout(() => {
       router.push(`/chat/${newSession.id}`);
     }, 10);
-  };
+  }, [agentId, t.agent.newConversation, addSession, router]);
 
-  const renderItem = ({ item }: { item: Session }) => (
+  const renderItem = useCallback(({ item }: { item: Session }) => (
     <SwipeableSessionItem
       item={item}
       onPress={() => {
@@ -87,11 +86,17 @@ export default function AgentSessionsScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       }}
       agentId={agentId}
-      agentAvatar={agent.avatar}
-      agentColor={agent.color}
+      agentAvatar={agent?.avatar}
+      agentColor={agent?.color || '#6366f1'}
       isDark={isDark}
     />
-  );
+  ), [agentId, agent?.avatar, agent?.color, isDark, toggleSessionPin, deleteSession, router]);
+
+  const getItemLayout = useCallback((_: any, index: number) => ({
+    length: ITEM_HEIGHT,
+    offset: ITEM_HEIGHT * index,
+    index,
+  }), []);
 
   const inputRef = React.useRef<TextInput>(null);
 
@@ -103,6 +108,8 @@ export default function AgentSessionsScreen() {
       keyboardDidHideListener.remove();
     };
   }, []);
+
+  if (!agent) return null;
 
   return (
     <PageLayout safeArea={false} className="bg-white dark:bg-black">
@@ -142,6 +149,11 @@ export default function AgentSessionsScreen() {
         data={filteredSessions}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
+        getItemLayout={getItemLayout}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        initialNumToRender={10}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         onScrollBeginDrag={() => {

@@ -278,7 +278,7 @@ const GeneratedImage: React.FC<{ src: string; alt?: string; isDark: boolean; t: 
   },
 );
 
-const LoadingDots = ({ isDark, color }: { isDark: boolean; color?: string }) => {
+const LoadingDots = React.memo(({ isDark, color }: { isDark: boolean; color?: string }) => {
   const opacity1 = useSharedValue(0.3);
   const opacity2 = useSharedValue(0.3);
   const opacity3 = useSharedValue(0.3);
@@ -319,7 +319,7 @@ const LoadingDots = ({ isDark, color }: { isDark: boolean; color?: string }) => 
       <Animated.View style={[dotStyle, anim3]} />
     </View>
   );
-};
+});
 
 /**
  * StreamingFadePulse - 流式输出对角线渐隐遮罩（持续模式）
@@ -552,12 +552,12 @@ const SelectTextModal: React.FC<{
  * 显示模型名称和时间戳，替代原有的 ActionBar
  * 设计原则：隐式注脚，不喧宾夺主
  */
-const MessageMeta: React.FC<{
+const MessageMeta = React.memo<{
   modelName?: string;
   timestamp?: number;
   isDark: boolean;
   loopCount?: number;
-}> = ({ modelName, timestamp, isDark, loopCount }) => {
+}>(({ modelName, timestamp, isDark, loopCount }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const opacity = useSharedValue(0);
 
@@ -718,7 +718,7 @@ const MessageMeta: React.FC<{
       )}
     </View>
   );
-};
+});
 
 const ImageViewerModal = ({
   visible,
@@ -948,6 +948,13 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       return `\n\`\`\`latex\n${formula.trim()}\n\`\`\`\n`;
     });
   }, [message.content, message.planningTask]);
+
+  // ✅ 提取图片：使用 useMemo 替代全局变量，避免内存泄漏
+  const { cleanContent: streamingContent, extractedImages } = useMemo(() => {
+    if (!processedContent) return { cleanContent: '', extractedImages: [] };
+    const { cleanContent, images } = extractImagesFromMarkdown(processedContent);
+    return { cleanContent, extractedImages: images };
+  }, [processedContent]);
 
   // Determine if this bubble is currently "loading" (last message and no content yet?)
   // Actually loading state is passed from parent but specific to session.
@@ -1622,13 +1629,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
             <>
               {/* ✅ Replaced monolithic Markdown with StreamingCardList */}
               <StreamingCardList
-                content={(() => {
-                  // Extract AI-generated images
-                  const { cleanContent, images } = extractImagesFromMarkdown(processedContent || '');
-                  // Store extracted images for rendering below
-                  (React as any)._aiImages = images;
-                  return cleanContent;
-                })()}
+                content={streamingContent}
                 markdownRules={markdownRules}
                 markdownStyles={{
                   body: {
@@ -1707,25 +1708,20 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
               />
 
               {/* Render extracted AI-generated images */}
-              {!isUser &&
-                (() => {
-                  const images = (React as any)._aiImages || [];
-                  if (images.length === 0) return null;
-                  return (
-                    <View style={{ marginTop: 12, gap: 12 }}>
-                      {images.map((img: { src: string; alt: string }, index: number) => (
-                        <GeneratedImage
-                          key={`ai-img-${index}`}
-                          src={img.src}
-                          alt={img.alt}
-                          isDark={isDark}
-                          t={t}
-                          onImagePress={setViewImageUri}
-                        />
-                      ))}
-                    </View>
-                  );
-                })()}
+              {!isUser && extractedImages.length > 0 && (
+                <View style={{ marginTop: 12, gap: 12 }}>
+                  {extractedImages.map((img, index) => (
+                    <GeneratedImage
+                      key={`ai-img-${index}`}
+                      src={img.src}
+                      alt={img.alt}
+                      isDark={isDark}
+                      t={t}
+                      onImagePress={setViewImageUri}
+                    />
+                  ))}
+                </View>
+              )}
             </>
           )}
 

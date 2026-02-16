@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Animated, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Animated as RNAnimated, StyleSheet, TouchableOpacity } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { Session } from '../../../types/chat';
 import { Typography } from '../../../components/ui/Typography';
 import { Pin, Trash2, ChevronRight } from 'lucide-react-native';
@@ -29,10 +30,8 @@ export const SwipeableSessionItem = ({
   agentColor,
   isDark,
 }: SwipeableSessionItemProps) => {
-  // Get active requests to check for generating status
   const isGenerating = useChatStore((state) => !!state.activeRequests[item.id]);
 
-  // Determine subtitle text and style
   let subtitleText = item.lastMessage;
   let subtitleStyle = 'text-gray-500 dark:text-gray-400';
   let isDraft = false;
@@ -56,7 +55,7 @@ export const SwipeableSessionItem = ({
     });
     return (
       <View style={styles.rightActionContainer}>
-        <Animated.View style={[styles.rightAction, { transform: [{ translateX: trans }] }]}>
+        <RNAnimated.View style={[styles.rightAction, { transform: [{ translateX: trans }] }]}>
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -67,7 +66,7 @@ export const SwipeableSessionItem = ({
           >
             <Trash2 size={20} color="white" />
           </TouchableOpacity>
-        </Animated.View>
+        </RNAnimated.View>
       </View>
     );
   };
@@ -80,7 +79,7 @@ export const SwipeableSessionItem = ({
     });
     return (
       <View style={styles.leftActionContainer}>
-        <Animated.View style={[styles.leftAction, { transform: [{ translateX: trans }] }]}>
+        <RNAnimated.View style={[styles.leftAction, { transform: [{ translateX: trans }] }]}>
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -91,22 +90,23 @@ export const SwipeableSessionItem = ({
           >
             <Pin size={20} color="white" fill={item.isPinned ? 'white' : 'none'} />
           </TouchableOpacity>
-        </Animated.View>
+        </RNAnimated.View>
       </View>
     );
   };
 
   return (
-    <Swipeable
-      ref={swipeableRef}
-      renderRightActions={renderRightActions}
-      renderLeftActions={renderLeftActions}
-      containerStyle={styles.swipeContainer}
-      useNativeAnimations
-      friction={2}
-      rightThreshold={40}
-      leftThreshold={40}
-    >
+    <Animated.View entering={FadeIn.duration(200)}>
+      <Swipeable
+        ref={swipeableRef}
+        renderRightActions={renderRightActions}
+        renderLeftActions={renderLeftActions}
+        containerStyle={styles.swipeContainer}
+        useNativeAnimations
+        friction={2}
+        rightThreshold={40}
+        leftThreshold={40}
+      >
       <TouchableOpacity
         activeOpacity={0.7}
         style={{
@@ -175,7 +175,8 @@ export const SwipeableSessionItem = ({
 
         <ChevronRight size={18} color={isDark ? '#52525b' : '#9ca3af'} style={{ marginLeft: 8 }} />
       </TouchableOpacity>
-    </Swipeable>
+      </Swipeable>
+    </Animated.View>
   );
 };
 

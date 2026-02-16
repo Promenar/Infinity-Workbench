@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   TextInput,
@@ -42,6 +42,7 @@ import Animated, {
   withTiming,
   Easing,
   cancelAnimation,
+  interpolateColor,
 } from 'react-native-reanimated';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Typography, ConfirmDialog, GlassBottomSheet } from '../../../components/ui';
@@ -280,6 +281,8 @@ export function ChatInput({
   const { t } = useI18n();
   const { isDark, colors } = useTheme();
   const rotation = useSharedValue(0);
+  const focusProgress = useSharedValue(0);
+  const [isFocused, setIsFocused] = useState(false);
   const [text, setText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<ChatAttachment[]>([]);
@@ -405,6 +408,27 @@ export function ChatInput({
       transform: [{ rotate: `${rotation.value}deg` }],
     };
   });
+
+  const focusAnimatedStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      borderColor: interpolateColor(focusProgress.value, [0, 1], [
+        isDark ? '#374151' : '#E5E7EB',
+        agentColor || colors[500],
+      ]),
+      shadowOpacity: focusProgress.value * 0.12,
+    };
+  });
+
+  const handleFocus = useCallback(() => {
+    setIsFocused(true);
+    focusProgress.value = withTiming(1, { duration: 200 });
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    setIsFocused(false);
+    focusProgress.value = withTiming(0, { duration: 200 });
+  }, []);
 
   const handleSend = () => {
     if (loading && onStop) {
@@ -775,8 +799,7 @@ export function ChatInput({
                 ))}
               </ScrollView>
             )}
-            <View style={styles.inputWrapper}>
-              {/* The line `onSendMessage={(content, options) => {` was removed as it was syntactically incorrect here. */}
+            <Animated.View style={[styles.inputWrapper, focusAnimatedStyle, { shadowColor: agentColor || colors[500] }]}>
               <TextInput
                 style={[
                   styles.input,
@@ -795,8 +818,10 @@ export function ChatInput({
                 value={text}
                 onChangeText={setText}
                 editable={!disabled && !loading}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
               />
-            </View>
+            </Animated.View>
           </View>
 
           <View style={styles.buttonContainer}>
@@ -987,10 +1012,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   inputWrapper: {
-    // flex: 1, // Removed to allow parent to control layout
     minHeight: 36,
     justifyContent: 'center',
     paddingHorizontal: 8,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 0,
   },
   input: {
     fontSize: 16,
