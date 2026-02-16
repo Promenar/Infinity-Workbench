@@ -381,19 +381,32 @@ export const useRagStore = create<RagState>()(
             const doc = get().documents.find(d => d.id === docId);
             if (!doc) throw new Error('Document not found');
 
-            // 1. Update DB
-            await db.execute('UPDATE documents SET content = ?, updated_at = ? WHERE id = ?', [content, Date.now(), docId]);
+            // 1. Clean up old KG data before content update
+            await db.execute('DELETE FROM kg_edges WHERE doc_id = ?', [docId]);
+            await db.execute(`
+              DELETE FROM kg_nodes 
+              WHERE id NOT IN (SELECT source_id FROM kg_edges) 
+              AND id NOT IN (SELECT target_id FROM kg_edges)
+            `);
 
-            // 2. Update physical file
+            // 2. Update DB
+            await db.execute('UPDATE documents SET content = ?, updated_at = ?, vectorized = 0, vector_count = 0 WHERE id = ?', [content, Date.now(), docId]);
+
+            // 3. Update physical file
             const physicalDir = await get()._getPhysicalPath(doc.folderId);
             await FileSystem.writeAsStringAsync(physicalDir + doc.title, content, {
               encoding: (FileSystem as any).EncodingType.UTF8
             });
 
-            // 3. Re-vectorize if already vectorized or failed (automatic re-queue)
-            if (doc.vectorized === 2 || doc.vectorized === -1) {
-              await get().vectorizeDocument(docId);
-            }
+            // 4. Update state
+            set((state: RagState) => ({
+              documents: state.documents.map((d: RagDocument) =>
+                d.id === docId ? { ...d, content: '', vectorized: 0, vectorCount: 0 } : d
+              ),
+            }));
+
+            // 5. Re-vectorize (includes KG extraction based on config)
+            await get().vectorizeDocument(docId);
           } catch (e) {
             console.error('Failed to update document content:', e);
             throw e;
@@ -806,6 +819,9 @@ export const useRagStore = create<RagState>()(
 
         deleteBatch: async (docIds: string[]) => {
           try {
+            // 🛡️ 在状态变更前缓存文档信息，防止 set 后 get 找不到
+            const docs = get().documents.filter((d: RagDocument) => docIds.includes(d.id));
+
             // Prepare transaction queries would be better, but loop is safer for now with current db adapter
             for (const id of docIds) {
               await db.execute('DELETE FROM vectors WHERE doc_id = ?', [id]);
@@ -823,6 +839,28 @@ export const useRagStore = create<RagState>()(
             set((state: RagState) => ({
               documents: state.documents.filter((d: RagDocument) => !docIds.includes(d.id)),
             }));
+
+            // 🛡️ 删除物理文件（按文件夹分组批量删除）
+            const folderGroups = new Map<string | null, RagDocument[]>();
+            for (const doc of docs) {
+              const key = doc.folderId ?? null;
+              if (!folderGroups.has(key)) {
+                folderGroups.set(key, []);
+              }
+              folderGroups.get(key)!.push(doc);
+            }
+
+            for (const [folderId, folderDocs] of folderGroups) {
+              const physicalDir = await get()._getPhysicalPath(folderId);
+              for (const doc of folderDocs) {
+                try {
+                  await FileSystem.deleteAsync(physicalDir + doc.title, { idempotent: true });
+                } catch (e) {
+                  console.warn('Failed to delete physical file:', doc.title, e);
+                }
+              }
+            }
+
             get().loadFolders();
           } catch (e) {
             console.error('Failed to delete batch:', e);
@@ -1065,6 +1103,7 @@ export const useRagStore = create<RagState>()(
         processingHistory: state.processingHistory,
         expandedFolders: Array.from(state.expandedFolders),
         selectedFolder: state.selectedFolder,
+        kgAccumulator: state.kgAccumulator,
       }),
       onRehydrateStorage: () => (state: any) => {
         if (state && state.expandedFolders) {

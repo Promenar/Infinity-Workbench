@@ -7,7 +7,7 @@ import { useSettingsStore } from '../../../store/settings-store';
 import { useRagStore } from '../../../store/rag-store';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useI18n } from '../../../lib/i18n';
-import { Database, Zap, BookOpen, Code, Trash2, Edit3, RotateCcw } from 'lucide-react-native';
+import { Database, Zap, BookOpen, Code, Trash2, Edit3, RotateCcw, RefreshCcw } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from '../../../lib/haptics';
 import { vectorStore } from '../../../lib/rag/vector-store';
@@ -76,7 +76,9 @@ export const GlobalRagConfigPanel: React.FC = () => {
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showKgLinkedConfirm, setShowKgLinkedConfirm] = useState(false); // 联动提示
+  const [showPruneConfirm, setShowPruneConfirm] = useState(false); // 孤立数据清理确认
   const [isClearing, setIsClearing] = useState(false);
+  const [isPruning, setIsPruning] = useState(false); // 孤立数据清理中
   const [kgStats, setKgStats] = useState<{ nodeCount: number; edgeCount: number }>({ nodeCount: 0, edgeCount: 0 });
 
   // Local state for prompt editing
@@ -171,6 +173,31 @@ export const GlobalRagConfigPanel: React.FC = () => {
       showToast(t.common.fail, 'error');
     } finally {
       setIsClearing(false);
+    }
+  };
+
+  // 清理孤立数据（已删除会话/文档的残留知识图谱数据）
+  const handlePruneOrphanData = async () => {
+    setIsPruning(true);
+    try {
+      const { documents } = useRagStore.getState();
+      const activeDocIds = documents.map(d => d.id);
+
+      const result = await vectorStore.pruneOrphanDocumentKG(activeDocIds);
+
+      await refreshKgStats();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showToast(
+        t.rag.pruneOrphanSuccess
+          ? t.rag.pruneOrphanSuccess.replace('{edges}', String(result.edgesDeleted)).replace('{nodes}', String(result.nodesDeleted))
+          : `已清理 ${result.edgesDeleted} 条孤立边和 ${result.nodesDeleted} 个孤立节点`,
+        'success'
+      );
+    } catch (error) {
+      console.error('[GlobalRagConfigPanel] Prune Error:', error);
+      showToast(t.common.fail, 'error');
+    } finally {
+      setIsPruning(false);
     }
   };
 
@@ -518,6 +545,34 @@ export const GlobalRagConfigPanel: React.FC = () => {
               {isClearing ? t.common.processing : t.rag.vectorStats.clearData}
             </Typography>
           </TouchableOpacity>
+
+          <View className="h-3" />
+
+          <TouchableOpacity
+            onPress={() => {
+              setTimeout(() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowPruneConfirm(true);
+              }, 10);
+            }}
+            disabled={isPruning}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 14,
+              backgroundColor: isDark ? 'rgba(251, 191, 36, 0.1)' : '#FFFBEB',
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(251, 191, 36, 0.2)' : '#FEF3C7',
+              opacity: isPruning ? 0.5 : 1,
+            }}
+          >
+            <RefreshCcw size={18} color="#F59E0B" style={{ marginRight: 8 }} />
+            <Typography style={{ fontWeight: 'bold', color: '#F59E0B' }}>
+              {isPruning ? t.common.processing : (t.rag.pruneOrphanData || '清理孤立数据')}
+            </Typography>
+          </TouchableOpacity>
         </View>
       </SettingsCard>
 
@@ -530,6 +585,17 @@ export const GlobalRagConfigPanel: React.FC = () => {
         cancelText={t.common.cancel}
         onConfirm={handleClearVectorRequest}
         onCancel={() => setShowClearConfirm(false)}
+      />
+      {/* 孤立数据清理确认弹窗 */}
+      <ConfirmDialog
+        visible={showPruneConfirm}
+        title={t.rag.pruneOrphanTitle || '清理孤立数据'}
+        message={t.rag.pruneOrphanDesc || '清理已删除会话/文档残留的知识图谱数据。此操作不可撤销。'}
+        confirmText={t.common.confirm}
+        cancelText={t.common.cancel}
+        isDestructive
+        onConfirm={() => { setShowPruneConfirm(false); handlePruneOrphanData(); }}
+        onCancel={() => setShowPruneConfirm(false)}
       />
       {/* 联动清理图谱确认弹窗 */}
       <ConfirmDialog

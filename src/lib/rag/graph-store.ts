@@ -31,8 +31,44 @@ export class GraphStore {
   // Knowledge Graph Operations (Nodes & Edges)
   // ==========================================
 
+  private mergeMetadata(existingMeta: string | null, newMeta: any): Record<string, any> {
+    let result: Record<string, any> = {};
+
+    try {
+      result = existingMeta ? JSON.parse(existingMeta) : {};
+    } catch (e) { }
+
+    if (!newMeta) return result;
+
+    for (const key of Object.keys(newMeta)) {
+      const newVal = newMeta[key];
+      const oldVal = result[key];
+
+      if (Array.isArray(newVal) && Array.isArray(oldVal)) {
+        const combined = [...oldVal, ...newVal];
+        result[key] = combined.filter((item, index, self) =>
+          index === self.findIndex((t) => JSON.stringify(t) === JSON.stringify(item))
+        );
+      } else if (newVal !== undefined && newVal !== null) {
+        result[key] = newVal;
+      }
+    }
+
+    return result;
+  }
+
+  private resolveType(existingType: string, newType: string): string {
+    const typePriority = ['concept', 'person', 'org', 'location', 'event', 'product'];
+    const existingPriority = typePriority.indexOf(existingType);
+    const newPriority = typePriority.indexOf(newType);
+
+    if (newPriority > existingPriority) return newType;
+    return existingType;
+  }
+
   /**
    * Upsert a node (create if not exists by name)
+   * Uses INSERT OR IGNORE to handle race conditions
    */
   async upsertNode(
     name: string,
@@ -41,84 +77,37 @@ export class GraphStore {
     scope?: { sessionId?: string; agentId?: string },
   ): Promise<string> {
     try {
-      // Check if exists (scope aware)
-      // Note: We query SELECT * to get existing metadata/type for merging
-      let query = 'SELECT * FROM kg_nodes WHERE name = ?';
-      const params: any[] = [name];
+      const id = generateId();
+      const createdAt = Date.now();
 
-      const existing = await db.execute(query, params);
+      const insertResult = await db.execute(
+        `INSERT OR IGNORE INTO kg_nodes (id, name, type, metadata, created_at, session_id, agent_id) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, name, type, JSON.stringify(metadata), createdAt, scope?.sessionId || null, scope?.agentId || null]
+      );
 
-      if (existing.rows && existing.rows.length > 0) {
-        const row = (existing.rows as any)[0];
-        const id = row.id;
-
-        // --- MERGE LOGIC START ---
-        // 1. Parsing old metadata
-        let oldMetadata = {};
-        try {
-          oldMetadata = row.metadata ? JSON.parse(row.metadata) : {};
-        } catch (e) {
-          console.warn('[GraphStore] Failed to parse existing metadata for merge', e);
-        }
-
-        const mergedMetadata = { ...oldMetadata };
-
-        // 2. Merge metadata properties
-        if (metadata) {
-          Object.keys(metadata).forEach((key) => {
-            const newVal = metadata[key];
-            const oldVal = (mergedMetadata as any)[key];
-
-            if (Array.isArray(newVal) && Array.isArray(oldVal)) {
-              // Array: Combine and Unique (e.g. aliases, roles)
-              const combined = [...oldVal, ...newVal];
-              const unique = combined.filter((item, index, self) =>
-                index === self.findIndex((t) => (
-                  JSON.stringify(t) === JSON.stringify(item)
-                ))
-              );
-              (mergedMetadata as any)[key] = unique;
-            } else if (newVal !== undefined && newVal !== null) {
-              // Simple value: Overwrite (Last Write Wins)
-              // This allows updating 'description', 'age', etc.
-              (mergedMetadata as any)[key] = newVal;
-            }
-          });
-        }
-
-        // 3. Update Type
-        // Logic: specific type replaces generic 'concept', otherwise overwrite
-        let updatedType = row.type;
-        if (type && type !== 'concept') {
-          updatedType = type;
-        }
-
-        // 4. Update DB
-        await db.execute(
-          'UPDATE kg_nodes SET type = ?, metadata = ?, updated_at = ? WHERE id = ?',
-          [updatedType, JSON.stringify(mergedMetadata), Date.now(), id]
-        );
-        // --- MERGE LOGIC END ---
-
+      if (insertResult.rowsAffected > 0) {
         return id;
       }
 
-      // Create new
-      const id = generateId();
-      const createdAt = Date.now();
-      await db.execute(
-        'INSERT INTO kg_nodes (id, name, type, metadata, created_at, session_id, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [
-          id,
-          name,
-          type,
-          JSON.stringify(metadata),
-          createdAt,
-          scope?.sessionId || null,
-          scope?.agentId || null,
-        ],
-      );
-      return id;
+      const existing = await db.execute('SELECT * FROM kg_nodes WHERE name = ?', [name]);
+
+      if (existing.rows && existing.rows.length > 0) {
+        const row = (existing.rows as any)[0];
+        const existingId = row.id;
+
+        const mergedMetadata = this.mergeMetadata(row.metadata, metadata);
+        const updatedType = this.resolveType(row.type, type);
+
+        await db.execute(
+          'UPDATE kg_nodes SET type = ?, metadata = ?, updated_at = ? WHERE id = ?',
+          [updatedType, JSON.stringify(mergedMetadata), Date.now(), existingId]
+        );
+
+        return existingId;
+      }
+
+      throw new Error(`Failed to upsert node: ${name}`);
     } catch (e: any) {
       if (e.message && (e.message.includes('UNIQUE constraint failed') || e.message.includes('SQLITE_CONSTRAINT'))) {
         throw e;
@@ -178,6 +167,7 @@ export class GraphStore {
   /**
    * Merge source node into target node (by name).
    * Moves all edges from source to target, merges metadata, and deletes source.
+   * Cleans up self-loops and duplicate edges after merge.
    */
   async mergeNodes(sourceId: string, targetName: string): Promise<void> {
     try {
@@ -194,48 +184,45 @@ export class GraphStore {
       console.log(`[GraphStore] Merging node ${sourceId} into ${targetId} (${targetName})`);
 
       // 2. Move Edges
-      // Update edges where source is the FROM node
       await db.execute(
         'UPDATE kg_edges SET source_id = ? WHERE source_id = ?',
         [targetId, sourceId]
       );
-      // Update edges where source is the TO node
       await db.execute(
         'UPDATE kg_edges SET target_id = ? WHERE target_id = ?',
         [targetId, sourceId]
       );
 
-      // Note: This might create self-loops or duplicate edges.
-      // For now we allow them, or the UI visualization handles them.
-      // Ideally we should cleanup duplicates here, but it requires complex query.
+      // 3. Clean up self-loop edges (source_id = target_id)
+      const selfLoopResult = await db.execute(
+        'DELETE FROM kg_edges WHERE source_id = ? AND target_id = ?',
+        [targetId, targetId]
+      );
+      if (selfLoopResult.rowsAffected > 0) {
+        console.log(`[GraphStore] Cleaned ${selfLoopResult.rowsAffected} self-loop edges`);
+      }
 
-      // 3. Merge Metadata
+      // 4. Clean up duplicate edges (keep the one with highest weight)
+      await db.execute(`
+        DELETE FROM kg_edges 
+        WHERE id IN (
+          SELECT id FROM kg_edges 
+          WHERE source_id = ? OR target_id = ?
+          EXCEPT
+          SELECT id FROM (
+            SELECT id, MAX(weight) as max_weight
+            FROM kg_edges
+            WHERE source_id = ? OR target_id = ?
+            GROUP BY source_id, target_id, relation
+          )
+        )
+      `, [targetId, targetId, targetId, targetId]);
+
+      // 5. Merge Metadata
       const sourceRes = await db.execute('SELECT * FROM kg_nodes WHERE id = ?', [sourceId]);
       if (sourceRes.rows && sourceRes.rows.length > 0) {
         const sourceNode = (sourceRes.rows as any)[0];
-
-        let sourceMeta = {};
-        let targetMeta = {};
-        try { sourceMeta = sourceNode.metadata ? JSON.parse(sourceNode.metadata) : {}; } catch (e) { }
-        try { targetMeta = targetNode.metadata ? JSON.parse(targetNode.metadata) : {}; } catch (e) { }
-
-        const mergedMeta = { ...targetMeta };
-
-        // Simple merge strategy: append arrays, keep existing target values for scalars
-        Object.keys(sourceMeta).forEach((key) => {
-          const sourceVal = (sourceMeta as any)[key];
-          const targetVal = (mergedMeta as any)[key];
-
-          if (Array.isArray(sourceVal)) {
-            const existingArr = Array.isArray(targetVal) ? targetVal : [];
-            // Combine and dedup
-            const combined = [...existingArr, ...sourceVal];
-            (mergedMeta as any)[key] = Array.from(new Set(combined.map((i) => JSON.stringify(i)))).map((s) => JSON.parse(s));
-          } else if (targetVal === undefined || targetVal === null) {
-            // Only fill if missing in target
-            (mergedMeta as any)[key] = sourceVal;
-          }
-        });
+        const mergedMeta = this.mergeMetadata(targetNode.metadata, sourceNode.metadata ? JSON.parse(sourceNode.metadata) : {});
 
         await db.execute(
           'UPDATE kg_nodes SET metadata = ?, updated_at = ? WHERE id = ?',
@@ -243,7 +230,7 @@ export class GraphStore {
         );
       }
 
-      // 4. Delete Source Node
+      // 6. Delete Source Node
       await db.execute('DELETE FROM kg_nodes WHERE id = ?', [sourceId]);
 
     } catch (e) {
@@ -253,7 +240,7 @@ export class GraphStore {
   }
 
   /**
-   * Create an edge between two nodes
+   * Create an edge between two nodes (with deduplication)
    */
   async createEdge(
     sourceId: string,
@@ -264,21 +251,34 @@ export class GraphStore {
     scope?: { sessionId?: string; agentId?: string },
   ): Promise<string> {
     try {
+      const sessionId = scope?.sessionId || null;
+      const agentId = scope?.agentId || null;
+
+      const existing = await db.execute(
+        `SELECT id, weight FROM kg_edges 
+         WHERE source_id = ? AND target_id = ? AND relation = ?
+         AND (doc_id = ? OR (doc_id IS NULL AND ? IS NULL))
+         AND (session_id = ? OR (session_id IS NULL AND ? IS NULL))`,
+        [sourceId, targetId, relation, docId || null, docId || null, sessionId, sessionId]
+      );
+
+      if (existing.rows && existing.rows.length > 0) {
+        const existingEdge = (existing.rows as any)[0];
+        const newWeight = (existingEdge.weight || 1) + weight;
+
+        await db.execute(
+          'UPDATE kg_edges SET weight = ?, created_at = ? WHERE id = ?',
+          [newWeight, Date.now(), existingEdge.id]
+        );
+
+        return existingEdge.id;
+      }
+
       const id = generateId();
       const createdAt = Date.now();
       await db.execute(
         'INSERT INTO kg_edges (id, source_id, target_id, relation, weight, doc_id, created_at, session_id, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          id,
-          sourceId,
-          targetId,
-          relation,
-          weight,
-          docId || null,
-          createdAt,
-          scope?.sessionId || null,
-          scope?.agentId || null,
-        ],
+        [id, sourceId, targetId, relation, weight, docId || null, createdAt, sessionId, agentId],
       );
       return id;
     } catch (e) {

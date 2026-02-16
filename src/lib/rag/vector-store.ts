@@ -264,6 +264,9 @@ export class VectorStore {
       await db.execute(
         "DELETE FROM vectors WHERE session_id IS NOT NULL AND json_extract(metadata, '$.type') = 'memory'",
       );
+      // 清理知识图谱孤立数据
+      await db.execute('DELETE FROM kg_edges WHERE session_id IS NOT NULL');
+      await db.execute('DELETE FROM kg_nodes WHERE session_id IS NOT NULL');
       return;
     }
 
@@ -278,6 +281,46 @@ export class VectorStore {
       `DELETE FROM sessions WHERE id IS NOT NULL AND id != 'super_assistant' AND id NOT IN (${placeholders})`,
       activeSessionIds,
     );
+
+    // 清理知识图谱孤立数据（session_id 不在活跃会话列表中）
+    await db.execute(
+      `DELETE FROM kg_edges WHERE session_id IS NOT NULL AND session_id NOT IN (${placeholders})`,
+      activeSessionIds,
+    );
+
+    // 清理孤立节点（没有边连接的节点）
+    await db.execute(`
+      DELETE FROM kg_nodes 
+      WHERE id NOT IN (SELECT source_id FROM kg_edges) 
+      AND id NOT IN (SELECT target_id FROM kg_edges)
+    `);
+  }
+
+  async pruneOrphanDocumentKG(activeDocIds: string[]): Promise<{ edgesDeleted: number; nodesDeleted: number }> {
+    const placeholders = activeDocIds.map(() => '?').join(',');
+
+    let edgesDeleted = 0;
+    let nodesDeleted = 0;
+
+    if (activeDocIds.length === 0) {
+      const edgesResult = await db.execute('DELETE FROM kg_edges WHERE doc_id IS NOT NULL');
+      edgesDeleted = edgesResult.rowsAffected || 0;
+    } else {
+      const edgesResult = await db.execute(
+        `DELETE FROM kg_edges WHERE doc_id IS NOT NULL AND doc_id NOT IN (${placeholders})`,
+        activeDocIds,
+      );
+      edgesDeleted = edgesResult.rowsAffected || 0;
+    }
+
+    const nodesResult = await db.execute(`
+      DELETE FROM kg_nodes 
+      WHERE id NOT IN (SELECT source_id FROM kg_edges) 
+      AND id NOT IN (SELECT target_id FROM kg_edges)
+    `);
+    nodesDeleted = nodesResult.rowsAffected || 0;
+
+    return { edgesDeleted, nodesDeleted };
   }
 
   async cleanupRedundantMemoryVectors(): Promise<{

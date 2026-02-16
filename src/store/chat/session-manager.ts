@@ -7,6 +7,7 @@
 import type { ManagerContext, SessionManager } from './types';
 import type { Session, SessionId, InferenceParams } from '../../types/chat';
 import { SessionRepository } from '../../lib/db/session-repository';
+import { db } from '../../lib/db';
 
 import { useMcpStore } from '../../store/mcp-store';
 
@@ -57,14 +58,27 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
         },
 
         deleteSession: async (id: SessionId) => {
-            // 1. 从 SQLite 删除（CASCADE 自动删除 messages）
+            // 1. 清理会话关联的知识图谱数据（kg_edges/kg_nodes 无 session_id 外键约束，需手动清理）
+            try {
+                await db.execute('DELETE FROM kg_edges WHERE session_id = ?', [id]);
+                await db.execute(`
+                    DELETE FROM kg_nodes 
+                    WHERE session_id = ? 
+                    AND id NOT IN (SELECT source_id FROM kg_edges)
+                    AND id NOT IN (SELECT target_id FROM kg_edges)
+                `, [id]);
+            } catch (e) {
+                console.warn('[SessionManager] KG cleanup failed:', e);
+            }
+
+            // 2. 从 SQLite 删除（CASCADE 自动删除 messages 和 vectors）
             try {
                 await SessionRepository.delete(id);
             } catch (e) {
                 console.warn('[SessionManager] DB delete failed:', e);
             }
 
-            // 2. 更新 Zustand 缓存
+            // 3. 更新 Zustand 缓存
             set((state) => ({
                 sessions: state.sessions.filter((s) => s.id !== id),
             }));
