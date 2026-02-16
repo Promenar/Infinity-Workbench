@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput, Dimensions } from 'react-native';
-import { NativeSyntheticEvent, NativeScrollEvent, Platform } from 'react-native'; // Removed ScrollView
-import { ScrollView } from 'react-native-gesture-handler'; // Added ✅
+import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent, Platform, ScrollView as RNScrollView } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import Markdown from 'react-native-markdown-display';
@@ -521,46 +520,40 @@ const GHScrollView = Animated.createAnimatedComponent(ScrollView);
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
     const scrollViewRef = React.useRef<ScrollView>(null);
     const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
-    const [isCollapsed, setIsCollapsed] = useState(!isMessageGenerating); // 生成中展开，非生成中折叠
+    const [isCollapsed, setIsCollapsed] = useState(!isMessageGenerating);
     const [hasManuallyToggled, setHasManuallyToggled] = useState(false);
-    // 🔑 追踪此 Timeline 是否曾经处于生成状态（用于区分老消息和当前生成中的消息）
     const wasEverGenerating = useRef(isMessageGenerating);
     const stepsCount = steps.length;
     const { isDark } = useTheme();
     const { t } = useI18n();
 
-    // 计算最后一步的内容长度，用于触发自动滚动
     const lastStepContentLength = steps.length > 0 ? (steps[steps.length - 1].content?.length || 0) : 0;
 
-    // 🔑 自动追踪新步骤及内容更新
+    const isAtTopRef = useRef(true);
+    const isAtBottomRef = useRef(true);
+    const lastScrollYRef = useRef(0);
+
     useEffect(() => {
         if (isAutoScrollEnabled && stepsCount > 0) {
             scrollViewRef.current?.scrollToEnd({ animated: true });
         }
     }, [stepsCount, isAutoScrollEnabled, lastStepContentLength]);
 
-    // 🔑 自动折叠/展开逻辑：仅对「曾经生成过」的消息生效
     useEffect(() => {
         if (hasManuallyToggled) return;
 
-        // 🔑 记录此 Timeline 是否曾处于生成状态
         if (isMessageGenerating) {
             wasEverGenerating.current = true;
         }
 
-        // 🔑 如果此 Timeline 从未处于生成状态（老消息），不做任何自动状态变更
-        // 这可防止新消息生成时，老消息的 Timeline 意外展开再折叠
         if (!wasEverGenerating.current) return;
 
         if (isMessageGenerating) {
-            // ⏳ DEBOUNCE START: 延迟展开以过滤竞态抖动 (如用户发送消息瞬间)
-            // 只有当生成状态持续超过 150ms 时才展开，这足以让 User 消息上屏并修正 isGenerating 判定
             const timer = setTimeout(() => {
                 setIsCollapsed(false);
             }, 150);
             return () => clearTimeout(timer);
         } else {
-            // 生成结束，延迟折叠
             if (stepsCount > 0) {
                 const timer = setTimeout(() => {
                     setIsCollapsed(true);
@@ -572,12 +565,45 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
 
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+        const currentScrollY = contentOffset.y;
+        const maxScrollY = contentSize.height - layoutMeasurement.height;
+
+        isAtTopRef.current = currentScrollY <= 10;
+        isAtBottomRef.current = currentScrollY >= maxScrollY - 10;
+
         const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
         if (isAtBottom) {
             if (!isAutoScrollEnabled) setIsAutoScrollEnabled(true);
         } else if (isAutoScrollEnabled) {
             setIsAutoScrollEnabled(false);
         }
+
+        lastScrollYRef.current = currentScrollY;
+    };
+
+    const handleScrollBeginDrag = () => {
+    };
+
+    const handleScrollEndDrag = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+        const currentScrollY = contentOffset.y;
+        const maxScrollY = contentSize.height - layoutMeasurement.height;
+
+        if (contentSize.height <= layoutMeasurement.height) {
+            return;
+        }
+
+        isAtTopRef.current = currentScrollY <= 10;
+        isAtBottomRef.current = currentScrollY >= maxScrollY - 10;
+    };
+
+    const handleMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+        const currentScrollY = contentOffset.y;
+        const maxScrollY = contentSize.height - layoutMeasurement.height;
+
+        isAtTopRef.current = currentScrollY <= 10;
+        isAtBottomRef.current = currentScrollY >= maxScrollY - 10;
     };
 
     if (!steps || steps.length === 0) return null;
@@ -632,15 +658,23 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                 {/* 2. 展开状态：完整列表 */}
                 {!isCollapsed && (
                     <Animated.View entering={FadeIn} exiting={FadeOut} className="relative">
-                        {/* 🛡️ 手势隔离层：已移除拦截，改用 GH ScrollView 处理嵌套滚动 */}
-                        <View>
+                        <View
+                            onStartShouldSetResponder={() => true}
+                            onMoveShouldSetResponder={() => true}
+                            onResponderTerminationRequest={() => false}
+                        >
                             <GHScrollView
                                 ref={scrollViewRef as any}
                                 nestedScrollEnabled={true}
                                 onScroll={handleScroll}
+                                onScrollBeginDrag={handleScrollBeginDrag}
+                                onScrollEndDrag={handleScrollEndDrag}
+                                onMomentumScrollEnd={handleMomentumScrollEnd}
                                 scrollEventThrottle={16}
                                 showsVerticalScrollIndicator={false}
                                 fadingEdgeLength={32}
+                                bounces={false}
+                                overScrollMode="never"
                                 style={{ maxHeight: Dimensions.get('window').height * 0.35 }}
                                 contentContainerStyle={{ paddingLeft: 22, paddingRight: 12, paddingBottom: 16 }}
                             >
