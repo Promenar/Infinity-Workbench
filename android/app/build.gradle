@@ -121,10 +121,6 @@ android {
         versionCode 119
         versionName "1.2.54"
 
-        ndk {
-            abiFilters 'arm64-v8a'
-        }
-
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
     signingConfigs {
