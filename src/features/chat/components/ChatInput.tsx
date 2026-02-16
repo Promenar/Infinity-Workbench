@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -8,6 +8,7 @@ import {
   Image,
   ScrollView,
   Modal,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -429,6 +430,18 @@ export function ChatInput({
     setIsFocused(false);
     focusProgress.value = withTiming(0, { duration: 200 });
   }, []);
+
+  useEffect(() => {
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      if (isFocused) {
+        setIsFocused(false);
+        focusProgress.value = withTiming(0, { duration: 200 });
+      }
+    });
+    return () => {
+      keyboardDidHideListener.remove();
+    };
+  }, [isFocused]);
 
   const handleSend = () => {
     if (loading && onStop) {
