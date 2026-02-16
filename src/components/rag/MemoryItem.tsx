@@ -10,6 +10,9 @@ import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS } from 'date-fns/locale';
 import { useI18n } from '../../lib/i18n';
 
+const FastFadeIn = FadeIn.duration(120);
+const FastFadeOut = FadeOut.duration(80);
+
 interface MemoryItemProps {
     id: string;
     content: string;
@@ -43,8 +46,8 @@ export const MemoryItem = memo<MemoryItemProps>(({ id, content, createdAt, onDel
 
     return (
         <Animated.View
-            entering={FadeIn.duration(200)}
-            exiting={FadeOut.duration(150)}
+            entering={FastFadeIn}
+            exiting={FastFadeOut}
             className="mx-6 mb-3 bg-gray-50 dark:bg-zinc-900/50 rounded-2xl border border-indigo-50 dark:border-indigo-500/10 overflow-hidden"
         >
             <TouchableOpacity

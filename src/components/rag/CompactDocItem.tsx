@@ -22,6 +22,9 @@ import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from '../../lib/haptics';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
+const FastFadeIn = FadeIn.duration(120);
+const FastFadeOut = FadeOut.duration(80);
+
 interface CompactDocItemProps {
   id: string;
   title: string;
@@ -217,8 +220,8 @@ export const CompactDocItem = memo<CompactDocItemProps>(
 
     return (
       <Animated.View
-        entering={FadeIn.duration(200)}
-        exiting={FadeOut.duration(150)}
+        entering={FastFadeIn}
+        exiting={FastFadeOut}
         className="mx-6 mb-1.5 flex-row items-center bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-indigo-50 dark:border-indigo-500/10 pr-1"
         style={isSelected ? { borderColor: colors[500], backgroundColor: isDark ? colors.opacity20 : colors.opacity10 } : undefined}
       >

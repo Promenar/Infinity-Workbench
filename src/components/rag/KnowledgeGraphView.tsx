@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -11,6 +11,74 @@ import { Plus, Link as LinkIcon, Unlink } from 'lucide-react-native';
 import { TouchableOpacity, Alert } from 'react-native';
 import * as Haptics from '../../lib/haptics';
 import { useI18n } from '../../lib/i18n';
+
+const HTML_TEMPLATE_CACHE: { [key: string]: string } = {};
+
+function generateHtmlKey(isDark: boolean, primaryColor: string): string {
+  return `${isDark}-${primaryColor}`;
+}
+
+function buildHtmlTemplate(isDark: boolean, colors: any): string {
+  const key = generateHtmlKey(isDark, colors[500]);
+  if (HTML_TEMPLATE_CACHE[key]) {
+    return HTML_TEMPLATE_CACHE[key];
+  }
+
+  const template = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src * 'unsafe-inline'; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline';">
+        <script type="text/javascript">
+          window.onerror = function(message, source, lineno, colno, error) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'error',
+              message: message,
+              source: source,
+              lineno: lineno
+            }));
+          };
+          // INJECT_VIS_Here
+          if (typeof vis === 'undefined') {
+             window.ReactNativeWebView.postMessage(JSON.stringify({
+               type: 'error',
+               message: 'Vis library failed to load: vis is undefined',
+               source: 'inline',
+               lineno: 0
+             }));
+          } else {
+             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Vis library loaded successfully' }));
+          }
+        </script>
+        <style type="text/css">
+            html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                background-color: ${isDark ? '#000000' : '#ffffff'};
+                overflow: hidden;
+            }
+            #mynetwork {
+                width: 100%;
+                height: 100%;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="mynetwork"></div>
+        <script type="text/javascript">
+            // DATA_PLACEHOLDER
+        </script>
+    </body>
+    </html>
+    `;
+
+  const finalTemplate = template.replace('// INJECT_VIS_Here', VIS_NETWORK_SOURCE);
+  HTML_TEMPLATE_CACHE[key] = finalTemplate;
+  return finalTemplate;
+}
 
 interface KnowledgeGraphViewProps {
   onNodeSelect?: (nodeId: string) => void;
@@ -181,53 +249,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     );
   }
 
-  // HTML Template using Vis.js via CDN (Local assets would be better for offline, but CDN is easier for prototype)
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src * 'unsafe-inline'; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline';">
-        <script type="text/javascript">
-          window.onerror = function(message, source, lineno, colno, error) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'error',
-              message: message,
-              source: source,
-              lineno: lineno
-            }));
-          };
-          // INJECT_VIS_Here
-          if (typeof vis === 'undefined') {
-             window.ReactNativeWebView.postMessage(JSON.stringify({
-               type: 'error',
-               message: 'Vis library failed to load: vis is undefined',
-               source: 'inline',
-               lineno: 0
-             }));
-          } else {
-             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: 'Vis library loaded successfully' }));
-          }
-        </script>
-        <style type="text/css">
-            html, body {
-                width: 100%;
-                height: 100%;
-                margin: 0;
-                padding: 0;
-                background-color: ${isDark ? '#000000' : '#ffffff'};
-                overflow: hidden;
-            }
-            #mynetwork {
-                width: 100%;
-                height: 100%;
-            }
-        </style>
-    </head>
-    <body>
-        <div id="mynetwork"></div>
-        <script type="text/javascript">
-            // Data
+  const dataScript = `
             var nodes = new vis.DataSet(${JSON.stringify(graphData.nodes)});
             var edges = new vis.DataSet(${JSON.stringify(graphData.edges)});
 
@@ -298,14 +320,10 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
                      }));
                 }
             });
-        </script>
-    </body>
-    </html>
-    `;
+        `;
 
-  const finalHtml = htmlContent.replace('// INJECT_VIS_Here', VIS_NETWORK_SOURCE);
-
-
+  const htmlTemplate = buildHtmlTemplate(isDark, colors);
+  const finalHtml = htmlTemplate.replace('// DATA_PLACEHOLDER', dataScript);
 
   return (
     <View style={{ flex: 1 }}>

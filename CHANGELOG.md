@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.52] - 2026-02-17
+
+### Changed
+- **Library UI Performance Optimization**: 文库界面全面性能优化
+  - **PortalCards 组件**: 从内联定义提取为独立 `memo` 组件，避免每次渲染重新创建
+  - **列表项动画**: `FadeIn/FadeOut` 时长从 200ms/150ms 优化为 120ms/80ms，提升滚动流畅度
+  - **RagStatusIndicator**: 呼吸灯动画改为按需运行，空闲时自动停止降低 CPU 占用
+  - **KnowledgeGraphView**: 新增 HTML 模板缓存机制，避免重复字符串生成
+  - **批量操作工具栏**: 添加 `SlideInUp/SlideOutDown` 弹簧动画
+
+### Docs
+- 新增文库界面审计报告 (`docs/archive/library-audit-2026-02-17.md`)
+
 ## [1.2.51] - 2026-02-17
 
 ### Changed

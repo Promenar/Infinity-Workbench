@@ -9,7 +9,8 @@ import Animated, {
   withTiming,
   useSharedValue,
   withRepeat,
-  Easing
+  Easing,
+  cancelAnimation
 } from 'react-native-reanimated';
 import { useRagStore } from '../../store/rag-store';
 import { Typography } from '../ui/Typography';
@@ -29,6 +30,8 @@ import {
 import { useTheme } from '../../theme/ThemeProvider';
 import { BlurView } from 'expo-blur';
 
+const GLOW_ANIMATION_DURATION = 2000;
+
 export function RagStatusIndicator() {
   const { currentTask, vectorizationQueue } = useRagStore();
   const { isDark, colors } = useTheme();
@@ -36,15 +39,20 @@ export function RagStatusIndicator() {
 
   const progressWidth = useSharedValue(0);
   const glowOpacity = useSharedValue(0.4);
+  const animationRef = useRef<string | null>(null);
 
-  // 呼吸灯效果
   useEffect(() => {
-    glowOpacity.value = withRepeat(
-      withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true
-    );
-  }, []);
+    if (currentTask || vectorizationQueue.length > 0) {
+      glowOpacity.value = withRepeat(
+        withTiming(1, { duration: GLOW_ANIMATION_DURATION, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true
+      );
+    } else {
+      cancelAnimation(glowOpacity);
+      glowOpacity.value = withTiming(0.4, { duration: 300 });
+    }
+  }, [currentTask, vectorizationQueue.length]);
 
   // 同步进度条
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, memo } from 'react';
 import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl } from 'react-native';
 import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, GlassHeader, AnimatedSearchBar } from '../../src/components/ui';
 import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive, Check } from 'lucide-react-native';
@@ -25,10 +25,144 @@ import { PdfExtractor, PdfExtractorRef } from '../../src/components/rag/PdfExtra
 import { RagStatusIndicator } from '../../src/components/rag/RagStatusIndicator';
 import { MemoryItem } from '../../src/components/rag/MemoryItem';
 
-// 使用 any 绕过 FlashList 的类型属性冲突问题
 const TypedFlashList = FlashList as any;
 
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LinearTransition, SlideInUp, SlideOutDown, useAnimatedStyle, withSpring, useSharedValue, withDelay } from 'react-native-reanimated';
+
+const FastFadeIn = FadeIn.duration(150);
+const FastFadeOut = FadeOut.duration(100);
+
+const PortalCards = memo(function PortalCards({
+  onDocsPress,
+  onMemoriesPress,
+  onGraphPress,
+  documentsCount,
+  memoriesCount,
+}: {
+  onDocsPress: () => void;
+  onMemoriesPress: () => void;
+  onGraphPress: () => void;
+  documentsCount: number;
+  memoriesCount: number;
+}) {
+  const { isDark, colors } = useTheme();
+
+  return (
+    <View style={{ paddingHorizontal: 24, marginTop: 0 }}>
+      <View style={{ flexDirection: 'row', gap: 16, marginBottom: 20 }}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={onDocsPress}
+          className="flex-1 overflow-hidden rounded-2xl border"
+          style={{
+            borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(0, 0, 0, 0.05)',
+          }}
+        >
+          <BlurView
+            intensity={isDark ? 30 : 60}
+            tint={isDark ? 'dark' : 'light'}
+            style={{
+              padding: 20,
+              backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
+            }}
+          >
+            <View className="relative">
+              <View style={{ position: 'absolute', top: -10, left: -10 }}>
+                <SilkyGlow color={colors[500]} size={60} />
+              </View>
+              <View
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 14,
+                  backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : colors.opacity10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 16,
+                }}
+              >
+                <BookOpen size={24} color={colors[500]} />
+              </View>
+            </View>
+            <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
+              {useI18n().t.library.tabDocuments}
+            </Typography>
+            <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+              {documentsCount} {useI18n().t.library.documents}
+            </Typography>
+          </BlurView>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={onMemoriesPress}
+          className="flex-1 overflow-hidden rounded-2xl border"
+          style={{
+            borderColor: isDark ? 'rgba(16, 185, 129, 0.2)' : 'rgba(0, 0, 0, 0.05)',
+          }}
+        >
+          <BlurView
+            intensity={isDark ? 30 : 60}
+            tint={isDark ? 'dark' : 'light'}
+            style={{
+              padding: 20,
+              backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
+            }}
+          >
+            <View className="relative">
+              <View style={{ position: 'absolute', top: -10, left: -10 }}>
+                <SilkyGlow color="#10b981" size={60} />
+              </View>
+              <View
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 14,
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 16,
+                }}
+              >
+                <Clock size={24} color="#10b981" />
+              </View>
+            </View>
+            <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
+              {useI18n().t.library.tabMemories}
+            </Typography>
+            <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+              {memoriesCount} {useI18n().t.library.itemsCount}
+            </Typography>
+          </BlurView>
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ marginTop: 8 }}>
+        <Typography className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 ml-1">
+          {useI18n().t.rag.otherFeatures}
+        </Typography>
+        <TouchableOpacity
+          onPress={onGraphPress}
+          activeOpacity={0.7}
+          className="flex-row items-center p-4 rounded-2xl border overflow-hidden"
+          style={{
+            backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb',
+            borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(0, 0, 0, 0.03)',
+          }}
+        >
+          <View className="w-10 h-10 rounded-xl bg-indigo-500/10 items-center justify-center mr-4">
+            <Brain size={20} color={colors[500]} />
+          </View>
+          <View className="flex-1">
+            <Typography className="font-bold text-gray-900 dark:text-white">{useI18n().t.rag.globalKnowledgeGraph}</Typography>
+            <Typography className="text-xs text-gray-400 mt-0.5">{useI18n().t.rag.viewAllDocRelations}</Typography>
+          </View>
+          <ChevronRight size={18} color="#94a3b8" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
 
 export default function RagScreen() {
   const router = useRouter();
@@ -662,134 +796,6 @@ export default function RagScreen() {
     }
   }, [documents, _getPhysicalPath, getDocumentContent, showToast]);
 
-  // 门户卡片组件
-  const PortalCards = () => {
-    const { isDark, colors } = useTheme();
-    const { documents, folders, memories } = useRagStore();
-
-    return (
-      <View style={{ paddingHorizontal: 24, marginTop: 0 }}>
-        <View style={{ flexDirection: 'row', gap: 16, marginBottom: 20 }}>
-          {/* 文档中心卡片 */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setViewMode('docs')}
-            className="flex-1 overflow-hidden rounded-2xl border"
-            style={{
-              borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(0, 0, 0, 0.05)',
-            }}
-          >
-            <BlurView
-              intensity={isDark ? 30 : 60}
-              tint={isDark ? 'dark' : 'light'}
-              style={{
-                padding: 20,
-                backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
-              }}
-            >
-              <View className="relative">
-                {/* 底部装饰光晕 */}
-                <View style={{ position: 'absolute', top: -10, left: -10 }}>
-                  <SilkyGlow color={colors[500]} size={60} />
-                </View>
-                <View
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 14,
-                    backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : colors.opacity10,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: 16,
-                  }}
-                >
-                  <BookOpen size={24} color={colors[500]} />
-                </View>
-              </View>
-              <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
-                {t.library.tabDocuments}
-              </Typography>
-              <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
-                {documents.length} {t.library.documents}
-              </Typography>
-            </BlurView>
-          </TouchableOpacity>
-
-          {/* 记忆库卡片 */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setViewMode('memories')}
-            className="flex-1 overflow-hidden rounded-2xl border"
-            style={{
-              borderColor: isDark ? 'rgba(16, 185, 129, 0.2)' : 'rgba(0, 0, 0, 0.05)',
-            }}
-          >
-            <BlurView
-              intensity={isDark ? 30 : 60}
-              tint={isDark ? 'dark' : 'light'}
-              style={{
-                padding: 20,
-                backgroundColor: isDark ? 'rgba(15, 17, 26, 0.7)' : 'rgba(255, 255, 255, 0.8)',
-              }}
-            >
-              <View className="relative">
-                {/* 底部装饰光晕 */}
-                <View style={{ position: 'absolute', top: -10, left: -10 }}>
-                  <SilkyGlow color="#10b981" size={60} />
-                </View>
-                <View
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 14,
-                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: 16,
-                  }}
-                >
-                  <Clock size={24} color="#10b981" />
-                </View>
-              </View>
-              <Typography className="text-lg font-black text-gray-900 dark:text-white mb-1">
-                {t.library.tabMemories}
-              </Typography>
-              <Typography className="text-xs text-gray-400 font-bold uppercase tracking-wider">
-                {memories.length} {t.library.itemsCount}
-              </Typography>
-            </BlurView>
-          </TouchableOpacity>
-        </View>
-
-        {/* 其它功能入口 */}
-        <View style={{ marginTop: 8 }}>
-          <Typography className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 ml-1">
-            {t.rag.otherFeatures}
-          </Typography>
-          <TouchableOpacity
-            onPress={() => router.push('/knowledge-graph')}
-            activeOpacity={0.7}
-            className="flex-row items-center p-4 rounded-2xl border overflow-hidden"
-            style={{
-              backgroundColor: isDark ? 'rgba(26, 28, 46, 0.4)' : '#f9fafb',
-              borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(0, 0, 0, 0.03)',
-            }}
-          >
-            <View className="w-10 h-10 rounded-xl bg-indigo-500/10 items-center justify-center mr-4">
-              <Brain size={20} color={colors[500]} />
-            </View>
-            <View className="flex-1">
-              <Typography className="font-bold text-gray-900 dark:text-white">{t.rag.globalKnowledgeGraph}</Typography>
-              <Typography className="text-xs text-gray-400 mt-0.5">{t.rag.viewAllDocRelations}</Typography>
-            </View>
-            <ChevronRight size={18} color="#94a3b8" />
-          </TouchableOpacity>
-
-        </View>
-      </View>
-    );
-  };
-
   // 渲染标题栏
   const renderHeader = () => {
     const isPortal = viewMode === 'portal';
@@ -948,11 +954,19 @@ export default function RagScreen() {
           {/* 内容展示区 */}
           <Animated.View
             key={viewMode}
-            entering={FadeIn.duration(200)}
-            exiting={FadeOut.duration(150)}
+            entering={FastFadeIn}
+            exiting={FastFadeOut}
             style={{ flex: 1, minHeight: 200 }}
           >
-            {viewMode === 'portal' && <PortalCards />}
+            {viewMode === 'portal' && (
+              <PortalCards
+                onDocsPress={() => setViewMode('docs')}
+                onMemoriesPress={() => setViewMode('memories')}
+                onGraphPress={() => router.push('/knowledge-graph')}
+                documentsCount={documents.length}
+                memoriesCount={memories.length}
+              />
+            )}
 
             {viewMode === 'docs' && (
               <TypedFlashList
@@ -1123,7 +1137,9 @@ export default function RagScreen() {
 
       {/* 批量操作工具栏 */}
       {isSelectionMode && (
-        <View
+        <Animated.View
+          entering={SlideInUp.springify().damping(20).stiffness(300)}
+          exiting={SlideOutDown.duration(200)}
           style={{
             position: 'absolute',
             bottom: 0,
@@ -1169,13 +1185,13 @@ export default function RagScreen() {
               className={`flex-row items-center px-4 py-3 rounded-xl gap-2 ${selectedDocIds.size > 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-gray-50 dark:bg-zinc-800 opacity-50'}`}
             >
               <Text
-                className={`font-bold ${selectedDocIds.size > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}
-              >
-                删除
-              </Text>
-            </TouchableOpacity>
+              className={`font-bold ${selectedDocIds.size > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}
+            >
+              删除
+            </Text>
+          </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
       )}
 
       {/* 新建文件夹Modal */}
