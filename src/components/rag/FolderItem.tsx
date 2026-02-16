@@ -140,8 +140,8 @@ export const FolderItem = memo<FolderItemProps>(({
 
       {/* 操作图标 - 独立触摸区域 */}
       <ContextMenu items={menuItems} triggerOnPress>
-        <View className="p-3">
-          <MoreVertical size={16} color="#94a3b8" />
+        <View className="p-3 min-w-[44px] min-h-[44px] items-center justify-center">
+          <MoreVertical size={18} color="#94a3b8" />
         </View>
       </ContextMenu>
     </View>

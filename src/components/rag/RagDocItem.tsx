@@ -116,15 +116,15 @@ export const RagDocItem = memo(
                 // { label: t.library.rename, icon: <Edit2 size={16} />, onPress: () => showToast(t.library.rename, 'info') }, // TODO
                 {
                   label: t.library.delete,
-                  icon: <Trash2 size={16} />,
+                  icon: <Trash2 size={18} />,
                   destructive: true,
                   onPress: onDelete,
                 },
               ]}
               triggerOnPress
             >
-              <View className="p-3 opacity-60">
-                <MoreVertical size={16} color={isSelected ? '#6366f1' : '#94a3b8'} />
+              <View className="p-3 min-w-[44px] min-h-[44px] items-center justify-center">
+                <MoreVertical size={18} color={isSelected ? '#6366f1' : '#94a3b8'} />
               </View>
             </ContextMenu>
           </View>

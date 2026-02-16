@@ -64,8 +64,8 @@ export const MemoryItem = memo<MemoryItemProps>(({ id, content, createdAt, onDel
                     </View>
 
                     <ContextMenu items={menuItems as any} triggerOnPress>
-                        <View className="p-1 -mr-1">
-                            <MoreVertical size={16} color="#94a3b8" />
+                        <View className="p-2 -mr-2 min-w-[44px] min-h-[44px] items-center justify-center">
+                            <MoreVertical size={18} color="#94a3b8" />
                         </View>
                     </ContextMenu>
                 </View>

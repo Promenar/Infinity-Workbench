@@ -266,8 +266,8 @@ export const CompactDocItem = memo<CompactDocItemProps>(
         {/* 操作菜单 - 独立触摸区域 */}
         {!isSelectionMode && (
           <ContextMenu items={menuItems as any} triggerOnPress>
-            <View className="py-3 pr-2 pl-1">
-              <MoreVertical size={16} color="#94a3b8" />
+            <View className="py-3 px-3 min-w-[44px] min-h-[44px] items-center justify-center">
+              <MoreVertical size={18} color="#94a3b8" />
             </View>
           </ContextMenu>
         )}
