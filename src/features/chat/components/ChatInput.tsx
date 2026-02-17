@@ -410,12 +410,15 @@ export function ChatInput({
     };
   });
 
+  const focusBorderColorInactive = isDark ? '#374151' : '#E5E7EB';
+  const focusBorderColorActive = agentColor || colors[500];
+
   const focusAnimatedStyle = useAnimatedStyle(() => {
     'worklet';
     return {
       borderColor: interpolateColor(focusProgress.value, [0, 1], [
-        isDark ? '#374151' : '#E5E7EB',
-        agentColor || colors[500],
+        focusBorderColorInactive,
+        focusBorderColorActive,
       ]),
       shadowOpacity: focusProgress.value * 0.12,
     };
@@ -833,6 +836,7 @@ export function ChatInput({
                 editable={!disabled && !loading}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
+                scrollEnabled
               />
             </Animated.View>
           </View>
@@ -1036,8 +1040,9 @@ const styles = StyleSheet.create({
   },
   input: {
     fontSize: 16,
-    maxHeight: 120,
+    maxHeight: 240,
     paddingVertical: 6,
+    textAlignVertical: 'top',
   },
   previewContainer: {
     marginBottom: 8,
