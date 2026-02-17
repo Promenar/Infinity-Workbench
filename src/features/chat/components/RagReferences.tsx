@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, TouchableOpacity, ScrollView, Platform, StyleSheet } from 'react-native';
 import { Typography } from '../../../components/ui';
 import { RagReference, RagProgress, RagMetadata } from '../../../types/chat';
 import { ChevronDown, FileText, Library } from 'lucide-react-native';
@@ -13,6 +13,7 @@ import Animated, {
   FadeOutUp,
 } from 'react-native-reanimated';
 import { RagDetailPanel } from './RagDetailPanel';
+import { Spacing } from '../../../theme/glass';
 
 interface RagReferencesChipProps {
   references: RagReference[];
@@ -211,6 +212,61 @@ interface RagReferencesListProps {
 export const RagReferencesList = React.memo<RagReferencesListProps>(({ references, isDark }) => {
   if (!references || references.length === 0) return null;
 
+  const styles = useMemo(() => StyleSheet.create({
+    referenceItem: {
+      padding: Spacing[3],
+      borderRadius: 12,
+      marginBottom: 10,
+      backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#f9fafb',
+      borderLeftWidth: 3,
+      borderLeftColor: isDark ? '#10b981' : '#059669',
+      borderWidth: Platform.OS === 'android' ? 1 : 0,
+      borderColor: isDark ? '#27272a' : '#f3f4f6',
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: Spacing[2],
+      gap: 6,
+    },
+    sourceText: {
+      color: isDark ? '#f4f4f5' : '#18181b',
+      opacity: 0.9,
+    },
+    similarityRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing[1],
+    },
+    originalSimilarityBadge: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
+    },
+    similarityBadge: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5',
+    },
+    originalSimilarityText: {
+      fontSize: 9,
+      fontWeight: '500',
+      color: isDark ? '#71717a' : '#94a3b8',
+    },
+    similarityText: {
+      fontSize: 9,
+      fontWeight: '700',
+      color: isDark ? '#34d399' : '#059669',
+    },
+    contentText: {
+      fontSize: 12,
+      lineHeight: 18,
+      color: isDark ? '#a1a1aa' : '#4b5563',
+    },
+  }), [isDark]);
+
   return (
     <Animated.View
       entering={FadeInUp.duration(300)}
@@ -220,62 +276,27 @@ export const RagReferencesList = React.memo<RagReferencesListProps>(({ reference
       {references.map((ref, index) => (
         <View
           key={ref.id || index}
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            marginBottom: 10,
-            backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#f9fafb',
-            borderLeftWidth: 3,
-            borderLeftColor: isDark ? '#10b981' : '#059669',
-            borderWidth: Platform.OS === 'android' ? 1 : 0,
-            borderColor: isDark ? '#27272a' : '#f3f4f6',
-          }}
+          style={styles.referenceItem}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 6 }}>
+          <View style={styles.headerRow}>
             <Typography
               className="text-xs font-bold flex-1"
-              style={{ color: isDark ? '#f4f4f5' : '#18181b', opacity: 0.9 }}
+              style={styles.sourceText}
               numberOfLines={1}
             >
               {ref.source || '未命名文档'}
             </Typography>
             {ref.similarity && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={styles.similarityRow}>
                 {ref.originalSimilarity !== undefined && (
-                  <View
-                    style={{
-                      paddingHorizontal: 6,
-                      paddingVertical: 2,
-                      borderRadius: 8,
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
-                    }}
-                  >
-                    <Typography
-                      style={{
-                        fontSize: 9,
-                        fontWeight: '500',
-                        color: isDark ? '#71717a' : '#94a3b8',
-                      }}
-                    >
+                  <View style={styles.originalSimilarityBadge}>
+                    <Typography style={styles.originalSimilarityText}>
                       {(ref.originalSimilarity * 100).toFixed(0)}%
                     </Typography>
                   </View>
                 )}
-                <View
-                  style={{
-                    paddingHorizontal: 6,
-                    paddingVertical: 2,
-                    borderRadius: 8,
-                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5',
-                  }}
-                >
-                  <Typography
-                    style={{
-                      fontSize: 9,
-                      fontWeight: '700',
-                      color: isDark ? '#34d399' : '#059669',
-                    }}
-                  >
+                <View style={styles.similarityBadge}>
+                  <Typography style={styles.similarityText}>
                     {(ref.similarity * 100).toFixed(0)}%
                   </Typography>
                 </View>
@@ -284,11 +305,7 @@ export const RagReferencesList = React.memo<RagReferencesListProps>(({ reference
           </View>
 
           <Typography
-            style={{
-              fontSize: 12,
-              lineHeight: 18,
-              color: isDark ? '#a1a1aa' : '#4b5563',
-            }}
+            style={styles.contentText}
             numberOfLines={5}
           >
             {ref.content}
