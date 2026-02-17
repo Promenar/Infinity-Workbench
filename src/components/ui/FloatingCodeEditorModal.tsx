@@ -20,7 +20,7 @@ import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
 import { X, Check } from 'lucide-react-native';
-import { Glass } from '../../theme/glass';
+import { Glass, Shadows } from '../../theme/glass';
 
 interface FloatingCodeEditorModalProps {
     visible: boolean;
@@ -128,10 +128,8 @@ export const FloatingCodeEditorModal: React.FC<FloatingCodeEditorModalProps> = (
                                     borderRadius: 16,
                                     padding: 20,
                                     width: MODAL_WIDTH,
+                                    ...Shadows.glow,
                                     shadowColor: isDark ? '#6366f1' : '#000',
-                                    shadowOffset: { width: 0, height: 4 },
-                                    shadowOpacity: 0.1,
-                                    shadowRadius: 15,
                                     elevation: isDark ? 0 : 20,
                                     overflow: 'hidden',
                                     marginTop: (SCREEN_HEIGHT - COLLAPSED_HEIGHT) / 2,

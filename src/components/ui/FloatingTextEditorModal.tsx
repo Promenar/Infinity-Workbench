@@ -22,6 +22,7 @@ import { StyleSheet } from 'react-native';
 import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
+import { Shadows } from '../../theme/glass';
 import { X, Check, AlertTriangle } from 'lucide-react-native';
 
 interface FloatingTextEditorModalProps {
@@ -137,10 +138,8 @@ export const FloatingTextEditorModal: React.FC<FloatingTextEditorModalProps> = (
                                     borderRadius: 16,
                                     padding: 24,
                                     width: MODAL_WIDTH,
+                                    ...Shadows.glow,
                                     shadowColor: isDark ? '#6366f1' : '#000',
-                                    shadowOffset: { width: 0, height: 4 },
-                                    shadowOpacity: 0.1,
-                                    shadowRadius: 15,
                                     elevation: isDark ? 0 : 20,
                                     overflow: 'hidden',
                                     marginTop: (SCREEN_HEIGHT - COLLAPSED_HEIGHT) / 2,

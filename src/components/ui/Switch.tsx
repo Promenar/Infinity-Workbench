@@ -7,6 +7,7 @@ import Animated, {
   interpolateColor,
 } from 'react-native-reanimated';
 import { useTheme } from '../../theme/ThemeProvider';
+import { Shadows } from '../../theme/glass';
 import * as Haptics from '../../lib/haptics';
 
 interface SwitchProps {
@@ -103,10 +104,6 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    ...Shadows.sm,
   },
 });

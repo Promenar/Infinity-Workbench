@@ -118,8 +118,8 @@ android {
         applicationId 'com.promenar.nexara'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 131
-        versionName "1.2.69"
+        versionCode 132
+        versionName "1.2.70"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

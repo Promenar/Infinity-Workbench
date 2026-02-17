@@ -13,6 +13,7 @@ import { Typography } from './Typography';
 import { clsx } from 'clsx';
 import * as Haptics from '../../lib/haptics';
 import { useTheme } from '../../theme/ThemeProvider';
+import { Shadows } from '../../theme/glass';
 
 export interface ContextMenuItem {
   label: string;
@@ -197,11 +198,8 @@ export function ContextMenu({ children, items, triggerOnPress = false }: Context
                   backgroundColor: isDark ? '#18181b' : '#ffffff',
                   borderRadius: 16,
                   overflow: 'hidden',
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 8 },
+                  ...Shadows.md,
                   shadowOpacity: isDark ? 0.4 : 0.12,
-                  shadowRadius: 24,
-                  elevation: 16,
                   borderWidth: 0.5,
                   borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
                 },

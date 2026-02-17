@@ -66,3 +66,50 @@ export const Glass = {
         } as const,
     },
 };
+
+/**
+ * Unified Shadow Constants
+ * 
+ * Standard shadow styles for consistent elevation across the app.
+ */
+export const Shadows = {
+    /**
+     * Small shadow - Used for subtle elevation (switches, small cards)
+     */
+    sm: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    /**
+     * Medium shadow - Used for floating elements (context menus)
+     */
+    md: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.12,
+        shadowRadius: 24,
+        elevation: 16,
+    },
+    /**
+     * Large shadow - Used for modals, bottom sheets, alerts
+     */
+    lg: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    /**
+     * Glow shadow - Used for editor modals with brand color tint
+     */
+    glow: {
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 15,
+        elevation: 20,
+    },
+};
