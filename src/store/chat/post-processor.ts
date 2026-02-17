@@ -212,11 +212,16 @@ export function updateStats(params: PostProcessorParams): void {
     const isSuperAssistant = sessionId === 'super_assistant' || session.agentId === 'super_assistant';
 
     // 🔑 Phase 4b: Upgrade to AI Auto-Title
-    // Case 1: Session just started (messages <= 1 after this new message) OR title is default
-    const isDefaultTitle = session.title === agent.name || session.title === 'New Conversation';
+    // Case 1: Session just started (messages <= 2 after this new message) OR title is default
+    // Note: messages.length is 2 after first exchange (user + assistant), so check <= 2
+    const isDefaultTitle = session.title === agent.name 
+        || session.title === 'New Conversation' 
+        || session.title === '新会话'
+        || session.title.startsWith('New Conversation')
+        || session.title.startsWith('新会话');
 
     // Check if we should auto-title
-    if (!isSuperAssistant && (session.messages.length <= 1 || isDefaultTitle)) {
+    if (!isSuperAssistant && (session.messages.length <= 2 || isDefaultTitle)) {
         // Option A: Use AI generator if available (Preferred)
         if (params.generateSessionTitle) {
             console.log(`[PostProcessor] Triggering AI Auto-Title for session ${sessionId}...`);
