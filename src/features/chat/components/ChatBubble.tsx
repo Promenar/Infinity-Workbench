@@ -52,6 +52,7 @@ import Animated, {
   FadeInUp,
   FadeOutUp,
   LinearTransition,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import * as FileSystem from 'expo-file-system/legacy';
 // import { SvgXml } from 'react-native-svg'; // Removed to prevent native crashes
@@ -298,6 +299,12 @@ const LoadingDots = React.memo(({ isDark, color }: { isDark: boolean; color?: st
     loop(opacity1, 0);
     loop(opacity2, 200);
     loop(opacity3, 400);
+
+    return () => {
+      cancelAnimation(opacity1);
+      cancelAnimation(opacity2);
+      cancelAnimation(opacity3);
+    };
   }, []);
 
   const dotStyle = {
