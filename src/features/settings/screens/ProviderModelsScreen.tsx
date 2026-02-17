@@ -9,6 +9,7 @@ import {
     Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withTiming, interpolateColor } from 'react-native-reanimated';
 import { Switch } from '../../../components/ui/Switch';
 import {
     X,
@@ -84,15 +85,16 @@ const ModelItem = React.memo(
         );
 
         return (
-            <View
+            <Animated.View
+                entering={FadeIn.duration(150)}
                 style={{
-                    backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#fff', // Slightly more transparent/glassy feel in dark mode
-                    borderRadius: 20, // Standard: 20px
-                    padding: 16, // Increased padding 10->16 for breathability
+                    backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : '#fff',
+                    borderRadius: 20,
+                    padding: 16,
                     marginBottom: 10,
                     marginHorizontal: 16,
                     borderWidth: 1,
-                    borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(0,0,0,0.05)', // Standard Glass Border
+                    borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(0,0,0,0.05)',
                     minHeight: 185,
                 }}
             >
@@ -357,7 +359,7 @@ const ModelItem = React.memo(
                         }}
                     />
                 </View>
-            </View>
+            </Animated.View>
         );
     },
     (prev, next) => {
@@ -867,7 +869,7 @@ export default function ProviderModelsScreen() {
     );
 }
 
-function TypeButton({
+const TypeButton = React.memo(function TypeButton({
     label,
     active,
     onPress,
@@ -877,16 +879,21 @@ function TypeButton({
     onPress: () => void;
 }) {
     const { isDark, colors } = useTheme();
+    const progress = useSharedValue(active ? 1 : 0);
+
+    useEffect(() => {
+        progress.value = withTiming(active ? 1 : 0, { duration: 150 });
+    }, [active]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(progress.value, [0, 1], [
+            isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
+            colors[500],
+        ]),
+    }));
+
     return (
-        <TouchableOpacity
-            onPress={onPress}
-            style={{
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 7,
-                backgroundColor: active ? colors[500] : isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
-            }}
-        >
+        <TouchableOpacity onPress={onPress} style={[{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 }, animatedStyle]}>
             <Typography
                 style={{
                     fontSize: 9,
@@ -898,9 +905,9 @@ function TypeButton({
             </Typography>
         </TouchableOpacity>
     );
-}
+});
 
-function CapabilityTag({
+const CapabilityTag = React.memo(function CapabilityTag({
     icon,
     label,
     active,
@@ -912,24 +919,35 @@ function CapabilityTag({
     onToggle: () => void;
 }) {
     const { isDark, colors } = useTheme();
+    const progress = useSharedValue(active ? 1 : 0);
+
+    useEffect(() => {
+        progress.value = withTiming(active ? 1 : 0, { duration: 150 });
+    }, [active]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(progress.value, [0, 1], [
+            isDark ? 'rgba(24, 24, 27, 0.5)' : '#f3f4f6',
+            colors.opacity20,
+        ]),
+        borderColor: interpolateColor(progress.value, [0, 1], [
+            isDark ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+            colors[500],
+        ]),
+    }));
+
     return (
         <TouchableOpacity
             onPress={onToggle}
-            style={{
+            style={[{
                 flexDirection: 'row',
                 alignItems: 'center',
                 paddingHorizontal: 6,
                 paddingVertical: 3,
                 borderRadius: 6,
-                backgroundColor: active
-                    ? colors.opacity20
-                    : isDark
-                        ? 'rgba(24, 24, 27, 0.5)'
-                        : '#f3f4f6',
                 borderWidth: 1,
-                borderColor: active ? colors[500] : isDark ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
                 gap: 3,
-            }}
+            }, animatedStyle]}
         >
             <View style={{ opacity: active ? 1 : 0.5 }}>
                 {React.isValidElement(icon) &&
@@ -948,4 +966,4 @@ function CapabilityTag({
             </Typography>
         </TouchableOpacity>
     );
-}
+});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,9 @@ import {
     Platform,
     StyleSheet,
     TouchableOpacity,
+    ActivityIndicator,
 } from 'react-native';
+import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withSpring, withTiming, interpolateColor } from 'react-native-reanimated';
 import { ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -114,6 +116,12 @@ export default function ProviderFormScreen() {
         jsonInput?: string;
     }>({});
 
+    const [isSaving, setIsSaving] = useState(false);
+    const saveScale = useSharedValue(1);
+    const nameFocusProgress = useSharedValue(0);
+    const apiKeyFocusProgress = useSharedValue(0);
+    const baseUrlFocusProgress = useSharedValue(0);
+
     // Reset state on load
     useEffect(() => {
         if (editingProvider) {
@@ -202,38 +210,69 @@ export default function ProviderFormScreen() {
             return;
         }
 
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setIsSaving(true);
+        saveScale.value = withSpring(0.95, { damping: 15 });
 
-        let finalApiKey = apiKey.trim();
-        if (type === 'google' && jsonInput) {
-            try {
-                const json = JSON.parse(jsonInput);
-                finalApiKey = json.private_key || 'vertex-placeholder';
-            } catch (e) {
-                finalApiKey = 'vertex-placeholder';
+        setTimeout(() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+            let finalApiKey = apiKey.trim();
+            if (type === 'google' && jsonInput) {
+                try {
+                    const json = JSON.parse(jsonInput);
+                    finalApiKey = json.private_key || 'vertex-placeholder';
+                } catch (e) {
+                    finalApiKey = 'vertex-placeholder';
+                }
             }
-        }
 
-        const providerData = {
-            name: name.trim(),
-            type,
-            baseUrl: baseUrl.trim() || undefined,
-            apiKey: finalApiKey || (type === 'google' ? 'vertex-placeholder' : ''),
-            enabled: true,
-            models: editingProvider?.models || [],
-            vertexProject: type === 'google' ? vertexProject.trim() : undefined,
-            vertexLocation: type === 'google' ? region.trim() : undefined,
-            vertexKeyJson: type === 'google' ? jsonInput.trim() : undefined,
-        };
+            const providerData = {
+                name: name.trim(),
+                type,
+                baseUrl: baseUrl.trim() || undefined,
+                apiKey: finalApiKey || (type === 'google' ? 'vertex-placeholder' : ''),
+                enabled: true,
+                models: editingProvider?.models || [],
+                vertexProject: type === 'google' ? vertexProject.trim() : undefined,
+                vertexLocation: type === 'google' ? region.trim() : undefined,
+                vertexKeyJson: type === 'google' ? jsonInput.trim() : undefined,
+            };
 
-        if (editingProvider) {
-            updateProvider(editingProvider.id, providerData);
-        } else {
-            addProvider(providerData);
-        }
+            if (editingProvider) {
+                updateProvider(editingProvider.id, providerData);
+            } else {
+                addProvider(providerData);
+            }
 
-        router.back();
+            saveScale.value = withSpring(1, { damping: 15 });
+            router.back();
+        }, 150);
     };
+
+    const saveAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: saveScale.value }],
+    }));
+
+    const nameFocusStyle = useAnimatedStyle(() => ({
+        borderColor: interpolateColor(nameFocusProgress.value, [0, 1], [
+            isDark ? '#27272a' : '#e5e7eb',
+            colors[500],
+        ]),
+    }));
+
+    const apiKeyFocusStyle = useAnimatedStyle(() => ({
+        borderColor: interpolateColor(apiKeyFocusProgress.value, [0, 1], [
+            isDark ? '#27272a' : '#e5e7eb',
+            colors[500],
+        ]),
+    }));
+
+    const baseUrlFocusStyle = useAnimatedStyle(() => ({
+        borderColor: interpolateColor(baseUrlFocusProgress.value, [0, 1], [
+            isDark ? '#27272a' : '#e5e7eb',
+            colors[500],
+        ]),
+    }));
 
     const handlePresetSelect = useCallback((presetKey: string) => {
         const preset = PROVIDER_PRESETS[presetKey];
@@ -283,48 +322,53 @@ export default function ProviderFormScreen() {
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>{t.settings.providerModal.presets}</Text>
                             <View style={styles.presetsGrid}>
-                                {Object.entries(PROVIDER_PRESETS).map(([key, preset]) => {
+                                {Object.entries(PROVIDER_PRESETS).map(([key, preset], index) => {
                                     const iconKey = key === 'openai-compatible' ? 'openai' : key;
                                     const isSelected = selectedPreset === key;
 
                                     return (
-                                        <TouchableOpacity
+                                        <Animated.View
                                             key={key}
-                                            onPress={() => handlePresetSelect(key)}
-                                            style={[
-                                                styles.presetCard,
-                                                {
-                                                    backgroundColor: isSelected
-                                                        ? (isDark ? '#27272a' : '#f3f4f6')
-                                                        : (isDark ? '#18181b' : '#fff'),
-                                                    borderColor: isSelected
-                                                        ? colors[500]
-                                                        : (isDark ? '#27272a' : '#e5e7eb')
-                                                }
-                                            ]}
+                                            entering={FadeInDown.duration(200).delay(index * 30).springify()}
+                                            style={{ width: '48%' }}
                                         >
-                                            <View style={styles.presetIcon}>
-                                                <ModelIconRenderer
-                                                    icon={iconKey as any} // Cast to any to satisfy type check if strict
-                                                    size={24}
-                                                    color={isSelected ? colors[500] : (isDark ? '#fff' : '#000')}
-                                                />
-                                            </View>
-                                            <Text
-                                                numberOfLines={1}
+                                            <TouchableOpacity
+                                                onPress={() => handlePresetSelect(key)}
                                                 style={[
-                                                    styles.presetName,
+                                                    styles.presetCard,
                                                     {
-                                                        color: isSelected
+                                                        backgroundColor: isSelected
+                                                            ? (isDark ? '#27272a' : '#f3f4f6')
+                                                            : (isDark ? '#18181b' : '#fff'),
+                                                        borderColor: isSelected
                                                             ? colors[500]
-                                                            : (isDark ? '#fff' : '#111'),
-                                                        fontWeight: isSelected ? '600' : '400'
+                                                            : (isDark ? '#27272a' : '#e5e7eb')
                                                     }
                                                 ]}
                                             >
-                                                {preset.name}
-                                            </Text>
-                                        </TouchableOpacity>
+                                                <View style={styles.presetIcon}>
+                                                    <ModelIconRenderer
+                                                        icon={iconKey as any}
+                                                        size={24}
+                                                        color={isSelected ? colors[500] : (isDark ? '#fff' : '#000')}
+                                                    />
+                                                </View>
+                                                <Text
+                                                    numberOfLines={1}
+                                                    style={[
+                                                        styles.presetName,
+                                                        {
+                                                            color: isSelected
+                                                                ? colors[500]
+                                                                : (isDark ? '#fff' : '#111'),
+                                                            fontWeight: isSelected ? '600' : '400'
+                                                        }
+                                                    ]}
+                                                >
+                                                    {preset.name}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </Animated.View>
                                     );
                                 })}
                             </View>
@@ -367,16 +411,20 @@ export default function ProviderFormScreen() {
                             <Text style={[styles.label, { color: isDark ? '#fff' : '#111' }]}>
                                 {t.settings.providerModal.baseUrl}
                             </Text>
-                            <TextInput
-                                value={baseUrl}
-                                onChangeText={setBaseUrl}
-                                placeholder={t.settings.providerModal.baseUrlPlaceholder}
-                                placeholderTextColor="#9ca3af"
-                                autoCapitalize="none"
-                                keyboardType="url"
-                                editable={type !== 'google'}
-                                style={[styles.input, inputStyle, { opacity: type === 'google' ? 0.6 : 1 }]}
-                            />
+                            <Animated.View style={baseUrlFocusStyle}>
+                                <TextInput
+                                    value={baseUrl}
+                                    onChangeText={setBaseUrl}
+                                    placeholder={t.settings.providerModal.baseUrlPlaceholder}
+                                    placeholderTextColor="#9ca3af"
+                                    autoCapitalize="none"
+                                    keyboardType="url"
+                                    editable={type !== 'google'}
+                                    onFocus={() => { baseUrlFocusProgress.value = withTiming(1, { duration: 200 }); }}
+                                    onBlur={() => { baseUrlFocusProgress.value = withTiming(0, { duration: 200 }); }}
+                                    style={[styles.input, inputStyle, { opacity: type === 'google' ? 0.6 : 1, borderWidth: 1.5 }]}
+                                />
+                            </Animated.View>
                         </View>
 
                         {/* API Key */}
@@ -385,14 +433,18 @@ export default function ProviderFormScreen() {
                                 <Text style={[styles.label, { color: isDark ? '#fff' : '#111' }]}>
                                     {t.settings.providerModal.apiKey}
                                 </Text>
-                                <TextInput
-                                    value={apiKey}
-                                    onChangeText={setApiKey}
-                                    placeholder={t.settings.providerModal.apiKeyPlaceholder}
-                                    placeholderTextColor="#9ca3af"
-                                    secureTextEntry
-                                    style={[styles.input, inputStyle]}
-                                />
+                                <Animated.View style={apiKeyFocusStyle}>
+                                    <TextInput
+                                        value={apiKey}
+                                        onChangeText={setApiKey}
+                                        placeholder={t.settings.providerModal.apiKeyPlaceholder}
+                                        placeholderTextColor="#9ca3af"
+                                        secureTextEntry
+                                        onFocus={() => { apiKeyFocusProgress.value = withTiming(1, { duration: 200 }); }}
+                                        onBlur={() => { apiKeyFocusProgress.value = withTiming(0, { duration: 200 }); }}
+                                        style={[styles.input, inputStyle, { borderWidth: 1.5 }]}
+                                    />
+                                </Animated.View>
                                 {errors.apiKey && <Text style={styles.errorText}>{errors.apiKey}</Text>}
                             </View>
                         )}
@@ -421,9 +473,19 @@ export default function ProviderFormScreen() {
                 backgroundColor: isDark ? '#000' : '#fff',
                 borderTopColor: isDark ? '#27272a' : '#e5e7eb'
             }]}>
-                <TouchableOpacity onPress={handleSave} style={[styles.saveBtn, { backgroundColor: colors[500] }]}>
-                    <Text style={styles.btnText}>{t.settings.providerModal.save}</Text>
-                </TouchableOpacity>
+                <Animated.View style={[{ width: '100%' }, saveAnimatedStyle]}>
+                    <TouchableOpacity 
+                        onPress={handleSave} 
+                        disabled={isSaving}
+                        style={[styles.saveBtn, { backgroundColor: colors[500] }]}
+                    >
+                        {isSaving ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.btnText}>{t.settings.providerModal.save}</Text>
+                        )}
+                    </TouchableOpacity>
+                </Animated.View>
             </View>
         </PageLayout>
     );
@@ -449,7 +511,6 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     presetCard: {
-        width: '48%', // Approx 2 columns
         flexDirection: 'row',
         alignItems: 'center',
         padding: 12,
