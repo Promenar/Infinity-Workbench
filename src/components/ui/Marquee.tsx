@@ -1,5 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, ScrollView, Animated, Easing, LayoutChangeEvent, TextProps } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, LayoutChangeEvent, TextProps } from 'react-native';
+import Animated, {
+    useSharedValue,
+    withTiming,
+    withRepeat,
+    withDelay,
+    Easing,
+    useAnimatedStyle,
+    cancelAnimation,
+} from 'react-native-reanimated';
 import { Typography } from './Typography';
 
 interface MarqueeProps {
@@ -14,38 +23,42 @@ interface MarqueeProps {
 export function Marquee({ text, className, duration = 3000, delay = 2000, style, textProps }: MarqueeProps) {
     const [containerWidth, setContainerWidth] = useState(0);
     const [textWidth, setTextWidth] = useState(0);
-    const scrollValue = useRef(new Animated.Value(0)).current;
+    const scrollValue = useSharedValue(0);
 
     const isLongText = textWidth > containerWidth && containerWidth > 0;
-    const GAP = 80; // 文本循环之间的间距
+    const GAP = 80;
 
     useEffect(() => {
-        scrollValue.setValue(0);
+        scrollValue.value = 0;
 
         if (isLongText) {
-            // 滚动一个完整的“文本+间距”周期
             const scrollDistance = textWidth + GAP;
+            const animationDuration = textWidth * 35;
 
-            const animation = Animated.loop(
-                Animated.timing(scrollValue, {
-                    toValue: -scrollDistance,
-                    duration: textWidth * 35, // 保持恒定速度，而不是恒定时间
-                    easing: Easing.linear,
-                    useNativeDriver: true,
-                })
+            scrollValue.value = withDelay(
+                delay,
+                withRepeat(
+                    withTiming(-scrollDistance, {
+                        duration: animationDuration,
+                        easing: Easing.linear,
+                    }),
+                    -1,
+                    false
+                )
             );
-
-            // 首次执行前稍微延迟一下，给用户时间阅读开头
-            const timer = setTimeout(() => {
-                animation.start();
-            }, delay);
-
-            return () => {
-                clearTimeout(timer);
-                animation.stop();
-            };
         }
+
+        return () => {
+            cancelAnimation(scrollValue);
+        };
     }, [isLongText, textWidth, containerWidth, text, delay]);
+
+    const animatedStyle = useAnimatedStyle(() => {
+        'worklet';
+        return {
+            transform: [{ translateX: scrollValue.value }],
+        };
+    });
 
     return (
         <View
@@ -71,12 +84,13 @@ export function Marquee({ text, className, duration = 3000, delay = 2000, style,
 
             {/* 可见的渲染层 */}
             <Animated.View
-                style={{
-                    flexDirection: 'row',
-                    transform: [{ translateX: scrollValue }],
-                    // 渲染两个重复的文本块以实现无缝对接
-                    width: isLongText ? (textWidth + GAP) * 2 : '100%',
-                }}
+                style={[
+                    {
+                        flexDirection: 'row',
+                        width: isLongText ? (textWidth + GAP) * 2 : '100%',
+                    },
+                    animatedStyle,
+                ]}
             >
                 <Typography
                     className={className}

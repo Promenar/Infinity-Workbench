@@ -5,7 +5,6 @@ import Animated, {
     useSharedValue,
     withTiming,
     Easing,
-    runOnJS,
 } from 'react-native-reanimated';
 import { ChevronRight } from 'lucide-react-native';
 import { Typography } from './Typography';
@@ -34,13 +33,12 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     const { colors, isDark } = useTheme();
     const [isOpen, setIsOpen] = useState(defaultOpen);
     const [contentHeight, setContentHeight] = useState(0);
+    const [measured, setMeasured] = useState(false);
 
-    // Animated values
-    const height = useSharedValue(defaultOpen ? 1 : 0); // 0 to 1 progress
+    const height = useSharedValue(defaultOpen ? 1 : 0);
     const rotation = useSharedValue(defaultOpen ? 90 : 0);
 
     const toggleOpen = () => {
-        // Native bridge safety delay
         setTimeout(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             const nextState = !isOpen;
@@ -54,27 +52,28 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     };
 
     const animatedContentStyle = useAnimatedStyle(() => {
-        // If contentHeight is 0 (not measured yet), don't show or animate weirdly
-        // But initially we might want to show if defaultOpen.
-        const actualHeight = contentHeight > 0 ? contentHeight : (defaultOpen ? 'auto' : 0);
-
+        'worklet';
         return {
             height: contentHeight === 0
-                ? undefined // Let it auto-layout first to measure
+                ? undefined
                 : (height.value * contentHeight),
             opacity: height.value,
             overflow: 'hidden',
         };
     });
 
-    const iconStyle = useAnimatedStyle(() => ({
-        transform: [{ rotate: `${rotation.value}deg` }],
-    }));
+    const iconStyle = useAnimatedStyle(() => {
+        'worklet';
+        return {
+            transform: [{ rotate: `${rotation.value}deg` }],
+        };
+    });
 
     const onLayout = (event: LayoutChangeEvent) => {
         const h = event.nativeEvent.layout.height;
         if (h > 0 && h !== contentHeight) {
             setContentHeight(h);
+            setMeasured(true);
         }
     };
 
@@ -82,8 +81,8 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         <View
             className="rounded-3xl overflow-hidden mb-3 border"
             style={[{
-                borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF', // matches border-indigo-50 / dark:border-indigo-500/10
-                backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(249, 250, 251, 0.8)' // bg-gray-50/80 dark:bg-zinc-900/60
+                borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF',
+                backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(249, 250, 251, 0.8)'
             }, style]}
         >
             <TouchableOpacity
@@ -99,11 +98,6 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                 </View>
 
                 <View className="flex-row items-center gap-3">
-                    {/* Fade out right element when opening (optional, or keep it?) 
-                Plan said: Preview of selected icon/color shown in header.
-                Ideally this stays visible or fades out if it duplicates content.
-                Let's keep it visible for now as a "summary".
-            */}
                     {!isOpen && rightElement && (
                         <View style={{ opacity: isOpen ? 0 : 1 }}>
                             {rightElement}
@@ -115,16 +109,24 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                 </View>
             </TouchableOpacity>
 
-            {/* 
-         Measurement Strategy:
-         Render children in a hidden absolute view to measure height, 
-         then drive the animated view with that height.
-      */}
-            <View style={{ position: 'absolute', opacity: 0, zIndex: -100, width: '100%', padding: 12 }} pointerEvents="none" onLayout={onLayout}>
-                <View style={contentContainerStyle}>
-                    {children}
+            {/* 测量层：仅在未测量完成时渲染 */}
+            {!measured && (
+                <View
+                    style={{
+                        position: 'absolute',
+                        opacity: 0,
+                        zIndex: -100,
+                        width: '100%',
+                        padding: 12,
+                    }}
+                    pointerEvents="none"
+                    onLayout={onLayout}
+                >
+                    <View style={contentContainerStyle}>
+                        {children}
+                    </View>
                 </View>
-            </View>
+            )}
 
             <Animated.View
                 style={[animatedContentStyle, { borderTopWidth: 1, borderTopColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF' }]}
