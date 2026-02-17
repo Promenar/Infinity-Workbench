@@ -887,9 +887,10 @@ const TypeButton = React.memo(function TypeButton({
 
     const animatedStyle = useAnimatedStyle(() => ({
         backgroundColor: interpolateColor(progress.value, [0, 1], [
-            isDark ? 'rgba(255, 255, 255, 0.05)' : '#f3f4f6',
+            isDark ? 'rgb(255, 255, 255)' : 'rgb(243, 244, 246)',
             colors[500],
         ]),
+        opacity: 0.05 + progress.value * 0.95,
     }));
 
     return (
@@ -927,13 +928,15 @@ const CapabilityTag = React.memo(function CapabilityTag({
 
     const animatedStyle = useAnimatedStyle(() => ({
         backgroundColor: interpolateColor(progress.value, [0, 1], [
-            isDark ? 'rgba(24, 24, 27, 0.5)' : '#f3f4f6',
-            colors.opacity20,
-        ]),
-        borderColor: interpolateColor(progress.value, [0, 1], [
-            isDark ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+            isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)',
             colors[500],
         ]),
+        opacity: 0.15 + progress.value * 0.15,
+        borderColor: interpolateColor(progress.value, [0, 1], [
+            isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)',
+            colors[500],
+        ]),
+        borderWidth: active ? 1.5 : 1,
     }));
 
     return (
@@ -945,7 +948,6 @@ const CapabilityTag = React.memo(function CapabilityTag({
                 paddingHorizontal: 6,
                 paddingVertical: 3,
                 borderRadius: 6,
-                borderWidth: 1,
                 gap: 3,
             }, animatedStyle]}
         >
