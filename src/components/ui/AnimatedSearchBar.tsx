@@ -9,6 +9,7 @@ import Animated, {
 import { Search, X } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../../theme/ThemeProvider';
+import { Borders } from '../../theme/glass';
 
 interface AnimatedSearchBarProps extends TextInputProps {
     value: string;
@@ -35,7 +36,7 @@ export function AnimatedSearchBar({
     const focusedBg = isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50];
     const blurredBg = isDark ? 'rgba(15, 17, 26, 0.4)' : '#f9fafb';
     const focusedBorder = colors[500];
-    const blurredBorder = isDark ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6';
+    const blurredBorder = isDark ? Borders.primary.dark : '#f3f4f6';
 
     useEffect(() => {
         focusProgress.value = withTiming(isFocused ? 1 : 0, { duration: 250 });

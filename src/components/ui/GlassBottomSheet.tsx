@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Modal, StyleSheet, Dimensions, DimensionV
 import { BlurView } from 'expo-blur';
 import { X } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Glass, Shadows } from '../../theme/glass';
+import { Glass, Shadows, Borders } from '../../theme/glass';
 import Animated, {
     FadeIn,
     FadeOut,
@@ -72,7 +72,7 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                         borderRadius: 32,
                         overflow: 'hidden',
                         borderWidth: 1,
-                        borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
+                        borderColor: isDark ? Borders.glass.dark : Borders.glass.light,
                         ...Shadows.lg,
                     }}
                 >

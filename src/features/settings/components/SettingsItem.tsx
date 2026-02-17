@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Colors } from '../../../theme/colors';
+import { Borders } from '../../../theme/glass';
 import * as Haptics from '../../../lib/haptics';
 
 interface SettingsItemProps {
@@ -45,7 +46,7 @@ export function SettingsItem({
         styles.container,
         !isLast && {
           borderBottomWidth: 1,
-          borderBottomColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+          borderBottomColor: isDark ? Borders.primary.dark : Borders.subtle.light,
         },
       ]}
     >

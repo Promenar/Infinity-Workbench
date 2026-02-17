@@ -9,6 +9,7 @@ import Animated, {
 import { ChevronRight } from 'lucide-react-native';
 import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
+import { Borders } from '../../theme/glass';
 import * as Haptics from '../../lib/haptics';
 
 interface CollapsibleSectionProps {
@@ -81,7 +82,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         <View
             className="rounded-3xl overflow-hidden mb-3 border"
             style={[{
-                borderColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF',
+                borderColor: isDark ? Borders.primary.dark : Borders.primary.light,
                 backgroundColor: isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(249, 250, 251, 0.8)'
             }, style]}
         >
@@ -129,7 +130,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
             )}
 
             <Animated.View
-                style={[animatedContentStyle, { borderTopWidth: 1, borderTopColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF' }]}
+                style={[animatedContentStyle, { borderTopWidth: 1, borderTopColor: isDark ? Borders.primary.dark : Borders.primary.light }]}
             >
                 <View className="p-3" style={contentContainerStyle}>
                     {children}

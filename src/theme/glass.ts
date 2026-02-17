@@ -113,3 +113,32 @@ export const Shadows = {
         elevation: 20,
     },
 };
+
+/**
+ * Unified Border Color Constants
+ * 
+ * Standard border colors for consistent styling across the app.
+ */
+export const Borders = {
+    /**
+     * Primary border - Used for cards, sections, containers
+     */
+    primary: {
+        light: '#EEF2FF', // indigo-50
+        dark: 'rgba(99, 102, 241, 0.1)', // indigo-500/10
+    },
+    /**
+     * Subtle border - Used for dividers, subtle separations
+     */
+    subtle: {
+        light: 'rgba(0, 0, 0, 0.05)',
+        dark: 'rgba(255, 255, 255, 0.05)',
+    },
+    /**
+     * Glass border - Used for glassmorphism components
+     */
+    glass: {
+        light: 'rgba(0, 0, 0, 0.08)',
+        dark: 'rgba(255, 255, 255, 0.12)',
+    },
+};

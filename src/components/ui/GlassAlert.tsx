@@ -4,7 +4,7 @@ import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanima
 import { Typography } from './Typography';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Glass, Shadows } from '../../theme/glass';
+import { Glass, Shadows, Borders } from '../../theme/glass';
 import * as Haptics from '../../lib/haptics';
 
 interface GlassAlertProps {
@@ -98,7 +98,7 @@ export const GlassAlert: React.FC<GlassAlertProps> = ({
                             borderRadius: 24,
                             overflow: 'hidden',
                             borderWidth: 1,
-                            borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
+                            borderColor: isDark ? Borders.glass.dark : Borders.glass.light,
                             backgroundColor: 'transparent',
                             ...Shadows.lg,
                         }}
