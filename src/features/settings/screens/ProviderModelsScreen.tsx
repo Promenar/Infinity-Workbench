@@ -885,13 +885,20 @@ const TypeButton = React.memo(function TypeButton({
         progress.value = withTiming(active ? 1 : 0, { duration: 150 });
     }, [active]);
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        backgroundColor: interpolateColor(progress.value, [0, 1], [
-            isDark ? 'rgb(255, 255, 255)' : 'rgb(243, 244, 246)',
-            colors[500],
-        ]),
-        opacity: 0.05 + progress.value * 0.95,
-    }));
+    const animatedStyle = useAnimatedStyle(() => {
+        const activeColor = colors[500];
+        const r = parseInt(activeColor.slice(1, 3), 16);
+        const g = parseInt(activeColor.slice(3, 5), 16);
+        const b = parseInt(activeColor.slice(5, 7), 16);
+        
+        return {
+            backgroundColor: interpolateColor(progress.value, [0, 1], [
+                isDark ? 'rgb(255, 255, 255)' : 'rgb(243, 244, 246)',
+                `rgb(${r}, ${g}, ${b})`,
+            ]),
+            opacity: 0.05 + progress.value * 0.95,
+        };
+    });
 
     return (
         <TouchableOpacity onPress={onPress} style={[{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 }, animatedStyle]}>
@@ -926,18 +933,25 @@ const CapabilityTag = React.memo(function CapabilityTag({
         progress.value = withTiming(active ? 1 : 0, { duration: 150 });
     }, [active]);
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        backgroundColor: interpolateColor(progress.value, [0, 1], [
-            isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)',
-            colors[500],
-        ]),
-        opacity: 0.05 + progress.value * 0.95,
-        borderColor: interpolateColor(progress.value, [0, 1], [
-            isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)',
-            colors[500],
-        ]),
-        borderWidth: active ? 1.5 : 1,
-    }));
+    const animatedStyle = useAnimatedStyle(() => {
+        const activeColor = colors[500];
+        const r = parseInt(activeColor.slice(1, 3), 16);
+        const g = parseInt(activeColor.slice(3, 5), 16);
+        const b = parseInt(activeColor.slice(5, 7), 16);
+        
+        return {
+            backgroundColor: interpolateColor(progress.value, [0, 1], [
+                isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)',
+                `rgb(${r}, ${g}, ${b})`,
+            ]),
+            opacity: 0.05 + progress.value * 0.95,
+            borderColor: interpolateColor(progress.value, [0, 1], [
+                isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)',
+                `rgb(${r}, ${g}, ${b})`,
+            ]),
+            borderWidth: active ? 1.5 : 1,
+        };
+    });
 
     return (
         <TouchableOpacity
