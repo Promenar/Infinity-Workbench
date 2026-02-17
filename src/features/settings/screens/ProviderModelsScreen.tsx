@@ -880,22 +880,22 @@ const TypeButton = React.memo(function TypeButton({
 }) {
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
+    
+    const activeColor = colors[500];
+    const r = parseInt(activeColor.slice(1, 3), 16);
+    const g = parseInt(activeColor.slice(3, 5), 16);
+    const b = parseInt(activeColor.slice(5, 7), 16);
+    const activeColorRgb = `rgb(${r}, ${g}, ${b})`;
+    
+    const inactiveColor = isDark ? 'rgb(255, 255, 255)' : 'rgb(243, 244, 246)';
 
     useEffect(() => {
         progress.value = withTiming(active ? 1 : 0, { duration: 150 });
     }, [active]);
 
     const animatedStyle = useAnimatedStyle(() => {
-        const activeColor = colors[500];
-        const r = parseInt(activeColor.slice(1, 3), 16);
-        const g = parseInt(activeColor.slice(3, 5), 16);
-        const b = parseInt(activeColor.slice(5, 7), 16);
-        
         return {
-            backgroundColor: interpolateColor(progress.value, [0, 1], [
-                isDark ? 'rgb(255, 255, 255)' : 'rgb(243, 244, 246)',
-                `rgb(${r}, ${g}, ${b})`,
-            ]),
+            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveColor, activeColorRgb]),
             opacity: 0.05 + progress.value * 0.95,
         };
     });
@@ -928,27 +928,25 @@ const CapabilityTag = React.memo(function CapabilityTag({
 }) {
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
+    
+    const activeColor = colors[500];
+    const r = parseInt(activeColor.slice(1, 3), 16);
+    const g = parseInt(activeColor.slice(3, 5), 16);
+    const b = parseInt(activeColor.slice(5, 7), 16);
+    const activeColorRgb = `rgb(${r}, ${g}, ${b})`;
+    
+    const inactiveBg = isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)';
+    const inactiveBorder = isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)';
 
     useEffect(() => {
         progress.value = withTiming(active ? 1 : 0, { duration: 150 });
     }, [active]);
 
     const animatedStyle = useAnimatedStyle(() => {
-        const activeColor = colors[500];
-        const r = parseInt(activeColor.slice(1, 3), 16);
-        const g = parseInt(activeColor.slice(3, 5), 16);
-        const b = parseInt(activeColor.slice(5, 7), 16);
-        
         return {
-            backgroundColor: interpolateColor(progress.value, [0, 1], [
-                isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)',
-                `rgb(${r}, ${g}, ${b})`,
-            ]),
+            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveBg, activeColorRgb]),
             opacity: 0.05 + progress.value * 0.95,
-            borderColor: interpolateColor(progress.value, [0, 1], [
-                isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)',
-                `rgb(${r}, ${g}, ${b})`,
-            ]),
+            borderColor: interpolateColor(progress.value, [0, 1], [inactiveBorder, activeColorRgb]),
             borderWidth: active ? 1.5 : 1,
         };
     });
