@@ -253,26 +253,39 @@ export default function ProviderFormScreen() {
         transform: [{ scale: saveScale.value }],
     }));
 
-    const nameFocusStyle = useAnimatedStyle(() => ({
-        borderColor: interpolateColor(nameFocusProgress.value, [0, 1], [
-            isDark ? '#27272a' : '#e5e7eb',
-            colors[500],
-        ]),
-    }));
+    // 预计算颜色值，避免在 worklet 中访问 JS 线程变量
+    const inputBorderInactive = isDark ? '#27272a' : '#e5e7eb';
+    const inputBorderActive = colors[500];
 
-    const apiKeyFocusStyle = useAnimatedStyle(() => ({
-        borderColor: interpolateColor(apiKeyFocusProgress.value, [0, 1], [
-            isDark ? '#27272a' : '#e5e7eb',
-            colors[500],
-        ]),
-    }));
+    const nameFocusStyle = useAnimatedStyle(() => {
+        'worklet';
+        return {
+            borderColor: interpolateColor(nameFocusProgress.value, [0, 1], [
+                inputBorderInactive,
+                inputBorderActive,
+            ]),
+        };
+    });
 
-    const baseUrlFocusStyle = useAnimatedStyle(() => ({
-        borderColor: interpolateColor(baseUrlFocusProgress.value, [0, 1], [
-            isDark ? '#27272a' : '#e5e7eb',
-            colors[500],
-        ]),
-    }));
+    const apiKeyFocusStyle = useAnimatedStyle(() => {
+        'worklet';
+        return {
+            borderColor: interpolateColor(apiKeyFocusProgress.value, [0, 1], [
+                inputBorderInactive,
+                inputBorderActive,
+            ]),
+        };
+    });
+
+    const baseUrlFocusStyle = useAnimatedStyle(() => {
+        'worklet';
+        return {
+            borderColor: interpolateColor(baseUrlFocusProgress.value, [0, 1], [
+                inputBorderInactive,
+                inputBorderActive,
+            ]),
+        };
+    });
 
     const handlePresetSelect = useCallback((presetKey: string) => {
         const preset = PROVIDER_PRESETS[presetKey];

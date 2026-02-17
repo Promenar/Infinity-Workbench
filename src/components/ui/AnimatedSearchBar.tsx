@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, TextInputProps } from 'react-native';
 import Animated, {
     useAnimatedStyle,
-    useAnimatedProps,
     withTiming,
     useSharedValue,
     interpolateColor,
@@ -19,8 +18,6 @@ interface AnimatedSearchBarProps extends TextInputProps {
     containerStyle?: any;
 }
 
-const AnimatedSearchIcon = Animated.createAnimatedComponent(Search);
-
 export function AnimatedSearchBar({
     value,
     onChangeText,
@@ -34,16 +31,18 @@ export function AnimatedSearchBar({
 
     const focusProgress = useSharedValue(0);
 
+    // 预计算颜色值，避免在 worklet 中访问 JS 线程变量
+    const focusedBg = isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50];
+    const blurredBg = isDark ? 'rgba(15, 17, 26, 0.4)' : '#f9fafb';
+    const focusedBorder = colors[500];
+    const blurredBorder = isDark ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6';
+
     useEffect(() => {
         focusProgress.value = withTiming(isFocused ? 1 : 0, { duration: 250 });
     }, [isFocused]);
 
     const animatedContainerStyle = useAnimatedStyle(() => {
-        const focusedBg = isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50];
-        const blurredBg = isDark ? 'rgba(15, 17, 26, 0.4)' : '#f9fafb';
-        const focusedBorder = colors[500];
-        const blurredBorder = isDark ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6';
-
+        'worklet';
         return {
             backgroundColor: interpolateColor(
                 focusProgress.value,
@@ -59,6 +58,7 @@ export function AnimatedSearchBar({
     });
 
     const animatedIconStyle = useAnimatedStyle(() => {
+        'worklet';
         return {
             opacity: 0.7 + focusProgress.value * 0.3,
         };

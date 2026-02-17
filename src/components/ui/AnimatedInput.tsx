@@ -35,6 +35,12 @@ export const AnimatedInput = forwardRef<TextInput, AnimatedInputProps>(({
     // Animation value: 0 = blurred, 1 = focused
     const focusProgress = useSharedValue(0);
 
+    // 预计算颜色值，避免在 worklet 中访问 JS 线程变量
+    const focusedBg = isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50];
+    const blurredBg = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0,0,0,0.02)';
+    const focusedBorder = colors[500];
+    const blurredBorder = isDark ? 'rgba(255, 255, 255, 0.1)' : 'transparent';
+
     useEffect(() => {
         focusProgress.value = withTiming(isFocused ? 1 : 0, { duration: 300 });
     }, [isFocused]);
@@ -50,18 +56,7 @@ export const AnimatedInput = forwardRef<TextInput, AnimatedInputProps>(({
     }, []);
 
     const animatedStyle = useAnimatedStyle(() => {
-        // Default colors matching AnimatedSearchBar for consistency
-        // But allow override via containerStyle if possible? 
-        // Actually, we want to ENFORCE the "same effect" (theme color tint).
-
-        // Background: Transparent or slight gray -> Tinted
-        const focusedBg = isDark ? 'rgba(99, 102, 241, 0.15)' : colors[50];
-        const blurredBg = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0,0,0,0.02)'; // Subtle default
-
-        // Border: Transparent or light gray -> Theme Color
-        const focusedBorder = colors[500];
-        const blurredBorder = isDark ? 'rgba(255, 255, 255, 0.1)' : 'transparent';
-
+        'worklet';
         return {
             backgroundColor: interpolateColor(
                 focusProgress.value,

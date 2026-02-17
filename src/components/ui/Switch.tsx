@@ -5,7 +5,6 @@ import Animated, {
   useSharedValue,
   withSpring,
   interpolateColor,
-  withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '../../theme/ThemeProvider';
 import * as Haptics from '../../lib/haptics';
@@ -23,6 +22,14 @@ export const Switch = React.memo(({ value, onValueChange, disabled = false }: Sw
   const progress = useSharedValue(value ? 1 : 0);
   const isMounted = useSharedValue(false);
 
+  // 预计算颜色值，避免在 worklet 中访问 JS 线程变量
+  const trackBgInactive = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
+  const trackBgActive = isDark ? colors.opacity30 : colors.opacity20;
+  const trackBorderInactive = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)';
+  const trackBorderActive = isDark ? colors.opacity30 : colors.opacity20;
+  const thumbBgInactive = isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.25)';
+  const thumbBgActive = colors[500];
+
   useEffect(() => {
     // 性能优化：首次挂载建议直接设置值，避免 spring 导致初次渲染出现微小位移/闪烁
     if (!isMounted.value) {
@@ -33,9 +40,9 @@ export const Switch = React.memo(({ value, onValueChange, disabled = false }: Sw
 
     // 随后的变化使用弹簧动画
     progress.value = withSpring(value ? 1 : 0, {
-      damping: 25, // 略微增加阻尼，减少视觉抖动
+      damping: 25,
       stiffness: 250,
-      mass: 0.5, // 减小质量，让反馈更灵敏
+      mass: 0.5,
     });
   }, [value]);
 
@@ -50,34 +57,18 @@ export const Switch = React.memo(({ value, onValueChange, disabled = false }: Sw
   };
 
   const animatedTrackStyle = useAnimatedStyle(() => {
+    'worklet';
     return {
-      backgroundColor: interpolateColor(
-        progress.value,
-        [0, 1],
-        isDark
-          ? ['rgba(255, 255, 255, 0.1)', colors.opacity30]
-          : ['rgba(0, 0, 0, 0.05)', colors.opacity20],
-      ),
-      borderColor: interpolateColor(
-        progress.value,
-        [0, 1],
-        isDark
-          ? ['rgba(255, 255, 255, 0.15)', colors.opacity30]
-          : ['rgba(0, 0, 0, 0.1)', colors.opacity20],
-      ),
+      backgroundColor: interpolateColor(progress.value, [0, 1], [trackBgInactive, trackBgActive]),
+      borderColor: interpolateColor(progress.value, [0, 1], [trackBorderInactive, trackBorderActive]),
     };
   });
 
   const animatedThumbStyle = useAnimatedStyle(() => {
+    'worklet';
     return {
       transform: [{ translateX: progress.value * 20 }],
-      backgroundColor: interpolateColor(
-        progress.value,
-        [0, 1],
-        isDark
-          ? ['rgba(255, 255, 255, 0.4)', colors[500]]
-          : ['rgba(0, 0, 0, 0.25)', colors[500]],
-      ),
+      backgroundColor: interpolateColor(progress.value, [0, 1], [thumbBgInactive, thumbBgActive]),
     };
   });
 
