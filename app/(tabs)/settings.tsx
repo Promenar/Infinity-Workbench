@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform, TextInput, Linking } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -56,6 +56,7 @@ import {
   Palette,
   Image as ImageIcon,
   User, // New Icon
+  Github,
 } from 'lucide-react-native';
 import { AgentAvatar } from '../../src/components/chat/AgentAvatar';
 import * as ImagePicker from 'expo-image-picker';
@@ -842,11 +843,36 @@ export default function SettingsScreen() {
           </Animated.View>
         </View>
 
-        <View style={{ marginTop: 32, alignItems: 'center', opacity: 0.3 }}>
+        {/* 底部版权信息与GitHub链接 */}
+        <View style={{ marginTop: 32, alignItems: 'center' }}>
           <View className="items-center pb-8 pt-4">
-            <Text className={`text-xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
+            <Text className={`text-xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`} style={{ opacity: 0.6 }}>
               Nexara AI • Project Narcis
             </Text>
+            {/* GitHub 刻印风格图标链接 */}
+            <TouchableOpacity
+              onPress={() => {
+                setTimeout(() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  Linking.openURL('https://github.com/NarcisWL/Nexara');
+                }, 10);
+              }}
+              style={{
+                marginTop: 12,
+                padding: 8,
+                borderRadius: 8,
+                backgroundColor: isDark ? 'rgba(39, 39, 42, 0.6)' : 'rgba(243, 244, 246, 0.8)',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(63, 63, 70, 0.5)' : 'rgba(209, 213, 219, 0.5)',
+              }}
+              activeOpacity={0.7}
+            >
+              <Github
+                size={20}
+                color={isDark ? '#71717a' : '#9ca3af'}
+                strokeWidth={1.5}
+              />
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
