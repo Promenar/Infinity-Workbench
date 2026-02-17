@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 
@@ -42,6 +42,19 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
   const { providers } = useApiStore();
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 防抖搜索
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedQuery(text);
+    }, 150);
+  }, []);
 
   const allModels = useMemo(() => {
     const models: (ModelConfig & { providerName: string })[] = [];
@@ -75,15 +88,15 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
   }, [providers, filterType]);
 
   const filteredModels = useMemo(() => {
-    if (!searchQuery) return allModels;
-    const q = searchQuery.toLowerCase();
+    if (!debouncedQuery) return allModels;
+    const q = debouncedQuery.toLowerCase();
     return allModels.filter(
       (m) =>
         m.name.toLowerCase().includes(q) ||
         m.id.toLowerCase().includes(q) ||
         m.providerName.toLowerCase().includes(q),
     );
-  }, [allModels, searchQuery]);
+  }, [allModels, debouncedQuery]);
 
   const formatContextLength = (length?: number) => {
     if (!length) return null;
@@ -276,7 +289,7 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
             placeholder={t.settings.modelSettings.searchPlaceholder}
             placeholderTextColor="#9ca3af"
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={handleSearchChange}
             style={{ flex: 1, marginLeft: 10, fontSize: 16, color: isDark ? '#fff' : '#111' }}
           />
         </View>

@@ -128,7 +128,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
     setLoading(true);
     setLastError(null);
     try {
-      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 10);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await ContextManager.checkAndSummarize(sessionId, session.messages, undefined, {
         maxMessages: 20,
         summarizeThreshold: 0,
@@ -154,7 +154,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
 
   const handleDeleteSummary = async (id: string) => {
     try {
-      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await ContextManager.deleteSummary(id);
       await loadData();
     } catch (e) {
@@ -198,7 +198,7 @@ export const ContextManagementPanel: React.FC<ContextManagementPanelProps> = ({ 
               {/* Mini Refresh Btn */}
               <TouchableOpacity
                 onPress={() => {
-                  setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 10);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   loadData();
                 }}
                 disabled={loading}
