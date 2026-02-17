@@ -931,7 +931,7 @@ const CapabilityTag = React.memo(function CapabilityTag({
             isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)',
             colors[500],
         ]),
-        opacity: 0.15 + progress.value * 0.15,
+        opacity: 0.05 + progress.value * 0.95,
         borderColor: interpolateColor(progress.value, [0, 1], [
             isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)',
             colors[500],
