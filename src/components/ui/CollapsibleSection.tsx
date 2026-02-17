@@ -9,7 +9,7 @@ import Animated, {
 import { ChevronRight } from 'lucide-react-native';
 import { Typography } from './Typography';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Borders } from '../../theme/glass';
+import { Borders, Spacing } from '../../theme/glass';
 import * as Haptics from '../../lib/haptics';
 
 interface CollapsibleSectionProps {
@@ -118,7 +118,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                         opacity: 0,
                         zIndex: -100,
                         width: '100%',
-                        padding: 12,
+                        padding: Spacing[3],
                     }}
                     pointerEvents="none"
                     onLayout={onLayout}

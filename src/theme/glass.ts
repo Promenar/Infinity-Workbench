@@ -142,3 +142,45 @@ export const Borders = {
         dark: 'rgba(255, 255, 255, 0.12)',
     },
 };
+
+/**
+ * Unified Spacing Constants
+ * 
+ * Standard spacing values following Tailwind CSS convention.
+ * Each unit = 4px
+ */
+export const Spacing = {
+    0: 0,
+    0.5: 2,
+    1: 4,
+    1.5: 6,
+    2: 8,
+    2.5: 10,
+    3: 12,
+    3.5: 14,
+    4: 16,
+    5: 20,
+    6: 24,
+    7: 28,
+    8: 32,
+    9: 36,
+    10: 40,
+    11: 44,
+    12: 48,
+    14: 56,
+    16: 64,
+    20: 80,
+    24: 96,
+} as const;
+
+/**
+ * Common spacing presets for convenience
+ */
+export const SpacingPresets = {
+    xs: Spacing[1],    // 4px
+    sm: Spacing[2],    // 8px
+    md: Spacing[3],    // 12px
+    lg: Spacing[4],    // 16px
+    xl: Spacing[6],    // 24px
+    xxl: Spacing[8],   // 32px
+} as const;

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Colors } from '../../../theme/colors';
-import { Borders } from '../../../theme/glass';
+import { Borders, Spacing } from '../../../theme/glass';
 import * as Haptics from '../../../lib/haptics';
 
 interface SettingsItemProps {
@@ -78,9 +78,9 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 11, // Ultra Compact: 13->11
-    minHeight: 44, // Ultra Compact: 48->44
+    paddingHorizontal: Spacing[4],
+    paddingVertical: 11,
+    minHeight: 44,
   },
   iconContainer: {
     width: 22,
@@ -89,22 +89,22 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    marginLeft: 14, // Increased spacing 12 -> 14
-    marginRight: 8,
+    marginLeft: Spacing[3.5],
+    marginRight: Spacing[2],
     justifyContent: 'center',
   },
   title: {
-    fontSize: 15, // Standard: 15px (down from 16)
-    fontWeight: '600', // Medium
-    letterSpacing: -0.2, // Tighter tracking
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
   subtitle: {
-    fontSize: 12.5, // Standard: 12.5px
-    marginTop: 2, // Tighter
+    fontSize: 12.5,
+    marginTop: Spacing[0.5],
     opacity: 0.8,
   },
   chevron: {
-    marginLeft: 4,
+    marginLeft: Spacing[1],
     opacity: 0.5,
   },
 });

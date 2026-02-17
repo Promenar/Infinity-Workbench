@@ -7,7 +7,7 @@ import Animated, {
   interpolateColor,
 } from 'react-native-reanimated';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Shadows } from '../../theme/glass';
+import { Shadows, Spacing } from '../../theme/glass';
 import * as Haptics from '../../lib/haptics';
 
 interface SwitchProps {
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 1.5,
-    padding: 2,
+    padding: Spacing[0.5],
   },
   thumb: {
     width: 22,

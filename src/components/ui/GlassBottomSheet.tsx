@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Modal, StyleSheet, Dimensions, DimensionV
 import { BlurView } from 'expo-blur';
 import { X } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Glass, Shadows, Borders } from '../../theme/glass';
+import { Glass, Shadows, Borders, Spacing } from '../../theme/glass';
 import Animated, {
     FadeIn,
     FadeOut,
@@ -62,13 +62,13 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                     entering={SlideInDown.duration(280).easing(Easing.out(Easing.quad))}
                     exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.quad))}
                     style={{
-                        marginHorizontal: 12,
-                        marginBottom: Math.max(insets.bottom, 16),
+                        marginHorizontal: Spacing[3],
+                        marginBottom: Math.max(insets.bottom, Spacing[4]),
                         height: height === 'auto' ? undefined : height,
                         minHeight: height === 'auto' ? 100 : undefined,
 
 
-                        backgroundColor: 'transparent', // ✅ Changed: Removed specific background color
+                        backgroundColor: 'transparent',
                         borderRadius: 32,
                         overflow: 'hidden',
                         borderWidth: 1,
@@ -77,12 +77,12 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                     }}
                 >
                     <BlurView
-                        intensity={isDark ? Glass.Header.intensity : Glass.Header.intensity} // ✅ Changed: Use Header intensity (stronger)
-                        style={{ flex: height === 'auto' ? undefined : 1, paddingTop: 24 }}
-                        tint={isDark ? Glass.Header.tint.dark : Glass.Header.tint.light} // ✅ Changed: Use Header tint
+                        intensity={isDark ? Glass.Header.intensity : Glass.Header.intensity}
+                        style={{ flex: height === 'auto' ? undefined : 1, paddingTop: Spacing[6] }}
+                        tint={isDark ? Glass.Header.tint.dark : Glass.Header.tint.light}
                         experimentalBlurMethod='dimezisBlurView'
                     >
-                        {/* ✅ Added: Internal Overlay for consistent "frosted" look */}
+                        {/* Internal Overlay for consistent "frosted" look */}
                         <View
                             style={{
                                 ...StyleSheet.absoluteFillObject,
@@ -97,8 +97,8 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                                 flexDirection: 'row',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
-                                paddingHorizontal: 24,
-                                marginBottom: 20,
+                                paddingHorizontal: Spacing[6],
+                                marginBottom: Spacing[5],
                             }}
                         >
                             <View>
@@ -117,7 +117,7 @@ export const GlassBottomSheet: React.FC<GlassBottomSheetProps> = ({
                                         style={{
                                             fontSize: 13,
                                             color: isDark ? '#a1a1aa' : '#71717a',
-                                            marginTop: 2,
+                                            marginTop: Spacing[0.5],
                                             fontWeight: '500',
                                         }}
                                     >

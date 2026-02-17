@@ -13,7 +13,7 @@ import { Typography } from './Typography';
 import { clsx } from 'clsx';
 import * as Haptics from '../../lib/haptics';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Shadows } from '../../theme/glass';
+import { Shadows, Spacing } from '../../theme/glass';
 
 export interface ContextMenuItem {
   label: string;
@@ -216,12 +216,12 @@ export function ContextMenu({ children, items, triggerOnPress = false }: Context
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     height: MENU_ITEM_HEIGHT,
-                    paddingHorizontal: 16,
+                    paddingHorizontal: Spacing[4],
                     borderBottomWidth: index < items.length - 1 ? 0.5 : 0,
                     borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                   }}
                 >
-                  <View style={{ flex: 1, marginRight: 12 }}>
+                  <View style={{ flex: 1, marginRight: Spacing[3] }}>
                     <Typography
                       style={{
                         fontSize: 15,
