@@ -171,3 +171,82 @@ export function resolveModelIdToName(modelId: string): string {
   // 3. Fallback: Return original ID
   return modelId;
 }
+
+/**
+ * 高参数模型关键词列表
+ * 这些模型通常具有较强的工具调用能力，默认开启智能技能
+ */
+const HIGH_CAPABILITY_KEYWORDS = [
+  'gpt-4', 'gpt-4o', 'o1', 'o3',
+  'claude-3-5', 'claude-3.5', 'claude-4',
+  'gemini-2', 'gemini-1.5-pro', 'gemini-1.5-flash',
+  'deepseek-v3', 'deepseek-r1', 'deepseek-reasoner',
+  'glm-4.5', 'glm-4.6', 'glm-4.7', 'glm-4-plus',
+  'qwen-max', 'qwen-plus', 'qwen2.5-72b', 'qwen2.5-32b',
+  'kimi', 'moonshot',
+  'llama-3.1-405b', 'llama-3.1-70b', 'llama-3-70b',
+  'mistral-large',
+];
+
+/**
+ * 中低参数模型关键词列表
+ * 这些模型工具调用能力较弱或未知，默认关闭智能技能
+ */
+const LOW_CAPABILITY_KEYWORDS = [
+  'gpt-3.5', 'gpt-3',
+  'qwen-turbo', 'qwen2.5-7b', 'qwen2.5-14b',
+  'doubao-lite', 'doubao-pro-4k',
+  'glm-3', 'glm-4-flash',
+  'yi-6b', 'yi-medium',
+  'baichuan-2', 'baichuan-3',
+  'ernie-speed', 'ernie-turbo',
+  'llama-2-7b', 'llama-3-8b',
+  'mistral-small', 'mistral-7b',
+];
+
+/**
+ * 判断模型是否为高参数模型（适合开启智能技能）
+ * 
+ * 判断逻辑：
+ * 1. 推理模型（reasoning）默认为高参数
+ * 2. 匹配高参数关键词列表
+ * 3. 排除中低参数关键词列表
+ * 4. 未知模型默认返回 false（保守策略）
+ * 
+ * @param modelId 模型 ID
+ * @returns 是否为高参数模型
+ */
+export function isHighCapabilityModel(modelId: string): boolean {
+  if (!modelId) return false;
+  
+  const lowerId = modelId.toLowerCase();
+  
+  // 1. 推理模型默认为高参数
+  const spec = findModelSpec(modelId);
+  if (spec?.type === 'reasoning' || spec?.capabilities?.reasoning) {
+    return true;
+  }
+  
+  // 2. 检查高参数关键词
+  for (const keyword of HIGH_CAPABILITY_KEYWORDS) {
+    if (lowerId.includes(keyword.toLowerCase())) {
+      // 但需要排除中低参数关键词（如 qwen-turbo 包含 qwen）
+      for (const lowKeyword of LOW_CAPABILITY_KEYWORDS) {
+        if (lowerId.includes(lowKeyword.toLowerCase())) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+  
+  // 3. 检查中低参数关键词
+  for (const keyword of LOW_CAPABILITY_KEYWORDS) {
+    if (lowerId.includes(keyword.toLowerCase())) {
+      return false;
+    }
+  }
+  
+  // 4. 未知模型默认关闭（保守策略）
+  return false;
+}

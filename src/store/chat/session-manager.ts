@@ -10,6 +10,7 @@ import { SessionRepository } from '../../lib/db/session-repository';
 import { db } from '../../lib/db';
 
 import { useMcpStore } from '../../store/mcp-store';
+import { isHighCapabilityModel } from '../../lib/llm/model-utils';
 
 export const createSessionManager = (context: ManagerContext): SessionManager => {
     const { get, set } = context;
@@ -22,12 +23,20 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
                 .filter(s => s.enabled && s.defaultIncluded)
                 .map(s => s.id);
 
+            // 根据模型能力自动设置 toolsEnabled 默认值
+            const modelId = session.modelId;
+            const toolsEnabled = modelId ? isHighCapabilityModel(modelId) : false;
+
             const enrichedSession: Session = {
                 ...session,
                 executionMode: session.executionMode || 'semi',
                 loopStatus: session.loopStatus || 'completed',
                 activeMcpServerIds: session.activeMcpServerIds || defaultMcpServers,
                 activeSkillIds: session.activeSkillIds || [],
+                options: {
+                    ...session.options,
+                    toolsEnabled: session.options?.toolsEnabled ?? toolsEnabled,
+                },
             };
 
             // 1. 写入 SQLite
@@ -159,14 +168,20 @@ export const createSessionManager = (context: ManagerContext): SessionManager =>
         },
 
         updateSessionModel: async (id: SessionId, modelId: string | undefined) => {
+            const session = get().sessions.find((s) => s.id === id);
+            
+            // 根据模型能力自动设置 toolsEnabled 默认值
+            const toolsEnabled = modelId ? isHighCapabilityModel(modelId) : false;
+            const newOptions = { ...session?.options, toolsEnabled };
+            
             try {
-                await SessionRepository.update(id, { modelId });
+                await SessionRepository.update(id, { modelId, options: newOptions });
             } catch (e) {
                 console.warn('[SessionManager] DB update model failed:', e);
             }
 
             set((state) => ({
-                sessions: state.sessions.map((s) => (s.id === id ? { ...s, modelId } : s)),
+                sessions: state.sessions.map((s) => (s.id === id ? { ...s, modelId, options: newOptions } : s)),
             }));
         },
 

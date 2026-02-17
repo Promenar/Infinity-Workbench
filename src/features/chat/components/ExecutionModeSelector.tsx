@@ -110,7 +110,7 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                 onClose={() => setVisible(false)}
                 title={t.settings.toolbox.title}
                 subtitle={t.settings.toolbox.subtitle}
-                height="80%"
+                height="auto"
             >
                 <ScrollView
                     showsVerticalScrollIndicator={false}
@@ -229,10 +229,10 @@ export const ExecutionModeSelector = ({ sessionId }: ExecutionModeSelectorProps)
                                         borderRadius: 12,
                                         backgroundColor: isDark ? colors[500] : '#fff',
                                         shadowColor: '#000',
-                                        shadowOffset: { width: 0, height: 2 },
-                                        shadowOpacity: 0.1,
-                                        shadowRadius: 4,
-                                        elevation: 2
+                                        shadowOffset: { width: 0, height: isDark ? 2 : 0 },
+                                        shadowOpacity: isDark ? 0.15 : 0,
+                                        shadowRadius: isDark ? 4 : 0,
+                                        elevation: isDark ? 2 : 0
                                     },
                                     animatedIndicatorStyle
                                 ]}
