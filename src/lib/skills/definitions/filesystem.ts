@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Skill } from '../../../types/skills';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
+import { auditService } from '../../services/audit-service';
 
 // 🛡️ 安全沙箱：限制所有操作在 DocumentDirectory/agent_sandbox/ 内
 const RAW_SANDBOX_ROOT = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory;
@@ -117,6 +118,17 @@ export const WriteFileSkill: Skill = {
                 size: params.content.length
             });
 
+            await auditService.log({
+                action: 'write',
+                resourceType: 'file',
+                resourcePath: params.path,
+                sessionId: context?.sessionId,
+                agentId: context?.agentId,
+                skillId: 'write_file',
+                status: 'success',
+                metadata: { size: params.content.length, encoding: params.encoding || 'utf8' },
+            });
+
             return {
                 id: `write_${Date.now()}`,
                 content: `Successfully wrote ${params.content.length} characters to "${params.path}".`,
@@ -128,6 +140,17 @@ export const WriteFileSkill: Skill = {
                 }
             };
         } catch (e: any) {
+            await auditService.log({
+                action: 'write',
+                resourceType: 'file',
+                resourcePath: params.path,
+                sessionId: context?.sessionId,
+                agentId: context?.agentId,
+                skillId: 'write_file',
+                status: 'error',
+                errorMessage: e.message,
+            });
+
             return {
                 id: `write_err_${Date.now()}`,
                 content: `Failed to write file "${params.path}": ${e.message}`,
@@ -169,6 +192,17 @@ export const ReadFileSkill: Skill = {
                 encoding: encodingType
             });
 
+            await auditService.log({
+                action: 'read',
+                resourceType: 'file',
+                resourcePath: params.path,
+                sessionId: context?.sessionId,
+                agentId: context?.agentId,
+                skillId: 'read_file',
+                status: 'success',
+                metadata: { size: content.length },
+            });
+
             return {
                 id: `read_${Date.now()}`,
                 content: content,
@@ -179,6 +213,17 @@ export const ReadFileSkill: Skill = {
                 }
             };
         } catch (e: any) {
+            await auditService.log({
+                action: 'read',
+                resourceType: 'file',
+                resourcePath: params.path,
+                sessionId: context?.sessionId,
+                agentId: context?.agentId,
+                skillId: 'read_file',
+                status: 'error',
+                errorMessage: e.message,
+            });
+
             return {
                 id: `read_err_${Date.now()}`,
                 content: `Failed to read file "${params.path}": ${e.message}`,
@@ -230,6 +275,17 @@ export const ListDirSkill: Skill = {
                 `[${item.type === 'directory' ? 'DIR ' : 'FILE'}] ${item.name} ${item.type === 'file' ? `(${item.size} bytes)` : ''}`
             ).join('\n');
 
+            await auditService.log({
+                action: 'list',
+                resourceType: 'file',
+                resourcePath: targetPath || './',
+                sessionId: context?.sessionId,
+                agentId: context?.agentId,
+                skillId: 'list_directory',
+                status: 'success',
+                metadata: { itemCount: details.length },
+            });
+
             return {
                 id: `ls_${Date.now()}`,
                 content: output || '(Empty Directory)',
@@ -240,6 +296,17 @@ export const ListDirSkill: Skill = {
                 }
             };
         } catch (e: any) {
+            await auditService.log({
+                action: 'list',
+                resourceType: 'file',
+                resourcePath: params.path || './',
+                sessionId: context?.sessionId,
+                agentId: context?.agentId,
+                skillId: 'list_directory',
+                status: 'error',
+                errorMessage: e.message,
+            });
+
             return {
                 id: `ls_err_${Date.now()}`,
                 content: `Failed to list directory "${params.path || './'}": ${e.message}`,

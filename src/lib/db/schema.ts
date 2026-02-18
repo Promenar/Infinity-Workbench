@@ -299,6 +299,33 @@ export const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_vectorization_tasks_status ON vectorization_tasks(status);
     `);
 
+    // 12. Audit Logs (Security & Compliance)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY NOT NULL,
+        action TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_path TEXT,
+        session_id TEXT,
+        agent_id TEXT,
+        skill_id TEXT,
+        status TEXT NOT NULL,
+        error_message TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      );
+    `);
+
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_session ON audit_logs(session_id);
+    `);
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
+    `);
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+    `);
+
     console.log('[DB] Tables created successfully');
   } catch (e) {
     console.error('[DB] Error creating tables:', e);

@@ -3,7 +3,7 @@
     "name": "Nexara",
     "slug": "nexara",
     "scheme": "nexara",
-    "version": "1.2.73",
+    "version": "1.2.74",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -25,7 +25,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.promenar.nexara",
-      "versionCode": 135,
+      "versionCode": 136,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.RECORD_AUDIO",
