@@ -1,106 +1,160 @@
-# NeuralFlow
-
-> **State-of-the-Art AI client with RAG knowledge base & multi-model support.**
-> 
-> **极致打磨的 AI 客户端，融合 RAG 知识库与多模型对话，兼顾日常交流和专业知识管理。**
+# Nexara
 
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Android-green.svg)
-![Expo](https://img.shields.io/badge/Expo-SDK%2052-black.svg)
+![Expo](https://img.shields.io/badge/Expo-SDK%2054-black.svg)
+![React Native](https://img.shields.io/badge/React_Native-0.81-61dafb.svg)
 
 ---
 
-## 📖 Introduction / 项目简介
+## English
 
-NeuralFlow is a commercial-grade AI assistant designed for Android users who demand privacy, efficiency, and knowledge depth. Unlike comprehensive cloud-based solutions, NeuralFlow operates as a local-first client that connects to various AI providers (OpenAI, Gemini, DeepSeek, etc.) while building a private, secure knowledge base on your device.
+Nexara is an Android AI assistant client with a focus on local-first data management and multi-provider model access. It stores conversations, knowledge bases, and vector embeddings entirely on-device using SQLite, while connecting to 12+ cloud AI providers for inference.
 
-NeuralFlow 是一款专为追求隐私、效率和深度知识管理的 Android 用户打造的商业级 AI 助手。与纯云端方案不同，NeuralFlow 采用"本地优先"架构，在连接主流 AI 服务商（OpenAI, Gemini, DeepSeek 等）的同时，在您的设备上构建私有、安全的 RAG 知识库。
+### Core Features
 
-## ✨ Key Features / 核心特性
+**Multi-Provider Chat**
 
-### 🤖 Multi-Model Chat / 多模型对话
-- **Streaming Response**: Real-time token streaming with 60fps rendering.
-- **Provider Agnostic**: Support for OpenAI, Anthropic, Gemini, VertexAI, DeepSeek, SiliconFlow, and Ollama.
-- **Context Management**: Smart sliding windows and manual context clearing.
-- **Visuals**: Markdown rendering, LaTeX support, and code syntax highlighting.
-- **流式响应**: 实时流式传输，60fps 丝滑渲染。
-- **多服务商支持**: 接入 OpenAI, Gemini, DeepSeek, Local Ollama 等 10+ 主流模型。
-- **视觉增强**: 完美支持 Markdown、LaTeX 公式及代码高亮。
+Connect to OpenAI, Anthropic, Gemini, Vertex AI, DeepSeek, Moonshot, Zhipu, SiliconFlow, GitHub Copilot, Cloudflare, and any OpenAI-compatible endpoint. Supports streaming responses, tool calling, image generation, and reasoning models (Chain of Thought).
 
-### 🧠 RAG Architecture / RAG 知识引擎
-- **Local Vector Store**: Built-in SQLite + Vector extension for high-performance retrieval.
-- **Hybrid Search**: Semantic search combined with keyword matching.
-- **Knowledge Graph**: (Beta) Extract entities and relationships from your documents to visualize connections.
-- **Privacy First**: Your documents never leave your device (unless you choose cloud sync).
-- **本地向量库**: 内置 SQLite + 向量扩展，无需外部数据库。
-- **混合检索**: 语义检索 + 关键词匹配，精准定位信息。
-- **知识图谱**: (Beta) 自动抽取实体与关系，可视化知识脉络。
-- **隐私优先**: 文档数据完全本地化存储。
+**RAG Knowledge Engine**
 
-### 🦸 Super Assistant / 超级助手
-- **Global Awareness**: A persistent agent that can search across all your sessions and documents.
-- **Customizable FAB**: 5+ animation modes (Nebula, Quantum, Glitch...) and dynamic colors.
-- **One-Tap RAG**: Instantly summon knowledge from anywhere in the app.
-- **全局感知**: 可跨会话、跨文档库检索的常驻智能体。
-- **炫酷悬浮球**: 支持星云、量子、故障艺术等 5+ 种动效，完全可定制。
-- **一键唤起**: 随时随地调用您的私人知识库。
+Built-in vector store using SQLite with FTS5 full-text search. Import documents, chunk and vectorize them with cloud or local embedding models, then retrieve context during conversations. Includes knowledge graph extraction, query rewriting, and reranking.
 
-### 🎨 Lumina Design / 极致设计
-- **Minimalist Aesthetics**: Clean, distraction-free UI inspired by modern design trends.
-- **Dark Mode**: Fully optimized dark theme.
-- **Haptics**: Subtle, reliable haptic feedback (optional).
-- **极简美学**: 干净无干扰的现代化 UI 设计。
-- **深色模式**: 完美适配的全局暗黑主题。
-- **触感反馈**: 细腻的震动交互体验。
+**Agent System**
 
-## 🛠 Tech Stack / 技术栈
+Preset agents for common tasks (translation, coding, creative writing), plus custom agent creation with configurable system prompts and model bindings. Agents can be scoped to specific RAG knowledge bases and tool sets.
 
-- **Framework**: [Expo SDK 52](https://expo.dev) + [React Native](https://reactnative.dev)
-- **Language**: TypeScript
-- **Styling**: [NativeWind (TailwindCSS)](https://www.nativewind.dev)
-- **Routing**: [Expo Router](https://docs.expo.dev/router/introduction)
-- **State Management**: [Zustand](https://github.com/pmndrs/zustand)
-- **Database**: [op-sqlite](https://github.com/OP-Engineering/op-sqlite) (High-performance SQLite)
-- **Animations**: [Reanimated 3](https://docs.swmansion.com/react-native-reanimated/)
-- **Haptics**: expo-haptics
-- **Markdown**: react-native-markdown-display
+**MCP Protocol**
 
-## 🚀 Getting Started / 快速开始
+Connect to external MCP servers via SSE or HTTP transports. External tools are bridged into the local skill registry and can be used by agents during conversations.
 
-### Prerequisites / 前置条件
-- Node.js > 18
-- JDK 17
-- Android Studio & Android SDK
+**Local Inference** *(experimental)*
 
-### Installation / 安装
+Run GGUF models on-device via `llama.rn`. Three independent model slots (main chat, embedding, rerank) with GPU acceleration support. Enables fully offline usage when combined with local embedding models.
+
+**Workbench** *(experimental)*
+
+Built-in WebSocket server and static file server allow a companion web UI (`web-client/`) to manage conversations, agents, knowledge base, and settings remotely from a browser on the same network.
+
+**Other Features**
+
+- Web search with cascading provider fallback (Google, Tavily, Bing, Bocha, SearXNG)
+- Markdown, LaTeX, Mermaid diagrams, and ECharts rendering in chat
+- Skill system with built-in tools (web search, code interpreter, file system, chart rendering)
+- WebDAV backup with automatic 24h interval
+- Bilingual interface (English / Chinese)
+
+### Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Framework | Expo SDK 54 + React Native (New Architecture) |
+| Language | TypeScript |
+| Styling | NativeWind (TailwindCSS) |
+| Navigation | Expo Router (file-based) |
+| State | Zustand |
+| Database | op-sqlite (SQLite + FTS5 + vector BLOBs) |
+| Local Inference | llama.rn |
+| Animation | Reanimated 4 |
+| Web Panel | Vite + React 18 + TailwindCSS 4 |
+
+### Quick Start
+
 ```bash
-# 1. Clone the repository
 git clone https://github.com/NarcisWL/Nexara.git
 cd Nexara
-
-# 2. Install dependencies
 npm install
-
-# 3. Prebuild (Required for Native Modules like op-sqlite)
 npx expo prebuild
-
-# 4. Run on Android Emulator or Device
 npm run android
 ```
 
-### Building for Release / 构建正式版
+### Roadmap
+
+- [ ] UI interaction polish (gestures, transitions, haptics consistency)
+- [ ] CJK native Markdown layout optimization (typography, list indentation)
+- [ ] Additional provider testing and validation
+- [ ] Local inference stability and model compatibility
+- [ ] Workbench reliability and edge-case handling
+
+---
+
+## 中文
+
+Nexara 是一个面向 Android 平台的 AI 助手客户端，核心特点是本地优先的数据管理和多服务商模型接入。对话记录、知识库、向量嵌入数据全部存储在设备本地的 SQLite 数据库中，推理则通过连接 12+ 云端 AI 服务商完成。
+
+### 核心功能
+
+**多服务商对话**
+
+支持接入 OpenAI、Anthropic、Gemini、Vertex AI、DeepSeek、Moonshot、智谱、SiliconFlow、GitHub Copilot、Cloudflare 以及任何 OpenAI 兼容接口。支持流式响应、工具调用、图像生成和思维链推理模型。
+
+**RAG 知识引擎**
+
+基于 SQLite + FTS5 全文检索的内置向量库。导入文档后，通过云端或本地嵌入模型进行分块和向量化，在对话时检索相关上下文。支持知识图谱抽取、查询重写和重排序。
+
+**Agent 系统**
+
+内置预设 Agent（翻译、编程、创意写作等），支持自定义 Agent，可配置系统提示词和模型绑定。Agent 可绑定特定的 RAG 知识库和工具集。
+
+**MCP 协议**
+
+通过 SSE 或 HTTP 传输层连接外部 MCP 服务器。外部工具会被桥接到本地 Skill 注册表，在对话中可供 Agent 调用。
+
+**本地推理** *(实验性)*
+
+通过 `llama.rn` 在设备端运行 GGUF 格式模型。三个独立模型槽位（主对话、嵌入、重排序），支持 GPU 加速。配合本地嵌入模型可实现完全离线使用。
+
+**Workbench** *(实验性)*
+
+内置 WebSocket 服务器和静态文件服务器，配套 Web 管理面板（`web-client/` 目录），可在同一局域网内通过浏览器远程管理对话、Agent、知识库和设置。
+
+**其他功能**
+
+- 联网搜索，多引擎级联降级（Google、Tavily、Bing、Bocha、SearXNG）
+- 对话中支持 Markdown、LaTeX、Mermaid 图表和 ECharts 渲染
+- Skill 工具系统，内置网页搜索、代码解释器、文件系统、图表渲染等工具
+- WebDAV 远程备份，支持 24 小时自动备份
+- 中英双语界面
+
+### 技术栈
+
+| 层级 | 选型 |
+|---|---|
+| 框架 | Expo SDK 54 + React Native（新架构） |
+| 语言 | TypeScript |
+| 样式 | NativeWind（TailwindCSS） |
+| 路由 | Expo Router（基于文件系统） |
+| 状态管理 | Zustand |
+| 数据库 | op-sqlite（SQLite + FTS5 + 向量 BLOB） |
+| 本地推理 | llama.rn |
+| 动画 | Reanimated 4 |
+| Web 面板 | Vite + React 18 + TailwindCSS 4 |
+
+### 快速开始
+
 ```bash
-# Build APK
-cd android
-./gradlew assembleRelease
+git clone https://github.com/NarcisWL/Nexara.git
+cd Nexara
+npm install
+npx expo prebuild
+npm run android
 ```
 
-## 📜 License / 许可协议
+### 待完成
+
+- [ ] UI 交互打磨（手势、转场、触感反馈一致性）
+- [ ] 中文原生 Markdown 排版优化（排版、列表缩进）
+- [ ] 部分服务商接入层的完整回归测试
+- [ ] 本地推理稳定性与模型兼容性
+- [ ] Workbench 可靠性与边界情况处理
+
+---
+
+## License
 
 This project is licensed under the **GNU General Public License v3.0 (GPLv3)**.
-本项目的源代码基于 **GNU General Public License v3.0 (GPLv3)** 开源。
 
-You are free to use, modify, and distribute this software, but all modifications and derived works must also be open-sourced under the same license.
-您可以自由使用、修改和分发本软件，但所有修改版及衍生作品必须同样基于 GPLv3 协议开源。
+本项目基于 **GNU General Public License v3.0 (GPLv3)** 开源协议发布。
 
 See [LICENSE](./LICENSE) for details.
