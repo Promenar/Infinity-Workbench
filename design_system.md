@@ -160,12 +160,6 @@ interface ButtonProps {
 - **Lists**: Staggered items.
 
 ## 5. Visual Reference Gallery
-````carousel
-![Settings Screen - Inset Grouped List](/C:/Users/lengz/.gemini/antigravity/brain/26eae043-e87c-4fa5-a1de-e355213056d6/uploaded_image_0_1766595131085.jpg)
-<!-- slide -->
-![Favorites Screen - Card Grid](/C:/Users/lengz/.gemini/antigravity/brain/26eae043-e87c-4fa5-a1de-e355213056d6/uploaded_image_1_1766595131085.jpg)
-<!-- slide -->
-![Folders Screen - Large Title](/C:/Users/lengz/.gemini/antigravity/brain/26eae043-e87c-4fa5-a1de-e355213056d6/uploaded_image_2_1766595131085.jpg)
-<!-- slide -->
-![Home Screen - Hero Carousel & Tabs](/C:/Users/lengz/.gemini/antigravity/brain/26eae043-e87c-4fa5-a1de-e355213056d6/uploaded_image_3_1766595131085.jpg)
-````
+
+<!-- Screenshots removed from repo. Add design reference images here if needed. -->
+

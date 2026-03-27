@@ -49,3 +49,16 @@ secure_env/
 # Worktrees
 worktrees/
 worktree/
+
+# Dev tool configs (symlinked to local storage)
+.agent/
+.lingma/
+.codebuddy/
+
+# Debug/test files at root
+test-deepseek-fmt.js
+test-deepseek-fmt.ts
+test-markdown-fix.js
+debug-markdown.js
+cache_debug_plan.txt
+dev-proxy.sh

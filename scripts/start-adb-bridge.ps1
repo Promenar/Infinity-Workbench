@@ -1,8 +1,11 @@
 # Nexara ADB Bridge Automation for WSL2
 # Pure ASCII version to avoid encoding issues
 
-$DeviceName = "OPPO Find N5"
-$HardwareID = "22d9:2769"
+$DeviceName = $env:NEXARA_DEVICE_NAME
+$HardwareID = $env:NEXARA_HARDWARE_ID
+
+if (-not $DeviceName) { Write-Host "Warning: NEXARA_DEVICE_NAME not set" -ForegroundColor Yellow; exit 1 }
+if (-not $HardwareID) { Write-Host "Warning: NEXARA_HARDWARE_ID not set" -ForegroundColor Yellow; exit 1 }
 $WSLDistro = "Ubuntu"
 
 Write-Host "--- Nexara ADB Bridge Tool ---" -ForegroundColor Cyan

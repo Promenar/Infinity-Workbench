@@ -23,14 +23,6 @@ export class WebDavClient {
     const url = config.url.endsWith('/') ? config.url : config.url + '/';
     this.config = { ...config, url };
 
-    // Debug: Check for invisible characters
-    console.log(
-      `[WebDav] Username chars: ${config.username
-        .split('')
-        .map((c) => c.charCodeAt(0))
-        .join(',')}`,
-    );
-
     // UTF-8 Safe Base64 Encoding
     // Compatible with btoa(unescape(encodeURIComponent(str))) pattern
     const credentials = `${config.username}:${config.password || ''}`;
@@ -38,16 +30,13 @@ export class WebDavClient {
 
     const auth = encode(utf8Credentials);
 
-    // Security: Log PARTIAL token to verify generation worked (first 6 chars)
-    console.log(`[WebDav] Generated Auth Token (Prefix): ${auth.substring(0, 6)}...`);
-
     this.headers = {
       Authorization: `Basic ${auth}`,
       'User-Agent': 'Nexara/1.0',
       Accept: '*/*',
     };
 
-    console.log(`[WebDav] Initialized for ${this.config.url} (User: ${config.username})`);
+    console.log(`[WebDav] Initialized for ${this.config.url}`);
   }
 
   /**
