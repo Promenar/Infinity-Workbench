@@ -54,6 +54,8 @@ worktree/
 .agent/
 .lingma/
 .codebuddy/
+.idea/
+.vscode/
 
 # Debug/test files at root
 test-deepseek-fmt.js
