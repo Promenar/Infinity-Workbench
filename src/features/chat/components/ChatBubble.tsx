@@ -1126,21 +1126,47 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         const { src, alt } = node.attributes;
         return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} onImagePress={setViewImageUri} />;
       },
-      // ✅ Allow inline text + math mixing
-      // ✅ Allow inline text + math mixing
-      paragraph: (node: any, children: any, parent: any, styles: any) => (
-        <View
-          key={node.key}
-          style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            alignItems: 'baseline',
-            marginBottom: 8,
-          }}
-        >
-          {children}
-        </View>
-      ),
+      // ✅ 检测行内数学公式动态切换布局
+      // 含 $...$ 时使用 row/wrap 支持行内数学混排，纯文本使用默认列布局
+      paragraph: (node: any, children: any, parent: any, styles: any) => {
+        // 遍历 markdown-it token 子节点，检查 text token 是否含 $ 行内数学分隔符
+        let hasInlineMath = false;
+        if (Array.isArray(node.children)) {
+          hasInlineMath = node.children.some((child: any) => {
+            if (child.type === 'text' && child.content?.includes('$')) return true;
+            // 嵌套 token（如 strong 内的 text）
+            if (child.children) {
+              return child.children.some((grandchild: any) =>
+                grandchild.type === 'text' && grandchild.content?.includes('$')
+              );
+            }
+            return false;
+          });
+        }
+
+        if (hasInlineMath) {
+          return (
+            <View
+              key={node.key}
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                alignItems: 'baseline',
+                marginBottom: 8,
+              }}
+            >
+              {children}
+            </View>
+          );
+        }
+
+        // 纯文本段落：使用默认列布局，恢复自然排版
+        return (
+          <View key={node.key} style={{ marginBottom: 8 }}>
+            {children}
+          </View>
+        );
+      },
       // ✅ Detect Inline Math ($...$)
       text: (node: any, children: any, parent: any, styles: any) => {
         const content = node.content;
@@ -1184,11 +1210,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
         );
       },
 
-      // ✅ Soft Line Break Configuration (User Request)
-      // Force soft breaks to be rendered as actual newlines
-      softbreak: (node: any, children: any, parent: any, styles: any) => (
-        <Text key={node.key}>{"\n"}</Text>
-      ),
+      // ✅ Soft Line Break: 返回 null 让段落内文本自然连接
+      // 单换行在 Markdown 中是软折行，不应产生可见断行
+      softbreak: () => null,
 
 
     }),

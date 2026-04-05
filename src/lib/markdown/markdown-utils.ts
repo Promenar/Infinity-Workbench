@@ -9,7 +9,7 @@
 
 const CHINESE_SENTENCE_END = /[。！？；]/;
 const CHINESE_SENTENCE_END_GLOBAL = /[。！？；]/g;
-const LINE_BREAK_THRESHOLD = 60;
+const LINE_BREAK_THRESHOLD = 80;
 
 export function preprocessMarkdown(text: string): string {
     if (!text) return '';
@@ -140,9 +140,9 @@ function addChineseLineBreaks(text: string): string {
             const nextPunctMatch = remaining.match(CHINESE_SENTENCE_END);
             const distanceToNext = nextPunctMatch ? nextPunctMatch.index! + 1 : remaining.length;
 
-            // 如果距离超过阈值，插入换行
+            // 如果距离超过阈值，插入双换行实现段落分割
             if (distanceToNext >= LINE_BREAK_THRESHOLD / 2) {
-                processedLine += line.slice(lastInsertPos, afterPunctPos) + '\n';
+                processedLine += line.slice(lastInsertPos, afterPunctPos) + '\n\n';
                 lastInsertPos = afterPunctPos;
             }
         }
