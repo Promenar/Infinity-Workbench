@@ -1214,6 +1214,64 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       // 单换行在 Markdown 中是软折行，不应产生可见断行
       softbreak: () => null,
 
+      // ✅ 表格渲染规则
+      table: (node: any, children: any) => (
+        <View key={node.key} style={{
+          borderWidth: 1,
+          borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)',
+          borderRadius: 6,
+          marginVertical: 10,
+          overflow: 'hidden',
+        }}>
+          {children}
+        </View>
+      ),
+      thead: (node: any, children: any) => (
+        <View key={node.key}>{children}</View>
+      ),
+      tbody: (node: any, children: any) => (
+        <View key={node.key}>{children}</View>
+      ),
+      th: (node: any, children: any) => {
+        const align = node.attributes?.align;
+        return (
+          <View key={node.key}
+            style={{
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+              borderBottomWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+              alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
+            }}
+          >
+            <Text style={{ fontWeight: 'bold', fontSize: 13, color: isDark ? '#e4e4e7' : '#27272a' }}>{children}</Text>
+          </View>
+        );
+      },
+      tr: (node: any, children: any) => (
+        <View key={node.key} style={{ flexDirection: 'row' }}>
+          {children}
+        </View>
+      ),
+      td: (node: any, children: any) => {
+        const align = node.attributes?.align;
+        return (
+          <View key={node.key}
+            style={{
+              flex: 1,
+              paddingVertical: 5,
+              paddingHorizontal: 8,
+              borderBottomWidth: 1,
+              borderRightWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+              alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
+            }}
+          >
+            <Text style={{ fontSize: 13, color: isDark ? '#d4d4d8' : '#3f3f46', lineHeight: 18 }}>{children}</Text>
+          </View>
+        );
+      },
 
     }),
     [isDark],

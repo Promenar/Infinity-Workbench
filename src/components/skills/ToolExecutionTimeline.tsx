@@ -661,7 +661,6 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                         <View
                             onStartShouldSetResponder={() => true}
                             onMoveShouldSetResponder={() => true}
-                            onResponderTerminationRequest={() => false}
                         >
                             <GHScrollView
                                 ref={scrollViewRef as any}
