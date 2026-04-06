@@ -4,10 +4,11 @@ import { useTheme } from '../../../theme/ThemeProvider';
 import { EChartsRenderer } from '../../../components/chat/EChartsRenderer';
 import { MermaidRenderer } from '../../../components/chat/MermaidRenderer';
 import { Typography } from '../../../components/ui';
-import { Wrench } from 'lucide-react-native';
+import { BarChart3, Network } from 'lucide-react-native';
+import { ToolResultArtifact } from '../../../types/chat';
 
 interface ToolArtifactsProps {
-    artifacts?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[];
+    artifacts?: ToolResultArtifact[];
 }
 
 /**
@@ -19,25 +20,44 @@ interface ToolArtifactsProps {
 export const ToolArtifacts: React.FC<ToolArtifactsProps> = ({ artifacts }) => {
     const { isDark, colors } = useTheme();
 
+    // 动态样式：暗色模式适配
+    const artifactWrapperStyle = {
+        borderRadius: 16,
+        overflow: 'hidden' as const,
+        borderWidth: 1,
+        borderColor: isDark ? 'rgba(255,255,255,0.08)' : (Platform.OS === 'ios' ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.08)'),
+        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+    };
+
+    const badgeStyle = {
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
+        alignSelf: 'flex-start' as const,
+        borderBottomRightRadius: 10,
+    };
+
     if (!artifacts || artifacts.length === 0) return null;
 
     return (
         <View style={styles.container}>
             {artifacts.map((artifact, index) => {
-                const key = `artifact-${index}`;
+                const key = `artifact-${artifact.type}-${artifact.name || index}`;
 
                 // 渲染图表
                 if (artifact.type === 'echarts') {
                     // 提取 JSON 配置
-                    const configMatch = artifact.content.match(/```echarts\n([\s\S]*?)\n```/);
+                    const configMatch = artifact.content.match(/```echarts\s*\n([\s\S]*?)\n?\s*```/);
                     const configStr = configMatch ? configMatch[1] : '';
 
                     return (
-                        <View key={key} style={styles.artifactWrapper}>
-                            <View style={styles.badge}>
-                                <Wrench size={10} color={colors?.[500] || '#6366f1'} />
+                        <View key={key} style={artifactWrapperStyle}>
+                            <View style={badgeStyle}>
+                                <BarChart3 size={10} color={colors?.[500] || '#6366f1'} />
                                 <Typography className="text-[9px] font-bold uppercase ml-1" style={{ color: colors?.[500] || '#6366f1' }}>
-                                    ECharts Result
+                                    Chart
                                 </Typography>
                             </View>
                             <EChartsRenderer content={configStr} />
@@ -47,9 +67,15 @@ export const ToolArtifacts: React.FC<ToolArtifactsProps> = ({ artifacts }) => {
 
                 // 渲染 Mermaid (预留)
                 if (artifact.type === 'mermaid') {
-                    const mermaidCode = artifact.content.replace(/```mermaid\n?([\s\S]*?)```/, '$1').trim();
+                    const mermaidCode = artifact.content.replace(/```mermaid\s*\n?([\s\S]*?)\n?\s*```/, '$1').trim();
                     return (
-                        <View key={key} style={styles.artifactWrapper}>
+                        <View key={key} style={artifactWrapperStyle}>
+                            <View style={badgeStyle}>
+                                <Network size={10} color={colors?.[500] || '#6366f1'} />
+                                <Typography className="text-[9px] font-bold uppercase ml-1" style={{ color: colors?.[500] || '#6366f1' }}>
+                                    Diagram
+                                </Typography>
+                            </View>
                             <MermaidRenderer content={mermaidCode} />
                         </View>
                     );
@@ -66,20 +92,4 @@ const styles = StyleSheet.create({
         gap: 12,
         marginVertical: 8,
     },
-    artifactWrapper: {
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.08)',
-        backgroundColor: 'rgba(0,0,0,0.02)',
-    },
-    badge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        backgroundColor: 'rgba(99, 102, 241, 0.05)',
-        alignSelf: 'flex-start',
-        borderBottomRightRadius: 10,
-    }
 });

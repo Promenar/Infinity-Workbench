@@ -127,16 +127,7 @@ Please STOP trying to use tools and answer the user's request directly using you
                     sessionId,
                     targetMsgId,
                     currentMsg.content || '',
-                    undefined, // tokens
-                    undefined, // reasoning
-                    undefined, // citations
-                    undefined, // ragReferences
-                    undefined, // ragReferencesLoading
-                    undefined, // ragMetadata
-                    undefined, // thought_signature
-                    undefined, // taskState
-                    undefined, // tool_calls
-                    updatedSteps
+                    { executionSteps: updatedSteps }
                 );
             };
 
@@ -306,14 +297,7 @@ Please DO NOT try to call it again. Instead:
                             sessionId,
                             targetMsgId,
                             targetMsg.content,
-                            undefined,
-                            undefined,
-                            undefined,
-                            undefined,
-                            false,
-                            undefined,
-                            undefined,
-                            result.data
+                            { ragReferencesLoading: false, planningTask: result.data }
                         );
 
                         if (get().flushMessageUpdates && tcName === 'manage_task' && finalArgs.action === 'complete') {
@@ -343,18 +327,7 @@ Please DO NOT try to call it again. Instead:
                                 sessionId,
                                 targetMsgId!,
                                 currentMsg.content || '',
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                undefined,
-                                newToolResults
+                                { toolResults: newToolResults }
                             );
                         }
                     }

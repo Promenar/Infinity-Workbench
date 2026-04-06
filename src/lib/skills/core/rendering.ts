@@ -9,7 +9,7 @@ Use this tool whenever you need to visualize data (bar charts, line charts, pie 
 DO NOT use code interpreters or write HTML files for charts.
 `,
     schema: z.object({
-        config: z.any().describe('The ECharts JSON configuration object. Can be a JSON string or an object.')
+        config: z.union([z.string().min(1), z.record(z.any())]).describe('The ECharts JSON configuration object. Can be a JSON string or an object.')
     }),
     execute: async (args: any, context: SkillContext): Promise<ToolResult> => {
         let chartOptionStr = '';
@@ -33,7 +33,7 @@ DO NOT use code interpreters or write HTML files for charts.
         } catch (e: any) {
             return {
                 id: 'error',
-                content: `Invalid ECharts Configuration: ${e.message}`,
+                content: `❌ ECharts 配置解析失败: ${e.message}。请确保传入合法的 JSON 配置对象。`,
                 status: 'error'
             };
         }
@@ -51,7 +51,14 @@ DO NOT use code interpreters for diagrams.
         code: z.string().describe('The Mermaid diagram source code.')
     }),
     execute: async (args: any, context: SkillContext): Promise<ToolResult> => {
-        const code = args.code || '';
+        const code = (args.code || '').trim();
+        if (!code) {
+            return {
+                id: 'error',
+                content: '❌ Mermaid 代码不能为空，请提供有效的图表定义。',
+                status: 'error'
+            };
+        }
         return {
             id: 'success',
             content: `✅ Diagram rendered to UI successfully.\n\n\`\`\`mermaid\n${code}\n\`\`\``,

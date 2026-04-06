@@ -12,7 +12,7 @@ import { MemoryManager } from '../../lib/rag/memory-manager';
 import { skillRegistry } from '../../lib/skills/registry';
 import { inferModelFamily, getModelSpecificEnhancements } from '../../lib/llm/model-prompts';
 import { getPrompts, getPromptLang } from '../../lib/llm/prompts/i18n';
-import type { Session, Message, RagReference, GeneratedImageData } from '../../types/chat';
+import type { Session, Message, RagReference, GeneratedImageData, UpdateMessageOptions } from '../../types/chat';
 
 export interface ContextBuilderParams {
     sessionId: string;
@@ -35,12 +35,7 @@ export interface ContextBuilderParams {
         sessionId: string,
         messageId: string,
         content: string,
-        usage?: any,
-        reasoning?: string,
-        citations?: any[],
-        ragReferences?: RagReference[],
-        ragReferencesLoading?: boolean,
-        ragMetadata?: any
+        options?: UpdateMessageOptions
     ) => void;
 }
 
@@ -158,12 +153,7 @@ export async function performRagRetrieval(
             sessionId,
             assistantMsgId,
             '',
-            undefined,
-            undefined,
-            undefined,
-            references,
-            false,
-            metadata
+            { ragReferences: references, ragReferencesLoading: false, ragMetadata: metadata }
         );
 
         // 同步处理状态
@@ -179,7 +169,7 @@ export async function performRagRetrieval(
         };
     } catch (e) {
         console.error('[ContextBuilder] RAG Retrieval failed:', e);
-        updateMessageContent(sessionId, assistantMsgId, '', undefined, undefined, undefined, [], false);
+        updateMessageContent(sessionId, assistantMsgId, '', { ragReferences: [], ragReferencesLoading: false });
         useRagStore.getState().updateProcessingState({ status: 'idle' }, assistantMsgId);
         return { context: '', references: [] };
     }

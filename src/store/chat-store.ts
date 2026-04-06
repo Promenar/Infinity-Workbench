@@ -14,6 +14,8 @@ import {
   RagMetadata,
   TaskState, // ✅ Added
   ChatAttachment, // ✅ Added
+  ToolResultArtifact, // 🆕 工具产物类型
+  UpdateMessageOptions, // 🆕 updateMessageContent 选项参数
 } from '../types/chat';
 import { db } from '../lib/db';
 import { useAgentStore } from './agent-store';
@@ -174,22 +176,7 @@ export interface ChatState {
     sessionId: SessionId,
     messageId: string,
     content: string,
-    tokens?: TokenUsage,
-    reasoning?: string,
-    citations?: { title: string; url: string; source?: string }[],
-    ragReferences?: RagReference[],
-    ragReferencesLoading?: boolean,
-    ragMetadata?: RagMetadata,
-    thought_signature?: string, // 🧠 Added for Gemini 2.0
-    planningTask?: TaskState, // ✅ Added for Message-Scoped Tasks
-    tool_calls?: ToolCall[], // ✅ Added for DeepSeek Consistency
-    executionSteps?: ExecutionStep[], // ✅ Added for execution steps tracking
-    pendingApprovalToolIds?: string[],
-    toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[], // 🆕 Added
-    isError?: boolean, // ✅ Added for robustness
-    errorMessage?: string, // ✅ Added for robustness
-    isLongWait?: boolean, // ✅ Added for Soft Timeout
-    loopCount?: number // ✅ Added for Transparency
+    options?: UpdateMessageOptions
   ) => void;
   updateMessageProgress: (sessionId: string, messageId: string, progress: RagProgress) => void;
   updateSessionInferenceParams: (id: SessionId, params: InferenceParams) => void;
@@ -317,9 +304,8 @@ export const useChatStore = create<ChatState>()(
         updateSessionModel: sessionManager.updateSessionModel,
         updateSessionOptions: sessionManager.updateSessionOptions,
         updateSessionScrollOffset: sessionManager.updateSessionScrollOffset,
-        updateMessageContent: (sessionId: string, messageId: string, content: string, tokens?: TokenUsage, reasoning?: string, citations?: any[], ragReferences?: RagReference[], ragRefLoading?: boolean, ragMeta?: RagMetadata, thoughtSig?: string, taskState?: TaskState, toolCalls?: ToolCall[], execSteps?: ExecutionStep[], pendingTools?: string[], toolRes?: any[], isError?: boolean, errorMsg?: string, isLongWait?: boolean, loopCount?: number) => {
-          // Proxy to messageManager but ensure signature matches or update messageManager
-          messageManager.updateMessageContent(sessionId, messageId, content, tokens, reasoning, citations, ragReferences, ragRefLoading, ragMeta, thoughtSig, taskState, toolCalls, execSteps, pendingTools, toolRes, isError, errorMsg, isLongWait, loopCount);
+        updateMessageContent: (sessionId: string, messageId: string, content: string, options?: UpdateMessageOptions) => {
+          messageManager.updateMessageContent(sessionId, messageId, content, options);
         },
 
         updateSessionInferenceParams: sessionManager.updateSessionInferenceParams,
@@ -721,12 +707,7 @@ export const useChatStore = create<ChatState>()(
                   sessionId,
                   assistantMsgId,
                   '',
-                  undefined,
-                  undefined,
-                  undefined,
-                  ragReferences,
-                  false,
-                  metadata,
+                  { ragReferences, ragReferencesLoading: false, ragMetadata: metadata }
                 );
 
                 // ✅ 后置同步：将检索到的引用数存入 ProcessingHistory 以供指示器显示
@@ -743,11 +724,7 @@ export const useChatStore = create<ChatState>()(
                   sessionId,
                   assistantMsgId,
                   '',
-                  undefined,
-                  undefined,
-                  undefined,
-                  [],
-                  false,
+                  { ragReferences: [], ragReferencesLoading: false }
                 );
               }
             } else {
@@ -1113,16 +1090,7 @@ export const useChatStore = create<ChatState>()(
                 sessionId,
                 currentAssistantMsgId,
                 accumulatedContent,
-                undefined,
-                accumulatedReasoning,
-                accumulatedCitations,
-                ragReferences,
-                false,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                loopExecutionSteps
+                { reasoning: accumulatedReasoning, citations: accumulatedCitations, ragReferences, ragReferencesLoading: false, executionSteps: loopExecutionSteps }
               );
             }
 
@@ -1148,16 +1116,7 @@ export const useChatStore = create<ChatState>()(
                 sessionId,
                 currentAssistantMsgId,
                 accumulatedContent,
-                undefined,
-                accumulatedReasoning,
-                accumulatedCitations,
-                ragReferences,
-                false,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                updatedSteps
+                { reasoning: accumulatedReasoning, citations: accumulatedCitations, ragReferences, ragReferencesLoading: false, executionSteps: updatedSteps }
               );
             };
 
@@ -1263,22 +1222,12 @@ export const useChatStore = create<ChatState>()(
                   sessionId,
                   currentAssistantMsgId,
                   accumulatedContent,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  turnThoughtSignature || targetMsg.thought_signature,
-                  undefined,
-                  toolCalls,
-                  [...(targetMsg.executionSteps || []), interventionStep],
-                  undefined, // pendingApprovalToolIds
-                  undefined, // toolResults
-                  undefined, // isError
-                  undefined, // errorMessage
-                  undefined, // isLongWait
-                  loopCount // ✅ 显式化轮数
+                  {
+                    thought_signature: turnThoughtSignature || targetMsg.thought_signature,
+                    tool_calls: toolCalls,
+                    executionSteps: [...(targetMsg.executionSteps || []), interventionStep],
+                    loopCount
+                  }
                 );
 
                 break;
@@ -1381,11 +1330,7 @@ export const useChatStore = create<ChatState>()(
                     sessionId,
                     currentAssistantMsgId,
                     accumulatedContent,
-                    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-                    false, // isError (false)
-                    undefined, // errorMessage
-                    true, // isLongWait (true)
-                    loopCount
+                    { isError: false, isLongWait: true, loopCount }
                   );
 
                   // Keep checking (don't clear interval), so if it *eventually* recovers, we can clear the warning.
@@ -1515,15 +1460,7 @@ export const useChatStore = create<ChatState>()(
                         sessionId,
                         currentAssistantMsgId,
                         accumulatedContent,
-                        undefined,
-                        undefined,
-                        undefined,
-                        undefined,
-                        false,
-                        undefined,
-                        undefined,
-                        newActiveTask, // Pass planning task
-                        undefined, undefined, undefined, undefined, undefined, undefined, undefined, loopCount
+                        { ragReferencesLoading: false, planningTask: newActiveTask, loopCount }
                       );
 
                       // Update Timeline
@@ -1553,16 +1490,7 @@ export const useChatStore = create<ChatState>()(
                       sessionId,
                       currentAssistantMsgId,
                       accumulatedContent,
-                      token.usage,
-                      undefined, // reasoning
-                      undefined, // citations
-                      undefined, // ragReferences
-                      undefined, // ragReferencesLoading
-                      undefined, // ragMetadata
-                      undefined, // thought_signature
-                      undefined, // taskState
-                      token.toolCalls,
-                      undefined, undefined, undefined, undefined, undefined, false, loopCount
+                      { tokens: token.usage, tool_calls: token.toolCalls, isLongWait: false, loopCount }
                     );
                     lastContentUpdateTime = now;
                   }
@@ -1582,10 +1510,7 @@ export const useChatStore = create<ChatState>()(
                       sessionId,
                       currentAssistantMsgId,
                       accumulatedContent,
-                      token.usage,
-                      undefined // 🔑 Use undefined to RETAIN current value unless we specifically want to clear it? 
-                      // Wait, if we want to move it to timeline, we SHOULD clear it from bubble.
-                      // Let's keep it '';
+                      { tokens: token.usage }
                     );
                     lastTimelineUpdateTime = now;
                   }
@@ -1631,17 +1556,15 @@ export const useChatStore = create<ChatState>()(
                 sessionId,
                 currentAssistantMsgId,
                 finalDisplayContent,
-                accumulatedUsage,
-                undefined, // reasoning
-                undefined, // citations
-                undefined, // ragReferences
-                undefined, // ragReferencesLoading
-                undefined, // ragMetadata
-                turnThoughtSignature || targetMsg.thought_signature,
-                latestSession.activeTask, // 🔑 保持任务状态同步
-                toolCalls, // 🔑 Correctly persist tool_calls at turn end
-                loopExecutionSteps, // 🔑 Pass the full accumulated steps list to avoid race conditions
-                undefined, undefined, undefined, undefined, false, loopCount
+                {
+                  tokens: accumulatedUsage,
+                  thought_signature: turnThoughtSignature || targetMsg.thought_signature,
+                  planningTask: latestSession.activeTask,
+                  tool_calls: toolCalls,
+                  executionSteps: loopExecutionSteps,
+                  isLongWait: false,
+                  loopCount
+                }
               );
 
               // 🛡️ 关键修复：刷新本地步骤列表，确保下一轮循环能看到工具执行结果
@@ -1868,7 +1791,7 @@ export const useChatStore = create<ChatState>()(
                 accumulatedReasoning = '';
                 // 🔑 关键修复：保存reasoning到assistant消息
                 // 必须传递reasoningFromThisTurn而非空字符串，否则会覆盖原有reasoning
-                get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage, reasoningFromThisTurn);
+                get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, { tokens: accumulatedUsage, reasoning: reasoningFromThisTurn });
               }
 
               if (toolCalls && toolCalls.length > 0) {
@@ -1902,17 +1825,7 @@ export const useChatStore = create<ChatState>()(
                     sessionId,
                     currentAssistantMsgId,
                     '', // Clear content since it's moved to timeline
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    [...(targetMsg.executionSteps || []), thinkingStep],
-                    undefined // pendingApprovalToolIds (14th)
+                    { executionSteps: [...(targetMsg.executionSteps || []), thinkingStep] }
                   );
                   accumulatedContent = '';
                 }
@@ -1941,15 +1854,11 @@ export const useChatStore = create<ChatState>()(
                         sessionId,
                         currentAssistantMsgId,
                         accumulatedContent,
-                        accumulatedUsage,
-                        undefined,
-                        undefined,
-                        undefined,
-                        undefined,
-                        undefined,
-                        turnThoughtSignature || targetMsg.thought_signature,
-                        undefined,
-                        toolCalls
+                        {
+                          tokens: accumulatedUsage,
+                          thought_signature: turnThoughtSignature || targetMsg.thought_signature,
+                          tool_calls: toolCalls
+                        }
                       );
                     }
                   }
@@ -1993,17 +1902,11 @@ export const useChatStore = create<ChatState>()(
                         sessionId,
                         currentAssistantMsgId,
                         accumulatedContent,
-                        undefined,
-                        undefined,
-                        undefined,
-                        undefined,
-                        undefined,
-                        undefined,
-                        turnThoughtSignature || targetMsg.thought_signature,
-                        undefined,
-                        toolCalls,
-                        undefined,
-                        pendingApprovalToolIds
+                        {
+                          thought_signature: turnThoughtSignature || targetMsg.thought_signature,
+                          tool_calls: toolCalls,
+                          pendingApprovalToolIds
+                        }
                       );
                       return; // 暂停等待审批
                     }
@@ -2036,17 +1939,7 @@ export const useChatStore = create<ChatState>()(
                     sessionId,
                     currentAssistantMsgId,
                     accumulatedContent,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    turnThoughtSignature || targetMsg.thought_signature,
-                    undefined,
-                    toolCalls,
-                    undefined,
-                    undefined
+                    { thought_signature: turnThoughtSignature || targetMsg.thought_signature, tool_calls: toolCalls }
                   );
 
                   // 🔑 关键修复：虚拟拆分新增的assistant+tool（不重新提取整个session）
@@ -2194,17 +2087,7 @@ export const useChatStore = create<ChatState>()(
                     sessionId,
                     currentAssistantMsgId,
                     accumulatedContent,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    turnThoughtSignature || targetMsg.thought_signature,
-                    undefined,
-                    toolCalls,
-                    [...(targetMsg.executionSteps || []), interventionStep],
-                    pendingApprovalToolIds
+                    { thought_signature: turnThoughtSignature || targetMsg.thought_signature, tool_calls: toolCalls, executionSteps: [...(targetMsg.executionSteps || []), interventionStep], pendingApprovalToolIds }
                   );
 
                   break; // Auto-exit to wait for user action
@@ -2235,7 +2118,7 @@ export const useChatStore = create<ChatState>()(
 
                     // 更新消息内容
                     accumulatedContent += '\n\n⚠️ 检测到死循环，已自动中断任务。';
-                    get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, accumulatedUsage);
+                    get().updateMessageContent(sessionId, currentAssistantMsgId, accumulatedContent, { tokens: accumulatedUsage });
                     break;
                   }
                 } else {
@@ -2257,17 +2140,7 @@ export const useChatStore = create<ChatState>()(
                     sessionId,
                     currentAssistantMsgId,
                     accumulatedContent,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    turnThoughtSignature || targetMsg.thought_signature,
-                    undefined,
-                    toolCalls,
-                    undefined,
-                    undefined
+                    { thought_signature: turnThoughtSignature || targetMsg.thought_signature, tool_calls: toolCalls }
                   );
                   break;
                 }
@@ -2278,17 +2151,7 @@ export const useChatStore = create<ChatState>()(
                   sessionId,
                   currentAssistantMsgId,
                   accumulatedContent,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  turnThoughtSignature || targetMsg.thought_signature,
-                  undefined,
-                  toolCalls,
-                  undefined,
-                  undefined
+                  { thought_signature: turnThoughtSignature || targetMsg.thought_signature, tool_calls: toolCalls }
                 );
 
                 // 🔑 关键修复：虚拟拆分新增的assistant+tool（不重新提取整个session）
@@ -2514,21 +2377,7 @@ export const useChatStore = create<ChatState>()(
               sessionId,
               assistantMsgId,
               accumulatedContent,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-
-              true, // ✅ isError (16th arg)
-              errorText // ✅ errorMessage (17th arg)
+              { isError: true, errorMessage: errorText }
             );
           } finally {
             // Cleanup active request and ensure loading flags are cleared

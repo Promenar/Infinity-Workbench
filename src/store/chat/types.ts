@@ -14,7 +14,9 @@ import {
     RagProgress,
     RagMetadata,
     TaskState,
-    InferenceParams
+    InferenceParams,
+    ToolResultArtifact,
+    UpdateMessageOptions
 } from '../../types/chat';
 import { ToolCall, ExecutionStep } from '../../types/skills';
 
@@ -37,22 +39,7 @@ export interface MessageManager {
         sessionId: string,
         messageId: string,
         content: string,
-        usage?: TokenUsage,
-        reasoning?: string,
-        citations?: any[],
-        ragReferences?: RagReference[],
-        ragReferencesLoading?: boolean,
-        ragMetadata?: RagMetadata,
-        thought_signature?: string,
-        taskState?: TaskState,
-        tool_calls?: ToolCall[],
-        executionSteps?: ExecutionStep[],
-        pendingApprovalToolIds?: string[],
-        toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[],
-        isError?: boolean,
-        errorMessage?: string,
-        isLongWait?: boolean,
-        loopCount?: number // ✅ 新增：显式化轮数
+        options?: UpdateMessageOptions
     ) => void;
 
     deleteMessage: (sessionId: string, messageId: string) => Promise<void>;

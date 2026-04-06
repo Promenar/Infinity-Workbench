@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Modal, SafeAreaView, StatusBar, Platform, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, TouchableOpacity, Text, Modal, SafeAreaView, StatusBar, Platform, Dimensions, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Maximize2, X, Share2, Network } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
 import Svg, { Path, Rect, G } from 'react-native-svg';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { resolveLocalLibUri, scriptTagWithFallback } from '../../lib/webview-assets';
 
 const PhoneRotateIcon = ({ size, color }: { size: number; color: string }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -32,6 +33,13 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
   const { isDark, colors } = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [localMermaidUri, setLocalMermaidUri] = useState<string | null>(null);
+
+  // 预加载本地 mermaid 资源
+  useEffect(() => {
+    resolveLocalLibUri('mermaid').then(uri => setLocalMermaidUri(uri));
+  }, []);
 
   // 清洗内容
   const cleanContent = content
@@ -45,25 +53,25 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=${isFull ? '5.0' : '1.0'}, user-scalable=${isFull ? 'yes' : 'no'}">
-      <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+      ${scriptTagWithFallback('mermaid', localMermaidUri, 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js')}
       <style>
         body {
           margin: 0;
-          padding: 20px;
+          padding: ${isFull ? '20px' : '10px'};
           background-color: ${isDark ? '#000000' : '#ffffff'};
           color: ${isDark ? '#e4e4e7' : '#27272a'};
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           display: flex;
           justify-content: center;
           align-items: center;
-          min-height: 100vh;
+          ${isFull ? 'min-height: 100vh;' : 'height: 120px; overflow: hidden; font-size: 12px;'}
         }
         #mermaid-container {
           width: 100%;
           display: flex;
           justify-content: center;
         }
-        /* 针对全屏模式的滚动条美化 */
+        ${isFull ? `/* 针对全屏模式的滚动条美化 */
         ::-webkit-scrollbar {
           width: 4px;
           height: 4px;
@@ -71,7 +79,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
         ::-webkit-scrollbar-thumb {
           background: ${isDark ? '#3f3f46' : '#d4d4d8'};
           border-radius: 2px;
-        }
+        }` : ''}
       </style>
     </head>
     <body>
@@ -82,7 +90,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
         mermaid.initialize({
           startOnLoad: true,
           theme: '${isDark ? 'dark' : 'default'}',
-          securityLevel: 'loose',
+          securityLevel: '${isFull ? 'loose' : 'strict'}',
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         });
       </script>
@@ -111,42 +119,57 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
   const accentColor = colors?.[500] || (isDark ? '#a78bfa' : '#7c3aed');
 
   return (
-    <View style={styles.outerContainer}>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setIsFullscreen(true);
-        }}
-        style={[styles.card, {
-          backgroundColor: isDark ? '#1c1c1e' : '#f9fafb',
-          borderColor: isDark ? '#2c2c2e' : '#e5e7eb'
-        }]}
-      >
-        <View style={[styles.iconContainer, { backgroundColor: isDark ? '#2c2c2e' : (colors?.opacity20 || '#ede9fe') }]}>
-          <Network size={22} color={accentColor} />
-        </View>
+    <>
+      <View style={[styles.cardWrapper, {
+        backgroundColor: isDark ? '#1c1c1e' : '#f9fafb',
+        borderColor: isDark ? '#2c2c2e' : '#e5e7eb'
+      }]}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setLoading(true);
+            setIsFullscreen(true);
+          }}
+          style={styles.card}
+        >
+          <View style={[styles.iconContainer, { backgroundColor: isDark ? '#2c2c2e' : (colors?.opacity20 || '#ede9fe') }]}>
+            <Network size={22} color={accentColor} />
+          </View>
 
-        <View style={styles.contentContainer}>
-          <Text style={[styles.cardTitle, { color: isDark ? '#f4f4f5' : '#111827' }]} numberOfLines={1}>
-            Mermaid 流程图
-          </Text>
-          <View style={styles.badgeContainer}>
-            <View style={[styles.badge, { backgroundColor: isDark ? '#334155' : (colors?.opacity30 || '#e2e8f0') }]}>
-              <Text style={[styles.badgeText, { color: isDark ? '#cbd5e1' : (colors?.[500] || '#475569') }]}>
-                DIAGRAM
+          <View style={styles.contentContainer}>
+            <Text style={[styles.cardTitle, { color: isDark ? '#f4f4f5' : '#111827' }]} numberOfLines={1}>
+              Mermaid 流程图
+            </Text>
+            <View style={styles.badgeContainer}>
+              <View style={[styles.badge, { backgroundColor: isDark ? '#334155' : (colors?.opacity30 || '#e2e8f0') }]}>
+                <Text style={[styles.badgeText, { color: isDark ? '#cbd5e1' : (colors?.[500] || '#475569') }]}>
+                  DIAGRAM
+                </Text>
+              </View>
+              <Text style={[styles.hintText, { color: isDark ? '#71717a' : '#9ca3af' }]}>
+                点击全屏交互
               </Text>
             </View>
-            <Text style={[styles.hintText, { color: isDark ? '#71717a' : '#9ca3af' }]}>
-              点击全屏交互
-            </Text>
           </View>
-        </View>
 
-        <View style={styles.actionIcon}>
-          <Maximize2 size={18} color={isDark ? '#52525b' : '#9ca3af'} />
+          <View style={styles.actionIcon}>
+            <Maximize2 size={18} color={isDark ? '#52525b' : '#9ca3af'} />
+          </View>
+        </TouchableOpacity>
+
+        <View style={{ height: 120, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+          <WebView
+            key="mermaid_preview"
+            source={{ html: generateHtml(false) }}
+            style={{ flex: 1, backgroundColor: 'transparent' }}
+            javaScriptEnabled={true}
+            androidLayerType="hardware"
+            bounces={false}
+            scrollEnabled={false}
+          />
         </View>
-      </TouchableOpacity>
+      </View>
 
       <Modal
         visible={isFullscreen}
@@ -169,13 +192,19 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
 
           <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}>
             <WebView
-              key={`mermaid_webview_${isLandscape}_${isFullscreen}`}
+              key={`mermaid_webview_full_${isLandscape}_${isFullscreen}`}
               source={{ html: generateHtml(true) }}
               style={{ flex: 1, backgroundColor: 'transparent' }}
               javaScriptEnabled={true}
               androidLayerType="hardware"
               bounces={true}
+              onLoad={() => setLoading(false)}
             />
+            {loading && (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color={accentColor} />
+              </View>
+            )}
           </View>
 
           {/* 🔄 Landscape Toggle FAB */}
@@ -190,7 +219,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
           </TouchableOpacity>
         </SafeAreaView>
       </Modal>
-    </View>
+    </>
   );
 };
 
@@ -199,14 +228,18 @@ const styles = StyleSheet.create({
     width: '100%',
     marginVertical: 4,
   },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
+  cardWrapper: {
     borderRadius: 16,
     borderWidth: 1,
     width: '100%',
     alignSelf: 'center',
+    overflow: 'hidden',
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   iconContainer: {
     width: 44,
@@ -280,5 +313,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 4.65,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   }
 });

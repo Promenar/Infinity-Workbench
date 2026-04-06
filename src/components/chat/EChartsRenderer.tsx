@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Modal, SafeAreaView, StatusBar, Platform, Dimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -6,6 +6,7 @@ import { Maximize2, X, BarChart3, PieChart, LineChart, Activity } from 'lucide-r
 import * as Haptics from '../../lib/haptics';
 import Svg, { Path, Rect, G } from 'react-native-svg';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { resolveLocalLibUri, scriptTagWithFallback } from '../../lib/webview-assets';
 
 const PhoneRotateIcon = ({ size, color }: { size: number; color: string }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -35,6 +36,12 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
     const { isDark, colors } = useTheme();
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isLandscape, setIsLandscape] = useState(false);
+    const [localEchartsUri, setLocalEchartsUri] = useState<string | null>(null);
+
+    // 预加载本地 echarts 资源
+    useEffect(() => {
+      resolveLocalLibUri('echarts').then(uri => setLocalEchartsUri(uri));
+    }, []);
 
     // Derived metadata
     let title = "ECharts Visualization";
@@ -44,12 +51,30 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
 
     try {
         const cleanContent = content
-            .replace(/^```echarts\n?/, '')
-            .replace(/```$/, '')
+            .replace(/^```echarts\s*\n?/, '')
+            .replace(/\n?\s*```$/, '')
             .trim();
         if (cleanContent) {
-            const parseLoose = (str: string) => new Function('return ' + str)();
-            chartOption = parseLoose(cleanContent);
+            // 安全解析：尝试标准 JSON.parse，失败则尝试移除注释后解析
+            const stripJsonComments = (str: string): string => {
+                // 移除单行注释 // ...
+                // 移除多行注释 /* ... */
+                // 注意：不处理字符串内的注释标记（对于 ECharts 配置已足够）
+                return str
+                    .replace(/\/\*[\s\S]*?\*\//g, '')
+                    .replace(/\/\/.*$/gm, '')
+                    .replace(/,\s*([}\]])/g, '$1')  // 移除尾逗号
+                    .replace(/([{,])\s*(\w+)\s*:/g, '$1"$2":')  // 无引号属性名加引号
+                    .replace(/"([^"]+)"\s*:\s*'([^']*)'/g, '"$1":"$2"');  // 单引号值转双引号
+            };
+            
+            try {
+                chartOption = JSON.parse(cleanContent);
+            } catch {
+                // 尝试宽松解析：处理 JS 对象字面量格式
+                const sanitized = stripJsonComments(cleanContent);
+                chartOption = JSON.parse(sanitized);
+            }
 
             if (chartOption) {
                 if (chartOption.title?.text) title = chartOption.title.text;
@@ -59,8 +84,9 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
                 }
             }
         }
-    } catch (e) {
+    } catch (e: any) {
         parseError = true;
+        console.warn('[EChartsRenderer] 解析失败:', e?.message);
     }
 
     const generateHtml = (isFull = false) => `
@@ -68,20 +94,16 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=${isFull ? '5.0' : '1.0'}, user-scalable=${isFull ? 'yes' : 'no'}">
-      <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+      ${scriptTagWithFallback('echarts', localEchartsUri, 'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js')}
       <style>
         body {
           margin: 0;
           padding: 0;
           background-color: ${isDark ? '#000000' : '#ffffff'};
-          height: 100vh;
-          display: flex;
-          flex-direction: column;
+          ${isFull ? 'height: 100vh; display: flex; flex-direction: column;' : 'height: 120px; overflow: hidden;'}
         }
         #chart-container {
-          flex: 1;
-          width: 100%;
-          min-height: 100%;
+          ${isFull ? 'flex: 1; width: 100%; min-height: 100%;' : 'width: 100%; height: 120px;'}
         }
       </style>
     </head>
@@ -100,14 +122,14 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
              }
         }
 
-        if (option.toolbox && typeof option.toolbox === 'object' && !Array.isArray(option.toolbox)) {
+        ${isFull ? `if (option.toolbox && typeof option.toolbox === 'object' && !Array.isArray(option.toolbox)) {
              option.toolbox.show = true;
              option.toolbox.top = 0; 
              option.toolbox.right = 10;
         }
         
         if (option.legend && typeof option.legend === 'object' && !Array.isArray(option.legend)) {
-             option.legend.top = 60; // Deeper to avoid native title bubble
+             option.legend.top = 60;
         }
 
         if (option.grid) {
@@ -118,11 +140,11 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
             }
         } else {
             option.grid = { top: 130, left: '10%', right: '10%', bottom: '12%', containLabel: true };
-        }
-
+        }` : ''}
         option.backgroundColor = 'transparent';
+        ${!isFull ? 'option.silent = true;' : ''}
         myChart.setOption(option);
-        window.addEventListener('resize', () => myChart.resize());
+        ${isFull ? "window.addEventListener('resize', () => myChart.resize());" : ''}
       </script>
     </body>
     </html>
@@ -132,7 +154,7 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         return (
             <View style={[styles.errorContainer, { borderColor: isDark ? '#333' : '#e5e7eb' }]}>
                 <Text style={{ color: isDark ? '#888' : '#666', fontSize: 13 }}>
-                    {content.length > 20 ? "数据生成中..." : "加载中..."}
+                    {parseError ? "图表配置解析失败" : (content.length > 0 ? "正在生成图表..." : "等待图表数据...")}
                 </Text>
             </View>
         );
@@ -180,28 +202,43 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
                     borderColor: isDark ? '#2c2c2e' : '#e5e7eb'
                 }]}
             >
-                <View style={[styles.iconContainer, { backgroundColor: isDark ? '#2c2c2e' : (colors?.opacity20 || '#ede9fe') }]}>
-                    {getIcon()}
-                </View>
+                <View style={styles.cardHeader}>
+                    <View style={[styles.iconContainer, { backgroundColor: isDark ? '#2c2c2e' : (colors?.opacity20 || '#ede9fe') }]}>
+                        {getIcon()}
+                    </View>
 
-                <View style={styles.contentContainer}>
-                    <Text style={[styles.cardTitle, { color: isDark ? '#f4f4f5' : '#111827' }]} numberOfLines={1}>
-                        {title}
-                    </Text>
-                    <View style={styles.badgeContainer}>
-                        <View style={[styles.badge, { backgroundColor: isDark ? '#334155' : (colors?.opacity30 || '#e2e8f0') }]}>
-                            <Text style={[styles.badgeText, { color: isDark ? '#cbd5e1' : (colors?.[500] || '#475569') }]}>
-                                {chartType.toUpperCase()}
+                    <View style={styles.contentContainer}>
+                        <Text style={[styles.cardTitle, { color: isDark ? '#f4f4f5' : '#111827' }]} numberOfLines={1}>
+                            {title}
+                        </Text>
+                        <View style={styles.badgeContainer}>
+                            <View style={[styles.badge, { backgroundColor: isDark ? '#334155' : (colors?.opacity30 || '#e2e8f0') }]}>
+                                <Text style={[styles.badgeText, { color: isDark ? '#cbd5e1' : (colors?.[500] || '#475569') }]}>
+                                    {chartType.toUpperCase()}
+                                </Text>
+                            </View>
+                            <Text style={[styles.hintText, { color: isDark ? '#71717a' : '#9ca3af' }]}>
+                                点击全屏交互
                             </Text>
                         </View>
-                        <Text style={[styles.hintText, { color: isDark ? '#71717a' : '#9ca3af' }]}>
-                            点击全屏交互
-                        </Text>
+                    </View>
+
+                    <View style={styles.actionIcon}>
+                        <Maximize2 size={18} color={isDark ? '#52525b' : '#9ca3af'} />
                     </View>
                 </View>
 
-                <View style={styles.actionIcon}>
-                    <Maximize2 size={18} color={isDark ? '#52525b' : '#9ca3af'} />
+                {/* WebView 缩略预览 */}
+                <View style={{ height: 120, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+                    <WebView
+                        key={`webview_preview_${title}`}
+                        source={{ html: generateHtml(false) }}
+                        style={{ flex: 1, backgroundColor: 'transparent' }}
+                        javaScriptEnabled={true}
+                        androidLayerType="hardware"
+                        bounces={false}
+                        scrollEnabled={false}
+                    />
                 </View>
             </TouchableOpacity>
 
@@ -257,13 +294,19 @@ const styles = StyleSheet.create({
         marginVertical: 4,
     },
     card: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
         borderRadius: 16,
         borderWidth: 1,
         width: '100%',
         alignSelf: 'center',
+        overflow: 'hidden',
+    },
+    cardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     iconContainer: {
         width: 44,

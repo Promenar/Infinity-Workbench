@@ -105,6 +105,33 @@ export interface RagMetadata {
   };
 }
 
+// 🆕 工具执行产物类型（集中定义，各层引用此接口）
+export type ToolResultArtifact = {
+  type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text';
+  content: string;
+  name?: string;
+};
+
+// 🆕 updateMessageContent 选项参数
+export interface UpdateMessageOptions {
+  tokens?: TokenUsage;
+  reasoning?: string;
+  citations?: { title: string; url: string; source?: string }[];
+  ragReferences?: RagReference[];
+  ragReferencesLoading?: boolean;
+  ragMetadata?: RagMetadata;
+  thought_signature?: string;
+  planningTask?: TaskState;
+  tool_calls?: ToolCall[];
+  executionSteps?: ExecutionStep[];
+  pendingApprovalToolIds?: string[];
+  toolResults?: ToolResultArtifact[];
+  isError?: boolean;
+  errorMessage?: string;
+  isLongWait?: boolean;
+  loopCount?: number;
+}
+
 export interface Message {
   id: string; // uuid
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -130,7 +157,7 @@ export interface Message {
   layoutHeight?: number; // ✅ 新增：缓存布局高度，优化滚动性能
   executionSteps?: ExecutionStep[]; // ✅ 新增：Agentic Loop 执行步骤
   tool_calls?: ToolCall[]; // ✅ 新增：工具调用列表
-  toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[]; // 🆕 新增：工具执行产物（专有渲染）
+  toolResults?: ToolResultArtifact[]; // 🆕 新增：工具执行产物（专有渲染）
   pendingApprovalToolIds?: string[]; // ✅ 新增：待审批工具 ID 列表（Semi模式下标记）
   tool_call_id?: string; // ✅ 新增：工具调用关联 ID (用于 role: tool)
   name?: string; // ✅ 新增：工具名称 (用于 role: tool)

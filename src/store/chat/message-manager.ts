@@ -7,7 +7,7 @@
 import type { ManagerContext, MessageManager } from './types';
 import type {
     Message, SessionId, TokenUsage, RagReference, RagProgress, RagMetadata, TaskState,
-    InferenceParams
+    InferenceParams, ToolResultArtifact, UpdateMessageOptions
 } from '../../types/chat';
 import type { ToolCall, ToolResult, ExecutionStep } from '../../types/skills';
 import { SessionRepository } from '../../lib/db/session-repository';
@@ -32,7 +32,7 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
         tool_calls?: ToolCall[];
         executionSteps?: ExecutionStep[];
         pendingApprovalToolIds?: string[];
-        toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[];
+        toolResults?: ToolResultArtifact[];
         isError?: boolean;
         errorMessage?: string;
         isLongWait?: boolean;
@@ -176,7 +176,6 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
                                         ...(pending.executionSteps && { executionSteps: pending.executionSteps }),
                                         ...(pending.pendingApprovalToolIds && { pendingApprovalToolIds: pending.pendingApprovalToolIds }),
                                         ...(pending.toolResults && { toolResults: pending.toolResults }),
-                                        ...(pending.toolResults && { toolResults: pending.toolResults }),
                                         ...(pending.isError !== undefined && { isError: pending.isError }),
                                         ...(pending.errorMessage !== undefined && { errorMessage: pending.errorMessage }),
                                         ...(pending.isLongWait !== undefined && { isLongWait: pending.isLongWait }),
@@ -235,30 +234,22 @@ export const createMessageManager = (context: ManagerContext): MessageManager =>
             sessionId: SessionId,
             messageId: string,
             content: string,
-            tokens?: TokenUsage,
-            reasoning?: string,
-            citations?: { title: string; url: string; source?: string }[],
-            ragReferences?: RagReference[],
-            ragReferencesLoading?: boolean,
-            ragMetadata?: RagMetadata,
-            thought_signature?: string,
-            taskState?: TaskState,
-            tool_calls?: ToolCall[],
-            executionSteps?: ExecutionStep[],
-            pendingApprovalToolIds?: string[],
-            toolResults?: { type: 'echarts' | 'mermaid' | 'math' | 'image' | 'text'; content: string; name?: string }[],
-            isError?: boolean,
-            errorMessage?: string,
-            isLongWait?: boolean,
-            loopCount?: number
+            options?: UpdateMessageOptions
         ) => {
+            const {
+                tokens, reasoning, citations, ragReferences, ragReferencesLoading,
+                ragMetadata, thought_signature, planningTask: taskState, tool_calls,
+                executionSteps, pendingApprovalToolIds, toolResults, isError,
+                errorMessage, isLongWait, loopCount
+            } = options || {};
+
             const key = `${sessionId}:${messageId}`;
             const currentPending = pendingUpdates.get(key) || { content };
 
             // Merge updates
             pendingUpdates.set(key, {
                 ...currentPending,
-                content: content, // Always overwrite content with latest
+                content: content,
                 ...(tokens !== undefined && { tokens }),
                 ...(reasoning !== undefined && { reasoning }),
                 ...(citations !== undefined && { citations }),
