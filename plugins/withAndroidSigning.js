@@ -18,11 +18,11 @@ const withAndroidSigning = (config) => {
         if (!hasReleaseInSigning && signingConfigsMatch) {
             const signingConfigStr = `
         release {
-            def secureEnv = file("../../../../secure_env/secure.properties")
+            def secureEnv = file("../../secure_env/secure.properties")
             if (secureEnv.exists()) {
                 def props = new Properties()
                 secureEnv.withInputStream { props.load(it) }
-                storeFile file("../../../../secure_env/promenar.keystore")
+                storeFile file("../../secure_env/promenar.keystore")
                 storePassword props.getProperty("KEYSTORE_PASSWORD")
                 keyAlias props.getProperty("KEY_ALIAS")
                 keyPassword props.getProperty("KEY_PASSWORD")

@@ -55,6 +55,7 @@
       "./plugins/withWideColorGamut",
       "./plugins/withAndroidSigning",
       "./plugins/withNativeLibraryTags",
+      "./plugins/withArm64Only",
       "expo-asset",
       "./plugins/withForegroundService"
     ]
