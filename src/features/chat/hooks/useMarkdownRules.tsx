@@ -128,34 +128,32 @@ export const useMarkdownRules = ({
         const content = node.content || '';
         const language = node.attributes?.lang || node.info || '';
 
-        // 4. SVG Optimization
+        // 4. SVG Optimization & Error Handling
+        if (language === 'svg-error') {
+          return (
+            <View
+              key={node.key}
+              collapsable={false}
+              style={{
+                marginVertical: 12,
+                padding: 16,
+                backgroundColor: isDark ? '#27272a' : '#fff1f2',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: isDark ? '#3f3f46' : '#fecaca',
+              }}
+            >
+              <Typography style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}>
+                {t.svgErrorTitle}
+              </Typography>
+              <Typography variant="caption" style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}>
+                {t.svgBlockedDesc}
+              </Typography>
+            </View>
+          );
+        }
+
         if (language === 'svg' || (content.trim().startsWith('<svg') && content.trim().endsWith('</svg>'))) {
-          const hasObviousSyntaxErrors = content.includes('undefined') || content.includes('[object Object]');
-
-          if (hasObviousSyntaxErrors) {
-            return (
-              <View
-                key={node.key}
-                collapsable={false}
-                style={{
-                  marginVertical: 12,
-                  padding: 16,
-                  backgroundColor: isDark ? '#27272a' : '#fff1f2',
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: isDark ? '#3f3f46' : '#fecaca',
-                }}
-              >
-                <Typography style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}>
-                  {t.svgErrorTitle}
-                </Typography>
-                <Typography variant="caption" style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}>
-                  {t.svgBlockedDesc}
-                </Typography>
-              </View>
-            );
-          }
-
           return (
             <View key={node.key + '-svg'} collapsable={false} style={{ marginVertical: 12, width: '100%' }}>
               <LazySVGRenderer svgContent={content} isDark={isDark} />

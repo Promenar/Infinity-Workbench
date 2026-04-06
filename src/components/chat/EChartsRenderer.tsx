@@ -52,30 +52,17 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
     let parseError = false;
 
     try {
-        const cleanContent = content
-            .replace(/^```echarts\s*\n?/, '')
-            .replace(/\n?\s*```$/, '')
-            .trim();
+        const cleanContent = content.trim();
         if (cleanContent) {
-            // 安全解析：尝试标准 JSON.parse，失败则尝试移除注释后解析
-            const stripJsonComments = (str: string): string => {
-                // 移除单行注释 // ...
-                // 移除多行注释 /* ... */
-                // 注意：不处理字符串内的注释标记（对于 ECharts 配置已足够）
-                return str
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/.*$/gm, '')
-                    .replace(/,\s*([}\]])/g, '$1')  // 移除尾逗号
-                    .replace(/([{,])\s*(\w+)\s*:/g, '$1"$2":')  // 无引号属性名加引号
-                    .replace(/"([^"]+)"\s*:\s*'([^']*)'/g, '"$1":"$2"');  // 单引号值转双引号
-            };
-            
+            // Because ContentSanitizer already ran jsonrepair on the original block,
+            // we can try parsing directly. If it's still invalid, it's truly unparseable.
             try {
                 chartOption = JSON.parse(cleanContent);
-            } catch {
-                // 尝试宽松解析：处理 JS 对象字面量格式
-                const sanitized = stripJsonComments(cleanContent);
-                chartOption = JSON.parse(sanitized);
+            } catch (innerError) {
+                // Secondary check for common JS object literal issues not fixed by repair
+                // (Though jsonrepair is very robust)
+                console.warn('[EChartsRenderer] JSON.parse failed, content:', cleanContent);
+                parseError = true;
             }
 
             if (chartOption) {
@@ -88,7 +75,7 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         }
     } catch (e: any) {
         parseError = true;
-        console.warn('[EChartsRenderer] 解析失败:', e?.message);
+        console.warn('[EChartsRenderer] Critical error during option extraction:', e?.message);
     }
 
     const generateHtml = (isFull = false) => `

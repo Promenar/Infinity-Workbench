@@ -24,7 +24,8 @@ import { ToolArtifacts } from './ToolArtifacts';
 // ✅ Import StreamCard for Error Display
 import { StreamCard } from './StreamCard'; // 🆕 新增
 import { ContextManager } from '../utils/ContextManager';
-import { preprocessMarkdown, markdownStyles as commonMarkdownStyles } from '../../../lib/markdown/markdown-utils'; // ✅ New Import
+import { markdownStyles as commonMarkdownStyles } from '../../../lib/markdown/markdown-utils';
+import { sanitize } from '../../../lib/sanitizer';
 import { useRagStore } from '../../../store/rag-store'; // ✅ 显式导入
 import { Typography, ContextMenu } from '../../../components/ui';
 import { useChatStore } from '../../../store/chat-store'; // ✅ 显式导入
@@ -63,7 +64,6 @@ import { ToolExecutionTimeline } from '../../../components/skills/ToolExecutionT
 
 import { findModelSpec, resolveModelIdToName } from '../../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
-import { extractImagesFromMarkdown } from '../utils/markdown-utils';
 import { TaskMonitor } from './TaskMonitor';
 import { TaskFinalResult } from './TaskFinalResult';
 
@@ -928,10 +928,9 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
   // 移除 handleLongPress 以释放原生文本选择手势
 
-  // 只处理 LaTeX 块级公式的预处理
-  // 将 $$...$$ 转换为 ```latex ... ``` 以便复用 fence 渲染逻辑
-  // ✅ 优化：内容归一化。如果正文为空，尝试使用任务总结作为正文显示。
-  const processedContent = useMemo(() => {
+  // ✅ 统一内容清洗与图片提取
+  // 使用新的 ContentSanitizer 插件架构，实现 LaTeX 转换、结构修补与图片提取的一次性处理
+  const { streamingContent, extractedImages } = useMemo(() => {
     let content = message.content || '';
 
     // 如果没有正文内容，但有任务最终总结，且任务已完成，则使用总结作为内容
@@ -939,26 +938,16 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       content = message.planningTask.final_summary;
     }
 
-    if (!content) return '';
+    if (!content) return { streamingContent: '', extractedImages: [] };
 
-    // ✅ Markdown 预处理: LaTeX 分隔符转换 + 结构化间距修复（幂等）
-    content = preprocessMarkdown(content);
-
-    // 替换块级公式 $$...$$
-    // 1. 临时保护代码块中的 $$（如果已有）- 简化处理，假设用户不会在代码块里写 $$ 作为文本
-    // 2. 查找孤立的 $$
-    const blockMathRegex = /\$\$([\s\S]+?)\$\$/g;
-    return content.replace(blockMathRegex, (match, formula) => {
-      return `\n\`\`\`latex\n${formula.trim()}\n\`\`\`\n`;
-    });
+    // 执行统一清洗逻辑（包含 LaTeX、HR、Table、Pangu 等修复，以及图片提取）
+    const result = sanitize(content, { extractImages: true });
+    
+    return { 
+      streamingContent: result.text, 
+      extractedImages: result.images || [] 
+    };
   }, [message.content, message.planningTask]);
-
-  // ✅ 提取图片：使用 useMemo 替代全局变量，避免内存泄漏
-  const { cleanContent: streamingContent, extractedImages } = useMemo(() => {
-    if (!processedContent) return { cleanContent: '', extractedImages: [] };
-    const { cleanContent, images } = extractImagesFromMarkdown(processedContent);
-    return { cleanContent, extractedImages: images };
-  }, [processedContent]);
 
   // Determine if this bubble is currently "loading" (last message and no content yet?)
   // Actually loading state is passed from parent but specific to session.
@@ -1141,7 +1130,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                 }}
                 {...({ selectable: true } as any)}
               >
-                {processedContent || ''}
+                {streamingContent || ''}
               </Markdown>
               {message.images && message.images.length > 0 && (
                 <View
@@ -1232,7 +1221,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
           <SelectTextModal
             isVisible={isModalVisible}
-            content={message.content || ''}
+            content={streamingContent || ''}
             onClose={() => setModalVisible(false)}
             isDark={isDark}
             t={t}
@@ -1638,7 +1627,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
       <SelectTextModal
         isVisible={isModalVisible}
-        content={processedContent || message.content || ''}
+        content={streamingContent || message.content || ''}
         onClose={() => setModalVisible(false)}
         isDark={isDark}
         t={t}
