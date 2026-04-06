@@ -235,16 +235,15 @@ export const useMarkdownRules = ({
         <ScrollView
           key={node.key}
           horizontal
+          nestedScrollEnabled={true}
           showsHorizontalScrollIndicator={true}
           style={{ marginVertical: 10 }}
-          contentContainerStyle={{ flexGrow: 1 }}
         >
           <View style={{
             borderWidth: 1,
             borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)',
             borderRadius: 6,
             overflow: 'hidden',
-            minWidth: '100%',
           }}>
             {children}
           </View>

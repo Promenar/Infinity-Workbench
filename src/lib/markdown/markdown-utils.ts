@@ -39,9 +39,9 @@ export function preprocessMarkdown(text: string): string {
     processed = processed.replace(/([^\n#])\n?(#{1,6})([^\s#\n])/g, '$1\n\n$2 $3');
     processed = processed.replace(/^(#{1,6})([^\s#\n])/gm, '$1 $2');
 
-    // 3b. 分隔符前后确保空行
-    processed = processed.replace(/([^\n])\n?(---+)/g, '$1\n\n$2');
-    processed = processed.replace(/(---+)\n?([^\n])/g, '$1\n\n$2');
+    // 3b. 分隔符前后确保空行（仅匹配独立成行的 HR，避免破坏 GFM 表格分隔行 `| --- |`）
+    processed = processed.replace(/([^\n])\n(^---+\s*$)/gm, '$1\n\n$2');
+    processed = processed.replace(/(^---+\s*$)\n([^\n])/gm, '$1\n\n$2');
 
     // 3c. 有序列表紧跟正文
     processed = processed.replace(/([^\n\d# ])\n?(\d{1,2}\. )/g, '$1\n$2');
