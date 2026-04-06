@@ -1,0 +1,10 @@
+declare module 'react-native-reanimated';
+declare module 'expo-file-system/legacy';
+declare module 'lucide-react-native';
+declare module 'react-native-svg';
+declare module 'react-native-syntax-highlighter';
+declare module 'react-syntax-highlighter/dist/esm/styles/hljs';
+declare module 'react-native-markdown-display';
+declare module 'expo-clipboard';
+declare module 'expo-sharing';
+declare module 'react-native-view-shot';

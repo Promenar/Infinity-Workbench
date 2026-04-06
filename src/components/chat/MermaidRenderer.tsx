@@ -35,6 +35,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
   const [isLandscape, setIsLandscape] = useState(false);
   const [loading, setLoading] = useState(true);
   const [localMermaidUri, setLocalMermaidUri] = useState<string | null>(null);
+  const [previewHeight, setPreviewHeight] = useState(120);
 
   // 预加载本地 mermaid 资源
   useEffect(() => {
@@ -93,6 +94,21 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
           securityLevel: '${isFull ? 'loose' : 'strict'}',
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         });
+        
+        ${!isFull ? `
+        // 上报内容高度
+        function sendHeight() {
+          setTimeout(function() {
+            var container = document.getElementById('mermaid-container');
+            var height = container ? container.scrollHeight : document.body.scrollHeight;
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: height + 40 }));
+            }
+          }, 500);
+        }
+        window.addEventListener('load', sendHeight);
+        // 如果 mermaid 渲染慢，可以在渲染完成后再次上报
+        ` : ''}
       </script>
     </body>
     </html>
@@ -158,7 +174,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
           </View>
         </TouchableOpacity>
 
-        <View style={{ height: 120, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+        <View style={{ height: loading ? 120 : previewHeight, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
           <WebView
             key="mermaid_preview"
             source={{ html: generateHtml(false) }}
@@ -167,6 +183,18 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
             androidLayerType="hardware"
             bounces={false}
             scrollEnabled={false}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                if (data.type === 'height' && !isFullscreen) {
+                  const newHeight = Math.min(Math.max(data.value, 80), 240);
+                  setPreviewHeight(newHeight);
+                  setLoading(false);
+                }
+              } catch (e) {
+                console.warn('[Mermaid] Height update error:', e);
+              }
+            }}
           />
         </View>
       </View>

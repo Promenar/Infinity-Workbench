@@ -9,7 +9,7 @@
 
 const CHINESE_SENTENCE_END = /[。！？；]/;
 const CHINESE_SENTENCE_END_GLOBAL = /[。！？；]/g;
-const LINE_BREAK_THRESHOLD = 80;
+const LINE_BREAK_THRESHOLD = 100;
 
 export function preprocessMarkdown(text: string): string {
     if (!text) return '';
@@ -22,9 +22,11 @@ export function preprocessMarkdown(text: string): string {
 
     // ━━ 2. 保护代码块和行内代码（避免结构修复影响代码内容）━━
     const protectedBlocks: string[] = [];
+    const PB_PREFIX = '\x00\x01PB_';
+    const PB_SUFFIX = '_PB\x01\x00';
     processed = processed.replace(/(```[\s\S]*?```|`[^`]+`)/g, (match) => {
         protectedBlocks.push(match);
-        return `\x00PB${protectedBlocks.length - 1}\x00`;
+        return `${PB_PREFIX}${protectedBlocks.length - 1}${PB_SUFFIX}`;
     });
 
     // ━━ 3. 结构化间距修复（通行 + 幂等）━━
@@ -44,11 +46,17 @@ export function preprocessMarkdown(text: string): string {
     // 3c. 有序列表紧跟正文
     processed = processed.replace(/([^\n\d# ])\n?(\d{1,2}\. )/g, '$1\n$2');
 
-    // 3d'. 修复粘连的 bullet + bold
-    processed = processed.replace(/\*\*\*([^*\n]+)\*\*(?!\*)/g, '\n* **$1**');
+    // 3d'. 修复粘连的 bullet + bold（仅行首场景，避免误匹配合法的 bold+italic）
+    processed = processed.replace(/^(\*\*\*)((?=[^*])([^*\n]+))\*\*(?!\*)/gm, '\n* **$3**');
 
     // 3d. 无序列表紧跟正文
     processed = processed.replace(/([^\n*])\n?([-*] )/g, '$1\n$2');
+
+    // ━━ 3.5. 中西文混排间距（pangu.js 规则）━━
+    // 中文后紧跟拉丁字母/数字 → 插入空格
+    processed = processed.replace(/([\u4e00-\u9fa5\u3400-\u4dbf])([A-Za-z0-9])/g, '$1 $2');
+    // 拉丁字母/数字后紧跟中文 → 插入空格
+    processed = processed.replace(/([A-Za-z0-9])([\u4e00-\u9fa5\u3400-\u4dbf])/g, '$1 $2');
 
     // ━━ 4. 中文智能换行 ━━
     // 针对低参数模型输出的无换行长文本，在句末标点后智能插入换行
@@ -56,7 +64,7 @@ export function preprocessMarkdown(text: string): string {
 
     // ━━ 5. 恢复保护块 ━━
     protectedBlocks.forEach((block, i) => {
-        processed = processed.replace(`\x00PB${i}\x00`, block);
+        processed = processed.replace(`${PB_PREFIX}${i}${PB_SUFFIX}`, block);
     });
 
     return processed;
@@ -164,8 +172,14 @@ function addChineseLineBreaks(text: string): string {
 export const markdownStyles = {
     body: {
         fontSize: 16,
-        lineHeight: 24,
+        lineHeight: 26,
         color: '#3f3f46',
+        includeFontPadding: false,
+        textAlignVertical: 'center' as const,
+    },
+    text: {
+        includeFontPadding: false,
+        textAlignVertical: 'center' as const,
     },
     heading1: {
         marginTop: 24,
@@ -186,7 +200,7 @@ export const markdownStyles = {
     paragraph: {
         marginTop: 8,
         marginBottom: 8,
-        lineHeight: 24,
+        lineHeight: 26,
     },
     list_item: {
         marginTop: 4,

@@ -5,6 +5,8 @@ import { Platform } from 'react-native';
 const ASSET_MODULES = {
   echarts: require('../../assets/web-libs/echarts.min.bundle'),
   mermaid: require('../../assets/web-libs/mermaid.min.bundle'),
+  katex_js: require('../../assets/web-libs/katex.min.bundle'),
+  katex_css: require('../../assets/web-libs/katex.min.css'),
 } as const;
 
 type LibName = keyof typeof ASSET_MODULES;

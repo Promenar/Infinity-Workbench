@@ -15,10 +15,8 @@ import {
   Pressable, // ✅ Import Pressable
 } from 'react-native';
 
-import SyntaxHighlighter from 'react-native-syntax-highlighter';
 import { atomOneDark, atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs';
-import { MermaidRenderer } from '../../../components/chat/MermaidRenderer';
-import { EChartsRenderer } from '../../../components/chat/EChartsRenderer';
+import { useMarkdownRules } from '../hooks/useMarkdownRules';
 import { MemoryManager } from '../../../lib/rag/memory-manager';
 import { graphExtractor } from '../../../lib/rag/graph-extractor';
 import { RagOmniIndicator } from './RagOmniIndicator';
@@ -65,10 +63,6 @@ import { ToolExecutionTimeline } from '../../../components/skills/ToolExecutionT
 
 import { findModelSpec, resolveModelIdToName } from '../../../lib/llm/model-utils';
 import { ModelIconRenderer } from '../../../components/icons/ModelIconRenderer';
-import {
-  MathRenderer,
-  LazySVGRenderer,
-} from '../../../components/chat/MathRenderer';
 import { extractImagesFromMarkdown } from '../utils/markdown-utils';
 import { TaskMonitor } from './TaskMonitor';
 import { TaskFinalResult } from './TaskFinalResult';
@@ -320,7 +314,7 @@ const LoadingDots = React.memo(({ isDark, color }: { isDark: boolean; color?: st
   const anim3 = useAnimatedStyle(() => ({ opacity: opacity3.value }));
 
   return (
-    <View className="flex-row items-center justify-center p-2 mb-2" style={{ height: 24 }}>
+    <View style={[{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 8, marginBottom: 8 }, { height: 24 }]}>
       <Animated.View style={[dotStyle, anim1]} />
       <Animated.View style={[dotStyle, anim2]} />
       <Animated.View style={[dotStyle, anim3]} />
@@ -460,7 +454,7 @@ const SelectTextModal: React.FC<{
 
   const handleDismiss = () => {
     bgOpacity.value = withTiming(0, { duration: 300 });
-    contentTranslateY.value = withTiming(600, { duration: 400 }, (finished) => {
+    contentTranslateY.value = withTiming(600, { duration: 400 }, (finished: boolean | undefined) => {
       if (finished) {
         runOnJS(setModalVisible)(false);
       }
@@ -523,20 +517,23 @@ const SelectTextModal: React.FC<{
               marginBottom: 16,
             }}
           >
-            <TouchableOpacity onPress={onClose} className="p-2">
+            <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
               <X size={24} color={isDark ? '#e4e4e7' : '#27272a'} />
             </TouchableOpacity>
-            <Typography className="text-base font-bold">{t.agent.viewAndSelectText}</Typography>
-            <TouchableOpacity onPress={handleCopy} style={{ backgroundColor: colors[500] }} className="p-2 rounded-full">
+            <Typography style={{ fontSize: 16, fontWeight: 'bold' }}>{t.agent.viewAndSelectText}</Typography>
+            <TouchableOpacity
+              onPress={handleCopy}
+              style={[{ backgroundColor: colors[500] }, { padding: 8, borderRadius: 100 }]}
+            >
               <Copy size={20} color="#fff" />
             </TouchableOpacity>
           </View>
 
-          <Typography variant="caption" className="mb-4 text-gray-500">
+          <Typography variant="caption" style={{ marginBottom: 16, color: '#6b7280' }}>
             {t.agent.textSelectionHint}
           </Typography>
 
-          <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
             <Typography
               selectable={true}
               style={{
@@ -573,7 +570,7 @@ const MessageMeta = React.memo<{
       opacity.value = withSequence(
         withTiming(1, { duration: 200 }),
         withTiming(1, { duration: 2000 }), // Stay visible for 2s
-        withTiming(0, { duration: 300 }, (finished) => {
+        withTiming(0, { duration: 300 }, (finished: boolean | undefined) => {
           if (finished) runOnJS(setShowTooltip)(false);
         })
       );
@@ -991,291 +988,14 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
 
 
   // Custom Markdown Rules to fix separate key warning in React 19 + FitImage + SVG Support + LaTeX Support
-  const markdownRules = useMemo(
-    () => ({
-      fence: (node: any, children: any, parent: any, styles: any) => {
-        const content = node.content?.trim() || '';
-        const language = node.sourceInfo?.toLowerCase() || '';
-
-        // 1. Mermaid Flowcharts
-        if (language === 'mermaid') {
-          return (
-            <View key={node.key} style={{ marginVertical: 12, width: '100%' }}>
-              <MermaidRenderer content={content} />
-            </View>
-          );
-        }
-
-        // 2. ECharts JSON Configuration
-        if (language === 'echarts') {
-          return (
-            <View key={node.key} style={{ marginVertical: 12, width: '100%' }}>
-              <EChartsRenderer content={content} />
-            </View>
-          );
-        }
-
-        // 3. LaTeX Block Formulas
-        if (language === 'latex' || language === 'math') {
-          return (
-            <View key={node.key} collapsable={false} style={{ marginVertical: 12, width: '100%' }}>
-              <MathRenderer content={content} isBlock={true} />
-            </View>
-          );
-        }
-
-        // 4. SVG Content
-        if (
-          language === 'svg' ||
-          content.startsWith('<svg') ||
-          (content.includes('<svg') && content.includes('</svg>'))
-        ) {
-          // Syntax check for obvious errors
-          const hasObviousSyntaxErrors =
-            /<path[^>]*\s+d[A-Z0-9]/.test(content) ||
-            /<rect[^>]*\s+x[A-Z0-9]/.test(content) ||
-            content.includes('strokeM') ||
-            content.includes('stroke#') ||
-            (content.includes('<path') && !content.includes('d='));
-
-          if (hasObviousSyntaxErrors) {
-            return (
-              <View
-                key={node.key}
-                collapsable={false}
-                style={{
-                  marginVertical: 12,
-                  padding: 16,
-                  backgroundColor: isDark ? '#27272a' : '#fff1f2',
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: isDark ? '#3f3f46' : '#fecaca',
-                }}
-              >
-                <Typography style={{ color: '#e11d48', fontSize: 13, fontWeight: '700' }}>
-                  {t.svgErrorTitle}
-                </Typography>
-                <Typography variant="caption" style={{ color: isDark ? '#a1a1aa' : '#6b7280', marginTop: 4 }}>
-                  {t.svgBlockedDesc}
-                </Typography>
-              </View>
-            );
-          }
-
-          return (
-            <View key={node.key + '-svg'} collapsable={false} style={{ marginVertical: 12, width: '100%' }}>
-              <LazySVGRenderer svgContent={content} isDark={isDark} />
-            </View>
-          );
-        }
-
-        // 5. Standard Code Blocks with Syntax Highlighting
-        const handleCopyCode = async () => {
-          await Clipboard.setStringAsync(content);
-          setTimeout(() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }, 10);
-        };
-
-        return (
-          <View key={node.key} style={[styles.fence, { padding: 0, overflow: 'hidden' }]}>
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-                borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.1)',
-              }}
-            >
-              <Typography variant="caption" style={{ color: isDark ? '#a1a1aa' : '#71717a', fontWeight: '600' }}>
-                {language.toUpperCase() || 'CODE'}
-              </Typography>
-              <TouchableOpacity
-                onPress={handleCopyCode}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Copy size={14} color={isDark ? '#a1a1aa' : '#71717a'} />
-              </TouchableOpacity>
-            </View>
-            <View style={{ padding: 0 }}>
-              <SyntaxHighlighter
-                language={language || 'text'}
-                style={isDark ? atomOneDark : atomOneLight}
-                highlighter={'hljs'}
-                fontSize={13}
-                fontFamily={Platform.OS === 'ios' ? 'Menlo' : 'monospace'}
-                customStyle={{
-                  padding: 12,
-                  backgroundColor: 'transparent',
-                }}
-                CodeTag={Text}
-                PreTag={View}
-              >
-                {content}
-              </SyntaxHighlighter>
-            </View>
-          </View>
-        );
-      },
-
-      image: (node: any, children: any, parent: any, styles: any) => {
-        const { src, alt } = node.attributes;
-        return <GeneratedImage key={node.key} src={src} alt={alt} isDark={isDark} t={t} onImagePress={setViewImageUri} />;
-      },
-      // ✅ 检测行内数学公式动态切换布局
-      // 含 $...$ 时使用 row/wrap 支持行内数学混排，纯文本使用默认列布局
-      paragraph: (node: any, children: any, parent: any, styles: any) => {
-        // 遍历 markdown-it token 子节点，检查 text token 是否含 $ 行内数学分隔符
-        let hasInlineMath = false;
-        if (Array.isArray(node.children)) {
-          hasInlineMath = node.children.some((child: any) => {
-            if (child.type === 'text' && child.content?.includes('$')) return true;
-            // 嵌套 token（如 strong 内的 text）
-            if (child.children) {
-              return child.children.some((grandchild: any) =>
-                grandchild.type === 'text' && grandchild.content?.includes('$')
-              );
-            }
-            return false;
-          });
-        }
-
-        if (hasInlineMath) {
-          return (
-            <View
-              key={node.key}
-              style={{
-                flexDirection: 'row',
-                flexWrap: 'wrap',
-                alignItems: 'baseline',
-                marginBottom: 8,
-              }}
-            >
-              {children}
-            </View>
-          );
-        }
-
-        // 纯文本段落：使用默认列布局，恢复自然排版
-        return (
-          <View key={node.key} style={{ marginBottom: 8 }}>
-            {children}
-          </View>
-        );
-      },
-      // ✅ Detect Inline Math ($...$)
-      text: (node: any, children: any, parent: any, styles: any) => {
-        const content = node.content;
-        // Simple optimization: check for possible math delimiter before splitting
-        if (!content.includes('$')) {
-          return <Text key={node.key} style={styles.text} textBreakStrategy="simple">{content}</Text>;
-        }
-
-        // Fix: Currency vs Math. Ignore $ followed by digit (e.g. $10).
-        // Only match $ if NOT followed by a digit.
-        const parts = content.split(/(\$(?!\d)[^\$]+\$)/g);
-
-        return (
-          <React.Fragment key={node.key}>
-            {parts.map((part: string, index: number) => {
-              if (part.startsWith('$') && part.endsWith('$')) {
-                // Remove $ delimiters
-                const math = part.slice(1, -1);
-                return (
-                  <View
-                    key={index}
-                    style={{
-                      marginHorizontal: 3,
-                      flexShrink: 0, // 防止公式被压缩
-                    }}
-                  >
-                    <MathRenderer content={math} isBlock={false} />
-                  </View>
-                );
-              }
-              // Skip empty text parts (e.g. caused by split at start/end)
-              if (!part) return null;
-
-              return (
-                <Text key={index} style={styles.text} textBreakStrategy="simple">
-                  {part}
-                </Text>
-              );
-            })}
-          </React.Fragment>
-        );
-      },
-
-      // ✅ Soft Line Break: 返回 null 让段落内文本自然连接
-      // 单换行在 Markdown 中是软折行，不应产生可见断行
-      softbreak: () => null,
-
-      // ✅ 表格渲染规则
-      table: (node: any, children: any) => (
-        <View key={node.key} style={{
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)',
-          borderRadius: 6,
-          marginVertical: 10,
-          overflow: 'hidden',
-        }}>
-          {children}
-        </View>
-      ),
-      thead: (node: any, children: any) => (
-        <View key={node.key}>{children}</View>
-      ),
-      tbody: (node: any, children: any) => (
-        <View key={node.key}>{children}</View>
-      ),
-      th: (node: any, children: any) => {
-        const align = node.attributes?.align;
-        return (
-          <View key={node.key}
-            style={{
-              paddingVertical: 6,
-              paddingHorizontal: 10,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-              borderBottomWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
-              alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
-            }}
-          >
-            <Text style={{ fontWeight: 'bold', fontSize: 13, color: isDark ? '#e4e4e7' : '#27272a' }}>{children}</Text>
-          </View>
-        );
-      },
-      tr: (node: any, children: any) => (
-        <View key={node.key} style={{ flexDirection: 'row' }}>
-          {children}
-        </View>
-      ),
-      td: (node: any, children: any) => {
-        const align = node.attributes?.align;
-        return (
-          <View key={node.key}
-            style={{
-              flex: 1,
-              paddingVertical: 5,
-              paddingHorizontal: 8,
-              borderBottomWidth: 1,
-              borderRightWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-              alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
-            }}
-          >
-            <Text style={{ fontSize: 13, color: isDark ? '#d4d4d8' : '#3f3f46', lineHeight: 18 }}>{children}</Text>
-          </View>
-        );
-      },
-
-    }),
-    [isDark],
-  );
+  // ✅ 使用重构后的自定义 Hook 获取 Markdown 渲染规则
+  const markdownRules = useMarkdownRules({
+    isDark,
+    colors,
+    t,
+    setViewImageUri,
+    GeneratedImage,
+  });
 
   // 🧐 UI 优化：隐藏并彻底不渲染工具消息
   // 🔑 必须放在所有 Hook 之后以满足 React 渲染准则
@@ -1394,13 +1114,16 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     ...commonMarkdownStyles.body,
                     color: isDark ? '#fafafa' : '#18181b',
                     fontSize: 15, // Keep 15px for mobile
+                    lineHeight: 25,
                     textAlign: 'left',
+                    includeFontPadding: false,
                   },
                   text: {
                     color: isDark ? '#ffffff' : '#18181b',
                     fontSize: 15,
-                    lineHeight: commonMarkdownStyles.body.lineHeight,
+                    lineHeight: 25,
                     fontWeight: '500', // Reduced from 600 for better reading
+                    includeFontPadding: false,
                   },
                   paragraph: { ...commonMarkdownStyles.paragraph, textAlign: 'left' },
                   blockquote: {
@@ -1566,7 +1289,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
           />
         </View>
 
-        <View className="flex-1 ml-3">
+        <View style={{ flex: 1, marginLeft: 12 }}>
           {(!!message.ragReferencesLoading ||
             (Array.isArray(message.ragReferences) && message.ragReferences.length > 0) ||
             (processingState.activeMessageId === message.id && (processingState.status !== 'idle' || processingState.kgStatus !== 'idle')) ||
@@ -1707,11 +1430,11 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
       >
         <View style={{ minHeight: 20, position: 'relative', overflow: 'hidden' }}>
           {isWaitingForContent ? (
-            <View className="items-start py-2">
+            <View style={{ alignItems: 'flex-start', paddingVertical: 8 }}>
               <LoadingDots isDark={isDark} color={agentColor} />
             </View>
           ) : (!isUser && !message.content && !message.reasoning && isGenerating) ? (
-            <View className="py-2">
+            <View style={{ paddingVertical: 8 }}>
               <LoadingDots isDark={isDark} />
             </View>
           ) : (
@@ -1725,11 +1448,14 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     ...commonMarkdownStyles.body,
                     color: isDark ? Colors.dark.textPrimary : '#27272A',
                     fontSize: 15,
+                    lineHeight: 25,
+                    includeFontPadding: false,
                   },
                   text: {
                     color: isDark ? Colors.dark.textPrimary : '#27272A',
                     fontSize: 15,
-                    lineHeight: commonMarkdownStyles.body.lineHeight,
+                    lineHeight: 25,
+                    includeFontPadding: false,
                   },
                   code_inline: {
                     backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -1740,7 +1466,7 @@ const ChatBubbleComponent: React.FC<ChatBubbleProps & { isGenerating?: boolean }
                     fontWeight: '500',
                   },
                   fence: {
-                    backgroundColor: isDark ? '#080911' : '#f8fafc',
+                    backgroundColor: isDark ? '#1a1a2e' : '#f8fafc',
                     borderColor: isDark ? Colors.dark.borderDefault : '#e2e8f0',
                     borderWidth: 1,
                     borderRadius: 12,

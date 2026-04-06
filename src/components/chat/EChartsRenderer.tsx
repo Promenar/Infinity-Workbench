@@ -37,6 +37,8 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isLandscape, setIsLandscape] = useState(false);
     const [localEchartsUri, setLocalEchartsUri] = useState<string | null>(null);
+    const [previewHeight, setPreviewHeight] = useState(120);
+    const [loading, setLoading] = useState(true);
 
     // 预加载本地 echarts 资源
     useEffect(() => {
@@ -145,6 +147,16 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         ${!isFull ? 'option.silent = true;' : ''}
         myChart.setOption(option);
         ${isFull ? "window.addEventListener('resize', () => myChart.resize());" : ''}
+
+        ${!isFull ? `
+        // 上报高度
+        setTimeout(function() {
+          var height = chartDom.scrollHeight || document.body.scrollHeight;
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: height + 20 }));
+          }
+        }, 500);
+        ` : ''}
       </script>
     </body>
     </html>
@@ -229,7 +241,7 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
                 </View>
 
                 {/* WebView 缩略预览 */}
-                <View style={{ height: 120, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+                <View style={{ height: loading ? 120 : previewHeight, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
                     <WebView
                         key={`webview_preview_${title}`}
                         source={{ html: generateHtml(false) }}
@@ -238,6 +250,15 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
                         androidLayerType="hardware"
                         bounces={false}
                         scrollEnabled={false}
+                        onMessage={(event) => {
+                            try {
+                                const data = JSON.parse(event.nativeEvent.data);
+                                if (data.type === 'height' && !isFullscreen) {
+                                    setPreviewHeight(Math.min(Math.max(data.value, 80), 240));
+                                    setLoading(false);
+                                }
+                            } catch {}
+                        }}
                     />
                 </View>
             </TouchableOpacity>

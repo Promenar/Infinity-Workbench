@@ -5,6 +5,7 @@ import { SvgXml } from 'react-native-svg';
 import { Play, Square, Eye, Maximize2, X, Minimize2 } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
 import { useTheme } from '../../theme/ThemeProvider';
+import { resolveLocalLibUri, scriptTagWithFallback } from '../../lib/webview-assets';
 
 interface MathRendererProps {
   content: string;
@@ -75,6 +76,13 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
   const { isDark } = useTheme();
   const webViewRef = React.useRef<WebView>(null);
   const [isWebViewReady, setIsWebViewReady] = React.useState(false);
+  const [localKatexJsUri, setLocalKatexJsUri] = React.useState<string | null>(null);
+  const [localKatexCssUri, setLocalKatexCssUri] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    resolveLocalLibUri('katex_js').then(uri => setLocalKatexJsUri(uri));
+    resolveLocalLibUri('katex_css').then(uri => setLocalKatexCssUri(uri));
+  }, []);
 
   // 1. 尝试从缓存获取初始尺寸
   const cachedSize = sizeCache.get(content);
@@ -126,14 +134,20 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
     // 安全转义 LaTeX 内容，防止 JS 注入破坏结构
     const safeContent = JSON.stringify(content);
 
+    const katexCssTag = localKatexCssUri
+      ? `<link rel="stylesheet" href="${localKatexCssUri}" onerror="(function(){var l=document.createElement('link');l.rel='stylesheet';l.href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';document.head.appendChild(l);})()">`
+      : `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">`;
+
+    const katexJsTag = scriptTagWithFallback('katex_js', localKatexJsUri, 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js');
+
     return {
       html: `
 <!DOCTYPE html>
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    ${katexCssTag}
+    ${katexJsTag}
     <style>
         body {
             margin: 0;
@@ -199,7 +213,7 @@ export const MathRenderer: React.FC<MathRendererProps> = React.memo(({ content, 
 </body>
 </html>
   `};
-  }, [backgroundColor, textColor, isBlock, content]); // Depend on content now
+  }, [backgroundColor, textColor, isBlock, content, localKatexJsUri, localKatexCssUri]); // Depend on content and uris now
 
   return (
     <View
