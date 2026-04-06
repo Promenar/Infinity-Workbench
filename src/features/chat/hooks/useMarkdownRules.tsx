@@ -18,6 +18,7 @@ import { NativeMathRenderer } from '../../../components/chat/NativeMathRenderer'
 import { LazySVGRenderer } from '../../../components/chat/MathRenderer';
 import { MermaidRenderer } from '../../../components/chat/MermaidRenderer';
 import { EChartsRenderer } from '../../../components/chat/EChartsRenderer';
+import { Borders } from '../../../theme/glass';
 
 interface UseMarkdownRulesProps {
   isDark: boolean;
@@ -186,9 +187,9 @@ export const useMarkdownRules = ({
                 alignItems: 'center',
                 paddingHorizontal: 12,
                 paddingVertical: 8,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                 borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                borderBottomColor: isDark ? Borders.glass.dark : Borders.glass.light,
               }}
             >
               <Typography variant="caption" style={{ color: isDark ? '#a1a1aa' : '#71717a', fontWeight: '600' }}>
@@ -239,7 +240,7 @@ export const useMarkdownRules = ({
         >
           <View style={{
             borderWidth: 1,
-            borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)',
+            borderColor: isDark ? Borders.glass.dark : Borders.glass.light,
             borderRadius: 6,
             overflow: 'hidden',
           }}>
@@ -267,9 +268,9 @@ export const useMarkdownRules = ({
               maxWidth: 200,
               paddingVertical: 6,
               paddingHorizontal: 10,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
               borderBottomWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+              borderColor: isDark ? Borders.glass.dark : Borders.glass.light,
               alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
             }}
           >

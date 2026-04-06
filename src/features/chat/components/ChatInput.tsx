@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   TextInput,
@@ -7,8 +7,6 @@ import {
   Platform,
   Image,
   ScrollView,
-  Modal,
-  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -20,22 +18,10 @@ import {
   X,
   Image as ImageIcon,
   Camera,
-  Zap,
-  Shield,
-  PlayCircle,
+  FileText,
   Check,
-  Wrench, // New Icon for tools
 } from 'lucide-react-native';
-import * as Haptics from '../../../lib/haptics';
-import { useI18n } from '../../../lib/i18n';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { BlurView } from 'expo-blur';
-import { PdfExtractor, PdfExtractorRef } from '../../../components/rag/PdfExtractor';
-import { documentProcessor } from '../../../lib/rag/document-processor';
-import { documentService } from '../../../lib/file/document-service';
-import { ChatAttachment } from '../../../types/chat';
-import { FileText, File } from 'lucide-react-native'; // Icon
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -43,198 +29,32 @@ import Animated, {
   withTiming,
   Easing,
   cancelAnimation,
-  interpolateColor,
 } from 'react-native-reanimated';
-import { useTheme } from '../../../theme/ThemeProvider';
-import { Typography, ConfirmDialog, GlassBottomSheet } from '../../../components/ui';
 import Svg, { Circle } from 'react-native-svg';
-import { TokenUsage } from '../../../types/chat';
-import { formatTokenCount } from '../utils/token-counter'
-import { useChatStore } from '../../../store/chat-store';
-import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
-import { useApiStore } from '../../../store/api-store';
-import { useAgentStore } from '../../../store/agent-store';
-import { ANIMATION_DURATION } from '../../../theme/animations';
+
+import * as Haptics from '../../../lib/haptics';
+import { useI18n } from '../../../lib/i18n';
+import { useTheme } from '../../../theme/ThemeProvider';
+import { Typography, ConfirmDialog } from '../../../components/ui';
 import { Glass } from '../../../theme/glass';
+import { ANIMATION_DURATION } from '../../../theme/animations';
+import { useChatStore } from '../../../store/chat-store';
+import { useApiStore } from '../../../store/api-store';
+import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
+import { formatTokenCount } from '../utils/token-counter';
+import { documentProcessor } from '../../../lib/rag/document-processor';
 
 import { ExecutionModeSelector } from './ExecutionModeSelector';
-
-// ✅ 思考等级切换器 (Gemini 3 Flash Thinking Mode)
-const ThinkingLevelButton = ({ sessionId, isDark, activeModelId, displayName }: { sessionId: string; isDark: boolean; activeModelId?: string; displayName?: string }) => {
-  const session = useChatStore((s) => s.sessions.find((sk) => sk.id === sessionId));
-  const agent = useAgentStore((s) => s.agents.find((a) => a.id === session?.agentId));
-  const updateSessionOptions = useChatStore((s) => s.updateSessionOptions);
-  const providers = useApiStore((s) => s.providers);
-  const [visible, setVisible] = useState(false);
-
-  // 🔍 Robust Model Identification
-
-  const modelConfig = useMemo(() => {
-    if (!activeModelId) return null;
-    for (const p of providers) {
-      const m = p.models.find(mod => mod.uuid === activeModelId || mod.id === activeModelId);
-      if (m) return m;
-    }
-    return null;
-  }, [providers, activeModelId]);
-
-  const { supportsThinkingConfig } = require('../../../lib/llm/model-utils');
-  const isSupported = supportsThinkingConfig(activeModelId);
-
-  if (!session || !activeModelId || !isSupported) return null;
-
-  const level = session.options?.thinkingLevel || 'high';
-
-  // 🛡️ User Request: Strictly check DISPLAY NAME for "Gemini" AND "Flash"
-  // API ID is ignored for this check to allow Vertex AI aliases to work naturally.
-  const nameToCheck = (displayName || modelConfig?.name || '').toLowerCase();
-  const isFlash = nameToCheck.includes('gemini') && nameToCheck.includes('flash');
-
-  // DEBUG LOG (Visible in terminal for diagnosis)
-  // console.log(`[ThinkingButton] ID: ${activeModelId} | isFlash: ${isFlash}`);
-
-  const options = [
-    { value: 'minimal', label: '极速', desc: '限制模型最大限度地少用 token 进行思考 (仅限 Flash)。', disabled: !isFlash },
-    { value: 'low', label: '轻量', desc: '限制模型使用较少的 token 进行思考，适合不需要进行大量推理的简单任务。' },
-    { value: 'medium', label: '均衡', desc: '提供了一种均衡方法，适合中等复杂程度的任务 (仅限 Flash)。', disabled: !isFlash },
-    { value: 'high', label: '深度', desc: '允许模型使用更多的 token 进行思考，适合需要深度推理的复杂提示。' },
-  ];
-
-  const getIcon = (l: string, size: number = 14) => {
-    // 🧠 Lightbulb for thinking
-    const { Lightbulb } = require('lucide-react-native');
-    switch (l) {
-      case 'minimal': return <Lightbulb size={size} color="#9ca3af" strokeWidth={2.5} />;
-      case 'low': return <Lightbulb size={size} color="#22c55e" strokeWidth={2.5} />;
-      case 'medium': return <Lightbulb size={size} color="#eab308" strokeWidth={2.5} />;
-      case 'high': return <Lightbulb size={size} color="#a855f7" strokeWidth={2.5} />;
-      default: return <Lightbulb size={size} color={isDark ? '#52525b' : '#a1a1aa'} />;
-    }
-  };
-
-  const getLabel = (l: string) => {
-    switch (l) {
-      case 'minimal': return 'MINI';
-      case 'low': return 'LOW';
-      case 'medium': return 'MED';
-      case 'high': return 'HIGH';
-      default: return l.toUpperCase();
-    }
-  };
-
-  const handleSelect = (l: 'minimal' | 'low' | 'medium' | 'high') => {
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      updateSessionOptions(sessionId, { thinkingLevel: l });
-      setVisible(false);
-    }, 10);
-  };
-
-  return (
-    <>
-      <TouchableOpacity
-        onPress={() => {
-          setTimeout(() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }, 10);
-          setVisible(true);
-        }}
-        activeOpacity={0.6}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 8,
-          paddingVertical: 2,
-          borderRadius: 10,
-          backgroundColor: 'rgba(0,0,0,0.03)',
-          gap: 4,
-          marginRight: 6, // Spacing
-        }}
-      >
-        {getIcon(level, 10)}
-        <Typography
-          className="text-[9px] font-black uppercase tracking-tight"
-          style={{
-            color: level === 'minimal' ? '#9ca3af' : level === 'low' ? '#22c55e' : level === 'medium' ? '#eab308' : '#a855f7',
-          }}
-        >
-          {getLabel(level)}
-        </Typography>
-      </TouchableOpacity>
-
-      <GlassBottomSheet
-        visible={visible}
-        onClose={() => setVisible(false)}
-        title="思考等级 (Reasoning Effort)"
-        subtitle="为模型生成回答指定思考预算"
-        height="auto"
-      >
-        <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}>
-          <Typography
-            variant="body"
-            style={{ color: isDark ? '#a1a1aa' : '#52525b', lineHeight: 20, marginBottom: 8 }}
-          >
-            调整模型在生成回答时的思考深度与 token 消耗预算。Pro 模型仅支持 <Typography style={{ fontWeight: '700', color: isDark ? '#fff' : '#000' }}>轻量</Typography> 与 <Typography style={{ fontWeight: '700', color: isDark ? '#fff' : '#000' }}>深度</Typography> 模式。
-          </Typography>
-
-          <View style={{ gap: 12 }}>
-            {options.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                disabled={opt.disabled}
-                onPress={() => !opt.disabled && handleSelect(opt.value as any)}
-                style={{
-                  flexDirection: 'row',
-                  padding: 16,
-                  backgroundColor: isDark ? '#27272a' : '#fff',
-                  borderRadius: 16,
-                  borderWidth: 1.5, // Thicker border for better visibility
-                  borderColor: level === opt.value ? (isDark ? '#a855f7' : '#a855f7') : (isDark ? '#3f3f46' : '#e4e4e7'),
-                  opacity: opt.disabled ? 0.4 : 1,
-                  gap: 14
-                }}
-              >
-                <View style={{ paddingTop: 2 }}>
-                  {getIcon(opt.value, 22)}
-                </View>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Typography
-                    style={{
-                      fontSize: 16,
-                      fontWeight: '700', // Bold title
-                      color: opt.disabled ? (isDark ? '#52525b' : '#d4d4d8') : (isDark ? '#fff' : '#000')
-                    }}
-                  >
-                    {opt.label} {opt.disabled && <Typography style={{ fontSize: 12, fontWeight: '400', color: isDark ? '#52525b' : '#a1a1aa' }}>(不支持)</Typography>}
-                  </Typography>
-                  <Typography
-                    style={{
-                      fontSize: 13,
-                      color: isDark ? '#a1a1aa' : '#52525b',
-                      lineHeight: 18
-                    }}
-                  >
-                    {opt.desc}
-                  </Typography>
-                </View>
-                {level === opt.value && (
-                  <View style={{ justifyContent: 'center' }}>
-                    <Check size={20} color={isDark ? '#a855f7' : '#a855f7'} strokeWidth={3} />
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </GlassBottomSheet>
-    </>
-  );
-};
+import { ThinkingLevelButton } from './input/ThinkingLevelButton';
+import { useMediaPicker } from './input/hooks/useMediaPicker';
+import { useChatInputState } from './input/hooks/useChatInputState';
+import { useKeyboardTracking } from './input/hooks/useKeyboardTracking';
+import { getInputStyles } from './input/styles/input-styles';
 
 interface ChatInputProps {
   onSendMessage: (
     text: string,
-    options?: { webSearch?: boolean; reasoning?: boolean; images?: string[]; files?: ChatAttachment[] },
+    options?: { webSearch?: boolean; reasoning?: boolean; images?: string[]; files?: any[] },
   ) => void;
   onStop?: () => void;
   sessionId: string;
@@ -245,20 +65,17 @@ interface ChatInputProps {
   onModelPress?: () => void;
   tokenUsage?: {
     total: number;
-    last?: TokenUsage;
+    last?: any;
   };
   onTokenPress?: () => void;
   isInterventionMode?: boolean;
-  // ✅ 新增：重发编辑模式
-  editingMessageId?: string;      // 正在编辑的消息 ID
-  initialEditText?: string;       // 初始编辑内容
-  onCancelEdit?: () => void;      // 取消编辑回调
-  toolsEnabled?: boolean;         // New prop
-  onToggleTools?: () => void;     // New prop
-  activeModelId?: string;         // ✅ New Source of Truth
+  editingMessageId?: string;
+  initialEditText?: string;
+  onCancelEdit?: () => void;
+  toolsEnabled?: boolean;
+  onToggleTools?: () => void;
+  activeModelId?: string;
 }
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 export function ChatInput({
   onSendMessage,
@@ -275,24 +92,52 @@ export function ChatInput({
   editingMessageId,
   initialEditText,
   onCancelEdit,
-  toolsEnabled = true, // Default to true
-  onToggleTools,
   activeModelId,
 }: ChatInputProps) {
   const { t } = useI18n();
   const { isDark, colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => getInputStyles(isDark, colors), [isDark, colors]);
+  
   const rotation = useSharedValue(0);
-  const focusProgress = useSharedValue(0);
-  const [isFocused, setIsFocused] = useState(false);
-  const [text, setText] = useState('');
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<ChatAttachment[]>([]);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
-  const pdfExtractorRef = React.useRef<PdfExtractorRef>(null);
+  const pdfExtractorRef = React.useRef<any>(null);
 
-  // Register PDF Extractor
+  // 1. Session & Options
+  const session = useChatStore((state) => state.getSession(sessionId));
+  const updateSessionDraft = useChatStore((state) => state.updateSessionDraft);
+  const webSearchEnabled = session?.options?.webSearch ?? false;
+  const reasoningEnabled = session?.options?.reasoning ?? true;
+
+  // 2. Logic Extraction Hooks
+  const media = useMediaPicker(t);
+  
+  const {
+    text,
+    setText,
+    handleSend,
+  } = useChatInputState({
+    sessionId,
+    onSendMessage,
+    clearAttachments: media.clearAttachments,
+    webSearchEnabled,
+    reasoningEnabled,
+    selectedImages: media.selectedImages,
+    selectedFiles: media.selectedFiles,
+    editingMessageId,
+    initialEditText,
+    onStop,
+  });
+
+  const {
+    isFocused,
+    focusAnimatedStyle,
+    handleFocus,
+    handleBlur,
+  } = useKeyboardTracking({ isDark, agentColor, colors });
+
+  // 3. Side Effects
   useEffect(() => {
-    // Delay registration to ensure ref is mounted
     const timer = setTimeout(() => {
       if (pdfExtractorRef.current) {
         documentProcessor.setPdfExtractor(pdfExtractorRef.current);
@@ -300,97 +145,6 @@ export function ChatInput({
     }, 500);
     return () => clearTimeout(timer);
   }, []);
-
-  // ✅ 编辑模式：当进入编辑模式时，设置初始文本
-  useEffect(() => {
-    if (editingMessageId && initialEditText !== undefined) {
-      setText(initialEditText);
-    }
-  }, [editingMessageId, initialEditText]);
-
-  // 确认弹窗状态
-  const [confirmState, setConfirmState] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  }>({
-    visible: false,
-    title: '',
-    message: '',
-    onConfirm: () => { },
-  });
-
-  // Access store directly to persist toggles
-  const session = useChatStore((state) => state.getSession(sessionId));
-  const updateSessionOptions = useChatStore((state) => state.updateSessionOptions);
-  const updateSessionDraft = useChatStore((state) => state.updateSessionDraft);
-
-  const webSearchEnabled = session?.options?.webSearch ?? false; // Default to false
-  const reasoningEnabled = session?.options?.reasoning ?? true; // Default to true
-
-  const draftTimerRef = React.useRef<NodeJS.Timeout | null>(null);
-  const isSendingRef = React.useRef(false); // 🆕 防止发送后的 setText('') 触发草稿保存
-
-  // 🛡️ User Intervention Check
-  // Check if the session is paused and waiting for user input
-  const pendingIntervention = session?.pendingIntervention;
-  const isInterventionRequired = session?.loopStatus === 'paused' && !!pendingIntervention;
-
-  const placeholderText = useMemo(() => {
-    if (isInterventionRequired) return "请回复以继续任务...";
-    // Default fallback
-    return "发送消息...";
-  }, [activeModelId, isInterventionRequired]);
-
-
-
-  // Load draft on mount
-  useEffect(() => {
-    if (session?.draft) {
-      setText(session.draft);
-    }
-  }, [sessionId]); // Only run when sessionId changes (effectively on mount for this component instance)
-
-  // Save draft on text change (debounced)
-  useEffect(() => {
-    // 🔑 无条件清除旧定时器（确保发送后不会有残留定时器）
-    if (draftTimerRef.current) {
-      clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = null;
-    }
-
-    // 🔑 发送过程中的 setText('') 不应触发草稿保存
-    if (isSendingRef.current) {
-      isSendingRef.current = false;
-      return;
-    }
-
-    // 只有非发送场景才创建新的防抖定时器
-    draftTimerRef.current = setTimeout(() => {
-      if (session && text !== (session.draft || '')) {
-        // Only update if changed to avoid loop
-        // Don't save empty string if it was already undefined/empty to avoid unnecessary writes
-        updateSessionDraft(sessionId, text);
-      }
-      draftTimerRef.current = null;
-    }, 500);
-
-    return () => {
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    };
-  }, [text, sessionId]);
-
-
-  // 检测是否为强制推理模型（无法关闭推理）
-  const providers = useApiStore((state) => state.providers);
-  const modelId = session?.modelId;
-  const currentModelConfig = modelId
-    ? providers.flatMap((p) => p.models).find((m) => m.uuid === modelId || m.id === modelId)
-    : undefined;
-  const isModelForcedReasoning = currentModelConfig
-    ? isForcedReasoningModel(currentModelConfig.id)
-    : false;
 
   useEffect(() => {
     if (loading) {
@@ -404,243 +158,38 @@ export function ChatInput({
     }
   }, [loading]);
 
-  const animatedCircleStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ rotate: `${rotation.value}deg` }],
-    };
-  });
+  const animatedCircleStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
 
-  const focusBorderColorInactive = isDark ? '#374151' : '#E5E7EB';
-  const focusBorderColorActive = agentColor || colors[500];
+  const placeholderText = useMemo(() => {
+    if (session?.loopStatus === 'paused' && !!session?.pendingIntervention) return "请回复以继续任务...";
+    return "发送消息...";
+  }, [session?.loopStatus, session?.pendingIntervention]);
 
-  const focusAnimatedStyle = useAnimatedStyle(() => {
-    'worklet';
-    return {
-      borderColor: interpolateColor(focusProgress.value, [0, 1], [
-        focusBorderColorInactive,
-        focusBorderColorActive,
-      ]),
-      shadowOpacity: focusProgress.value * 0.12,
-    };
-  });
-
-  const handleFocus = useCallback(() => {
-    setIsFocused(true);
-    focusProgress.value = withTiming(1, { duration: 200 });
-  }, []);
-
-  const handleBlur = useCallback(() => {
-    setIsFocused(false);
-    focusProgress.value = withTiming(0, { duration: 200 });
-  }, []);
-
-  useEffect(() => {
-    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
-      if (isFocused) {
-        setIsFocused(false);
-        focusProgress.value = withTiming(0, { duration: 200 });
-      }
-    });
-    return () => {
-      keyboardDidHideListener.remove();
-    };
-  }, [isFocused]);
-
-  const handleSend = () => {
-    if (loading && onStop) {
-      setTimeout(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onStop();
-      }, 10);
-      return;
-    }
-
-    if ((!text.trim() && selectedImages.length === 0 && selectedFiles.length === 0) || disabled || loading) return;
-
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      // ✅ 立即清除草稿保存定时器，防止发送后的 setText('') 触发竞态回填
-      if (draftTimerRef.current) {
-        clearTimeout(draftTimerRef.current);
-        draftTimerRef.current = null;
-      }
-
-      // 🆕 标记正在发送，防止 setText('') 触发 useEffect 重新保存草稿
-      isSendingRef.current = true;
-
-      // Pass the current persistent options
-      onSendMessage(text, {
-        webSearch: webSearchEnabled,
-        reasoning: reasoningEnabled,
-        images: selectedImages.length > 0 ? selectedImages : undefined,
-        files: selectedFiles.length > 0 ? selectedFiles : undefined,
-      });
-      setText('');
-      updateSessionDraft(sessionId, ''); // Clear draft immediately IN DB
-      setSelectedImages([]);
-      setSelectedFiles([]);
-    }, 10);
-
-  };
-
-  const handlePickImage = async (source: 'camera' | 'library') => {
-    setShowAttachmentMenu(false);
-    try {
-      let result;
-      if (source === 'camera') {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-          setConfirmState({
-            visible: true,
-            title: t.chat.cameraPermission,
-            message: t.chat.cameraPermissionMessage,
-            onConfirm: () => setConfirmState((prev) => ({ ...prev, visible: false })),
-          });
-          return;
-        }
-        result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: false,
-          quality: 0.7,
-        });
-      } else {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-          setConfirmState({
-            visible: true,
-            title: t.chat.galleryPermission,
-            message: t.chat.galleryPermissionMessage,
-            onConfirm: () => setConfirmState((prev) => ({ ...prev, visible: false })),
-          });
-          return;
-        }
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsMultipleSelection: true,
-          quality: 0.7,
-        });
-      }
-
-      if (!result.canceled) {
-        const newImages: string[] = [];
-        // Ensure directory exists
-        const imgDir = (FileSystem.documentDirectory || '') + 'images/';
-        try {
-          await FileSystem.makeDirectoryAsync(imgDir, { intermediates: true });
-        } catch (e) {
-          console.warn('[ChatInput] Failed to create image directory, using cache dir or original uri');
-        }
-
-        for (const asset of result.assets) {
-          // 🔑 Fallback Strategy:
-          // Try to copy to internal storage for persistence.
-          // If execution fails (common in Release builds due to permissions/paths),
-          // fallback to using the original asset.uri directly.
-          try {
-            const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-            const dest = imgDir + filename;
-            await FileSystem.copyAsync({
-              from: asset.uri,
-              to: dest,
-            });
-            newImages.push(dest);
-          } catch (copyError) {
-            console.warn('[ChatInput] Copy failed, using original URI:', copyError);
-            // ✅ Fallback: Use original URI
-            newImages.push(asset.uri);
-          }
-        }
-
-        if (newImages.length > 0) {
-          setSelectedImages((prev) => [...prev, ...newImages]);
-          setTimeout(() => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          }, 10);
-        }
-      }
-    } catch (e) {
-      console.error('Image picker error:', e);
-      setConfirmState({
-        visible: true,
-        title: t.chat.imageSelectionError,
-        // ✅ Show actual error message for debugging
-        message: `${t.chat.imageSelectionErrorMessage}\n\nDebug Info: ${(e as Error).message}`,
-        onConfirm: () => setConfirmState((prev) => ({ ...prev, visible: false })),
-      });
-    }
-  };
-
-  const handlePickFile = async () => {
-    setShowAttachmentMenu(false);
-    const file = await documentService.pickDocument();
-    if (file) {
-      setSelectedFiles((prev) => [...prev, file]);
-      setTimeout(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }, 10);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, 10);
-  };
-
-
-
-  const removeImage = (index: number) => {
-    setSelectedImages((prev) => prev.filter((_, i) => i !== index));
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, 10);
-  };
-
-  const handleModelPress = () => {
+  // Actions
+  const onModelBarPress = () => {
     if (onModelPress) {
-      setTimeout(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onModelPress();
-      }, 10);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onModelPress();
     }
   };
 
-  const handleTokenPress = () => {
+  const onTokenBarPress = () => {
     if (onTokenPress) {
-      setTimeout(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onTokenPress();
-      }, 10);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onTokenPress();
     }
+  };
+
+  const toggleAttachmentMenu = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowAttachmentMenu(!showAttachmentMenu);
   };
 
   return (
-    <View
-      style={[
-        styles.outerContainer,
-        { marginBottom: 12 + (useSafeAreaInsets().bottom || 0) }, // 🔑 适配安全区底部高度
-        Platform.select({
-          ios: {
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.15,
-            shadowRadius: 16,
-          },
-          android: {
-            // elevation 需要背景色，但为了透出毛玻璃，使用极低透明度的背景
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.01)' : 'rgba(255, 255, 255, 0.01)',
-            borderRadius: 24,
-            elevation: 12,
-            margin: 2,
-          },
-        }),
-      ]}
-    >
-
-
-      {/* ✅ 编辑模式横条 Banner */}
+    <View style={[styles.outerContainer, { marginBottom: 12 + insets.bottom }]}>
+      {/* Edit Mode Banner */}
       {editingMessageId && (
         <TouchableOpacity
           onPress={() => {
@@ -648,142 +197,68 @@ export function ChatInput({
             onCancelEdit?.();
           }}
           activeOpacity={0.8}
-          style={{
-            position: 'absolute',
-            top: -12,
-            left: 0,
-            right: 0,
-            zIndex: 100,
-            alignItems: 'center',
-          }}
+          style={styles.editBanner}
         >
-          <View
-            style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.95)',
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: 10,
-            }}
-          >
-            <Typography style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
-              退出重发模式
-            </Typography>
+          <View style={styles.editBadge}>
+            <Typography style={styles.editBadgeText}>退出重发模式</Typography>
           </View>
         </TouchableOpacity>
       )}
 
-
       <BlurView
-        intensity={isDark ? Glass.Header.intensity : Glass.Header.intensity} // Consistent intensity
+        intensity={Glass.Header.intensity}
         tint={isDark ? Glass.Header.tint.dark : Glass.Header.tint.light}
         experimentalBlurMethod='dimezisBlurView'
         style={[
           styles.blurContainer,
           {
-            // ✅ 编辑模式：红色边框
             borderColor: editingMessageId
               ? 'rgba(239, 68, 68, 0.7)'
               : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
             borderWidth: editingMessageId ? 2 : 1.5,
           },
-          // ✅ 编辑模式：羽化红色阴影
-          editingMessageId && {
-            shadowColor: '#ef4444',
-            shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.5,
-            shadowRadius: 12,
-            elevation: 8,
-          },
+          editingMessageId && styles.editShadow,
         ]}
       >
-        <View
-          style={[
-            styles.overlay,
-            {
-              // 统一使用 Glass.Header 的透明度
-              backgroundColor: isDark
-                ? `rgba(0, 0, 0, ${Glass.Header.opacity.dark})`
-                : `rgba(255, 255, 255, ${Glass.Header.opacity.light})`,
-            },
-          ]}
-        />
+        <View style={[styles.overlay, { backgroundColor: isDark ? `rgba(0,0,0,${Glass.Header.opacity.dark})` : `rgba(255,255,255,${Glass.Header.opacity.light})` }]} />
 
+        {/* Top Bar: Model, Tokens, Modes */}
         <View style={styles.topBar}>
           {currentModel && (
-            <TouchableOpacity
-              onPress={handleModelPress}
-              activeOpacity={0.6}
-              style={styles.modelBar}
-            >
+            <TouchableOpacity onPress={onModelBarPress} activeOpacity={0.6} style={styles.modelBar}>
               <Cpu size={10} color={agentColor} />
-              <Typography
-                numberOfLines={1}
-                ellipsizeMode="tail"
-                className="text-[9px] font-black ml-1 uppercase tracking-tight text-gray-400 dark:text-gray-500"
-                style={{ maxWidth: 100 }}
-              >
-                {currentModel}
-              </Typography>
+              <Typography numberOfLines={1} style={styles.topBarText}>{currentModel}</Typography>
             </TouchableOpacity>
           )}
 
           {tokenUsage && (
-            <TouchableOpacity
-              onPress={handleTokenPress}
-              activeOpacity={0.6}
-              style={styles.tokenBar}
-            >
+            <TouchableOpacity onPress={onTokenBarPress} activeOpacity={0.6} style={styles.tokenBar}>
               <Calculator size={10} color={isDark ? '#52525b' : '#a1a1aa'} />
-              <Typography className="text-[9px] font-bold ml-1 text-gray-400 dark:text-zinc-600">
-                {formatTokenCount(tokenUsage.total)} TOK
-              </Typography>
+              <Typography style={styles.topBarText}>{formatTokenCount(tokenUsage.total)} TOK</Typography>
             </TouchableOpacity>
           )}
 
-          {/* Indicators Stack */}
-          <View className="flex-col items-start gap-1">
-            {/* SummaryIndicator 已移除，摘要状态由消息气泡内的 RAG 指示器统一处理 */}
-          </View>
-
-
           <View style={{ flex: 1 }} />
 
-          {/* ✅ 执行模式切换器（替换原联网搜索和深度思考按钮） */}
-          <View style={{ paddingRight: 12, flexDirection: 'row', alignItems: 'center' }}>
-            {/* ✅ 思考等级切换器 */}
+          <View style={styles.modeSelectors}>
             <ThinkingLevelButton sessionId={sessionId} isDark={isDark} activeModelId={activeModelId} displayName={currentModel} />
-            <ExecutionModeSelector sessionId={sessionId} />
           </View>
         </View>
 
+        {/* Content Area: Attachments, Input, Send */}
         <View style={styles.contentContainer}>
-          <TouchableOpacity
-            onPress={() => {
-              setTimeout(() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowAttachmentMenu(!showAttachmentMenu);
-              }, 10);
-            }}
-            style={[styles.iconButton, { backgroundColor: isDark ? '#27272a' : '#f4f4f5' }]}
-          >
+          <TouchableOpacity onPress={toggleAttachmentMenu} style={[styles.iconButton, { backgroundColor: isDark ? '#27272a' : '#f4f4f5' }]}>
             <Plus size={20} color="#64748b" />
           </TouchableOpacity>
 
           <View style={{ flex: 1 }}>
-            {selectedImages.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.previewContainer}
-                contentContainerStyle={{ paddingHorizontal: 4 }}
-              >
-                {selectedImages.map((uri, index) => (
+            {/* Image Preview */}
+            {media.selectedImages.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewContainer}>
+                {media.selectedImages.map((uri, index) => (
                   <View key={uri} style={styles.previewItem}>
                     <Image source={{ uri }} style={styles.previewImage} />
-                    <TouchableOpacity
-                      style={styles.removeButton}
-                      onPress={() => removeImage(index)}
-                    >
+                    <TouchableOpacity style={styles.removeButton} onPress={() => media.removeImage(index)}>
                       <X size={12} color="white" />
                     </TouchableOpacity>
                   </View>
@@ -792,41 +267,27 @@ export function ChatInput({
             )}
 
             {/* File Preview */}
-            {selectedFiles.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.previewContainer}
-                contentContainerStyle={{ paddingHorizontal: 4 }}
-              >
-                {selectedFiles.map((file, index) => (
-                  <View key={file.id} style={[styles.previewItem, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' }]}>
+            {media.selectedFiles.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewContainer}>
+                {media.selectedFiles.map((file, index) => (
+                  <View key={file.id} style={[styles.previewItem, styles.filePreviewItem, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
                     <FileText size={24} color={isDark ? '#e4e4e7' : '#4b5563'} />
-                    <Typography numberOfLines={1} style={{ fontSize: 9, marginTop: 4, width: '90%', textAlign: 'center', color: isDark ? '#e4e4e7' : '#4b5563' }}>
-                      {file.name}
-                    </Typography>
-                    <TouchableOpacity
-                      style={styles.removeButton}
-                      onPress={() => removeFile(index)}
-                    >
+                    <Typography numberOfLines={1} style={styles.filePreviewText}>{file.name}</Typography>
+                    <TouchableOpacity style={styles.removeButton} onPress={() => media.removeFile(index)}>
                       <X size={12} color="white" />
                     </TouchableOpacity>
                   </View>
                 ))}
               </ScrollView>
             )}
+
             <Animated.View style={[styles.inputWrapper, focusAnimatedStyle, { shadowColor: agentColor || colors[500] }]}>
               <TextInput
-                style={[
-                  styles.input,
-                  { color: isDark ? '#fff' : '#000', backgroundColor: 'transparent' },
-                ]}
+                style={[styles.input, { color: isDark ? '#fff' : '#000' }]}
                 placeholder={
-                  selectedImages.length > 0 || selectedFiles.length > 0
+                  media.selectedImages.length > 0 || media.selectedFiles.length > 0
                     ? 'Add a caption...'
-                    : isInterventionMode
-                      ? 'Steer the agent...'
-                      : placeholderText
+                    : isInterventionMode ? 'Steer the agent...' : placeholderText
                 }
                 placeholderTextColor="#94a3b8"
                 underlineColorAndroid="transparent"
@@ -845,44 +306,21 @@ export function ChatInput({
             {loading && (
               <Animated.View style={[styles.svgContainer, animatedCircleStyle]}>
                 <Svg width="40" height="40" viewBox="0 0 40 40">
-                  <Circle
-                    cx="20"
-                    cy="20"
-                    r="18"
-                    stroke={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}
-                    strokeWidth="2"
-                    fill="none"
-                  />
-                  <Circle
-                    cx="20"
-                    cy="20"
-                    r="18"
-                    stroke={agentColor}
-                    strokeWidth="2"
-                    strokeDasharray="25, 100"
-                    strokeLinecap="round"
-                    fill="none"
-                  />
+                  <Circle cx="20" cy="20" r="18" stroke={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'} strokeWidth="2" fill="none" />
+                  <Circle cx="20" cy="20" r="18" stroke={agentColor} strokeWidth="2" strokeDasharray="25, 100" strokeLinecap="round" fill="none" />
                 </Svg>
               </Animated.View>
             )}
             <TouchableOpacity
-              onPress={handleSend}
-              disabled={!loading && ((!text.trim() && selectedImages.length === 0) || disabled)}
+              onPress={() => handleSend(!!loading, !!disabled)}
+              disabled={!loading && ((!text.trim() && media.selectedImages.length === 0) || disabled)}
               style={[
                 styles.sendButton,
                 {
-                  backgroundColor:
-                    text.trim() || selectedImages.length > 0 || selectedFiles.length > 0 || loading
-                      ? isInterventionMode
-                        ? '#f59e0b' // Amber for intervention
-                        : agentColor === '#6366f1'
-                          ? colors[500]
-                          : agentColor
-                      : isDark
-                        ? '#3f3f46'
-                        : '#cbd5e1',
-                  opacity: text.trim() || selectedImages.length > 0 || selectedFiles.length > 0 || loading ? 1 : 0.4,
+                  backgroundColor: (text.trim() || media.selectedImages.length > 0 || media.selectedFiles.length > 0 || loading)
+                    ? isInterventionMode ? '#f59e0b' : agentColor
+                    : isDark ? '#3f3f46' : '#cbd5e1',
+                  opacity: (text.trim() || media.selectedImages.length > 0 || media.selectedFiles.length > 0 || loading) ? 1 : 0.4,
                 },
               ]}
             >
@@ -896,229 +334,33 @@ export function ChatInput({
         </View>
       </BlurView>
 
-      {/* Attachment Menu - Moved outside BlurView to prevent clipping due to overflow:hidden */}
-      {
-        showAttachmentMenu && (
-          <View
-            style={[
-              styles.attachmentMenu,
-              {
-                backgroundColor: isDark ? 'rgba(39, 39, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-              },
-            ]}
-          >
-            <TouchableOpacity
-              style={styles.attachmentMenuItem}
-              onPress={() => handlePickImage('camera')}
-            >
-              <Camera size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
-              <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-                {t.chat.takePhoto}
-              </Typography>
-            </TouchableOpacity>
-            <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e5e7eb' }} />
-            <TouchableOpacity
-              style={styles.attachmentMenuItem}
-              onPress={() => handlePickImage('library')}
-            >
-              <ImageIcon size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
-              <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-                {t.chat.selectFromGallery}
-              </Typography>
-            </TouchableOpacity>
-            <View style={{ height: 1, backgroundColor: isDark ? '#3f3f46' : '#e5e7eb' }} />
-            <TouchableOpacity
-              style={styles.attachmentMenuItem}
-              onPress={handlePickFile}
-            >
-              <FileText size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
-              <Typography className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">
-                {t.common?.document || 'Document'}
-              </Typography>
-            </TouchableOpacity>
-          </View>
-        )
-      }
+      {/* Attachment Menu */}
+      {showAttachmentMenu && (
+        <View style={[styles.attachmentMenu, { backgroundColor: isDark ? 'rgba(39, 39, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
+          <TouchableOpacity style={styles.attachmentMenuItem} onPress={() => { setShowAttachmentMenu(false); media.handlePickImage('camera'); }}>
+            <Camera size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
+            <Typography className="ml-3 text-sm font-medium">{t.chat.takePhoto}</Typography>
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          <TouchableOpacity style={styles.attachmentMenuItem} onPress={() => { setShowAttachmentMenu(false); media.handlePickImage('library'); }}>
+            <ImageIcon size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
+            <Typography className="ml-3 text-sm font-medium">{t.chat.selectFromGallery}</Typography>
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          <TouchableOpacity style={styles.attachmentMenuItem} onPress={() => { setShowAttachmentMenu(false); media.handlePickFile(); }}>
+            <FileText size={20} color={isDark ? '#e4e4e7' : '#4b5563'} />
+            <Typography className="ml-3 text-sm font-medium">{t.common?.document || 'Document'}</Typography>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ConfirmDialog
-        visible={confirmState.visible}
-        title={confirmState.title}
-        message={confirmState.message}
-        onConfirm={confirmState.onConfirm}
-        onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
+        visible={media.confirmState.visible}
+        title={media.confirmState.title}
+        message={media.confirmState.message}
+        onConfirm={media.confirmState.onConfirm}
+        onCancel={() => media.setConfirmState((prev: any) => ({ ...prev, visible: false }))}
       />
-    </View >
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  outerContainer: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    // 外部容器取消 iOS 阴影以防冲突，主要由内层处理
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 12,
-      },
-    }),
-  },
-  blurContainer: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    // Android elevation
-    ...Platform.select({
-      android: {
-        elevation: 10,
-      },
-    }),
-  },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 12,
-    paddingTop: 6,
-    marginBottom: 2,
-  },
-  modelBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.03)',
-    marginRight: 6,
-  },
-  tokenBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.02)',
-  },
-  toggleButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  contentContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputWrapper: {
-    minHeight: 36,
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-    borderWidth: 1.5,
-    borderRadius: 12,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
-    elevation: 0,
-  },
-  input: {
-    fontSize: 16,
-    maxHeight: 240,
-    paddingVertical: 6,
-    textAlignVertical: 'top',
-  },
-  previewContainer: {
-    marginBottom: 8,
-    height: 64,
-  },
-  previewItem: {
-    width: 60,
-    height: 60,
-    marginRight: 8,
-    borderRadius: 8,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  previewImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 8,
-  },
-  removeButton: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 10,
-    width: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonContainer: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-  },
-  svgContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 40,
-    height: 40,
-  },
-  sendButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  attachmentMenu: {
-    position: 'absolute',
-    bottom: 60,
-    left: 12,
-    width: 160,
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-    // Shadow
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  attachmentMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-});
