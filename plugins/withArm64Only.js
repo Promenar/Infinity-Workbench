@@ -31,12 +31,13 @@ const withArm64Only = (config) => {
     config = withAppBuildGradle(config, (config) => {
         let buildGradle = config.modResults.contents;
 
-        // 检查是否已有 ndk 配置
-        if (!/ndk\s*{/.test(buildGradle)) {
-            // 在 defaultConfig 块末尾添加 ndk 配置
+        // 检查是否已有 ndk abiFilters 配置
+        if (!/abiFilters\s*'arm64-v8a'/.test(buildGradle)) {
+            // 在 defaultConfig 块的 buildConfigField 后添加 ndk 配置
+            // 匹配 defaultConfig { ... buildConfigField ... } 并在其后插入
             buildGradle = buildGradle.replace(
-                /(defaultConfig\s*{[\s\S]*?)(buildConfigField\s+"String",\s+"REACT_NATIVE_RELEASE_LEVEL"[^}]*})\s*(\n\s*})/,
-                '$1$2\n\n        // 仅编译 ARM64 架构以减小 APK 体积\n        ndk {\n            abiFilters \'arm64-v8a\'\n        }\n    }'
+                /(buildConfigField\s+"String",\s+"REACT_NATIVE_RELEASE_LEVEL"[^\n]*\n)(\s*})/,
+                '$1\n        // 仅编译 ARM64 架构以减小 APK 体积\n        ndk {\n            abiFilters \'arm64-v8a\'\n        }\n    }'
             );
         }
 
