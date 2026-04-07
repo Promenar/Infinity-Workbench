@@ -12,6 +12,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from '../../../lib/haptics';
 import { Typography } from '../../../components/ui';
 import { Copy, ExternalLink } from 'lucide-react-native';
+import { ScrollView as RNGHScrollView } from 'react-native-gesture-handler';
 import SyntaxHighlighter from 'react-native-syntax-highlighter';
 import { atomOneDark, atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import { NativeMathRenderer } from '../../../components/chat/NativeMathRenderer';
@@ -231,7 +232,7 @@ export const useMarkdownRules = ({
 
       // 5. Tables
       table: (node: any, children: any) => (
-        <ScrollView
+        <RNGHScrollView
           key={node.key}
           horizontal
           nestedScrollEnabled={true}
@@ -246,7 +247,7 @@ export const useMarkdownRules = ({
           }}>
             {children}
           </View>
-        </ScrollView>
+        </RNGHScrollView>
       ),
       thead: (node: any, children: any) => (
         <View key={node.key}>{children}</View>
