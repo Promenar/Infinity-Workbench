@@ -1,6 +1,25 @@
+/// <reference types="nativewind/types" />
 import React, { useState, useEffect, useRef } from 'react';
-import { View, TouchableOpacity, Image, ActivityIndicator, LayoutChangeEvent, Linking, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent, Platform, ScrollView as RNScrollView } from 'react-native';
-import { ScrollView } from 'react-native-gesture-handler';
+import { 
+  View as RNView, 
+  TouchableOpacity as RNTouchableOpacity, 
+  Image as RNImage, 
+  ActivityIndicator, 
+  LayoutChangeEvent, 
+  Linking, 
+  TextInput as RNTextInput, 
+  Dimensions, 
+  NativeSyntheticEvent, 
+  NativeScrollEvent, 
+  Platform, 
+  ScrollView as RNScrollView 
+} from 'react-native';
+
+// Type overrides for NativeWind support in this file
+const View = RNView as any;
+const TouchableOpacity = RNTouchableOpacity as any;
+const Image = RNImage as any;
+const TextInput = RNTextInput as any;
 import Animated, { FadeIn, FadeInUp, FadeOut, FadeOutUp, Layout, withTiming } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import Markdown from 'react-native-markdown-display';
@@ -515,10 +534,8 @@ const TimelineItem = React.memo(TimelineItemComponent, (prev, next) => {
     return true;
 });
 
-const GHScrollView = Animated.createAnimatedComponent(ScrollView);
-
 export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerating, sessionId }) => {
-    const scrollViewRef = React.useRef<ScrollView>(null);
+    const scrollViewRef = React.useRef<RNScrollView>(null);
     const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
     const [isCollapsed, setIsCollapsed] = useState(!isMessageGenerating);
     const [hasManuallyToggled, setHasManuallyToggled] = useState(false);
@@ -661,9 +678,10 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                         <View
                             onStartShouldSetResponder={() => true}
                             onMoveShouldSetResponder={() => true}
+                            onResponderTerminationRequest={() => false}
                         >
-                            <GHScrollView
-                                ref={scrollViewRef as any}
+                            <RNScrollView
+                                ref={scrollViewRef}
                                 nestedScrollEnabled={true}
                                 onScroll={handleScroll}
                                 onScrollBeginDrag={handleScrollBeginDrag}
@@ -686,7 +704,7 @@ export const ToolExecutionTimeline: React.FC<Props> = ({ steps, isMessageGenerat
                                         sessionId={sessionId}
                                     />
                                 ))}
-                            </GHScrollView>
+                            </RNScrollView>
                         </View>
                     </Animated.View>
                 )}
@@ -713,7 +731,7 @@ const LoopActiveIntervention = ({ sessionId }: { sessionId?: string }) => {
                     placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
                     className="flex-1 text-xs py-1"
                     style={{ color: isDark ? '#fff' : '#000' }}
-                    onSubmitEditing={(e) => {
+                    onSubmitEditing={(e: any) => {
                         const val = e.nativeEvent.text;
                         if (val.trim()) {
                             useChatStore.getState().setPendingIntervention(sessionId, val.trim());

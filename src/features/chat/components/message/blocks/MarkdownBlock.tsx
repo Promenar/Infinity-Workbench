@@ -6,7 +6,11 @@ import { useMarkdownRules } from '../../../hooks/useMarkdownRules';
 import { GeneratedImage } from './GeneratedImage';
 import { sanitize } from '../../../../../lib/sanitizer';
 
-export const MarkdownBlock: React.FC = React.memo(() => {
+interface MarkdownBlockProps {
+  overrideContent?: string;
+}
+
+export const MarkdownBlock: React.FC<MarkdownBlockProps> = React.memo(({ overrideContent }) => {
   const { 
     message, 
     isDark, 
@@ -26,12 +30,7 @@ export const MarkdownBlock: React.FC = React.memo(() => {
   });
 
   const streamingContent = useMemo(() => {
-    let content = message.content || '';
-
-    // If no main content but task summary exists, use it
-    if (!content && message.planningTask?.final_summary && message.planningTask?.status === 'completed') {
-      content = message.planningTask.final_summary;
-    }
+    let content = overrideContent || message.content || '';
 
     if (!content) return '';
 

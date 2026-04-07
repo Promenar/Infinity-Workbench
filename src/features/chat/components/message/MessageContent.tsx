@@ -5,7 +5,6 @@ import {
   MarkdownBlock,
   AttachmentBlock,
   ToolCallBlock,
-  ReasoningBlock,
   ErrorBlock,
   LoadingDots,
   StreamingFadePulse
@@ -24,6 +23,11 @@ export const MessageContent: React.FC = React.memo(() => {
     globalPendingIntervention,
     sessionData
   } = useMessageContext() as any;
+
+  const intermediateContentSteps = React.useMemo(() => {
+    if (isUser) return [];
+    return (message.executionSteps || []).filter((s: any) => s.type === 'thinking' && (s.content || '').trim().length > 0 && s.id !== 'native-reasoning');
+  }, [message.executionSteps, isUser]);
 
   // Heuristics for waiting/loading state
   const isWaitingForContent = !isUser && isGenerating && !message.content;
@@ -46,8 +50,6 @@ export const MessageContent: React.FC = React.memo(() => {
 
   return (
     <View style={{ flex: 1 }}>
-       <ReasoningBlock />
-       
        {!isUser && message.planningTask && (
           <TaskMonitor
             sessionId={sessionId}
@@ -59,6 +61,13 @@ export const MessageContent: React.FC = React.memo(() => {
        )}
 
        <ToolCallBlock />
+
+       {/* Intermediate Content Cards (Results of thought/inter-step output) */}
+       {intermediateContentSteps.map((step: any) => (
+         <View key={step.id} style={{ marginBottom: 8 }}>
+            <MarkdownBlock overrideContent={step.content} />
+         </View>
+       ))}
 
        <View style={{ minHeight: 20, position: 'relative', overflow: 'hidden' }}>
           {isWaitingForContent ? (
