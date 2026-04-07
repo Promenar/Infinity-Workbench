@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, Text } from 'react-native';
+import { View, TouchableOpacity, Text, GestureResponderEvent } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -8,6 +8,8 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from '../../../../lib/haptics';
+import { MoreHorizontal } from 'lucide-react-native';
+import { useMessageContext } from './MessageContext';
 
 export const MessageMeta = React.memo<{
   modelName?: string;
@@ -15,6 +17,7 @@ export const MessageMeta = React.memo<{
   isDark: boolean;
   loopCount?: number;
 }>(({ modelName, timestamp, isDark, loopCount }) => {
+  const { onOpenMenu } = useMessageContext();
   const [showTooltip, setShowTooltip] = useState(false);
   const opacity = useSharedValue(0);
 
@@ -142,6 +145,16 @@ export const MessageMeta = React.memo<{
           </View>
         </>
       )}
+
+      <Text style={[{ fontSize: 10, color: isDark ? '#3f3f46' : '#e4e4e7' }, insetShadowStyle]}>·</Text>
+      
+      <TouchableOpacity
+        onPress={(e: GestureResponderEvent) => onOpenMenu?.(e)}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        activeOpacity={0.6}
+      >
+        <MoreHorizontal size={14} color={isDark ? '#52525b' : '#a1a1aa'} />
+      </TouchableOpacity>
     </View>
   );
 });

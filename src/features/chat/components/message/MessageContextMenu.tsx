@@ -1,11 +1,12 @@
-import React from 'react';
-import { useMessageContext } from './MessageContext';
-import { ContextMenu } from '../../../../components/ui';
+import React, { useRef, useCallback } from 'react';
+import { useMessageContext, MessageProvider } from './MessageContext';
+import { ContextMenu, ContextMenuRef } from '../../../../components/ui';
 import { Copy, Type, Share2, RefreshCw, BrainCircuit, FileInput, FileText, Trash2 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from '../../../../lib/haptics';
 
 export const MessageContextMenu: React.FC<{ children: React.ReactNode }> = React.memo(({ children }) => {
+  const context = useMessageContext();
   const {
     message,
     isUser,
@@ -18,7 +19,13 @@ export const MessageContextMenu: React.FC<{ children: React.ReactNode }> = React
     onSummarize,
     onShare,
     onSelectText
-  } = useMessageContext() as any;
+  } = context as any;
+
+  const menuRef = useRef<ContextMenuRef>(null);
+
+  const handleOpenMenu = useCallback((event: any) => {
+    menuRef.current?.open(event);
+  }, []);
 
   const items = [
     {
@@ -85,5 +92,11 @@ export const MessageContextMenu: React.FC<{ children: React.ReactNode }> = React
     },
   ].filter(Boolean) as any[];
 
-  return <ContextMenu items={items}>{children}</ContextMenu>;
+  return (
+    <ContextMenu ref={menuRef} items={items} disablePressTrigger={true}>
+      <MessageProvider value={{ ...context, onOpenMenu: handleOpenMenu }}>
+        {children}
+      </MessageProvider>
+    </ContextMenu>
+  );
 });

@@ -38,6 +38,7 @@ export interface MessageContextValue {
   onSummarize?: () => void;
   onViewImage?: (uri: string | null) => void;
   onSelectText?: () => void;
+  onOpenMenu?: (event: any) => void;
   
   // Rag and Local State
   isRagExpanded?: boolean;
