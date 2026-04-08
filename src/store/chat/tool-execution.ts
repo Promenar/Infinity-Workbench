@@ -2,6 +2,7 @@
  * 工具执行模块
  * 负责执行工具调用并更新执行步骤
  * Phase 3: 从 chat-store.ts 迁移完整逻辑
+ * Phase 3.1: 集成 Artifact 自动提取机制
  */
 
 import type { ManagerContext, ToolExecutor } from './types';
@@ -10,6 +11,11 @@ import type { TaskState } from '../../types/chat';
 import { skillRegistry } from '../../lib/skills/registry';
 import { useAgentStore } from '../agent-store';
 import { SessionRepository } from '../../lib/db/session-repository';
+import {
+    extractArtifactsFromToolResult,
+    createArtifactParamsBatch
+} from '../../features/chat/utils/artifact-extractor';
+import { useArtifactStore } from '../artifact-store';
 
 export const createToolExecutor = (context: ManagerContext): ToolExecutor => {
     const { get, set } = context;
@@ -330,6 +336,40 @@ Please DO NOT try to call it again. Instead:
                                 { toolResults: newToolResults }
                             );
                         }
+                    }
+                }
+
+                // 🎨 ARTIFACT AUTO-EXTRACTION: 自动提取并持久化 Artifact
+                // 从工具执行结果中自动识别 echarts、mermaid、math 等内容
+                // 非阻塞执行，即使失败也不影响工具执行结果
+                if (result.status === 'success' && result.content) {
+                    try {
+                        const extractedArtifacts = extractArtifactsFromToolResult(tcName, result);
+
+                        if (extractedArtifacts.length > 0) {
+                            console.log(`[ToolExecutor] Auto-extracted ${extractedArtifacts.length} artifact(s) from tool: ${tcName}`);
+
+                            const artifactParams = createArtifactParamsBatch(
+                                extractedArtifacts,
+                                sessionId,
+                                targetMsgId
+                            );
+
+                            // 异步保存到数据库，不阻塞工具执行流程
+                            const artifactStore = useArtifactStore.getState();
+                            for (const params of artifactParams) {
+                                artifactStore.addArtifact(params)
+                                    .then(saved => {
+                                        console.log(`[ToolExecutor] Artifact saved: ${saved.id} (${saved.type})`);
+                                    })
+                                    .catch(err => {
+                                        console.error('[ToolExecutor] Failed to save artifact:', err);
+                                    });
+                            }
+                        }
+                    } catch (extractError) {
+                        // 提取失败不应影响工具执行结果
+                        console.warn('[ToolExecutor] Artifact extraction failed (non-critical):', extractError);
                     }
                 }
             }

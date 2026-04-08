@@ -647,10 +647,6 @@ export default function ChatDetailScreen() {
               currentModel={modelConfig?.name || currentModelId}
               activeModelId={currentModelId}
               agentColor={agent.color}
-              tokenUsage={{
-                total: session.stats?.totalTokens || 0,
-                last: messages.length > 0 ? messages[messages.length - 1].tokens : undefined,
-              }}
             />
           }
           // ✅ 编辑模式 props

@@ -4,7 +4,7 @@
  * 
  * 职责:
  * - 渲染模型选择器按钮
- * - 渲染Token统计
+ * - 渲染上下文Token统计（当前上下文/上限）
  * - 渲染工作区按钮
  * - 管理SessionSettingsSheet和WorkspaceSheet的显示状态
  * 
@@ -17,10 +17,10 @@ import { Cpu, Calculator, FolderOpen, Settings } from 'lucide-react-native';
 import * as Haptics from '../../../../lib/haptics';
 import { useTheme } from '../../../../theme/ThemeProvider';
 import { Typography } from '../../../../components/ui';
-import { formatTokenCount } from '../../utils/token-counter';
 import { ThinkingLevelButton } from './ThinkingLevelButton';
 import { getTopBarStyles } from './ChatInputTopBar.styles';
 import { useTopBarSheets } from './hooks/useTopBarSheets';
+import { useContextTokens } from '../../hooks/useContextTokens';
 
 // Sheet组件懒加载导入
 import { SessionSettingsSheet } from '../SessionSettingsSheet';
@@ -32,11 +32,6 @@ export interface ChatInputTopBarProps {
     currentModel?: string;
     /** 模型按钮点击回调（可选，如果提供则调用父组件逻辑，否则打开设置Sheet） */
     onModelPress?: () => void;
-    /** Token使用量 */
-    tokenUsage?: {
-        total: number;
-        last?: any;
-    };
     /** Token按钮点击回调（可选） */
     onTokenPress?: () => void;
     /** Agent颜色 */
@@ -54,7 +49,6 @@ export interface ChatInputTopBarProps {
  *   sessionId={sessionId}
  *   currentModel="GPT-4"
  *   agentColor="#6366f1"
- *   tokenUsage={{ total: 1500 }}
  * />
  * ```
  */
@@ -62,13 +56,15 @@ export const ChatInputTopBar: React.FC<ChatInputTopBarProps> = ({
     sessionId,
     currentModel,
     onModelPress,
-    tokenUsage,
     onTokenPress,
     agentColor = '#6366f1',
     activeModelId,
 }) => {
     const { isDark, colors } = useTheme();
     const styles = useMemo(() => getTopBarStyles(isDark, colors), [isDark, colors]);
+
+    // 获取上下文Token使用情况
+    const contextInfo = useContextTokens(sessionId);
 
     // Sheet状态管理
     const {
@@ -110,11 +106,6 @@ export const ChatInputTopBar: React.FC<ChatInputTopBarProps> = ({
         openWorkspace();
     };
 
-    // 设置按钮点击处理
-    const handleSettingsPress = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        toggleSettings();
-    };
 
     return (
         <>
@@ -127,13 +118,25 @@ export const ChatInputTopBar: React.FC<ChatInputTopBarProps> = ({
                     </TouchableOpacity>
                 )}
 
-                {/* Token统计 */}
-                {tokenUsage && (
-                    <TouchableOpacity onPress={handleTokenPress} activeOpacity={0.6} style={styles.tokenBar}>
-                        <Calculator size={10} color={isDark ? '#52525b' : '#a1a1aa'} />
-                        <Typography style={styles.topBarText}>{formatTokenCount(tokenUsage.total)} TOK</Typography>
-                    </TouchableOpacity>
-                )}
+                {/* 上下文Token统计 - 显示当前上下文/上限 */}
+                <TouchableOpacity onPress={handleTokenPress} activeOpacity={0.6} style={styles.tokenBar}>
+                    <Calculator size={10} color={contextInfo.color} />
+                    <Typography style={[styles.topBarText, { color: contextInfo.color }]}>
+                        {contextInfo.display}
+                    </Typography>
+                    {/* 进度条 */}
+                    <View style={styles.contextProgressBar}>
+                        <View
+                            style={[
+                                styles.contextProgressFill,
+                                {
+                                    width: `${Math.min(100, contextInfo.usagePercent)}%`,
+                                    backgroundColor: contextInfo.color,
+                                }
+                            ]}
+                        />
+                    </View>
+                </TouchableOpacity>
 
                 {/* 弹性空间 */}
                 <View style={styles.spacer} />
@@ -158,15 +161,6 @@ export const ChatInputTopBar: React.FC<ChatInputTopBarProps> = ({
                         <Typography style={styles.workspaceButtonText}>工作区</Typography>
                     </TouchableOpacity>
 
-                    {/* 设置按钮 */}
-                    <TouchableOpacity
-                        onPress={handleSettingsPress}
-                        activeOpacity={0.6}
-                        style={styles.settingsButton}
-                    >
-                        <Settings size={12} color={colors[500]} />
-                        <Typography style={styles.settingsButtonText}>设置</Typography>
-                    </TouchableOpacity>
                 </View>
             </View>
 

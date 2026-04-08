@@ -27,6 +27,8 @@ export interface PostProcessorParams {
     accumulatedUsage?: { input: number; output: number; total: number };
     totalContextTokens: number;
     modelId: string;
+    providerId?: string; // 供应商ID，用于统计分类
+    providerName?: string; // 供应商显示名称
     getSession: (id: string) => Session | undefined;
     updateSession: (id: string, updates: Partial<Session>) => void;
     updateMessageProgress: (sessionId: string, messageId: string, progress: any) => void;
@@ -186,7 +188,7 @@ export async function checkContextSummarization(params: PostProcessorParams): Pr
 export function updateStats(params: PostProcessorParams): void {
     const {
         sessionId, accumulatedUsage, ragUsage, totalContextTokens,
-        assistantContent, modelId, session,
+        assistantContent, modelId, providerId, providerName, session,
         updateSession, agent, userContent,
         updateSessionTitle
     } = params;
@@ -198,14 +200,15 @@ export function updateStats(params: PostProcessorParams): void {
         chatInput: { count: finalUsage.input, isEstimated: !accumulatedUsage },
         chatOutput: { count: finalUsage.output, isEstimated: !accumulatedUsage },
         ragSystem: ragUsage ? { count: ragUsage.ragSystem, isEstimated: ragUsage.isEstimated } : { count: 0, isEstimated: false },
-        total: finalUsage.total + (ragUsage?.ragSystem || 0)
+        total: finalUsage.total + (ragUsage?.ragSystem || 0),
+        costUSD: 0, // 默认值，防止字段缺失导致崩溃
     };
 
     updateSession(sessionId, { stats: { totalTokens: billingUsage.total, billing: billingUsage } });
 
-    // 异步更新 Token 统计
+    // 异步更新 Token 统计（包含 providerId 和 providerName）
     import('../token-stats-store').then(({ useTokenStatsStore }) => {
-        useTokenStatsStore.getState().trackUsage({ modelId, usage: billingUsage });
+        useTokenStatsStore.getState().trackUsage({ modelId, providerId, providerName, usage: billingUsage });
     }).catch(() => { });
 
     // 自动生成标题 (排除超级助手 - 根据ID或AgentID双重判定)
@@ -214,8 +217,8 @@ export function updateStats(params: PostProcessorParams): void {
     // 🔑 Phase 4b: Upgrade to AI Auto-Title
     // Case 1: Session just started (messages <= 2 after this new message) OR title is default
     // Note: messages.length is 2 after first exchange (user + assistant), so check <= 2
-    const isDefaultTitle = session.title === agent.name 
-        || session.title === 'New Conversation' 
+    const isDefaultTitle = session.title === agent.name
+        || session.title === 'New Conversation'
         || session.title === '新会话'
         || session.title.startsWith('New Conversation')
         || session.title.startsWith('新会话');

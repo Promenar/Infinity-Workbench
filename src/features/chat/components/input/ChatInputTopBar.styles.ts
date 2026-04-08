@@ -60,20 +60,17 @@ export const getTopBarStyles = (isDark: boolean, colors: any) => StyleSheet.crea
         marginLeft: 4,
         color: isDark ? '#a1a1aa' : '#71717a',
     },
-    // 设置按钮样式
-    settingsButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 10,
-        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-        marginLeft: 6,
-    },
-    settingsButtonText: {
-        fontSize: 9,
-        fontWeight: '600',
+    // 上下文进度条样式
+    contextProgressBar: {
+        width: 32,
+        height: 3,
+        borderRadius: 1.5,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
         marginLeft: 4,
-        color: colors[500],
+        overflow: 'hidden',
+    },
+    contextProgressFill: {
+        height: '100%',
+        borderRadius: 1.5,
     },
 });

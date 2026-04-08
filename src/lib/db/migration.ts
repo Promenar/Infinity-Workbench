@@ -315,4 +315,39 @@ export const migrateDatabase = async () => {
   } catch (e) {
     console.warn('[DB Migration] Migration 10 failed:', e);
   }
+
+  // Migration 11: Create artifacts table for Workspace integration
+  try {
+    const artifactsInfo = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='artifacts'"
+    );
+
+    if (!artifactsInfo.rows || artifactsInfo.rows.length === 0) {
+      console.log('[DB Migration] Creating artifacts table...');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS artifacts (
+          id TEXT PRIMARY KEY NOT NULL,
+          type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          preview_image TEXT,
+          session_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          tags TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        )
+      `);
+
+      // Create indexes
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_artifacts_session ON artifacts(session_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(type)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_artifacts_created_at ON artifacts(created_at)');
+
+      console.log('[DB Migration] Artifacts table created successfully');
+    }
+  } catch (e) {
+    console.warn('[DB Migration] Migration 11 failed:', e);
+  }
 };

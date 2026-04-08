@@ -2348,6 +2348,8 @@ export const useChatStore = create<ChatState>()(
               accumulatedUsage,
               totalContextTokens,
               modelId,
+              providerId: provider?.id, // 传递供应商ID用于统计分类
+              providerName: provider?.name || provider?.type, // 传递供应商显示名称
               getSession: get().getSession,
               updateSession: get().updateSession,
               updateMessageProgress: get().updateMessageProgress,
