@@ -35,6 +35,7 @@ interface ChatBubbleProps {
   onSummarize?: () => void; // Manually trigger summary
   onLayout?: (event: any) => void;
   globalPendingIntervention?: string;
+  modelName?: string;
 }
 
 export const ChatBubble = React.memo<ChatBubbleProps>((props) => {

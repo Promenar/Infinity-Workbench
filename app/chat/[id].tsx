@@ -10,6 +10,23 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { PageLayout, Typography, GlassHeader } from '../../src/components/ui';
+
+// 🛡️ NativeWind 类型补丁：解决标准组件 className 报错
+declare module 'react-native' {
+  interface ViewProps { className?: string; }
+  interface TouchableOpacityProps { className?: string; }
+  interface TextInputProps { className?: string; }
+  interface TextProps { className?: string; }
+}
+
+// 🛡️ 为 Typography 组件添加类型支持（如果 IDE 仍报错）
+declare global {
+  namespace JSX {
+    interface IntrinsicAttributes {
+      className?: string;
+    }
+  }
+}
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { FlatList } from 'react-native'; // 替代 FlashList，详见下方注释
 import { ChevronLeft, Settings, ChevronDown } from 'lucide-react-native';
@@ -19,6 +36,7 @@ import { useAgentStore } from '../../src/store/agent-store';
 import { useApiStore } from '../../src/store/api-store';
 import { ChatBubble } from '../../src/features/chat/components/ChatBubble';
 import { ChatInput } from '../../src/features/chat/components/ChatInput';
+import { ChatInputTopBar } from '../../src/features/chat/components/input/ChatInputTopBar';
 import { ChatSkeleton } from '../../src/features/chat/components/ChatSkeleton';
 import { ExecutionModeSelector } from '../../src/features/chat/components/ExecutionModeSelector';
 import { useChat } from '../../src/features/chat/hooks/useChat';
@@ -204,7 +222,7 @@ export default function ChatDetailScreen() {
   }));
 
   const onScroll = useAnimatedScrollHandler({
-    onScroll: (event) => {
+    onScroll: (event: any) => {
       'worklet';
       scrollY.value = event.contentOffset.y;
       scrollOffset.value = event.contentOffset.y;
@@ -219,7 +237,7 @@ export default function ChatDetailScreen() {
       userScrolledAway.value = true;
       runOnJS(syncScrollAway)(true);
     },
-    onEndDrag: (event) => {
+    onEndDrag: (event: any) => {
       'worklet';
       const offset = event.contentOffset.y;
       if (offset < 20) {
@@ -232,7 +250,7 @@ export default function ChatDetailScreen() {
       userScrolledAway.value = true;
       runOnJS(syncScrollAway)(true);
     },
-    onMomentumEnd: (event) => {
+    onMomentumEnd: (event: any) => {
       'worklet';
       const offset = event.contentOffset.y;
       if (offset < 20) {
@@ -622,23 +640,23 @@ export default function ChatDetailScreen() {
           sessionId={id}
           loading={loading}
           agentColor={agent.color}
-          currentModel={modelConfig?.name || currentModelId}
-          activeModelId={currentModelId}
-          onModelPress={() => setShowModelPicker(true)}
-          tokenUsage={{
-            total: session.stats?.totalTokens || 0,
-            last: messages.length > 0 ? messages[messages.length - 1].tokens : undefined,
-          }}
-          onTokenPress={() => setShowTokenStats(true)}
-          // ✅ 新增：编辑模式 props
+          // ✅ 使用组合模式传入TopBar组件
+          topBar={
+            <ChatInputTopBar
+              sessionId={id}
+              currentModel={modelConfig?.name || currentModelId}
+              activeModelId={currentModelId}
+              agentColor={agent.color}
+              tokenUsage={{
+                total: session.stats?.totalTokens || 0,
+                last: messages.length > 0 ? messages[messages.length - 1].tokens : undefined,
+              }}
+            />
+          }
+          // ✅ 编辑模式 props
           editingMessageId={editingMessage?.id}
           initialEditText={editingMessage?.content}
           onCancelEdit={() => setEditingMessage(null)}
-          toolsEnabled={session.options?.toolsEnabled ?? true}
-          onToggleTools={() => {
-            const current = session.options?.toolsEnabled ?? true;
-            useChatStore.getState().updateSessionOptions(id, { toolsEnabled: !current });
-          }}
         />
       </KeyboardStickyView>
 
@@ -721,7 +739,7 @@ export default function ChatDetailScreen() {
         >
           <TouchableOpacity
             activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
+            onPress={(e: any) => e.stopPropagation()}
             className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-indigo-50 dark:border-indigo-500/10"
           >
             <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">

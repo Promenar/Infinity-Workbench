@@ -34,6 +34,7 @@ export interface MessageRowProps {
   onSummarize?: () => void;
   onLayout?: (event: any) => void;
   globalPendingIntervention?: string;
+  modelName?: string;
 }
 
 export const MessageRow: React.FC<MessageRowProps> = React.memo((props) => {
@@ -55,9 +56,10 @@ export const MessageRow: React.FC<MessageRowProps> = React.memo((props) => {
   const isRecent = useMemo(() => Date.now() - props.message.createdAt < 1000, [props.message.createdAt]);
 
   const resolvedModelName = useMemo(() => {
+    if (props.modelName) return props.modelName;
     const targetId = props.message.modelId || props.modelId;
     return targetId ? resolveModelIdToName(targetId) : undefined;
-  }, [props.message.modelId, props.modelId]);
+  }, [props.message.modelId, props.modelId, props.modelName]);
 
   // Archive & Processing heuristics
   const isProcessing = useMemo(() => {

@@ -12,14 +12,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowUp,
   Plus,
-  Cpu,
   Square,
-  Calculator,
   X,
   Image as ImageIcon,
   Camera,
   FileText,
-  Check,
 } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -39,13 +36,7 @@ import { Typography, ConfirmDialog } from '../../../components/ui';
 import { Glass } from '../../../theme/glass';
 import { ANIMATION_DURATION } from '../../../theme/animations';
 import { useChatStore } from '../../../store/chat-store';
-import { useApiStore } from '../../../store/api-store';
-import { isForcedReasoningModel } from '../../../lib/llm/model-utils';
-import { formatTokenCount } from '../utils/token-counter';
 import { documentProcessor } from '../../../lib/rag/document-processor';
-
-import { ExecutionModeSelector } from './ExecutionModeSelector';
-import { ThinkingLevelButton } from './input/ThinkingLevelButton';
 import { useMediaPicker } from './input/hooks/useMediaPicker';
 import { useChatInputState } from './input/hooks/useChatInputState';
 import { useKeyboardTracking } from './input/hooks/useKeyboardTracking';
@@ -61,20 +52,12 @@ interface ChatInputProps {
   disabled?: boolean;
   loading?: boolean;
   agentColor?: string;
-  currentModel?: string;
-  onModelPress?: () => void;
-  tokenUsage?: {
-    total: number;
-    last?: any;
-  };
-  onTokenPress?: () => void;
+  /** 顶部工具栏组件（通过组合模式传入，保持ChatInput轻量） */
+  topBar?: React.ReactNode;
   isInterventionMode?: boolean;
   editingMessageId?: string;
   initialEditText?: string;
   onCancelEdit?: () => void;
-  toolsEnabled?: boolean;
-  onToggleTools?: () => void;
-  activeModelId?: string;
 }
 
 export function ChatInput({
@@ -84,21 +67,17 @@ export function ChatInput({
   disabled,
   loading,
   agentColor = '#6366f1',
-  currentModel,
-  onModelPress,
-  tokenUsage,
-  onTokenPress,
+  topBar,
   isInterventionMode,
   editingMessageId,
   initialEditText,
   onCancelEdit,
-  activeModelId,
 }: ChatInputProps) {
   const { t } = useI18n();
   const { isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => getInputStyles(isDark, colors), [isDark, colors]);
-  
+
   const rotation = useSharedValue(0);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const pdfExtractorRef = React.useRef<any>(null);
@@ -111,7 +90,7 @@ export function ChatInput({
 
   // 2. Logic Extraction Hooks
   const media = useMediaPicker(t);
-  
+
   const {
     text,
     setText,
@@ -168,20 +147,6 @@ export function ChatInput({
   }, [session?.loopStatus, session?.pendingIntervention]);
 
   // Actions
-  const onModelBarPress = () => {
-    if (onModelPress) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onModelPress();
-    }
-  };
-
-  const onTokenBarPress = () => {
-    if (onTokenPress) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onTokenPress();
-    }
-  };
-
   const toggleAttachmentMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowAttachmentMenu(!showAttachmentMenu);
@@ -222,28 +187,8 @@ export function ChatInput({
       >
         <View style={[styles.overlay, { backgroundColor: isDark ? `rgba(0,0,0,${Glass.Header.opacity.dark})` : `rgba(255,255,255,${Glass.Header.opacity.light})` }]} />
 
-        {/* Top Bar: Model, Tokens, Modes */}
-        <View style={styles.topBar}>
-          {currentModel && (
-            <TouchableOpacity onPress={onModelBarPress} activeOpacity={0.6} style={styles.modelBar}>
-              <Cpu size={10} color={agentColor} />
-              <Typography numberOfLines={1} style={styles.topBarText}>{currentModel}</Typography>
-            </TouchableOpacity>
-          )}
-
-          {tokenUsage && (
-            <TouchableOpacity onPress={onTokenBarPress} activeOpacity={0.6} style={styles.tokenBar}>
-              <Calculator size={10} color={isDark ? '#52525b' : '#a1a1aa'} />
-              <Typography style={styles.topBarText}>{formatTokenCount(tokenUsage.total)} TOK</Typography>
-            </TouchableOpacity>
-          )}
-
-          <View style={{ flex: 1 }} />
-
-          <View style={styles.modeSelectors}>
-            <ThinkingLevelButton sessionId={sessionId} isDark={isDark} activeModelId={activeModelId} displayName={currentModel} />
-          </View>
-        </View>
+        {/* Top Bar: 由外部通过props传入，保持ChatInput轻量 */}
+        {topBar}
 
         {/* Content Area: Attachments, Input, Send */}
         <View style={styles.contentContainer}>
