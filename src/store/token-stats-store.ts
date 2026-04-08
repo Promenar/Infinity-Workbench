@@ -186,14 +186,17 @@ export const useTokenStatsStore = create<TokenStatsState>()(
             console.warn('[TokenStatsStore] Repairing missing globalTotal');
             state.globalTotal = JSON.parse(JSON.stringify(initialBilling));
           } else {
-            // 确保 globalTotal 的所有字段存在
-            if (!state.globalTotal.chatInput) {
+            // 确保 globalTotal 的所有 TokenMetric 字段存在且 count 有效
+            if (!state.globalTotal.chatInput || typeof state.globalTotal.chatInput.count !== 'number') {
+              console.warn('[TokenStatsStore] Repairing invalid chatInput');
               state.globalTotal.chatInput = { ...initialMetric };
             }
-            if (!state.globalTotal.chatOutput) {
+            if (!state.globalTotal.chatOutput || typeof state.globalTotal.chatOutput.count !== 'number') {
+              console.warn('[TokenStatsStore] Repairing invalid chatOutput');
               state.globalTotal.chatOutput = { ...initialMetric };
             }
-            if (!state.globalTotal.ragSystem) {
+            if (!state.globalTotal.ragSystem || typeof state.globalTotal.ragSystem.count !== 'number') {
+              console.warn('[TokenStatsStore] Repairing invalid ragSystem');
               state.globalTotal.ragSystem = { ...initialMetric };
             }
             if (typeof state.globalTotal.total !== 'number') {
@@ -203,15 +206,63 @@ export const useTokenStatsStore = create<TokenStatsState>()(
               state.globalTotal.costUSD = 0;
             }
           }
-          // 确保 byModel 存在
+          // 确保 byModel 存在且每个模型的 BillingUsage 结构完整
           if (!state.byModel) {
             console.warn('[TokenStatsStore] Repairing missing byModel');
             state.byModel = {};
+          } else {
+            // 修复每个模型的损坏数据
+            for (const modelId of Object.keys(state.byModel)) {
+              const modelStats = state.byModel[modelId];
+              if (modelStats) {
+                if (!modelStats.chatInput || typeof modelStats.chatInput.count !== 'number') {
+                  modelStats.chatInput = { ...initialMetric };
+                }
+                if (!modelStats.chatOutput || typeof modelStats.chatOutput.count !== 'number') {
+                  modelStats.chatOutput = { ...initialMetric };
+                }
+                if (!modelStats.ragSystem || typeof modelStats.ragSystem.count !== 'number') {
+                  modelStats.ragSystem = { ...initialMetric };
+                }
+                if (typeof modelStats.total !== 'number') {
+                  modelStats.total = 0;
+                }
+              }
+            }
           }
-          // 确保 byProvider 存在
+          // 确保 byProvider 存在且每个供应商的统计数据结构完整
           if (!state.byProvider) {
             console.warn('[TokenStatsStore] Repairing missing byProvider');
             state.byProvider = {};
+          } else {
+            // 修复每个供应商的损坏数据
+            for (const providerId of Object.keys(state.byProvider)) {
+              const providerStats = state.byProvider[providerId];
+              if (providerStats) {
+                if (!providerStats.total || typeof providerStats.total.total !== 'number') {
+                  providerStats.total = { input: 0, output: 0, total: 0 };
+                }
+                if (typeof providerStats.total.input !== 'number') {
+                  providerStats.total.input = 0;
+                }
+                if (typeof providerStats.total.output !== 'number') {
+                  providerStats.total.output = 0;
+                }
+                if (!providerStats.models) {
+                  providerStats.models = {};
+                } else {
+                  // 修复每个模型的统计数据
+                  for (const modelId of Object.keys(providerStats.models)) {
+                    const modelStats = providerStats.models[modelId];
+                    if (modelStats) {
+                      if (typeof modelStats.input !== 'number') modelStats.input = 0;
+                      if (typeof modelStats.output !== 'number') modelStats.output = 0;
+                      if (typeof modelStats.total !== 'number') modelStats.total = 0;
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },

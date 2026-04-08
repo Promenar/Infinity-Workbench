@@ -85,6 +85,9 @@ export default function TokenUsageScreen() {
     const match = label.match(/^(.*?)\s*(\(.*\))$/);
     const title = match ? match[1] : label;
     const subtitle = match ? match[2] : null;
+    // 防御性编程：确保 metric 和 count 存在
+    const count = metric?.count ?? 0;
+    const isEstimated = metric?.isEstimated ?? false;
     return (
       <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6', padding: 16, borderRadius: 16 }}>
         <View style={{ marginBottom: 8 }}>
@@ -95,31 +98,41 @@ export default function TokenUsageScreen() {
           {subtitle && <Typography className="text-[10px] font-bold text-gray-400 uppercase ml-[20px] mt-0.5">{subtitle}</Typography>}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-          {metric.isEstimated && <Typography className="text-xs text-amber-500 mr-1">~</Typography>}
-          <Typography className="text-xl font-black text-black dark:text-white">{metric.count.toLocaleString()}</Typography>
+          {isEstimated && <Typography className="text-xs text-amber-500 mr-1">~</Typography>}
+          <Typography className="text-xl font-black text-black dark:text-white">{count.toLocaleString()}</Typography>
         </View>
       </View>
     );
   };
 
-  const ModelSimpleRow = ({ modelId, stats }: { modelId: string; stats: ProviderModelStats }) => (
-    <View style={{ paddingVertical: 10, paddingHorizontal: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderRadius: 8, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: '#8b5cf6' }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <View style={{ flex: 1, marginRight: 8 }}>
-          <Typography className="font-semibold text-sm text-black dark:text-white" numberOfLines={1}>{getModelName(modelId)}</Typography>
+  const ModelSimpleRow = ({ modelId, stats }: { modelId: string; stats: ProviderModelStats }) => {
+    // 防御性编程：确保 stats 的所有字段存在
+    const input = stats?.input ?? 0;
+    const output = stats?.output ?? 0;
+    const total = stats?.total ?? 0;
+    return (
+      <View style={{ paddingVertical: 10, paddingHorizontal: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderRadius: 8, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: '#8b5cf6' }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Typography className="font-semibold text-sm text-black dark:text-white" numberOfLines={1}>{getModelName(modelId)}</Typography>
+          </View>
+          <Typography className="font-bold text-sm text-gray-600 dark:text-gray-300">{total.toLocaleString()}</Typography>
         </View>
-        <Typography className="font-bold text-sm text-gray-600 dark:text-gray-300">{stats.total.toLocaleString()}</Typography>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+          <Typography className="text-[10px] text-gray-400">Input: {input.toLocaleString()}</Typography>
+          <Typography className="text-[10px] text-gray-400">Output: {output.toLocaleString()}</Typography>
+        </View>
       </View>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
-        <Typography className="text-[10px] text-gray-400">Input: {stats.input.toLocaleString()}</Typography>
-        <Typography className="text-[10px] text-gray-400">Output: {stats.output.toLocaleString()}</Typography>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const ProviderRow = ({ providerId, stats }: { providerId: string; stats: ProviderStats }) => {
     const isExpanded = expandedProviders.has(providerId);
-    const modelCount = Object.keys(stats.models).length;
+    const modelCount = Object.keys(stats?.models || {}).length;
+    // 防御性编程：确保 stats.total 的所有字段存在
+    const totalInput = stats?.total?.input ?? 0;
+    const totalOutput = stats?.total?.output ?? 0;
+    const totalTokens = stats?.total?.total ?? 0;
     return (
       <View style={{ marginBottom: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f9fafb', borderRadius: 16, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#e5e7eb', overflow: 'hidden' }}>
         <TouchableOpacity onPress={() => toggleProviderExpand(providerId)} style={{ padding: 16 }}>
@@ -129,22 +142,22 @@ export default function TokenUsageScreen() {
               <Typography className="text-[10px] text-gray-400">{modelCount} model{modelCount !== 1 ? 's' : ''}</Typography>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Typography className="font-black text-gray-500 dark:text-gray-400 mr-2">{stats.total.total.toLocaleString()}</Typography>
+              <Typography className="font-black text-gray-500 dark:text-gray-400 mr-2">{totalTokens.toLocaleString()}</Typography>
               {isExpanded ? <ChevronDown size={18} color={isDark ? '#888' : '#666'} /> : <ChevronRight size={18} color={isDark ? '#888' : '#666'} />}
             </View>
           </View>
           <View style={{ flexDirection: 'row', height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb', marginTop: 8 }}>
-            <View style={{ flex: Math.max(stats.total.input, 1), backgroundColor: '#8b5cf6' }} />
-            <View style={{ flex: Math.max(stats.total.output, 1), backgroundColor: '#f59e0b' }} />
+            <View style={{ flex: Math.max(totalInput, 1), backgroundColor: '#8b5cf6' }} />
+            <View style={{ flex: Math.max(totalOutput, 1), backgroundColor: '#f59e0b' }} />
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
-            <Typography className="text-[10px] text-gray-400">Input: {stats.total.input.toLocaleString()}</Typography>
-            <Typography className="text-[10px] text-gray-400">Output: {stats.total.output.toLocaleString()}</Typography>
+            <Typography className="text-[10px] text-gray-400">Input: {totalInput.toLocaleString()}</Typography>
+            <Typography className="text-[10px] text-gray-400">Output: {totalOutput.toLocaleString()}</Typography>
           </View>
         </TouchableOpacity>
         {isExpanded && (
           <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
-            {Object.entries(stats.models).map(([modelId, modelStats]) => (
+            {Object.entries(stats?.models || {}).map(([modelId, modelStats]) => (
               <ModelSimpleRow key={modelId} modelId={modelId} stats={modelStats} />
             ))}
           </View>
@@ -153,27 +166,34 @@ export default function TokenUsageScreen() {
     );
   };
 
-  const ModelRow = ({ modelId, usage }: { modelId: string; usage: BillingUsage }) => (
-    <View style={{ marginBottom: 12, padding: 16, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f9fafb', borderRadius: 16, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#e5e7eb' }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <View style={{ flex: 1, marginRight: 8 }}>
-          <Typography className="font-bold text-base text-black dark:text-white" numberOfLines={1}>{getModelName(modelId)}</Typography>
-          {getModelName(modelId) !== modelId && <Typography className="text-[10px] text-gray-400" numberOfLines={1}>{modelId}</Typography>}
+  const ModelRow = ({ modelId, usage }: { modelId: string; usage: BillingUsage }) => {
+    // 防御性编程：确保 usage 的所有字段存在
+    const chatInputCount = usage?.chatInput?.count ?? 0;
+    const chatOutputCount = usage?.chatOutput?.count ?? 0;
+    const ragSystemCount = usage?.ragSystem?.count ?? 0;
+    const total = usage?.total ?? 0;
+    return (
+      <View style={{ marginBottom: 12, padding: 16, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f9fafb', borderRadius: 16, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#e5e7eb' }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Typography className="font-bold text-base text-black dark:text-white" numberOfLines={1}>{getModelName(modelId)}</Typography>
+            {getModelName(modelId) !== modelId && <Typography className="text-[10px] text-gray-400" numberOfLines={1}>{modelId}</Typography>}
+          </View>
+          <Typography className="font-black text-gray-500 dark:text-gray-400">{total.toLocaleString()}</Typography>
         </View>
-        <Typography className="font-black text-gray-500 dark:text-gray-400">{usage.total.toLocaleString()}</Typography>
+        <View style={{ flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb' }}>
+          <View style={{ flex: Math.max(chatInputCount, 0.001), backgroundColor: '#8b5cf6' }} />
+          <View style={{ flex: Math.max(chatOutputCount, 0.001), backgroundColor: '#f59e0b' }} />
+          <View style={{ flex: Math.max(ragSystemCount, 0.001), backgroundColor: '#10b981' }} />
+        </View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+          <Typography className="text-[10px] text-gray-400">Input: {chatInputCount.toLocaleString()}</Typography>
+          <Typography className="text-[10px] text-gray-400">Output: {chatOutputCount.toLocaleString()}</Typography>
+          <Typography className="text-[10px] text-gray-400">System: {ragSystemCount.toLocaleString()}</Typography>
+        </View>
       </View>
-      <View style={{ flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb' }}>
-        <View style={{ flex: Math.max(usage.chatInput.count, 0.001), backgroundColor: '#8b5cf6' }} />
-        <View style={{ flex: Math.max(usage.chatOutput.count, 0.001), backgroundColor: '#f59e0b' }} />
-        <View style={{ flex: Math.max(usage.ragSystem.count, 0.001), backgroundColor: '#10b981' }} />
-      </View>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-        <Typography className="text-[10px] text-gray-400">Input: {usage.chatInput.count.toLocaleString()}</Typography>
-        <Typography className="text-[10px] text-gray-400">Output: {usage.chatOutput.count.toLocaleString()}</Typography>
-        <Typography className="text-[10px] text-gray-400">System: {usage.ragSystem.count.toLocaleString()}</Typography>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <PageLayout className="bg-white dark:bg-black" safeArea={false}>
