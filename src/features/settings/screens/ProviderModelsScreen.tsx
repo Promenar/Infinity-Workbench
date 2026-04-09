@@ -881,13 +881,7 @@ const TypeButton = React.memo(function TypeButton({
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
     
-    const activeColor = colors[500];
-    const r = parseInt(activeColor.slice(1, 3), 16);
-    const g = parseInt(activeColor.slice(3, 5), 16);
-    const b = parseInt(activeColor.slice(5, 7), 16);
-    const activeColorRgb = `rgb(${r}, ${g}, ${b})`;
-    
-    const inactiveColor = isDark ? 'rgb(255, 255, 255)' : 'rgb(243, 244, 246)';
+    const inactiveColor = isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)';
 
     useEffect(() => {
         progress.value = withTiming(active ? 1 : 0, { duration: 150 });
@@ -895,22 +889,23 @@ const TypeButton = React.memo(function TypeButton({
 
     const animatedStyle = useAnimatedStyle(() => {
         return {
-            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveColor, activeColorRgb]),
-            opacity: 0.05 + progress.value * 0.95,
+            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveColor, colors[500]]),
         };
     });
 
     return (
-        <TouchableOpacity onPress={onPress} style={[{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 }, animatedStyle]}>
-            <Typography
-                style={{
-                    fontSize: 9,
-                    fontWeight: 'bold',
-                    color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
-                }}
-            >
-                {label}
-            </Typography>
+        <TouchableOpacity onPress={onPress}>
+            <Animated.View style={[{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 }, animatedStyle]}>
+                <Typography
+                    style={{
+                        fontSize: 9,
+                        fontWeight: 'bold',
+                        color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
+                    }}
+                >
+                    {label}
+                </Typography>
+            </Animated.View>
         </TouchableOpacity>
     );
 });
