@@ -881,7 +881,9 @@ const TypeButton = React.memo(function TypeButton({
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
     
+    const activeColor = colors[500];
     const inactiveColor = isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)';
+    const inactiveBorder = isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)';
 
     useEffect(() => {
         progress.value = withTiming(active ? 1 : 0, { duration: 150 });
@@ -889,12 +891,14 @@ const TypeButton = React.memo(function TypeButton({
 
     const animatedStyle = useAnimatedStyle(() => {
         return {
-            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveColor, colors[500]]),
+            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveColor, activeColor]),
+            borderColor: interpolateColor(progress.value, [0, 1], [inactiveBorder, activeColor]),
+            borderWidth: 1.5,
         };
     });
 
     return (
-        <TouchableOpacity onPress={onPress}>
+        <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
             <Animated.View style={[{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 }, animatedStyle]}>
                 <Typography
                     style={{
@@ -924,6 +928,7 @@ const CapabilityTag = React.memo(function CapabilityTag({
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
     
+    const activeColor = colors[500];
     const inactiveBg = isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)';
     const inactiveBorder = isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)';
 
@@ -934,9 +939,9 @@ const CapabilityTag = React.memo(function CapabilityTag({
     const animatedStyle = useAnimatedStyle(() => {
         // use colors array correctly, interpolateColor natively supports hex, rgb, hsl, etc.
         return {
-            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveBg, colors[500]]),
-            borderColor: interpolateColor(progress.value, [0, 1], [inactiveBorder, colors[500]]),
-            borderWidth: active ? 1.5 : 1,
+            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveBg, activeColor]),
+            borderColor: interpolateColor(progress.value, [0, 1], [inactiveBorder, activeColor]),
+            borderWidth: 1.5,
         };
     });
 
