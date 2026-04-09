@@ -1,15 +1,13 @@
 import {
   Easing,
-  WithTimingConfig,
-  WithSpringConfig,
   FadeIn,
   FadeOut,
   SlideInUp,
   SlideInDown,
   ZoomIn,
   ZoomOut,
-  LayoutAnimation,
 } from 'react-native-reanimated';
+import type { WithTimingConfig, WithSpringConfig } from 'react-native-reanimated';
 
 export const ANIMATION_DURATION = {
   FAST: 120,
@@ -19,28 +17,28 @@ export const ANIMATION_DURATION = {
   ROTATION_SLOW: 1500,
 };
 
-export const ANIMATION_CONFIG = {
+export const ANIMATION_CONFIG: Record<string, any> = {
   DEFAULT: {
     duration: ANIMATION_DURATION.NORMAL,
     easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-  } as WithTimingConfig,
+  },
   FAST: {
     duration: ANIMATION_DURATION.FAST,
     easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-  } as WithTimingConfig,
+  },
 
-  SPRING_DEFAULT: { damping: 26, stiffness: 120, mass: 1 } as WithSpringConfig,
-  SPRING_BOUNCY: { damping: 18, stiffness: 120, mass: 1 } as WithSpringConfig,
-  SPRING_SNAPPY: { damping: 30, stiffness: 200, mass: 0.8 } as WithSpringConfig,
+  SPRING_DEFAULT: { damping: 26, stiffness: 120, mass: 1 },
+  SPRING_BOUNCY: { damping: 18, stiffness: 120, mass: 1 },
+  SPRING_SNAPPY: { damping: 30, stiffness: 200, mass: 0.8 },
 
-  SPRING_BUTTON: { damping: 20, stiffness: 400, mass: 0.5 } as WithSpringConfig,
-  SPRING_CARD: { damping: 20, stiffness: 400, mass: 0.5 } as WithSpringConfig,
-  SPRING_TOAST: { damping: 20, stiffness: 180, mass: 0.8 } as WithSpringConfig,
+  SPRING_BUTTON: { damping: 20, stiffness: 400, mass: 0.5 },
+  SPRING_CARD: { damping: 20, stiffness: 400, mass: 0.5 },
+  SPRING_TOAST: { damping: 20, stiffness: 180, mass: 0.8 },
 
   SILK: {
     duration: 200,
     easing: Easing.bezier(0.4, 0, 0.2, 1),
-  } as WithTimingConfig,
+  },
 };
 
 export const LayoutAnimations = {

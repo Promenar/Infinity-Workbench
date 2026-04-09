@@ -2,7 +2,8 @@ import React, { memo } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Typography, ContextMenu } from '../ui';
 import { FileText, MoreVertical, Edit2, Share, Trash2, Check } from 'lucide-react-native';
-import Animated, { useAnimatedStyle, SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated';
 import { clsx } from 'clsx';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -21,7 +22,7 @@ export const RagDocItem = memo(
     item: any;
     isSelected: boolean;
     isSelectionMode: boolean;
-    selectionProgress: SharedValue<number>;
+    selectionProgress: any; // Temporarily use any to bypass namespace conflict with SharedValue
     onPress: () => void;
     onLongPress: () => void;
     onDelete: () => void;

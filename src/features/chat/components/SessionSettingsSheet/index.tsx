@@ -13,14 +13,23 @@ interface SessionSettingsSheetProps {
   visible: boolean;
   onClose: () => void;
   sessionId: string;
+  initialTab?: 'model' | 'thinking' | 'stats' | 'tools';
 }
 
 export const SessionSettingsSheet: React.FC<SessionSettingsSheetProps> = ({
   visible,
   onClose,
   sessionId,
+  initialTab = 'model',
 }) => {
-  const [activeTab, setActiveTab] = useState('model');
+  const [activeTab, setActiveTab] = React.useState<'model' | 'thinking' | 'stats' | 'tools'>(initialTab);
+
+  // Force tab when opening
+  React.useEffect(() => {
+    if (visible) {
+      setActiveTab(initialTab);
+    }
+  }, [visible, initialTab]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -39,7 +48,7 @@ export const SessionSettingsSheet: React.FC<SessionSettingsSheetProps> = ({
 
   return (
     <GlassBottomSheet visible={visible} onClose={onClose} title="会话设置" height="70%">
-      <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+      <TabBar activeTab={activeTab} onTabChange={(tab) => setActiveTab(tab as any)} />
       <View style={styles.content}>
         <Animated.View
           key={activeTab}

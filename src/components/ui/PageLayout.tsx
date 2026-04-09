@@ -5,6 +5,7 @@ import React from 'react';
 
 interface PageLayoutProps extends ViewProps {
   safeArea?: boolean;
+  children?: React.ReactNode;
 }
 
 /**

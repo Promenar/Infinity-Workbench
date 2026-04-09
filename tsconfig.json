@@ -7,6 +7,7 @@
     "node_modules",
     "_reference_ui",
     "worktrees",
+    "worktree",
     "web-client",
     "**/__tests__/*"
   ]

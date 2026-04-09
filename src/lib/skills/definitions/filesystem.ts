@@ -260,7 +260,7 @@ export const ListDirSkill: Skill = {
             const files = await FileSystem.readDirectoryAsync(fullPath);
 
             // 获取详细信息 (区分文件和文件夹) - Optional: 可以增强为并发获取详情
-            const details = await Promise.all(files.map(async (file) => {
+            const details = await Promise.all(files.map(async (file: string) => {
                 const itemPath = fullPath + (fullPath.endsWith('/') ? '' : '/') + file;
                 const info = await FileSystem.getInfoAsync(itemPath);
                 return {

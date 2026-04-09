@@ -79,12 +79,16 @@ const ProviderListItem = memo(({
                                 text={provider.name}
                                 className="font-bold text-[15px] text-gray-900 dark:text-white"
                             />
-                            <Text style={[
-                                styles.urlText,
-                                { color: isDark ? Colors.dark.textSecondary : '#666' }
-                            ]}>
-                                {provider.baseUrl}
-                            </Text>
+                            <Marquee
+                                text={provider.baseUrl || ''}
+                                style={{ height: 16 }}
+                                textProps={{
+                                    style: [
+                                        styles.urlText,
+                                        { color: isDark ? Colors.dark.textSecondary : '#666' }
+                                    ]
+                                }}
+                            />
                         </View>
                     </View>
 

@@ -11,9 +11,9 @@ import Animated, {
   FadeOut,
   withTiming,
   Easing,
-  SharedValue,
   useSharedValue,
 } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RagDocItem } from '../../src/components/rag/RagDocItem';
 import { useI18n } from '../../src/lib/i18n';
@@ -48,7 +48,7 @@ export default function FolderDetailScreen() {
     return folderInfo.label;
   }, [folderId, t]);
 
-  const selectionProgress: SharedValue<number> = useSharedValue(0);
+  const selectionProgress = useSharedValue(0);
 
   useEffect(() => {
     selectionProgress.value = withTiming(isSelectionMode ? 1 : 0, {

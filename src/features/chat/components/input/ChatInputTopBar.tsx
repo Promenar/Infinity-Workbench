@@ -72,19 +72,19 @@ export const ChatInputTopBar: React.FC<ChatInputTopBarProps> = ({
         showWorkspaceSheet,
         openSettings,
         closeSettings,
-        toggleSettings,
         openWorkspace,
         closeWorkspace,
     } = useTopBarSheets();
 
+    const [settingsTab, setSettingsTab] = React.useState<'model' | 'stats'>('model');
+
     // 模型按钮点击处理
     const handleModelPress = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSettingsTab('model');
         if (onModelPress) {
-            // 如果提供了外部回调，使用外部回调
             onModelPress();
         } else {
-            // 否则打开设置Sheet
             openSettings();
         }
     };
@@ -92,10 +92,10 @@ export const ChatInputTopBar: React.FC<ChatInputTopBarProps> = ({
     // Token按钮点击处理
     const handleTokenPress = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSettingsTab('stats');
         if (onTokenPress) {
             onTokenPress();
         } else {
-            // 默认行为：打开设置Sheet到统计页
             openSettings();
         }
     };
@@ -169,6 +169,7 @@ export const ChatInputTopBar: React.FC<ChatInputTopBarProps> = ({
                 visible={showSettingsSheet}
                 onClose={closeSettings}
                 sessionId={sessionId}
+                initialTab={settingsTab}
             />
 
             {/* WorkspaceSheet */}

@@ -151,7 +151,11 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ sessionId }) => {
   ];
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={styles.container} 
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: Spacing[4], paddingBottom: Spacing[6] }}
+    >
       <View style={styles.section}>
         <Typography style={styles.sectionTitle}>上下文使用</Typography>
         <View style={styles.card}>

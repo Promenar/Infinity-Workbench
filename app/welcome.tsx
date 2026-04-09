@@ -39,7 +39,7 @@ export default function WelcomeScreen() {
         progress.value = withTiming(1, {
             duration: 2500,
             easing: Easing.inOut(Easing.cubic),
-        }, (finished) => {
+        }, (finished: boolean | undefined) => {
             if (finished) {
                 layoutProgress.value = withDelay(200, withSpring(1, {
                     damping: 20,

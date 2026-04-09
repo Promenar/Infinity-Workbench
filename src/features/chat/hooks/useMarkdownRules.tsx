@@ -266,35 +266,39 @@ export const useMarkdownRules = ({
       ),
       th: (node: any, children: any) => {
         const align = node.attributes?.align;
+        const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
         return (
           <View key={node.key}
             style={{
               minWidth: 80,
               maxWidth: 200,
-              paddingVertical: 6,
-              paddingHorizontal: 10,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
               borderBottomWidth: 1,
-              borderColor: isDark ? Borders.glass.dark : Borders.glass.light,
+              borderRightWidth: 1,
+              borderColor: borderColor,
               alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
+              justifyContent: 'center',
             }}
           >
-            <Text style={{ fontWeight: 'bold', fontSize: 13, color: isDark ? '#e4e4e7' : '#27272a', includeFontPadding: false }}>{children}</Text>
+            <Text style={{ fontWeight: 'bold', fontSize: 13, color: isDark ? '#fff' : '#18181b', includeFontPadding: false }}>{children}</Text>
           </View>
         );
       },
       td: (node: any, children: any) => {
         const align = node.attributes?.align;
+        const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
         return (
           <View key={node.key}
             style={{
               minWidth: 80,
               maxWidth: 200,
-              paddingVertical: 5,
-              paddingHorizontal: 8,
+              paddingVertical: 8,
+              paddingHorizontal: 12,
               borderBottomWidth: 1,
               borderRightWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+              borderColor: borderColor,
               alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
             }}
           >

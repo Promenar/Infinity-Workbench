@@ -966,14 +966,14 @@ const CapabilityTag = React.memo(function CapabilityTag({
             <View style={{ opacity: active ? 1 : 0.5 }}>
                 {React.isValidElement(icon) &&
                     React.cloneElement(icon as React.ReactElement<any>, {
-                        color: active ? colors[500] : isDark ? '#9ca3af' : '#6b7280',
+                        color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
                     })}
             </View>
             <Typography
                 style={{
                     fontSize: 9,
                     fontWeight: 'bold',
-                    color: active ? colors[500] : isDark ? '#9ca3af' : '#6b7280',
+                    color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
                 }}
             >
                 {label}

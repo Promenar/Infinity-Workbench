@@ -1,4 +1,4 @@
-import { Zap, BookOpen, Code, LucideIcon } from 'lucide-react-native';
+import { Zap, BookOpen, Code, type LucideProps } from 'lucide-react-native';
 import { Colors } from '../../theme/colors';
 
 export interface RagPresetConfig {
@@ -15,7 +15,7 @@ export interface RagPresetConfig {
 
 export interface RagPreset {
     name: string; // Key for i18n
-    icon: LucideIcon;
+    icon: any; // Lucide Icon
     color: string;
     config: RagPresetConfig;
 }
