@@ -929,12 +929,6 @@ const CapabilityTag = React.memo(function CapabilityTag({
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
     
-    const activeColor = colors[500];
-    const r = parseInt(activeColor.slice(1, 3), 16);
-    const g = parseInt(activeColor.slice(3, 5), 16);
-    const b = parseInt(activeColor.slice(5, 7), 16);
-    const activeColorRgb = `rgb(${r}, ${g}, ${b})`;
-    
     const inactiveBg = isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)';
     const inactiveBorder = isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)';
 
@@ -943,10 +937,10 @@ const CapabilityTag = React.memo(function CapabilityTag({
     }, [active]);
 
     const animatedStyle = useAnimatedStyle(() => {
+        // use colors array correctly, interpolateColor natively supports hex, rgb, hsl, etc.
         return {
-            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveBg, activeColorRgb]),
-            opacity: 0.05 + progress.value * 0.95,
-            borderColor: interpolateColor(progress.value, [0, 1], [inactiveBorder, activeColorRgb]),
+            backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveBg, colors[500]]),
+            borderColor: interpolateColor(progress.value, [0, 1], [inactiveBorder, colors[500]]),
             borderWidth: active ? 1.5 : 1,
         };
     });
@@ -954,30 +948,34 @@ const CapabilityTag = React.memo(function CapabilityTag({
     return (
         <TouchableOpacity
             onPress={onToggle}
-            style={[{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingHorizontal: 6,
-                paddingVertical: 3,
-                borderRadius: 6,
-                gap: 3,
-            }, animatedStyle]}
+            activeOpacity={0.7}
         >
-            <View style={{ opacity: active ? 1 : 0.5 }}>
-                {React.isValidElement(icon) &&
-                    React.cloneElement(icon as React.ReactElement<any>, {
-                        color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
-                    })}
-            </View>
-            <Typography
-                style={{
-                    fontSize: 9,
-                    fontWeight: 'bold',
-                    color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
-                }}
+            <Animated.View
+                style={[{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 6,
+                    paddingVertical: 3,
+                    borderRadius: 6,
+                    gap: 3,
+                }, animatedStyle]}
             >
-                {label}
-            </Typography>
+                <View style={{ opacity: active ? 1 : 0.5 }}>
+                    {React.isValidElement(icon) &&
+                        React.cloneElement(icon as React.ReactElement<any>, {
+                            color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
+                        })}
+                </View>
+                <Typography
+                    style={{
+                        fontSize: 9,
+                        fontWeight: 'bold',
+                        color: active ? '#fff' : isDark ? '#9ca3af' : '#6b7280',
+                    }}
+                >
+                    {label}
+                </Typography>
+            </Animated.View>
         </TouchableOpacity>
     );
 });
