@@ -50,12 +50,12 @@ secure_env/
 worktrees/
 worktree/
 
-# Dev tool configs (symlinked to local storage)
-.agent/
-.lingma/
-.codebuddy/
-.idea/
-.vscode/
+# Dev tool configs (now included in git)
+# .agent/
+# .lingma/
+# .codebuddy/
+# .idea/
+# .vscode/
 
 # Debug/test files at root
 test-deepseek-fmt.js
