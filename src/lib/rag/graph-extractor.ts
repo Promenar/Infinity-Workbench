@@ -2,7 +2,7 @@ import { useApiStore } from '../../store/api-store';
 import { useSettingsStore } from '../../store/settings-store';
 import { createLlmClient, ExtendedModelConfig } from '../llm/factory';
 import { graphStore } from './graph-store';
-import { getDefaultKgPrompt } from './defaults';
+import { getDefaultKgPrompt, getKgFreeModePrompt, getKgDomainAutoPrompt } from './defaults';
 import { getPrompts, getPromptLang } from '../llm/prompts/i18n';
 import { useRagStore } from '../../store/rag-store';
 
@@ -113,34 +113,35 @@ export class GraphExtractor {
 
   private getSystemPrompt(): string {
     const settingsState = useSettingsStore.getState();
-    const customPrompt = settingsState.globalRagConfig.kgExtractionPrompt;
-    const entityTypes = settingsState.globalRagConfig.kgEntityTypes || [
-      'Concept',
-      'Person',
-      'Organization',
-      'Location',
-      'Event',
-      'Product',
-    ];
+    const config = settingsState.globalRagConfig;
+    const customPrompt = config.kgExtractionPrompt;
+    
+    // 1. Determine base prompt
+    let basePrompt = '';
+    const isFreeMode = config.kgFreeMode || !config.kgEntityTypes || config.kgEntityTypes.length === 0;
+    const entityTypes = config.kgEntityTypes || [];
 
-    // If custom prompt is present, use it (injecting entity types if placeholder exists)
     if (customPrompt && customPrompt.trim().length > 0) {
-      if (customPrompt.includes('{entityTypes}')) {
-        return customPrompt.replace('{entityTypes}', entityTypes.join(', '));
-      } else {
-        // Fallback: 用户删除了 placeholder，追加本地化的实体类型提示
-        const p = getPrompts(getPromptLang());
-        return `${customPrompt}${p.rag.kgFallback(entityTypes.join(', '))}`;
+      basePrompt = customPrompt;
+      if (basePrompt.includes('{entityTypes}')) {
+        basePrompt = basePrompt.replace('{entityTypes}', entityTypes.length > 0 ? entityTypes.join(', ') : 'any meaningful types');
+      }
+    } else {
+      basePrompt = isFreeMode ? getKgFreeModePrompt() : getDefaultKgPrompt();
+      if (!isFreeMode && basePrompt.includes('{entityTypes}')) {
+        basePrompt = basePrompt.replace('{entityTypes}', entityTypes.join(', '));
       }
     }
 
-    // 🌐 使用本地化默认 Prompt
-    const defaultPrompt = getDefaultKgPrompt();
-    if (defaultPrompt && defaultPrompt.includes('{entityTypes}')) {
-      return defaultPrompt.replace('{entityTypes}', entityTypes.join(', '));
+    // 2. Append Domain Auto-Detection instruction if enabled
+    // Unified: kgDomainAuto flag OR kgDomainHint==='auto' both trigger auto-detection
+    if (config.kgDomainAuto || config.kgDomainHint === 'auto') {
+      basePrompt += '\n\n' + getKgDomainAutoPrompt();
+    } else if (config.kgDomainHint) {
+      basePrompt += `\n\nFocus on the context of: ${config.kgDomainHint}`;
     }
 
-    return defaultPrompt;
+    return basePrompt;
   }
 
   /**

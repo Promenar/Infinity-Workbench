@@ -120,6 +120,8 @@ export const RagOmniIndicator: React.FC<RagOmniIndicatorProps> = ({
                 'API_RX': '接收 RAG 响应...',
                 'RERANK': '精排：深度相关性重排序...',
                 'KG_SCAN': '知识图谱：关系溯源...',
+                'KG_JIT': '图谱：正在实时关联知识...',
+                'KG_JIT_PARSE': '图谱：自动识别文本领域...',
             };
             const label = (processingState.subStage && dict[processingState.subStage]) ||
                 (processingState.networkStats && !processingState.networkStats.rxBytes ? '模型推理中...' : '知识库检索中...');

@@ -243,6 +243,9 @@ export const createTables = async () => {
         name TEXT NOT NULL,
         type TEXT DEFAULT 'concept', -- 'concept'|'person'|'org'|'location'...
         metadata TEXT, -- JSON
+        session_id TEXT,
+        agent_id TEXT,
+        source_type TEXT DEFAULT 'full', -- 'full' | 'summary' | 'jit'
         created_at INTEGER NOT NULL,
         updated_at INTEGER,
         UNIQUE(name)
@@ -257,12 +260,28 @@ export const createTables = async () => {
         relation TEXT NOT NULL,
         weight REAL DEFAULT 1.0,
         doc_id TEXT, -- Source document for attribution
+        session_id TEXT,
+        agent_id TEXT,
+        source_type TEXT DEFAULT 'full', -- 'full' | 'summary' | 'jit'
         created_at INTEGER NOT NULL,
         FOREIGN KEY (source_id) REFERENCES kg_nodes(id) ON DELETE CASCADE,
         FOREIGN KEY (target_id) REFERENCES kg_nodes(id) ON DELETE CASCADE,
         FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
       );
     `);
+
+    // 10.5 JIT Cache Table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS kg_jit_cache (
+        cache_key TEXT PRIMARY KEY,
+        query_hash TEXT NOT NULL,
+        chunk_ids_hash TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+    `);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_kg_jit_cache_expires ON kg_jit_cache(expires_at)');
 
     // 11. Vectorization Tasks Queue (Checkpoint Persistence)
     // 🔑 用于持久化向量化任务状态，支持后台中断恢复

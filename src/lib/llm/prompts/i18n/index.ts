@@ -66,6 +66,8 @@ export interface PromptDict {
     };
     rag: {
         kgDefaultPrompt: string;
+        kgFreeModePrompt: string;
+        kgDomainAutoPrompt: string;
         kgFallback: (entityTypes: string) => string;
         queryRewriter: {
             hyde: (query: string) => string;

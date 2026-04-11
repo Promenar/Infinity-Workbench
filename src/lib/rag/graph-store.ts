@@ -6,6 +6,7 @@ export interface KGNode {
   name: string;
   type: string; // 'concept'|'person'|'org'|'location'...
   metadata?: Record<string, any>;
+  sourceType?: 'full' | 'summary' | 'jit';
   createdAt: number;
 }
 
@@ -16,6 +17,7 @@ export interface KGEdge {
   relation: string;
   weight: number;
   docId?: string;
+  sourceType?: 'full' | 'summary' | 'jit';
   createdAt: number;
 }
 
@@ -58,12 +60,28 @@ export class GraphStore {
   }
 
   private resolveType(existingType: string, newType: string): string {
-    const typePriority = ['concept', 'person', 'org', 'location', 'event', 'product'];
-    const existingPriority = typePriority.indexOf(existingType);
-    const newPriority = typePriority.indexOf(newType);
+    // 策略: 未知类型优先 (通常代表更精确的 LLM 推断，例如 Mathematician 优于 Person)
+    const KNOWN_TYPES = new Set(['concept', 'person', 'org', 'location', 'event', 'product']);
+    
+    const existingIsKnown = KNOWN_TYPES.has(existingType.toLowerCase());
+    const newIsKnown = KNOWN_TYPES.has(newType.toLowerCase());
+    
+    // 1. 已知 -> 未知: 升级为更精确的自定义类型
+    if (existingIsKnown && !newIsKnown) return newType;
+    
+    // 2. 未知 -> 已知: 保留现有的更精确类型，避免降级
+    if (!existingIsKnown && newIsKnown) return existingType;
+    
+    // 3. 均为已知类型: 遵循原有优先级
+    if (existingIsKnown && newIsKnown) {
+      const typePriority = ['concept', 'person', 'org', 'location', 'event', 'product'];
+      const existingPriority = typePriority.indexOf(existingType.toLowerCase());
+      const newPriority = typePriority.indexOf(newType.toLowerCase());
+      return newPriority > existingPriority ? newType : existingType;
+    }
 
-    if (newPriority > existingPriority) return newType;
-    return existingType;
+    // 4. 均为未知类型: 以最新提取的为准 (最近更新优先)
+    return newType;
   }
 
   /**
@@ -75,15 +93,16 @@ export class GraphStore {
     type: string = 'concept',
     metadata: any = {},
     scope?: { sessionId?: string; agentId?: string },
+    sourceType: 'full' | 'summary' | 'jit' = 'full',
   ): Promise<string> {
     try {
       const id = generateId();
       const createdAt = Date.now();
 
       const insertResult = await db.execute(
-        `INSERT OR IGNORE INTO kg_nodes (id, name, type, metadata, created_at, session_id, agent_id) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, name, type, JSON.stringify(metadata), createdAt, scope?.sessionId || null, scope?.agentId || null]
+        `INSERT OR IGNORE INTO kg_nodes (id, name, type, metadata, created_at, session_id, agent_id, source_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, name, type, JSON.stringify(metadata), createdAt, scope?.sessionId || null, scope?.agentId || null, sourceType]
       );
 
       if (insertResult.rowsAffected > 0) {
@@ -99,9 +118,15 @@ export class GraphStore {
         const mergedMetadata = this.mergeMetadata(row.metadata, metadata);
         const updatedType = this.resolveType(row.type, type);
 
+        // 升级逻辑: jit -> full/summary 可升级，反之不可降级
+        const sourcePriority = { 'full': 2, 'summary': 1, 'jit': 0 };
+        const existingPriority = sourcePriority[row.source_type as keyof typeof sourcePriority] ?? 0;
+        const newPriority = sourcePriority[sourceType] ?? 0;
+        const finalSourceType = newPriority >= existingPriority ? sourceType : row.source_type;
+
         await db.execute(
-          'UPDATE kg_nodes SET type = ?, metadata = ?, updated_at = ? WHERE id = ?',
-          [updatedType, JSON.stringify(mergedMetadata), Date.now(), existingId]
+          'UPDATE kg_nodes SET type = ?, metadata = ?, updated_at = ?, source_type = ? WHERE id = ?',
+          [updatedType, JSON.stringify(mergedMetadata), Date.now(), finalSourceType, existingId]
         );
 
         return existingId;
@@ -249,26 +274,33 @@ export class GraphStore {
     docId?: string,
     weight: number = 1.0,
     scope?: { sessionId?: string; agentId?: string },
+    sourceType: 'full' | 'summary' | 'jit' = 'full',
   ): Promise<string> {
     try {
       const sessionId = scope?.sessionId || null;
       const agentId = scope?.agentId || null;
 
       const existing = await db.execute(
-        `SELECT id, weight FROM kg_edges 
+        `SELECT id, weight, source_type FROM kg_edges 
          WHERE source_id = ? AND target_id = ? AND relation = ?
          AND (doc_id = ? OR (doc_id IS NULL AND ? IS NULL))
-         AND (session_id = ? OR (session_id IS NULL AND ? IS NULL))`,
-        [sourceId, targetId, relation, docId || null, docId || null, sessionId, sessionId]
+         AND (session_id = ? OR (session_id IS NULL AND ? IS NULL))
+         AND (agent_id = ? OR (agent_id IS NULL AND ? IS NULL))`,
+        [sourceId, targetId, relation, docId || null, docId || null, sessionId, sessionId, agentId, agentId]
       );
 
       if (existing.rows && existing.rows.length > 0) {
         const existingEdge = (existing.rows as any)[0];
         const newWeight = (existingEdge.weight || 1) + weight;
 
+        const sourcePriority = { 'full': 2, 'summary': 1, 'jit': 0 };
+        const existingPriority = sourcePriority[existingEdge.source_type as keyof typeof sourcePriority] ?? 0;
+        const newPriority = sourcePriority[sourceType] ?? 0;
+        const finalSourceType = newPriority >= existingPriority ? sourceType : existingEdge.source_type;
+
         await db.execute(
-          'UPDATE kg_edges SET weight = ?, created_at = ? WHERE id = ?',
-          [newWeight, Date.now(), existingEdge.id]
+          'UPDATE kg_edges SET weight = ?, created_at = ?, source_type = ? WHERE id = ?',
+          [newWeight, Date.now(), finalSourceType, existingEdge.id]
         );
 
         return existingEdge.id;
@@ -277,8 +309,8 @@ export class GraphStore {
       const id = generateId();
       const createdAt = Date.now();
       await db.execute(
-        'INSERT INTO kg_edges (id, source_id, target_id, relation, weight, doc_id, created_at, session_id, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, sourceId, targetId, relation, weight, docId || null, createdAt, sessionId, agentId],
+        'INSERT INTO kg_edges (id, source_id, target_id, relation, weight, doc_id, created_at, session_id, agent_id, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, sourceId, targetId, relation, weight, docId || null, createdAt, sessionId, agentId, sourceType],
       );
       return id;
     } catch (e) {

@@ -176,6 +176,28 @@ Rules:
 4. "weight" is 0.0 to 1.0, indicating confidence or importance.
 5. JSON ONLY. No markdown formatted blocks.`,
 
+        kgFreeModePrompt: `You are an expert Knowledge Graph extractor.
+Freely identify all noteworthy entities in the text, and determine the type names yourself.
+Prioritize identifying core objects (Object), followed by attributes (Attribute).
+
+Return a valid JSON object with the following structure:
+{
+  "nodes": [
+    { "name": "Exact Name", "type": "YourCustomType", "metadata": { "description": "short desc" } }
+  ],
+  "edges": [
+    { "source": "SourceNodeName", "target": "TargetNodeName", "relation": "relationship_verb", "weight": 1.0 }
+  ]
+}
+
+Rules:
+1. "name" must be the unique identifier.
+2. Keep descriptions concise and relationships clear.
+3. JSON ONLY.`,
+
+        kgDomainAutoPrompt: `Before starting the extraction, please first analyze and determine the domain of the user-provided text (e.g., fiction, academic paper, technical documentation, dialogue records, etc.).
+Optimize and refine your relationship extraction based on the unique logic of that domain (e.g., character relationships in fiction, methodology in papers, module dependencies in code).`,
+
         kgFallback: (entityTypes: string) =>
             `\n\nTarget Entity Types: ${entityTypes}\nEnsure output is valid JSON.`,
 

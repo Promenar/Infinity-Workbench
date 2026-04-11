@@ -176,6 +176,28 @@ export const zhPrompts = {
 4. "weight" 从 0.0 到 1.0，表示置信度或重要性。
 5. 仅输出 JSON。不要使用 Markdown 格式化代码块。`,
 
+        kgFreeModePrompt: `你是一位专业的知识图谱提取专家。
+自由识别文本中所有值得关注的实体对象，类型名称由你自行判断。
+优先识别核心对象(Object)，其次才是属性(Attribute)。
+
+返回一个有效的 JSON 对象，结构如下:
+{
+  "nodes": [
+    { "name": "精确名称", "type": "你的自定义实体类型", "metadata": { "description": "短描述" } }
+  ],
+  "edges": [
+    { "source": "源节点名称", "target": "目标节点名称", "relation": "关系动词", "weight": 1.0 }
+  ]
+}
+
+规则:
+1. "name" 必须是唯一标识符。
+2. 保持描述简洁，关系清晰。
+3. 仅输出 JSON。`,
+
+        kgDomainAutoPrompt: `在开始提取之前，请首先分析并判定用户输入文本所属的领域（如：虚构文学、科学论文、技术文档、对话记录等）。
+基于该领域的特有逻辑（如：小说的角色关系，论文的方法论，代码的模块依赖）来优化并细化你的关系抽取。`,
+
         kgFallback: (entityTypes: string) =>
             `\n\n目标实体类型: ${entityTypes}\n请确保输出为合法 JSON。`,
 

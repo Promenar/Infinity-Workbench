@@ -492,6 +492,34 @@ export class MemoryManager {
     allResults.sort((a, b) => b.similarity - a.similarity);
     const uniqueResults = allResults.filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i);
 
+    // 🔑 Phase 2: JIT Micro-Graph Fire (并行触发)
+    // 在 Rerank 之前或同时启动 JIT，以最大化重叠耗时
+    let jitPromise: Promise<any> | null = null;
+    const isJitEnabled = !!effectiveRagConfig.jitMaxChunks && effectiveRagConfig.jitMaxChunks > 0;
+    
+    if (isJitEnabled && uniqueResults.length > 0) {
+      // Lazy JIT check: 只有在现有图谱覆盖不足时才触发
+      const densityCheck = async () => {
+        const topChunks = uniqueResults.slice(0, 3);
+        const hasEdges = await MemoryManager.checkKgDensity(topChunks);
+        if (!hasEdges) {
+          const { microGraphExtractor } = await import('./micro-graph-extractor');
+          return microGraphExtractor.extract(
+            topChunks.slice(0, effectiveRagConfig.jitMaxChunks || 3),
+            query,
+            sessionId,
+            { 
+              timeout: effectiveRagConfig.jitTimeoutMs || 5000,
+              maxChars: effectiveRagConfig.jitMaxCharsPerChunk ? (effectiveRagConfig.jitMaxCharsPerChunk * 3) : 6000,
+              onProgress: (sub) => onProgress?.('kg_searching', 90, sub)
+            }
+          );
+        }
+        return null;
+      };
+      jitPromise = densityCheck();
+    }
+
     let finalResults: SearchResult[];
 
     if (effectiveRagConfig.enableRerank) {
@@ -637,8 +665,24 @@ export class MemoryManager {
         // 这是一个“读时增强”策略，通过已召回的向量结果反查 KG
         const allReferenceText = finalResults.map(r => r.content).join('\n');
 
-        // 1. 获取所有已知节点（简单起见，目前基于子串匹配或精确匹配）
-        const nodesRes = await db.execute('SELECT id, name, type FROM kg_nodes');
+        // 1. 获取召回文档关联的所有实体节点 (避免全表扫描)
+        // 策略：只查找与当前召回 docIds 或全局常识 (docId IS NULL) 相关的节点
+        const authDocList = Array.from(authorizedDocIds || []);
+        let docFilter = 'e.doc_id IS NULL';
+        if (enableDocs && !isGlobal && authDocList.length > 0) {
+          const placeholders = authDocList.map(() => '?').join(',');
+          docFilter += ` OR e.doc_id IN (${placeholders})`;
+        } else if (enableDocs && isGlobal) {
+          docFilter = '1=1';
+        }
+
+        const nodesRes = await db.execute(
+          `SELECT DISTINCT n.id, n.name, n.type 
+           FROM kg_nodes n
+           JOIN kg_edges e ON (n.id = e.source_id OR n.id = e.target_id)
+           WHERE ${docFilter}`,
+          enableDocs && !isGlobal && authDocList.length > 0 ? authDocList : []
+        );
         const allNodes = (nodesRes.rows as any)._array || (nodesRes.rows as any) || [];
 
         // 找出文本中提到的实体
@@ -698,17 +742,56 @@ export class MemoryManager {
       }
     }
 
+    // ===== 阶段 5: JIT Micro-Graph Integration (实时补全) =====
+    let jitContext = '';
+    if (jitPromise) {
+      try {
+        // Smart Wait: 给予 JIT 一定的宽限期，避免阻塞主流程
+        onProgress?.('kg_searching', 95, 'KG_SCAN');
+        const jitResult = await jitPromise;
+        if (jitResult && jitResult.context) {
+          jitContext = `\nDynamically Discovered Relations (实时关联补充):\n${jitResult.context}\n`;
+        }
+      } catch (e) {
+        console.warn('[MemoryManager] JIT Context injection failed:', e);
+      }
+    }
+
     onProgress?.('done', 100);
 
     return {
-      context: `relevant_context_block (参考上下文):\n${contextBlock}\n${kgContext}`,
+      context: `relevant_context_block (参考上下文):\n${contextBlock}\n${kgContext}\n${jitContext}`,
       references,
       metadata,
       billingUsage: {
         ragSystem: rewriteTokenUsage,
-        isEstimated: rewriteTokenUsage > 0 && false, // If captured from API, it's real. If 0, it doesn't matter. We can refine this.
+        isEstimated: rewriteTokenUsage > 0 && false, 
       },
     };
+  }
+
+  /**
+   * 检查指定文本块在知识图谱中的密度
+   * 如果已有足够的关系，则跳过 JIT
+   */
+  private static async checkKgDensity(results: SearchResult[]): Promise<boolean> {
+    try {
+      if (results.length === 0) return true;
+      const docIds = results.map(r => r.docId).filter((id): id is string => !!id);
+      if (docIds.length === 0) return false;
+
+      const placeholders = docIds.map(() => '?').join(',');
+      const res = await db.execute(
+        `SELECT COUNT(*) as count FROM kg_edges WHERE doc_id IN (${placeholders})`,
+        docIds
+      );
+      const count = (res.rows?.[0] as any)?.count || 0;
+      
+      // 阈值：如果这些文档已贡献超过 3 条关系，认为静态图谱已足够，不再 JIT
+      return count >= 3;
+    } catch (e) {
+      return false;
+    }
   }
 
   /**

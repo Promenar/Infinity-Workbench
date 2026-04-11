@@ -9,6 +9,20 @@ export function getDefaultKgPrompt(): string {
 }
 
 /**
+ * 获取“自由提取”模式下的系统提示词
+ */
+export function getKgFreeModePrompt(): string {
+  return getPrompts(getPromptLang()).rag.kgFreeModePrompt;
+}
+
+/**
+ * 获取“领域自动识别”的增强指令
+ */
+export function getKgDomainAutoPrompt(): string {
+  return getPrompts(getPromptLang()).rag.kgDomainAutoPrompt;
+}
+
+/**
  * 保留原始英文版本用于向后兼容（已有自定义 Prompt 的用户不受影响）
  * @deprecated 请使用 getDefaultKgPrompt() 获取本地化版本
  */

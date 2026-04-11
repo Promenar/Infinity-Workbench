@@ -152,6 +152,50 @@ export default function RagAdvancedSettings() {
             />
           </SettingsSection>
 
+          {/* New: JIT Micro-Graph Configuration */}
+          <SettingsSection title={t.rag.kg.jitTitle}>
+            <SettingsSwitchItem
+              icon={Cpu}
+              title={t.rag.kg.jitEnable}
+              subtitle={t.rag.kg.jitEnableDesc}
+              value={!!globalRagConfig.jitMaxChunks && globalRagConfig.jitMaxChunks > 0}
+              onValueChange={(v) => updateGlobalRagConfig({ jitMaxChunks: v ? 3 : 0 })}
+            />
+            {!!globalRagConfig.jitMaxChunks && globalRagConfig.jitMaxChunks > 0 && (
+              <SettingsItem
+                icon={Bot}
+                title={t.rag.kg.jitMaxChunks}
+                subtitle={t.rag.kg.jitMaxChunksDesc}
+                rightElement={
+                  <TextInput
+                    keyboardType="numeric"
+                    style={{ color: Colors.primary, fontWeight: 'bold', width: 40, textAlign: 'right' }}
+                    defaultValue={String(globalRagConfig.jitMaxChunks || 3)}
+                    onEndEditing={(e) => {
+                       const val = parseInt(e.nativeEvent.text);
+                       if (!isNaN(val)) updateGlobalRagConfig({ jitMaxChunks: val });
+                    }}
+                  />
+                }
+              />
+            )}
+            <SettingsSwitchItem
+              icon={Cpu}
+              title={t.rag.kg.freeModeEnable}
+              subtitle={t.rag.kg.freeModeDesc}
+              value={!!globalRagConfig.kgFreeMode}
+              onValueChange={(v) => updateGlobalRagConfig({ kgFreeMode: v })}
+            />
+            <SettingsSwitchItem
+              icon={Network}
+              title={t.rag.kg.domainAuto}
+              subtitle={t.rag.kg.domainAutoDesc}
+              value={!!globalRagConfig.kgDomainAuto}
+              onValueChange={(v) => updateGlobalRagConfig({ kgDomainAuto: v })}
+              isLast
+            />
+          </SettingsSection>
+
           {/* 1. 策略选择 */}
           <SettingsSection title={t.rag.kg.costStrategyTitle}>
             <View className="p-3">

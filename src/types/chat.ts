@@ -299,6 +299,15 @@ export interface RagConfiguration {
   kgExtractionPrompt?: string; // 自定义抽取提示词
   kgMaxDepth?: number; // 遍历深度 (默认2)
   kgEntityTypes?: string[]; // 关注的实体类型 (Person, Org, etc.)
+  kgFreeMode?: boolean; // 启用自由实体识别模式 (默认 false)
+  kgDomainHint?: string; // 领域引导字符串 (fiction/academic...) 或 'auto' 触发自动识别
+  kgDomainAuto?: boolean; // UI开关：是否自动识别领域 (与 kgDomainHint==='auto' 等价)
+
+  // JIT 动态建图配置
+  jitTimeoutMs?: number; // JIT 抽取超时 (默认 5000ms)
+  jitMaxChunks?: number; // JIT 输入最大 chunk 数 (默认 3)
+  jitMaxCharsPerChunk?: number; // 每个 chunk 最大字符数 (默认 2000)
+  jitCacheTTL?: number; // JIT 缓存 TTL 秒数 (默认 3600)
 
   // 降本策略
   costStrategy?: 'summary-first' | 'on-demand' | 'full'; // 抽取策略

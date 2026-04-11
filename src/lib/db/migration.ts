@@ -233,6 +233,34 @@ export const migrateDatabase = async () => {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_kg_edges_session ON kg_edges(session_id)');
     }
 
+    // Migration 9.1: JIT & Source Tagging
+    if (!kgNodesCols.includes('source_type')) {
+      console.log('[DB Migration] Adding source_type to kg_nodes...');
+      await db.execute("ALTER TABLE kg_nodes ADD COLUMN source_type TEXT DEFAULT 'full'");
+    }
+    if (!kgEdgesCols.includes('source_type')) {
+      console.log('[DB Migration] Adding source_type to kg_edges...');
+      await db.execute("ALTER TABLE kg_edges ADD COLUMN source_type TEXT DEFAULT 'full'");
+    }
+
+    const jitCacheInfo = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='kg_jit_cache'"
+    );
+    if (!jitCacheInfo.rows || jitCacheInfo.rows.length === 0) {
+      console.log('[DB Migration] Creating kg_jit_cache table...');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS kg_jit_cache (
+          cache_key TEXT PRIMARY KEY,
+          query_hash TEXT NOT NULL,
+          chunk_ids_hash TEXT NOT NULL,
+          result_json TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+      `);
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_kg_jit_cache_expires ON kg_jit_cache(expires_at)');
+    }
+
     // Migration 9: Deduplicate workspace folders and cleanup explosion (High Efficiency)
     const WORKSPACE_NAME = 'workspace';
 

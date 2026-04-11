@@ -1103,7 +1103,6 @@ export const useRagStore = create<RagState>()(
         processingHistory: state.processingHistory,
         expandedFolders: Array.from(state.expandedFolders),
         selectedFolder: state.selectedFolder,
-        kgAccumulator: state.kgAccumulator,
       }),
       onRehydrateStorage: () => (state: any) => {
         if (state && state.expandedFolders) {
