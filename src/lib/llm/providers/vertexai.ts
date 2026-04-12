@@ -673,14 +673,7 @@ Available tools: ${toolListDesc} + Native Web Search (built-in).`
                               }
                               // 2. Text
                               else if (part.text) {
-                                const chunkHasThought = candidate.content.parts.some(
-                                  (p: any) => p.thought === true,
-                                );
-                                if (chunkHasThought) {
-                                  reasoning += part.text;
-                                } else {
-                                  text += part.text;
-                                }
+                                text += part.text;
                               }
                               // 3. Function Call (Native Gemini)
                               else if (part.functionCall) {

@@ -3,6 +3,7 @@ import { ErrorNormalizer } from '../error-normalizer';
 import { Skill, ToolCall } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { ThinkingDetector } from '../thinking-detector';
 
 export class DeepSeekClient implements LlmClient {
   private apiKey: string;
@@ -144,7 +145,7 @@ export class DeepSeekClient implements LlmClient {
 
         let lastPosition = 0;
         const currentToolCalls: Record<number, { id: string; name: string; arguments: string }> = {};
-        let isInsideThinkTag = false;
+        const thinkingDetector = new ThinkingDetector();
 
         // Helper to try parsing partial JSON
         const safeJsonParse = (str: string) => {
@@ -185,130 +186,12 @@ export class DeepSeekClient implements LlmClient {
                   const usageRaw = json.usage;
                   const deltaToolCalls = delta?.tool_calls;
 
-                  // 🧐 DeepSeek-Chat <think> tag support with Buffer for Split Tags
-                  // Combined existing logic with robust split handling
-                  let contentToProcess = content;
-
-                  // Check if we have a partial tag at the end of the previous chunk (not implemented here explicitly, 
-                  // but we can try to be robust with simple lookahead/buffering if we had a class-level buffer).
-                  // Since we are inside a callback without persistent buffer state easily accessible (except closure),
-                  // we will use a simpler heuristic:
-                  // If we are likely inside a tag, we check for closure.
-
-                  if (contentToProcess.includes('<think>')) {
-                    isInsideThinkTag = true;
-                    const parts = contentToProcess.split('<think>');
-                    content = parts[0];
-                    reasoning += parts.slice(1).join('<think>');
-                  } else if (contentToProcess.includes('</think>')) {
-                    isInsideThinkTag = false;
-                    const parts = contentToProcess.split('</think>');
-                    reasoning += parts[0];
-                    content = parts.slice(1).join('</think>');
-                  } else if (isInsideThinkTag) {
-                    // Check for partial closing tag at the end?
-                    // Ideally we should buffer, but for now let's assume if it looks like code, it might be a leak?
-                    // No, that's dangerous.
-
-                    // Specific Fix for "Swallowed Content":
-                    // If we see what looks like the start of a standard response while "inside think",
-                    // we might have missed the closing tag.
-                    // Heuristic: If we see a large burst of text without '>', maybe check?
-                    // But reliably: Just move content to reasoning.
-                    reasoning += contentToProcess;
-                    content = '';
-                  }
-
-                  // 🛡️ Split Tag Safety (Heuristic)
-                  // If 'content' ends with split tag chars like '<', '</', '</t', etc., 
-                  // we might want to defer processing? 
-                  // But 'content' here is DELTA. 
-                  // Real fix requires a `streamBuffer` in the class instance.
-                  // Current fix: Rely on the improved StreamParser regex removal being GONE, 
-                  // so even if some leak happens, it's visible.
-                  // The previous code was: 
-                  //   if (isInsideThinkTag) { reasoning += content; content = ''; }
-                  // This is correct IF we are truly inside. 
-                  // The issue: "Split Tag". 
-                  // Chunk 1: "some reasoning </" -> goes to reasoning. isInside=true.
-                  // Chunk 2: "think> final answer" -> goes to reasoning. isInside=true.
-                  // Result: "final answer" is in reasoning.
-
-                  // ⚡ Quick Fix for Split Tag:
-                  // If we are inside think tag, and the content *starts* with a completion of the tag?
-                  if (isInsideThinkTag && /^(think>|hink>|ink>|nk>|k>|>)/.test(contentToProcess)) {
-                    // Attempt to recovery
-                    const match = /^(think>|hink>|ink>|nk>|k>|>)([\s\S]*)/.exec(contentToProcess);
-                    if (match) {
-                      isInsideThinkTag = false;
-                      reasoning += ''; // The tag part is effectively consumed
-                      content = match[2]; // The rest is content
-                    }
-                  }
+                  // 🧐 Thinking Tag Detection via ThinkingDetector
+                  const { content: filteredContent, reasoning: tagReasoning } = thinkingDetector.process(content);
+                  content = filteredContent;
+                  reasoning += tagReasoning;
 
                   // Debug Logic
-                  if (content && content.length > 0) {
-                    // console.log('[OpenAiClient] Received content chunk');
-                  }
-
-                  // Accumulate Tool Calls
-                  if (deltaToolCalls) {
-                    for (const tc of deltaToolCalls) {
-                      const index = tc.index;
-                      if (!currentToolCalls[index]) {
-                        currentToolCalls[index] = {
-                          id: tc.id || '',
-                          name: tc.function?.name || '',
-                          arguments: tc.function?.arguments || '',
-                        };
-                      } else {
-                        // Append arguments
-                        if (tc.function?.arguments) {
-                          currentToolCalls[index].arguments += tc.function.arguments;
-                        }
-                        // It's possible for id/name to be split but usually they come in the first chunk
-                        if (tc.id && !currentToolCalls[index].id) currentToolCalls[index].id = tc.id;
-                        if (tc.function?.name && !currentToolCalls[index].name) currentToolCalls[index].name = tc.function.name;
-                      }
-                    }
-                  }
-
-                  let usage: { input: number; output: number; total: number } | undefined;
-                  if (usageRaw) {
-                    usage = {
-                      input: usageRaw.prompt_tokens,
-                      output: usageRaw.completion_tokens,
-                      total: usageRaw.total_tokens,
-                    };
-                  }
-
-                  // Convert accumulated tool calls to array for the callback
-                  const toolCallsArray = Object.values(currentToolCalls).map(tc => ({
-                    id: tc.id,
-                    name: tc.name,
-                    arguments: tc.arguments, // Keep as string for now, parse later
-                  })).filter(tc => tc.id && tc.name); // Only emit if we have at least id and name (though args might need completion)
-
-                  // Note: JSON.parse on streaming arguments is dangerous because they are incomplete.
-                  // However, chat-store expects 'toolCalls' to be the FINAL structure in each update?
-                  // Actually chat-store just assigns it.
-                  // If we parse incomplete JSON, it will crash.
-                  // We should only define toolCalls in onToken when we are "done" or if we want partials.
-                  // But chat-store uses it essentially at the END of the stream loop (when toolCalls is checked).
-                  // So we can just pass the raw Accumulated structure and let chat-store parse it?
-                  // Or, better: we only pass toolCalls when we have them, but keep them as raw string in a hidden field?
-                  // No, the interface says `toolCalls: ToolCall[]` where arguments is `any` (usually object).
-
-                  // Better Strategy:
-                  // Pass the toolCalls ONLY when they are valid or wait until stream end?
-                  // Streaming tool calls updates is useful for UI (e.g. showing args being typed).
-                  // But `safeJson` is needed.
-
-                  let safeToolCalls: ToolCall[] | undefined;
-                  if (toolCallsArray.length > 0) {
-                    safeToolCalls = toolCallsArray.map(tc => {
-                      const argsStr = tc.arguments.trim();
-                      // 🛡️ 成熟度检查：如果 JSON 还没开始（只有 { ）或者明显不完整，
                       // 我们只返回 id 和 name，但在 arguments 中通过标记或空对象保留。
                       // 关键：不要让 chat-store 误以为这是一个已经“完成”的空指令。
 

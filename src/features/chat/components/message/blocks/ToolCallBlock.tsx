@@ -23,15 +23,9 @@ export const ToolCallBlock: React.FC = React.memo(() => {
       }
     }
 
-    // 2. Filter out intermediate text-only 'thinking' steps that should be cards
-    // Usually these are non-empty chunks that aren't the native reasoning
-    return steps.filter(s => {
-      if (s.type === 'thinking' && s.id !== 'native-reasoning') {
-        // If it looks like content (not a tool progress update), hide from timeline
-        return false;
-      }
-      return true;
-    });
+    // 2. Show all steps in timeline (no longer filtering out thinking steps)
+    // All thinking steps are now displayed in the timeline.
+    return steps;
   }, [message.executionSteps, message.reasoning]);
 
   const hasExecutionSteps = processedSteps.length > 0;

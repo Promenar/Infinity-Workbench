@@ -1375,9 +1375,12 @@ export const useChatStore = create<ChatState>()(
                   }
 
                   if (parseResult.reasoning) {
+                    // [Deprecated] StreamParser no longer produces reasoning output.
+                    // Kept as a safety net for any edge cases.
                     reasoningFromThisTurn += parseResult.reasoning;
                   }
                   if (token.reasoning) {
+                    // Primary source: Provider layer (ThinkingDetector) ensures clean separation
                     reasoningFromThisTurn += token.reasoning;
                   }
 

@@ -3,6 +3,8 @@ import { ErrorNormalizer } from '../error-normalizer';
 import { Skill, ToolCall } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { ThinkingDetector } from '../thinking-detector';
+import { ThinkingDetector } from '../thinking-detector';
 
 export class OpenAiCompatibleClient implements LlmClient {
     private apiKey: string;
@@ -150,7 +152,7 @@ export class OpenAiCompatibleClient implements LlmClient {
 
                 let lastPosition = 0;
                 const currentToolCalls: Record<number, { id: string; name: string; arguments: string }> = {};
-                let isInsideThinkTag = false;
+                const thinkingDetector = new ThinkingDetector();
 
                 const safeJsonParse = (str: string) => {
                     try {
@@ -212,33 +214,10 @@ export class OpenAiCompatibleClient implements LlmClient {
 
                                     // 🛡️ <think> Tag Logic (Generic)
                                     // 即使是 OpenAI 兼容接口，后端可能是 DeepSeek 或其他支持思考的模型
-                                    let contentToProcess = content;
-
-                                    if (contentToProcess.includes('<think>')) {
-                                        isInsideThinkTag = true;
-                                        const parts = contentToProcess.split('<think>');
-                                        content = parts[0];
-                                        reasoning += parts.slice(1).join('<think>');
-                                    } else if (contentToProcess.includes('</think>')) {
-                                        isInsideThinkTag = false;
-                                        const parts = contentToProcess.split('</think>');
-                                        reasoning += parts[0];
-                                        content = parts.slice(1).join('</think>');
-                                    } else if (isInsideThinkTag) {
-                                        reasoning += contentToProcess;
-                                        content = '';
-                                    }
-
-                                    // 🛡️ Split Tag Safety 
-                                    if (isInsideThinkTag && /^(think>|hink>|ink>|nk>|k>|>)/.test(contentToProcess)) {
-                                        const match = /^(think>|hink>|ink>|nk>|k>|>)([\s\S]*)/.exec(contentToProcess);
-                                        if (match) {
-                                            isInsideThinkTag = false;
-                                            reasoning += '';
-                                            content = match[2];
-                                        }
-                                    }
-
+                                    // Thinking Tag Detection via ThinkingDetector
+                                    const { content: filteredContent, reasoning: tagReasoning } = thinkingDetector.process(content);
+                                    content = filteredContent;
+                                    reasoning += tagReasoning;
                                     // 🛡️ Cleaning DeepSeek Special Tokens
                                     const cleanTokens = (text: string) => {
                                         if (!text) return text;

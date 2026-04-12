@@ -3,6 +3,7 @@ import { ErrorNormalizer } from '../error-normalizer';
 import { Skill, ToolCall } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { ThinkingDetector } from '../thinking-detector';
 
 export class OpenAiClient implements LlmClient {
   private apiKey: string;
@@ -153,7 +154,7 @@ export class OpenAiClient implements LlmClient {
 
         let lastPosition = 0;
         const currentToolCalls: Record<number, { id: string; name: string; arguments: string }> = {};
-        let isInsideThinkTag = false;
+        const thinkingDetector = new ThinkingDetector();
 
         // Helper to try parsing partial JSON
         const safeJsonParse = (str: string) => {
@@ -194,26 +195,10 @@ export class OpenAiClient implements LlmClient {
                   const usageRaw = json.usage;
                   const deltaToolCalls = delta?.tool_calls;
 
-                  // 🧐 DeepSeek-Chat <think> tag support
-                  if (content.includes('<think>')) {
-                    isInsideThinkTag = true;
-                    const parts = content.split('<think>');
-                    // Everything before <think> stays as content
-                    content = parts[0];
-                    // Everything after <think> goes to reasoning
-                    reasoning += parts.slice(1).join('<think>');
-                  } else if (content.includes('</think>')) {
-                    isInsideThinkTag = false;
-                    const parts = content.split('</think>');
-                    // Everything before </think> goes to reasoning
-                    reasoning += parts[0];
-                    // Everything after </think> stays as content
-                    content = parts.slice(1).join('</think>');
-                  } else if (isInsideThinkTag) {
-                    // If we are deep inside the tag, move all content to reasoning
-                    reasoning += content;
-                    content = '';
-                  }
+                  // 🧐 Thinking Tag Detection via ThinkingDetector
+                  const { content: filteredContent, reasoning: tagReasoning } = thinkingDetector.process(content);
+                  content = filteredContent;
+                  reasoning += tagReasoning;
 
                   // Debug Logic
                   if (content && content.length > 0) {

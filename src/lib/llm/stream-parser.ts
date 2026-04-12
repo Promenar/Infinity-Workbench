@@ -9,16 +9,18 @@ export interface ParseResult {
     plan?: any[];
 }
 
-type ParserState = 'IDLE' | 'IN_THINK' | 'IN_TOOL_XML' | 'IN_PLAN';
+type ParserState = 'IDLE' | 'IN_TOOL_XML' | 'IN_PLAN';
 
 /**
  * StreamParser
  * 
  * A stateful, incremental parser for LLM output streams.
- * Optimized to handle mixed content (text, reasoning, tool calls) 
+ * Optimized to handle mixed content (text, tool calls, plans) 
  * without O(N^2) regex matching on the entire history.
  * 
- * 增强：Provider感知，支持不同模型的特定清理逻辑
+ * NOTE: Thinking/reasoning tag extraction is NO LONGER handled here.
+ * All thinking tag detection is now handled by ThinkingDetector at the Provider layer.
+ * StreamParser only handles: tool_call XML blocks, plan blocks, and code fences.
  */
 export class StreamParser {
     private buffer: string = '';
@@ -39,7 +41,7 @@ export class StreamParser {
 
     process(chunk: string): ParseResult {
         let outputContent = '';
-        let outputReasoning = '';
+        const outputReasoning = ''; // Deprecated: reasoning is now handled by ThinkingDetector at Provider layer
         const outputToolCalls: ToolCall[] = [];
         let outputPlan: any[] | undefined;
 
@@ -117,8 +119,8 @@ export class StreamParser {
                 // 🛡️ NORMAL: Look for Tags OR Code Starts
                 // We must find which one happens FIRST.
 
-                // 1. Tag Regex from before
-                const tagRegex = /<(?:(think|thought|plan|tool_code|tool_calls|tools|tool_call|call)(?=[\s>])|!--)/i;
+                // 1. Tag Regex - only tool and plan tags (think/thought removed, handled by ThinkingDetector)
+                const tagRegex = /<(?:(plan|tool_code|tool_calls|tools|tool_call|call)(?=[\s>]))/i;
                 const tagMatch = tagRegex.exec(this.buffer);
 
                 // 2. Code Start Regex
@@ -194,46 +196,10 @@ export class StreamParser {
                     outputContent += this.buffer.slice(0, tagIdx);
                     this.buffer = this.buffer.slice(tagIdx);
 
-                    // (Reuse existing logic below)
-                    // Determine detected tag name
-                    let tagName = tagMatch[1] ? tagMatch[1].toLowerCase() : '!--';
+                    let tagName = tagMatch[1] ? tagMatch[1].toLowerCase() : '';
                     this.startTag = tagName;
 
-                    // ... [Logic for !-- THINKING check] ...
-                    if (tagName === '!--') {
-                        const thinkStartRegex = /^<!--\s*THINKING_START/i;
-                        const potentialMatch = thinkStartRegex.exec(this.buffer);
-
-                        if (potentialMatch) {
-                            this.state = 'IN_THINK';
-                            // Consume marker if possible
-                            const fullStartTagRegex = /^<!--\s*THINKING_START\s*(-->)?/i;
-                            const fullMatch = fullStartTagRegex.exec(this.buffer);
-                            if (fullMatch) {
-                                this.buffer = this.buffer.slice(fullMatch[0].length);
-                            } else {
-                                this.buffer = this.buffer.slice(potentialMatch[0].length);
-                            }
-                            continue;
-                        } else {
-                            // Partial check
-                            const partialMatch = /^<!--\s*T?H?I?N?K?I?N?G?_?S?T?A?R?T?$/i.exec(this.buffer);
-                            if (partialMatch) break; // Wait
-                            else {
-                                // Not our special comment, normal comment. Treat as content.
-                                // We consume just the '<' to advance
-                                outputContent += '<';
-                                this.buffer = this.buffer.slice(1);
-                                continue;
-                            }
-                        }
-                    } else if (tagName === 'think' || tagName === 'thought') {
-                        this.state = 'IN_THINK';
-                        const closeBracket = this.buffer.indexOf('>');
-                        if (closeBracket !== -1) {
-                            this.buffer = this.buffer.slice(closeBracket + 1);
-                        } else { break; }
-                    } else if (tagName === 'plan') {
+                    if (tagName === 'plan') {
                         this.state = 'IN_PLAN';
                         const closeBracket = this.buffer.indexOf('>');
                         if (closeBracket !== -1) {
@@ -241,41 +207,15 @@ export class StreamParser {
                         } else { break; }
                     } else {
                         this.state = 'IN_TOOL_XML';
-                        // this.bracketCount = 0; 
                         break;
                     }
                 }
 
             }
             // =================================================================================
-            // State: IN_THINK / IN_PLAN / IN_TOOL_XML (Unchanged)
+            // State: IN_PLAN / IN_TOOL_XML
             // =================================================================================
-            else if (this.state === 'IN_THINK') {
-                // Standard XML tags or HTML comment marker
-                const endRegex = /(<\/think>|<\/thought>|<!--\s*THINKING_END\s*-->)/i;
-                const match = endRegex.exec(this.buffer);
-
-                if (match) {
-                    const endIdx = match.index;
-                    const endTag = match[0];
-                    outputReasoning += this.buffer.substring(0, endIdx);
-                    this.buffer = this.buffer.substring(endIdx + endTag.length);
-                    this.state = 'IDLE';
-                } else {
-                    const partialMatch = /<(\/?t?h?i?n?k?)?$/i.exec(this.buffer);
-                    const partialComment = /<!?-?-?\s?T?H?I?N?K?I?N?G?_?E?N?D?\s?-?-?>?$/i.exec(this.buffer);
-
-                    let safeLength = this.buffer.length;
-                    if (partialMatch) safeLength = partialMatch.index;
-                    else if (partialComment) safeLength = partialComment.index;
-
-                    if (safeLength > 0) {
-                        outputReasoning += this.buffer.substring(0, safeLength);
-                        this.buffer = this.buffer.substring(safeLength);
-                    }
-                    break;
-                }
-            } else if (this.state === 'IN_PLAN') {
+            if (this.state === 'IN_PLAN') {
                 const endRegex = /<\/plan>/i;
                 const match = endRegex.exec(this.buffer);
                 if (match) {

@@ -24,10 +24,8 @@ export const MessageContent: React.FC = React.memo(() => {
     sessionData
   } = useMessageContext() as any;
 
-  const intermediateContentSteps = React.useMemo(() => {
-    if (isUser) return [];
-    return (message.executionSteps || []).filter((s: any) => s.type === 'thinking' && (s.content || '').trim().length > 0 && s.id !== 'native-reasoning');
-  }, [message.executionSteps, isUser]);
+  // Thinking steps are now unified in ToolCallBlock's timeline
+  // No longer rendering intermediateContentSteps as cards above content
 
   // Heuristics for waiting/loading state
   const isWaitingForContent = !isUser && isGenerating && !message.content;
@@ -62,12 +60,7 @@ export const MessageContent: React.FC = React.memo(() => {
 
        <ToolCallBlock />
 
-       {/* Intermediate Content Cards (Results of thought/inter-step output) */}
-       {intermediateContentSteps.map((step: any) => (
-         <View key={step.id} style={{ marginBottom: 8 }}>
-            <MarkdownBlock overrideContent={step.content} />
-         </View>
-       ))}
+       {/* Thinking steps are now rendered in ToolCallBlock's timeline */}
 
        <View style={{ minHeight: 20, position: 'relative', overflow: 'hidden' }}>
           {isWaitingForContent ? (
