@@ -191,16 +191,51 @@ export class DeepSeekClient implements LlmClient {
                   content = filteredContent;
                   reasoning += tagReasoning;
 
-                  // Debug Logic
-                      // 我们只返回 id 和 name，但在 arguments 中通过标记或空对象保留。
-                      // 关键：不要让 chat-store 误以为这是一个已经“完成”的空指令。
+                  // Accumulate Tool Calls
+                  if (deltaToolCalls) {
+                    for (const tc of deltaToolCalls) {
+                      const index = tc.index;
+                      if (!currentToolCalls[index]) {
+                        currentToolCalls[index] = {
+                          id: tc.id || '',
+                          name: tc.function?.name || '',
+                          arguments: tc.function?.arguments || '',
+                        };
+                      } else {
+                        if (tc.function?.arguments) {
+                          currentToolCalls[index].arguments += tc.function.arguments;
+                        }
+                        if (tc.id && !currentToolCalls[index].id) currentToolCalls[index].id = tc.id;
+                        if (tc.function?.name && !currentToolCalls[index].name) {
+                          currentToolCalls[index].name = tc.function.name;
+                        }
+                      }
+                    }
+                  }
 
+                  let usage: { input: number; output: number; total: number } | undefined;
+                  if (usageRaw) {
+                    usage = {
+                      input: usageRaw.prompt_tokens,
+                      output: usageRaw.completion_tokens,
+                      total: usageRaw.total_tokens,
+                    };
+                  }
+
+                  const toolCallsArray = Object.values(currentToolCalls).map(tc => ({
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: tc.arguments,
+                  })).filter(tc => tc.id && tc.name);
+
+                  let safeToolCalls: ToolCall[] | undefined;
+                  if (toolCallsArray.length > 0) {
+                    safeToolCalls = toolCallsArray.map(tc => {
+                      const argsStr = tc.arguments.trim();
                       let parsedArgs = {};
-                      // 只有当字符串看起来像一个包含内容的 JSON 对象时才尝试解析
                       if (argsStr.length > 2 && argsStr.includes(':')) {
                         parsedArgs = safeJsonParse(argsStr);
                       }
-
                       return { ...tc, arguments: parsedArgs };
                     }).filter(tc => !!(tc.id && tc.name));
                   }

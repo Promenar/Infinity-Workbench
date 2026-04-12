@@ -4,7 +4,6 @@ import { Skill, ToolCall } from '../../../types/skills';
 import { apiLogger } from '../api-logger';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { ThinkingDetector } from '../thinking-detector';
-import { ThinkingDetector } from '../thinking-detector';
 
 export class OpenAiCompatibleClient implements LlmClient {
     private apiKey: string;
