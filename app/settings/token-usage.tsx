@@ -85,8 +85,8 @@ export default function TokenUsageScreen() {
     const match = label.match(/^(.*?)\s*(\(.*\))$/);
     const title = match ? match[1] : label;
     const subtitle = match ? match[2] : null;
-    // 防御性编程：确保 metric 和 count 存在
-    const count = metric?.count ?? 0;
+    // 防御性编程：确保 metric 和 count 存在，Number() 兜底 null/undefined
+    const count = Number(metric?.count ?? 0) || 0;
     const isEstimated = metric?.isEstimated ?? false;
     return (
       <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6', padding: 16, borderRadius: 16 }}>
@@ -207,13 +207,13 @@ export default function TokenUsageScreen() {
         {/* Global Summary */}
         <View style={{ alignItems: 'center', marginBottom: 32 }}>
           <View style={{ width: 200, height: 200, borderRadius: 100, borderWidth: 4, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
-            <Typography className="text-5xl font-black text-black dark:text-white" style={{ letterSpacing: -2 }}>{(globalTotal.total / 1000).toFixed(1)}k</Typography>
+            <Typography className="text-5xl font-black text-black dark:text-white" style={{ letterSpacing: -2 }}>{((globalTotal?.total ?? 0) / 1000).toFixed(1)}k</Typography>
             <Typography className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mt-2">{t.settings.tokenUsageDetails.totalTokens || 'Total Tokens'}</Typography>
           </View>
           <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
-            <MetricCard label={t.settings.tokenUsageDetails.input || 'Input'} metric={globalTotal.chatInput} color="#8b5cf6" icon={MessageSquare} />
-            <MetricCard label={t.settings.tokenUsageDetails.output || 'Output'} metric={globalTotal.chatOutput} color="#f59e0b" icon={Zap} />
-            <MetricCard label={t.settings.tokenUsageDetails.system || 'System'} metric={globalTotal.ragSystem} color="#10b981" icon={Database} />
+            <MetricCard label={t.settings.tokenUsageDetails.input || 'Input'} metric={globalTotal?.chatInput} color="#8b5cf6" icon={MessageSquare} />
+            <MetricCard label={t.settings.tokenUsageDetails.output || 'Output'} metric={globalTotal?.chatOutput} color="#f59e0b" icon={Zap} />
+            <MetricCard label={t.settings.tokenUsageDetails.system || 'System'} metric={globalTotal?.ragSystem} color="#10b981" icon={Database} />
           </View>
         </View>
 
