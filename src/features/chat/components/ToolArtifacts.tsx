@@ -1,11 +1,12 @@
 import React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { useTheme } from '../../../theme/ThemeProvider';
-import { EChartsRenderer } from '../../../components/chat/EChartsRenderer';
-import { MermaidRenderer } from '../../../components/chat/MermaidRenderer';
 import { Typography } from '../../../components/ui';
-import { BarChart3, Network } from 'lucide-react-native';
 import { ToolResultArtifact } from '../../../types/chat';
+import { RendererRegistry } from '../../../components/chat/renderers';
+
+// 确保渲染器已注册（副作用导入）
+import '../../../components/chat/renderers';
 
 interface ToolArtifactsProps {
     artifacts?: ToolResultArtifact[];
@@ -13,9 +14,14 @@ interface ToolArtifactsProps {
 
 /**
  * ToolArtifacts - 专用工具执行产物渲染组件
- * 
+ *
  * 按照用户要求，将图表等产物从正文中剥离，
  * 在消息气泡中以独立组件形式呈现，避免正文布局畸形。
+ *
+ * 使用 RendererRegistry 注册表模式分发渲染：
+ * - 支持的 artifact 类型通过注册表查找对应渲染器配置
+ * - 每种渲染器独立管理解析、元数据和渲染逻辑
+ * - 新增渲染器类型只需实现 ArtifactRendererConfig 并注册
  */
 export const ToolArtifacts: React.FC<ToolArtifactsProps> = ({ artifacts }) => {
     const { isDark, colors } = useTheme();
@@ -46,42 +52,31 @@ export const ToolArtifacts: React.FC<ToolArtifactsProps> = ({ artifacts }) => {
             {artifacts.map((artifact, index) => {
                 const key = `artifact-${artifact.type}-${artifact.name || index}`;
 
-                // 渲染图表
-                if (artifact.type === 'echarts') {
-                    // 提取 JSON 配置
-                    const configMatch = artifact.content.match(/```echarts\s*\n([\s\S]*?)\n?\s*```/);
-                    const configStr = configMatch ? configMatch[1] : '';
+                // 通过注册表查找渲染器配置
+                const rendererConfig = RendererRegistry.get(artifact.type);
+                if (!rendererConfig) return null;
 
-                    return (
-                        <View key={key} style={artifactWrapperStyle}>
-                            <View style={badgeStyle}>
-                                <BarChart3 size={10} color={colors?.[500] || '#6366f1'} />
-                                <Typography className="text-[9px] font-bold uppercase ml-1" style={{ color: colors?.[500] || '#6366f1' }}>
-                                    Chart
-                                </Typography>
-                            </View>
-                            <EChartsRenderer content={configStr} />
+                // 使用渲染器配置解析内容
+                const parsed = rendererConfig.parseContent(artifact.content);
+                const contentStr = parsed.data
+                    ? (typeof parsed.data === 'string' ? parsed.data : JSON.stringify(parsed.data))
+                    : parsed.raw;
+
+                return (
+                    <View key={key} style={artifactWrapperStyle}>
+                        <View style={badgeStyle}>
+                            {rendererConfig.renderBadgeIcon(10, colors?.[500] || '#6366f1')}
+                            <Typography className="text-[9px] font-bold uppercase ml-1" style={{ color: colors?.[500] || '#6366f1' }}>
+                                {rendererConfig.badgeLabel}
+                            </Typography>
                         </View>
-                    );
-                }
-
-                // 渲染 Mermaid (预留)
-                if (artifact.type === 'mermaid') {
-                    const mermaidCode = artifact.content.replace(/```mermaid\s*\n?([\s\S]*?)\n?\s*```/, '$1').trim();
-                    return (
-                        <View key={key} style={artifactWrapperStyle}>
-                            <View style={badgeStyle}>
-                                <Network size={10} color={colors?.[500] || '#6366f1'} />
-                                <Typography className="text-[9px] font-bold uppercase ml-1" style={{ color: colors?.[500] || '#6366f1' }}>
-                                    Diagram
-                                </Typography>
-                            </View>
-                            <MermaidRenderer content={mermaidCode} />
-                        </View>
-                    );
-                }
-
-                return null;
+                        {rendererConfig.renderContent({
+                            content: contentStr || artifact.content,
+                            colors,
+                            isDark,
+                        })}
+                    </View>
+                );
             })}
         </View>
     );

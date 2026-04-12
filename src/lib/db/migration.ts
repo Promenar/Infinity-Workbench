@@ -378,4 +378,39 @@ export const migrateDatabase = async () => {
   } catch (e) {
     console.warn('[DB Migration] Migration 11 failed:', e);
   }
+
+  // Migration 12: Create FTS5 virtual table for artifacts full-text search
+  try {
+    const ftsInfo = await db.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='artifacts_fts'"
+    );
+
+    if (!ftsInfo.rows || ftsInfo.rows.length === 0) {
+      console.log('[DB Migration] Creating artifacts_fts FTS5 table...');
+      await db.execute(
+        'CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(title, content, content=artifacts, content_rowid=rowid)'
+      );
+
+      // Triggers to keep FTS in sync
+      await db.execute(
+        'CREATE TRIGGER IF NOT EXISTS artifacts_fts_insert AFTER INSERT ON artifacts BEGIN INSERT INTO artifacts_fts(rowid, title, content) VALUES(new.rowid, new.title, new.content); END'
+      );
+      await db.execute(
+        'CREATE TRIGGER IF NOT EXISTS artifacts_fts_update AFTER UPDATE ON artifacts BEGIN UPDATE artifacts_fts SET title = new.title, content = new.content WHERE rowid = old.rowid; END'
+      );
+      await db.execute(
+        'CREATE TRIGGER IF NOT EXISTS artifacts_fts_delete AFTER DELETE ON artifacts BEGIN DELETE FROM artifacts_fts WHERE rowid = old.rowid; END'
+      );
+
+      // Populate FTS from existing data
+      await db.execute(
+        'INSERT INTO artifacts_fts(rowid, title, content) SELECT rowid, title, content FROM artifacts'
+      );
+
+      console.log('[DB Migration] Artifacts FTS5 table created successfully');
+    }
+  } catch (e) {
+    // FTS5 not available - search will fall back to LIKE queries
+    console.warn('[DB Migration] Migration 12 (FTS5 for artifacts) skipped:', e);
+  }
 };

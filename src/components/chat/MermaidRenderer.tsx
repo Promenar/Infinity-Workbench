@@ -1,25 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Modal, SafeAreaView, StatusBar, Platform, Dimensions, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Maximize2, X, Share2, Network } from 'lucide-react-native';
+import { Maximize2, Network, RefreshCw, Download, Copy } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
-import Svg, { Path, Rect, G } from 'react-native-svg';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { resolveLocalLibUri, scriptTagWithFallback } from '../../lib/webview-assets';
-
-const PhoneRotateIcon = ({ size, color }: { size: number; color: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M3.5 12C3.5 7.30558 7.30558 3.5 12 3.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
-    <Path d="M20.5 12C20.5 16.6944 16.6944 20.5 12 20.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
-    <Path d="M12 3.5H15M12 3.5V6.5" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M12 20.5H9M12 20.5V17.5" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    <G transform="rotate(45, 12, 12)">
-      <Rect x="8" y="5" width="8" height="14" rx="1.5" stroke={color} strokeWidth="2" />
-      <Path d="M11 16H13" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-    </G>
-  </Svg>
-);
+import { renderMermaidPreviewHtml, renderMermaidFullscreenHtml } from '../../lib/artifact-templates/mermaid-templates';
+import { artifactColors } from '../../lib/artifact-theme';
+import { PhoneRotateIcon } from './shared/PhoneRotateIcon';
+import { FullscreenModal } from './shared/FullscreenModal';
+import { useFullscreenOrientation } from './shared/useFullscreenOrientation';
+import { ArtifactActionSheet, ActionSheetAction } from './shared/ArtifactActionSheet';
 
 interface MermaidRendererProps {
   content: string;
@@ -31,11 +24,19 @@ interface MermaidRendererProps {
  */
 export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => {
   const { isDark, colors } = useTheme();
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isLandscape, setIsLandscape] = useState(false);
+  const ac = artifactColors(isDark, colors);
+  const { isFullscreen, isLandscape, enterFullscreen, toggleOrientation, exitFullscreen } = useFullscreenOrientation();
   const [loading, setLoading] = useState(true);
   const [localMermaidUri, setLocalMermaidUri] = useState<string | null>(null);
   const [previewHeight, setPreviewHeight] = useState(120);
+  const [renderError, setRenderError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const MAX_RETRIES = 3;
+
+  // 基于内容生成稳定的 key
+  const contentHash = content.length ^ content.charCodeAt(0) ^ content.charCodeAt(Math.max(0, content.length - 1));
 
   // 预加载本地 mermaid 资源
   useEffect(() => {
@@ -48,135 +49,121 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
     .replace(/```$/, '')
     .trim();
 
-  // 根据主题生成 HTML
-  const generateHtml = (isFull = false) => `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=${isFull ? '5.0' : '1.0'}, user-scalable=${isFull ? 'yes' : 'no'}">
-      ${scriptTagWithFallback('mermaid', localMermaidUri, 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js')}
-      <style>
-        body {
-          margin: 0;
-          padding: ${isFull ? '20px' : '10px'};
-          background-color: ${isDark ? '#000000' : '#ffffff'};
-          color: ${isDark ? '#e4e4e7' : '#27272a'};
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          ${isFull ? 'min-height: 100vh;' : 'height: 120px; overflow: hidden; font-size: 12px;'}
-        }
-        #mermaid-container {
-          width: 100%;
-          display: flex;
-          justify-content: center;
-        }
-        ${isFull ? `/* 针对全屏模式的滚动条美化 */
-        ::-webkit-scrollbar {
-          width: 4px;
-          height: 4px;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: ${isDark ? '#3f3f46' : '#d4d4d8'};
-          border-radius: 2px;
-        }` : ''}
-      </style>
-    </head>
-    <body>
-      <div id="mermaid-container" class="mermaid">
-        ${cleanContent}
-      </div>
-      <script>
-        mermaid.initialize({
-          startOnLoad: true,
-          theme: '${isDark ? 'dark' : 'default'}',
-          securityLevel: '${isFull ? 'loose' : 'strict'}',
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        });
-        
-        ${!isFull ? `
-        // 上报内容高度
-        function sendHeight() {
-          setTimeout(function() {
-            var container = document.getElementById('mermaid-container');
-            var height = container ? container.scrollHeight : document.body.scrollHeight;
-            if (window.ReactNativeWebView) {
-              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: height + 40 }));
-            }
-          }, 500);
-        }
-        window.addEventListener('load', sendHeight);
-        // 如果 mermaid 渲染慢，可以在渲染完成后再次上报
-        ` : ''}
-      </script>
-    </body>
-    </html>
-  `;
+  // 检查 mermaid 内容有效性
+  const isValidContent = cleanContent.length > 0 && /[a-zA-Z]/.test(cleanContent);
 
-  const toggleOrientation = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const nextLandscape = !isLandscape;
-    setIsLandscape(nextLandscape);
-
-    if (nextLandscape) {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
-    } else {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+  // 重试处理
+  const handleRetry = useCallback(() => {
+    if (retryCount < MAX_RETRIES) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setRetryCount(prev => prev + 1);
+      setRenderError(false);
     }
+  }, [retryCount]);
+
+  // 重置渲染错误状态当内容变化
+  useEffect(() => {
+    setRenderError(false);
+    setRetryCount(0);
+  }, [content]);
+
+  // 根据主题生成 HTML（委托外部模板）
+  const generateHtml = (isFull = false) => {
+    const commonOpts = {
+      cleanContent,
+      isDark,
+      localMermaidUri,
+      cdnUrl: 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js',
+      scriptTagWithFallback,
+    };
+    return isFull
+      ? renderMermaidFullscreenHtml(commonOpts)
+      : renderMermaidPreviewHtml(commonOpts);
   };
 
-  const handleClose = async () => {
-    await ScreenOrientation.unlockAsync();
-    setIsFullscreen(false);
-    setIsLandscape(false);
-  };
+  const handleClose = exitFullscreen;
 
-  const accentColor = colors?.[500] || (isDark ? '#a78bfa' : '#7c3aed');
+  const accentColor = ac.accent;
+
+  // 导出 Mermaid 为 HTML
+  const handleExport = useCallback(async () => {
+    if (isExporting || !isValidContent) return;
+    setIsExporting(true);
+    try {
+      const exportHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+<style>body{margin:0;padding:20px;display:flex;justify-content:center;align-items:center;min-height:100vh;background:${isDark ? '#000' : '#fff'};color:${isDark ? '#e4e4e7' : '#27272a'};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}</style></head>
+<body><div class="mermaid">${cleanContent}</div>
+<script>mermaid.initialize({startOnLoad:true,theme:'${isDark ? 'dark' : 'default'}',securityLevel:'loose'});</script></body></html>`;
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const fileName = `mermaid-${timestamp}.html`;
+      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(filePath, exportHtml, { encoding: FileSystem.EncodingType.UTF8 });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(filePath, {
+          mimeType: 'text/html',
+          dialogTitle: 'Mermaid 流程图',
+          UTI: 'public.html',
+        });
+      }
+    } catch (e: any) {
+      console.warn('[MermaidRenderer] Export failed:', e?.message);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [cleanContent, isDark, isExporting, isValidContent]);
 
   return (
     <>
       <View style={[styles.cardWrapper, {
-        backgroundColor: isDark ? '#1c1c1e' : '#f9fafb',
-        borderColor: isDark ? '#2c2c2e' : '#e5e7eb'
+        backgroundColor: ac.card.background,
+        borderColor: ac.card.border
       }]}>
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setLoading(true);
-            setIsFullscreen(true);
+            enterFullscreen();
           }}
+          onLongPress={() => setShowContextMenu(true)}
+          delayLongPress={400}
           style={styles.card}
+          accessibilityRole="button"
+          accessibilityLabel="流程图, 点击查看全屏"
+          accessibilityHint="点击查看全屏流程图，长按打开菜单"
         >
-          <View style={[styles.iconContainer, { backgroundColor: isDark ? '#2c2c2e' : (colors?.opacity20 || '#ede9fe') }]}>
+          <View style={[styles.iconContainer, { backgroundColor: ac.icon.background }]}>
             <Network size={22} color={accentColor} />
           </View>
 
           <View style={styles.contentContainer}>
-            <Text style={[styles.cardTitle, { color: isDark ? '#f4f4f5' : '#111827' }]} numberOfLines={1}>
+            <Text style={[styles.cardTitle, { color: ac.text.primary }]} numberOfLines={1}>
               Mermaid 流程图
             </Text>
             <View style={styles.badgeContainer}>
-              <View style={[styles.badge, { backgroundColor: isDark ? '#334155' : (colors?.opacity30 || '#e2e8f0') }]}>
-                <Text style={[styles.badgeText, { color: isDark ? '#cbd5e1' : (colors?.[500] || '#475569') }]}>
+              <View style={[styles.badge, { backgroundColor: ac.badge.background }]}>
+                <Text style={[styles.badgeText, { color: ac.badge.text }]}>
                   DIAGRAM
                 </Text>
               </View>
-              <Text style={[styles.hintText, { color: isDark ? '#71717a' : '#9ca3af' }]}>
+              <Text style={[styles.hintText, { color: ac.text.hint }]}>
                 点击全屏交互
               </Text>
             </View>
           </View>
 
           <View style={styles.actionIcon}>
-            <Maximize2 size={18} color={isDark ? '#52525b' : '#9ca3af'} />
+            <Maximize2 size={18} color={ac.button.icon} />
           </View>
         </TouchableOpacity>
 
         <View style={{ height: loading ? 120 : previewHeight, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
           <WebView
-            key="mermaid_preview"
+            key={`mermaid_preview_${retryCount}_${contentHash}`}
             source={{ html: generateHtml(false) }}
             style={{ flex: 1, backgroundColor: 'transparent' }}
             javaScriptEnabled={true}
@@ -190,63 +177,125 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ content }) => 
                   const newHeight = Math.min(Math.max(data.value, 80), 240);
                   setPreviewHeight(newHeight);
                   setLoading(false);
+                  setRenderError(false);
+                } else if (data.type === 'error') {
+                  console.warn('[Mermaid] Render error:', data.message);
+                  setRenderError(true);
                 }
               } catch (e) {
                 console.warn('[Mermaid] Height update error:', e);
               }
             }}
+            onError={() => {
+              setRenderError(true);
+            }}
           />
+          {renderError && (
+            <View style={[styles.loadingOverlay, { backgroundColor: ac.overlay.background }]}>
+              <Text style={{ color: ac.text.errorMuted, fontSize: 13, textAlign: 'center' }}>
+                流程图渲染失败
+              </Text>
+              {retryCount < MAX_RETRIES ? (
+                <TouchableOpacity
+                  onPress={handleRetry}
+                  style={{
+                    marginTop: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: ac.overlay.retryBackground,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="重试渲染流程图"
+                  accessibilityHint="重新尝试渲染流程图"
+                >
+                  <RefreshCw size={14} color={ac.text.retryCount} />
+                  <Text style={{ color: ac.text.retryCount, fontSize: 12, marginLeft: 4 }}>
+                    重试 ({MAX_RETRIES - retryCount}/{MAX_RETRIES})
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={{ color: ac.text.disabled, fontSize: 11, marginTop: 4 }}>
+                  数据可能无效，请重新生成
+                </Text>
+              )}
+            </View>
+          )}
         </View>
       </View>
 
-      <Modal
+      <FullscreenModal
         visible={isFullscreen}
-        animationType="fade"
-        presentationStyle="fullScreen"
-        onRequestClose={handleClose}
-      >
-        <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff', paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0 }}>
-          <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#1c1c1e' : '#f3f4f6' }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#000' }]} numberOfLines={1}>
-              Mermaid 流程图
-            </Text>
-            <TouchableOpacity
-              style={[styles.closeIconButton, { backgroundColor: isDark ? '#1c1c1e' : '#f3f4f6' }]}
-              onPress={handleClose}
-            >
-              <X size={20} color={isDark ? '#fff' : '#666'} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}>
-            <WebView
-              key={`mermaid_webview_full_${isLandscape}_${isFullscreen}`}
-              source={{ html: generateHtml(true) }}
-              style={{ flex: 1, backgroundColor: 'transparent' }}
-              javaScriptEnabled={true}
-              androidLayerType="hardware"
-              bounces={true}
-              onLoad={() => setLoading(false)}
-            />
-            {loading && (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color={accentColor} />
-              </View>
-            )}
-          </View>
-
-          {/* 🔄 Landscape Toggle FAB */}
+        title="Mermaid 流程图"
+        isDark={isDark}
+        isLandscape={isLandscape}
+        accentColor={accentColor}
+        onClose={handleClose}
+        onToggleOrientation={toggleOrientation}
+        headerRight={
           <TouchableOpacity
-            style={[styles.fab, {
-              backgroundColor: colors?.[500] || (isDark ? '#2c2c2e' : '#7c3aed'),
-              shadowColor: colors?.[500] || '#000'
-            }]}
-            onPress={toggleOrientation}
+            style={[styles.closeIconButton, { backgroundColor: ac.button.background }]}
+            onPress={handleExport}
+            disabled={isExporting}
+            accessibilityRole="button"
+            accessibilityLabel="导出流程图"
+            accessibilityHint="将流程图导出为HTML文件并分享"
           >
-            <PhoneRotateIcon size={28} color="#fff" />
+            <Download size={18} color={ac.button.closeIcon} />
           </TouchableOpacity>
-        </SafeAreaView>
-      </Modal>
+        }
+      >
+        <View style={{ flex: 1, backgroundColor: ac.webview.background }}>
+          <WebView
+            key={`mermaid_full_${isLandscape}_${isFullscreen}_${contentHash}`}
+            source={{ html: generateHtml(true) }}
+            style={{ flex: 1, backgroundColor: 'transparent' }}
+            javaScriptEnabled={true}
+            androidLayerType="hardware"
+            bounces={true}
+            onLoad={() => setLoading(false)}
+          />
+          {loading && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color={accentColor} />
+            </View>
+          )}
+        </View>
+      </FullscreenModal>
+
+      <ArtifactActionSheet
+        visible={showContextMenu}
+        title="Mermaid 流程图"
+        isDark={isDark}
+        onClose={() => setShowContextMenu(false)}
+        actions={[
+          {
+            key: 'fullscreen',
+            label: '全屏查看',
+            icon: <Maximize2 size={20} color={isDark ? '#f4f4f5' : '#111827'} />,
+            onPress: () => { setLoading(true); enterFullscreen(); },
+          },
+          {
+            key: 'export',
+            label: '导出流程图',
+            icon: <Download size={20} color={isDark ? '#f4f4f5' : '#111827'} />,
+            onPress: handleExport,
+          },
+          {
+            key: 'copy',
+            label: '复制数据',
+            icon: <Copy size={20} color={isDark ? '#f4f4f5' : '#111827'} />,
+            onPress: () => {
+              if (cleanContent) {
+                const Clipboard = require('react-native').Clipboard;
+                Clipboard.setString(cleanContent);
+              }
+            },
+          },
+        ] as ActionSheetAction[]}
+      />
     </>
   );
 };

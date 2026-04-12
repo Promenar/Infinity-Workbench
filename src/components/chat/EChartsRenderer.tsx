@@ -1,28 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Modal, SafeAreaView, StatusBar, Platform, Dimensions } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Maximize2, X, BarChart3, PieChart, LineChart, Activity } from 'lucide-react-native';
+import { Maximize2, BarChart3, PieChart, LineChart, Activity, RefreshCw, Download, Copy } from 'lucide-react-native';
 import * as Haptics from '../../lib/haptics';
-import Svg, { Path, Rect, G } from 'react-native-svg';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { resolveLocalLibUri, scriptTagWithFallback } from '../../lib/webview-assets';
-
-const PhoneRotateIcon = ({ size, color }: { size: number; color: string }) => (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        {/* Curved arrows representing rotation */}
-        <Path d="M3.5 12C3.5 7.30558 7.30558 3.5 12 3.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
-        <Path d="M20.5 12C20.5 16.6944 16.6944 20.5 12 20.5" stroke={color} strokeWidth="2" strokeLinecap="round" />
-        <Path d="M12 3.5H15M12 3.5V6.5" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M12 20.5H9M12 20.5V17.5" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-
-        {/* Smartphone shape at an angle */}
-        <G transform="rotate(45, 12, 12)">
-            <Rect x="8" y="5" width="8" height="14" rx="1.5" stroke={color} strokeWidth="2" />
-            <Path d="M11 16H13" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-        </G>
-    </Svg>
-);
+import { renderEChartsPreviewHtml, renderEChartsFullscreenHtml } from '../../lib/artifact-templates/echarts-templates';
+import { artifactColors } from '../../lib/artifact-theme';
+import { PhoneRotateIcon } from './shared/PhoneRotateIcon';
+import { FullscreenModal } from './shared/FullscreenModal';
+import { useFullscreenOrientation } from './shared/useFullscreenOrientation';
+import { ArtifactActionSheet, ActionSheetAction } from './shared/ArtifactActionSheet';
 
 interface EChartsRendererProps {
     content: string; // JSON string configuration
@@ -34,11 +24,18 @@ interface EChartsRendererProps {
  */
 export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => {
     const { isDark, colors } = useTheme();
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [isLandscape, setIsLandscape] = useState(false);
+    const ac = artifactColors(isDark, colors);
+    const { isFullscreen, isLandscape, enterFullscreen, toggleOrientation, exitFullscreen } = useFullscreenOrientation();
     const [localEchartsUri, setLocalEchartsUri] = useState<string | null>(null);
     const [previewHeight, setPreviewHeight] = useState(120);
     const [loading, setLoading] = useState(true);
+    const [retryCount, setRetryCount] = useState(0);
+    const [isExporting, setIsExporting] = useState(false);
+    const [showContextMenu, setShowContextMenu] = useState(false);
+    const MAX_RETRIES = 3;
+
+    // 基于内容生成稳定的 key（避免 title 变化导致 WebView 重建闪烁）
+    const contentHash = content.length ^ content.charCodeAt(0) ^ content.charCodeAt(Math.max(0, content.length - 1));
 
     // 预加载本地 echarts 资源
     useEffect(() => {
@@ -78,90 +75,67 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         console.warn('[EChartsRenderer] Critical error during option extraction:', e?.message);
     }
 
-    const generateHtml = (isFull = false) => `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=${isFull ? '5.0' : '1.0'}, user-scalable=${isFull ? 'yes' : 'no'}">
-      ${scriptTagWithFallback('echarts', localEchartsUri, 'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js')}
-      <style>
-        body {
-          margin: 0;
-          padding: 0;
-          background-color: ${isDark ? '#000000' : '#ffffff'};
-          ${isFull ? 'height: 100vh; display: flex; flex-direction: column;' : 'height: 120px; overflow: hidden;'}
-        }
-        #chart-container {
-          ${isFull ? 'flex: 1; width: 100%; min-height: 100%;' : 'width: 100%; height: 120px;'}
-        }
-      </style>
-    </head>
-    <body>
-      <div id="chart-container"></div>
-      <script>
-        const chartDom = document.getElementById('chart-container');
-        const myChart = echarts.init(chartDom, '${isDark ? 'dark' : 'light'}');
-        const option = ${JSON.stringify(chartOption)};
-        
-        if (option.title) {
-             if (typeof option.title === 'object' && !Array.isArray(option.title)) {
-                 option.title.show = false; 
-             } else if (Array.isArray(option.title)) {
-                 option.title.forEach(t => t.show = false);
-             }
-        }
-
-        ${isFull ? `if (option.toolbox && typeof option.toolbox === 'object' && !Array.isArray(option.toolbox)) {
-             option.toolbox.show = true;
-             option.toolbox.top = 0; 
-             option.toolbox.right = 10;
-        }
-        
-        if (option.legend && typeof option.legend === 'object' && !Array.isArray(option.legend)) {
-             option.legend.top = 60;
-        }
-
-        if (option.grid) {
-            if (typeof option.grid === 'object' && !Array.isArray(option.grid)) {
-                option.grid.top = option.grid.top || 130;
-            } else if (Array.isArray(option.grid)) {
-                option.grid.forEach(g => g.top = g.top || 130);
-            }
-        } else {
-            option.grid = { top: 130, left: '10%', right: '10%', bottom: '12%', containLabel: true };
-        }` : ''}
-        option.backgroundColor = 'transparent';
-        ${!isFull ? 'option.silent = true;' : ''}
-        myChart.setOption(option);
-        ${isFull ? "window.addEventListener('resize', () => myChart.resize());" : ''}
-
-        ${!isFull ? `
-        // 上报高度
-        setTimeout(function() {
-          var height = chartDom.scrollHeight || document.body.scrollHeight;
-          if (window.ReactNativeWebView) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: height + 20 }));
-          }
-        }, 500);
-        ` : ''}
-      </script>
-    </body>
-    </html>
-  `;
+    const generateHtml = (isFull = false) => {
+        const commonOpts = {
+            chartOption,
+            isDark,
+            localEchartsUri,
+            cdnUrl: 'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js',
+            scriptTagWithFallback,
+        };
+        return isFull
+            ? renderEChartsFullscreenHtml(commonOpts)
+            : renderEChartsPreviewHtml(commonOpts);
+    };
 
     if (!chartOption || parseError) {
+        const canRetry = retryCount < MAX_RETRIES;
+        const handleRetry = () => {
+            if (canRetry) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setRetryCount(prev => prev + 1);
+            }
+        };
+
         return (
-            <View style={[styles.errorContainer, { borderColor: isDark ? '#333' : '#e5e7eb' }]}>
-                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 13 }}>
+            <View style={[styles.errorContainer, { borderColor: ac.card.border }]}>
+                <Text style={{ color: ac.text.errorMuted, fontSize: 13, textAlign: 'center' }}>
                     {parseError ? "图表配置解析失败" : (content.length > 0 ? "正在生成图表..." : "等待图表数据...")}
                 </Text>
+                {parseError && canRetry && (
+                    <TouchableOpacity
+                        onPress={handleRetry}
+                        style={{
+                            marginTop: 8,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 8,
+                            backgroundColor: ac.overlay.retryBackground,
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="重试解析图表"
+                        accessibilityHint="重新尝试解析图表配置"
+                    >
+                        <RefreshCw size={14} color={ac.text.retryCount} />
+                        <Text style={{ color: ac.text.retryCount, fontSize: 12, marginLeft: 4 }}>
+                            重试 ({MAX_RETRIES - retryCount}/{MAX_RETRIES})
+                        </Text>
+                    </TouchableOpacity>
+                )}
+                {parseError && !canRetry && (
+                    <Text style={{ color: ac.text.disabled, fontSize: 11, marginTop: 4 }}>
+                        数据可能无效，请重新生成
+                    </Text>
+                )}
             </View>
         );
     }
 
     const getIcon = () => {
         const iconSize = 22;
-        const color = colors?.[500] || (isDark ? '#a78bfa' : '#7c3aed');
+        const color = ac.accent;
         switch (chartType) {
             case 'pie': return <PieChart size={iconSize} color={color} />;
             case 'line': return <LineChart size={iconSize} color={color} />;
@@ -170,67 +144,89 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
         }
     };
 
-    const toggleOrientation = async () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        const nextLandscape = !isLandscape;
-        setIsLandscape(nextLandscape);
+    const toggleOrientationLocal = toggleOrientation;
 
-        if (nextLandscape) {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
-        } else {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    const handleExport = useCallback(async () => {
+        if (isExporting || !chartOption) return;
+        setIsExporting(true);
+        try {
+            // Generate a standalone HTML file with the chart
+            const exportHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:${isDark ? '#000' : '#fff'}}
+#chart{width:800px;height:600px}</style></head>
+<body><div id="chart"></div>
+<script>var c=echarts.init(document.getElementById('chart'),'${isDark ? 'dark' : 'light'}');
+c.setOption(${JSON.stringify(chartOption)});</script></body></html>`;
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const fileName = `echarts-${timestamp}.html`;
+            const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+
+            await FileSystem.writeAsStringAsync(filePath, exportHtml, { encoding: FileSystem.EncodingType.UTF8 });
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(filePath, {
+                    mimeType: 'text/html',
+                    dialogTitle: title || 'ECharts 图表',
+                    UTI: 'public.html',
+                });
+            }
+        } catch (e: any) {
+            console.warn('[EChartsRenderer] Export failed:', e?.message);
+        } finally {
+            setIsExporting(false);
         }
-    };
+    }, [chartOption, isDark, title, isExporting]);
 
-    const handleClose = async () => {
-        await ScreenOrientation.unlockAsync();
-        setIsFullscreen(false);
-        setIsLandscape(false);
-    };
+    const handleClose = exitFullscreen;
 
     return (
         <View style={styles.outerContainer}>
             <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setIsFullscreen(true);
-                }}
+                onPress={() => enterFullscreen()}
+                onLongPress={() => setShowContextMenu(true)}
+                delayLongPress={400}
                 style={[styles.card, {
-                    backgroundColor: isDark ? '#1c1c1e' : '#f9fafb',
-                    borderColor: isDark ? '#2c2c2e' : '#e5e7eb'
+                    backgroundColor: ac.card.background,
+                    borderColor: ac.card.border
                 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`图表: ${title}, ${chartType}类型`}
+                accessibilityHint="点击查看全屏图表，长按打开菜单"
             >
                 <View style={styles.cardHeader}>
-                    <View style={[styles.iconContainer, { backgroundColor: isDark ? '#2c2c2e' : (colors?.opacity20 || '#ede9fe') }]}>
+                    <View style={[styles.iconContainer, { backgroundColor: ac.icon.background }]}>
                         {getIcon()}
                     </View>
 
                     <View style={styles.contentContainer}>
-                        <Text style={[styles.cardTitle, { color: isDark ? '#f4f4f5' : '#111827' }]} numberOfLines={1}>
+                        <Text style={[styles.cardTitle, { color: ac.text.primary }]} numberOfLines={1}>
                             {title}
                         </Text>
                         <View style={styles.badgeContainer}>
-                            <View style={[styles.badge, { backgroundColor: isDark ? '#334155' : (colors?.opacity30 || '#e2e8f0') }]}>
-                                <Text style={[styles.badgeText, { color: isDark ? '#cbd5e1' : (colors?.[500] || '#475569') }]}>
+                            <View style={[styles.badge, { backgroundColor: ac.badge.background }]}>
+                                <Text style={[styles.badgeText, { color: ac.badge.text }]}>
                                     {chartType.toUpperCase()}
                                 </Text>
                             </View>
-                            <Text style={[styles.hintText, { color: isDark ? '#71717a' : '#9ca3af' }]}>
+                            <Text style={[styles.hintText, { color: ac.text.hint }]}>
                                 点击全屏交互
                             </Text>
                         </View>
                     </View>
 
                     <View style={styles.actionIcon}>
-                        <Maximize2 size={18} color={isDark ? '#52525b' : '#9ca3af'} />
+                        <Maximize2 size={18} color={ac.button.icon} />
                     </View>
                 </View>
 
                 {/* WebView 缩略预览 */}
                 <View style={{ height: loading ? 120 : previewHeight, overflow: 'hidden', borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
                     <WebView
-                        key={`webview_preview_${title}`}
+                        key={`echarts_preview_${contentHash}`}
                         source={{ html: generateHtml(false) }}
                         style={{ flex: 1, backgroundColor: 'transparent' }}
                         javaScriptEnabled={true}
@@ -250,48 +246,70 @@ export const EChartsRenderer: React.FC<EChartsRendererProps> = ({ content }) => 
                 </View>
             </TouchableOpacity>
 
-            <Modal
+            <FullscreenModal
                 visible={isFullscreen}
-                animationType="fade"
-                presentationStyle="fullScreen"
-                onRequestClose={handleClose}
-            >
-                <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff', paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0 }}>
-                    <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#1c1c1e' : '#f3f4f6' }]}>
-                        <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#000' }]} numberOfLines={1}>
-                            {title}
-                        </Text>
-                        <TouchableOpacity
-                            style={[styles.closeIconButton, { backgroundColor: isDark ? '#1c1c1e' : '#f3f4f6' }]}
-                            onPress={handleClose}
-                        >
-                            <X size={20} color={isDark ? '#fff' : '#666'} />
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}>
-                        <WebView
-                            key={`webview_${isLandscape}_${isFullscreen}`}
-                            source={{ html: generateHtml(true) }}
-                            style={{ flex: 1, backgroundColor: 'transparent' }}
-                            javaScriptEnabled={true}
-                            androidLayerType="hardware"
-                            bounces={false}
-                        />
-                    </View>
-
-                    {/* 🔄 Landscape Toggle FAB */}
+                title={title}
+                isDark={isDark}
+                isLandscape={isLandscape}
+                accentColor={ac.accent}
+                onClose={handleClose}
+                onToggleOrientation={toggleOrientationLocal}
+                headerRight={
                     <TouchableOpacity
-                        style={[styles.fab, {
-                            backgroundColor: colors?.[500] || (isDark ? '#2c2c2e' : '#7c3aed'),
-                            shadowColor: colors?.[500] || '#000'
-                        }]}
-                        onPress={toggleOrientation}
+                        style={[styles.closeIconButton, { backgroundColor: ac.button.background }]}
+                        onPress={handleExport}
+                        disabled={isExporting}
+                        accessibilityRole="button"
+                        accessibilityLabel="导出图表"
+                        accessibilityHint="将图表导出为HTML文件并分享"
                     >
-                        <PhoneRotateIcon size={28} color="#fff" />
+                        <Download size={18} color={ac.button.closeIcon} />
                     </TouchableOpacity>
-                </SafeAreaView>
-            </Modal>
+                }
+            >
+                <View style={{ flex: 1, backgroundColor: ac.webview.background }}>
+                    <WebView
+                        key={`echarts_full_${isLandscape}_${isFullscreen}_${contentHash}`}
+                        source={{ html: generateHtml(true) }}
+                        style={{ flex: 1, backgroundColor: 'transparent' }}
+                        javaScriptEnabled={true}
+                        androidLayerType="hardware"
+                        bounces={false}
+                    />
+                </View>
+            </FullscreenModal>
+
+            <ArtifactActionSheet
+                visible={showContextMenu}
+                title={title}
+                isDark={isDark}
+                onClose={() => setShowContextMenu(false)}
+                actions={[
+                    {
+                        key: 'fullscreen',
+                        label: '全屏查看',
+                        icon: <Maximize2 size={20} color={isDark ? '#f4f4f5' : '#111827'} />,
+                        onPress: () => enterFullscreen(),
+                    },
+                    {
+                        key: 'export',
+                        label: '导出图表',
+                        icon: <Download size={20} color={isDark ? '#f4f4f5' : '#111827'} />,
+                        onPress: handleExport,
+                    },
+                    {
+                        key: 'copy',
+                        label: '复制数据',
+                        icon: <Copy size={20} color={isDark ? '#f4f4f5' : '#111827'} />,
+                        onPress: () => {
+                            if (chartOption) {
+                                const Clipboard = require('react-native').Clipboard;
+                                Clipboard.setString(JSON.stringify(chartOption, null, 2));
+                            }
+                        },
+                    },
+                ] as ActionSheetAction[]}
+            />
         </View>
     );
 };

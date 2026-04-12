@@ -9,6 +9,8 @@ import { generateId } from '../lib/utils/id-generator';
 import {
     Artifact,
     ArtifactFilter,
+    ArtifactSortField,
+    ArtifactSortOrder,
     CreateArtifactParams,
     UpdateArtifactParams,
 } from '../types/artifact';
@@ -29,6 +31,8 @@ interface ArtifactState {
     clearFilter: () => void;
     getArtifactsBySession: (sessionId: string) => Artifact[];
     getArtifactsByMessage: (messageId: string) => Artifact[];
+    searchArtifacts: (query: string) => Promise<Artifact[]>;
+    getArtifactsByType: (type: string) => Artifact[];
 }
 
 /**
@@ -59,7 +63,7 @@ function rowToArtifact(row: any): Artifact {
 }
 
 /**
- * 应用筛选条件
+ * 应用筛选条件和排序
  */
 function applyFilter(artifacts: Artifact[], filter: ArtifactFilter): Artifact[] {
     let result = [...artifacts];
@@ -77,7 +81,8 @@ function applyFilter(artifacts: Artifact[], filter: ArtifactFilter): Artifact[] 
         result = result.filter(
             a =>
                 a.title.toLowerCase().includes(query) ||
-                a.content.toLowerCase().includes(query)
+                a.content.toLowerCase().includes(query) ||
+                (a.tags && a.tags.some(t => t.toLowerCase().includes(query)))
         );
     }
 
@@ -88,6 +93,37 @@ function applyFilter(artifacts: Artifact[], filter: ArtifactFilter): Artifact[] 
     if (filter.dateTo) {
         result = result.filter(a => a.createdAt <= filter.dateTo!);
     }
+
+    // 标签筛选
+    if (filter.tags && filter.tags.length > 0) {
+        result = result.filter(a =>
+            a.tags && filter.tags!.some(ft => a.tags!.includes(ft))
+        );
+    }
+
+    // 排序
+    const sortBy: ArtifactSortField = filter.sortBy || 'createdAt';
+    const sortOrder: ArtifactSortOrder = filter.sortOrder || 'desc';
+
+    result.sort((a, b) => {
+        let cmp = 0;
+        switch (sortBy) {
+            case 'title':
+                cmp = a.title.localeCompare(b.title);
+                break;
+            case 'type':
+                cmp = a.type.localeCompare(b.type);
+                break;
+            case 'updatedAt':
+                cmp = a.updatedAt - b.updatedAt;
+                break;
+            case 'createdAt':
+            default:
+                cmp = a.createdAt - b.createdAt;
+                break;
+        }
+        return sortOrder === 'desc' ? -cmp : cmp;
+    });
 
     return result;
 }
@@ -250,5 +286,57 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
 
     getArtifactsByMessage: (messageId: string): Artifact[] => {
         return get().artifacts.filter(a => a.messageId === messageId);
+    },
+
+    /**
+     * FTS5 全文搜索 Artifact（带 LIKE 回退）
+     * 支持在标题和内容中搜索
+     */
+    searchArtifacts: async (query: string): Promise<Artifact[]> => {
+        if (!query.trim()) return get().artifacts;
+
+        const searchTerm = query.trim();
+        const likeParam = `%${searchTerm}%`;
+
+        try {
+            // 尝试 FTS5 搜索（需要 artifacts_fts 虚拟表）
+            const ftsResult = await db.execute(
+                `SELECT a.* FROM artifacts a
+                 JOIN artifacts_fts fts ON a.id = fts.id
+                 WHERE artifacts_fts MATCH ?
+                 ORDER BY rank
+                 LIMIT 100`,
+                [searchTerm]
+            );
+
+            if (ftsResult.rows && ftsResult.rows.length > 0) {
+                return ftsResult.rows.map(rowToArtifact);
+            }
+        } catch {
+            // FTS5 不可用，回退到 LIKE
+        }
+
+        // LIKE 回退搜索
+        try {
+            const result = await db.execute(
+                `SELECT * FROM artifacts
+                 WHERE title LIKE ? OR content LIKE ?
+                 ORDER BY created_at DESC
+                 LIMIT 100`,
+                [likeParam, likeParam]
+            );
+
+            if (result.rows) {
+                return result.rows.map(rowToArtifact);
+            }
+        } catch (e: any) {
+            console.warn('[ArtifactStore] Search failed:', e?.message);
+        }
+
+        return [];
+    },
+
+    getArtifactsByType: (type: string): Artifact[] => {
+        return get().artifacts.filter(a => a.type === type);
     },
 }));

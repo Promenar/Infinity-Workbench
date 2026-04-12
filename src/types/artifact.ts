@@ -18,12 +18,18 @@ export interface Artifact {
     tags?: string[];
 }
 
+export type ArtifactSortField = 'createdAt' | 'updatedAt' | 'title' | 'type';
+export type ArtifactSortOrder = 'asc' | 'desc';
+
 export interface ArtifactFilter {
     type?: ArtifactType;
     sessionId?: string;
     searchQuery?: string;
     dateFrom?: number;
     dateTo?: number;
+    tags?: string[];
+    sortBy?: ArtifactSortField;
+    sortOrder?: ArtifactSortOrder;
 }
 
 export interface CreateArtifactParams {
