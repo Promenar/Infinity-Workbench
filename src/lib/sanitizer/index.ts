@@ -19,6 +19,7 @@ import { jsonRepairer } from './plugins/json-repairer';
 import { mermaidFixer } from './plugins/mermaid-fixer';
 import { textCleaner } from './plugins/text-cleaner';
 import { svgValidator } from './plugins/svg-validator';
+import { isNativeSanitizerAvailable, processHotPathNative } from '../../native/Sanitizer';
 
 const DEFAULT_PLUGINS: SanitizerPlugin[] = [
   textCleaner,       // Phase 0 (raw input cleaning)
@@ -71,10 +72,46 @@ export function sanitize(text: string, options?: SanitizerOptions, plugins?: San
   context.protectedBlocks = blocks;
   processed = withPlaceholders;
 
+  // Native hot-path plugin names that are handled by C++ when available
+  const NATIVE_HOT_PATH_PLUGINS = new Set(['heading-fixer', 'pangu-spacing', 'line-breaker']);
+
+  // Determine if native hot-path should be used
+  const nativeAvailable = isNativeSanitizerAvailable();
+  let nativeHotPathApplied = false;
+
   // Phase 2-3: post-protect (Structure fixing, etc.)
-  for (const plugin of activePlugins.filter(p => p.phase === 'post-protect')) {
-    if (plugin.enabled !== false) {
-      processed = plugin.process(processed, context);
+  // When native is available, apply it once before JS plugins and skip hot-path JS plugins
+  if (nativeAvailable) {
+    // Run non-hot-path JS plugins first (hrFixer, listFixer, tableFixer)
+    for (const plugin of activePlugins.filter(p => p.phase === 'post-protect' && !NATIVE_HOT_PATH_PLUGINS.has(p.name))) {
+      if (plugin.enabled !== false) {
+        processed = plugin.process(processed, context);
+      }
+    }
+
+    // Apply native hot-path (heading-fixer + pangu-spacing combined)
+    const nativeResult = processHotPathNative(processed, {
+      enableHeadingFix: true,
+      enablePanguSpacing: true,
+      enableLineBreak: false, // line-breaker runs in post-restore phase, not here
+    });
+    if (nativeResult !== null) {
+      processed = nativeResult;
+      nativeHotPathApplied = true;
+    } else {
+      // Native failed, fall back to JS hot-path plugins
+      for (const plugin of activePlugins.filter(p => p.phase === 'post-protect' && NATIVE_HOT_PATH_PLUGINS.has(p.name) && p.name !== 'line-breaker')) {
+        if (plugin.enabled !== false) {
+          processed = plugin.process(processed, context);
+        }
+      }
+    }
+  } else {
+    // No native: run all JS plugins as before
+    for (const plugin of activePlugins.filter(p => p.phase === 'post-protect')) {
+      if (plugin.enabled !== false) {
+        processed = plugin.process(processed, context);
+      }
     }
   }
 
@@ -89,10 +126,36 @@ export function sanitize(text: string, options?: SanitizerOptions, plugins?: San
 
   // Phase 5-7: Restore blocks + post-restore (Image extraction, etc.)
   processed = restoreProtectedBlocks(processed, context.protectedBlocks);
-  
-  for (const plugin of activePlugins.filter(p => p.phase === 'post-restore')) {
-    if (plugin.enabled !== false) {
-      processed = plugin.process(processed, context);
+
+  // Apply native line-breaker in post-restore phase if native was used earlier
+  if (nativeHotPathApplied && opts.chineseLineBreaks !== false) {
+    const nativeLineBreakResult = processHotPathNative(processed, {
+      enableHeadingFix: false,
+      enablePanguSpacing: false,
+      enableLineBreak: true,
+    });
+    if (nativeLineBreakResult !== null) {
+      processed = nativeLineBreakResult;
+      // Skip JS line-breaker since native handled it
+      for (const plugin of activePlugins.filter(p => p.phase === 'post-restore' && p.name !== 'line-breaker')) {
+        if (plugin.enabled !== false) {
+          processed = plugin.process(processed, context);
+        }
+      }
+    } else {
+      // Native line-break failed, fall back to all JS post-restore plugins
+      for (const plugin of activePlugins.filter(p => p.phase === 'post-restore')) {
+        if (plugin.enabled !== false) {
+          processed = plugin.process(processed, context);
+        }
+      }
+    }
+  } else {
+    // No native hot-path was applied, run all JS post-restore plugins as before
+    for (const plugin of activePlugins.filter(p => p.phase === 'post-restore')) {
+      if (plugin.enabled !== false) {
+        processed = plugin.process(processed, context);
+      }
     }
   }
 

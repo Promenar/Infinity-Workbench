@@ -8,11 +8,16 @@
  * 2. 对于超过 chunkSize 的句子，使用 Trigram 滑动窗口分块
  * 3. 确保每个块之间有 overlap 重叠，保持语义连贯性
  *
+ * 性能优化：当 native TextSplitter (C++) 可用时，自动委托给原生实现，
+ * 消除 JS 主线程阻塞和 setTimeout(0) 让出 hack。
+ *
  * 优势：
  * - 更适合中文语义边界
  * - 保留更多上下文信息
  * - 减少语义断裂
  */
+
+import { splitTextNative, isNativeSplitterAvailable, estimateChunkCountNative } from '../../native/TextSplitter';
 
 interface TrigramSplitterConfig {
   chunkSize: number; // 块大小（字符数）
@@ -43,6 +48,23 @@ export class TrigramTextSplitter {
     if (!text || text.trim().length === 0) {
       return [];
     }
+
+    // Try native C++ implementation first (runs on background thread, no UI blocking)
+    if (isNativeSplitterAvailable()) {
+      const nativeResult = await splitTextNative(text, this.chunkSize, this.chunkOverlap);
+      if (nativeResult !== null) {
+        return nativeResult;
+      }
+    }
+
+    // Fallback: JS implementation
+    return this.splitTextJS(text);
+  }
+
+  /**
+   * JS fallback implementation (original logic)
+   */
+  private async splitTextJS(text: string): Promise<string[]> {
 
     // Step 1: 按句子分割
     const sentences = this.splitIntoSentences(text);
@@ -210,6 +232,15 @@ export class TrigramTextSplitter {
    * 估算文本会被分割成多少块（不实际分割）
    */
   estimateChunkCount(text: string): number {
+    // Try native first
+    if (isNativeSplitterAvailable()) {
+      const nativeResult = estimateChunkCountNative(text, this.chunkSize, this.chunkOverlap);
+      if (nativeResult !== null) {
+        return nativeResult;
+      }
+    }
+
+    // Fallback: JS estimate
     const textLength = text.length;
     const effectiveChunkSize = this.chunkSize - this.chunkOverlap;
 
