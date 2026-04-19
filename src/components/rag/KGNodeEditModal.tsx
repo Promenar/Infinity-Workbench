@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Modal, TextInput, TouchableOpacity, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Modal, TextInput, TouchableOpacity, Text, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Typography } from '../ui/Typography';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -182,6 +182,7 @@ export const KGNodeEditModal: React.FC<KGNodeEditModalProps> = ({
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
             <View className="flex-1 justify-center items-center px-6">
                 {/* Backdrop - consistent dim */}
                 <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.3)' }} />
@@ -311,6 +312,7 @@ export const KGNodeEditModal: React.FC<KGNodeEditModalProps> = ({
                     </BlurView>
                 </View>
             </View>
+            </KeyboardAvoidingView>
 
             {/* Glass Alert for all interactions */}
             <GlassAlert

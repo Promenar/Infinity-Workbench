@@ -8,11 +8,11 @@ import {
   Modal,
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
   Platform,
   StyleSheet,
 } from 'react-native';
 import { Switch, CollapsibleSection } from '../../components/ui';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useI18n } from '../../lib/i18n';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useToast } from '../../components/ui/Toast';
@@ -554,8 +554,7 @@ export function BackupSettings() {
         title={t.settings.backup.settingsTitle}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1 }}
         >
           <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>

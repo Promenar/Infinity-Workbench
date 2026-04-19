@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, StyleSheet, Modal, FlatList, TextInput, Alert } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Modal, FlatList, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { FolderOpen, ChevronDown, Check, Plus, X, Info } from 'lucide-react-native';
 import { useTheme } from '../../../../theme/ThemeProvider';
 import { Typography } from '../../../../components/ui/Typography';
@@ -136,6 +136,7 @@ export const WorkspacePathIndicator: React.FC<WorkspacePathIndicatorProps> = ({
       </TouchableOpacity>
 
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: isDark ? '#18181b' : '#ffffff' }]}>
             <View style={styles.modalHeader}>
@@ -201,6 +202,7 @@ export const WorkspacePathIndicator: React.FC<WorkspacePathIndicatorProps> = ({
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
