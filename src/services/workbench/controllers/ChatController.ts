@@ -1,6 +1,7 @@
 import { useChatStore } from '../../../store/chat-store';
 import { useAgentStore } from '../../../store/agent-store';
 import { RouterContext } from '../WorkbenchRouter';
+import { generateId } from '../../../lib/utils/id-generator';
 
 export const ChatController = {
     async getSessions(payload: any, context: RouterContext) {
@@ -44,7 +45,7 @@ export const ChatController = {
         if (!agent) throw new Error('Agent not found');
 
         const newSession = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             title: 'New Chat',
             agentId,
             messages: [],
