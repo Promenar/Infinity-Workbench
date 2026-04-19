@@ -200,12 +200,13 @@ export function extractArtifactsFromToolResult(
 }
 
 /**
- * 创建 Artifact 参数（不含 sessionId 和 messageId）
+ * 创建 Artifact 参数（包含 session 关联信息）
  */
 export function createArtifactParams(
     extracted: ExtractedArtifact,
     sessionId: string,
-    messageId: string
+    messageId: string,
+    workspacePath?: string
 ): CreateArtifactParams {
     return {
         type: extracted.type,
@@ -213,6 +214,7 @@ export function createArtifactParams(
         content: extracted.content,
         sessionId,
         messageId,
+        workspacePath,
     };
 }
 
@@ -222,7 +224,8 @@ export function createArtifactParams(
 export function createArtifactParamsBatch(
     extractedList: ExtractedArtifact[],
     sessionId: string,
-    messageId: string
+    messageId: string,
+    workspacePath?: string
 ): CreateArtifactParams[] {
-    return extractedList.map(extracted => createArtifactParams(extracted, sessionId, messageId));
+    return extractedList.map(extracted => createArtifactParams(extracted, sessionId, messageId, workspacePath));
 }

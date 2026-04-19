@@ -7,6 +7,7 @@ import {
     ActivityIndicator,
     Platform,
     Keyboard,
+    KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withTiming, interpolateColor } from 'react-native-reanimated';
@@ -713,7 +714,11 @@ export default function ProviderModelsScreen() {
                 }}
                 intensity={100}
             />
-            <View style={{ flex: 1 }}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+            >
                 {/* Fixed Header Section (Search & Actions) */}
                 <View style={{
                     paddingTop: insets.top + 64 + 16,
@@ -864,7 +869,7 @@ export default function ProviderModelsScreen() {
                     onConfirm={confirmState.onConfirm}
                     onCancel={() => setConfirmState((prev) => ({ ...prev, visible: false }))}
                 />
-            </View>
+            </KeyboardAvoidingView>
         </PageLayout>
     );
 }

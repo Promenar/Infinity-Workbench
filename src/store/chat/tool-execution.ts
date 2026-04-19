@@ -252,7 +252,7 @@ Please DO NOT try to call it again. Instead:
                 try {
                     if (skill) {
                         console.log('[ToolExecutor] calling skill execution:', tcName);
-                        result = await skill.execute(finalArgs, { sessionId, agentId: agent.id });
+                        result = await skill.execute(finalArgs, { sessionId, agentId: agent.id, workspacePath: session.workspacePath });
                     } else {
                         result = { id: (tc as any).id, content: `Error: Skill ${tcName} not found`, status: 'error' };
                     }
@@ -349,10 +349,12 @@ Please DO NOT try to call it again. Instead:
                         if (extractedArtifacts.length > 0) {
                             console.log(`[ToolExecutor] Auto-extracted ${extractedArtifacts.length} artifact(s) from tool: ${tcName}`);
 
+                            const workspacePath = session.workspacePath || 'workspace';
                             const artifactParams = createArtifactParamsBatch(
                                 extractedArtifacts,
                                 sessionId,
-                                targetMsgId
+                                targetMsgId,
+                                workspacePath
                             );
 
                             // 异步保存到数据库，不阻塞工具执行流程

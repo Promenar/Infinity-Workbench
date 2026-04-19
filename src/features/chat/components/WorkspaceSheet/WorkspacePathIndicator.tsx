@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, StyleSheet, Modal, FlatList, TextInput, Alert } from 'react-native';
 import { FolderOpen, ChevronDown, Check, Plus, X, Info } from 'lucide-react-native';
 import { useTheme } from '../../../../theme/ThemeProvider';
@@ -6,6 +6,10 @@ import { Typography } from '../../../../components/ui/Typography';
 import { useChatStore } from '../../../../store/chat-store';
 import { Spacing } from '../../../../theme/glass';
 import { impactAsync, ImpactFeedbackStyle } from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
+
+const CUSTOM_WORKSPACES_KEY = 'nexara_custom_workspaces';
 
 interface WorkspacePathIndicatorProps {
   sessionId: string;
@@ -25,6 +29,21 @@ const DEFAULT_WORKSPACES = [
   },
 ];
 
+/**
+ * 确保工作区物理目录存在
+ */
+const ensureWorkspaceDir = async (workspacePath: string) => {
+  try {
+    const fullPath = `${FileSystem.documentDirectory}agent_sandbox/${workspacePath}`;
+    const info = await FileSystem.getInfoAsync(fullPath);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(fullPath, { intermediates: true });
+    }
+  } catch (e) {
+    console.warn('[WorkspacePathIndicator] Failed to ensure workspace dir:', e);
+  }
+};
+
 export const WorkspacePathIndicator: React.FC<WorkspacePathIndicatorProps> = ({
   sessionId,
   onWorkspaceChange,
@@ -37,7 +56,22 @@ export const WorkspacePathIndicator: React.FC<WorkspacePathIndicatorProps> = ({
   const [newPath, setNewPath] = useState('');
   const [customWorkspaces, setCustomWorkspaces] = useState<string[]>([]);
 
-  const currentPath = (session as any)?.workspacePath || 'workspace';
+  // ✅ 从 AsyncStorage 加载自定义工作区列表
+  useEffect(() => {
+    const loadCustomWorkspaces = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(CUSTOM_WORKSPACES_KEY);
+        if (stored) {
+          setCustomWorkspaces(JSON.parse(stored));
+        }
+      } catch (e) {
+        console.warn('[WorkspacePathIndicator] Failed to load custom workspaces:', e);
+      }
+    };
+    loadCustomWorkspaces();
+  }, []);
+
+  const currentPath = session?.workspacePath || 'workspace';
 
   const allWorkspaces = [...DEFAULT_WORKSPACES, ...customWorkspaces.map(p => ({
     path: p,
@@ -45,19 +79,32 @@ export const WorkspacePathIndicator: React.FC<WorkspacePathIndicatorProps> = ({
     description: '自定义工作区'
   }))];
 
-  const handleSelectWorkspace = (path: string) => {
+  const handleSelectWorkspace = async (path: string) => {
     impactAsync(ImpactFeedbackStyle.Light);
-    updateSession(sessionId, { workspacePath: path } as any);
+    await ensureWorkspaceDir(path);
+    updateSession(sessionId, { workspacePath: path });
     setModalVisible(false);
     onWorkspaceChange?.(path);
   };
 
-  const handleCreateWorkspace = () => {
+  const handleCreateWorkspace = async () => {
     if (!newPath.trim()) return;
     impactAsync(ImpactFeedbackStyle.Light);
     const sanitized = newPath.trim().replace(/[^a-zA-Z0-9_/-]/g, '_');
-    setCustomWorkspaces((prev) => [...prev, sanitized]);
-    updateSession(sessionId, { workspacePath: sanitized } as any);
+
+    // 确保物理目录存在
+    await ensureWorkspaceDir(sanitized);
+
+    // 持久化自定义工作区列表
+    const updated = [...customWorkspaces, sanitized];
+    setCustomWorkspaces(updated);
+    try {
+      await AsyncStorage.setItem(CUSTOM_WORKSPACES_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('[WorkspacePathIndicator] Failed to persist custom workspaces:', e);
+    }
+
+    updateSession(sessionId, { workspacePath: sanitized });
     setNewPath('');
     setModalVisible(false);
     onWorkspaceChange?.(sanitized);

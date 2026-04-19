@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, memo } from 'react';
-import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl } from 'react-native';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
 import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, GlassHeader, AnimatedSearchBar } from '../../src/components/ui';
 import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive, Check } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
@@ -1196,6 +1196,10 @@ export default function RagScreen() {
 
       {/* 新建文件夹Modal */}
       <Modal transparent visible={showFolderModal} animationType="fade">
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
         <View className="flex-1 bg-black/40 items-center justify-center px-6">
           <View className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full shadow-xl">
             <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">
@@ -1234,6 +1238,7 @@ export default function RagScreen() {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 移动文档Modal */}

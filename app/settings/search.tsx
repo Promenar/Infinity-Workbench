@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, TouchableOpacity, ScrollView, Linking } from 'react-native';
+import { View, TextInput, TouchableOpacity, ScrollView, Linking, KeyboardAvoidingView, Platform } from 'react-native';
 import { PageLayout, Typography, GlassHeader } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { ChevronLeft, Layers, ExternalLink } from 'lucide-react-native';
@@ -238,11 +238,18 @@ export default function SearchSettingsScreen() {
         }}
       />
 
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingTop: 110, paddingBottom: 120, paddingHorizontal: 16 }}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ paddingTop: 110, paddingBottom: 120, paddingHorizontal: 16 }}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+        >
         <SettingsSection title={t.settings.searchEngine}>
           <Typography className="text-[10px] text-gray-400 dark:text-zinc-500 mb-2 italic">
             * {language === 'zh' ? '长按引擎标签可向左移动排序 (Fallback 优先级)' : 'Long press to move engine left (Fallback priority)'}
@@ -330,6 +337,7 @@ export default function SearchSettingsScreen() {
           </Typography>
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
     </PageLayout>
   );
 }

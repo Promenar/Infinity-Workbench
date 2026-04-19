@@ -56,6 +56,7 @@ function rowToArtifact(row: any): Artifact {
         previewImage: row.preview_image ?? undefined,
         sessionId: row.session_id,
         messageId: row.message_id,
+        workspacePath: row.workspace_path || undefined,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         tags,
@@ -74,6 +75,10 @@ function applyFilter(artifacts: Artifact[], filter: ArtifactFilter): Artifact[] 
 
     if (filter.sessionId) {
         result = result.filter(a => a.sessionId === filter.sessionId);
+    }
+
+    if (filter.workspacePath) {
+        result = result.filter(a => a.workspacePath === filter.workspacePath);
     }
 
     if (filter.searchQuery) {
@@ -169,6 +174,7 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
             previewImage: params.previewImage,
             sessionId: params.sessionId,
             messageId: params.messageId,
+            workspacePath: params.workspacePath,
             createdAt: now,
             updatedAt: now,
             tags: params.tags,
@@ -176,8 +182,8 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
 
         try {
             await db.execute(
-                `INSERT INTO artifacts (id, type, title, content, preview_image, session_id, message_id, created_at, updated_at, tags)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO artifacts (id, type, title, content, preview_image, session_id, message_id, workspace_path, created_at, updated_at, tags)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     artifact.id,
                     artifact.type,
@@ -186,6 +192,7 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
                     artifact.previewImage || null,
                     artifact.sessionId,
                     artifact.messageId,
+                    artifact.workspacePath || null,
                     artifact.createdAt,
                     artifact.updatedAt,
                     artifact.tags ? JSON.stringify(artifact.tags) : null,

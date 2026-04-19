@@ -1,20 +1,35 @@
 
 import { z } from 'zod';
-import { Skill } from '../../../types/skills';
+import { Skill, SkillContext } from '../../../types/skills';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { auditService } from '../../services/audit-service';
 
 // 🛡️ 安全沙箱：限制所有操作在 DocumentDirectory/agent_sandbox/ 内
 const RAW_SANDBOX_ROOT = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory;
-const SANDBOX_FOLDER = 'agent_sandbox/workspace/';
-const SANDBOX_ROOT = RAW_SANDBOX_ROOT + SANDBOX_FOLDER;
+const SANDBOX_BASE = RAW_SANDBOX_ROOT + 'agent_sandbox/';
+
+/**
+ * 获取会话工作区的根路径
+ * 根据 SkillContext 中的 workspacePath 动态确定沙箱目录
+ */
+const getWorkspaceRoot = (context?: SkillContext): string => {
+    const workspacePath = context?.workspacePath || 'workspace';
+    // 安全校验：防止路径遍历
+    if (workspacePath.includes('..')) {
+        return SANDBOX_BASE + 'workspace/';
+    }
+    return SANDBOX_BASE + workspacePath + '/';
+};
 
 /**
  * 路径安全校验辅助函数
  * 防止路径遍历攻击 (Directory Traversal) 并确保沙箱目录存在
+ * ✅ 支持根据 SkillContext 动态路由到不同工作区
  */
-const resolveSafePath = async (relativePath: string): Promise<string> => {
+const resolveSafePath = async (relativePath: string, context?: SkillContext): Promise<string> => {
+    const SANDBOX_ROOT = getWorkspaceRoot(context);
+
     // 确保沙箱根目录存在
     const sandboxInfo = await FileSystem.getInfoAsync(SANDBOX_ROOT);
     if (!sandboxInfo.exists) {
@@ -49,7 +64,7 @@ export const WriteFileSkill: Skill = {
     }),
     execute: async (params: { path: string; content: string; encoding?: 'utf8' | 'base64' }, context) => {
         try {
-            const fullPath = await resolveSafePath(params.path);
+            const fullPath = await resolveSafePath(params.path, context);
 
             // 自动创建父目录 (Robust physical write)
             const directory = fullPath.substring(0, fullPath.lastIndexOf('/'));
@@ -174,7 +189,7 @@ export const ReadFileSkill: Skill = {
     }),
     execute: async (params: { path: string; encoding?: 'utf8' | 'base64' }, context) => {
         try {
-            const fullPath = await resolveSafePath(params.path);
+            const fullPath = await resolveSafePath(params.path, context);
 
             const fileInfo = await FileSystem.getInfoAsync(fullPath);
             if (!fileInfo.exists) {
@@ -247,7 +262,7 @@ export const ListDirSkill: Skill = {
     execute: async (params: { path?: string }, context) => {
         try {
             const targetPath = params.path || '';
-            const fullPath = await resolveSafePath(targetPath);
+            const fullPath = await resolveSafePath(targetPath, context);
 
             const dirInfo = await FileSystem.getInfoAsync(fullPath);
             if (!dirInfo.exists) {

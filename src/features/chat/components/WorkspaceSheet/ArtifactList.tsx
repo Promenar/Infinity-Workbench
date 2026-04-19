@@ -49,6 +49,13 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({
         loadArtifacts();
     }, [loadArtifacts]);
 
+    // ✅ workspacePath 变化时更新筛选条件
+    useEffect(() => {
+        if (workspacePath) {
+            setFilter({ ...filter, workspacePath });
+        }
+    }, [workspacePath]);
+
     // 下拉刷新
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);

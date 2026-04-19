@@ -27,6 +27,7 @@ export const createTables = async () => {
         options TEXT, -- JSON (webSearch, reasoning, toolsEnabled)
         active_mcp_server_ids TEXT, -- JSON Array
         active_skill_ids TEXT, -- JSON Array
+        workspace_path TEXT, -- 工作区路径（默认 'workspace'）
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -146,6 +147,13 @@ export const createTables = async () => {
     try {
       await db.execute('ALTER TABLE messages ADD COLUMN is_error INTEGER DEFAULT 0;');
       await db.execute('ALTER TABLE messages ADD COLUMN error_message TEXT;');
+    } catch (e) {
+      // Column likely exists
+    }
+
+    // 🔑 Migration: ensure sessions.workspace_path exists (Workspace 模块持久化)
+    try {
+      await db.execute('ALTER TABLE sessions ADD COLUMN workspace_path TEXT;');
     } catch (e) {
       // Column likely exists
     }
@@ -355,6 +363,7 @@ export const createTables = async () => {
         preview_image TEXT,
         session_id TEXT NOT NULL,
         message_id TEXT NOT NULL,
+        workspace_path TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         tags TEXT,
@@ -372,6 +381,13 @@ export const createTables = async () => {
     await db.execute(`
       CREATE INDEX IF NOT EXISTS idx_artifacts_created_at ON artifacts(created_at);
     `);
+
+    // 🔑 Migration: ensure artifacts.workspace_path exists (Workspace 模块集成)
+    try {
+      await db.execute('ALTER TABLE artifacts ADD COLUMN workspace_path TEXT;');
+    } catch (e) {
+      // Column likely exists
+    }
 
     console.log('[DB] Tables created successfully');
   } catch (e) {

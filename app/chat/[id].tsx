@@ -728,45 +728,50 @@ export default function ChatDetailScreen() {
         transparent={true}
         onRequestClose={() => setShowTitleEditor(false)}
       >
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => setShowTitleEditor(false)}
-          className="flex-1 bg-black/50 items-center justify-center p-6"
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <TouchableOpacity
             activeOpacity={1}
-            onPress={(e: any) => e.stopPropagation()}
-            className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-indigo-50 dark:border-indigo-500/10"
+            onPress={() => setShowTitleEditor(false)}
+            className="flex-1 bg-black/50 items-center justify-center p-6"
           >
-            <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              {t.agent.conversation.editTitle}
-            </Typography>
-            <TextInput
-              value={editingTitle}
-              onChangeText={setEditingTitle}
-              placeholder={t.agent.superAssistant.enterTitle}
-              placeholderTextColor="#9ca3af"
-              autoFocus
-              className="bg-gray-50 dark:bg-black p-4 rounded-xl border border-gray-200 dark:border-zinc-800 text-gray-900 dark:text-white mb-4"
-            />
-            <View className="flex-row gap-3">
-              <TouchableOpacity
-                onPress={() => setShowTitleEditor(false)}
-                className="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-zinc-800 items-center"
-              >
-                <Typography className="font-semibold text-gray-700 dark:text-gray-300">
-                  {t.common.cancel}
-                </Typography>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleTitleSave}
-                className="flex-1 py-3 rounded-xl bg-indigo-600 dark:bg-indigo-500 items-center"
-              >
-                <Typography className="font-semibold text-white">{t.common.save}</Typography>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e: any) => e.stopPropagation()}
+              className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-indigo-50 dark:border-indigo-500/10"
+            >
+              <Typography className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                {t.agent.conversation.editTitle}
+              </Typography>
+              <TextInput
+                value={editingTitle}
+                onChangeText={setEditingTitle}
+                placeholder={t.agent.superAssistant.enterTitle}
+                placeholderTextColor="#9ca3af"
+                autoFocus
+                className="bg-gray-50 dark:bg-black p-4 rounded-xl border border-gray-200 dark:border-zinc-800 text-gray-900 dark:text-white mb-4"
+              />
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  onPress={() => setShowTitleEditor(false)}
+                  className="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-zinc-800 items-center"
+                >
+                  <Typography className="font-semibold text-gray-700 dark:text-gray-300">
+                    {t.common.cancel}
+                  </Typography>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleTitleSave}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 dark:bg-indigo-500 items-center"
+                >
+                  <Typography className="font-semibold text-white">{t.common.save}</Typography>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Glass Header */}

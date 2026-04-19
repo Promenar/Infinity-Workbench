@@ -18,8 +18,9 @@ export async function createSession(session: Session): Promise<void> {
       id, agent_id, title, last_message, time, unread, model_id, custom_prompt,
       is_pinned, scroll_offset, draft, execution_mode, loop_status,
       pending_intervention, approval_request, rag_options, inference_params,
-      active_task, stats, options, active_mcp_server_ids, active_skill_ids, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      active_task, stats, options, active_mcp_server_ids, active_skill_ids,
+      workspace_path, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             session.id,
             session.agentId,
@@ -43,6 +44,7 @@ export async function createSession(session: Session): Promise<void> {
             session.options ? JSON.stringify(session.options) : null,
             session.activeMcpServerIds ? JSON.stringify(session.activeMcpServerIds) : null,
             session.activeSkillIds ? JSON.stringify(session.activeSkillIds) : null,
+            session.workspacePath || null,
             now,
             now,
         ]
@@ -95,6 +97,7 @@ export async function updateSession(id: string, updates: Partial<Session>): Prom
     if (updates.options !== undefined) { setClauses.push('options = ?'); values.push(updates.options ? JSON.stringify(updates.options) : null); }
     if (updates.activeMcpServerIds !== undefined) { setClauses.push('active_mcp_server_ids = ?'); values.push(updates.activeMcpServerIds ? JSON.stringify(updates.activeMcpServerIds) : null); }
     if (updates.activeSkillIds !== undefined) { setClauses.push('active_skill_ids = ?'); values.push(updates.activeSkillIds ? JSON.stringify(updates.activeSkillIds) : null); }
+    if (updates.workspacePath !== undefined) { setClauses.push('workspace_path = ?'); values.push(updates.workspacePath || null); }
 
     if (setClauses.length === 0) return;
 
@@ -126,6 +129,7 @@ export async function updateSession(id: string, updates: Partial<Session>): Prom
                 if (updates.activeSkillIds !== undefined && !columns.includes('active_skill_ids')) missingCols.push('active_skill_ids');
                 if (updates.stats !== undefined && !columns.includes('stats')) missingCols.push('stats');
                 if (updates.activeTask !== undefined && !columns.includes('active_task')) missingCols.push('active_task');
+                if (updates.workspacePath !== undefined && !columns.includes('workspace_path')) missingCols.push('workspace_path');
 
                 for (const col of missingCols) {
                     console.log(`[SessionRepository] Auto-creating missing column: ${col}`);
@@ -367,6 +371,7 @@ function rowToSession(row: any): Session {
         options: row.options ? JSON.parse(row.options) : undefined,
         activeMcpServerIds: row.active_mcp_server_ids ? JSON.parse(row.active_mcp_server_ids) : undefined,
         activeSkillIds: row.active_skill_ids ? JSON.parse(row.active_skill_ids) : undefined,
+        workspacePath: row.workspace_path || undefined,
     };
 }
 

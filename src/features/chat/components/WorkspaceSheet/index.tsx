@@ -42,7 +42,7 @@ export const WorkspaceSheet: React.FC<WorkspaceSheetProps> = ({
   const [editedContent, setEditedContent] = useState('');
   
   const session = useChatStore((s) => s.sessions.find((sk) => sk.id === sessionId));
-  const workspacePath = (session as any)?.workspacePath || 'workspace';
+  const workspacePath = session?.workspacePath || 'workspace';
 
   const handleSelectTask = useCallback((taskId: string, path: string) => {
     onSelectTask?.(taskId, path);

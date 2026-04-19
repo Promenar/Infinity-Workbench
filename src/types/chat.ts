@@ -204,6 +204,7 @@ export interface Session {
   };
   scrollOffset?: number; // 记录滚动位置
   draft?: string; // 未发送的草稿内容
+  workspacePath?: string; // ✅ 工作区路径：隔离不同项目的文件/任务/工件（默认 'workspace'）
   activeTask?: TaskState;
 
   // Steerable Agent Loop Fields

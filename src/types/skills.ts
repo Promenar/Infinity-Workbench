@@ -31,7 +31,7 @@ export interface SkillContext {
     modelId?: string;    // 当前调用的模型 ID
     sessionId?: string;  // 当前会话 ID
     agentId?: string;    // Agent ID
-    // 未来可以扩展更多上下文，如 User ID, Location 等
+    workspacePath?: string; // ✅ 当前会话的工作区路径（默认 'workspace'）
 }
 
 /**

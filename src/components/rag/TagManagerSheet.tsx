@@ -15,7 +15,6 @@ import { useRagStore } from '../../store/rag-store';
 import { X, Plus, Trash2, Tag as TagIcon } from 'lucide-react-native';
 import { TagCapsule } from './TagCapsule';
 import { Typography, Button } from '../ui';
-import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 
 interface TagManagerSheetProps {
   visible: boolean;
@@ -67,8 +66,8 @@ export const TagManagerSheet: React.FC<TagManagerSheetProps> = ({ visible, onClo
       <TouchableWithoutFeedback onPress={onClose}>
         <View className="flex-1 bg-black/50 justify-end">
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <Animated.View
-              entering={SlideInDown}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               className={`bg-white dark:bg-zinc-900 rounded-t-3xl h-[70%] w-full overflow-hidden`}
             >
               {/* Header */}
@@ -88,7 +87,7 @@ export const TagManagerSheet: React.FC<TagManagerSheetProps> = ({ visible, onClo
               </View>
 
               {/* Content */}
-              <View className="flex-1 p-4">
+              <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
                 {/* Create New Tag Section */}
                 <View className="mb-6 bg-gray-50 dark:bg-zinc-800/50 p-4 rounded-xl">
                   <View className="flex-row items-center gap-2 mb-3">
@@ -128,30 +127,28 @@ export const TagManagerSheet: React.FC<TagManagerSheetProps> = ({ visible, onClo
                   已有标签 ({availableTags.length})
                 </Typography>
 
-                <ScrollView className="flex-1">
-                  {availableTags.length === 0 ? (
-                    <View className="items-center justify-center py-10 opacity-50">
-                      <TagIcon size={40} color="#9ca3af" />
-                      <Typography className="mt-2 text-gray-500">暂无标签</Typography>
-                    </View>
-                  ) : (
-                    <View className="flex-row flex-wrap gap-2">
-                      {availableTags.map((tag) => (
-                        <View key={tag.id} className="relative group">
-                          <TagCapsule name={tag.name} color={tag.color} size="md" />
-                          <TouchableOpacity
-                            onPress={() => handleDelete(tag.id)}
-                            className="absolute -top-1 -right-1 w-4 h-4 bg-gray-200 dark:bg-zinc-700 rounded-full items-center justify-center border border-white dark:border-zinc-900"
-                          >
-                            <X size={10} color={isDark ? '#e5e5e5' : '#4b5563'} />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </ScrollView>
-              </View>
-            </Animated.View>
+                {availableTags.length === 0 ? (
+                  <View className="items-center justify-center py-10 opacity-50">
+                    <TagIcon size={40} color="#9ca3af" />
+                    <Typography className="mt-2 text-gray-500">暂无标签</Typography>
+                  </View>
+                ) : (
+                  <View className="flex-row flex-wrap gap-2">
+                    {availableTags.map((tag) => (
+                      <View key={tag.id} className="relative group">
+                        <TagCapsule name={tag.name} color={tag.color} size="md" />
+                        <TouchableOpacity
+                          onPress={() => handleDelete(tag.id)}
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-gray-200 dark:bg-zinc-700 rounded-full items-center justify-center border border-white dark:border-zinc-900"
+                        >
+                          <X size={10} color={isDark ? '#e5e5e5' : '#4b5563'} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </ScrollView>
+            </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
