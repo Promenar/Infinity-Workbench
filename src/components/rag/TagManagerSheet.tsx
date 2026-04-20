@@ -6,10 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
-  KeyboardAvoidingView,
-  Platform,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useRagStore } from '../../store/rag-store';
 import { X, Plus, Trash2, Tag as TagIcon } from 'lucide-react-native';
@@ -67,7 +66,7 @@ export const TagManagerSheet: React.FC<TagManagerSheetProps> = ({ visible, onClo
         <View className="flex-1 bg-black/50 justify-end">
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
             <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              behavior="padding"
               className={`bg-white dark:bg-zinc-900 rounded-t-3xl h-[70%] w-full overflow-hidden`}
             >
               {/* Header */}

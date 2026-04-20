@@ -7,8 +7,8 @@ import {
     ActivityIndicator,
     Platform,
     Keyboard,
-    KeyboardAvoidingView,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withTiming, interpolateColor } from 'react-native-reanimated';
 import { Switch } from '../../../components/ui/Switch';
@@ -716,7 +716,7 @@ export default function ProviderModelsScreen() {
             />
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior="padding"
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
             >
                 {/* Fixed Header Section (Search & Actions) */}

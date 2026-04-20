@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Modal, TextInput, TouchableOpacity, Text, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Modal, TextInput, TouchableOpacity, Text, ActivityIndicator, Alert } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Typography } from '../ui/Typography';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useI18n } from '../../lib/i18n';
@@ -79,7 +80,7 @@ export const KGEdgeEditModal: React.FC<KGEdgeEditModalProps> = ({
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
+            <KeyboardAvoidingView behavior="padding" className="flex-1">
             <View className="flex-1 bg-black/50 justify-center items-center px-6">
                 <View className="bg-white/80 dark:bg-zinc-900/60 w-full rounded-3xl p-6 shadow-xl border border-indigo-50 dark:border-indigo-500/10">
 

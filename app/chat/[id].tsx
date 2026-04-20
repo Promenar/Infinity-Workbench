@@ -730,7 +730,7 @@ export default function ChatDetailScreen() {
       >
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
         >
           <TouchableOpacity
             activeOpacity={1}

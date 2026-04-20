@@ -4,10 +4,9 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { clsx } from 'clsx';
 import {
   PageLayout,
@@ -431,7 +430,7 @@ export default function SuperAssistantSettingsScreen() {
       />
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         className="flex-1"
       >
         <ScrollView

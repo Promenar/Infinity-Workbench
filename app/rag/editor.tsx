@@ -3,15 +3,14 @@ import {
     View,
     TextInput,
     Text,
-    Platform,
     StyleSheet,
     ActivityIndicator,
     ScrollView,
     Dimensions,
     TouchableOpacity,
-    KeyboardAvoidingView,
     Alert,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SyntaxHighlighter from 'react-native-syntax-highlighter';
@@ -216,7 +215,7 @@ export default function DocumentEditorScreen() {
                 </View>
             ) : (
                 <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    behavior="padding"
                     style={{ flex: 1 }}
                 >
                     {/* 大文件警告横幅 */}

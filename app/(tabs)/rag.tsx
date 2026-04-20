@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo, memo } from 'react';
-import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, TouchableOpacity, Text, Modal, TextInput, ActivityIndicator, BackHandler, StyleSheet, RefreshControl } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { PageLayout, Typography, useToast, ConfirmDialog, LargeTitleHeader, GlassHeader, AnimatedSearchBar } from '../../src/components/ui';
 import { Search, X, FolderInput, Folder, BookOpen, Clock, ChevronRight, Brain, ChevronLeft, HardDrive, Check } from 'lucide-react-native';
 import { Stack, useRouter, useNavigation } from 'expo-router';
@@ -1198,7 +1199,7 @@ export default function RagScreen() {
       <Modal transparent visible={showFolderModal} animationType="fade">
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
         >
         <View className="flex-1 bg-black/40 items-center justify-center px-6">
           <View className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full shadow-xl">

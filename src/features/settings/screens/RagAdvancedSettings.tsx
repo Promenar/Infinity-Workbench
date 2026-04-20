@@ -5,9 +5,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Stack, useRouter } from 'expo-router';
 import { Typography, Switch, PageLayout, GlassHeader, Card } from '../../../components/ui';
 import { SettingsSection } from '../components/SettingsSection';
@@ -114,7 +113,7 @@ export default function RagAdvancedSettings() {
       />
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         className="flex-1"
       >
         <ScrollView

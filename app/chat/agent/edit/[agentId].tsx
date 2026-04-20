@@ -4,10 +4,9 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { PageLayout, Typography, GlassHeader, ConfirmDialog, SettingsCard, SettingsSectionHeader, SettingsInput } from '../../../../src/components/ui';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -225,7 +224,7 @@ export default function AgentEditScreen() {
       />
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         className="flex-1"
         keyboardVerticalOffset={0}
       >

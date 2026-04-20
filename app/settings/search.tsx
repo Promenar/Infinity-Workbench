@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, TouchableOpacity, ScrollView, Linking, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, TextInput, TouchableOpacity, ScrollView, Linking } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { PageLayout, Typography, GlassHeader } from '../../src/components/ui';
 import { Stack, useRouter } from 'expo-router';
 import { ChevronLeft, Layers, ExternalLink } from 'lucide-react-native';
@@ -240,7 +241,7 @@ export default function SearchSettingsScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
         <ScrollView

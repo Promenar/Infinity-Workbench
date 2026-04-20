@@ -4,12 +4,12 @@ import {
     Text,
     TextInput,
     ScrollView,
-    KeyboardAvoidingView,
     Platform,
     StyleSheet,
     TouchableOpacity,
     ActivityIndicator,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withSpring, withTiming, interpolateColor } from 'react-native-reanimated';
 import { ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react-native';
 import * as Haptics from '../../../lib/haptics';
@@ -322,7 +322,7 @@ export default function ProviderFormScreen() {
 
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior="padding"
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
             >
                 <ScrollView
