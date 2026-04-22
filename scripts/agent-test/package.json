@@ -1,0 +1,31 @@
+{
+  "name": "@nexara/agent-test",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Nexara Agent Test Framework - 智能测试诊断与修复工具",
+  "main": "cli.ts",
+  "scripts": {
+    "start": "tsx cli.ts",
+    "test": "npm run start --",
+    "help": "npm run start -- --help"
+  },
+  "keywords": [
+    "testing",
+    "jest",
+    "diagnosis",
+    "fix",
+    "nexara"
+  ],
+  "author": "Nexara Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "jest": ">=29.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

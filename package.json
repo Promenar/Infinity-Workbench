@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "bump:patch": "node scripts/bump-version.js patch",
     "bump:minor": "node scripts/bump-version.js minor",
+    "test:agent": "tsx scripts/agent-test/cli.ts",
     "postinstall": "patch-package"
   },
   "dependencies": {

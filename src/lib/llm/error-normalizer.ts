@@ -38,11 +38,21 @@ export class ErrorNormalizer {
    * @returns 标准化后的错误
    */
   static normalize(error: any, providerType?: string): NormalizedError {
+    if (error == null) {
+      return {
+        category: ErrorCategory.UNKNOWN,
+        message: '发生未知错误，请重试',
+        technicalMessage: 'null or undefined error',
+        retryable: true,
+      };
+    }
+
     const errorMsg = error.message || error.toString();
+    const errorMsgLower = errorMsg.toLowerCase();
     const errorStatus = error.status || error.statusCode;
 
     // 1. 网络错误
-    if (this.isNetworkError(error, errorMsg)) {
+    if (this.isNetworkError(error, errorMsgLower)) {
       return {
         category: ErrorCategory.NETWORK,
         message: '网络连接失败，请检查您的网络设置',
@@ -52,7 +62,7 @@ export class ErrorNormalizer {
     }
 
     // 2. 鉴权错误
-    if (this.isAuthError(error, errorStatus, errorMsg)) {
+    if (this.isAuthError(error, errorStatus, errorMsgLower)) {
       return {
         category: ErrorCategory.AUTH,
         message: 'API 密钥无效或已过期，请检查设置',
@@ -62,7 +72,7 @@ export class ErrorNormalizer {
     }
 
     // 3. 限流错误
-    if (this.isRateLimitError(error, errorStatus, errorMsg)) {
+    if (this.isRateLimitError(error, errorStatus, errorMsgLower)) {
       const retryAfter = this.extractRetryAfter(error) || 60;
       const waitTime = this.formatWaitTime(retryAfter);
       return {
@@ -75,7 +85,7 @@ export class ErrorNormalizer {
     }
 
     // 4. 配额超限
-    if (this.isQuotaError(errorMsg)) {
+    if (this.isQuotaError(errorMsgLower)) {
       return {
         category: ErrorCategory.QUOTA_EXCEEDED,
         message: 'API 配额已用尽，请升级套餐或明日再试',
@@ -85,7 +95,7 @@ export class ErrorNormalizer {
     }
 
     // 5. 超时错误
-    if (this.isTimeoutError(error, errorMsg)) {
+    if (this.isTimeoutError(error, errorMsgLower)) {
       return {
         category: ErrorCategory.TIMEOUT,
         message: '请求超时，请重试',
@@ -128,10 +138,10 @@ export class ErrorNormalizer {
    */
   private static isNetworkError(error: any, msg: string): boolean {
     return (
-      msg.includes('Network') ||
+      msg.includes('network') ||
       msg.includes('fetch') ||
       msg.includes('connection') ||
-      msg.includes('ERR_NETWORK') ||
+      msg.includes('err_network') ||
       error.name === 'NetworkError' ||
       error.code === 'ENOTFOUND' ||
       error.code === 'ECONNREFUSED'
@@ -147,10 +157,10 @@ export class ErrorNormalizer {
       status === 403 ||
       msg.includes('401') ||
       msg.includes('403') ||
-      msg.includes('Unauthorized') ||
-      msg.includes('Forbidden') ||
+      msg.includes('unauthorized') ||
+      msg.includes('forbidden') ||
       msg.includes('authentication') ||
-      msg.includes('API key')
+      msg.includes('api key')
     );
   }
 
@@ -185,7 +195,7 @@ export class ErrorNormalizer {
   private static isTimeoutError(error: any, msg: string): boolean {
     return (
       msg.includes('timeout') ||
-      msg.includes('ETIMEDOUT') ||
+      msg.includes('etimedout') ||
       error.name === 'TimeoutError' ||
       error.code === 'ETIMEDOUT'
     );

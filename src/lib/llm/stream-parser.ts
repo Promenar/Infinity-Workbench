@@ -207,7 +207,8 @@ export class StreamParser {
                         } else { break; }
                     } else {
                         this.state = 'IN_TOOL_XML';
-                        break;
+                        // Continue loop to process close tag in same process() call
+                        continue;
                     }
                 }
 

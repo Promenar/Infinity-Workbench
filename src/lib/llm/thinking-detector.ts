@@ -12,15 +12,15 @@
 // 支持的思考开始标签（按优先级排序）
 const THINK_OPEN_PATTERNS: { regex: RegExp; tagLength: number }[] = [
   // HTML 注释格式（最长，优先匹配）
-  { regex: /<!--\s*THINKING_START\s*-->/i, tagLength: 27 },
-  // XML 标签格式
-  { regex: /<think\s*>/i, tagLength: 7 },
-  { regex: /<thought\s*>/i, tagLength: 9 },
+  { regex: /<!--\s*THINKING_START\s*-->/i, tagLength: 23 },
+  // XML 标签格式（支持属性如 <think type="reasoning">）
+  { regex: /<think(?=\s|>)/i, tagLength: 7 },
+  { regex: /<thought(?=\s|>)/i, tagLength: 9 },
 ];
 
 // 支持的思考结束标签
 const THINK_CLOSE_PATTERNS: { regex: RegExp; tagLength: number }[] = [
-  { regex: /<!--\s*THINKING_END\s*-->/i, tagLength: 25 },
+  { regex: /<!--\s*THINKING_END\s*-->/i, tagLength: 21 },
   { regex: /<\/think\s*>/i, tagLength: 8 },
   { regex: /<\/thought\s*>/i, tagLength: 10 },
 ];
@@ -186,7 +186,7 @@ export class ThinkingDetector {
       const match = pattern.regex.exec(text);
       if (match && (bestIndex === -1 || match.index < bestIndex)) {
         bestIndex = match.index;
-        bestTagLength = pattern.tagLength;
+        bestTagLength = match[0].length; // 使用实际匹配长度
       }
     }
 
