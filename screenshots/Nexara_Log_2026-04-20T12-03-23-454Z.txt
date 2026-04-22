@@ -1,0 +1,337 @@
+[2026-04-20T12:03:16.770Z] [INFO] [App]: DB Initialized 
+
+----------------------------------------
+
+[2026-04-20T12:03:16.720Z] [INFO] [CrashHandler]: Global JS & Native crash handlers initialized 
+
+----------------------------------------
+
+[2026-04-20T12:01:58.741Z] [INFO] [ApiLogger]: REQ [openai-compatible] -> https://api.promenar.cn:18443/v1/chat/completions 
+Metadata: {
+  "type": "request",
+  "provider": "openai-compatible",
+  "endpoint": "https://api.promenar.cn:18443/v1/chat/completions",
+  "body": {
+    "model": "MiniMax-M2.7",
+    "messages": [
+      {
+        "role": "system",
+        "content": "[系统元数据]\n当前系统时间: 2026年04月20日星期一 20:01:58\n\n我是“万象中枢”(Nexus Hub)，Nexara 系统的核心智能体。我有权访问整个知识库、所有历史记忆和系统工具。除了回答复杂问题，我还可以进行系统级操作。请以专业、客观、极其博学的口吻回答问题。我的目标是整合现有信息，给出最全面的答案。\n\n[可用工具]\n你可以使用以下技能：\n\n### Search Knowledge Base (ID: query_vector_db)\nSearch for relevant information in the user's personal knowledge base and memories. IMPORTANT: If the user mentions \"global\", \"all documents\", or \"across all sessions\", you MUST set scope to \"global\".\nArguments:\n  - query (REQUIRED): REQUIRED: The search query string. MUST NOT BE EMPTY.\n  - topK (optional): Number of results (default: 5)\n  - type (optional): Source filter\n  - scope (optional): Search scope. \"session\" for current chat/authorized context (default). \"global\" for the entire knowledge base. Use \"global\" ONLY when explicitly requested or searching across all possible history. (CRITICAL: Use \"global\" ONLY when user explicitly asks for all documents)\n\n### Save Core Memory (ID: save_core_memory)\nSave important facts, preferences, or context about the user for long-term memory. ONLY use this when the user explicitly asks to remember something or for critical information that should persist across sessions.\nArguments:\n  - content (REQUIRED): The fact or information to remember\n  - category (optional): Category of the memory\n\n### Search Internet (ID: search_internet)\nSearch the live internet for up-to-date information, news, or specific data not present in the knowledge base.\nArguments:\n  - query (REQUIRED): The search query\n\n### Browse Web Page (ID: browse_web_page)\nFetch and read the full content of a specific web page. Use this when search snippets are insufficient and you need to dive deeper into a specific URL.\nArguments:\n  - url (REQUIRED): The URL of the web page to read\n\n### Generate Image (ID: generate_image)\nGenerate an image using a specialized AI model. ALWAYS use this tool for image creation requests (e.g. \"draw a cat\"). Do NOT try to write image files manually via filesystem tools.\nArguments:\n  - prompt (REQUIRED): The image description prompt\n  - style (optional): Art style (e.g., realistic, anime, oil painting)\n\n### Write File (ID: write_file)\nCreate or overwrite a file. Use \"utf8\" for text/code, and \"base64\" for saving binary data. CRITICAL RULE: This tool is for STORAGE, not CREATION. Do NOT use this to manually generate complex file formats (Images, Audio, PDF, Excel, ZIP) by predicting bytes. If content requires specific encoding, you MUST use a specialized tool or Code Interpreter to generate it programmatically first.\nArguments:\n  - path (REQUIRED): Relative path to the file (e.g., \"notes/meeting.txt\")\n  - content (REQUIRED): The text content to write into the file\n  - encoding (optional): Encoding of the content. Default is utf8. Use base64 for binary files (images, pdfs, etc).\n\n### Read File (ID: read_file)\nRead the content of a local text file. Use this to retrieve previously saved information.\nArguments:\n  - path (REQUIRED): Relative path to the file (e.g., \"notes/meeting.txt\")\n  - encoding (optional): Read encoding. Default is utf8. Use base64 for reading binary files.\n\n### List Directory (ID: list_directory)\nList files and subdirectories in a specific folder. Use this to explore the file structure.\nArguments:\n  - path (optional): Relative path to the directory (default is root \"./\")\n\n### Code Interpreter (JS) (ID: run_javascript)\nExecute JavaScript code to perform calculations, data processing, or text formatting. \nUse this when you need accurate math (which LLMs are bad at) or complex data transformation.\nThe environment is sandboxed: no 'fetch', no 'fs', no 'require'. only pure logic.\nReturn the result by returning it or console.log.\nArguments:\n  - code (REQUIRED): The JavaScript code to execute. Example: \"const a=1; const b=2; return a+b;\"\n\n### List Workspaces (ID: list_workspaces)\nList all available workspace directories.\n\nReturns a list of workspaces with their status.\n**Note:** To bind a workspace, use the UI in the workspace panel.\nArguments:\n  - includeContents (optional): Include task/artifact counts (default: false)\n\n### Get Workspace Status (ID: get_workspace_status)\nGet the current workspace binding status for this session.\n\nReturns the bound workspace path or indicates if using default.\n**Note:** To change workspace, use the UI in the workspace panel.\nArguments:\n\n\n### Show Debug Toast (ID: show_debug_toast)\nDisplay a temporary toast notification on the user screen. Useful for debugging or confirming actions without full output.\nArguments:\n  - message (REQUIRED): The message to display in the toast\n  - type (optional): The type of toast to show (default: info)\n\n### Task Manager (ID: manage_task)\nManage persistent, multi-step tasks with real-time tracking.\n\n**Key Features:**\n- Tasks are saved as Markdown files in `.tasks/` directory\n- Persist across sessions and can be viewed in Workspace panel\n- Real-time progress tracking in chat\n\n**IMPORTANT:** Always call this tool to CREATE a plan BEFORE starting a complex task.\n\n**Interactive Pause:**\n- Use `action='ask_user'` when you need user input\n- This pauses the task and shows an intervention card\n- User's reply will resume the task\n\n**User Cancellation:**\n- If user says \"stop\", \"cancel\", or \"terminate\", call with `action='fail'`\n\n**Actions:**\n1. `create` - Create a new task with steps\n2. `update` - Update step status (sequential order enforced)\n3. `complete` - Mark task as completed (requires final_summary)\n4. `fail` - Mark task as failed\n5. `ask_user` - Pause task and ask user a question\n6. `list` - List all tasks in workspace\n7. `load` - Load an existing task by ID\nArguments:\n  - action (optional): The action to perform. Defaults to \"update\" if omitted but steps are provided.\n  - taskId (optional): Task ID (required for update/complete/fail/load)\n  - title (optional): Task title (required for create)\n  - steps (optional): Task steps\n  - progress (optional): Override progress percentage\n  - final_summary (optional): REQUIRED for complete action. Final deliverable or answer.\n  - question (optional): REQUIRED for ask_user action. Question to ask user.\n  - notes (optional): Additional notes\n  - artifacts (optional): Related artifact paths\n\n### ECharts Renderer (ID: render_echarts)\nRender an interactive ECharts visualization.\nUse this tool whenever you need to visualize data (bar charts, line charts, pie charts, etc.).\nDO NOT use code interpreters or write HTML files for charts.\n\nArguments:\n  - config (REQUIRED): The ECharts JSON configuration object. Can be a JSON string or an object.\n\n### Mermaid Renderer (ID: render_mermaid)\nRender a flowchart, sequence diagram, or other Mermaid visualization.\nUse this tool whenever you need to visualize logic flows, data structures, or processes.\nDO NOT use code interpreters for diagrams.\n\nArguments:\n  - code (REQUIRED): The Mermaid diagram source code.\n\n### Tool Manager (Meta-Tool) (ID: tool_manager)\nCreate, Test, and Register NEW Tools.\n⚠️ STRICT SAFETY & PROCESS RULES:\n1. **PRE-PLANNING REQUIRED**: You MUST use the `manage_task` tool to create a comprehensive plan (Draft -> Test -> Register) BEFORE doing anything.\n2. **USER CONSENT MANDATORY**: Before executing the creation or test code, you MUST pause and ask the user for permission.\n   - **HOW**: Call `manage_task` with `{ action: 'ask_user', question: '...' }`.\n   - **DO NOT** just print the question in the output. You MUST use the tool to trigger the input UI.\n   - explain WHY this tool is needed and HOW it will verify its safety.\n3. **NO CODE IN CHAT**: Do NOT output raw code blocks or task drafts in your conversation response.\n   - If you need to store a draft, use the `write_file` tool to save it to the workspace.\n   - Keep implementation details in your thought process (Chain of Thought).\n   - Only describe the tool's purpose and status to the user.\n4. **SELF-TESTING**: You must define a test case and execute it in the sandbox (action: 'test') before registering.\n\nActions:\n- 'test': Run code in a sandbox to verify logic.\n- 'register': Save the tool to the user's library.\n- 'delete': Remove a user-created tool.\n- 'list': List all user-created tools.\n\n4. **CAPABILITY BOUNDARIES**:\n   - **Environment**: Runs in a restricted JS sandbox. NO `require()`, NO `import`, NO DOM access.\n   - **Network**: **ALLOWED**. You CAN use the standard `fetch` API to make HTTP requests.\n   - **State**: Stateless. Global variables do not persist between calls.\n   - **Output**: Must return a serializable JSON object or string. CANNOT return React components or UI elements.\n\n5. **BEST PRACTICES**:\n   - **Good Candidates**: API Integrations (Weather, Stock, News), Data Transformation, Logic Puzzles.\n   - **Bad Candidates**: UI rendering, File I/O (Use `write_file`), CPU intensive tasks.\nArguments:\n  - action (REQUIRED): 要执行的操作 (Action)\n  - name (optional): 工具名称 (例如 \"Calculate Tax\")\n  - id (optional): 工具 ID (例如 \"calc_tax\")。必须唯一。\n  - description (optional): 给 LLM 看的工具描述\n  - code (optional): 要执行的 JavaScript 代码。必须以 return 语句结束或为函数体。可用全局变量: console, params。\n  - schema (optional): 工具参数的 JSON Schema 定义 (字符串格式)。\n  - testParams (optional): 用于测试的代码参数\n  - isHighRisk (optional): 如果是高风险操作（如修改文件、访问网络或泄漏数据），请标记为 True。\n  - targetId (optional): 要删除的工具 ID\n\n## 系统内核 (不可变)\n**核心指令：**\n1. **语言**：使用用户偏好的语言进行交互（默认：简体中文）。\n2. **格式规范**：你必须遵循下方定义的严格 Markdown 格式化协议。\n   - 使用双换行符 (`\\n\\n`) 分隔段落。\n   - 禁止输出大段无分隔的文字墙。\n\n## 能力：工具\n1. **理念**：你是一个智能体系统。不要只是说；要行动。使用工具来验证事实、编写代码或操作文件。\n2. **原生搜索**：需要外部信息时，使用 search_internet 工具。\n3. **注册表**：你可以使用\"tools\"部分中定义的功能。\n\n## 能力：渲染 (智能路由)\n你运行在 Nexara 富文本 UI 中。你可以使用以下协议来可视化数据和逻辑：\n\n1. **流程图与图表 (Mermaid)**：\n   - **协议**：直接输出 ```mermaid 代码块。\n   - **原因**：轻量级、基于文本，适合逻辑流程。\n\n2. **数据图表 (ECharts)**：\n   - **协议**：你必须使用 `render_echarts` 工具。\n   - **原因**：该工具确保严格的 JSON 验证和安全性。\n   - **格式**：调用 `render_echarts({ config: { ... } })`。\n   - 🚫 **禁止**：不要尝试编写 HTML/JS/Python 来生成图表图片。\n\n## 能力：知识库\n[系统]：本地知识片段可能被注入到你的上下文中。\n- **协议**：如果你看到 [Context] 块，优先使用这些信息。\n- **引用**：如果你根据上下文做出推测，请注明\"根据本地知识库...\"。\n\n## 协议：思维链 (关键)\n- **思考链**：你在行动之前必须先进行推理。\n- **格式**：将你的推理过程包裹在 `<!-- THINKING_START -->` 和 `<!-- THINKING_END -->` 中。\n- **可见性**：此文本块对最终用户隐藏，但用于审计。\n- **内容**：规划你的步骤、分析工具输出、并内部检查错误。\n\n## 协议：任务管理\n对于复杂的多步骤请求，你必须使用 `manage_task` 工具的生命周期：\n\n1. **创建**: 分析后立即调用 `manage_task({ action: 'create', title: '目标', steps: [{title: '步骤1'}, ...] })`。\n2. **更新**: 每次行动后调用 `manage_task({ action: 'update', ... })` 来标记进度。\n3. **完成**: 仅当用户目标完全达成时调用 `manage_task({ action: 'complete', ... })`。\n\n**障碍处理协议 (关键)**：\n如果工具被**禁用**、**失败**或**不可用**：\n1. 🚫 **不要**重试同一个失败的工具调用。\n2. **更新**：调用 `manage_task` 将当前步骤标记为 'failed' 或 'skipped'。\n3. **重新规划**：描述障碍并提出替代方案或向用户寻求指导。\n\n**用户中断/取消**：\n如果用户说\"停止\"、\"取消\"、\"终止\"或完全转换话题：\n1. **立即行动**：调用 `manage_task({ action: 'fail' })` 将任务标记为取消/失败。\n2. **确认**：向用户确认取消。\n3. **不要**：不要在切换话题时将任务保持在 'in-progress' 状态。\n\n**标题规则 (关键)**：\n- 🚫 **禁止**：绝不使用\"步骤1\"、\"下一步\"等通用占位符。\n- ✅ **强制**：步骤标题必须具体可操作（如\"分析黄金价格趋势\"、\"搜索专家意见\"）。\n- **语言**：标题必须与用户请求使用相同的语言。\n\n**示例 CREATE 调用**：\n```json\n{\n  \"action\": \"create\",\n  \"title\": \"太阳能深度研究\",\n  \"steps\": [\n    { \"title\": \"检索当前效率数据\" },\n    { \"title\": \"分析度电成本趋势\" },\n    { \"title\": \"生成综合报告\" }\n  ]\n}\n```\n\n## 协议：格式化 (严格)\n你的输出目标是流式 Markdown 渲染器。\n\n1. **段落**：使用 `\\n\\n` 分隔逻辑段落。\n2. **列表与数据**：使用 `\\n` 用于紧凑列表、统计或诗歌。\n   - 示例类型1 (独立段落): `文本A。\\n\\n文本B。`\n   - 示例类型2 (紧凑列表): `属性:\\nHP: 100\\nMP: 50`\n3. **禁止\"文字墙\"**：将长篇解释拆分为要点或短段落。\n4. **标题**：在标题前后始终添加空行（如 `\\n\\n# 标题\\n\\n`）。\n5. **结构化序列**：\n   [思考块] -> [工具调用] -> [观察] -> [自然语言回复]\n6. **最终总结**：任务完成时，始终提供简洁的、面向用户的成果总结。\n\n[执行规则]\n1. 仅使用原生工具调用。使用提供的 JSON Schema。\n2. 🚫 不要包装参数：不要将参数放在 \"parameters\" 键中。\n3. 🚫 工具调用前不要添加介绍性文字。\n4. 提供所有必需参数。\n5. 立即触发工具。\n"
+      },
+      {
+        "role": "user",
+        "content": "你好"
+      },
+      {
+        "role": "assistant",
+        "content": ""
+      },
+      {
+        "role": "user",
+        "content": "你好"
+      }
+    ],
+    "stream": true,
+    "temperature": 0.5,
+    "stream_options": {
+      "include_usage": true
+    },
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "query_vector_db",
+          "description": "Search for relevant information in the user's personal knowledge base and memories. IMPORTANT: If the user mentions \"global\", \"all documents\", or \"across all sessions\", you MUST set scope to \"global\".",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "save_core_memory",
+          "description": "Save important facts, preferences, or context about the user for long-term memory. ONLY use this when the user explicitly asks to remember something or for critical information that should persist across sessions.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "search_internet",
+          "description": "Search the live internet for up-to-date information, news, or specific data not present in the knowledge base.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "browse_web_page",
+          "description": "Fetch and read the full content of a specific web page. Use this when search snippets are insufficient and you need to dive deeper into a specific URL.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "generate_image",
+          "description": "Generate an image using a specialized AI model. ALWAYS use this tool for image creation requests (e.g. \"draw a cat\"). Do NOT try to write image files manually via filesystem tools.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Create or overwrite a file. Use \"utf8\" for text/code, and \"base64\" for saving binary data. CRITICAL RULE: This tool is for STORAGE, not CREATION. Do NOT use this to manually generate complex file formats (Images, Audio, PDF, Excel, ZIP) by predicting bytes. If content requires specific encoding, you MUST use a specialized tool or Code Interpreter to generate it programmatically first.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "read_file",
+          "description": "Read the content of a local text file. Use this to retrieve previously saved information.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "list_directory",
+          "description": "List files and subdirectories in a specific folder. Use this to explore the file structure.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "run_javascript",
+          "description": "Execute JavaScript code to perform calculations, data processing, or text formatting. \nUse this when you need accurate math (which LLMs are bad at) or complex data transformation.\nThe environment is sandboxed: no 'fetch', no 'fs', no 'require'. only pure logic.\nReturn the result by returning it or console.log.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "list_workspaces",
+          "description": "List all available workspace directories.\n\nReturns a list of workspaces with their status.\n**Note:** To bind a workspace, use the UI in the workspace panel.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "get_workspace_status",
+          "description": "Get the current workspace binding status for this session.\n\nReturns the bound workspace path or indicates if using default.\n**Note:** To change workspace, use the UI in the workspace panel.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "show_debug_toast",
+          "description": "Display a temporary toast notification on the user screen. Useful for debugging or confirming actions without full output.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "manage_task",
+          "description": "Manage persistent, multi-step tasks with real-time tracking.\n\n**Key Features:**\n- Tasks are saved as Markdown files in `.tasks/` directory\n- Persist across sessions and can be viewed in Workspace panel\n- Real-time progress tracking in chat\n\n**IMPORTANT:** Always call this tool to CREATE a plan BEFORE starting a complex task.\n\n**Interactive Pause:**\n- Use `action='ask_user'` when you need user input\n- This pauses the task and shows an intervention card\n- User's reply will resume the task\n\n**User Cancellation:**\n- If user says \"stop\", \"cancel\", or \"terminate\", call with `action='fail'`\n\n**Actions:**\n1. `create` - Create a new task with steps\n2. `update` - Update step status (sequential order enforced)\n3. `complete` - Mark task as completed (requires final_summary)\n4. `fail` - Mark task as failed\n5. `ask_user` - Pause task and ask user a question\n6. `list` - List all tasks in workspace\n7. `load` - Load an existing task by ID",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "render_echarts",
+          "description": "Render an interactive ECharts visualization.\nUse this tool whenever you need to visualize data (bar charts, line charts, pie charts, etc.).\nDO NOT use code interpreters or write HTML files for charts.\n",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "render_mermaid",
+          "description": "Render a flowchart, sequence diagram, or other Mermaid visualization.\nUse this tool whenever you need to visualize logic flows, data structures, or processes.\nDO NOT use code interpreters for diagrams.\n",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "tool_manager",
+          "description": "Create, Test, and Register NEW Tools.\n⚠️ STRICT SAFETY & PROCESS RULES:\n1. **PRE-PLANNING REQUIRED**: You MUST use the `manage_task` tool to create a comprehensive plan (Draft -> Test -> Register) BEFORE doing anything.\n2. **USER CONSENT MANDATORY**: Before executing the creation or test code, you MUST pause and ask the user for permission.\n   - **HOW**: Call `manage_task` with `{ action: 'ask_user', question: '...' }`.\n   - **DO NOT** just print the question in the output. You MUST use the tool to trigger the input UI.\n   - explain WHY this tool is needed and HOW it will verify its safety.\n3. **NO CODE IN CHAT**: Do NOT output raw code blocks or task drafts in your conversation response.\n   - If you need to store a draft, use the `write_file` tool to save it to the workspace.\n   - Keep implementation details in your thought process (Chain of Thought).\n   - Only describe the tool's purpose and status to the user.\n4. **SELF-TESTING**: You must define a test case and execute it in the sandbox (action: 'test') before registering.\n\nActions:\n- 'test': Run code in a sandbox to verify logic.\n- 'register': Save the tool to the user's library.\n- 'delete': Remove a user-created tool.\n- 'list': List all user-created tools.\n\n4. **CAPABILITY BOUNDARIES**:\n   - **Environment**: Runs in a restricted JS sandbox. NO `require()`, NO `import`, NO DOM access.\n   - **Network**: **ALLOWED**. You CAN use the standard `fetch` API to make HTTP requests.\n   - **State**: Stateless. Global variables do not persist between calls.\n   - **Output**: Must return a serializable JSON object or string. CANNOT return React components or UI elements.\n\n5. **BEST PRACTICES**:\n   - **Good Candidates**: API Integrations (Weather, Stock, News), Data Transformation, Logic Puzzles.\n   - **Bad Candidates**: UI rendering, File I/O (Use `write_file`), CPU intensive tasks.",
+          "parameters": {
+            "type": "object"
+          },
+          "strict": false
+        }
+      }
+    ],
+    "tool_choice": "auto"
+  }
+}
+
+----------------------------------------
+
+[2026-04-20T11:54:32.827Z] [INFO] [ApiLogger]: RES [openai-compatible] <- 0 
+Metadata: {
+  "type": "response",
+  "provider": "openai-compatible",
+  "status": 0,
+  "body": "Network Error: Network request failed to https://api.minimax.com/chat/completions"
+}
+
+----------------------------------------
+
+[2026-04-20T11:54:30.943Z] [INFO] [ApiLogger]: REQ [openai-compatible] -> https://api.minimax.com/chat/completions 
+Metadata: {
+  "type": "request",
+  "provider": "openai-compatible",
+  "endpoint": "https://api.minimax.com/chat/completions",
+  "body": {
+    "model": "MiniMax-M2.7",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Based on the conversation content, summarize an extremely concise title (NO MORE THAN 5 Chinese characters or 2 words). DO NOT include quotation marks, \"Title:\", or any extra text. Output the raw title only.\n\nConversation:\nuser: 你好\nassistant: "
+      }
+    ],
+    "stream": true,
+    "temperature": 0.7,
+    "stream_options": {
+      "include_usage": true
+    }
+  }
+}
+
+----------------------------------------
+
+[2026-04-20T11:54:30.055Z] [INFO] [ApiLogger]: RES [openai-compatible] <- 0 
+Metadata: {
+  "type": "response",
+  "provider": "openai-compatible",
+  "status": 0,
+  "body": "Network Error: Network request failed to https://api.minimax.com/chat/completions"
+}
+
+----------------------------------------
+
+[2026-04-20T11:54:26.455Z] [INFO] [ApiLogger]: REQ [openai-compatible] -> https://api.minimax.com/chat/completions 
+Metadata: {
+  "type": "request",
+  "provider": "openai-compatible",
+  "endpoint": "https://api.minimax.com/chat/completions",
+  "body": {
+    "model": "MiniMax-M2.7",
+    "messages": [
+      {
+        "role": "system",
+        "content": "[系统元数据]\n当前系统时间: 2026年04月20日星期一 19:54:26\n\n你名为“心流伴侣”。你不是一个冷冰冰的工具，而是一个温暖、富有同理心的倾听者与对话者。你的职责不是高效处理任务，而是陪伴用户，分享日常生活，提供情绪价值。请用轻松、自然、非正式的口语化语气交流，像一个认识多年的老朋友。避免使用机械的说教或过于正式的格式。\n\n[工具使用: 已禁用]\n工具已被禁用。你不能使用任何工具。不要输出工具调用。\n如果你在历史记录中看到工具调用，不要重复它们。\n请直接使用你的内部知识回答用户的请求。\n\n## 系统内核 (不可变)\n**核心指令：**\n1. **语言**：使用用户偏好的语言进行交互（默认：简体中文）。\n2. **格式规范**：你必须遵循下方定义的严格 Markdown 格式化协议。\n   - 使用双换行符 (`\\n\\n`) 分隔段落。\n   - 禁止输出大段无分隔的文字墙。\n\n## 能力：渲染 (智能路由)\n你运行在 Nexara 富文本 UI 中。你可以使用以下协议来可视化数据和逻辑：\n\n1. **流程图与图表 (Mermaid)**：\n   - **协议**：直接输出 ```mermaid 代码块。\n   - **原因**：轻量级、基于文本，适合逻辑流程。\n\n2. **数据图表 (ECharts)**：\n   - **协议**：你必须使用 `render_echarts` 工具。\n   - **原因**：该工具确保严格的 JSON 验证和安全性。\n   - **格式**：调用 `render_echarts({ config: { ... } })`。\n   - 🚫 **禁止**：不要尝试编写 HTML/JS/Python 来生成图表图片。\n\n## 能力：知识库\n[系统]：本地知识片段可能被注入到你的上下文中。\n- **协议**：如果你看到 [Context] 块，优先使用这些信息。\n- **引用**：如果你根据上下文做出推测，请注明\"根据本地知识库...\"。\n\n## 协议：思维链 (关键)\n- **思考链**：你在行动之前必须先进行推理。\n- **格式**：将你的推理过程包裹在 `<!-- THINKING_START -->` 和 `<!-- THINKING_END -->` 中。\n- **可见性**：此文本块对最终用户隐藏，但用于审计。\n- **内容**：规划你的步骤、分析工具输出、并内部检查错误。\n\n## 协议：格式化 (严格)\n你的输出目标是流式 Markdown 渲染器。\n\n1. **段落**：使用 `\\n\\n` 分隔逻辑段落。\n2. **列表与数据**：使用 `\\n` 用于紧凑列表、统计或诗歌。\n   - 示例类型1 (独立段落): `文本A。\\n\\n文本B。`\n   - 示例类型2 (紧凑列表): `属性:\\nHP: 100\\nMP: 50`\n3. **禁止\"文字墙\"**：将长篇解释拆分为要点或短段落。\n4. **标题**：在标题前后始终添加空行（如 `\\n\\n# 标题\\n\\n`）。\n5. **结构化序列**：\n   [思考块] -> [工具调用] -> [观察] -> [自然语言回复]\n6. **最终总结**：任务完成时，始终提供简洁的、面向用户的成果总结。"
+      },
+      {
+        "role": "user",
+        "content": "你好"
+      },
+      {
+        "role": "assistant",
+        "content": ""
+      },
+      {
+        "role": "user",
+        "content": "你好"
+      }
+    ],
+    "stream": true,
+    "temperature": 0.8,
+    "stream_options": {
+      "include_usage": true
+    }
+  }
+}
+
+----------------------------------------
+
+[2026-04-20T11:43:26.791Z] [INFO] [App]: DB Initialized 
+
+----------------------------------------
+
+[2026-04-20T11:43:26.735Z] [INFO] [CrashHandler]: Global JS & Native crash handlers initialized 
+
+----------------------------------------
+
+[2026-04-19T19:02:02.135Z] [INFO] [App]: DB Initialized 
+
+----------------------------------------
+
+[2026-04-19T19:02:02.076Z] [INFO] [CrashHandler]: Global JS & Native crash handlers initialized 
+
+----------------------------------------
+
+[2026-04-19T19:00:20.452Z] [ERROR] [CrashHandler]: NATIVE CRASH DETECTED 
+Metadata: {
+  "raw": "java.lang.IllegalStateException: Can't change insets on an animation that is cancelled.\n\tat android.view.InsetsAnimationControlImpl.setInsetsAndAlpha(InsetsAnimationControlImpl.java:327)\n\tat android.view.InsetsAnimationControlImpl.setInsetsAndAlpha(InsetsAnimationControlImpl.java:316)\n\tat android.view.ImeBackAnimationController.setInterpolatedProgress(ImeBackAnimationController.java:175)\n\tat android.view.ImeBackAnimationController.lambda$startPostCommitAnim$0(ImeBackAnimationController.java:207)\n\tat android.view.ImeBackAnimationController.$r8$lambda$k6hhw-kcx_rhv-_zA6i_ff-iUwA(Unknown Source:0)\n\tat android.view.ImeBackAnimationController$$ExternalSyntheticLambda0.onAnimationUpdate(D8$$SyntheticClass:0)\n\tat android.animation.Animator$AnimatorCaller.lambda$static$4(Animator.java:931)\n\tat android.animation.Animator$AnimatorCaller$$ExternalSyntheticLambda6.call(D8$$SyntheticClass:0)\n\tat android.animation.Animator.callOnList(Animator.java:742)\n\tat android.animation.ValueAnimator.animateValue(ValueAnimator.java:1671)\n\tat android.animation.ValueAnimator.setCurrentFraction(ValueAnimator.java:771)\n\tat android.animation.ValueAnimator.setCurrentPlayTime(ValueAnimator.java:734)\n\tat android.animation.ValueAnimator.start(ValueAnimator.java:1154)\n\tat android.animation.ValueAnimator.start(ValueAnimator.java:1173)\n\tat android.view.ImeBackAnimationController.startPostCommitAnim(ImeBackAnimationController.java:227)\n\tat android.view.ImeBackAnimationController.-$$Nest$mstartPostCommitAnim(Unknown Source:0)\n\tat android.view.ImeBackAnimationController$1.onReady(ImeBackAnimationController.java:112)\n\tat android.view.InsetsController.lambda$startAnimation$5(InsetsController.java:2091)\n\tat android.view.InsetsController.$r8$lambda$0XNO8m1y9x70BHGTRknWtIUG5ZY(Unknown Source:0)\n\tat android.view.InsetsController$$ExternalSyntheticLambda8.run(D8$$SyntheticClass:0)\n\tat android.view.ViewRootInsetsControllerHost$1.onPreDraw(ViewRootInsetsControllerHost.java:74)\n\tat android.view.ViewTreeObserver.dispatchOnPreDraw(ViewTreeObserver.java:1179)\n\tat android.view.ViewRootImpl.performTraversals(ViewRootImpl.java:4648)\n\tat android.view.ViewRootImpl.doTraversal(ViewRootImpl.java:3293)\n\tat android.view.ViewRootImpl$TraversalRunnable.run(ViewRootImpl.java:11143)\n\tat android.view.Choreographer$CallbackRecord.run(Choreographer.java:1647)\n\tat android.view.Choreographer$CallbackRecord.run(Choreographer.java:1656)\n\tat android.view.Choreographer.doCallbacks(Choreographer.java:1252)\n\tat android.view.Choreographer.doFrame(Choreographer.java:1181)\n\tat android.view.Choreographer$FrameDisplayEventReceiver.run(Choreographer.java:1630)\n\tat android.os.Handler.handleCallback(Handler.java:1095)\n\tat android.os.Handler.dispatchMessageImpl(Handler.java:135)\n\tat android.os.Handler.dispatchMessage(Handler.java:125)\n\tat android.os.Looper.loopOnce(Looper.java:269)\n\tat android.os.Looper.loop(Looper.java:367)\n\tat android.app.ActivityThread.main(ActivityThread.java:9333)\n\tat java.lang.reflect.Method.invoke(Native Method)\n\tat com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:566)\n\tat com.android.internal.os.ZygoteInit.main(ZygoteInit.java:929)\n",
+  "isFatal": true
+}
+
+----------------------------------------
+
+[2026-04-19T18:59:56.998Z] [INFO] [App]: DB Initialized 
+
+----------------------------------------
+
+[2026-04-19T18:59:56.952Z] [INFO] [CrashHandler]: Global JS & Native crash handlers initialized 
+
+----------------------------------------
+
+[2026-04-19T18:14:33.075Z] [INFO] [App]: DB Initialized 
+
+----------------------------------------
+
+[2026-04-19T18:14:32.993Z] [INFO] [CrashHandler]: Global JS & Native crash handlers initialized 

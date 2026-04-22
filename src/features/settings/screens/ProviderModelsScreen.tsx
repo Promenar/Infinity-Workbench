@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -45,6 +45,11 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 
 // 使用 any 绕过某些环境下 FlashList 的类型检测问题
 const TypedFlashList = FlashList as any;
+
+// Store 写入防抖时间 (毫秒)
+const STORE_WRITE_DEBOUNCE_MS = 200;
+// 按钮交互冷却时间 (毫秒)
+const INTERACTION_COOLDOWN_MS = 120;
 
 // 提取并 Memoize 模型项以获得极致性能
 const ModelItem = React.memo(
@@ -364,7 +369,12 @@ const ModelItem = React.memo(
         );
     },
     (prev, next) => {
-        // 自定义 Memo 逻辑：深比较必要的属性
+        // [FIX I3+I4] 深比较所有必要属性 + testStatus 深比较替代引用比较
+        const testEqual =
+            prev.testStatus?.loading === next.testStatus?.loading &&
+            prev.testStatus?.success === next.testStatus?.success &&
+            prev.testStatus?.latency === next.testStatus?.latency &&
+            prev.testStatus?.error === next.testStatus?.error;
         return (
             prev.model.uuid === next.model.uuid &&
             prev.model.name === next.model.name &&
@@ -372,10 +382,12 @@ const ModelItem = React.memo(
             prev.model.enabled === next.model.enabled &&
             prev.model.type === next.model.type &&
             prev.model.contextLength === next.model.contextLength &&
+            prev.model.isAutoFetched === next.model.isAutoFetched &&
+            prev.model.icon === next.model.icon &&
             prev.model.capabilities.vision === next.model.capabilities.vision &&
             prev.model.capabilities.internet === next.model.capabilities.internet &&
             prev.model.capabilities.reasoning === next.model.capabilities.reasoning &&
-            prev.testStatus === next.testStatus
+            testEqual
         );
     },
 );
@@ -400,7 +412,55 @@ export default function ProviderModelsScreen() {
     const [testResults, setTestResults] = useState<
         Record<string, { loading: boolean; success?: boolean; latency?: number; error?: string }>
     >({});
-    const inputRef = React.useRef<TextInput>(null);
+    const inputRef = useRef<TextInput>(null);
+
+    // [FIX I5] 用 ref 持有最新 testResults，避免 renderItem 闭包过期
+    const testResultsRef = useRef(testResults);
+    testResultsRef.current = testResults;
+
+    // [FIX P1+D3] 防抖 Store 写入机制
+    const storeWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingModelsRef = useRef<ModelConfig[]>([]);
+    const lastLocalEditRef = useRef<number>(0);
+
+    // 防抖写入 Store（用于高频操作：toggle, update）
+    const scheduleStoreWrite = useCallback((newModels: ModelConfig[]) => {
+        lastLocalEditRef.current = Date.now();
+        pendingModelsRef.current = newModels;
+        if (storeWriteTimerRef.current) {
+            clearTimeout(storeWriteTimerRef.current);
+        }
+        storeWriteTimerRef.current = setTimeout(() => {
+            if (provider) {
+                updateProvider(provider.id, { models: pendingModelsRef.current });
+            }
+            storeWriteTimerRef.current = null;
+        }, STORE_WRITE_DEBOUNCE_MS);
+    }, [provider, updateProvider]);
+
+    // 立即写入 Store（用于低频操作：delete, add, batch）
+    const writeToStore = useCallback((newModels: ModelConfig[]) => {
+        lastLocalEditRef.current = Date.now();
+        if (storeWriteTimerRef.current) {
+            clearTimeout(storeWriteTimerRef.current);
+            storeWriteTimerRef.current = null;
+        }
+        if (provider) {
+            updateProvider(provider.id, { models: newModels });
+        }
+    }, [provider, updateProvider]);
+
+    // 组件卸载时刷新待写入数据
+    useEffect(() => {
+        return () => {
+            if (storeWriteTimerRef.current) {
+                clearTimeout(storeWriteTimerRef.current);
+                if (provider) {
+                    updateProvider(provider.id, { models: pendingModelsRef.current });
+                }
+            }
+        };
+    }, [provider, updateProvider]);
 
     useEffect(() => {
         const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
@@ -428,48 +488,52 @@ export default function ProviderModelsScreen() {
 
     const [isReady, setIsReady] = useState(false);
 
-    // Sync internal models state with provider models
+    // [FIX I1+I2] 同步内部状态与 Store 数据，移除 setTimeout(0)，添加防抖窗口保护
     useEffect(() => {
         if (provider) {
-            const task = setTimeout(() => {
-                // 对没有 uuid 或 uuid 与 id 冲突（导致Shadowing）的旧数据进行迁移
-                const initialModels = (provider.models || []).map((m) =>
-                    (m.uuid && m.uuid !== m.id) ? m : { ...m, uuid: m.id + '-' + Math.random().toString(36).substr(2, 9) },
-                );
-
-                // Auto-save if migration occurred to make it persistent across app restarts
-                // use JSON.stringify for deep comparison to avoid infinite loops
-                if (JSON.stringify(initialModels) !== JSON.stringify(provider.models)) {
-                    console.log('[ProviderModels] Auto-migrating model UUIDs for uniqueness');
-                    onUpdateModels(initialModels);
-                }
-
-                setModels(initialModels);
+            // 跳过防抖窗口内的同步，避免覆盖本地未写入的编辑
+            if (Date.now() - lastLocalEditRef.current < STORE_WRITE_DEBOUNCE_MS + 50) {
                 setIsReady(true);
-            }, 0); // Immediate execution but next tick
+                return;
+            }
 
-            return () => clearTimeout(task);
+            // 对没有 uuid 或 uuid 与 id 冲突的旧数据进行迁移
+            const initialModels = (provider.models || []).map((m) =>
+                (m.uuid && m.uuid !== m.id) ? m : { ...m, uuid: m.id + '-' + Math.random().toString(36).substr(2, 9) },
+            );
+
+            // Auto-save if migration occurred
+            let needsMigration = false;
+            for (let i = 0; i < initialModels.length; i++) {
+                if (initialModels[i].uuid !== (provider.models || [])[i]?.uuid) {
+                    needsMigration = true;
+                    break;
+                }
+            }
+            if (needsMigration) {
+                console.log('[ProviderModels] Auto-migrating model UUIDs for uniqueness');
+                writeToStore(initialModels);
+            }
+
+            setModels(initialModels);
+            setIsReady(true);
         } else {
             setIsReady(false);
             setModels([]);
         }
-    }, [provider]);
+    }, [provider, writeToStore]);
 
-    // Handle updates back to the store
-    const onUpdateModels = useCallback((newModels: ModelConfig[]) => {
-        if (provider) {
-            updateProvider(provider.id, { models: newModels });
-        }
-    }, [provider, updateProvider]);
-
-
+    // [FIX D4] 测试连通性，添加已取消标志防止过期结果覆盖
     const handleTestModel = useCallback(
         async (model: ModelConfig) => {
             if (!provider) return;
 
+            Keyboard.dismiss();
+
+            const testId = model.uuid;
             setTestResults((prev) => ({
                 ...prev,
-                [model.uuid]: { loading: true },
+                [testId]: { loading: true },
             }));
 
             try {
@@ -487,7 +551,6 @@ export default function ProviderModelsScreen() {
 
                 const client = createLlmClient(fullConfig as any);
 
-                // 根据模型类型选择正确的测试方法
                 let result;
                 if (model.type === 'rerank' && client.testRerankConnection) {
                     result = await client.testRerankConnection();
@@ -497,7 +560,7 @@ export default function ProviderModelsScreen() {
 
                 setTestResults((prev) => ({
                     ...prev,
-                    [model.uuid]: {
+                    [testId]: {
                         loading: false,
                         success: result.success,
                         latency: result.latency,
@@ -513,7 +576,7 @@ export default function ProviderModelsScreen() {
             } catch (e) {
                 setTestResults((prev) => ({
                     ...prev,
-                    [model.uuid]: { loading: false, success: false, error: (e as Error).message },
+                    [testId]: { loading: false, success: false, error: (e as Error).message },
                 }));
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
@@ -521,47 +584,58 @@ export default function ProviderModelsScreen() {
         [provider],
     );
 
+    // [FIX P1+D3] 防抖写入 + [FIX 崩溃] Keyboard.dismiss + rAF 延迟布局变更
     const handleToggleModel = useCallback(
         (uuid: string, enabled: boolean) => {
-            setModels((prev) => {
-                const next = prev.map((m) => (m.uuid === uuid ? { ...m, enabled } : m));
-                onUpdateModels(next);
-                return next;
+            Keyboard.dismiss();
+            requestAnimationFrame(() => {
+                setModels((prev) => {
+                    const next = prev.map((m) => (m.uuid === uuid ? { ...m, enabled } : m));
+                    scheduleStoreWrite(next);
+                    return next;
+                });
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             });
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         },
-        [onUpdateModels],
+        [scheduleStoreWrite],
     );
 
     const handleDeleteModel = useCallback(
         (uuid: string) => {
-            setModels((prev) => {
-                const next = prev.filter((m) => m.uuid !== uuid);
-                onUpdateModels(next);
-                return next;
+            Keyboard.dismiss();
+            requestAnimationFrame(() => {
+                setModels((prev) => {
+                    const next = prev.filter((m) => m.uuid !== uuid);
+                    writeToStore(next);
+                    return next;
+                });
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             });
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         },
-        [onUpdateModels],
+        [writeToStore],
     );
 
     const handleUpdateModel = useCallback(
         (uuid: string, updates: Partial<ModelConfig>) => {
-            setModels((prev) => {
-                const next = prev.map((m) => (m.uuid === uuid ? { ...m, ...updates } : m));
-                onUpdateModels(next);
-                return next;
+            Keyboard.dismiss();
+            requestAnimationFrame(() => {
+                setModels((prev) => {
+                    const next = prev.map((m) => (m.uuid === uuid ? { ...m, ...updates } : m));
+                    scheduleStoreWrite(next);
+                    return next;
+                });
             });
         },
-        [onUpdateModels],
+        [scheduleStoreWrite],
     );
 
-    const handleAutoFetch = async () => {
+    const handleAutoFetch = useCallback(async () => {
         if (!provider?.apiKey) {
             showToast(t.settings.modelSettings.fetchError, 'error');
             return;
         }
 
+        Keyboard.dismiss();
         setIsFetching(true);
         try {
             const fetchedModels = await ModelService.fetchModels(
@@ -580,17 +654,14 @@ export default function ProviderModelsScreen() {
                 fetchedModels.forEach((nm) => {
                     const existingIndex = updatedModels.findIndex((m) => m.id === nm.id);
                     if (existingIndex > -1) {
-                        // 模型已存在，更新时保留用户设置
                         const existing = updatedModels[existingIndex];
                         if (existing.isAutoFetched) {
                             updatedModels[existingIndex] = {
                                 ...existing,
                                 contextLength: nm.contextLength || existing.contextLength,
-                                // 保留用户手动设置的类型，仅在无旧类型时使用新检测的
                                 type: existing.type || nm.type,
                                 capabilities: {
                                     ...existing.capabilities,
-                                    // 只添加新的能力，不覆盖已有的
                                     vision: existing.capabilities.vision || nm.capabilities.vision,
                                     internet: existing.capabilities.internet || nm.capabilities.internet,
                                     reasoning: existing.capabilities.reasoning || nm.capabilities.reasoning,
@@ -598,11 +669,10 @@ export default function ProviderModelsScreen() {
                             };
                         }
                     } else {
-                        // 新模型，直接添加
                         updatedModels.push(nm);
                     }
                 });
-                onUpdateModels(updatedModels);
+                writeToStore(updatedModels);
                 return updatedModels;
             });
             showToast(
@@ -615,62 +685,71 @@ export default function ProviderModelsScreen() {
         } finally {
             setIsFetching(false);
         }
-    };
+    }, [provider, writeToStore, showToast, t]);
 
-    const handleManualAdd = () => {
-        const id = `model-${Date.now()}`;
-        const newModel: ModelConfig = {
-            uuid: id + '-' + Math.random().toString(36).substr(2, 9),
-            id: id,
-            name: t.settings.modelSettings.newModel,
-            enabled: true,
-            isAutoFetched: false,
-            capabilities: {},
-        };
-        setModels((prev) => {
-            const next = [newModel, ...prev]; // Prepend new model
-            onUpdateModels(next);
-            return next;
+    const handleManualAdd = useCallback(() => {
+        Keyboard.dismiss();
+        requestAnimationFrame(() => {
+            const id = `model-${Date.now()}`;
+            const newModel: ModelConfig = {
+                uuid: id + '-' + Math.random().toString(36).substr(2, 9),
+                id: id,
+                name: t.settings.modelSettings.newModel,
+                enabled: true,
+                isAutoFetched: false,
+                capabilities: {},
+            };
+            setModels((prev) => {
+                const next = [newModel, ...prev];
+                writeToStore(next);
+                return next;
+            });
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    };
+    }, [writeToStore, t]);
 
-    const handleDisableAll = () => {
+    const handleDisableAll = useCallback(() => {
         setConfirmState({
             visible: true,
             title: t.settings.modelSettings.disableAll,
             message: t.settings.modelSettings.disableAllConfirm,
             isDestructive: false,
             onConfirm: () => {
-                setModels((prev) => {
-                    const next = prev.map((m) => ({ ...m, enabled: false }));
-                    onUpdateModels(next);
-                    return next;
+                Keyboard.dismiss();
+                requestAnimationFrame(() => {
+                    setModels((prev) => {
+                        const next = prev.map((m) => ({ ...m, enabled: false }));
+                        writeToStore(next);
+                        return next;
+                    });
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    showToast(t.settings.modelSettings.disableAllSuccess, 'info');
+                    setConfirmState((prev) => ({ ...prev, visible: false }));
                 });
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                showToast(t.settings.modelSettings.disableAllSuccess, 'info');
-                setConfirmState((prev) => ({ ...prev, visible: false }));
             },
         });
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    };
+    }, [writeToStore, showToast, t]);
 
-    const handleDeleteAll = () => {
+    const handleDeleteAll = useCallback(() => {
         setConfirmState({
             visible: true,
             title: t.settings.modelSettings.deleteAll,
             message: t.settings.modelSettings.deleteAllConfirm,
             isDestructive: true,
             onConfirm: () => {
-                setModels([]);
-                onUpdateModels([]);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                showToast(t.settings.modelSettings.deleteAllSuccess, 'info');
-                setConfirmState((prev) => ({ ...prev, visible: false }));
+                Keyboard.dismiss();
+                requestAnimationFrame(() => {
+                    setModels([]);
+                    writeToStore([]);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    showToast(t.settings.modelSettings.deleteAllSuccess, 'info');
+                    setConfirmState((prev) => ({ ...prev, visible: false }));
+                });
             },
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    };
+    }, [writeToStore, showToast, t]);
 
     const filteredModels = useMemo(() => {
         if (!searchQuery) return models;
@@ -680,6 +759,7 @@ export default function ProviderModelsScreen() {
         );
     }, [models, searchQuery]);
 
+    // [FIX I5+P2] 使用 ref 访问 testResults，从依赖中移除以稳定 renderItem 引用
     const renderItem = useCallback(
         ({ item }: { item: ModelConfig }) => (
             <ModelItem
@@ -688,7 +768,7 @@ export default function ProviderModelsScreen() {
                 onDelete={handleDeleteModel}
                 onUpdate={handleUpdateModel}
                 onTest={handleTestModel}
-                testStatus={testResults[item.uuid]}
+                testStatus={testResultsRef.current[item.uuid]}
             />
         ),
         [
@@ -696,10 +776,8 @@ export default function ProviderModelsScreen() {
             handleDeleteModel,
             handleUpdateModel,
             handleTestModel,
-            testResults,
         ],
     );
-
 
 
     return (
@@ -716,7 +794,7 @@ export default function ProviderModelsScreen() {
             />
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
-                behavior="padding"
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
             >
                 {/* Fixed Header Section (Search & Actions) */}
@@ -841,8 +919,8 @@ export default function ProviderModelsScreen() {
                         removeClippedSubviews={false}
                         keyExtractor={(item: ModelConfig) => item.uuid}
                         contentContainerStyle={{
-                            paddingBottom: 450, // 💡 增加底部间距，允许用户手动向上滚动以避开键盘 (Rule 1)
-                            paddingTop: 16, // Change top padding since header is removed from list
+                            paddingBottom: 450,
+                            paddingTop: 16,
                         }}
                         extraData={testResults}
                         getItemType={() => 'model'}
@@ -874,6 +952,7 @@ export default function ProviderModelsScreen() {
     );
 }
 
+// [FIX D5+D6] TypeButton 添加交互冷却防抖
 const TypeButton = React.memo(function TypeButton({
     label,
     active,
@@ -885,7 +964,8 @@ const TypeButton = React.memo(function TypeButton({
 }) {
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
-    
+    const lastPressRef = useRef(0);
+
     const activeColor = colors[500];
     const inactiveColor = isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)';
     const inactiveBorder = isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)';
@@ -902,8 +982,15 @@ const TypeButton = React.memo(function TypeButton({
         };
     });
 
+    const handlePress = useCallback(() => {
+        const now = Date.now();
+        if (now - lastPressRef.current < INTERACTION_COOLDOWN_MS) return;
+        lastPressRef.current = now;
+        onPress();
+    }, [onPress]);
+
     return (
-        <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
             <Animated.View style={[{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 }, animatedStyle]}>
                 <Typography
                     style={{
@@ -919,6 +1006,7 @@ const TypeButton = React.memo(function TypeButton({
     );
 });
 
+// [FIX D6] CapabilityTag 添加交互冷却防抖
 const CapabilityTag = React.memo(function CapabilityTag({
     icon,
     label,
@@ -932,7 +1020,8 @@ const CapabilityTag = React.memo(function CapabilityTag({
 }) {
     const { isDark, colors } = useTheme();
     const progress = useSharedValue(active ? 1 : 0);
-    
+    const lastPressRef = useRef(0);
+
     const activeColor = colors[500];
     const inactiveBg = isDark ? 'rgb(24, 24, 27)' : 'rgb(243, 244, 246)';
     const inactiveBorder = isDark ? 'rgb(63, 63, 70)' : 'rgb(229, 231, 235)';
@@ -942,7 +1031,6 @@ const CapabilityTag = React.memo(function CapabilityTag({
     }, [active]);
 
     const animatedStyle = useAnimatedStyle(() => {
-        // use colors array correctly, interpolateColor natively supports hex, rgb, hsl, etc.
         return {
             backgroundColor: interpolateColor(progress.value, [0, 1], [inactiveBg, activeColor]),
             borderColor: interpolateColor(progress.value, [0, 1], [inactiveBorder, activeColor]),
@@ -950,9 +1038,16 @@ const CapabilityTag = React.memo(function CapabilityTag({
         };
     });
 
+    const handleToggle = useCallback(() => {
+        const now = Date.now();
+        if (now - lastPressRef.current < INTERACTION_COOLDOWN_MS) return;
+        lastPressRef.current = now;
+        onToggle();
+    }, [onToggle]);
+
     return (
         <TouchableOpacity
-            onPress={onToggle}
+            onPress={handleToggle}
             activeOpacity={0.7}
         >
             <Animated.View
