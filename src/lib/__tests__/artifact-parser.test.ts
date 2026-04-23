@@ -67,9 +67,11 @@ describe('parseEChartsContent', () => {
         expect(result.error).toBeNull();
     });
 
-    it('应对完全无效内容返回错误', () => {
+    it('应对完全无效内容返回 data 为字符串（jsonrepair 将纯文本包装为 JSON 字符串）', () => {
         const result = parseEChartsContent('this is not json at all no braces');
-        expect(result.error).toBeTruthy();
+        // jsonrepair 会将纯文本包装为合法的 JSON 字符串，因此不产生 error
+        expect(typeof result.data).toBe('string');
+        expect(result.error).toBeNull();
     });
 
     it('应处理含 BOM 头的内容', () => {

@@ -5,6 +5,12 @@ module.exports = {
   // 测试环境配置
   testEnvironment: 'node',
 
+  // 匹配 .test.ts, .spec.ts 和 .bench.ts 文件
+  testMatch: [
+    '**/__tests__/**/*.?([mc])[jt]s?(x)',
+    '**/?(*.)+(spec|test|bench).?([mc])[jt]s?(x)',
+  ],
+
   // Setup 文件 - 注册 Mock 别名
   setupFiles: ['<rootDir>/scripts/test-setup.ts'],
 
@@ -17,6 +23,8 @@ module.exports = {
     '/android/',
     '/ios/',
     '/web-client/',
+    '/worktree/',
+    '\\.benchmark\\.ts$',
   ],
 
   // 覆盖测试超时

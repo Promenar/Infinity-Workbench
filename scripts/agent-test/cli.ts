@@ -17,6 +17,9 @@ import { ErrorClassifier } from './diagnostician/error-classifier.js';
 import { StackParser } from './diagnostician/stack-parser.js';
 import { SafeModifier } from './fix/safe-modifier.js';
 import { RollbackManager } from './fix/rollback-manager.js';
+import { ScreenshotManager } from './visual/screenshot-manager.js';
+import { BaselineManager } from './visual/baseline-manager.js';
+import { DiffEngine } from './visual/diff-engine.js';
 
 // CLI 参数接口
 interface CliArgs {
@@ -28,6 +31,9 @@ interface CliArgs {
   verbose: boolean;
   updateSnapshot: boolean;
   help: boolean;
+  visualCapture: boolean;
+  visualCompare: boolean;
+  visualScreen: string;
 }
 
 // 解析命令行参数
@@ -40,6 +46,9 @@ function parseArgs(): CliArgs {
     verbose: false,
     updateSnapshot: false,
     help: false,
+    visualCapture: false,
+    visualCompare: false,
+    visualScreen: '',
   };
 
   for (const arg of args) {
@@ -70,6 +79,12 @@ function parseArgs(): CliArgs {
       result.mode = 'benchmark';
     } else if (arg === '--visual') {
       result.mode = 'visual';
+    } else if (arg === '--visual-capture') {
+      result.visualCapture = true;
+    } else if (arg === '--visual-compare') {
+      result.visualCompare = true;
+    } else if (arg.startsWith('--visual-screen=')) {
+      result.visualScreen = arg.split('=')[1];
     }
   }
 
@@ -94,6 +109,11 @@ ${Logger.name ? '' : '\x1b[1m'}Agent Test CLI\x1b[0m
   --updateSnapshot      更新快照
   --verbose, -v         详细输出
   --help, -h            显示帮助信息
+
+视觉测试选项 (--mode=visual):
+  --visual-capture      截屏并创建/更新基线
+  --visual-compare      对比当前截图与基线
+  --visual-screen=<name> 指定屏幕名称 (默认: default)
 
 示例:
   agent-test --mode=run --scope=src/lib
@@ -451,7 +471,176 @@ async function benchmarkMode(args: CliArgs, logger: Logger): Promise<number> {
 // 视觉测试模式
 async function visualMode(args: CliArgs, logger: Logger): Promise<number> {
   logger.section('视觉测试模式');
-  logger.warn('视觉测试功能待实现');
+
+  const projectRoot = process.cwd();
+  const screenName = args.visualScreen || 'default';
+
+  // 1. 初始化三个模块
+  const screenshotManager = new ScreenshotManager(
+    path.resolve(projectRoot, '.agent-test/screenshots'),
+    projectRoot,
+  );
+  const baselineManager = new BaselineManager(projectRoot);
+  const diffEngine = new DiffEngine({
+    outputDir: path.resolve(projectRoot, '.agent-test/visual-diffs'),
+  });
+
+  await baselineManager.initialize();
+
+  // 2. 检查平台
+  if (process.platform !== 'darwin') {
+    logger.error('视觉测试当前仅支持 macOS（需要 iOS Simulator）');
+    return 1;
+  }
+
+  // 3. 列出可用模拟器
+  const iosDevices = screenshotManager.listIOSDevices();
+  if (iosDevices.length === 0) {
+    logger.error('未找到可用的 iOS 模拟器，请先启动模拟器');
+    return 1;
+  }
+  logger.info(`可用模拟器: ${iosDevices.map(d => d.name).join(', ')}`);
+
+  // 4. 截图模式 (--visual-capture)
+  if (args.visualCapture) {
+    logger.info(`正在截取屏幕: ${screenName} ...`);
+
+    const captureResult = await screenshotManager.capture(screenName, { platform: 'ios' });
+
+    if (!captureResult.success) {
+      logger.error(`截图失败: ${captureResult.error}`);
+      return 1;
+    }
+
+    logger.success(`截图成功: ${captureResult.path}`);
+    logger.info(`设备: ${captureResult.device}`);
+
+    // 将截图保存为基线
+    const entry = await baselineManager.addBaseline(
+      screenName,
+      captureResult.path!,
+      'light',
+      captureResult.device || 'iPhone 15 Pro',
+    );
+
+    logger.success(`基线已创建/更新: ${entry.id}`);
+    logger.info(`  屏幕名称: ${entry.screenName}`);
+    logger.info(`  设备: ${entry.device}`);
+    logger.info(`  版本: ${entry.version}`);
+    return 0;
+  }
+
+  // 5. 对比模式 (--visual-compare)
+  if (args.visualCompare) {
+    // 先截取当前屏幕
+    logger.info(`正在截取当前屏幕: ${screenName} ...`);
+
+    const captureResult = await screenshotManager.capture(screenName, { platform: 'ios' });
+
+    if (!captureResult.success) {
+      logger.error(`截图失败: ${captureResult.error}`);
+      return 1;
+    }
+
+    logger.success(`截图成功: ${captureResult.path}`);
+
+    // 查找对应基线
+    const baseline = await baselineManager.findBaseline({
+      screenName,
+      variant: 'light',
+    });
+
+    if (!baseline) {
+      logger.warn(`未找到屏幕 "${screenName}" 的基线`);
+      logger.info('请先使用 --visual-capture 创建基线');
+      return 1;
+    }
+
+    logger.info(`找到基线: ${baseline.baselinePath}`);
+    logger.info(`  创建时间: ${baseline.createdAt}`);
+
+    // 执行对比
+    logger.info('正在执行像素级对比 ...');
+    const diffResult = await diffEngine.compare(
+      baseline.baselinePath,
+      captureResult.path!,
+      screenName,
+    );
+
+    logger.section('对比结果');
+    logger.info(`状态: ${diffResult.status === 'pass' ? '✅ 通过' : diffResult.status === 'regression' ? '❌ 回归' : '🆕 新增'}`);
+    logger.info(`差异百分比: ${(diffResult.diffPercentage * 100).toFixed(2)}%`);
+    logger.info(`差异像素数: ${diffResult.diffPixelCount} / ${diffResult.totalPixels}`);
+
+    if (diffResult.analysis) {
+      logger.info(`分析: ${diffResult.analysis}`);
+    }
+
+    if (diffResult.diffPath) {
+      logger.info(`差异图像: ${diffResult.diffPath}`);
+    }
+
+    if (diffResult.status === 'regression') {
+      logger.error(`检测到视觉回归，差异 ${(diffResult.diffPercentage * 100).toFixed(1)}% 超过阈值`);
+      return 1;
+    }
+
+    logger.success('视觉测试通过');
+    return 0;
+  }
+
+  // 6. 默认模式：同时执行截屏和对比
+  logger.info('执行完整的视觉测试流程 (截屏 + 对比) ...');
+
+  // 截取当前屏幕
+  const captureResult = await screenshotManager.capture(screenName, { platform: 'ios' });
+
+  if (!captureResult.success) {
+    logger.error(`截图失败: ${captureResult.error}`);
+    return 1;
+  }
+
+  logger.success(`截图成功: ${captureResult.path}`);
+
+  // 查找基线
+  const baseline = await baselineManager.findBaseline({
+    screenName,
+    variant: 'light',
+  });
+
+  if (!baseline) {
+    logger.warn(`未找到屏幕 "${screenName}" 的基线`);
+    logger.info('提示: 使用 --visual-capture 先创建基线');
+    logger.info('本次截图已保存，可作为首次基线参考');
+    return 0;
+  }
+
+  // 对比
+  const diffResult = await diffEngine.compare(
+    baseline.baselinePath,
+    captureResult.path!,
+    screenName,
+  );
+
+  logger.section('对比结果');
+  logger.info(`状态: ${diffResult.status === 'pass' ? '✅ 通过' : diffResult.status === 'regression' ? '❌ 回归' : '🆕 新增'}`);
+  logger.info(`差异百分比: ${(diffResult.diffPercentage * 100).toFixed(2)}%`);
+  logger.info(`差异像素数: ${diffResult.diffPixelCount} / ${diffResult.totalPixels}`);
+
+  if (diffResult.analysis) {
+    logger.info(`分析: ${diffResult.analysis}`);
+  }
+
+  if (diffResult.diffPath) {
+    logger.info(`差异图像: ${diffResult.diffPath}`);
+  }
+
+  if (diffResult.status === 'regression') {
+    logger.error(`检测到视觉回归`);
+    return 1;
+  }
+
+  logger.success('视觉测试通过');
   return 0;
 }
 

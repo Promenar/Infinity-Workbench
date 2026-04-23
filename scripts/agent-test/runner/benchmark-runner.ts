@@ -449,7 +449,7 @@ export async function main(): Promise<void> {
   await runner.runAll();
 }
 
-// 运行
-if (require.main === module) {
+// 运行（ESM 兼容）
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(console.error);
 }

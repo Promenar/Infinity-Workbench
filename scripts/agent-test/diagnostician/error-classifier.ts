@@ -452,6 +452,26 @@ export class ErrorClassifier {
       rawError: error,
     };
   }
+
+  /**
+   * 格式化分类结果为可读字符串
+   */
+  formatResult(result: ClassifiedError): string {
+    return `
+错误分类结果:
+───────────────────────────────────────
+类别: ${result.category}
+严重程度: ${result.severity}
+置信度: ${(result.confidence * 100).toFixed(0)}%
+匹配模式: ${result.patternName}
+
+可能原因:
+${result.likelyCauses.map(c => `  • ${c}`).join('\n')}
+
+建议修复:
+${result.suggestedFix}
+`;
+  }
 }
 
 // ============================================================================
@@ -496,7 +516,7 @@ Error Classifier - 错误分类器
       
       const output = args.includes('--json') 
         ? JSON.stringify(result, null, 2)
-        : this.formatResult(result);
+        : classifier.formatResult(result);
       
       console.log(output);
     } catch (e) {
@@ -506,21 +526,4 @@ Error Classifier - 错误分类器
   }
 
   console.log('使用 --help 查看用法');
-}
-
-private formatResult(result: ClassifiedError): string {
-  return `
-错误分类结果:
-───────────────────────────────────────
-类别: ${result.category}
-严重程度: ${result.severity}
-置信度: ${(result.confidence * 100).toFixed(0)}%
-匹配模式: ${result.patternName}
-
-可能原因:
-${result.likelyCauses.map(c => `  • ${c}`).join('\n')}
-
-建议修复:
-${result.suggestedFix}
-`;
 }
