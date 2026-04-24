@@ -44,6 +44,22 @@ export default function DemoPage() {
                     </View>
                 </View>
 
+                {/* Section 3: WebView Renderer Lab */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>3. WebView Renderer Lab</Text>
+                    <View style={[styles.demoBox, { borderColor: isDark ? '#333' : '#ddd', height: 'auto', padding: 20 }]}>
+                        <Text style={{ color: colors.textSecondary, fontSize: 14, marginBottom: 16, textAlign: 'center' }}>
+                            单一 WebView 聊天渲染器 POC — Bridge 通信 + Markdown + 主题 + 流式输出
+                        </Text>
+                        <TouchableOpacity
+                            onPress={() => router.push('/webview-renderer-demo')}
+                            style={[localStyles.button, { backgroundColor: '#6366f1' }]}
+                        >
+                            <Text style={localStyles.buttonText}>进入 WebView Renderer Lab</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
                 {/* Section 4: Welcome Screen Debug */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>4. Welcome Screen Debug</Text>
