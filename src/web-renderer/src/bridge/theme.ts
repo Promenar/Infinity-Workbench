@@ -34,16 +34,17 @@ export function applyTheme(theme: WebViewThemePayload): void {
   // --- 边框 ---
   root.style.setProperty('--border-default', isDark ? '#272729' : '#e4e4e7');
   root.style.setProperty('--border-subtle', isDark ? '#161618' : '#f4f4f5');
+  root.style.setProperty('--border-glass', isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)');
 
-  // --- 气泡 ---
-  root.style.setProperty('--bubble-user-bg', isDark ? '#1c1c1e' : '#f4f4f5');
+  // --- 气泡 — 对齐 MessageContent.tsx 的内联样式 ---
+  root.style.setProperty('--bubble-user-bg', isDark ? 'rgba(39,39,42,0.4)' : 'rgba(244,244,245,0.6)');
   root.style.setProperty('--bubble-user-border', isDark ? '#2c2c2e' : '#e5e7eb');
-  root.style.setProperty('--bubble-assistant-bg', isDark ? 'transparent' : 'transparent');
-  root.style.setProperty('--bubble-assistant-border', 'transparent');
 
-  // --- 代码块 ---
-  root.style.setProperty('--code-bg', isDark ? '#1a1a2e' : '#f8f9fa');
-  root.style.setProperty('--code-border', isDark ? '#2d2d44' : '#e2e8f0');
+  // --- 代码块 — 对齐 useMarkdownRules.tsx fence 样式 ---
+  root.style.setProperty('--code-bg', isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)');
+  root.style.setProperty('--code-border', isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)');
+  root.style.setProperty('--code-header-bg', isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)');
+  root.style.setProperty('--code-inline-bg', isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)');
 
   // --- 强调色（动态色阶） ---
   root.style.setProperty('--accent', palette[500] || accentColor);

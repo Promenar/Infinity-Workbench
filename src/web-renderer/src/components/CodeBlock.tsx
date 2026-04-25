@@ -24,28 +24,45 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   }
 
   return (
-    <div style={{ margin: '8px 0', borderRadius: '12px', overflow: 'hidden' }}>
+    <div style={{
+      margin: '12px 0',
+      borderRadius: 'var(--radius-md)',
+      overflow: 'hidden',
+      border: '1px solid var(--code-border)',
+      backgroundColor: 'var(--code-bg)',
+    }}>
+      {/* 语言标签 + 复制按钮 — 对齐 useMarkdownRules fence header */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: '6px 12px',
-        backgroundColor: isDark ? '#1a1a2e' : '#e8ecf0',
-        fontSize: '12px',
-        color: isDark ? '#888' : '#666',
+        padding: '8px 12px',
+        backgroundColor: 'var(--code-header-bg)',
+        borderBottomWidth: 'thin',
+        borderBottomColor: 'var(--border-glass)',
+        borderBottomStyle: 'solid',
       }}>
-        <span>{language.toUpperCase()}</span>
+        <span style={{
+          fontSize: '13px',
+          color: isDark ? '#a1a1aa' : '#71717a',
+          fontWeight: 600,
+          textTransform: 'uppercase',
+        }}>
+          {language.toUpperCase() || 'CODE'}
+        </span>
         <button
           onClick={handleCopy}
           style={{
             background: 'none', border: 'none',
-            color: isDark ? '#aaa' : '#666', cursor: 'pointer',
+            color: isDark ? '#a1a1aa' : '#71717a',
+            cursor: 'pointer',
             fontSize: '12px', padding: '2px 8px', borderRadius: '4px',
           }}
         >
           {copied ? '已复制' : '复制'}
         </button>
       </div>
+      {/* 代码高亮区域 */}
       <Highlight
         theme={isDark ? themes.nightOwl : themes.nightOwlLight}
         code={code}
@@ -56,6 +73,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
             ...style, margin: 0, padding: '12px',
             overflowX: 'auto', fontSize: '13px', lineHeight: '1.5',
             fontFamily: 'var(--font-mono)',
+            background: 'transparent',
           }}>
             {tokens.map((line, i) => (
               <div key={i} {...getLineProps({ line })}>

@@ -88,53 +88,80 @@ def fibonacci(n: int) -> list[int]:
   },
   {
     id: '5', role: 'user',
-    content: '展示一个较长的代码块。',
+    content: '展示数学公式渲染。',
     createdAt: Date.now() - 40000, status: 'sent',
   },
   {
     id: '6', role: 'assistant',
-    content: `\`\`\`rust
-use std::collections::HashMap;
+    content: `## 行内公式
 
-/// WebView Bridge 通信管理器
-pub struct BridgeManager {
-    webview: WebViewController,
-    message_queue: VecDeque<BridgeMessage>,
-    is_ready: bool,
-    theme: ThemeConfig,
-}
+质能方程 $E = mc^2$ 是物理学最著名的公式之一。欧拉公式 $e^{i\\pi} + 1 = 0$ 被誉为最美的数学公式。
 
-impl BridgeManager {
-    pub fn new(webview: WebViewController) -> Self {
-        Self {
-            webview,
-            message_queue: VecDeque::new(),
-            is_ready: false,
-            theme: ThemeConfig::default(),
-        }
-    }
+## 块级公式
 
-    pub async fn initialize(&mut self) -> Result<(), BridgeError> {
-        self.webview.inject_script("window.postMessage(JSON.stringify({type:'READY'}))")?;
-        self.is_ready = true;
-        self.flush_queue().await
-    }
+高斯积分：
 
-    pub fn send_message(&mut self, msg: BridgeMessage) {
-        if self.is_ready {
-            let json = serde_json::to_string(&msg).unwrap();
-            self.webview.inject_script(&format!(
-                "window.postMessage({}, '*')", json
-            ));
-        } else {
-            self.message_queue.push_back(msg);
-        }
-    }
-}
+$$\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}$$
+
+麦克斯韦方程组：
+
+$$\\nabla \\times \\mathbf{E} = -\\frac{\\partial \\mathbf{B}}{\\partial t}$$
+
+矩阵运算：
+
+$$\\mathbf{A} = \\begin{pmatrix} a_{11} & a_{12} \\\\ a_{21} & a_{22} \\end{pmatrix}$$`,
+    createdAt: Date.now() - 35000, status: 'sent',
+  },
+  {
+    id: '7', role: 'user',
+    content: '展示一个错误状态。',
+    createdAt: Date.now() - 30000, status: 'sent',
+  },
+  {
+    id: '8', role: 'assistant',
+    content: '这条消息模拟了错误状态。',
+    createdAt: Date.now() - 25000, status: 'error',
+    isError: true,
+    errorMessage: '模型响应超时 (30s)，请检查网络连接后重试。',
+  },
+  {
+    id: '9', role: 'user',
+    content: '展示一个流程图和图表。',
+    createdAt: Date.now() - 20000, status: 'sent',
+  },
+  {
+    id: '10', role: 'assistant',
+    content: `## Mermaid 流程图
+
+\`\`\`mermaid
+graph TD
+    A[用户发送消息] --> B{消息类型}
+    B -->|文本| C[Markdown 渲染]
+    B -->|代码| D[代码高亮]
+    B -->|数学| E[KaTeX 渲染]
+    B -->|图表| F[图表渲染器]
+    C --> G[WebView 显示]
+    D --> G
+    E --> G
+    F --> G
+    G --> H[用户查看]
 \`\`\`
 
-以上是一个 Rust 实现的 Bridge 通信管理器。`,
-    createdAt: Date.now() - 35000, status: 'sent',
+## ECharts 图表
+
+\`\`\`echarts
+{
+  "title": { "text": "WebView vs 原生渲染性能对比" },
+  "tooltip": { "trigger": "axis" },
+  "xAxis": { "type": "category", "data": ["代码高亮", "数学公式", "表格", "100条消息滚动", "主题切换"] },
+  "yAxis": { "type": "value", "name": "FPS" },
+  "series": [
+    { "name": "WebView", "type": "bar", "data": [58, 60, 59, 55, 60] },
+    { "name": "RN 原生", "type": "bar", "data": [55, 30, 52, 45, 50] }
+  ]
+}
+\`\`\``,
+    createdAt: Date.now() - 15000, status: 'sent',
   },
 ];
 

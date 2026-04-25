@@ -3,6 +3,8 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { CodeBlock } from './CodeBlock'
+import { MermaidRenderer } from './MermaidRenderer'
+import { EChartsRenderer } from './EChartsRenderer'
 
 interface MarkdownRendererProps {
   content: string
@@ -20,20 +22,19 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
             const codeString = String(children).replace(/\n$/, '')
 
             if (match) {
+              const lang = match[1].toLowerCase()
+              // Mermaid / ECharts 图表 — 委托专用渲染器
+              if (lang === 'mermaid' || lang === 'mmd') {
+                return <MermaidRenderer code={codeString} />
+              }
+              if (lang === 'echarts') {
+                return <EChartsRenderer code={codeString} />
+              }
               return <CodeBlock code={codeString} language={match[1]} />
             }
 
             return (
-              <code
-                style={{
-                  backgroundColor: 'var(--code-bg)',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  fontSize: '0.9em',
-                  fontFamily: 'var(--font-mono)',
-                }}
-                {...props}
-              >
+              <code {...props}>
                 {children}
               </code>
             )
@@ -41,13 +42,18 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           pre({ children }) {
             return <>{children}</>
           },
+          /* 表格 — 对齐 useMarkdownRules table/th/td */
           table({ children }) {
             return (
-              <div style={{ overflowX: 'auto', margin: '8px 0' }}>
+              <div style={{ overflowX: 'auto', margin: '10px 0' }}>
                 <table style={{
                   borderCollapse: 'collapse',
-                  width: '100%',
+                  width: 'max-content',
+                  minWidth: '100%',
                   fontSize: '13px',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: '6px',
+                  overflow: 'hidden',
                 }}>
                   {children}
                 </table>
@@ -57,11 +63,16 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           th({ children }) {
             return (
               <th style={{
-                border: '1px solid var(--border-default)',
-                padding: '6px 10px',
-                textAlign: 'left',
+                minWidth: 80,
+                maxWidth: 200,
+                padding: '8px 12px',
                 backgroundColor: 'var(--bg-secondary)',
-                fontWeight: 600,
+                borderBottom: '1px solid var(--border-default)',
+                borderRight: '1px solid var(--border-default)',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                color: 'var(--text-primary)',
+                textAlign: 'left',
               }}>
                 {children}
               </th>
@@ -70,18 +81,28 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           td({ children }) {
             return (
               <td style={{
-                border: '1px solid var(--border-default)',
-                padding: '6px 10px',
+                minWidth: 80,
+                maxWidth: 200,
+                padding: '8px 12px',
+                borderBottom: '1px solid var(--border-default)',
+                borderRight: '1px solid var(--border-default)',
+                fontSize: '13px',
+                color: 'var(--text-secondary)',
+                lineHeight: '20px',
               }}>
                 {children}
               </td>
             )
           },
+          /* 引用 — 对齐 markdown-theme.ts blockquote */
           blockquote({ children }) {
             return (
               <blockquote style={{
+                backgroundColor: 'var(--bg-secondary)',
                 borderLeft: '3px solid var(--accent)',
-                paddingLeft: '12px',
+                paddingInline: 12,
+                paddingBlock: 8,
+                borderRadius: 'var(--radius-sm)',
                 margin: '8px 0',
                 color: 'var(--text-secondary)',
               }}>
@@ -89,9 +110,16 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               </blockquote>
             )
           },
+          /* 链接 — 对齐 useMarkdownRules link */
           a({ href, children }) {
             return (
-              <a href={href} style={{ color: 'var(--accent)', textDecoration: 'none' }}>
+              <a
+                href={href}
+                style={{
+                  color: 'var(--accent)',
+                  textDecorationColor: 'color-mix(in srgb, var(--accent) 40%, transparent)',
+                }}
+              >
                 {children}
               </a>
             )

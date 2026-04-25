@@ -3,6 +3,8 @@
  *
  * CSS 变量由 bridge/theme.ts 的 applyTheme() 动态设置，
  * 此文件仅定义默认值（Light 模式）和基础排版样式。
+ *
+ * 视觉参数来源：src/features/chat/components/message/ 下的 RN 原生组件
  */
 
 :root {
@@ -19,16 +21,18 @@
   /* 边框 */
   --border-default: #e4e4e7;
   --border-subtle: #f4f4f5;
+  --border-glass: rgba(0,0,0,0.08);
 
   /* 气泡 */
-  --bubble-user-bg: #f4f4f5;
+  --bubble-user-bg: rgba(244,244,245,0.6);
   --bubble-user-border: #e5e7eb;
   --bubble-assistant-bg: transparent;
-  --bubble-assistant-border: transparent;
 
   /* 代码块 */
-  --code-bg: #f8f9fa;
-  --code-border: #e2e8f0;
+  --code-bg: rgba(0,0,0,0.02);
+  --code-border: rgba(0,0,0,0.08);
+  --code-header-bg: rgba(0,0,0,0.02);
+  --code-inline-bg: rgba(0,0,0,0.05);
 
   /* 强调色（默认 Indigo） */
   --accent: #6366f1;
@@ -42,9 +46,6 @@
   --accent-700: #4338ca;
   --accent-800: #3730a3;
   --accent-900: #312e81;
-  --accent-opacity-10: #6366f11a;
-  --accent-opacity-20: #6366f133;
-  --accent-opacity-30: #6366f14d;
 
   /* 状态色 */
   --color-success: #10b981;
@@ -55,34 +56,32 @@
   --scrollbar-thumb: #ccc;
   --scrollbar-track: #f0f0f0;
 
-  /* 排版 */
+  /* 排版 — 对齐 RN markdown-theme.ts */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', 'Courier New', monospace;
+  --font-size-xs: 10px;
   --font-size-sm: 13px;
   --font-size-base: 15px;
   --font-size-lg: 17px;
-  --line-height: 1.6;
+  --line-height: 25px;
 
-  /* 间距 */
+  /* 间距 — 对齐 SpacingPresets */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
   --spacing-lg: 16px;
-  --spacing-xl: 24px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
 
   /* 圆角 */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --radius-xl: 20px;
+  --radius-xl: 18px;
 }
 
 /* --- 全局重置 --- */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
   font-size: var(--font-size-base);
@@ -97,38 +96,268 @@ body {
   background-color: var(--bg-primary);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-#root {
-  min-height: 100vh;
-  min-height: 100dvh;
-}
+#root { min-height: 100vh; min-height: 100dvh; }
 
 /* --- 滚动条样式 --- */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 2px;
-}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 
-/* --- 消息列表容器 --- */
+/* ============================
+   消息列表容器
+   ============================ */
 .message-list {
   height: 100vh;
   height: 100dvh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-sm);
   padding-bottom: 80px;
   scroll-behavior: smooth;
 }
 
-/* --- 回到底部按钮 --- */
+/* ============================
+   消息行 — 对齐 message-styles.ts
+   ============================ */
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+.message-row-user {
+  justify-content: flex-end;
+  padding-inline: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+.message-row-assistant {
+  justify-content: flex-start;
+  padding-inline: var(--spacing-xl);
+  margin-bottom: var(--spacing-2xl);
+}
+
+/* ============================
+   头像 — 对齐 MessageHeader.tsx
+   ============================ */
+.avatar-wrapper {
+  background: var(--bg-secondary);
+  border-radius: 9999px;
+  padding: 2px;
+  border: 1px solid var(--border-glass);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  flex-shrink: 0;
+  margin-right: var(--spacing-md);
+  margin-top: 2px;
+}
+.avatar-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 28px;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ============================
+   气泡 — 对齐 MessageContent.tsx
+   ============================ */
+.bubble-user {
+  max-width: 85%;
+  min-width: 60px;
+  background: var(--bubble-user-bg);
+  border-radius: var(--radius-lg);
+  border-top-right-radius: 4px;  /* 气泡尾巴效果 */
+  padding: var(--spacing-lg);
+  border: 1px solid var(--bubble-user-border);
+}
+.bubble-assistant {
+  max-width: 100%;
+  min-width: 60px;
+  flex: 1;
+  min-height: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* User 标签 */
+.bubble-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+/* 气泡内容 */
+.bubble-content {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height);
+  color: var(--text-primary);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+/* ============================
+   错误卡片 — 对齐 ErrorBlock.tsx
+   ============================ */
+.error-card {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: rgba(239,68,68,0.1);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+}
+.error-retry {
+  margin-top: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ============================
+   推理折叠 — 对齐 reasoning block
+   ============================ */
+.reasoning-block {
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.reasoning-block summary {
+  cursor: pointer;
+  opacity: 0.8;
+  padding: 4px 0;
+}
+.reasoning-content {
+  margin-top: 6px;
+  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+/* ============================
+   流式动画
+   ============================ */
+/* 加载圆点 — 对齐 LoadingDots.tsx */
+.loading-dots,
+.streaming-cursor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm);
+  gap: 4px;
+}
+.loading-dots .dot,
+.streaming-cursor .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--text-secondary);
+  animation: dotPulse 1.5s ease-in-out infinite;
+}
+.loading-dots .dot:nth-child(2),
+.streaming-cursor .dot:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots .dot:nth-child(3),
+.streaming-cursor .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* 流式底部渐变脉冲 — 对齐 StreamingFadePulse.tsx */
+.stream-pulse {
+  height: 72px;
+  background: linear-gradient(
+    to bottom right,
+    transparent 0%,
+    rgba(255,255,255,0.1) 35%,
+    rgba(255,255,255,0.45) 65%,
+    rgba(255,255,255,0.85) 100%
+  );
+  animation: pulseFade 0.6s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes pulseFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* ============================
+   Markdown 排版 — 对齐 markdown-theme.ts
+   ============================ */
+.markdown-body {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height);
+  color: var(--text-primary);
+}
+.markdown-body p {
+  margin-bottom: var(--spacing-sm);
+}
+.markdown-body h1 {
+  margin-top: var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 32px;
+  border-bottom: 0.5px solid var(--border-default);
+  padding-bottom: 8px;
+  color: var(--text-primary);
+}
+.markdown-body h2 {
+  margin-top: var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
+  font-size: 1.25em;
+  font-weight: 600;
+  line-height: 28px;
+  border-bottom: 0.5px solid var(--border-default);
+  padding-bottom: 6px;
+  color: var(--text-primary);
+}
+.markdown-body h3 {
+  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-sm);
+  font-size: 1.1em;
+  font-weight: 600;
+}
+.markdown-body ul, .markdown-body ol {
+  padding-left: 20px;
+  margin-bottom: var(--spacing-sm);
+}
+.markdown-body li {
+  margin: 4px 0;
+}
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border-default);
+  margin: var(--spacing-lg) 0;
+}
+.markdown-body strong { font-weight: 700; }
+.markdown-body em { font-style: italic; }
+
+/* 行内代码 */
+.markdown-body code:not(pre code) {
+  background: var(--code-inline-bg);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* KaTeX 数学公式 */
+.katex-display {
+  margin: 10px 0;
+  overflow-x: auto;
+}
+.katex { font-size: 1.1em; }
+
+/* ============================
+   回到底部按钮
+   ============================ */
 .scroll-to-bottom {
   position: fixed;
   bottom: 90px;
@@ -142,7 +371,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   z-index: 100;
   opacity: 0;
   transform: translateY(10px);
@@ -156,4 +385,83 @@ body {
   width: 20px;
   height: 20px;
   fill: var(--text-secondary);
+}
+
+/* ============================
+   图表卡片 — 对齐 ToolArtifacts.tsx
+   ============================ */
+.chart-card {
+  margin: 12px 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-glass);
+  background: var(--bg-secondary);
+}
+.chart-badge {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: rgba(99,102,241,0.1);
+  border-bottom-right-radius: 10px;
+  gap: 4px;
+}
+.chart-badge-text {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.chart-badge-title {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+.chart-loading {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.chart-error {
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+  padding: 16px;
+  text-align: center;
+}
+
+/* ============================
+   消息操作按钮栏 — 对齐 MessageContextMenu.tsx
+   ============================ */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+.message-row:hover .message-actions,
+.message-row:active .message-actions {
+  opacity: 1;
+}
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.action-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.action-btn-danger:hover {
+  color: var(--color-error);
+  background: rgba(239,68,68,0.1);
 }

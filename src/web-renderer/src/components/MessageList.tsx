@@ -17,17 +17,23 @@ export function MessageList({ messages, theme, isGenerating }: MessageListProps)
         {messages.map(msg => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
-        {isGenerating && (
-          <div style={{
-            textAlign: 'center',
-            padding: '8px',
-            color: 'var(--text-tertiary)',
-            fontSize: '13px',
-          }}>
-            <span>正在生成...</span>
+
+        {/* 等待内容时显示加载动画 */}
+        {isGenerating && messages.length > 0 && !messages[messages.length - 1]?.content && (
+          <div className="loading-dots">
+            <span className="dot" />
+            <span className="dot" />
+            <span className="dot" />
           </div>
         )}
+
+        {/* 流式生成中的底部淡出脉冲 */}
+        {isGenerating && messages.length > 0 && messages[messages.length - 1]?.content && (
+          <div className="stream-pulse" />
+        )}
       </div>
+
+      {/* 回到底部按钮 */}
       <button
         className={`scroll-to-bottom ${showScrollButton ? 'visible' : ''}`}
         onClick={scrollToBottom}
