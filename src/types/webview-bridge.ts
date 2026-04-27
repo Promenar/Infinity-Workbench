@@ -22,6 +22,79 @@ export interface BridgeMessage {
   isError?: boolean;
   errorMessage?: string;
   reasoning?: string;
+  /** Phase 2: 任务监控数据 */
+  task?: WebViewTaskState;
+  /** Phase 2: 工具执行步骤 */
+  executionSteps?: WebViewExecutionStep[];
+  /** Phase 2: RAG 指示器状态 */
+  ragState?: WebViewRagIndicatorState;
+  /** Phase 2: 审批请求 */
+  approvalRequest?: WebViewApprovalRequest | null;
+  /** Phase 2: 记忆处理状态 */
+  processingState?: WebViewProcessingState;
+  /** Phase 2: 会话循环状态 */
+  loopStatus?: 'idle' | 'running' | 'waiting_for_approval' | 'completed';
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: 扩展数据结构（RN 侧定义，序列化后传给 WebView）
+// ---------------------------------------------------------------------------
+
+export interface WebViewTaskStep {
+  id: string;
+  title: string;
+  description?: string;
+  status: 'completed' | 'in-progress' | 'failed' | 'skipped' | 'pending';
+}
+
+export interface WebViewTaskState {
+  title: string;
+  status: 'in-progress' | 'completed' | 'failed';
+  progress: number;
+  steps: WebViewTaskStep[];
+}
+
+export interface WebViewExecutionStep {
+  id: string;
+  type: string;
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  content?: string;
+  data?: Record<string, unknown>;
+  timestamp?: number;
+  throttledUntil?: number;
+}
+
+export interface WebViewRagIndicatorState {
+  stage?: string;
+  status?: string;
+  subStage?: string;
+  progress?: number;
+  kgStatus?: string;
+  kgProgress?: number;
+  pulseActive?: boolean;
+  networkStats?: { txBytes?: number; rxBytes?: number };
+  chunks?: string[];
+  referencesCount?: number;
+  history?: {
+    type: 'retrieved' | 'archived' | 'summarized';
+    chunkCount?: number;
+    summary?: string;
+  };
+}
+
+export interface WebViewApprovalRequest {
+  toolName: string;
+  args?: unknown[];
+  reason?: string;
+  type: 'continuation' | 'action';
+}
+
+export interface WebViewProcessingState {
+  status: string;
+  summary?: string;
+  chunkCount?: number;
+  type?: 'retrieved' | 'archived' | 'summarized';
 }
 
 // ---------------------------------------------------------------------------
@@ -42,7 +115,7 @@ export interface WebViewThemePayload {
 }
 
 export type RNToWebMessage =
-  | { type: 'INIT'; payload: { messages: BridgeMessage[]; theme: WebViewThemePayload } }
+  | { type: 'INIT'; payload: { messages: BridgeMessage[]; theme: WebViewThemePayload; sessionId?: string } }
   | { type: 'APPEND_MESSAGE'; payload: BridgeMessage }
   | { type: 'UPDATE_MESSAGE'; payload: { id: string; partial: Partial<BridgeMessage> } }
   | { type: 'STREAM_CHUNK'; payload: { messageId: string; content: string } }
@@ -66,4 +139,10 @@ export type WebToRNMessage =
   | { type: 'SHARE_MESSAGE'; messageId: string }
   | { type: 'SCROLL_POSITION'; offset: number }
   | { type: 'ERROR'; message: string }
-  | { type: 'PERF_METRICS'; payload: { fps: number; renderTime: number; memoryMb: number } };
+  | { type: 'PERF_METRICS'; payload: { fps: number; renderTime: number; memoryMb: number } }
+  /** Phase 2: 审批操作 */
+  | { type: 'APPROVE_ACTION'; sessionId: string; approved: boolean; instruction?: string }
+  /** Phase 2: 干预指令 */
+  | { type: 'SET_INTERVENTION'; sessionId: string; instruction: string }
+  /** Phase 2: 展开/折叠组件 */
+  | { type: 'TOGGLE_COMPONENT'; messageId: string; component: string; expanded: boolean };

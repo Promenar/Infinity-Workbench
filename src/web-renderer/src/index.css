@@ -465,3 +465,380 @@ body {
   color: var(--color-error);
   background: rgba(239,68,68,0.1);
 }
+
+/* ============================
+   旋转动画（Spinner）
+   ============================ */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin-animation {
+  animation: spin 1s linear infinite;
+}
+
+/* ============================
+   Phase 2: 审批卡片 — 对齐 ApprovalCard.tsx
+   ============================ */
+.approval-card {
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid;
+}
+.approval-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.approval-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.approval-content {
+  margin-bottom: 12px;
+}
+.approval-reason {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.approval-tool-card {
+  background: rgba(0,0,0,0.1);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+}
+.approval-tool-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.approval-tool-args {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.approval-input-wrapper {
+  margin-bottom: 12px;
+}
+.approval-input-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.approval-input {
+  width: 100%;
+  background: rgba(0,0,0,0.1);
+  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-glass);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 20px;
+  resize: vertical;
+  font-family: var(--font-sans);
+  min-height: 44px;
+}
+.approval-input::placeholder {
+  color: var(--text-tertiary);
+}
+.approval-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.approval-actions {
+  display: flex;
+  gap: 12px;
+}
+.approval-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.approval-btn:hover { opacity: 0.85; }
+.approval-btn-reject {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-glass);
+}
+.approval-btn-approve {
+  color: #fff;
+}
+
+/* ============================
+   Phase 2: 任务监控 — 对齐 TaskMonitor.tsx
+   ============================ */
+.task-monitor {
+  margin: 4px 0;
+}
+.task-monitor-inner {
+  border-radius: 16px;
+  border-top: 0.5px solid var(--border-glass);
+  border-bottom: 0.5px solid var(--border-glass);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+.task-monitor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px 16px 16px 29px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.task-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.task-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.task-dot-pulse { background: var(--accent); animation: dotPulse 2s ease-in-out infinite; }
+.task-dot-done { background: #22c55e; }
+.task-dot-idle { background: var(--text-tertiary); }
+.task-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-progress-pill {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.task-intervention-card {
+  margin: 0 16px 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.task-intervention-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.task-intervention-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.task-intervention-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.task-intervention-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.task-steps {
+  padding: 0 16px 12px;
+}
+.task-step {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.task-step-icon {
+  margin-right: 10px;
+  padding-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.task-step-text {
+  flex: 1;
+  min-width: 0;
+}
+.task-step-title {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.task-step-completed .task-step-title { color: var(--text-tertiary); font-weight: 500; }
+.task-step-active .task-step-title { color: var(--accent); font-weight: 500; }
+.task-step-pending .task-step-title { color: var(--text-primary); }
+.task-step-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+}
+.task-collapsed-preview {
+  margin: 0 16px 12px 37px;
+  padding-left: 12px;
+  border-left: 2px solid rgba(99,102,241,0.3);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================
+   Phase 2: RAG 指示器 — 对齐 RagOmniIndicator.tsx
+   ============================ */
+.rag-indicator {
+  width: 100%;
+  height: 34px;
+  position: relative;
+  cursor: default;
+}
+.rag-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 100%;
+}
+.rag-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rag-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rag-icon {
+  display: flex;
+  align-items: center;
+}
+.rag-pulse {
+  animation: ragPulse 1.6s ease-in-out infinite;
+}
+@keyframes ragPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.8; }
+}
+.rag-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+.rag-stat {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+.rag-progress-rail {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: transparent;
+}
+.rag-progress-bar {
+  height: 100%;
+  border-radius: 1px;
+  width: 0;
+  opacity: 0;
+  transition: width 0.5s ease, opacity 0.3s ease;
+}
+
+/* ============================
+   Phase 2: 记忆处理指示器 — 对齐 ProcessingIndicator.tsx
+   ============================ */
+.processing-completed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.processing-chip-btn {
+  padding: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.processing-capsule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-glass);
+  background: rgba(0,0,0,0.03);
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.processing-capsule:hover { background: var(--bg-secondary); }
+.processing-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.processing-status-text {
+  font-size: 11px;
+  font-weight: 600;
+}
+.processing-details {
+  margin-top: 12px;
+  width: 100%;
+}
+.processing-details-block {
+  padding: 12px;
+  border-radius: 12px;
+  border-left: 3px solid;
+  margin-bottom: 8px;
+}
+.processing-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.processing-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.processing-chunk-content {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}

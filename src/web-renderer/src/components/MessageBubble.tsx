@@ -1,12 +1,17 @@
 import type { BridgeMessage } from '../types/bridge'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { MessageActions } from './MessageActions'
+import { TaskMonitor } from './TaskMonitor'
+import { RagOmniIndicator } from './RagOmniIndicator'
+import { ApprovalCard } from './ApprovalCard'
+import { ProcessingIndicator } from './ProcessingIndicator'
 
 interface MessageBubbleProps {
   message: BridgeMessage
+  sessionId?: string
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, sessionId }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const isError = message.isError || message.status === 'error'
   const isStreaming = message.status === 'streaming'
@@ -30,6 +35,24 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <div className="bubble-label">你</div>
         )}
 
+        {/* Phase 2: RAG 指示器（Assistant 消息顶部） */}
+        {!isUser && message.ragState && (
+          <RagOmniIndicator
+            messageId={message.id}
+            ragState={message.ragState}
+            isGenerating={isStreaming}
+            referencesCount={message.ragState.referencesCount}
+          />
+        )}
+
+        {/* Phase 2: 审批卡片 */}
+        {message.approvalRequest && sessionId && (
+          <ApprovalCard
+            approvalRequest={message.approvalRequest}
+            sessionId={sessionId}
+          />
+        )}
+
         {/* 消息内容 */}
         <div className="bubble-content">
           <MarkdownRenderer content={message.content} />
@@ -49,6 +72,23 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <summary>思考过程</summary>
             <div className="reasoning-content">{message.reasoning}</div>
           </details>
+        )}
+
+        {/* Phase 2: 任务监控 */}
+        {message.task && (
+          <TaskMonitor
+            task={message.task}
+            isLatest={true}
+            pendingIntervention={message.loopStatus === 'waiting_for_approval' ? '等待审批' : undefined}
+          />
+        )}
+
+        {/* Phase 2: 记忆处理指示器 */}
+        {message.processingState && (
+          <ProcessingIndicator
+            messageId={message.id}
+            processingState={message.processingState}
+          />
         )}
 
         {/* 流式生成动画指示 */}

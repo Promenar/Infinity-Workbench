@@ -6,16 +6,17 @@ interface MessageListProps {
   messages: BridgeMessage[]
   theme: WebViewThemePayload
   isGenerating: boolean
+  sessionId?: string
 }
 
-export function MessageList({ messages, theme, isGenerating }: MessageListProps) {
+export function MessageList({ messages, theme, isGenerating, sessionId }: MessageListProps) {
   const { containerRef, showScrollButton, scrollToBottom } = useAutoScroll([messages, isGenerating])
 
   return (
     <>
       <div className="message-list" ref={containerRef}>
         {messages.map(msg => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble key={msg.id} message={msg} sessionId={sessionId} />
         ))}
 
         {/* 等待内容时显示加载动画 */}

@@ -4,7 +4,7 @@ import { Asset } from 'expo-asset';
 import { Platform } from 'react-native';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import type { Message } from '../../types/chat';
-import type { RNToWebMessage, WebToRNMessage, WebViewThemePayload } from '../../types/webview-bridge';
+import type { BridgeMessage, RNToWebMessage, WebToRNMessage, WebViewThemePayload } from '../../types/webview-bridge';
 import { generatePalette } from '../../lib/color-utils';
 
 // Metro 将 web-renderer 构建产物打包为 asset
@@ -14,6 +14,7 @@ interface WebViewMessageListProps {
   messages: Message[];
   isDark: boolean;
   colors: Record<string, string>;
+  sessionId?: string;
 }
 
 // 全局缓存，避免重复加载
@@ -76,6 +77,7 @@ export const WebViewMessageList: React.FC<WebViewMessageListProps> = ({
   messages,
   isDark,
   colors,
+  sessionId,
 }) => {
   const webViewRef = useRef<WebView>(null);
   const isReadyRef = useRef(false);
@@ -103,18 +105,29 @@ export const WebViewMessageList: React.FC<WebViewMessageListProps> = ({
     loadWebRendererHTML().then(setHtmlContent);
   }, []);
 
-  // 将 Message 转换为 BridgeMessage（精简字段）
-  const toBridgeMessages = useCallback((msgs: Message[]) => {
-    return msgs.map(msg => ({
-      id: msg.id,
-      role: msg.role,
-      content: msg.content,
-      createdAt: msg.createdAt,
-      status: msg.status,
-      isError: msg.isError,
-      errorMessage: msg.errorMessage,
-      reasoning: msg.reasoning,
-    }));
+  // 将 Message 转换为 BridgeMessage（精简字段 + Phase 2 扩展）
+  const toBridgeMessages = useCallback((msgs: Message[]): BridgeMessage[] => {
+    return msgs.map(msg => {
+      const base: BridgeMessage = {
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        createdAt: msg.createdAt,
+        status: msg.status,
+        isError: msg.isError,
+        errorMessage: msg.errorMessage,
+        reasoning: msg.reasoning,
+      };
+      // Phase 2: 透传扩展字段（仅当 Message 对象上存在时）
+      const extra = msg as any;
+      if (extra.task) base.task = extra.task;
+      if (extra.executionSteps) base.executionSteps = extra.executionSteps;
+      if (extra.ragState) base.ragState = extra.ragState;
+      if ('approvalRequest' in extra) base.approvalRequest = extra.approvalRequest ?? undefined;
+      if (extra.processingState) base.processingState = extra.processingState;
+      if (extra.loopStatus) base.loopStatus = extra.loopStatus;
+      return base;
+    });
   }, []);
 
   // 发送消息到 WebView
@@ -139,7 +152,7 @@ export const WebViewMessageList: React.FC<WebViewMessageListProps> = ({
     } else if (currentLength > 0) {
       postToWebView({
         type: 'INIT',
-        payload: { messages: toBridgeMessages(messages), theme: themePayload },
+        payload: { messages: toBridgeMessages(messages), theme: themePayload, sessionId },
       });
     }
 
@@ -161,7 +174,7 @@ export const WebViewMessageList: React.FC<WebViewMessageListProps> = ({
         prevMessagesLengthRef.current = messages.length;
         postToWebView({
           type: 'INIT',
-          payload: { messages: toBridgeMessages(messages), theme: themePayload },
+          payload: { messages: toBridgeMessages(messages), theme: themePayload, sessionId },
         });
       } else if (data.type === 'ERROR') {
         console.error('[WebViewMessageList] WebView error:', data.message);

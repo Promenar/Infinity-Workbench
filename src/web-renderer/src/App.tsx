@@ -30,6 +30,7 @@ function App() {
           ...prev,
           messages: msg.payload.messages,
           theme: msg.payload.theme,
+          sessionId: msg.payload.sessionId,
         }))
         break
 
@@ -95,6 +96,7 @@ function App() {
       messages={state.messages}
       theme={state.theme}
       isGenerating={state.isGenerating}
+      sessionId={state.sessionId}
     />
   )
 }

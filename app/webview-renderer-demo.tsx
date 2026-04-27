@@ -163,6 +163,144 @@ graph TD
 \`\`\``,
     createdAt: Date.now() - 15000, status: 'sent',
   },
+
+  // ===== Phase 2 测试消息 =====
+
+  {
+    id: '11', role: 'user',
+    content: '展示 Phase 2 高级组件：RAG 指示器 + 任务监控 + 审批卡片 + 记忆处理',
+    createdAt: Date.now() - 10000, status: 'sent',
+  },
+
+  // --- RAG 指示器（检索完成状态）---
+  {
+    id: '12', role: 'assistant',
+    content: `## RAG 指示器测试
+
+上方显示了 RAG 检索完成状态的指示器，展示了"已关联 5 个知识点"的状态。`,
+    createdAt: Date.now() - 9000, status: 'sent',
+    ragState: {
+      stage: 'complete',
+      status: 'idle',
+      progress: 100,
+      referencesCount: 5,
+      history: {
+        type: 'retrieved',
+        chunkCount: 8,
+      },
+    },
+  },
+
+  // --- 任务监控（进行中）---
+  {
+    id: '13', role: 'assistant',
+    content: `## 任务监控测试
+
+下方展示了一个进行中的多步骤任务监控面板，模拟代码重构任务：`,
+    createdAt: Date.now() - 8000, status: 'sent',
+    task: {
+      title: '代码重构 — WebView 渲染器迁移',
+      status: 'in-progress',
+      progress: 60,
+      steps: [
+        { id: 's1', title: '分析现有架构', description: '评估 RN 原生组件与 WebView 方案的优劣', status: 'completed' },
+        { id: 's2', title: '设计 Bridge 协议', description: '定义 RN ↔ WebView 双向消息类型', status: 'completed' },
+        { id: 's3', title: '构建 Web Renderer', description: 'Vite + React 搭建 WebView 端渲染引擎', status: 'completed' },
+        { id: 's4', title: '实现核心组件', description: 'MessageBubble / MarkdownRenderer / CodeBlock', status: 'in-progress' },
+        { id: 's5', title: '集成图表渲染', description: 'Mermaid / ECharts iframe 隔离方案', status: 'pending' },
+        { id: 's6', title: '实机验证与优化', description: '性能测试、滚动优化、长会话处理', status: 'pending' },
+      ],
+    },
+  },
+
+  // --- 审批卡片（continuation 模式）---
+  {
+    id: '14', role: 'assistant',
+    content: `## 审批卡片测试
+
+下方展示了循环限制审批卡片（蓝色主题），模拟 Agent 执行轮次达到上限时的场景：`,
+    createdAt: Date.now() - 7000, status: 'sent',
+    approvalRequest: {
+      toolName: 'Loop Limit',
+      reason: 'Agent 已执行 10 轮工具调用，达到当前会话设定的循环上限。可选择继续执行（追加 10 轮）或终止任务。',
+      type: 'continuation',
+    },
+    loopStatus: 'waiting_for_approval',
+  },
+
+  // --- 审批卡片（action 模式）---
+  {
+    id: '15', role: 'assistant',
+    content: `下方展示了高风险操作审批卡片（琥珀色主题），模拟需要人工确认的危险操作：`,
+    createdAt: Date.now() - 6000, status: 'sent',
+    approvalRequest: {
+      toolName: 'execute_shell',
+      args: [{ command: 'rm -rf /tmp/test-build && npm run build:release' }],
+      reason: '该操作将清理临时目录并执行生产构建，涉及文件系统写入权限。',
+      type: 'action',
+    },
+    loopStatus: 'waiting_for_approval',
+  },
+
+  // --- 记忆处理（已完成归档）---
+  {
+    id: '16', role: 'assistant',
+    content: `## 记忆处理测试
+
+下方展示了记忆归档完成状态的指示器，消息已被切片并存入向量数据库。`,
+    createdAt: Date.now() - 5000, status: 'sent',
+    processingState: {
+      status: 'completed',
+      chunkCount: 6,
+      type: 'archived',
+    },
+  },
+
+  // --- 记忆处理（已完成摘要）---
+  {
+    id: '17', role: 'assistant',
+    content: `下方展示了记忆摘要完成状态，同时包含归档和摘要两种处理结果。`,
+    createdAt: Date.now() - 4000, status: 'sent',
+    processingState: {
+      status: 'completed',
+      summary: '用户询问了 WebView 渲染器的 Phase 2 高级组件开发进度，包括 RAG 指示器、任务监控、审批卡片和记忆处理指示器的测试验证。',
+      chunkCount: 4,
+      type: 'summarized',
+    },
+  },
+
+  // --- 任务监控（已完成）---
+  {
+    id: '18', role: 'assistant',
+    content: `下方展示了一个已完成的任务监控面板，所有步骤均已完成：`,
+    createdAt: Date.now() - 3000, status: 'sent',
+    task: {
+      title: '环境初始化',
+      status: 'completed',
+      progress: 100,
+      steps: [
+        { id: 'c1', title: '检查 Node.js 版本', status: 'completed' },
+        { id: 'c2', title: '安装依赖包', description: 'npm install — 312 packages', status: 'completed' },
+        { id: 'c3', title: '配置 Metro bundler', status: 'completed' },
+        { id: 'c4', title: '预构建 WebView 资源', description: 'Vite build → 2.2MB inline HTML', status: 'completed' },
+      ],
+    },
+  },
+
+  // --- RAG 指示器（活跃检索状态）---
+  {
+    id: '19', role: 'assistant',
+    content: `上方展示了 RAG 活跃检索中的状态，带有进度条和脉冲动画。`,
+    createdAt: Date.now() - 2000, status: 'sent',
+    ragState: {
+      stage: 'retrieval',
+      status: 'retrieving',
+      subStage: 'RERANK',
+      progress: 72,
+      networkStats: { txBytes: 15360, rxBytes: 87040 },
+      referencesCount: 0,
+    },
+  },
 ];
 
 const STREAMING_TEXT = `这是一个**流式输出**的模拟测试。
@@ -255,11 +393,11 @@ export default function WebViewRendererDemo() {
           </TouchableOpacity>
         </View>
         <Text style={{ color: darkMode ? '#a1a1aa' : '#71717a', fontSize: 12 }}>
-          消息数: {messages.length} | 模式: 完整 Web Renderer (react-markdown + KaTeX + Prism.js)
+          消息数: {messages.length} | Phase 2: RAG + Task + Approval + Processing
         </Text>
       </View>
       <View style={{ flex: 1 }}>
-        <WebViewMessageList messages={messages} isDark={darkMode} colors={colors} />
+        <WebViewMessageList messages={messages} isDark={darkMode} colors={colors} sessionId="demo-session-poc" />
       </View>
     </SafeAreaView>
   );
