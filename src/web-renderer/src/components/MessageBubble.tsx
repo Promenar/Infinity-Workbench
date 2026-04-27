@@ -5,6 +5,7 @@ import { TaskMonitor } from './TaskMonitor'
 import { RagOmniIndicator } from './RagOmniIndicator'
 import { ApprovalCard } from './ApprovalCard'
 import { ProcessingIndicator } from './ProcessingIndicator'
+import { ToolExecutionTimeline } from './ToolExecutionTimeline'
 
 interface MessageBubbleProps {
   message: BridgeMessage
@@ -72,6 +73,15 @@ export function MessageBubble({ message, sessionId }: MessageBubbleProps) {
             <summary>思考过程</summary>
             <div className="reasoning-content">{message.reasoning}</div>
           </details>
+        )}
+
+        {/* Phase 2: 工具执行时间线 */}
+        {message.executionSteps && message.executionSteps.length > 0 && (
+          <ToolExecutionTimeline
+            steps={message.executionSteps}
+            isMessageGenerating={isStreaming}
+            sessionId={sessionId}
+          />
         )}
 
         {/* Phase 2: 任务监控 */}

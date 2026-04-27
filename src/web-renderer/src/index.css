@@ -842,3 +842,280 @@ body {
   line-height: 1.5;
   color: var(--text-primary);
 }
+
+/* ============================
+   Tool Execution Timeline — 对齐 ToolExecutionTimeline.tsx
+   ============================ */
+
+/* 容器 — BlurView 替代 */
+.tl-container {
+  margin: 4px 0;
+  border-radius: 16px;
+  overflow: hidden;
+  width: 100%;
+}
+.tl-blur {
+  border-radius: 16px;
+  border-top: 0.5px solid var(--border-glass);
+  border-bottom: 0.5px solid var(--border-glass);
+  background: var(--bg-secondary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Header */
+.tl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px 16px 16px 25px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.tl-header-left {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 10px;
+}
+.tl-header-text {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+/* 可滚动步骤列表 */
+.tl-scroll {
+  max-height: 35vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 22px 16px 12px;
+}
+
+/* 时间线项 */
+.tl-item {
+  display: flex;
+  min-height: 40px;
+}
+.tl-item-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 24px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+.tl-item-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.05);
+  flex-shrink: 0;
+}
+.tl-icon-blue { border: 1px solid rgba(59,130,246,0.5); background: rgba(59,130,246,0.2); }
+.tl-icon-amber { border: 1px solid rgba(245,158,11,0.5); background: rgba(245,158,11,0.2); }
+.tl-icon-error { border: 1px solid rgba(255,107,107,0.5); background: rgba(255,107,107,0.2); }
+.tl-connector {
+  width: 1px;
+  flex: 1;
+  margin: 4px 0;
+  background: var(--border-subtle);
+}
+
+/* 项内容区 */
+.tl-item-body {
+  flex: 1;
+  padding-bottom: 16px;
+  min-width: 0;
+}
+.tl-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px;
+  border-radius: 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+.tl-item-header:hover { background: var(--bg-tertiary); }
+.tl-header-blue { background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.2); }
+.tl-header-amber { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.2); }
+.tl-item-title-wrap {
+  flex: 1;
+  margin-right: 8px;
+  padding-left: 4px;
+  min-width: 0;
+}
+.tl-item-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: rgba(255,255,255,0.8);
+}
+.tl-title-blue { color: #60a5fa; }
+.tl-title-amber { color: #fbbf24; }
+.tl-item-preview {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 展开内容 */
+.tl-item-expanded {
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-default);
+}
+.tl-tool-args {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #93c5fd;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.tl-item-content {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 搜索结果 */
+.tl-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.tl-search-item {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-glass);
+  background: var(--bg-secondary);
+}
+.tl-search-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4F8EF7;
+  text-decoration: underline;
+  margin-bottom: 4px;
+}
+.tl-search-url {
+  font-size: 10px;
+  color: #60a5fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.tl-search-snippet {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* RAG 引用 */
+.tl-rag-refs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tl-rag-ref {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tl-rag-ref-score {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.tl-rag-ref-text {
+  color: var(--text-secondary);
+}
+
+/* 干预 UI */
+.tl-intervention {
+  margin-top: 12px;
+}
+.tl-intervention-actions {
+  display: flex;
+  gap: 12px;
+}
+.tl-intervention-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.tl-intervention-btn:hover { opacity: 0.85; }
+.tl-intervention-reject {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-glass);
+}
+.tl-intervention-approve {
+  color: #fff;
+}
+
+/* 底部干预输入 */
+.tl-loop-intervention {
+  margin-top: 8px;
+  padding: 0 4px 8px;
+}
+.tl-loop-input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: 16px;
+  padding: 4px 12px;
+}
+.tl-loop-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 4px 0;
+  font-family: var(--font-sans);
+}
+.tl-loop-input::placeholder { color: var(--text-tertiary); }
+.tl-loop-send {
+  padding: 8px;
+  opacity: 0.3;
+  color: var(--text-secondary);
+}

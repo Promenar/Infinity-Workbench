@@ -301,6 +301,66 @@ graph TD
       referencesCount: 0,
     },
   },
+
+  // ===== 工具执行时间线测试 =====
+
+  {
+    id: '20', role: 'user',
+    content: '展示工具执行时间线（生成完成，已自动折叠）',
+    createdAt: Date.now() - 1000, status: 'sent',
+  },
+
+  {
+    id: '21', role: 'assistant',
+    content: `下方展示了已完成的工具执行时间线，包含 3 轮思考 + 2 轮工具调用。生成完成后时间线自动折叠为摘要视图。`,
+    createdAt: Date.now() - 500, status: 'sent',
+    executionSteps: [
+      {
+        id: 'es1', type: 'thinking', content: '用户要求展示工具执行时间线。\n\n分析：需要模拟一个典型的 Agent 工具调用流程。\n\n结论：构造思考 → 工具调用 → 结果 → 再思考的流程。',
+        timestamp: Date.now() - 480,
+      },
+      {
+        id: 'es2', type: 'tool_call', toolName: 'search_internet',
+        toolArgs: { query: 'WebView tool execution timeline best practices 2026', max_results: 5 },
+        timestamp: Date.now() - 460,
+      },
+      {
+        id: 'es3', type: 'tool_result', toolName: 'search_internet', content: '搜索完成，找到 5 个相关结果。',
+        data: {
+          sources: [
+            { title: 'React Native WebView Architecture Guide', url: 'https://reactnative.dev/docs/webview', snippet: 'Complete guide to WebView architecture patterns in React Native applications.' },
+            { title: 'Agent Tool Execution Patterns', url: 'https://langchain.ai/docs/tools', snippet: 'Best practices for implementing tool execution timelines in AI agent systems.' },
+            { title: 'Timeline UI Component Library', url: 'https://ui.dev/timeline', snippet: 'Open source timeline component with expand/collapse and step visualization.' },
+          ],
+        },
+        timestamp: Date.now() - 440,
+      },
+      {
+        id: 'es4', type: 'thinking', content: '搜索结果已获取。分析结果：\n1. WebView 架构指南提供了基础模式\n2. Agent 工具执行模式提供了交互范式\n3. 时间线 UI 组件库提供了视觉参考\n\n现在可以综合这些信息给出答案。',
+        timestamp: Date.now() - 420,
+      },
+      {
+        id: 'es5', type: 'tool_call', toolName: 'query_vector_db',
+        toolArgs: { query: 'timeline rendering performance', top_k: 3 },
+        timestamp: Date.now() - 400,
+      },
+      {
+        id: 'es6', type: 'tool_result', toolName: 'query_vector_db', content: '向量检索完成，返回 3 条相关记录。',
+        data: {
+          references: [
+            { content: '使用虚拟列表渲染长列表可显著提升滚动性能，避免一次性加载所有节点。', score: 0.92 },
+            { content: '工具执行时间线应支持折叠/展开，默认折叠以减少视觉噪音。', score: 0.87 },
+            { content: 'BlurView 磨砂效果可通过 CSS backdrop-filter 在 WebView 中实现。', score: 0.81 },
+          ],
+        },
+        timestamp: Date.now() - 380,
+      },
+      {
+        id: 'es7', type: 'thinking', content: '向量检索补充了性能优化建议。综合所有信息，可以给出完整答案了。',
+        timestamp: Date.now() - 360,
+      },
+    ],
+  },
 ];
 
 const STREAMING_TEXT = `这是一个**流式输出**的模拟测试。
