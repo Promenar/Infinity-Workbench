@@ -376,7 +376,8 @@ console.log(greeting);
 
 export default function WebViewRendererDemo() {
   const { isDark, colors } = useTheme();
-  const [darkMode, setDarkMode] = useState(isDark);
+  // 默认暗色模式以展示 Stitch 设计效果
+  const [darkMode, setDarkMode] = useState(true);
   const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
   const [isStreaming, setIsStreaming] = useState(false);
   const streamTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -424,12 +425,12 @@ export default function WebViewRendererDemo() {
   }, []);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: darkMode ? '#0a0a0c' : '#ffffff' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: darkMode ? '#131315' : '#ffffff' }]}>
       <Stack.Screen
         options={{
           title: 'WebView Renderer POC',
           headerBackTitle: 'Demo',
-          headerStyle: { backgroundColor: darkMode ? '#0a0a0c' : '#ffffff' },
+          headerStyle: { backgroundColor: darkMode ? '#131315' : '#ffffff' },
           headerTintColor: darkMode ? '#ffffff' : '#000000',
         }}
       />
