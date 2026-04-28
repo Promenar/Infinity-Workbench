@@ -28,7 +28,7 @@ export function ProcessingIndicator({ messageId, processingState }: ProcessingIn
       <div className="processing-completed">
         {(type === 'archived' || isSummarized) && (
           <button className="processing-chip-btn" onClick={() => setExpanded(!expanded)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
             </svg>
           </button>
@@ -63,7 +63,7 @@ export function ProcessingIndicator({ messageId, processingState }: ProcessingIn
     <div>
       <button className="processing-capsule" onClick={() => setExpanded(!expanded)}>
         {status === 'completed' ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
           </svg>
         ) : (
@@ -92,7 +92,6 @@ function ProcessingDetails({ summary, chunkCount, type }: {
     <div className="processing-details">
       {summary && (
         <div className="processing-details-block" style={{
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
           borderLeftColor: '#3b82f6',
         }}>
           <div className="processing-section-header">
@@ -107,12 +106,11 @@ function ProcessingDetails({ summary, chunkCount, type }: {
 
       {type === 'archived' && !summary && (
         <div className="processing-details-block" style={{
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
-          borderLeftColor: '#10b981',
+          borderLeftColor: 'var(--color-success)',
         }}>
           <div className="processing-section-header">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
-            <span className="processing-section-title" style={{ color: '#10b981' }}>背景归档已完成</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
+            <span className="processing-section-title" style={{ color: 'var(--color-success)' }}>背景归档已完成</span>
           </div>
           <div className="processing-chunk-content">
             消息已成功切片 ({chunkCount || 0} 个切片) 并存入向量数据库，以便后续检索参考。

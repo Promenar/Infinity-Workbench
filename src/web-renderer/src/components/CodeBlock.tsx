@@ -43,10 +43,11 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
         borderBottomStyle: 'solid',
       }}>
         <span style={{
-          fontSize: '13px',
-          color: isDark ? '#a1a1aa' : '#71717a',
-          fontWeight: 600,
+          fontSize: '10px',
+          color: 'var(--text-tertiary)',
+          fontWeight: 700,
           textTransform: 'uppercase',
+          letterSpacing: '0.05em',
         }}>
           {language.toUpperCase() || 'CODE'}
         </span>
@@ -54,10 +55,14 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
           onClick={handleCopy}
           style={{
             background: 'none', border: 'none',
-            color: isDark ? '#a1a1aa' : '#71717a',
+            color: 'var(--text-tertiary)',
             cursor: 'pointer',
-            fontSize: '12px', padding: '2px 8px', borderRadius: '4px',
+            fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
+            display: 'flex', alignItems: 'center', gap: '4px',
+            transition: 'background 0.15s, color 0.15s',
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-secondary)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}
         >
           {copied ? '已复制' : '复制'}
         </button>

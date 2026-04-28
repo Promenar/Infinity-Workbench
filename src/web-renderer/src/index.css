@@ -1,21 +1,30 @@
 /**
  * WebView Renderer 全局样式 + CSS 变量定义
  *
- * CSS 变量由 bridge/theme.ts 的 applyTheme() 动态设置，
- * 此文件仅定义默认值（Light 模式）和基础排版样式。
+ * 设计系统：Stitch "Modern Session UI Redesign"
+ * 核心风格：Glassmorphism + Material Design 3 动态颜色
+ * 色彩体系：Zinc-950 基底 + Indigo 主色调
  *
- * 视觉参数来源：src/features/chat/components/message/ 下的 RN 原生组件
+ * CSS 变量由 bridge/theme.ts 的 applyTheme() 动态设置，
+ * 此文件定义默认值（Light 模式）和组件样式。
  */
 
 :root {
-  /* 背景 */
+  /* ═══════════════════════════════════════
+     背景与表面 — Material Design 3 Surface 层级
+     ═══════════════════════════════════════ */
   --bg-primary: #ffffff;
   --bg-secondary: #f4f4f5;
   --bg-tertiary: #e4e4e7;
+  --bg-surface-lowest: #fafafa;
+  --bg-surface-low: #f4f4f5;
+  --bg-surface-high: #e4e4e7;
+  --bg-surface-highest: #d4d4d8;
+  --bg-surface-bright: #ffffff;
 
   /* 文本 */
   --text-primary: #09090b;
-  --text-secondary: #71717a;
+  --text-secondary: #52525b;
   --text-tertiary: #a1a1aa;
 
   /* 边框 */
@@ -46,6 +55,9 @@
   --accent-700: #4338ca;
   --accent-800: #3730a3;
   --accent-900: #312e81;
+  --accent-opacity-10: rgba(99,102,241,0.1);
+  --accent-opacity-20: rgba(99,102,241,0.2);
+  --accent-opacity-30: rgba(99,102,241,0.3);
 
   /* 状态色 */
   --color-success: #10b981;
@@ -55,6 +67,11 @@
   /* 滚动条 */
   --scrollbar-thumb: #ccc;
   --scrollbar-track: #f0f0f0;
+
+  /* 玻璃拟态 — Stitch 设计系统 */
+  --glass-bg: rgba(255,255,255,0.7);
+  --glass-border: rgba(0,0,0,0.08);
+  --glass-blur: 20px;
 
   /* 排版 — 对齐 RN markdown-theme.ts */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -96,6 +113,7 @@ body {
   background-color: var(--bg-primary);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root { min-height: 100vh; min-height: 100dvh; }
@@ -105,9 +123,23 @@ body {
 ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 
-/* ============================
+/* ═══════════════════════════════════════
+   玻璃拟态工具类
+   ═══════════════════════════════════════ */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 0.5px solid var(--glass-border);
+}
+
+.glass-inset {
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05);
+}
+
+/* ═══════════════════════════════════════
    消息列表容器
-   ============================ */
+   ═══════════════════════════════════════ */
 .message-list {
   height: 100vh;
   height: 100dvh;
@@ -118,9 +150,9 @@ body {
   scroll-behavior: smooth;
 }
 
-/* ============================
-   消息行 — 对齐 message-styles.ts
-   ============================ */
+/* ═══════════════════════════════════════
+   消息行
+   ═══════════════════════════════════════ */
 .message-row {
   display: flex;
   align-items: flex-start;
@@ -137,40 +169,25 @@ body {
   margin-bottom: var(--spacing-2xl);
 }
 
-/* ============================
-   头像 — 对齐 MessageHeader.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   头像（已隐藏，保留样式以防复用）
+   ═══════════════════════════════════════ */
 .avatar-wrapper {
-  background: var(--bg-secondary);
-  border-radius: 9999px;
-  padding: 2px;
-  border: 1px solid var(--border-glass);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  flex-shrink: 0;
-  margin-right: var(--spacing-md);
-  margin-top: 2px;
-}
-.avatar-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 28px;
-  background: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: none;
 }
 
-/* ============================
-   气泡 — 对齐 MessageContent.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   气泡 — Stitch Glassmorphism 风格
+   ═══════════════════════════════════════ */
 .bubble-user {
   max-width: 85%;
   min-width: 60px;
   background: var(--bubble-user-bg);
   border-radius: var(--radius-lg);
-  border-top-right-radius: 4px;  /* 气泡尾巴效果 */
+  border-top-right-radius: 4px;
   padding: var(--spacing-lg);
-  border: 1px solid var(--bubble-user-border);
+  border: 0.5px solid var(--bubble-user-border);
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05);
 }
 .bubble-assistant {
   max-width: 100%;
@@ -198,27 +215,30 @@ body {
   word-break: break-word;
 }
 
-/* ============================
-   错误卡片 — 对齐 ErrorBlock.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   错误卡片
+   ═══════════════════════════════════════ */
 .error-card {
   margin-top: var(--spacing-md);
   padding: var(--spacing-md);
-  background: rgba(239,68,68,0.1);
+  background: var(--color-error);
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
-  color: var(--color-error);
+  color: #fff;
+  opacity: 0.15;
 }
 .error-retry {
   margin-top: 6px;
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline;
+  opacity: 1;
+  color: var(--color-error);
 }
 
-/* ============================
-   推理折叠 — 对齐 reasoning block
-   ============================ */
+/* ═══════════════════════════════════════
+   推理折叠
+   ═══════════════════════════════════════ */
 .reasoning-block {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-sm);
@@ -228,6 +248,7 @@ body {
   cursor: pointer;
   opacity: 0.8;
   padding: 4px 0;
+  font-weight: 500;
 }
 .reasoning-content {
   margin-top: 6px;
@@ -237,12 +258,12 @@ body {
   white-space: pre-wrap;
   font-size: var(--font-size-sm);
   line-height: 1.5;
+  border: 0.5px solid var(--border-glass);
 }
 
-/* ============================
+/* ═══════════════════════════════════════
    流式动画
-   ============================ */
-/* 加载圆点 — 对齐 LoadingDots.tsx */
+   ═══════════════════════════════════════ */
 .loading-dots,
 .streaming-cursor {
   display: flex;
@@ -256,7 +277,7 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 3px;
-  background: var(--text-secondary);
+  background: var(--accent);
   animation: dotPulse 1.5s ease-in-out infinite;
 }
 .loading-dots .dot:nth-child(2),
@@ -265,19 +286,19 @@ body {
 .streaming-cursor .dot:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes dotPulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 
-/* 流式底部渐变脉冲 — 对齐 StreamingFadePulse.tsx */
+/* 流式底部渐变脉冲 */
 .stream-pulse {
   height: 72px;
   background: linear-gradient(
-    to bottom right,
+    to bottom,
     transparent 0%,
-    rgba(255,255,255,0.1) 35%,
-    rgba(255,255,255,0.45) 65%,
-    rgba(255,255,255,0.85) 100%
+    var(--accent-opacity-10) 40%,
+    var(--accent-opacity-30) 70%,
+    var(--accent-opacity-20) 100%
   );
   animation: pulseFade 0.6s ease-in-out infinite alternate;
   pointer-events: none;
@@ -287,9 +308,9 @@ body {
   100% { opacity: 1; }
 }
 
-/* ============================
-   Markdown 排版 — 对齐 markdown-theme.ts
-   ============================ */
+/* ═══════════════════════════════════════
+   Markdown 排版
+   ═══════════════════════════════════════ */
 .markdown-body {
   font-size: var(--font-size-base);
   line-height: var(--line-height);
@@ -333,7 +354,7 @@ body {
 }
 .markdown-body hr {
   border: none;
-  border-top: 1px solid var(--border-default);
+  border-top: 0.5px solid var(--border-default);
   margin: var(--spacing-lg) 0;
 }
 .markdown-body strong { font-weight: 700; }
@@ -342,10 +363,20 @@ body {
 /* 行内代码 */
 .markdown-body code:not(pre code) {
   background: var(--code-inline-bg);
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 4px;
   font-family: var(--font-mono);
   font-size: 0.9em;
+}
+
+/* 引用块 */
+.markdown-body blockquote {
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-sm) 0;
+  font-style: italic;
 }
 
 /* KaTeX 数学公式 */
@@ -355,9 +386,9 @@ body {
 }
 .katex { font-size: 1.1em; }
 
-/* ============================
-   回到底部按钮
-   ============================ */
+/* ═══════════════════════════════════════
+   回到底部按钮 — Glassmorphism
+   ═══════════════════════════════════════ */
 .scroll-to-bottom {
   position: fixed;
   bottom: 90px;
@@ -365,13 +396,15 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 20px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-default);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 0.5px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
   z-index: 100;
   opacity: 0;
   transform: translateY(10px);
@@ -387,29 +420,33 @@ body {
   fill: var(--text-secondary);
 }
 
-/* ============================
-   图表卡片 — 对齐 ToolArtifacts.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   图表卡片 — Glassmorphism 风格
+   ═══════════════════════════════════════ */
 .chart-card {
   margin: 12px 0;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  border: 1px solid var(--border-glass);
-  background: var(--bg-secondary);
+  border: 0.5px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05);
 }
 .chart-badge {
   display: flex;
   align-items: center;
-  padding: 4px 10px;
-  background: rgba(99,102,241,0.1);
-  border-bottom-right-radius: 10px;
-  gap: 4px;
+  padding: 4px 12px;
+  background: var(--accent-opacity-10);
+  border-bottom: 0.5px solid var(--glass-border);
+  gap: 6px;
 }
 .chart-badge-text {
   font-size: 9px;
   font-weight: 700;
   color: var(--accent);
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 .chart-badge-title {
   font-size: 10px;
@@ -419,6 +456,8 @@ body {
 .chart-loading {
   color: var(--text-tertiary);
   font-size: var(--font-size-sm);
+  padding: 16px;
+  text-align: center;
 }
 .chart-error {
   color: var(--color-error);
@@ -427,16 +466,79 @@ body {
   text-align: center;
 }
 
-/* ============================
-   消息操作按钮栏 — 对齐 MessageContextMenu.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   代码块 — Stitch Glassmorphism 风格
+   ═══════════════════════════════════════ */
+.code-block {
+  margin: 12px 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 0.5px solid var(--glass-border);
+  background: var(--code-bg);
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05);
+}
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--code-header-bg);
+  border-bottom: 0.5px solid var(--glass-border);
+}
+.code-block-lang {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.code-block-copy {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.code-block-copy:hover {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.code-block pre {
+  padding: var(--spacing-md);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.code-block code {
+  font-family: var(--font-mono);
+}
+
+/* 代码高亮 — 暗色模式适配 */
+[data-theme="dark"] .code-block .token.keyword,
+[data-theme="dark"] .code-block .token.operator { color: #c0c1ff; }
+[data-theme="dark"] .code-block .token.function { color: #e1e0ff; }
+[data-theme="dark"] .code-block .token.string { color: #ffb783; }
+[data-theme="dark"] .code-block .token.comment { color: #908fa0; }
+[data-theme="dark"] .code-block .token.number { color: #34d399; }
+
+/* ═══════════════════════════════════════
+   消息操作按钮栏 — Stitch 圆形图标风格
+   ═══════════════════════════════════════ */
 .message-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 0.5px solid var(--border-glass);
   opacity: 0.5;
   transition: opacity 0.2s;
 }
@@ -447,14 +549,16 @@ body {
 .action-btn {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 8px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: none;
   background: none;
   color: var(--text-tertiary);
   font-size: 11px;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 50%;
   transition: background 0.15s, color 0.15s;
 }
 .action-btn:hover {
@@ -465,10 +569,14 @@ body {
   color: var(--color-error);
   background: rgba(239,68,68,0.1);
 }
+.action-btn svg {
+  width: 16px;
+  height: 16px;
+}
 
-/* ============================
+/* ═══════════════════════════════════════
    旋转动画（Spinner）
-   ============================ */
+   ═══════════════════════════════════════ */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -476,20 +584,37 @@ body {
   animation: spin 1s linear infinite;
 }
 
-/* ============================
-   Phase 2: 审批卡片 — 对齐 ApprovalCard.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   Phase 2: 审批卡片 — Glassmorphism
+   ═══════════════════════════════════════ */
 .approval-card {
   margin: 8px 0;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid;
+  position: relative;
+  overflow: hidden;
+}
+/* 背景光晕装饰 */
+.approval-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(25%, -50%);
+  opacity: 0.1;
 }
 .approval-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  position: relative;
+  z-index: 1;
 }
 .approval-title {
   font-weight: 700;
@@ -497,17 +622,20 @@ body {
 }
 .approval-content {
   margin-bottom: 12px;
+  position: relative;
+  z-index: 1;
 }
 .approval-reason {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
   margin-bottom: 4px;
+  line-height: 1.5;
 }
 .approval-tool-card {
-  background: rgba(0,0,0,0.1);
-  padding: 8px;
-  border-radius: 8px;
-  border: 1px solid var(--border-glass);
+  background: var(--bg-secondary);
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--border-glass);
 }
 .approval-tool-name {
   font-family: var(--font-mono);
@@ -524,6 +652,8 @@ body {
 }
 .approval-input-wrapper {
   margin-bottom: 12px;
+  position: relative;
+  z-index: 1;
 }
 .approval-input-label {
   font-size: 12px;
@@ -532,16 +662,17 @@ body {
 }
 .approval-input {
   width: 100%;
-  background: rgba(0,0,0,0.1);
-  border-radius: 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
   padding: 10px;
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   color: var(--text-primary);
   font-size: 14px;
   line-height: 20px;
   resize: vertical;
   font-family: var(--font-sans);
   min-height: 44px;
+  transition: border-color 0.15s;
 }
 .approval-input::placeholder {
   color: var(--text-tertiary);
@@ -553,6 +684,8 @@ body {
 .approval-actions {
   display: flex;
   gap: 12px;
+  position: relative;
+  z-index: 1;
 }
 .approval-btn {
   flex: 1;
@@ -561,42 +694,72 @@ body {
   justify-content: center;
   gap: 6px;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: none;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, transform 0.1s;
 }
 .approval-btn:hover { opacity: 0.85; }
+.approval-btn:active { transform: scale(0.98); }
 .approval-btn-reject {
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
 }
 .approval-btn-approve {
   color: #fff;
 }
 
-/* ============================
-   Phase 2: 任务监控 — 对齐 TaskMonitor.tsx
-   ============================ */
+/* 审批卡片颜色变体 */
+.approval-card-continuation {
+  background: var(--accent-opacity-10);
+  border-color: var(--accent-opacity-30);
+}
+.approval-card-continuation::before {
+  background: var(--accent);
+}
+.approval-card-continuation .approval-title { color: var(--accent); }
+.approval-card-continuation .approval-btn-approve {
+  background: var(--accent);
+  box-shadow: 0 4px 12px var(--accent-opacity-20);
+}
+
+.approval-card-action {
+  background: rgba(245,158,11,0.1);
+  border-color: rgba(245,158,11,0.3);
+}
+.approval-card-action::before {
+  background: #f59e0b;
+}
+.approval-card-action .approval-title { color: #f59e0b; }
+.approval-card-action .approval-btn-approve {
+  background: #f59e0b;
+  box-shadow: 0 4px 12px rgba(245,158,11,0.2);
+}
+
+/* ═══════════════════════════════════════
+   Phase 2: 任务监控 — Glassmorphism
+   ═══════════════════════════════════════ */
 .task-monitor {
   margin: 4px 0;
 }
 .task-monitor-inner {
-  border-radius: 16px;
-  border-top: 0.5px solid var(--border-glass);
-  border-bottom: 0.5px solid var(--border-glass);
-  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05);
 }
 .task-monitor-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 16px 16px 16px 29px;
+  padding: 16px 16px 16px 20px;
   background: none;
   border: none;
   cursor: pointer;
@@ -616,7 +779,7 @@ body {
   flex-shrink: 0;
 }
 .task-dot-pulse { background: var(--accent); animation: dotPulse 2s ease-in-out infinite; }
-.task-dot-done { background: #22c55e; }
+.task-dot-done { background: var(--color-success); }
 .task-dot-idle { background: var(--text-tertiary); }
 .task-title {
   font-size: 12px;
@@ -640,9 +803,9 @@ body {
 .task-intervention-card {
   margin: 0 16px 12px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  border: 0.5px solid rgba(245, 158, 11, 0.3);
 }
 .task-intervention-header {
   display: flex;
@@ -703,7 +866,7 @@ body {
 .task-collapsed-preview {
   margin: 0 16px 12px 37px;
   padding-left: 12px;
-  border-left: 2px solid rgba(99,102,241,0.3);
+  border-left: 2px solid var(--accent-opacity-30);
   font-size: 11px;
   font-style: italic;
   color: var(--text-tertiary);
@@ -712,9 +875,9 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ============================
-   Phase 2: RAG 指示器 — 对齐 RagOmniIndicator.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   Phase 2: RAG 指示器 — Pill Glass 风格
+   ═══════════════════════════════════════ */
 .rag-indicator {
   width: 100%;
   height: 30px;
@@ -777,9 +940,9 @@ body {
   transition: width 0.5s ease, opacity 0.3s ease;
 }
 
-/* ============================
-   Phase 2: 记忆处理指示器 — 对齐 ProcessingIndicator.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   Phase 2: 记忆处理指示器
+   ═══════════════════════════════════════ */
 .processing-completed {
   display: flex;
   align-items: center;
@@ -800,10 +963,13 @@ body {
   gap: 6px;
   padding: 5px 10px;
   border-radius: 20px;
-  border: 1px solid var(--border-glass);
-  background: rgba(0,0,0,0.03);
+  border: 0.5px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   cursor: pointer;
   color: var(--text-secondary);
+  transition: background 0.15s;
 }
 .processing-capsule:hover { background: var(--bg-secondary); }
 .processing-spinner {
@@ -824,9 +990,14 @@ body {
 }
 .processing-details-block {
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border-left: 3px solid;
   margin-bottom: 8px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 0.5px solid var(--glass-border);
+  border-left-width: 3px;
 }
 .processing-section-header {
   display: flex;
@@ -838,6 +1009,7 @@ body {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 .processing-chunk-content {
   font-size: 11px;
@@ -845,24 +1017,24 @@ body {
   color: var(--text-primary);
 }
 
-/* ============================
-   Tool Execution Timeline — 对齐 ToolExecutionTimeline.tsx
-   ============================ */
+/* ═══════════════════════════════════════
+   Tool Execution Timeline — Glassmorphism
+   ═══════════════════════════════════════ */
 
-/* 容器 — BlurView 替代 */
+/* 容器 */
 .tl-container {
   margin: 4px 0;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   width: 100%;
 }
 .tl-blur {
-  border-radius: 16px;
-  border-top: 0.5px solid var(--border-glass);
-  border-bottom: 0.5px solid var(--border-glass);
-  background: var(--bg-secondary);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05);
 }
 
 /* Header */
@@ -871,7 +1043,7 @@ body {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 16px 16px 16px 25px;
+  padding: 16px 16px 16px 20px;
   background: none;
   border: none;
   cursor: pointer;
@@ -887,6 +1059,7 @@ body {
   font-size: 11px;
   font-weight: 700;
   opacity: 0.8;
+  letter-spacing: 0.02em;
 }
 
 /* 可滚动步骤列表 */
@@ -917,17 +1090,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.05);
+  background: var(--bg-secondary);
+  border: 0.5px solid var(--border-glass);
   flex-shrink: 0;
 }
-.tl-icon-blue { border: 1px solid rgba(59,130,246,0.5); background: rgba(59,130,246,0.2); }
-.tl-icon-amber { border: 1px solid rgba(245,158,11,0.5); background: rgba(245,158,11,0.2); }
-.tl-icon-error { border: 1px solid rgba(255,107,107,0.5); background: rgba(255,107,107,0.2); }
+.tl-icon-blue { border-color: rgba(59,130,246,0.5); background: rgba(59,130,246,0.15); }
+.tl-icon-amber { border-color: rgba(245,158,11,0.5); background: rgba(245,158,11,0.15); }
+.tl-icon-error { border-color: rgba(255,107,107,0.5); background: rgba(255,107,107,0.15); }
 .tl-connector {
   width: 1px;
   flex: 1;
   margin: 4px 0;
-  background: var(--border-subtle);
+  background: var(--border-glass);
 }
 
 /* 项内容区 */
@@ -942,7 +1116,7 @@ body {
   justify-content: space-between;
   width: 100%;
   padding: 8px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -951,8 +1125,8 @@ body {
   transition: background 0.15s;
 }
 .tl-item-header:hover { background: var(--bg-tertiary); }
-.tl-header-blue { background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.2); }
-.tl-header-amber { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.2); }
+.tl-header-blue { background: rgba(59,130,246,0.08); border: 0.5px solid rgba(59,130,246,0.2); }
+.tl-header-amber { background: rgba(245,158,11,0.08); border: 0.5px solid rgba(245,158,11,0.2); }
 .tl-item-title-wrap {
   flex: 1;
   margin-right: 8px;
@@ -981,7 +1155,7 @@ body {
 .tl-item-expanded {
   margin-top: 8px;
   padding-left: 8px;
-  border-left: 2px solid var(--border-default);
+  border-left: 2px solid var(--border-glass);
 }
 .tl-tool-args {
   font-family: var(--font-mono);
@@ -1009,9 +1183,11 @@ body {
 }
 .tl-search-item {
   padding: 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border-glass);
-  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
 }
 .tl-search-link {
   display: flex;
@@ -1075,18 +1251,19 @@ body {
 .tl-intervention-btn {
   flex: 1;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: none;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, transform 0.1s;
 }
 .tl-intervention-btn:hover { opacity: 0.85; }
+.tl-intervention-btn:active { transform: scale(0.98); }
 .tl-intervention-reject {
-  background: rgba(255,255,255,0.05);
+  background: var(--bg-secondary);
   color: var(--text-secondary);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
 }
 .tl-intervention-approve {
   color: #fff;
@@ -1101,8 +1278,8 @@ body {
   display: flex;
   align-items: center;
   background: var(--bg-secondary);
-  border: 1px solid var(--border-glass);
-  border-radius: 16px;
+  border: 0.5px solid var(--border-glass);
+  border-radius: var(--radius-md);
   padding: 4px 12px;
 }
 .tl-loop-input {
