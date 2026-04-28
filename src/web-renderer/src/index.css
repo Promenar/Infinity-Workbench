@@ -133,7 +133,7 @@ body {
 }
 .message-row-assistant {
   justify-content: flex-start;
-  padding-inline: var(--spacing-xl);
+  padding-inline: var(--spacing-lg);
   margin-bottom: var(--spacing-2xl);
 }
 
@@ -717,9 +717,11 @@ body {
    ============================ */
 .rag-indicator {
   width: 100%;
-  height: 34px;
+  height: 30px;
   position: relative;
   cursor: default;
+  margin-top: -4px;
+  margin-bottom: 2px;
 }
 .rag-content {
   display: flex;
@@ -962,7 +964,7 @@ body {
   font-size: 12px;
   font-weight: 700;
   line-height: 1.4;
-  color: rgba(255,255,255,0.8);
+  color: var(--text-primary);
 }
 .tl-title-blue { color: #60a5fa; }
 .tl-title-amber { color: #fbbf24; }
