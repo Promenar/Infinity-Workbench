@@ -71,6 +71,24 @@ export const useAgentStore = create<AgentState>()(
     {
       name: 'agent-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: (state) => {
+        return (rehydratedState, error) => {
+          if (!error && rehydratedState) {
+            console.log('[NativeSync] Rehydration complete, syncing agents...');
+            syncAgentsToNative(rehydratedState.agents);
+          }
+        };
+      },
     },
   ),
 );
+
+// ──────────────────────────────────────────
+// Native Bridge Synchronization
+// ──────────────────────────────────────────
+import { syncAgentsToNative } from '../native/NexaraBridge';
+
+useAgentStore.subscribe((state) => {
+  console.log(`[NativeSync] Syncing ${state.agents.length} agents to Native`);
+  syncAgentsToNative(state.agents);
+});

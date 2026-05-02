@@ -171,12 +171,14 @@ export function EChartsRenderer({ code }: EChartsRendererProps) {
   if (error) {
     return (
       <div className="chart-card">
-        <div className="chart-badge">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" />
-          </svg>
-          <span className="chart-badge-text">ECHARTS</span>
-          <span className="chart-badge-title">{title}</span>
+        <div className="chart-card-header">
+          <div className="chart-card-header-left">
+            <svg className="chart-card-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" />
+            </svg>
+            <span className="chart-card-header-label">ECharts</span>
+          </div>
+          <span className="chart-card-header-badge">{title}</span>
         </div>
         <div className="chart-error">
           图表渲染失败: {error}
@@ -187,20 +189,16 @@ export function EChartsRenderer({ code }: EChartsRendererProps) {
 
   return (
     <div className="chart-card" ref={containerRef}>
-      <div className="chart-badge">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2">
-          <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" />
-        </svg>
-        <span className="chart-badge-text">ECHARTS</span>
-        <span className="chart-badge-title">{title}</span>
+      <div className="chart-card-header">
+        <div className="chart-card-header-left">
+          <svg className="chart-card-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" />
+          </svg>
+          <span className="chart-card-header-label">ECharts</span>
+        </div>
+        <span className="chart-card-header-badge">{title}</span>
       </div>
-      <div style={{
-        padding: '8px',
-        minHeight: loading ? '200px' : 'auto',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
+      <div className="chart-card-content">
         {dataUrl && (
           <img
             src={dataUrl}

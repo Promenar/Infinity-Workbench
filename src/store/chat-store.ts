@@ -2579,3 +2579,13 @@ export const useChatStore = create<ChatState>()(
     }
   )
 );
+
+// ──────────────────────────────────────────
+// Native Bridge Synchronization (Sessions & Messages)
+// ──────────────────────────────────────────
+import { syncSessionsToNative, setCurrentSessionNative } from '../native/NexaraBridge';
+
+useChatStore.subscribe((state) => {
+  // 同步会话列表
+  syncSessionsToNative(state.sessions);
+});

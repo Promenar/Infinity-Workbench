@@ -24,43 +24,13 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   }
 
   return (
-    <div style={{
-      margin: '12px 0',
-      borderRadius: 'var(--radius-md)',
-      overflow: 'hidden',
-      border: '1px solid var(--code-border)',
-      backgroundColor: 'var(--code-bg)',
-    }}>
-      {/* 语言标签 + 复制按钮 — 对齐 useMarkdownRules fence header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '8px 12px',
-        backgroundColor: 'var(--code-header-bg)',
-        borderBottomWidth: 'thin',
-        borderBottomColor: 'var(--border-glass)',
-        borderBottomStyle: 'solid',
-      }}>
-        <span style={{
-          fontSize: '10px',
-          color: 'var(--text-tertiary)',
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}>
-          {language.toUpperCase() || 'CODE'}
-        </span>
+    <div className="code-block">
+      {/* 语言标签 + 复制按钮 — Stitch 风格 header */}
+      <div className="code-block-header">
+        <span className="code-block-lang">{language.toUpperCase() || 'CODE'}</span>
         <button
+          className="code-block-copy"
           onClick={handleCopy}
-          style={{
-            background: 'none', border: 'none',
-            color: 'var(--text-tertiary)',
-            cursor: 'pointer',
-            fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
-            display: 'flex', alignItems: 'center', gap: '4px',
-            transition: 'background 0.15s, color 0.15s',
-          }}
           onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-secondary)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}
         >

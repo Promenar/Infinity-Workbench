@@ -15,6 +15,9 @@ export function MessageList({ messages, theme, isGenerating, sessionId }: Messag
   return (
     <>
       <div className="message-list" ref={containerRef}>
+        {/* Stitch 环境光效 */}
+        <div className="ambient-glow" />
+
         {messages.map(msg => (
           <MessageBubble key={msg.id} message={msg} sessionId={sessionId} />
         ))}

@@ -197,11 +197,13 @@ export function MermaidRenderer({ code }: MermaidRendererProps) {
   if (error) {
     return (
       <div className="chart-card">
-        <div className="chart-badge">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
-          </svg>
-          <span className="chart-badge-text">MERMAID</span>
+        <div className="chart-card-header">
+          <div className="chart-card-header-left">
+            <svg className="chart-card-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+            </svg>
+            <span className="chart-card-header-label">Mermaid</span>
+          </div>
         </div>
         <div className="chart-error">
           图表渲染失败: {error}
@@ -221,22 +223,15 @@ export function MermaidRenderer({ code }: MermaidRendererProps) {
 
   return (
     <div className="chart-card">
-      <div className="chart-badge">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
-        </svg>
-        <span className="chart-badge-text">MERMAID</span>
+      <div className="chart-card-header">
+        <div className="chart-card-header-left">
+          <svg className="chart-card-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+          </svg>
+          <span className="chart-card-header-label">Mermaid</span>
+        </div>
       </div>
-      <div
-        style={{
-          padding: '16px',
-          minHeight: loading ? '120px' : 'auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'auto',
-        }}
-      >
+      <div className="chart-card-content">
         {svg && <div dangerouslySetInnerHTML={{ __html: svg }} />}
         {loading && !svg && <div className="chart-loading">渲染中…</div>}
       </div>
