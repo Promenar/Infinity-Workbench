@@ -5,7 +5,6 @@ import com.promenar.nexara.data.remote.protocol.ProtocolId
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 
 class LlmProviderTest {
 
@@ -26,26 +25,27 @@ class LlmProviderTest {
 
         @Test
         fun `builder with anthropic protocol`() {
-            val builder = LlmProvider.builder()
+            val provider = LlmProvider.builder()
                 .protocolId(ProtocolId.ANTHROPIC)
                 .baseUrl("https://api.anthropic.com")
                 .apiKey("test-key")
                 .model("claude-3-5-sonnet")
+                .build()
 
-            val ex = assertThrows<NotImplementedError> { builder.build() }
-            assertThat(ex.message).contains("Anthropic")
+            assertThat(provider.protocolId).isEqualTo(ProtocolId.ANTHROPIC)
         }
 
         @Test
         fun `builder with vertex AI protocol`() {
-            val builder = LlmProvider.builder()
+            val provider = LlmProvider.builder()
                 .protocolId(ProtocolId.VERTEX_AI)
-                .baseUrl("https://us-central1-aiplatform.googleapis.com")
-                .apiKey("test-key")
+                .serviceAccountKeyPath("/dummy/path.json")
+                .projectId("test-project")
+                .location("us-central1")
                 .model("gemini-3-flash-preview")
+                .build()
 
-            val ex = assertThrows<NotImplementedError> { builder.build() }
-            assertThat(ex.message).contains("Vertex")
+            assertThat(provider.protocolId).isEqualTo(ProtocolId.VERTEX_AI)
         }
 
         @Test
@@ -65,16 +65,30 @@ class LlmProviderTest {
     inner class ProtocolIdTests {
 
         @Test
-        fun `anthropic and vertex_ai protocols throw NotImplementedError`() {
-            for (id in listOf(ProtocolId.ANTHROPIC, ProtocolId.VERTEX_AI)) {
-                val builder = LlmProvider.builder()
-                    .protocolId(id)
-                    .baseUrl("https://example.com")
-                    .apiKey("key")
-                    .model("model")
+        fun `all protocol ids build successfully`() {
+            val openai = LlmProvider.builder()
+                .protocolId(ProtocolId.OPENAI)
+                .baseUrl("https://api.openai.com/v1")
+                .apiKey("key")
+                .model("gpt-4o")
+                .build()
+            assertThat(openai.protocolId).isEqualTo(ProtocolId.OPENAI)
 
-                assertThrows<NotImplementedError> { builder.build() }
-            }
+            val anthropic = LlmProvider.builder()
+                .protocolId(ProtocolId.ANTHROPIC)
+                .baseUrl("https://api.anthropic.com")
+                .apiKey("key")
+                .model("claude-3-5-sonnet")
+                .build()
+            assertThat(anthropic.protocolId).isEqualTo(ProtocolId.ANTHROPIC)
+
+            val vertexai = LlmProvider.builder()
+                .protocolId(ProtocolId.VERTEX_AI)
+                .serviceAccountKeyPath("/dummy/path.json")
+                .projectId("test-project")
+                .model("gemini-3-flash-preview")
+                .build()
+            assertThat(vertexai.protocolId).isEqualTo(ProtocolId.VERTEX_AI)
         }
 
         @Test

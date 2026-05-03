@@ -1,11 +1,13 @@
 package com.promenar.nexara.data.remote.provider
 
+import com.promenar.nexara.data.remote.protocol.AnthropicProtocol
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.OpenAIProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
 import com.promenar.nexara.data.remote.protocol.ProtocolId
 import com.promenar.nexara.data.remote.protocol.StreamChunk
+import com.promenar.nexara.data.remote.protocol.VertexAIProtocol
 import kotlinx.coroutines.flow.Flow
 
 class LlmProvider(private val protocol: LlmProtocol) {
@@ -25,14 +27,23 @@ class LlmProvider(private val protocol: LlmProtocol) {
         private var baseUrl: String = ""
         private var apiKey: String = ""
         private var model: String = ""
+        private var serviceAccountKeyPath: String = ""
+        private var projectId: String = ""
+        private var location: String = "us-central1"
 
         fun protocolId(id: ProtocolId) = apply { this.protocolId = id }
         fun baseUrl(url: String) = apply { this.baseUrl = url }
         fun apiKey(key: String) = apply { this.apiKey = key }
         fun model(model: String) = apply { this.model = model }
+        fun serviceAccountKeyPath(path: String) = apply { this.serviceAccountKeyPath = path }
+        fun projectId(id: String) = apply { this.projectId = id }
+        fun location(loc: String) = apply { this.location = loc }
 
         fun build(): LlmProvider {
-            val protocol = createProtocol(protocolId, baseUrl, apiKey, model)
+            val protocol = createProtocol(
+                protocolId, baseUrl, apiKey, model,
+                serviceAccountKeyPath, projectId, location
+            )
             return LlmProvider(protocol)
         }
     }
@@ -44,14 +55,18 @@ class LlmProvider(private val protocol: LlmProtocol) {
             id: ProtocolId,
             baseUrl: String,
             apiKey: String,
-            model: String
+            model: String,
+            serviceAccountKeyPath: String = "",
+            projectId: String = "",
+            location: String = "us-central1"
         ): LlmProtocol = when (id) {
             ProtocolId.OPENAI -> OpenAIProtocol(baseUrl, apiKey, model)
-            ProtocolId.ANTHROPIC -> throw NotImplementedError(
-                "AnthropicProtocol is not yet implemented."
-            )
-            ProtocolId.VERTEX_AI -> throw NotImplementedError(
-                "VertexAIProtocol is not yet implemented."
+            ProtocolId.ANTHROPIC -> AnthropicProtocol(baseUrl, apiKey, model)
+            ProtocolId.VERTEX_AI -> VertexAIProtocol(
+                serviceAccountKeyPath = serviceAccountKeyPath,
+                projectId = projectId,
+                location = location,
+                model = model
             )
         }
     }
