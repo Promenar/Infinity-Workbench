@@ -43,4 +43,28 @@ interface SessionDao {
 
     @Query("UPDATE sessions SET last_message = :lastMessage, time = :time, updated_at = :updatedAt WHERE id = :sessionId")
     suspend fun updateLastMessage(sessionId: String, lastMessage: String?, time: String?, updatedAt: Long)
+
+    @Query("UPDATE sessions SET draft = :draft, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateDraft(sessionId: String, draft: String?, updatedAt: Long)
+
+    @Query("UPDATE sessions SET is_pinned = :isPinned, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updatePinned(sessionId: String, isPinned: Int, updatedAt: Long)
+
+    @Query("UPDATE sessions SET inference_params = :inferenceParams, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateInferenceParams(sessionId: String, inferenceParams: String?, updatedAt: Long)
+
+    @Query("UPDATE sessions SET model_id = :modelId, options = :options, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateModel(sessionId: String, modelId: String?, options: String?, updatedAt: Long)
+
+    @Query("UPDATE sessions SET active_mcp_server_ids = :activeMcpServerIds, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateActiveMcpServerIds(sessionId: String, activeMcpServerIds: String?, updatedAt: Long)
+
+    @Query("UPDATE sessions SET active_skill_ids = :activeSkillIds, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateActiveSkillIds(sessionId: String, activeSkillIds: String?, updatedAt: Long)
+
+    @Query("UPDATE sessions SET active_task = :activeTask, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateActiveTask(sessionId: String, activeTask: String?, updatedAt: Long)
+
+    @Query("UPDATE sessions SET options = :options, rag_options = :ragOptions, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateOptions(sessionId: String, options: String?, ragOptions: String?, updatedAt: Long)
 }

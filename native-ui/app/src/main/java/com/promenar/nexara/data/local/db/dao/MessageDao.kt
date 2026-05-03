@@ -43,4 +43,32 @@ interface MessageDao {
 
     @Query("UPDATE messages SET status = :status WHERE id = :messageId")
     suspend fun updateStatus(messageId: String, status: String)
+
+    @Query("DELETE FROM messages WHERE session_id = :sessionId AND created_at >= :timestamp")
+    suspend fun deleteBySessionIdAndTimestampAfter(sessionId: String, timestamp: Long)
+
+    @Query("SELECT * FROM messages WHERE session_id = :sessionId AND created_at < :timestamp ORDER BY created_at ASC")
+    suspend fun getBySessionBeforeTimestamp(sessionId: String, timestamp: Long): List<MessageEntity>
+
+    @Query("UPDATE messages SET vectorization_status = :status, is_archived = :isArchived WHERE id = :messageId")
+    suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Int?)
+
+    @Query("UPDATE messages SET content = :content, tokens = :tokens, reasoning = :reasoning, citations = :citations, rag_references = :ragReferences, rag_metadata = :ragMetadata, thought_signature = :thoughtSignature, planning_task = :planningTask, execution_steps = :executionSteps, pending_approval_tool_ids = :pendingApprovalToolIds, tool_results = :toolResults, tool_calls = :toolCalls, is_error = :isError, error_message = :errorMessage WHERE id = :messageId")
+    suspend fun updateContent(
+        messageId: String,
+        content: String?,
+        tokens: String?,
+        reasoning: String?,
+        citations: String?,
+        ragReferences: String?,
+        ragMetadata: String?,
+        thoughtSignature: String?,
+        planningTask: String?,
+        executionSteps: String?,
+        pendingApprovalToolIds: String?,
+        toolResults: String?,
+        toolCalls: String?,
+        isError: Int?,
+        errorMessage: String?
+    )
 }

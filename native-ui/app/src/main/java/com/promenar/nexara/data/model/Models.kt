@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class Agent(
     val id: String,
     val name: String,
@@ -12,6 +15,7 @@ data class Agent(
     val createdAt: Long = 0L
 )
 
+@Serializable
 data class ChatSession(
     val id: String,
     val agentId: String,
@@ -20,6 +24,7 @@ data class ChatSession(
     val lastUpdatedAt: Long = 0L
 )
 
+@Serializable
 data class ChatMessage(
     val id: String,
     val content: String,
@@ -28,18 +33,21 @@ data class ChatMessage(
     val isStreaming: Boolean = false
 )
 
+@Serializable
 data class TokenUsage(
     val input: Int = 0,
     val output: Int = 0,
     val total: Int = 0
 )
 
+@Serializable
 data class GeneratedImageData(
     val thumbnail: String,
     val original: String,
     val mime: String
 )
 
+@Serializable
 data class Citation(
     val title: String,
     val url: String,
