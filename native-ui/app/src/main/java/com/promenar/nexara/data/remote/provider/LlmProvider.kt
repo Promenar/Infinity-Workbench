@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.remote.provider
 
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
+import com.promenar.nexara.data.remote.protocol.OpenAIProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
 import com.promenar.nexara.data.remote.protocol.ProtocolId
@@ -44,10 +45,13 @@ class LlmProvider(private val protocol: LlmProtocol) {
             baseUrl: String,
             apiKey: String,
             model: String
-        ): LlmProtocol {
-            throw NotImplementedError(
-                "Protocol implementation for $id is not yet available. " +
-                "Implement OpenAIProtocol, AnthropicProtocol, VertexAIProtocol first."
+        ): LlmProtocol = when (id) {
+            ProtocolId.OPENAI -> OpenAIProtocol(baseUrl, apiKey, model)
+            ProtocolId.ANTHROPIC -> throw NotImplementedError(
+                "AnthropicProtocol is not yet implemented."
+            )
+            ProtocolId.VERTEX_AI -> throw NotImplementedError(
+                "VertexAIProtocol is not yet implemented."
             )
         }
     }

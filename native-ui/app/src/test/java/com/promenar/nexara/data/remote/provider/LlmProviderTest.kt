@@ -15,13 +15,13 @@ class LlmProviderTest {
 
         @Test
         fun `builder creates instance with default protocol`() {
-            val builder = LlmProvider.builder()
+            val provider = LlmProvider.builder()
                 .baseUrl("https://api.openai.com/v1")
                 .apiKey("test-key")
                 .model("gpt-4o")
+                .build()
 
-            val ex = assertThrows<NotImplementedError> { builder.build() }
-            assertThat(ex.message).contains("OPENAI")
+            assertThat(provider.protocolId).isEqualTo(ProtocolId.OPENAI)
         }
 
         @Test
@@ -33,7 +33,7 @@ class LlmProviderTest {
                 .model("claude-3-5-sonnet")
 
             val ex = assertThrows<NotImplementedError> { builder.build() }
-            assertThat(ex.message).contains("ANTHROPIC")
+            assertThat(ex.message).contains("Anthropic")
         }
 
         @Test
@@ -45,7 +45,7 @@ class LlmProviderTest {
                 .model("gemini-3-flash-preview")
 
             val ex = assertThrows<NotImplementedError> { builder.build() }
-            assertThat(ex.message).contains("VERTEX_AI")
+            assertThat(ex.message).contains("Vertex")
         }
 
         @Test
@@ -65,8 +65,8 @@ class LlmProviderTest {
     inner class ProtocolIdTests {
 
         @Test
-        fun `all three protocols throw NotImplementedError`() {
-            for (id in ProtocolId.entries) {
+        fun `anthropic and vertex_ai protocols throw NotImplementedError`() {
+            for (id in listOf(ProtocolId.ANTHROPIC, ProtocolId.VERTEX_AI)) {
                 val builder = LlmProvider.builder()
                     .protocolId(id)
                     .baseUrl("https://example.com")
@@ -75,6 +75,18 @@ class LlmProviderTest {
 
                 assertThrows<NotImplementedError> { builder.build() }
             }
+        }
+
+        @Test
+        fun `openai protocol builds successfully`() {
+            val provider = LlmProvider.builder()
+                .protocolId(ProtocolId.OPENAI)
+                .baseUrl("https://api.openai.com/v1")
+                .apiKey("key")
+                .model("gpt-4o")
+                .build()
+
+            assertThat(provider.protocolId).isEqualTo(ProtocolId.OPENAI)
         }
     }
 }
