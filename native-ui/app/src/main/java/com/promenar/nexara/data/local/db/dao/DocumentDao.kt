@@ -37,4 +37,13 @@ interface DocumentDao {
 
     @Query("UPDATE documents SET vectorized = :vectorized, vector_count = :vectorCount WHERE id = :docId")
     suspend fun updateVectorizationStatus(docId: String, vectorized: Int, vectorCount: Int)
+
+    @Query("UPDATE documents SET vectorized = :vectorized, vector_count = :vectorCount, content_hash = :contentHash WHERE id = :docId")
+    suspend fun updateVectorizationStatusWithHash(docId: String, vectorized: Int, vectorCount: Int, contentHash: String)
+
+    @Query("UPDATE documents SET vectorized = :vectorized WHERE id = :docId")
+    suspend fun updateVectorized(docId: String, vectorized: Int)
+
+    @Query("SELECT * FROM documents WHERE folder_id IN (:folderIds)")
+    suspend fun getByFolderIds(folderIds: List<String>): List<DocumentEntity>
 }

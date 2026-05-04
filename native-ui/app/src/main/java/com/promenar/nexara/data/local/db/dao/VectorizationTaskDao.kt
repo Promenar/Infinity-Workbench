@@ -33,4 +33,13 @@ interface VectorizationTaskDao {
 
     @Query("UPDATE vectorization_tasks SET status = :status, updated_at = :updatedAt WHERE id = :taskId")
     suspend fun updateStatus(taskId: String, status: String, updatedAt: Long)
+
+    @Query("SELECT * FROM vectorization_tasks WHERE status IN ('pending', 'interrupted') ORDER BY created_at ASC")
+    suspend fun getRecoverableTasks(): List<VectorizationTaskEntity>
+
+    @Query("UPDATE vectorization_tasks SET status = 'interrupted' WHERE status = 'processing' AND updated_at < :staleThreshold")
+    suspend fun markStaleAsInterrupted(staleThreshold: Long)
+
+    @Query("DELETE FROM vectorization_tasks WHERE status IN ('completed', 'failed')")
+    suspend fun deleteCompletedTasks()
 }
