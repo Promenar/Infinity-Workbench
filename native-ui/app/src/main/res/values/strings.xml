@@ -1,0 +1,724 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ============ Common Components ============ -->
+    <!-- ModelPicker -->
+    <string name="common_model_picker_title">Select Model</string>
+    <string name="common_model_picker_search">Search models…</string>
+    <string name="common_model_picker_empty">No models available</string>
+    <string name="common_model_picker_k_context">K context</string>
+    <string name="common_model_picker_selected">Selected</string>
+
+    <!-- FloatingTextEditor -->
+    <string name="common_text_editor_placeholder">Enter text…</string>
+
+    <!-- InferencePresets -->
+    <string name="common_preset_precise">Precise</string>
+    <string name="common_preset_balanced">Balanced</string>
+    <string name="common_preset_creative">Creative</string>
+    <string name="common_preset_temp_label">T: %1$s</string>
+
+    <!-- ColorPickerPanel -->
+    <string name="common_color_custom">Custom</string>
+
+    <!-- ExecutionMode -->
+    <string name="common_mode_auto">Auto</string>
+    <string name="common_mode_semi">Semi</string>
+    <string name="common_mode_manual">Manual</string>
+
+    <!-- ConfirmDialog -->
+    <string name="common_btn_confirm">Confirm</string>
+    <string name="common_btn_cancel">Cancel</string>
+
+    <!-- SearchBar -->
+    <string name="common_search_placeholder">Search…</string>
+
+    <!-- Content Descriptions (无障碍) -->
+    <string name="common_cd_back">Back</string>
+    <string name="common_cd_save">Save</string>
+    <string name="common_cd_clear">Clear</string>
+    <string name="common_cd_collapse">Collapse</string>
+    <string name="common_cd_expand">Expand</string>
+    <string name="common_cd_navigate">Navigate</string>
+    <string name="common_cd_pin">Pin</string>
+    <string name="common_cd_unpin">Unpin</string>
+    <string name="common_cd_selected">Selected</string>
+
+    <!-- ============ Navigation ============ -->
+    <string name="nav_tab_chat">Chat</string>
+    <string name="nav_tab_library">Library</string>
+    <string name="nav_tab_settings">Settings</string>
+
+    <!-- ============ Welcome ============ -->
+    <string name="welcome_brand">NEXARA</string>
+    <string name="welcome_slogan">INTELLIGENCE REIMAGINED</string>
+    <string name="welcome_lang_english">English</string>
+    <string name="welcome_lang_chinese">中文 (简体)</string>
+    <string name="welcome_cd_language">Select language</string>
+
+    <!-- ============ Shared / Reused ============ -->
+    <string name="shared_loading">Loading…</string>
+    <string name="shared_error_generic">Something went wrong</string>
+    <string name="shared_btn_delete">Delete</string>
+    <string name="shared_btn_save">Save</string>
+    <string name="shared_btn_edit">Edit</string>
+    <string name="shared_btn_add">Add</string>
+    <string name="shared_btn_reset">Reset</string>
+    <string name="shared_btn_close">Close</string>
+    <string name="shared_btn_done">Done</string>
+    <string name="shared_btn_retry">Retry</string>
+    <string name="shared_confirm_delete_title">Confirm Delete</string>
+    <string name="shared_action_cannot_undo">This action cannot be undone.</string>
+
+    <!-- ============ Hub ============ -->
+    <string name="hub_title">Agents</string>
+    <string name="hub_subtitle">Your AI Assistant Team</string>
+    <string name="hub_search_placeholder">Search agents…</string>
+    <string name="hub_btn_add_agent">Add Agent</string>
+    <string name="hub_fab_super">Super Assistant</string>
+    <string name="hub_empty_title">No Agents Yet</string>
+    <string name="hub_empty_subtitle">Tap + to create your first AI agent</string>
+    <string name="hub_dialog_add_title">Add New Agent</string>
+    <string name="hub_dialog_label_name">Name</string>
+    <string name="hub_dialog_label_desc">Description</string>
+    <string name="hub_dialog_label_model">Model ID</string>
+    <string name="hub_dialog_label_prompt">System Prompt</string>
+    <string name="hub_action_unpin">Unpin</string>
+
+    <!-- Sessions -->
+    <string name="sessions_search_placeholder">Search sessions…</string>
+    <string name="sessions_empty_title">No Conversations Yet</string>
+    <string name="sessions_empty_subtitle">Start your first conversation</string>
+    <string name="sessions_btn_new">New Session</string>
+    <string name="sessions_count_format">%1$d sessions</string>
+    <string name="sessions_cd_settings">Agent Settings</string>
+    <string name="sessions_cd_new">New session</string>
+    <string name="sessions_tag_session">SESSION</string>
+    <string name="sessions_tag_pinned">PINNED</string>
+
+    <!-- ============ Agent Edit ============ -->
+    <string name="agent_edit_title">Edit Agent</string>
+    <string name="agent_edit_section_basic">Basic Info</string>
+    <string name="agent_edit_label_name">Name</string>
+    <string name="agent_edit_placeholder_name">Enter agent name…</string>
+    <string name="agent_edit_label_desc">Description</string>
+    <string name="agent_edit_placeholder_desc">Describe this agent…</string>
+    <string name="agent_edit_section_appearance">Appearance</string>
+    <string name="agent_edit_label_icon">Select Icon</string>
+    <string name="agent_edit_icon_custom">Custom</string>
+    <string name="agent_edit_icon_upload">Upload Image</string>
+    <string name="agent_edit_section_personality">Personality</string>
+    <string name="agent_edit_prompt_label">System Prompt</string>
+    <string name="agent_edit_prompt_placeholder">Define agent behavior…</string>
+    <string name="agent_edit_prompt_hint">Tap to edit system prompt…</string>
+    <string name="agent_edit_prompt_configured">Configured</string>
+    <string name="agent_edit_prompt_not_set">Not Set</string>
+    <string name="agent_edit_section_model">Model Configuration</string>
+    <string name="agent_edit_current_model">Current Model</string>
+    <string name="agent_edit_label_presets">Inference Presets</string>
+    <string name="agent_edit_section_knowledge">Knowledge</string>
+    <string name="agent_edit_rag_config">RAG Configuration</string>
+    <string name="agent_edit_rag_desc">Chunking, memory, vectorization</string>
+    <string name="agent_edit_advanced_retrieval">Advanced Retrieval</string>
+    <string name="agent_edit_retrieval_desc">Reranking, query rewriting, hybrid search</string>
+    <string name="agent_edit_section_danger">Danger Zone</string>
+    <string name="agent_edit_delete_btn">Delete Agent</string>
+    <string name="agent_edit_delete_title">Delete Agent</string>
+    <string name="agent_edit_delete_message">Are you sure you want to delete this agent? This action cannot be undone.</string>
+    <string name="agent_edit_delete_confirm">Delete</string>
+
+    <!-- ============ RAG Config ============ -->
+    <string name="agent_rag_title">RAG Configuration</string>
+    <string name="agent_rag_status_inherited">Inherited from Global</string>
+    <string name="agent_rag_status_custom">Custom</string>
+    <string name="agent_rag_reset_title">Reset Configuration</string>
+    <string name="agent_rag_reset_message">Are you sure you want to reset to global defaults? All custom settings will be lost.</string>
+    <string name="agent_rag_reset_confirm">Reset</string>
+    <string name="agent_rag_section_chunk">Document Chunking</string>
+    <string name="agent_rag_chunk_size">Chunk Size</string>
+    <string name="agent_rag_overlap">Chunk Overlap</string>
+    <string name="agent_rag_section_memory">Memory</string>
+    <string name="agent_rag_memory_chunk">Memory Chunk Size</string>
+    <string name="agent_rag_section_context">Context</string>
+    <string name="agent_rag_active_window">Active Context Window</string>
+    <string name="agent_rag_summary_threshold">Summary Trigger Threshold</string>
+    <string name="agent_rag_section_summary">Summary Template</string>
+    <string name="agent_rag_summary_placeholder">Enter summary template…</string>
+    <string name="agent_rag_summary_hint">Tap to edit summary template…</string>
+    <string name="agent_rag_summary_configured">Configured</string>
+    <string name="agent_rag_summary_default">Using Default</string>
+    <string name="agent_rag_unit_char">char</string>
+    <string name="agent_rag_unit_messages">messages</string>
+
+    <!-- ============ Advanced Retrieval ============ -->
+    <string name="agent_retrieval_title">Advanced Retrieval</string>
+    <string name="agent_retrieval_section_memory">Memory Retrieval</string>
+    <string name="agent_retrieval_memory_limit">Memory Limit</string>
+    <string name="agent_retrieval_memory_threshold">Memory Similarity Threshold</string>
+    <string name="agent_retrieval_section_document">Document Retrieval</string>
+    <string name="agent_retrieval_doc_limit">Document Limit</string>
+    <string name="agent_retrieval_doc_threshold">Document Similarity Threshold</string>
+    <string name="agent_retrieval_section_rerank">Reranking</string>
+    <string name="agent_retrieval_rerank_enable">Enable Reranking</string>
+    <string name="agent_retrieval_recall_count">Recall Count</string>
+    <string name="agent_retrieval_final_count">Final Result Count</string>
+    <string name="agent_retrieval_section_rewrite">Query Rewriting</string>
+    <string name="agent_retrieval_rewrite_enable">Enable Query Rewriting</string>
+    <string name="agent_retrieval_strategy_label">Strategy</string>
+    <string name="agent_retrieval_strategy_hyde">HyDE</string>
+    <string name="agent_retrieval_strategy_multi">Multi-Query</string>
+    <string name="agent_retrieval_strategy_expansion">Expansion</string>
+    <string name="agent_retrieval_variant_count">Variant Count</string>
+    <string name="agent_retrieval_section_hybrid">Hybrid Search</string>
+    <string name="agent_retrieval_vector_weight">Vector Weight</string>
+    <string name="agent_retrieval_bm25_boost">BM25 Boost</string>
+
+    <!-- ============ Settings ============ -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_tab_app">App</string>
+    <string name="settings_tab_provider">Providers</string>
+    <string name="settings_section_general">General</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_zh">Chinese</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_color">Theme Color</string>
+    <string name="settings_theme_color_desc">Custom accent color</string>
+    <string name="settings_haptic">Haptic Feedback</string>
+    <string name="settings_section_model_presets">Model Presets</string>
+    <string name="settings_model_summary">Summary Model</string>
+    <string name="settings_model_image">Image Model</string>
+    <string name="settings_model_embedding">Embedding Model</string>
+    <string name="settings_model_rerank">Rerank Model</string>
+    <string name="settings_not_set">Not Set</string>
+    <string name="settings_section_knowledge">Knowledge Management</string>
+    <string name="settings_rag_config">RAG Configuration</string>
+    <string name="settings_rag_desc">Chunking, memory, vectorization</string>
+    <string name="settings_advanced_retrieval">Advanced Retrieval</string>
+    <string name="settings_retrieval_desc">Reranking, query rewriting, hybrid search</string>
+    <string name="settings_token_usage">Token Usage</string>
+    <string name="settings_token_cost_month">%1$s this month</string>
+    <string name="settings_section_tools">Tools</string>
+    <string name="settings_web_search">Web Search</string>
+    <string name="settings_web_search_desc">Tavily deep search</string>
+    <string name="settings_workbench">Workbench</string>
+    <string name="settings_workbench_desc">Portable server · Experimental</string>
+    <string name="settings_skills">Skills</string>
+    <string name="settings_skills_desc">Agent skills and MCP</string>
+    <string name="settings_local_models">Local Models</string>
+    <string name="settings_local_models_desc">GGUF on-device · Experimental</string>
+    <string name="settings_section_data">Data</string>
+    <string name="settings_backup">Backup</string>
+    <string name="settings_backup_desc">Local / WebDAV sync</string>
+    <string name="settings_logs">Logs</string>
+    <string name="settings_logs_desc">Record debug info and error logs</string>
+    <string name="settings_export_logs">Export Logs</string>
+    <string name="settings_export_logs_desc">Share log files</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_about_nexara">About Nexara</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_provider_empty">No providers configured yet.\nTap the button above to add one.</string>
+    <string name="settings_add_provider">Add Provider</string>
+    <string name="settings_delete_provider_title">Delete Provider</string>
+    <string name="settings_delete_provider_message">Are you sure you want to delete this provider? This action cannot be undone.</string>
+    <string name="settings_manage_models">Manage Models</string>
+    <string name="settings_edit_name">Edit Name</string>
+    <string name="settings_edit_name_placeholder">Enter your display name</string>
+    <string name="settings_btn_save">Save</string>
+    <string name="settings_btn_cancel">Cancel</string>
+    <string name="settings_btn_delete">Delete</string>
+
+    <!-- ============ Chat ============ -->
+    <!-- ChatScreen -->
+    <string name="chat_title_new">New Chat</string>
+    <string name="chat_menu_session_settings">Session Settings</string>
+    <string name="chat_menu_token_stats">Token Stats</string>
+    <string name="chat_menu_super_assistant">Super Assistant</string>
+    <string name="chat_menu_export">Export Chat</string>
+    <string name="chat_input_placeholder">Message %1$s…</string>
+    <string name="chat_input_placeholder_default">Message…</string>
+    <string name="chat_cd_workspace">Workspace</string>
+    <string name="chat_cd_options">Options</string>
+    <string name="chat_cd_stop">Stop</string>
+    <string name="chat_cd_send">Send</string>
+    <string name="chat_cd_scroll_bottom">Scroll to bottom</string>
+
+    <!-- SessionSettingsScreen -->
+    <string name="session_settings_title">Settings</string>
+    <string name="session_settings_active_agent">Active Agent</string>
+    <string name="session_settings_export">Export Session</string>
+    <string name="session_settings_section_info">Session Info</string>
+    <string name="session_settings_title_label">Session Title</string>
+    <string name="session_settings_title_placeholder">Enter session title…</string>
+    <string name="session_settings_ai_title">AI Generated Title</string>
+    <string name="session_settings_section_inference">Inference Parameters</string>
+    <string name="session_settings_temperature">Temperature</string>
+    <string name="session_settings_top_p">Top P</string>
+    <string name="session_settings_max_tokens">Max Tokens</string>
+    <string name="session_settings_label_focused">Focused</string>
+    <string name="session_settings_label_diverse">Diverse</string>
+    <string name="session_settings_label_short">Short</string>
+    <string name="session_settings_label_long">Long</string>
+    <string name="session_settings_section_rag">RAG Settings</string>
+    <string name="session_settings_memory">Long-term Memory</string>
+    <string name="session_settings_memory_desc">Semantic memory for context across sessions</string>
+    <string name="session_settings_kg">Knowledge Graph Extraction</string>
+    <string name="session_settings_kg_desc">Extract entities and relationships from conversations</string>
+    <string name="session_settings_kb">Knowledge Base</string>
+    <string name="session_settings_kb_desc">Enable document retrieval for this session</string>
+    <string name="session_settings_section_prompt">Custom Prompt</string>
+    <string name="session_settings_prompt_editor_title">Custom Prompt</string>
+    <string name="session_settings_prompt_placeholder">Enter custom system prompt…</string>
+    <string name="session_settings_delete_title">Delete Session</string>
+    <string name="session_settings_delete_message">Are you sure you want to delete this session? This action cannot be undone.</string>
+    <string name="session_settings_configured">Configured</string>
+    <string name="session_settings_not_set">Not Set</string>
+    <string name="session_settings_docs_attached">%1$d documents attached</string>
+    <string name="session_settings_add_docs">Add Documents</string>
+    <string name="session_settings_system_prompt_label">System Prompt</string>
+    <string name="session_settings_attached_docs_label">Attached Documents</string>
+    <string name="session_settings_section_danger">Danger Zone</string>
+    <string name="session_settings_delete_btn">Delete Session</string>
+
+    <!-- SessionSettingsSheet -->
+    <string name="sheet_title">Session Settings</string>
+    <string name="sheet_tab_model">Model</string>
+    <string name="sheet_tab_thinking">Thinking</string>
+    <string name="sheet_tab_stats">Stats</string>
+    <string name="sheet_tab_tools">Tools</string>
+    <string name="sheet_thinking_minimal">Minimal</string>
+    <string name="sheet_thinking_minimal_desc">Fast response, minimal compute</string>
+    <string name="sheet_thinking_low">Low</string>
+    <string name="sheet_thinking_low_desc">Basic reasoning, balanced speed</string>
+    <string name="sheet_thinking_medium">Medium</string>
+    <string name="sheet_thinking_medium_desc">Deep reasoning, recommended</string>
+    <string name="sheet_thinking_high">High</string>
+    <string name="sheet_thinking_high_desc">Strongest reasoning, highest quality</string>
+    <string name="sheet_stats_prompt">Prompt</string>
+    <string name="sheet_stats_completion">Completion</string>
+    <string name="sheet_stats_rag">RAG System</string>
+    <string name="sheet_stats_total">Total Tokens</string>
+    <string name="sheet_stats_reset">Reset Stats</string>
+    <string name="sheet_stats_disclaimer">Estimated token usage</string>
+    <string name="sheet_tool_time_injection">Time Injection</string>
+    <string name="sheet_tool_strict_mode">Strict Mode</string>
+    <string name="sheet_tool_skills">Agent Skills</string>
+    <string name="sheet_tool_mcp_servers">MCP Servers</string>
+    <string name="sheet_tool_user_skills">User Skills</string>
+    <string name="sheet_stats_tokens">tokens</string>
+    <string name="sheet_tool_execution_mode">Execution Mode</string>
+    <string name="sheet_tool_search_retrieval">Search &amp; Retrieval</string>
+    <string name="sheet_tool_code_analysis">Code Analysis</string>
+    <string name="sheet_tool_web_search">Web Search</string>
+    <string name="sheet_tool_filesystem_server">Filesystem Server</string>
+    <string name="sheet_tool_github_server">GitHub Server</string>
+
+    <!-- SpaSettingsScreen -->
+    <string name="spa_title">Super Assistant Settings</string>
+    <string name="spa_section_fab">FAB Appearance</string>
+    <string name="spa_fab_rotation">Rotation Animation</string>
+    <string name="spa_fab_glow">Glow Effect</string>
+    <string name="spa_section_model">Model Configuration</string>
+    <string name="spa_section_kg">Knowledge Graph</string>
+    <string name="spa_kg_enable">Enable Knowledge Graph</string>
+    <string name="spa_kg_enable_desc">Extract and store entity relationships</string>
+    <string name="spa_kg_view">View Full Graph</string>
+    <string name="spa_kg_browse">Browse nodes and edges</string>
+    <string name="spa_section_knowledge">Knowledge Management</string>
+    <string name="spa_section_context">Context</string>
+    <string name="spa_context_window">Active Context Window</string>
+    <string name="spa_section_stats">Global Knowledge</string>
+    <string name="spa_stat_documents">Documents</string>
+    <string name="spa_stat_sessions">Sessions</string>
+    <string name="spa_stat_vectors">Vectors</string>
+    <string name="spa_clean_ghost">Clean Ghost Data</string>
+    <string name="spa_export_history">Export History</string>
+    <string name="spa_section_danger">Danger Zone</string>
+    <string name="spa_delete_btn">Delete Super Assistant</string>
+    <string name="spa_delete_title">Delete Super Assistant</string>
+    <string name="spa_delete_message">Are you sure? This will clear all Super Assistant data.</string>
+    <string name="spa_assistant_title_label">Assistant Title</string>
+    <string name="spa_assistant_title_placeholder">Enter assistant name…</string>
+    <string name="spa_icon_style">Icon Style</string>
+    <string name="spa_color_label">Color</string>
+    <string name="spa_default_model">Default Model</string>
+    <string name="spa_rag_config">RAG Configuration</string>
+    <string name="spa_rag_config_desc">Configure retrieval settings</string>
+    <string name="spa_advanced_retrieval">Advanced Retrieval</string>
+    <string name="spa_retrieval_desc">Fine-tune search parameters</string>
+
+    <!-- WorkspaceSheet -->
+    <string name="workspace_title">Workspace</string>
+    <string name="workspace_tab_tasks">Tasks</string>
+    <string name="workspace_tab_artifacts">Artifacts</string>
+    <string name="workspace_tab_files">Files</string>
+    <string name="workspace_task_running">Running</string>
+    <string name="workspace_task_pending">Pending</string>
+    <string name="workspace_task_completed">Completed</string>
+    <string name="workspace_sprint_pipeline">Sprint Pipeline</string>
+    <string name="workspace_x_of_y_completed">%1$d of %2$d completed</string>
+    <string name="workspace_empty_tasks">No tasks yet</string>
+    <string name="workspace_empty_artifacts">No artifacts yet</string>
+    <string name="workspace_empty_files">No files yet</string>
+    <string name="workspace_file_preview_title">File Preview</string>
+
+    <!-- Chat Error Messages (prefixes for ViewModel) -->
+    <string name="chat_error_context_build">Context build failed: %1$s</string>
+    <string name="chat_error_generation">Generation failed: %1$s</string>
+    <string name="chat_error_session_not_found">Session not found: %1$s</string>
+    <string name="chat_error_load_session">Failed to load session: %1$s</string>
+
+    <!-- ============ Settings Sub-screens ============ -->
+
+    <!-- BackupSettingsScreen -->
+    <string name="backup_title">Backup &amp; Restore</string>
+    <string name="backup_desc">Manage data security, local export, and cloud sync settings.</string>
+    <string name="backup_content_title">Backup Content</string>
+    <string name="backup_items_selected">%1$d items selected</string>
+    <string name="backup_content_sessions">Sessions</string>
+    <string name="backup_content_library">Knowledge Base</string>
+    <string name="backup_content_files">Files</string>
+    <string name="backup_content_settings">Settings</string>
+    <string name="backup_content_keys">API Keys</string>
+    <string name="backup_section_local">Local Storage</string>
+    <string name="backup_export_title">Export Backup</string>
+    <string name="backup_export_subtitle">JSON Archive</string>
+    <string name="backup_import_title">Import Backup</string>
+    <string name="backup_import_subtitle">Restore Data</string>
+    <string name="backup_section_webdav">WebDAV Cloud</string>
+    <string name="backup_webdav_sync">WebDAV Sync</string>
+    <string name="backup_webdav_configured">Configured</string>
+    <string name="backup_webdav_not_configured">Not Configured</string>
+    <string name="backup_auto_backup">Auto Backup</string>
+    <string name="backup_upload_cloud">Upload to Cloud</string>
+    <string name="backup_restore_cloud">Restore from Cloud</string>
+    <string name="backup_config_webdav">Configure WebDAV</string>
+    <string name="backup_info_text">Data is stored locally by default. Configure WebDAV for end-to-end encrypted cross-device sync.</string>
+    <string name="backup_webdav_config_title">WebDAV Configuration</string>
+    <string name="backup_webdav_url_label">Server URL</string>
+    <string name="backup_webdav_url_hint">https://your-webdav-server.com</string>
+    <string name="backup_webdav_user_label">Username</string>
+    <string name="backup_webdav_user_hint">user</string>
+    <string name="backup_webdav_pass_label">Password / Token</string>
+    <string name="backup_test_connection">Test Connection</string>
+    <string name="backup_save_config">Save Configuration</string>
+
+    <!-- LocalModelsScreen -->
+    <string name="local_models_title">Local Models</string>
+    <string name="local_models_desc">Manage and run on-device lightweight models for maximum privacy and low latency.</string>
+    <string name="local_models_enable_engine">Enable Local Engine</string>
+    <string name="local_models_engine_subtitle">Required to run downloaded GGUF models</string>
+    <string name="local_models_import_title">Import GGUF File</string>
+    <string name="local_models_import_subtitle">Select a .gguf file from device</string>
+    <string name="local_models_active_slots">Active Slots</string>
+    <string name="local_models_imported">Imported Models</string>
+    <string name="local_models_engine_status">Engine Status</string>
+    <string name="local_models_not_loaded">Not Loaded</string>
+    <string name="local_models_slot_main">Main Generator</string>
+    <string name="local_models_slot_embeddings">Embeddings</string>
+    <string name="local_models_slot_reranker">Reranker</string>
+    <string name="local_models_slot_idle">Idle</string>
+    <string name="local_models_load_model">Load Model</string>
+    <string name="local_models_memory_heavy">Q8 Memory Heavy</string>
+    <string name="local_models_active_main">Active Main</string>
+    <string name="local_models_loaded">Loaded</string>
+    <string name="local_models_load">Load</string>
+    <string name="local_models_cd_delete">Delete</string>
+
+    <!-- WorkbenchScreen -->
+    <string name="workbench_title">Workbench</string>
+    <string name="workbench_desc">Turn your device into a local web server for browser access.</string>
+    <string name="workbench_section_stability">Stability Guide</string>
+    <string name="workbench_stability_intro">To ensure stable background service, complete the following settings:</string>
+    <string name="workbench_notification_perm">Notification Permission</string>
+    <string name="workbench_battery_opt">Battery Optimization</string>
+    <string name="workbench_recent_apps">Lock Recent Apps</string>
+    <string name="workbench_recent_apps_desc">Swipe the app card in the recent tasks list and tap the lock icon</string>
+    <string name="workbench_section_connection">Connection Details</string>
+    <string name="workbench_access_code">Access Code</string>
+    <string name="workbench_connected_clients">Connected Clients</string>
+    <string name="workbench_active_count">%1$d active</string>
+    <string name="workbench_latency">%1$s latency</string>
+    <string name="workbench_copy">Copy</string>
+    <string name="workbench_refresh">Refresh</string>
+    <string name="workbench_endpoint_url">Endpoint URL</string>
+    <string name="workbench_status_online">Online · Routing</string>
+    <string name="workbench_status_offline">Offline · Stopped</string>
+    <string name="workbench_refresh_at">Refresh at %1$s</string>
+
+    <!-- ProviderFormScreen -->
+    <string name="provider_form_title_add">Add Provider</string>
+    <string name="provider_form_title_edit">Edit Provider</string>
+    <string name="provider_form_desc">Select a provider and configure the credentials needed for integration.</string>
+    <string name="provider_form_preset_title">Presets</string>
+    <string name="provider_form_config_section">Configuration</string>
+    <string name="provider_form_label_name">Name</string>
+    <string name="provider_form_placeholder_name">My Provider</string>
+    <string name="provider_form_label_url">Base URL</string>
+    <string name="provider_form_placeholder_url">https://api.example.com/v1</string>
+    <string name="provider_form_label_api_key">API Key</string>
+    <string name="provider_form_secure_storage">Secure Storage</string>
+    <string name="provider_form_placeholder_api_key">sk-…</string>
+    <string name="provider_form_label_sa">Service Account JSON</string>
+    <string name="provider_form_paste_json">Paste Vertex AI JSON</string>
+    <string name="provider_form_label_model">Model</string>
+    <string name="provider_form_default_provider">Set as Default</string>
+    <string name="provider_form_btn_test">Test Connection</string>
+    <string name="provider_form_btn_save">Save Provider</string>
+    <string name="provider_form_cd_hide">Hide</string>
+    <string name="provider_form_cd_show">Show</string>
+
+    <!-- ProviderModelsScreen -->
+    <string name="provider_models_search">Search models…</string>
+    <string name="provider_models_desc">Manage model access and capabilities.</string>
+    <string name="provider_models_auto_fetch">Auto Fetch</string>
+    <string name="provider_models_add">Add</string>
+    <string name="provider_models_disable_all">Disable All</string>
+    <string name="provider_models_delete_all">Delete All</string>
+    <string name="provider_models_delete_all_title">Delete All Models</string>
+    <string name="provider_models_delete_all_message">Are you sure you want to delete all model configurations? Enabled models will become unavailable.</string>
+    <string name="provider_models_test_success">Connection successful · %1$s latency</string>
+    <string name="provider_models_test_error">Error: Invalid API Key or insufficient quota</string>
+    <string name="provider_models_add_custom">Add Custom Model</string>
+    <string name="provider_models_context_label">Context:</string>
+    <string name="provider_models_cd_test">Test</string>
+
+    <!-- SearchConfigScreen -->
+    <string name="search_config_title">Web Search</string>
+    <string name="search_config_desc">Configure web search behavior and result filtering.</string>
+    <string name="search_config_web_search">Web Search</string>
+    <string name="search_config_web_search_desc">Enable web search for responses</string>
+    <string name="search_config_search_depth">Search Depth</string>
+    <string name="search_config_result_count">Result Count</string>
+    <string name="search_config_results">%1$d results</string>
+    <string name="search_config_include_domains">Include Domains</string>
+    <string name="search_config_exclude_domains">Exclude Domains</string>
+    <string name="search_config_depth_basic">Basic</string>
+    <string name="search_config_depth_advanced">Advanced</string>
+
+    <!-- SkillsScreen -->
+    <string name="skills_title">Agent Skills</string>
+    <string name="skills_desc">Configure capabilities and external tool connections for your AI agents.</string>
+    <string name="skills_loop_limit">Execution Loop Limit</string>
+    <string name="skills_loop_limit_desc">Maximum tool-calling iterations per request</string>
+    <string name="skills_unlimited">Infinity</string>
+    <string name="skills_warning_unlimited">Infinite loop mode enabled. May cause excessive API costs.</string>
+    <string name="skills_tab_preset">Preset</string>
+    <string name="skills_tab_user">User</string>
+    <string name="skills_tab_mcp">MCP</string>
+    <string name="skills_add_custom">Add Custom Skill</string>
+    <string name="skills_add_mcp">Add MCP Server</string>
+    <string name="skills_mcp_name_placeholder">Server Name</string>
+    <string name="skills_mcp_url_placeholder">Server URL</string>
+    <string name="skills_mcp_add_btn">Add Server</string>
+    <string name="skills_mcp_call_interval">Call Interval</string>
+    <string name="skills_mcp_enabled">Enabled</string>
+    <string name="skills_mcp_default">Default</string>
+    <string name="skills_mcp_tools">Tools (%1$d)</string>
+    <string name="skills_configure">Configure</string>
+    <string name="skills_edit_skill">Edit Skill Config</string>
+
+    <!-- ThemeScreen -->
+    <string name="theme_title">Appearance</string>
+    <string name="theme_desc">Customize the look and feel of your app.</string>
+    <string name="theme_mode">Theme Mode</string>
+    <string name="theme_accent_color">Accent Color</string>
+    <string name="theme_preview">Preview</string>
+    <string name="theme_primary_btn">Primary Button</string>
+    <string name="theme_secondary_btn">Secondary Button</string>
+
+    <!-- TokenUsageScreen -->
+    <string name="token_title">Token Usage</string>
+    <string name="token_desc">Global statistics across all providers and models.</string>
+    <string name="token_total_usage">TOTAL USAGE</string>
+    <string name="token_tokens">tokens</string>
+    <string name="token_clear_history">Clear All History</string>
+    <string name="token_in_out">In: %1$s · Out: %2$s</string>
+    <string name="token_active_model">Active Model</string>
+
+    <!-- SettingsViewModel defaults -->
+    <string name="settings_default_user_name">Nexara User</string>
+
+    <!-- ============ RAG Module ============ -->
+
+    <!-- RagHomeScreen -->
+    <string name="rag_home_title">Knowledge Base</string>
+    <string name="rag_home_subtitle">Centralized intelligence repository and vector storage.</string>
+    <string name="rag_home_search">Search documents…</string>
+    <string name="rag_home_documents">Documents</string>
+    <string name="rag_home_memory">Memory</string>
+    <string name="rag_home_graph">Graph</string>
+    <string name="rag_home_section_collections">Collections</string>
+    <string name="rag_home_new">New</string>
+    <string name="rag_home_graph_btn">Graph</string>
+    <string name="rag_home_upload_area">Drag &amp; drop files to upload</string>
+    <string name="rag_home_upload_hint">PDF, Markdown, TXT up to 50MB</string>
+    <string name="rag_home_empty_title">No collections yet</string>
+    <string name="rag_home_empty_subtitle">Upload documents or create a folder to get started.</string>
+    <string name="rag_home_search_results">Search Results</string>
+    <string name="rag_home_recent_docs">Recent Documents</string>
+    <string name="rag_home_memory_section">Memory</string>
+    <string name="rag_home_memory_empty">Memory summaries from sessions will appear here.</string>
+    <string name="rag_home_vectorizing">Vectorizing…</string>
+    <string name="rag_home_selected_count">%1$d items selected</string>
+    <string name="rag_home_clear_all">Clear all</string>
+    <string name="rag_home_move">Move</string>
+    <string name="rag_home_reindex">Re-index</string>
+    <string name="rag_home_move_to_folder">Move to Folder</string>
+    <string name="rag_home_delete_confirm_title">Delete %1$d items?</string>
+    <string name="rag_home_docs_count">%1$d docs</string>
+
+    <!-- RagFolderScreen -->
+    <string name="rag_folder_select_all">Select All</string>
+    <string name="rag_folder_deselect">Deselect All</string>
+    <string name="rag_folder_empty">No documents yet</string>
+    <string name="rag_folder_empty_subtitle">Upload documents to start building your knowledge base.</string>
+    <string name="rag_folder_upload">Upload Document</string>
+    <string name="rag_folder_delete_confirm_title">Delete %1$d documents?</string>
+
+    <!-- DocEditorScreen -->
+    <string name="doc_editor_title_placeholder">Document Title…</string>
+    <string name="doc_editor_preview">Preview</string>
+    <string name="doc_editor_edit">Edit</string>
+    <string name="doc_editor_large_file_desc">Large file detected (%1$s). Editing may affect performance. Consider splitting the document.</string>
+    <string name="doc_editor_dismiss">Dismiss</string>
+    <string name="doc_editor_typing_placeholder">Start typing…</string>
+    <string name="doc_editor_utf8">UTF-8</string>
+    <string name="doc_editor_words">%1$d words</string>
+    <string name="doc_editor_chars">%1$d chars</string>
+    <string name="doc_editor_editing">Edit Mode</string>
+    <string name="doc_editor_readonly">Preview Mode (Read-Only)</string>
+
+    <!-- KnowledgeGraphScreen -->
+    <string name="kg_title">Knowledge Graph</string>
+    <string name="kg_stats_summary">%1$d nodes · %2$d edges</string>
+    <string name="kg_filter_all">All</string>
+    <string name="kg_filter_documents">Documents</string>
+    <string name="kg_filter_folders">Folders</string>
+    <string name="kg_filter_concepts">Concepts</string>
+    <string name="kg_node_details">%1$s Node · %2$d connections</string>
+    <string name="kg_node_description">This node represents a key entity in the knowledge graph. Tap to expand context or modify its properties.</string>
+    <string name="kg_expand_context">Expand Context</string>
+
+    <!-- RagAdvancedScreen -->
+    <string name="rag_advanced_title">Advanced RAG</string>
+    <string name="rag_advanced_desc">Knowledge graph extraction, retrieval strategies, and cost management for intelligent context augmentation.</string>
+    <string name="rag_advanced_kg_section">Knowledge Graph</string>
+    <string name="rag_advanced_kg_enable">Enable Knowledge Graph (KG)</string>
+    <string name="rag_advanced_kg_desc">Extract entities and relationships from documents</string>
+    <string name="rag_advanced_extract_config">Extraction Configuration</string>
+    <string name="rag_advanced_extract_model">Extraction Model</string>
+    <string name="rag_advanced_jit_section">JIT Micro-Graph</string>
+    <string name="rag_advanced_jit_enable">Enable JIT</string>
+    <string name="rag_advanced_jit_desc">Dynamically build micro-graphs for each query</string>
+    <string name="rag_advanced_jit_max_blocks">Max Chunks</string>
+    <string name="rag_advanced_jit_free_mode">Free Mode</string>
+    <string name="rag_advanced_jit_free_desc">Allow unrestricted entity extraction</string>
+    <string name="rag_advanced_jit_domain">Domain Auto-Detection</string>
+    <string name="rag_advanced_jit_domain_desc">Automatically detect domain for entity filtering</string>
+    <string name="rag_advanced_cost_section">Cost Strategy</string>
+    <string name="rag_advanced_cost_summary">Summary First</string>
+    <string name="rag_advanced_cost_summary_desc">Low cost, summarize then extract</string>
+    <string name="rag_advanced_cost_on_demand">On-Demand</string>
+    <string name="rag_advanced_cost_on_demand_desc">Balanced, extract as needed</string>
+    <string name="rag_advanced_cost_full_scan">Full Scan</string>
+    <string name="rag_advanced_cost_full_scan_desc">Maximum depth, highest cost</string>
+    <string name="rag_advanced_optimization_section">Local Optimization</string>
+    <string name="rag_advanced_incremental_hash">Incremental Hashing</string>
+    <string name="rag_advanced_incremental_hash_desc">Use content hashing to skip unchanged documents</string>
+    <string name="rag_advanced_rule_prefilter">Rule Pre-Filtering</string>
+    <string name="rag_advanced_rule_prefilter_desc">Apply domain rules before extraction</string>
+    <string name="rag_advanced_prompt_section">Extraction Prompt</string>
+    <string name="rag_advanced_active_prompt">Active Prompt</string>
+    <string name="rag_advanced_view_graph">View Full Graph</string>
+    <string name="rag_advanced_edit_prompt">Edit Extraction Prompt</string>
+    <string name="rag_advanced_reset_default">Reset Default</string>
+
+    <!-- RagDebugScreen -->
+    <string name="rag_debug_title">Vector Stats</string>
+    <string name="rag_debug_desc">Real-time RAG index metrics and diagnostics</string>
+    <string name="rag_debug_total_vectors">Total Vectors · %1$.2f MB</string>
+    <string name="rag_debug_section_types">Type Distribution</string>
+    <string name="rag_debug_doc_vectors">Documents</string>
+    <string name="rag_debug_memory_vectors">Memory</string>
+    <string name="rag_debug_summary_vectors">Summary</string>
+    <string name="rag_debug_section_health">Storage Health</string>
+    <string name="rag_debug_redundancy">Redundancy Rate</string>
+    <string name="rag_debug_cleanup">Clean Index</string>
+    <string name="rag_debug_section_sessions">Top Sessions</string>
+    <string name="rag_debug_vectors_count">%1$s vectors</string>
+    <string name="rag_debug_empty">No vector data available</string>
+
+    <!-- GlobalRagConfigScreen -->
+    <string name="rag_config_title">RAG Config</string>
+    <string name="rag_config_desc">Fine-tune global retrieval augmented generation logic for optimal AI performance across operations.</string>
+    <string name="rag_config_presets">Configuration Presets</string>
+    <string name="rag_config_preset_balanced">Balanced</string>
+    <string name="rag_config_preset_writing">Writing</string>
+    <string name="rag_config_preset_coding">Coding</string>
+    <string name="rag_config_retrieval_params">Retrieval Parameters</string>
+    <string name="rag_config_chunk_size">Chunk Size</string>
+    <string name="rag_config_overlap">Overlap</string>
+    <string name="rag_config_context_window">Context Window</string>
+    <string name="rag_config_summary_threshold">Summary Threshold</string>
+    <string name="rag_config_section_template">Summary Template</string>
+    <string name="rag_config_template_hint">RAG prompt template</string>
+    <string name="rag_config_vector_status">Vector Index Status</string>
+    <string name="rag_config_stats_documents">Indexed Docs</string>
+    <string name="rag_config_stats_vectors">Total Vectors</string>
+    <string name="rag_config_stats_storage">Storage</string>
+    <string name="rag_config_no_data">No data</string>
+    <string name="rag_config_reranker">Reranker</string>
+    <string name="rag_config_reranker_enable">Enable Reranker</string>
+    <string name="rag_config_reranker_desc">Re-ranks retrieved chunks for better relevance</string>
+    <string name="rag_config_advanced_link">Advanced</string>
+    <string name="rag_config_advanced_desc">Knowledge graph and extraction settings</string>
+    <string name="rag_config_details_link">Vector Stats</string>
+    <string name="rag_config_details_desc">Debug and diagnostics</string>
+    <string name="rag_config_clear_vectors">Clear Vector Data</string>
+    <string name="rag_config_clean_orphans">Clean Orphans</string>
+    <string name="rag_config_clear_message">This will delete all indexed vector data. Knowledge graph data and original documents will not be affected.</string>
+    <string name="rag_config_clear_only_vectors">Only Clear Vectors</string>
+    <string name="rag_config_clear_with_kg">Also Clear KG Data</string>
+    <string name="rag_config_clear_all">Clear All</string>
+    <string name="rag_config_edit_template">Edit Summary Template</string>
+
+    <!-- AdvancedRetrievalScreen -->
+    <string name="retrieval_title">Adv. Retrieval</string>
+    <string name="retrieval_title_full">Advanced Retrieval</string>
+    <string name="retrieval_desc">Fine-tune the RAG pipeline parameters to optimize context extraction, relevance filtering, and query execution.</string>
+    <string name="retrieval_memory_section">Memory Retrieval</string>
+    <string name="retrieval_memory_limit">Retrieval Limit</string>
+    <string name="retrieval_similarity_threshold">Similarity Threshold</string>
+    <string name="retrieval_doc_section">Document Retrieval</string>
+    <string name="retrieval_doc_limit">Top-K Documents</string>
+    <string name="retrieval_hybrid_section">Hybrid Search</string>
+    <string name="retrieval_hybrid_enable">Connect to Knowledge Server</string>
+    <string name="retrieval_hybrid_desc">Combine dense vector with sparse BM25 matching</string>
+    <string name="retrieval_vector_weight">Vector Weight</string>
+    <string name="retrieval_bm25_boost">BM25 Boost</string>
+    <string name="retrieval_rerank_section">Reranker</string>
+    <string name="retrieval_rerank_enable">Enable Reranker</string>
+    <string name="retrieval_rerank_desc">Re-order retrieved chunks using cross-encoder</string>
+    <string name="retrieval_rerank_top_n">Rerank Top-N</string>
+    <string name="retrieval_rerank_final">Final Results</string>
+    <string name="retrieval_rewrite_section">Query Rewrite Strategy</string>
+    <string name="retrieval_section_observability">Observability</string>
+    <string name="retrieval_show_progress">Show Retrieval Progress</string>
+    <string name="retrieval_show_progress_desc">Display progress indicators during retrieval</string>
+    <string name="retrieval_show_details">Show Retrieval Details</string>
+    <string name="retrieval_show_details_desc">Display detailed retrieval information</string>
+    <string name="retrieval_track_metrics">Track Retrieval Metrics</string>
+    <string name="retrieval_track_metrics_desc">Log metrics for performance analysis</string>
+    <string name="retrieval_rerank_badge">Rerank</string>
+
+    <!-- Rag Components -->
+    <string name="rag_folder_item_files">%1$d files</string>
+    <string name="rag_indexing_progress">Indexing…</string>
+    <string name="rag_status_ready">Ready</string>
+    <string name="rag_status_indexing">Indexing</string>
+    <string name="rag_status_error">Error</string>
+    <string name="rag_status_pending">Pending</string>
+</resources>

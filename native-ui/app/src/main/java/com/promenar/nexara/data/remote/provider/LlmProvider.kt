@@ -20,6 +20,8 @@ class LlmProvider(private val protocol: LlmProtocol) {
     suspend fun sendPromptSync(request: PromptRequest): PromptResponse =
         protocol.sendPromptSync(request)
 
+    suspend fun listModels(): List<String> = protocol.listModels()
+
     fun cancel() = protocol.cancel()
 
     class Builder {

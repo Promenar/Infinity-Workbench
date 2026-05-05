@@ -1,0 +1,723 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ============ Common Components ============ -->
+    <!-- ModelPicker -->
+    <string name="common_model_picker_title">选择模型</string>
+    <string name="common_model_picker_search">搜索模型…</string>
+    <string name="common_model_picker_empty">暂无可用模型</string>
+    <string name="common_model_picker_k_context">K 上下文</string>
+    <string name="common_model_picker_selected">已选中</string>
+
+    <!-- FloatingTextEditor -->
+    <string name="common_text_editor_placeholder">请输入文本…</string>
+
+    <!-- InferencePresets -->
+    <string name="common_preset_precise">精确</string>
+    <string name="common_preset_balanced">均衡</string>
+    <string name="common_preset_creative">创意</string>
+    <string name="common_preset_temp_label">温度: %1$s</string>
+
+    <!-- ColorPickerPanel -->
+    <string name="common_color_custom">自定义</string>
+
+    <!-- ExecutionMode -->
+    <string name="common_mode_auto">自动</string>
+    <string name="common_mode_semi">半自动</string>
+    <string name="common_mode_manual">手动</string>
+
+    <!-- ConfirmDialog -->
+    <string name="common_btn_confirm">确认</string>
+    <string name="common_btn_cancel">取消</string>
+
+    <!-- SearchBar -->
+    <string name="common_search_placeholder">搜索…</string>
+
+    <!-- Content Descriptions -->
+    <string name="common_cd_back">返回</string>
+    <string name="common_cd_save">保存</string>
+    <string name="common_cd_clear">清除</string>
+    <string name="common_cd_collapse">收起</string>
+    <string name="common_cd_expand">展开</string>
+    <string name="common_cd_navigate">导航</string>
+    <string name="common_cd_pin">置顶</string>
+    <string name="common_cd_unpin">取消置顶</string>
+    <string name="common_cd_selected">已选中</string>
+
+    <!-- ============ Navigation ============ -->
+    <string name="nav_tab_chat">对话</string>
+    <string name="nav_tab_library">知识库</string>
+    <string name="nav_tab_settings">设置</string>
+
+    <!-- ============ Welcome ============ -->
+    <string name="welcome_brand">NEXARA</string>
+    <string name="welcome_slogan">智能重塑</string>
+    <string name="welcome_lang_english">English</string>
+    <string name="welcome_lang_chinese">中文 (简体)</string>
+    <string name="welcome_cd_language">选择语言</string>
+
+    <!-- ============ Shared / Reused ============ -->
+    <string name="shared_loading">加载中…</string>
+    <string name="shared_error_generic">出了点问题</string>
+    <string name="shared_btn_delete">删除</string>
+    <string name="shared_btn_save">保存</string>
+    <string name="shared_btn_edit">编辑</string>
+    <string name="shared_btn_add">添加</string>
+    <string name="shared_btn_reset">重置</string>
+    <string name="shared_btn_close">关闭</string>
+    <string name="shared_btn_done">完成</string>
+    <string name="shared_btn_retry">重试</string>
+    <string name="shared_confirm_delete_title">确认删除</string>
+    <string name="shared_action_cannot_undo">此操作无法撤销。</string>
+
+    <!-- ============ Hub ============ -->
+    <string name="hub_title">智能助手</string>
+    <string name="hub_subtitle">你的智能助手团队</string>
+    <string name="hub_search_placeholder">搜索助手…</string>
+    <string name="hub_btn_add_agent">添加助手</string>
+    <string name="hub_fab_super">超级助手</string>
+    <string name="hub_empty_title">还没有助手</string>
+    <string name="hub_empty_subtitle">点击 + 创建你的第一个 AI 助手</string>
+    <string name="hub_dialog_add_title">创建新助手</string>
+    <string name="hub_dialog_label_name">名称</string>
+    <string name="hub_dialog_label_desc">描述</string>
+    <string name="hub_dialog_label_model">模型 ID</string>
+    <string name="hub_dialog_label_prompt">系统提示词</string>
+    <string name="hub_action_unpin">取消置顶</string>
+
+    <!-- Sessions -->
+    <string name="sessions_search_placeholder">搜索会话…</string>
+    <string name="sessions_empty_title">还没有对话</string>
+    <string name="sessions_empty_subtitle">开始第一个吧</string>
+    <string name="sessions_btn_new">新建会话</string>
+    <string name="sessions_count_format">%1$d 个会话</string>
+    <string name="sessions_cd_settings">助手设置</string>
+    <string name="sessions_cd_new">新建会话</string>
+    <string name="sessions_tag_session">会话</string>
+    <string name="sessions_tag_pinned">已置顶</string>
+
+    <!-- ============ Agent Edit ============ -->
+    <string name="agent_edit_title">编辑助手</string>
+    <string name="agent_edit_section_basic">基本信息</string>
+    <string name="agent_edit_label_name">名称</string>
+    <string name="agent_edit_placeholder_name">输入助手名称…</string>
+    <string name="agent_edit_label_desc">描述</string>
+    <string name="agent_edit_placeholder_desc">描述这个助手…</string>
+    <string name="agent_edit_section_appearance">外观</string>
+    <string name="agent_edit_label_icon">选择图标</string>
+    <string name="agent_edit_icon_custom">自定义</string>
+    <string name="agent_edit_icon_upload">上传图片</string>
+    <string name="agent_edit_section_personality">性格</string>
+    <string name="agent_edit_prompt_label">系统提示词</string>
+    <string name="agent_edit_prompt_placeholder">定义助手行为…</string>
+    <string name="agent_edit_prompt_hint">点击编辑系统提示词…</string>
+    <string name="agent_edit_prompt_configured">已配置</string>
+    <string name="agent_edit_prompt_not_set">未设置</string>
+    <string name="agent_edit_section_model">模型配置</string>
+    <string name="agent_edit_current_model">当前模型</string>
+    <string name="agent_edit_label_presets">推理预设</string>
+    <string name="agent_edit_section_knowledge">知识</string>
+    <string name="agent_edit_rag_config">RAG 配置</string>
+    <string name="agent_edit_rag_desc">分块、记忆、向量化</string>
+    <string name="agent_edit_advanced_retrieval">高级检索</string>
+    <string name="agent_edit_retrieval_desc">重排序、查询改写、混合搜索</string>
+    <string name="agent_edit_section_danger">危险区</string>
+    <string name="agent_edit_delete_btn">删除助手</string>
+    <string name="agent_edit_delete_title">删除助手</string>
+    <string name="agent_edit_delete_message">确定要删除此助手吗？此操作无法撤销。</string>
+    <string name="agent_edit_delete_confirm">删除</string>
+
+    <!-- ============ RAG Config ============ -->
+    <string name="agent_rag_title">RAG 配置</string>
+    <string name="agent_rag_status_inherited">继承全局</string>
+    <string name="agent_rag_status_custom">自定义</string>
+    <string name="agent_rag_reset_title">重置配置</string>
+    <string name="agent_rag_reset_message">确定要重置为全局默认配置吗？所有自定义设置将丢失。</string>
+    <string name="agent_rag_reset_confirm">重置</string>
+    <string name="agent_rag_section_chunk">文档分块</string>
+    <string name="agent_rag_chunk_size">分块大小</string>
+    <string name="agent_rag_overlap">分块重叠</string>
+    <string name="agent_rag_section_memory">记忆</string>
+    <string name="agent_rag_memory_chunk">记忆分块大小</string>
+    <string name="agent_rag_section_context">上下文</string>
+    <string name="agent_rag_active_window">活跃上下文窗口</string>
+    <string name="agent_rag_summary_threshold">摘要触发阈值</string>
+    <string name="agent_rag_section_summary">摘要模板</string>
+    <string name="agent_rag_summary_placeholder">输入摘要模板…</string>
+    <string name="agent_rag_summary_hint">点击编辑摘要模板…</string>
+    <string name="agent_rag_summary_configured">已配置</string>
+    <string name="agent_rag_summary_default">使用默认</string>
+    <string name="agent_rag_unit_char">字</string>
+    <string name="agent_rag_unit_messages">条消息</string>
+
+    <!-- ============ Advanced Retrieval ============ -->
+    <string name="agent_retrieval_title">高级检索</string>
+    <string name="agent_retrieval_section_memory">记忆检索</string>
+    <string name="agent_retrieval_memory_limit">记忆数量限制</string>
+    <string name="agent_retrieval_memory_threshold">记忆相似度阈值</string>
+    <string name="agent_retrieval_section_document">文档检索</string>
+    <string name="agent_retrieval_doc_limit">文档数量限制</string>
+    <string name="agent_retrieval_doc_threshold">文档相似度阈值</string>
+    <string name="agent_retrieval_section_rerank">重排序</string>
+    <string name="agent_retrieval_rerank_enable">启用重排序</string>
+    <string name="agent_retrieval_recall_count">召回数量</string>
+    <string name="agent_retrieval_final_count">最终结果数量</string>
+    <string name="agent_retrieval_section_rewrite">查询改写</string>
+    <string name="agent_retrieval_rewrite_enable">启用查询改写</string>
+    <string name="agent_retrieval_strategy_label">策略</string>
+    <string name="agent_retrieval_strategy_hyde">HyDE</string>
+    <string name="agent_retrieval_strategy_multi">多查询</string>
+    <string name="agent_retrieval_strategy_expansion">扩展</string>
+    <string name="agent_retrieval_variant_count">变体数量</string>
+    <string name="agent_retrieval_section_hybrid">混合搜索</string>
+    <string name="agent_retrieval_vector_weight">向量权重</string>
+    <string name="agent_retrieval_bm25_boost">BM25 增益</string>
+
+    <!-- ============ Settings ============ -->
+    <string name="settings_title">设置</string>
+    <string name="settings_tab_app">应用</string>
+    <string name="settings_tab_provider">提供商</string>
+    <string name="settings_section_general">通用</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_language_zh">中文</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_theme_color">主题色</string>
+    <string name="settings_theme_color_desc">自定义强调色</string>
+    <string name="settings_haptic">触觉反馈</string>
+    <string name="settings_section_model_presets">模型预设</string>
+    <string name="settings_model_summary">摘要模型</string>
+    <string name="settings_model_image">图像模型</string>
+    <string name="settings_model_embedding">嵌入模型</string>
+    <string name="settings_model_rerank">重排模型</string>
+    <string name="settings_not_set">未设置</string>
+    <string name="settings_section_knowledge">知识管理</string>
+    <string name="settings_rag_config">RAG 配置</string>
+    <string name="settings_rag_desc">分块、记忆、向量化</string>
+    <string name="settings_advanced_retrieval">高级检索</string>
+    <string name="settings_retrieval_desc">重排序、查询改写、混合搜索</string>
+    <string name="settings_token_usage">Token 用量</string>
+    <string name="settings_token_cost_month">%1$s 本月</string>
+    <string name="settings_section_tools">工具</string>
+    <string name="settings_web_search">Web 搜索</string>
+    <string name="settings_web_search_desc">Tavily 深度搜索</string>
+    <string name="settings_workbench">工作台</string>
+    <string name="settings_workbench_desc">便携服务器 · 实验性</string>
+    <string name="settings_skills">技能</string>
+    <string name="settings_skills_desc">Agent 技能与 MCP</string>
+    <string name="settings_local_models">本地模型</string>
+    <string name="settings_local_models_desc">GGUF 端侧推理 · 实验性</string>
+    <string name="settings_section_data">数据</string>
+    <string name="settings_backup">备份</string>
+    <string name="settings_backup_desc">本地 / WebDAV 同步</string>
+    <string name="settings_logs">日志</string>
+    <string name="settings_logs_desc">记录调试信息与错误日志</string>
+    <string name="settings_export_logs">导出日志</string>
+    <string name="settings_export_logs_desc">分享日志文件</string>
+    <string name="settings_section_about">关于</string>
+    <string name="settings_about_nexara">关于 Nexara</string>
+    <string name="settings_version">版本 %1$s</string>
+    <string name="settings_provider_empty">暂无提供商配置\n点击上方按钮添加</string>
+    <string name="settings_add_provider">添加提供商</string>
+    <string name="settings_delete_provider_title">删除提供商</string>
+    <string name="settings_delete_provider_message">确定要删除此提供商吗？此操作无法撤销。</string>
+    <string name="settings_manage_models">管理模型</string>
+    <string name="settings_edit_name">编辑名称</string>
+    <string name="settings_edit_name_placeholder">输入你的显示名称</string>
+    <string name="settings_btn_save">保存</string>
+    <string name="settings_btn_cancel">取消</string>
+    <string name="settings_btn_delete">删除</string>
+
+    <!-- ============ Chat ============ -->
+    <!-- ChatScreen -->
+    <string name="chat_title_new">新对话</string>
+    <string name="chat_menu_session_settings">会话设置</string>
+    <string name="chat_menu_token_stats">Token 统计</string>
+    <string name="chat_menu_super_assistant">超级助手</string>
+    <string name="chat_menu_export">导出对话</string>
+    <string name="chat_input_placeholder">发消息给%1$s…</string>
+    <string name="chat_input_placeholder_default">发消息…</string>
+    <string name="chat_cd_workspace">工作区</string>
+    <string name="chat_cd_options">选项</string>
+    <string name="chat_cd_stop">停止</string>
+    <string name="chat_cd_send">发送</string>
+    <string name="chat_cd_scroll_bottom">回到底部</string>
+
+    <!-- SessionSettingsScreen -->
+    <string name="session_settings_title">设置</string>
+    <string name="session_settings_active_agent">当前助手</string>
+    <string name="session_settings_export">导出会话</string>
+    <string name="session_settings_section_info">会话信息</string>
+    <string name="session_settings_title_label">会话标题</string>
+    <string name="session_settings_title_placeholder">输入会话标题…</string>
+    <string name="session_settings_ai_title">AI 生成标题</string>
+    <string name="session_settings_section_inference">推理参数</string>
+    <string name="session_settings_temperature">温度</string>
+    <string name="session_settings_top_p">Top P</string>
+    <string name="session_settings_max_tokens">最大 Token 数</string>
+    <string name="session_settings_label_focused">聚焦</string>
+    <string name="session_settings_label_diverse">多样</string>
+    <string name="session_settings_label_short">短</string>
+    <string name="session_settings_label_long">长</string>
+    <string name="session_settings_section_rag">RAG 设置</string>
+    <string name="session_settings_memory">长期记忆</string>
+    <string name="session_settings_memory_desc">跨会话语义记忆上下文</string>
+    <string name="session_settings_kg">知识图谱抽取</string>
+    <string name="session_settings_kg_desc">从对话中提取实体和关系</string>
+    <string name="session_settings_kb">知识库</string>
+    <string name="session_settings_kb_desc">为此会话启用文档检索</string>
+    <string name="session_settings_section_prompt">自定义提示词</string>
+    <string name="session_settings_prompt_editor_title">自定义提示词</string>
+    <string name="session_settings_prompt_placeholder">输入自定义系统提示词…</string>
+    <string name="session_settings_delete_title">删除会话</string>
+    <string name="session_settings_delete_message">确定要删除此会话吗？此操作无法撤销。</string>
+    <string name="session_settings_configured">已配置</string>
+    <string name="session_settings_not_set">未设置</string>
+    <string name="session_settings_docs_attached">已附加 %1$d 个文档</string>
+    <string name="session_settings_add_docs">添加文档</string>
+    <string name="session_settings_system_prompt_label">系统提示词</string>
+    <string name="session_settings_attached_docs_label">已附加文档</string>
+    <string name="session_settings_section_danger">危险区</string>
+    <string name="session_settings_delete_btn">删除会话</string>
+
+    <!-- SessionSettingsSheet -->
+    <string name="sheet_title">会话设置</string>
+    <string name="sheet_tab_model">模型</string>
+    <string name="sheet_tab_thinking">思考级别</string>
+    <string name="sheet_tab_stats">统计</string>
+    <string name="sheet_tab_tools">工具</string>
+    <string name="sheet_thinking_minimal">最小</string>
+    <string name="sheet_thinking_minimal_desc">快速响应，最低计算</string>
+    <string name="sheet_thinking_low">低</string>
+    <string name="sheet_thinking_low_desc">基础推理，平衡速度</string>
+    <string name="sheet_thinking_medium">中</string>
+    <string name="sheet_thinking_medium_desc">深度推理，推荐</string>
+    <string name="sheet_thinking_high">高</string>
+    <string name="sheet_thinking_high_desc">最强推理，最高质量</string>
+    <string name="sheet_stats_prompt">提示词</string>
+    <string name="sheet_stats_completion">补全</string>
+    <string name="sheet_stats_rag">RAG 系统</string>
+    <string name="sheet_stats_total">总 Token</string>
+    <string name="sheet_stats_reset">重置统计</string>
+    <string name="sheet_stats_disclaimer">预估 Token 用量</string>
+    <string name="sheet_tool_time_injection">时间注入</string>
+    <string name="sheet_tool_strict_mode">严格模式</string>
+    <string name="sheet_tool_skills">Agent 技能</string>
+    <string name="sheet_tool_mcp_servers">MCP 服务器</string>
+    <string name="sheet_tool_user_skills">用户技能</string>
+    <string name="sheet_stats_tokens">token</string>
+    <string name="sheet_tool_execution_mode">执行模式</string>
+    <string name="sheet_tool_search_retrieval">搜索与检索</string>
+    <string name="sheet_tool_code_analysis">代码分析</string>
+    <string name="sheet_tool_web_search">Web 搜索</string>
+    <string name="sheet_tool_filesystem_server">文件系统服务器</string>
+    <string name="sheet_tool_github_server">GitHub 服务器</string>
+
+    <!-- SpaSettingsScreen -->
+    <string name="spa_title">超级助手设置</string>
+    <string name="spa_section_fab">FAB 外观</string>
+    <string name="spa_fab_rotation">旋转动画</string>
+    <string name="spa_fab_glow">发光效果</string>
+    <string name="spa_section_model">模型配置</string>
+    <string name="spa_section_kg">知识图谱</string>
+    <string name="spa_kg_enable">启用知识图谱</string>
+    <string name="spa_kg_enable_desc">提取并存储实体关系</string>
+    <string name="spa_kg_view">查看完整图谱</string>
+    <string name="spa_kg_browse">浏览节点和边</string>
+    <string name="spa_section_knowledge">知识管理</string>
+    <string name="spa_section_context">上下文</string>
+    <string name="spa_context_window">活跃上下文窗口</string>
+    <string name="spa_section_stats">全局知识</string>
+    <string name="spa_stat_documents">文档</string>
+    <string name="spa_stat_sessions">会话</string>
+    <string name="spa_stat_vectors">向量</string>
+    <string name="spa_clean_ghost">清理幽灵数据</string>
+    <string name="spa_export_history">导出历史</string>
+    <string name="spa_section_danger">危险区</string>
+    <string name="spa_delete_btn">删除超级助手</string>
+    <string name="spa_delete_title">删除超级助手</string>
+    <string name="spa_delete_message">确定要删除吗？这将清除所有超级助手数据。</string>
+    <string name="spa_assistant_title_label">助手标题</string>
+    <string name="spa_assistant_title_placeholder">输入助手名称…</string>
+    <string name="spa_icon_style">图标样式</string>
+    <string name="spa_color_label">颜色</string>
+    <string name="spa_default_model">默认模型</string>
+    <string name="spa_rag_config">RAG 配置</string>
+    <string name="spa_rag_config_desc">配置检索设置</string>
+    <string name="spa_advanced_retrieval">高级检索</string>
+    <string name="spa_retrieval_desc">微调搜索参数</string>
+
+    <!-- WorkspaceSheet -->
+    <string name="workspace_title">工作区</string>
+    <string name="workspace_tab_tasks">任务</string>
+    <string name="workspace_tab_artifacts">产物</string>
+    <string name="workspace_tab_files">文件</string>
+    <string name="workspace_task_running">运行中</string>
+    <string name="workspace_task_pending">等待中</string>
+    <string name="workspace_task_completed">已完成</string>
+    <string name="workspace_sprint_pipeline">Sprint 流水线</string>
+    <string name="workspace_x_of_y_completed">%1$d / %2$d 已完成</string>
+    <string name="workspace_empty_tasks">暂无任务</string>
+    <string name="workspace_empty_artifacts">暂无产物</string>
+    <string name="workspace_empty_files">暂无文件</string>
+    <string name="workspace_file_preview_title">文件预览</string>
+
+    <!-- Chat Error Messages -->
+    <string name="chat_error_context_build">上下文构建失败: %1$s</string>
+    <string name="chat_error_generation">生成失败: %1$s</string>
+    <string name="chat_error_session_not_found">未找到会话: %1$s</string>
+    <string name="chat_error_load_session">加载会话失败: %1$s</string>
+
+    <!-- ============ Settings Sub-screens ============ -->
+
+    <!-- BackupSettingsScreen -->
+    <string name="backup_title">备份与恢复</string>
+    <string name="backup_desc">管理数据安全、本地导出与云端同步设置。</string>
+    <string name="backup_content_title">备份内容</string>
+    <string name="backup_items_selected">%1$d 项已选择</string>
+    <string name="backup_content_sessions">会话</string>
+    <string name="backup_content_library">知识库</string>
+    <string name="backup_content_files">文件</string>
+    <string name="backup_content_settings">设置</string>
+    <string name="backup_content_keys">密钥</string>
+    <string name="backup_section_local">本地存储</string>
+    <string name="backup_export_title">导出备份</string>
+    <string name="backup_export_subtitle">JSON 归档</string>
+    <string name="backup_import_title">导入备份</string>
+    <string name="backup_import_subtitle">恢复数据</string>
+    <string name="backup_section_webdav">WebDAV 云端</string>
+    <string name="backup_webdav_sync">WebDAV 同步</string>
+    <string name="backup_webdav_configured">已配置</string>
+    <string name="backup_webdav_not_configured">未配置</string>
+    <string name="backup_auto_backup">自动备份</string>
+    <string name="backup_upload_cloud">上传到云端</string>
+    <string name="backup_restore_cloud">从云端恢复</string>
+    <string name="backup_config_webdav">配置 WebDAV</string>
+    <string name="backup_info_text">数据默认仅在本地存储。配置 WebDAV 后可启用端到端加密的跨设备同步。</string>
+    <string name="backup_webdav_config_title">WebDAV 配置</string>
+    <string name="backup_webdav_url_label">服务器 URL</string>
+    <string name="backup_webdav_url_hint">https://your-webdav-server.com</string>
+    <string name="backup_webdav_user_label">用户名</string>
+    <string name="backup_webdav_user_hint">user</string>
+    <string name="backup_webdav_pass_label">密码 / Token</string>
+    <string name="backup_test_connection">测试连接</string>
+    <string name="backup_save_config">保存配置</string>
+
+    <!-- LocalModelsScreen -->
+    <string name="local_models_title">本地模型</string>
+    <string name="local_models_desc">管理并运行端侧轻量模型，实现最高隐私保护与低延迟。</string>
+    <string name="local_models_enable_engine">启用本地引擎</string>
+    <string name="local_models_engine_subtitle">运行已下载的 GGUF 模型所必需</string>
+    <string name="local_models_import_title">导入 GGUF 文件</string>
+    <string name="local_models_import_subtitle">从设备中选择 .gguf 文件</string>
+    <string name="local_models_active_slots">活跃插槽</string>
+    <string name="local_models_imported">已导入模型</string>
+    <string name="local_models_engine_status">引擎状态</string>
+    <string name="local_models_not_loaded">未加载</string>
+    <string name="local_models_slot_main">主生成器</string>
+    <string name="local_models_slot_embeddings">嵌入</string>
+    <string name="local_models_slot_reranker">重排序</string>
+    <string name="local_models_slot_idle">空闲</string>
+    <string name="local_models_load_model">加载模型</string>
+    <string name="local_models_memory_heavy">Q8 高内存</string>
+    <string name="local_models_active_main">活跃主槽</string>
+    <string name="local_models_loaded">已加载</string>
+    <string name="local_models_load">加载</string>
+    <string name="local_models_cd_delete">删除</string>
+
+    <!-- WorkbenchScreen -->
+    <string name="workbench_title">工作台</string>
+    <string name="workbench_desc">将设备变成本地 Web 服务器供浏览器访问。</string>
+    <string name="workbench_section_stability">稳定性引导</string>
+    <string name="workbench_stability_intro">为确保后台服务稳定运行，建议完成以下设置：</string>
+    <string name="workbench_notification_perm">通知权限</string>
+    <string name="workbench_battery_opt">电池优化</string>
+    <string name="workbench_recent_apps">锁定最近应用</string>
+    <string name="workbench_recent_apps_desc">从最近任务列表中滑动应用卡片并点击锁定图标</string>
+    <string name="workbench_section_connection">连接详情</string>
+    <string name="workbench_access_code">访问码</string>
+    <string name="workbench_connected_clients">已连接客户端</string>
+    <string name="workbench_active_count">%1$d 活跃</string>
+    <string name="workbench_latency">%1$s 延迟</string>
+    <string name="workbench_copy">复制</string>
+    <string name="workbench_refresh">刷新</string>
+    <string name="workbench_endpoint_url">端点 URL</string>
+    <string name="workbench_status_online">在线 · 路由中</string>
+    <string name="workbench_status_offline">离线 · 已停止</string>
+    <string name="workbench_refresh_at">%1$s 后刷新</string>
+
+    <!-- ProviderFormScreen -->
+    <string name="provider_form_title_add">添加提供商</string>
+    <string name="provider_form_title_edit">编辑提供商</string>
+    <string name="provider_form_desc">选择提供商并配置集成所需凭证。</string>
+    <string name="provider_form_preset_title">预设提供商</string>
+    <string name="provider_form_config_section">配置</string>
+    <string name="provider_form_label_name">名称</string>
+    <string name="provider_form_placeholder_name">我的提供商</string>
+    <string name="provider_form_label_url">Base URL</string>
+    <string name="provider_form_label_api_key">API Key</string>
+    <string name="provider_form_secure_storage">安全存储</string>
+    <string name="provider_form_placeholder_api_key">sk-…</string>
+    <string name="provider_form_label_sa">服务账号 JSON</string>
+    <string name="provider_form_paste_json">粘贴 Vertex AI JSON</string>
+    <string name="provider_form_label_model">模型</string>
+    <string name="provider_form_default_provider">设为默认</string>
+    <string name="provider_form_btn_test">测试连接</string>
+    <string name="provider_form_btn_save">保存提供商</string>
+    <string name="provider_form_cd_hide">隐藏</string>
+    <string name="provider_form_cd_show">显示</string>
+
+    <!-- ProviderModelsScreen -->
+    <string name="provider_models_search">搜索模型…</string>
+    <string name="provider_models_desc">管理模型访问与能力。</string>
+    <string name="provider_models_auto_fetch">自动获取</string>
+    <string name="provider_models_add">添加</string>
+    <string name="provider_models_disable_all">全部禁用</string>
+    <string name="provider_models_delete_all">全部删除</string>
+    <string name="provider_models_delete_all_title">删除所有模型</string>
+    <string name="provider_models_delete_all_message">确定要删除所有模型配置吗？已启用的模型将无法使用。</string>
+    <string name="provider_models_test_success">连接成功 · %1$s 延迟</string>
+    <string name="provider_models_test_error">错误：无效的 API Key 或配额不足</string>
+    <string name="provider_models_add_custom">添加自定义模型</string>
+    <string name="provider_models_context_label">上下文:</string>
+    <string name="provider_models_cd_test">测试</string>
+
+    <!-- SearchConfigScreen -->
+    <string name="search_config_title">Web 搜索</string>
+    <string name="search_config_desc">配置 Web 搜索行为与结果过滤。</string>
+    <string name="search_config_web_search">Web 搜索</string>
+    <string name="search_config_web_search_desc">为响应启用 Web 搜索</string>
+    <string name="search_config_search_depth">搜索深度</string>
+    <string name="search_config_result_count">最大结果数</string>
+    <string name="search_config_results">%1$d 个结果</string>
+    <string name="search_config_include_domains">包含域名</string>
+    <string name="search_config_exclude_domains">排除域名</string>
+    <string name="search_config_depth_basic">基础</string>
+    <string name="search_config_depth_advanced">高级</string>
+
+    <!-- SkillsScreen -->
+    <string name="skills_title">Agent 技能</string>
+    <string name="skills_desc">配置 AI 助手的能力与外部工具连接。</string>
+    <string name="skills_loop_limit">执行循环限制</string>
+    <string name="skills_loop_limit_desc">每次请求的最大工具调用迭代次数</string>
+    <string name="skills_unlimited">无限</string>
+    <string name="skills_warning_unlimited">无限循环模式已启用，可能导致过高的 API 费用。</string>
+    <string name="skills_tab_preset">预设</string>
+    <string name="skills_tab_user">用户</string>
+    <string name="skills_tab_mcp">MCP</string>
+    <string name="skills_add_custom">添加自定义技能</string>
+    <string name="skills_add_mcp">添加 MCP 服务器</string>
+    <string name="skills_mcp_name_placeholder">服务器名称</string>
+    <string name="skills_mcp_url_placeholder">服务器 URL</string>
+    <string name="skills_mcp_add_btn">添加服务器</string>
+    <string name="skills_mcp_call_interval">调用间隔</string>
+    <string name="skills_mcp_enabled">已启用</string>
+    <string name="skills_mcp_default">默认</string>
+    <string name="skills_mcp_tools">工具 (%1$d)</string>
+    <string name="skills_configure">配置</string>
+    <string name="skills_edit_skill">编辑技能配置</string>
+
+    <!-- ThemeScreen -->
+    <string name="theme_title">个性化</string>
+    <string name="theme_desc">自定义应用的外观与风格。</string>
+    <string name="theme_mode">主题模式</string>
+    <string name="theme_accent_color">强调色</string>
+    <string name="theme_preview">预览</string>
+    <string name="theme_primary_btn">主要按钮</string>
+    <string name="theme_secondary_btn">次要按钮</string>
+
+    <!-- TokenUsageScreen -->
+    <string name="token_title">Token 用量</string>
+    <string name="token_desc">所有提供商和模型的全局统计。</string>
+    <string name="token_total_usage">总用量</string>
+    <string name="token_tokens">token</string>
+    <string name="token_clear_history">清除所有历史</string>
+    <string name="token_in_out">输入: %1$s · 输出: %2$s</string>
+    <string name="token_active_model">活跃模型</string>
+
+    <!-- SettingsViewModel defaults -->
+    <string name="settings_default_user_name">Nexara 用户</string>
+
+    <!-- ============ RAG Module ============ -->
+
+    <!-- RagHomeScreen -->
+    <string name="rag_home_title">知识库</string>
+    <string name="rag_home_subtitle">集中式智能知识库与向量存储。</string>
+    <string name="rag_home_search">搜索文档…</string>
+    <string name="rag_home_documents">文档</string>
+    <string name="rag_home_memory">记忆</string>
+    <string name="rag_home_graph">图谱</string>
+    <string name="rag_home_section_collections">集合</string>
+    <string name="rag_home_new">新建</string>
+    <string name="rag_home_graph_btn">图谱</string>
+    <string name="rag_home_upload_area">拖放文件到此处上传</string>
+    <string name="rag_home_upload_hint">PDF、Markdown、TXT，最大 50MB</string>
+    <string name="rag_home_empty_title">暂无集合</string>
+    <string name="rag_home_empty_subtitle">上传文档或创建文件夹以开始。</string>
+    <string name="rag_home_search_results">搜索结果</string>
+    <string name="rag_home_recent_docs">最近文档</string>
+    <string name="rag_home_memory_section">记忆</string>
+    <string name="rag_home_memory_empty">来自会话的记忆摘要将显示在此处。</string>
+    <string name="rag_home_vectorizing">正在向量化…</string>
+    <string name="rag_home_selected_count">已选择 %1$d 项</string>
+    <string name="rag_home_clear_all">清除全部</string>
+    <string name="rag_home_move">移动</string>
+    <string name="rag_home_reindex">重新向量化</string>
+    <string name="rag_home_move_to_folder">移动到文件夹</string>
+    <string name="rag_home_delete_confirm_title">删除 %1$d 项？</string>
+    <string name="rag_home_docs_count">%1$d 文档</string>
+
+    <!-- RagFolderScreen -->
+    <string name="rag_folder_select_all">全选</string>
+    <string name="rag_folder_deselect">取消全选</string>
+    <string name="rag_folder_empty">暂无文档</string>
+    <string name="rag_folder_empty_subtitle">上传文档以开始构建知识库。</string>
+    <string name="rag_folder_upload">上传文档</string>
+    <string name="rag_folder_delete_confirm_title">删除 %1$d 个文档？</string>
+
+    <!-- DocEditorScreen -->
+    <string name="doc_editor_title_placeholder">文档标题…</string>
+    <string name="doc_editor_preview">预览</string>
+    <string name="doc_editor_edit">编辑</string>
+    <string name="doc_editor_large_file_desc">检测到大文件（%1$s）。编辑可能影响性能。建议拆分文档。</string>
+    <string name="doc_editor_dismiss">关闭</string>
+    <string name="doc_editor_typing_placeholder">开始输入…</string>
+    <string name="doc_editor_utf8">UTF-8</string>
+    <string name="doc_editor_words">%1$d 词</string>
+    <string name="doc_editor_chars">%1$d 字符</string>
+    <string name="doc_editor_editing">编辑模式</string>
+    <string name="doc_editor_readonly">预览模式（只读）</string>
+
+    <!-- KnowledgeGraphScreen -->
+    <string name="kg_title">知识图谱</string>
+    <string name="kg_stats_summary">%1$d 节点 · %2$d 边</string>
+    <string name="kg_filter_all">全部</string>
+    <string name="kg_filter_documents">文档</string>
+    <string name="kg_filter_folders">文件夹</string>
+    <string name="kg_filter_concepts">概念</string>
+    <string name="kg_node_details">%1$s 节点 · %2$d 连接</string>
+    <string name="kg_node_description">此节点代表知识图谱中的一个关键实体。点击以展开上下文或修改其属性。</string>
+    <string name="kg_expand_context">展开上下文</string>
+
+    <!-- RagAdvancedScreen -->
+    <string name="rag_advanced_title">高级 RAG</string>
+    <string name="rag_advanced_desc">知识图谱抽取、检索策略与成本管理，用于智能上下文增强。</string>
+    <string name="rag_advanced_kg_section">知识图谱</string>
+    <string name="rag_advanced_kg_enable">启用知识图谱（KG）</string>
+    <string name="rag_advanced_kg_desc">从文档中提取实体与关系</string>
+    <string name="rag_advanced_extract_config">抽取配置</string>
+    <string name="rag_advanced_extract_model">抽取模型</string>
+    <string name="rag_advanced_jit_section">JIT 微图</string>
+    <string name="rag_advanced_jit_enable">启用 JIT</string>
+    <string name="rag_advanced_jit_desc">为每次查询动态构建微型图谱</string>
+    <string name="rag_advanced_jit_max_blocks">最大块数</string>
+    <string name="rag_advanced_jit_free_mode">免费模式</string>
+    <string name="rag_advanced_jit_free_desc">允许无限制的实体抽取</string>
+    <string name="rag_advanced_jit_domain">域名自动检测</string>
+    <string name="rag_advanced_jit_domain_desc">自动检测域名以过滤实体</string>
+    <string name="rag_advanced_cost_section">成本策略</string>
+    <string name="rag_advanced_cost_summary">摘要优先</string>
+    <string name="rag_advanced_cost_summary_desc">低成本，先摘要后抽取</string>
+    <string name="rag_advanced_cost_on_demand">按需</string>
+    <string name="rag_advanced_cost_on_demand_desc">均衡，按需抽取</string>
+    <string name="rag_advanced_cost_full_scan">全扫描</string>
+    <string name="rag_advanced_cost_full_scan_desc">最大深度，最高成本</string>
+    <string name="rag_advanced_optimization_section">本地优化</string>
+    <string name="rag_advanced_incremental_hash">增量哈希</string>
+    <string name="rag_advanced_incremental_hash_desc">使用内容哈希跳过未更改的文档</string>
+    <string name="rag_advanced_rule_prefilter">规则预过滤</string>
+    <string name="rag_advanced_rule_prefilter_desc">在抽取前应用域名规则</string>
+    <string name="rag_advanced_prompt_section">抽取提示词</string>
+    <string name="rag_advanced_active_prompt">活跃提示词</string>
+    <string name="rag_advanced_view_graph">查看完整图谱</string>
+    <string name="rag_advanced_edit_prompt">编辑抽取提示词</string>
+    <string name="rag_advanced_reset_default">重置默认</string>
+
+    <!-- RagDebugScreen -->
+    <string name="rag_debug_title">向量统计</string>
+    <string name="rag_debug_desc">实时 RAG 索引指标与诊断</string>
+    <string name="rag_debug_total_vectors">总向量数 · %1$.2f MB</string>
+    <string name="rag_debug_section_types">类型分布</string>
+    <string name="rag_debug_doc_vectors">文档</string>
+    <string name="rag_debug_memory_vectors">记忆</string>
+    <string name="rag_debug_summary_vectors">摘要</string>
+    <string name="rag_debug_section_health">存储健康</string>
+    <string name="rag_debug_redundancy">冗余率</string>
+    <string name="rag_debug_cleanup">清理索引</string>
+    <string name="rag_debug_section_sessions">Top 会话</string>
+    <string name="rag_debug_vectors_count">%1$s 向量</string>
+    <string name="rag_debug_empty">暂无向量数据</string>
+
+    <!-- GlobalRagConfigScreen -->
+    <string name="rag_config_title">RAG 配置</string>
+    <string name="rag_config_desc">微调全局检索增强生成逻辑，以优化各操作的 AI 表现。</string>
+    <string name="rag_config_presets">配置预设</string>
+    <string name="rag_config_preset_balanced">均衡</string>
+    <string name="rag_config_preset_writing">写作</string>
+    <string name="rag_config_preset_coding">编程</string>
+    <string name="rag_config_retrieval_params">检索参数</string>
+    <string name="rag_config_chunk_size">分块大小</string>
+    <string name="rag_config_overlap">重叠</string>
+    <string name="rag_config_context_window">上下文窗口</string>
+    <string name="rag_config_summary_threshold">摘要阈值</string>
+    <string name="rag_config_section_template">摘要模板</string>
+    <string name="rag_config_template_hint">RAG 提示词模板</string>
+    <string name="rag_config_vector_status">向量索引状态</string>
+    <string name="rag_config_stats_documents">已索引文档</string>
+    <string name="rag_config_stats_vectors">总向量数</string>
+    <string name="rag_config_stats_storage">存储</string>
+    <string name="rag_config_no_data">暂无数据</string>
+    <string name="rag_config_reranker">重排序器</string>
+    <string name="rag_config_reranker_enable">启用重排序器</string>
+    <string name="rag_config_reranker_desc">对检索到的分块重新排序以提升相关性</string>
+    <string name="rag_config_advanced_link">高级</string>
+    <string name="rag_config_advanced_desc">知识图谱与抽取设置</string>
+    <string name="rag_config_details_link">向量统计</string>
+    <string name="rag_config_details_desc">调试与诊断</string>
+    <string name="rag_config_clear_vectors">清除向量数据</string>
+    <string name="rag_config_clean_orphans">清理孤立数据</string>
+    <string name="rag_config_clear_message">这将删除所有已索引的向量数据。知识图谱数据和原始文档不受影响。</string>
+    <string name="rag_config_clear_only_vectors">仅清除向量</string>
+    <string name="rag_config_clear_with_kg">同时清除图谱数据</string>
+    <string name="rag_config_clear_all">全部清除</string>
+    <string name="rag_config_edit_template">编辑摘要模板</string>
+
+    <!-- AdvancedRetrievalScreen -->
+    <string name="retrieval_title">高级检索</string>
+    <string name="retrieval_title_full">高级检索</string>
+    <string name="retrieval_desc">微调 RAG 流水线参数，优化上下文提取、相关性过滤与查询执行。</string>
+    <string name="retrieval_memory_section">记忆检索</string>
+    <string name="retrieval_memory_limit">检索数量限制</string>
+    <string name="retrieval_similarity_threshold">相似度阈值</string>
+    <string name="retrieval_doc_section">文档检索</string>
+    <string name="retrieval_doc_limit">Top-K 文档</string>
+    <string name="retrieval_hybrid_section">混合搜索</string>
+    <string name="retrieval_hybrid_enable">连接知识服务器</string>
+    <string name="retrieval_hybrid_desc">结合密集向量与稀疏 BM25 匹配</string>
+    <string name="retrieval_vector_weight">向量权重</string>
+    <string name="retrieval_bm25_boost">BM25 增益</string>
+    <string name="retrieval_rerank_section">重排序</string>
+    <string name="retrieval_rerank_enable">启用重排序</string>
+    <string name="retrieval_rerank_desc">使用交叉编码器对检索分块重新排序</string>
+    <string name="retrieval_rerank_top_n">重排序 Top-N</string>
+    <string name="retrieval_rerank_final">最终结果数</string>
+    <string name="retrieval_rewrite_section">查询改写策略</string>
+    <string name="retrieval_section_observability">可观测性</string>
+    <string name="retrieval_show_progress">显示检索进度</string>
+    <string name="retrieval_show_progress_desc">在检索过程中显示进度指示器</string>
+    <string name="retrieval_show_details">显示检索详情</string>
+    <string name="retrieval_show_details_desc">显示详细检索信息</string>
+    <string name="retrieval_track_metrics">跟踪检索指标</string>
+    <string name="retrieval_track_metrics_desc">记录指标用于性能分析</string>
+    <string name="retrieval_rerank_badge">重排序</string>
+
+    <!-- Rag Components -->
+    <string name="rag_folder_item_files">%1$d 个文件</string>
+    <string name="rag_indexing_progress">正在索引…</string>
+    <string name="rag_status_ready">就绪</string>
+    <string name="rag_status_indexing">索引中</string>
+    <string name="rag_status_error">错误</string>
+    <string name="rag_status_pending">等待中</string>
+</resources>

@@ -4,16 +4,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.native.bridge.NexaraBridge
 import com.promenar.nexara.native.ui.theme.NexaraColors
 import com.promenar.nexara.native.ui.theme.NexaraTypography
 
@@ -22,6 +27,8 @@ import com.promenar.nexara.native.ui.theme.NexaraTypography
 fun AgentHubScreen(
     onNavigateToChat: () -> Unit
 ) {
+    val agents by NexaraBridge.agents.collectAsState()
+
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         contentWindowInsets = WindowInsets.systemBars,
@@ -52,43 +59,28 @@ fun AgentHubScreen(
                 top = 16.dp, bottom = 120.dp // pb-[100px] equivalent for BottomBar clearance
             )
         ) {
-            item {
+            items(agents) { agent ->
+                // Helper to parse hex colors or fallback
+                val parsedColor = try {
+                    Color(android.graphics.Color.parseColor(agent.color))
+                } catch (e: Exception) {
+                    NexaraColors.PrimaryContainer
+                }
+                
+                // Helper to map string icon to ImageVector (simplified for now)
+                val iconVector = when(agent.icon) {
+                    "💻" -> Icons.Rounded.Code
+                    "📝" -> Icons.Rounded.EditNote
+                    "🌐", "A" -> Icons.Rounded.Translate
+                    else -> Icons.Rounded.SmartToy
+                }
+
                 AgentListItem(
-                    icon = Icons.Rounded.SmartToy,
-                    title = "超级助手 (Super Assistant)",
-                    subtitle = "全能型任务专家",
-                    iconContainerColor = NexaraColors.PrimaryContainer,
-                    iconTintColor = NexaraColors.OnPrimaryContainer,
-                    onClick = onNavigateToChat
-                )
-            }
-            item {
-                AgentListItem(
-                    icon = Icons.Rounded.Code,
-                    title = "代码助手 (Coder)",
-                    subtitle = "精通多门编程语言",
-                    iconContainerColor = NexaraColors.TertiaryContainer,
-                    iconTintColor = NexaraColors.OnTertiaryContainer,
-                    onClick = onNavigateToChat
-                )
-            }
-            item {
-                AgentListItem(
-                    icon = Icons.Rounded.EditNote,
-                    title = "文案写手 (Writer)",
-                    subtitle = "公文、广告、润色",
-                    iconContainerColor = NexaraColors.SecondaryContainer,
-                    iconTintColor = NexaraColors.OnSecondaryContainer,
-                    onClick = onNavigateToChat
-                )
-            }
-            item {
-                AgentListItem(
-                    icon = Icons.Rounded.Translate,
-                    title = "翻译官 (Translator)",
-                    subtitle = "多语言精准转换",
-                    iconContainerColor = NexaraColors.PrimaryContainer,
-                    iconTintColor = NexaraColors.OnPrimaryContainer,
+                    icon = iconVector,
+                    title = agent.name,
+                    subtitle = agent.description,
+                    iconContainerColor = parsedColor,
+                    iconTintColor = NexaraColors.OnPrimaryContainer, // Ideal to calculate contrast color, fallback for now
                     onClick = onNavigateToChat
                 )
             }

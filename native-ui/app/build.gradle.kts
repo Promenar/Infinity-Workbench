@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
@@ -18,6 +17,10 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    androidResources {
+        localeFilters += listOf("en", "zh-rCN")
+    }
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -43,12 +46,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
+        resValues = true
     }
 
     packaging {
@@ -100,7 +100,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // ─── Room (SQLite ORM) ───
-    val roomVersion = "2.6.1"
+    val roomVersion = "2.7.0-alpha11"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
@@ -120,7 +120,9 @@ dependencies {
     testImplementation("androidx.test.ext:junit:1.1.5")
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 

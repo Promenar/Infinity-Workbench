@@ -1,12 +1,18 @@
 package com.promenar.nexara.ui.chat.manager
 
+import android.util.Log
 import com.promenar.nexara.data.model.BillingUsage
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionStats
 import com.promenar.nexara.data.model.TokenMetric
 import com.promenar.nexara.data.model.TokenUsage
+import com.promenar.nexara.data.rag.EmbeddingClient
+import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
+import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.ui.chat.ChatStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class PostProcessorParams(
     val sessionId: String,
@@ -28,7 +34,10 @@ data class PostProcessorParams(
 class PostProcessor(
     private val store: ChatStore,
     private val sessionManager: SessionManager,
-    private val messageManager: MessageManager
+    private val messageManager: MessageManager,
+    private val embeddingClient: EmbeddingClient? = null,
+    private val vectorStore: VectorStore? = null,
+    private val textSplitter: RecursiveCharacterTextSplitter? = null
 ) {
     private var onGenerateTitle: (suspend (sessionId: String) -> String?)? = null
 
@@ -96,13 +105,62 @@ class PostProcessor(
             "processing"
         )
 
+        val client = embeddingClient
+        val store = vectorStore
+        val splitter = textSplitter
+
+        if (client == null || store == null || splitter == null) {
+            Log.w(TAG, "Embedding pipeline not configured, skipping archive")
+            messageManager.setVectorizationStatus(
+                params.sessionId,
+                listOf(params.userMsgId, params.assistantMsgId),
+                "skipped"
+            )
+            return
+        }
+
         try {
+            val combinedText = buildString {
+                append("User: ").append(params.userContent).append("\n\n")
+                append("Assistant: ").append(params.assistantContent)
+            }
+
+            val chunks = splitter.splitText(combinedText)
+            if (chunks.isEmpty()) {
+                messageManager.setVectorizationStatus(
+                    params.sessionId,
+                    listOf(params.userMsgId, params.assistantMsgId),
+                    "success"
+                )
+                return
+            }
+
+            val embeddingResult = withContext(Dispatchers.IO) {
+                client.embedDocuments(chunks)
+            }
+
+            val vectorRecords = chunks.mapIndexed { index, chunk ->
+                VectorStore.NewVectorRecord(
+                    sessionId = params.sessionId,
+                    content = chunk,
+                    embedding = embeddingResult.embeddings[index],
+                    metadata = """{"type":"memory","modelId":"${params.modelId}"}""",
+                    startMessageId = params.userMsgId,
+                    endMessageId = params.assistantMsgId
+                )
+            }
+
+            withContext(Dispatchers.IO) {
+                store.addVectorRecords(vectorRecords)
+            }
+
             messageManager.setVectorizationStatus(
                 params.sessionId,
                 listOf(params.userMsgId, params.assistantMsgId),
                 "success"
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "archiveToRag failed for session ${params.sessionId}", e)
             messageManager.setVectorizationStatus(
                 params.sessionId,
                 listOf(params.userMsgId, params.assistantMsgId),
@@ -112,6 +170,8 @@ class PostProcessor(
     }
 
     companion object {
+        private const val TAG = "PostProcessor"
+
         fun estimateTokens(text: String): Int {
             if (text.isEmpty()) return 0
             return (text.length / 4.0).toInt().coerceAtLeast(1)

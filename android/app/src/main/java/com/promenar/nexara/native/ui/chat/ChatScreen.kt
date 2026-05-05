@@ -21,14 +21,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.native.bridge.ChatMessage
+import com.promenar.nexara.native.bridge.NexaraBridge
+import com.promenar.nexara.native.bridge.SseClient
 import com.promenar.nexara.native.ui.common.NexaraGlassCard
 import com.promenar.nexara.native.ui.theme.NexaraColors
 import com.promenar.nexara.native.ui.theme.NexaraCustomShapes
 import com.promenar.nexara.native.ui.theme.NexaraShapes
 import com.promenar.nexara.native.ui.theme.NexaraTypography
-
-// Temporary Mock Data
-data class ChatMessage(val isUser: Boolean, val text: String)
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,20 +40,24 @@ fun ChatScreen(
 ) {
     val listState = rememberLazyListState()
     var inputText by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
     
-    val mockMessages = listOf(
-        ChatMessage(true, "Show me how to implement a floating glassmorphic input in Compose."),
-        ChatMessage(false, "Certainly. A floating glassmorphic input typically relies on a Box overlaid at the bottom of your Scaffold, utilizing background blur and subtle borders. Here is an example implementation:")
-    )
+    val messages by NexaraBridge.messages.collectAsState()
+    val currentSessionId by NexaraBridge.currentSessionId.collectAsState()
 
-    // Using Scaffold to automatically manage the TopAppBar and the layout structure.
-    // However, because we want the Input to float over the content and the TopBar to blur,
-    // we need to handle the content overlapping manually with Box.
+    // Temporary basic SSE Client (mocked apiKey/baseUrl for now, should be injected)
+    val sseClient = remember { SseClient("dummy_key", "https://api.openai.com") }
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         contentWindowInsets = WindowInsets.systemBars,
         topBar = {
-            // Glassmorphic TopBar
             TopAppBar(
                 title = { 
                     Text("Super Assistant", style = NexaraTypography.headlineMedium) 
@@ -80,37 +86,95 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Chat List
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = 20.dp, // safe-margin
+                    start = 20.dp,
                     end = 20.dp,
                     top = 16.dp,
-                    bottom = 100.dp // Padding for the floating input
+                    bottom = 100.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(mockMessages) { msg ->
+                items(messages) { msg ->
                     ChatBubble(message = msg)
                 }
             }
 
-            // Floating Input Area
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    // Apply ime padding so the input rises with the keyboard!
                     .windowInsetsPadding(WindowInsets.ime)
-                    .padding(horizontal = 20.dp, vertical = 16.dp) // safe-margin and rhythm
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
                 ChatInputBar(
                     text = inputText,
                     onTextChange = { inputText = it },
                     onSend = { 
-                        if(inputText.isNotBlank()) inputText = "" 
+                        if(inputText.isNotBlank()) {
+                            val userMsg = ChatMessage(
+                                id = UUID.randomUUID().toString(),
+                                content = inputText,
+                                isUser = true,
+                                timestamp = System.currentTimeMillis().toString()
+                            )
+                            val currentMessages = messages.toMutableList()
+                            currentMessages.add(userMsg)
+                            
+                            val aiMsgId = UUID.randomUUID().toString()
+                            val aiMsg = ChatMessage(
+                                id = aiMsgId,
+                                content = "...",
+                                isUser = false,
+                                timestamp = System.currentTimeMillis().toString(),
+                                isStreaming = true
+                            )
+                            currentMessages.add(aiMsg)
+                            
+                            NexaraBridge.updateMessages(currentSessionId ?: "temp_session", currentMessages)
+                            
+                            val prompt = inputText
+                            inputText = ""
+                            
+                            sseClient.sendPrompt(
+                                model = "gpt-4o",
+                                prompt = prompt,
+                                onToken = { token ->
+                                    coroutineScope.launch {
+                                        val msgs = NexaraBridge.messages.value.toMutableList()
+                                        val idx = msgs.indexOfFirst { it.id == aiMsgId }
+                                        if (idx != -1) {
+                                            val oldMsg = msgs[idx]
+                                            val newContent = if (oldMsg.content == "...") token else oldMsg.content + token
+                                            msgs[idx] = oldMsg.copy(content = newContent)
+                                            NexaraBridge.updateMessages(currentSessionId ?: "temp_session", msgs)
+                                        }
+                                    }
+                                },
+                                onComplete = {
+                                    coroutineScope.launch {
+                                        val msgs = NexaraBridge.messages.value.toMutableList()
+                                        val idx = msgs.indexOfFirst { it.id == aiMsgId }
+                                        if (idx != -1) {
+                                            msgs[idx] = msgs[idx].copy(isStreaming = false)
+                                            NexaraBridge.updateMessages(currentSessionId ?: "temp_session", msgs)
+                                        }
+                                    }
+                                },
+                                onError = { error ->
+                                    coroutineScope.launch {
+                                        val msgs = NexaraBridge.messages.value.toMutableList()
+                                        val idx = msgs.indexOfFirst { it.id == aiMsgId }
+                                        if (idx != -1) {
+                                            msgs[idx] = msgs[idx].copy(content = "[Error: $error]", isStreaming = false)
+                                            NexaraBridge.updateMessages(currentSessionId ?: "temp_session", msgs)
+                                        }
+                                    }
+                                }
+                            )
+                        } 
                     }
                 )
             }
@@ -134,7 +198,7 @@ fun ChatBubble(message: ChatMessage) {
                 modifier = Modifier.widthIn(max = 280.dp)
             ) {
                 Text(
-                    text = message.text,
+                    text = message.content,
                     style = NexaraTypography.bodyMedium, // The 15px/25px Gold Standard
                     color = NexaraColors.OnBackground,
                     modifier = Modifier.padding(16.dp)
@@ -146,7 +210,7 @@ fun ChatBubble(message: ChatMessage) {
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
                 Text(
-                    text = message.text,
+                    text = message.content,
                     style = NexaraTypography.bodyMedium,
                     color = NexaraColors.OnBackground,
                     modifier = Modifier.padding(vertical = 8.dp) // No horizontal padding needed as per spec, aligns with edge

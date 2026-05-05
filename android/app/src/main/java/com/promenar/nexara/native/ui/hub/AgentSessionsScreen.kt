@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -15,17 +16,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.promenar.nexara.native.bridge.NexaraBridge
 import com.promenar.nexara.native.ui.common.NexaraGlassCard
 import com.promenar.nexara.native.ui.theme.NexaraColors
 import com.promenar.nexara.native.ui.theme.NexaraShapes
 import com.promenar.nexara.native.ui.theme.NexaraTypography
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentSessionsScreen(
     onNavigateBack: () -> Unit,
-    onNavigateToChat: () -> Unit
+    onNavigateToChat: () -> Unit // In real app, pass sessionId: String
 ) {
+    val sessions by NexaraBridge.sessions.collectAsState()
+
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         contentWindowInsets = WindowInsets.systemBars,
@@ -73,22 +80,19 @@ fun AgentSessionsScreen(
             }
 
             // Session List
-            item {
+            items(sessions) { session ->
+                val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+                val timeString = formatter.format(Date(session.lastUpdatedAt))
+                
                 SessionCard(
-                    title = "React Native WebView Refactor",
-                    time = "2 hours ago",
-                    preview = "Help me analyze this Bridge protocol...",
-                    tag = "DEVELOPMENT",
-                    onClick = onNavigateToChat
-                )
-            }
-            item {
-                SessionCard(
-                    title = "Knowledge Base Retrieval Fix",
-                    time = "Yesterday",
-                    preview = "The retrieved Chunks quantity is incorrect...",
-                    tag = "AI LOGIC",
-                    onClick = onNavigateToChat
+                    title = session.title,
+                    time = timeString,
+                    preview = session.lastMessage,
+                    tag = "SESSION", // Fallback, could extract from data if available
+                    onClick = {
+                        NexaraBridge.currentSessionId.value = session.id
+                        onNavigateToChat()
+                    }
                 )
             }
         }

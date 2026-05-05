@@ -3,6 +3,7 @@ package com.promenar.nexara.data.local.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.promenar.nexara.data.local.db.dao.AgentDao
 import com.promenar.nexara.data.local.db.dao.ArtifactDao
 import com.promenar.nexara.data.local.db.dao.AttachmentDao
 import com.promenar.nexara.data.local.db.dao.AuditLogDao
@@ -20,6 +21,7 @@ import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
 import com.promenar.nexara.data.local.db.entity.ArtifactEntity
 import com.promenar.nexara.data.local.db.entity.AttachmentEntity
+import com.promenar.nexara.data.local.db.entity.AgentEntity
 import com.promenar.nexara.data.local.db.entity.AuditLogEntity
 import com.promenar.nexara.data.local.db.entity.ContextSummaryEntity
 import com.promenar.nexara.data.local.db.entity.DocumentEntity
@@ -37,6 +39,7 @@ import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
 
 @Database(
     entities = [
+        AgentEntity::class,
         SessionEntity::class,
         MessageEntity::class,
         AttachmentEntity::class,
@@ -54,11 +57,12 @@ import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
         AuditLogEntity::class,
         ArtifactEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
 abstract class NexaraDatabase : RoomDatabase() {
+    abstract fun agentDao(): AgentDao
     abstract fun sessionDao(): SessionDao
     abstract fun messageDao(): MessageDao
     abstract fun attachmentDao(): AttachmentDao

@@ -126,6 +126,6 @@ interface LlmProtocol {
     suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk>
 
     suspend fun sendPromptSync(request: PromptRequest): PromptResponse
-
+    suspend fun listModels(): List<String> = emptyList()
     fun cancel()
 }

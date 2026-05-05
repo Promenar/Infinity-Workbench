@@ -148,6 +148,22 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "Gemini 2.0"
     ),
     ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-2.0-pro"),
+        contextLength = 2000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "gemini",
+        note = "Gemini 2.0 Pro"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-2.0-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "gemini",
+        note = "Gemini 2.0 Flash"
+    ),
+    ModelSpec(
         pattern = ModelPattern.StringPattern("gemini-1.5-pro"),
         contextLength = 2000000,
         type = ModelType.CHAT,
@@ -164,12 +180,11 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "Gemini 1.5 Flash"
     ),
     ModelSpec(
-        pattern = ModelPattern.StringPattern("gemini-1.5"),
-        contextLength = 1000000,
+        pattern = ModelPattern.StringPattern("gemini-1.0-pro"),
+        contextLength = 32768,
         type = ModelType.CHAT,
-        capabilities = ModelCapabilities(reasoning = true),
         icon = "gemini",
-        note = "Gemini 1.5"
+        note = "Gemini 1.0 Pro"
     ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("gemini"),
@@ -553,6 +568,26 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         contextLength = 32000,
         icon = "mistral",
         note = "Mixtral 8x7B"
+    ),
+
+    // ==================== Gemma ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gemma-2-27b""", RegexOption.IGNORE_CASE)),
+        contextLength = 8192,
+        icon = "gemma",
+        note = "Gemma 2 27B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gemma-2-9b""", RegexOption.IGNORE_CASE)),
+        contextLength = 8192,
+        icon = "gemma",
+        note = "Gemma 2 9B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gemma""", RegexOption.IGNORE_CASE)),
+        contextLength = 8192,
+        icon = "gemma",
+        note = "Gemma Series"
     ),
 
     // ==================== Rerank Models ====================

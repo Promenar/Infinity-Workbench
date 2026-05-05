@@ -141,6 +141,29 @@ class OpenAIProtocol(
         return parseSyncResponse(responseText)
     }
 
+    override suspend fun listModels(): List<String> {
+        val response: HttpResponse
+        try {
+            response = httpClient.get(baseUrl.trimEnd('/') + "/models") {
+                header("Authorization", "Bearer $apiKey")
+            }
+        } catch (e: Exception) {
+            return emptyList()
+        }
+
+        if (!response.status.isSuccess()) return emptyList()
+
+        val responseText = response.bodyAsText()
+        return try {
+            val root = json.parseToJsonElement(responseText).jsonObject
+            root["data"]?.jsonArray?.mapNotNull {
+                it.jsonObject["id"]?.jsonPrimitive?.contentOrNull
+            } ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     override fun cancel() {
         activeChannel?.cancel()
     }

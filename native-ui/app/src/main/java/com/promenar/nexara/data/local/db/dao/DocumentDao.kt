@@ -46,4 +46,7 @@ interface DocumentDao {
 
     @Query("SELECT * FROM documents WHERE folder_id IN (:folderIds)")
     suspend fun getByFolderIds(folderIds: List<String>): List<DocumentEntity>
+
+    @Query("SELECT COUNT(*) FROM documents WHERE folder_id = :folderId")
+    suspend fun countByFolderId(folderId: String): Int
 }
