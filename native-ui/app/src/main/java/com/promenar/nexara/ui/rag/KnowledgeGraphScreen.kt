@@ -67,28 +67,22 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-data class GraphNode(
-    val id: String,
-    val label: String,
-    val type: String,
-    val x: Float,
-    val y: Float,
-    val icon: ImageVector = Icons.Rounded.Hub
-)
-
-data class GraphEdge(
-    val sourceId: String,
-    val targetId: String,
-    val relation: String = ""
-)
+import android.app.Application
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KnowledgeGraphScreen(
+    viewModel: KnowledgeGraphViewModel = viewModel(factory = KnowledgeGraphViewModel.factory(LocalContext.current.applicationContext as Application)),
     onNavigateBack: () -> Unit
 ) {
-    val nodes = remember { generateMockNodes() }
-    val edges = remember { generateMockEdges(nodes) }
+    val nodes by viewModel.nodes.collectAsState()
+    val edges by viewModel.edges.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
 
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -127,6 +121,22 @@ fun KnowledgeGraphScreen(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_cd_back),
                             tint = NexaraColors.OnSurface
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.injectMockData() }) {
+                        Icon(
+                            Icons.Rounded.AutoFixHigh,
+                            contentDescription = "Inject Mock Data",
+                            tint = NexaraColors.Primary
+                        )
+                    }
+                    IconButton(onClick = { viewModel.clearGraph() }) {
+                        Icon(
+                            Icons.Rounded.DeleteSweep,
+                            contentDescription = "Clear Graph",
+                            tint = NexaraColors.Error
                         )
                     }
                 },
@@ -234,6 +244,13 @@ fun KnowledgeGraphScreen(
                 }
             }
 
+            if (isLoading) {
+                 androidx.compose.material3.CircularProgressIndicator(
+                     modifier = Modifier.align(Alignment.Center),
+                     color = NexaraColors.Primary
+                 )
+            }
+
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -259,9 +276,6 @@ fun KnowledgeGraphScreen(
                                 else Modifier
                             )
                             .padding(horizontal = 12.dp, vertical = 6.dp)
-                            .then(
-                                if (label != allLabel) Modifier else Modifier
-                            )
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -398,56 +412,6 @@ private fun DrawScope.drawGrid(width: Float, height: Float, scale: Float, offset
         drawLine(gridColor, Offset(0f, y), Offset(width, y), strokeWidth = 0.5f)
         y += gridSize
     }
-}
-
-private fun generateMockNodes(): List<GraphNode> {
-    val rng = Random(42)
-    return listOf(
-        GraphNode("n0", "Nexus Core", "concept", 500f, 350f, Icons.Rounded.Psychology),
-        GraphNode("n1", "Q3 Research", "document", 180f, 120f, Icons.Rounded.Description),
-        GraphNode("n2", "Architecture.md", "document", 750f, 100f, Icons.Rounded.Description),
-        GraphNode("n3", "API Gateway", "concept", 150f, 520f, Icons.Rounded.Hub),
-        GraphNode("n4", "Agent 04", "person", 800f, 520f, Icons.Rounded.Person),
-    ) + (5..54).map { i ->
-        val type = when (rng.nextInt(3)) {
-            0 -> "concept"
-            1 -> "document"
-            else -> "person"
-        }
-        val icon = when (type) {
-            "concept" -> Icons.Rounded.Hub
-            "document" -> Icons.Rounded.Description
-            else -> Icons.Rounded.Person
-        }
-        GraphNode(
-            "n$i",
-            "${type.capitalize()} ${('A' + i % 26)}${i / 26 + 1}",
-            type,
-            rng.nextFloat() * 900f + 50f,
-            rng.nextFloat() * 600f + 50f,
-            icon
-        )
-    }
-}
-
-private fun generateMockEdges(nodes: List<GraphNode>): List<GraphEdge> {
-    val rng = Random(42)
-    val edges = mutableListOf<GraphEdge>()
-    edges.add(GraphEdge("n0", "n1", "contains"))
-    edges.add(GraphEdge("n0", "n2", "references"))
-    edges.add(GraphEdge("n0", "n3", "depends_on"))
-    edges.add(GraphEdge("n0", "n4", "managed_by"))
-    edges.add(GraphEdge("n1", "n3", "related"))
-    edges.add(GraphEdge("n2", "n4", "authored"))
-
-    for (i in 0 until 74) {
-        val src = nodes[rng.nextInt(nodes.size)]
-        val tgt = nodes[rng.nextInt(nodes.size)]
-        if (src.id != tgt.id && edges.none { (it.sourceId == src.id && it.targetId == tgt.id) || (it.sourceId == tgt.id && it.targetId == src.id) }) {
-            edges.add(GraphEdge(src.id, tgt.id))
-        }
-    }
-    return edges
 }
 
 private fun String.capitalize() = replaceFirstChar { it.uppercase() }

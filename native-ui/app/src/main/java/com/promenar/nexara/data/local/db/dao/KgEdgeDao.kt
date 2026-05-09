@@ -89,4 +89,10 @@ interface KgEdgeDao {
 
     @Query("SELECT COUNT(*) FROM kg_edges")
     suspend fun getCount(): Int
+
+    @Query("SELECT * FROM kg_edges")
+    suspend fun getAll(): List<KgEdgeEntity>
+
+    @Query("DELETE FROM kg_edges")
+    suspend fun clearAll()
 }

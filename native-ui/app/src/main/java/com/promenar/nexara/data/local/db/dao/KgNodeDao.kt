@@ -54,4 +54,7 @@ interface KgNodeDao {
 
     @Query("SELECT COUNT(*) FROM kg_nodes")
     suspend fun getCount(): Int
+
+    @Query("DELETE FROM kg_nodes")
+    suspend fun clearAll()
 }
