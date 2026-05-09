@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -357,8 +358,8 @@ fun RagHomeScreen(
                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(Icons.Rounded.Folder, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(40.dp))
-                                        Text(stringResource(R.string.rag_home_empty_title), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurfaceVariant)
-                                        Text(stringResource(R.string.rag_home_empty_subtitle), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+                                        Text(stringResource(R.string.rag_home_empty_title), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                                        Text(stringResource(R.string.rag_home_empty_subtitle), style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant)
                                     }
                                 }
                             }
@@ -418,7 +419,7 @@ fun RagHomeScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Icon(Icons.Rounded.Psychology, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(40.dp))
-                                    Text(stringResource(R.string.rag_home_memory_empty), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurfaceVariant)
+                                    Text(stringResource(R.string.rag_home_memory_empty), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
                                 }
                             }
                         }
@@ -574,6 +575,7 @@ fun RagHomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.7f)
                     .padding(24.dp)
                     .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -620,6 +622,7 @@ fun RagHomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.7f)
                     .padding(24.dp)
                     .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)

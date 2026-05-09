@@ -8,11 +8,14 @@ data class Agent(
     val name: String,
     val description: String = "",
     val systemPrompt: String = "",
-    val model: String = "gpt-4o",
+    val model: String = "",
     val icon: String = "✨",
     val color: String = "#C0C1FF",
     val avatarPath: String? = null,
     val isPinned: Boolean = false,
+    val temperature: Double? = 0.7,
+    val topP: Double? = 0.9,
+    val maxTokens: Int? = 4096,
     val createdAt: Long = 0L
 )
 

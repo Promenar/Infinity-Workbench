@@ -275,7 +275,7 @@ fun ProviderFormScreen(
                     .clip(NexaraShapes.medium)
                     .background(NexaraColors.InversePrimary)
                     .clickable {
-                        onSave(selectedPreset.protocolId, baseUrl, apiKey, "gpt-4o", name.ifBlank { null })
+                        onSave(selectedPreset.protocolId, baseUrl, apiKey, "", name.ifBlank { null })
                         if (providerId != null) {
                             onNavigateToModels()
                         } else {

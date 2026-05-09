@@ -556,7 +556,7 @@ fun AgentEditScreen(
 }
 
 @Composable
-private fun IconSelectionItem(
+private fun RowScope.IconSelectionItem(
     option: AgentIconOption,
     isSelected: Boolean,
     activeColor: Color,

@@ -2,8 +2,7 @@ package com.promenar.nexara.ui.chat
 
 import android.app.Activity
 import android.view.WindowManager
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.*
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -11,11 +10,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -68,7 +66,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,6 +73,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraCustomShapes
@@ -131,6 +129,15 @@ fun ChatScreen(
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty() && !isUserScrolledAway) {
             listState.animateScrollToItem(uiState.messages.size - 1)
+        }
+    }
+
+    // Auto-scroll when last message content grows during generation
+    val lastMessageContent = uiState.messages.lastOrNull()?.content ?: ""
+    val lastMessageReasoning = uiState.messages.lastOrNull()?.reasoning ?: ""
+    LaunchedEffect(lastMessageContent.length, lastMessageReasoning.length) {
+        if (uiState.isGenerating && !isUserScrolledAway && uiState.messages.isNotEmpty()) {
+            listState.scrollToItem(uiState.messages.size - 1)
         }
     }
 
@@ -297,7 +304,7 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ChatInputTopBar(
-                    modelName = uiState.session?.modelId ?: "gpt-4o",
+                    modelName = uiState.session?.modelId ?: "",
                     onModelClick = { showSettingsSheet = true },
                     onToolClick = { showSettingsSheet = true },
                     onWorkspaceClick = { showWorkspaceSheet = true }
@@ -343,7 +350,11 @@ private fun ChatInputTopBar(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(Icons.Rounded.Memory, null, tint = NexaraColors.Primary, modifier = Modifier.size(14.dp))
-                Text(modelName, style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurface)
+                Text(
+                    text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
+                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
+                    color = if (modelName.isBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface
+                )
             }
         }
 
@@ -399,17 +410,6 @@ fun ChatBubble(
     message: Message,
     isGenerating: Boolean = false
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
-    val cursorAlpha by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(530),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "cursorAlpha"
-    )
-
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.role == MessageRole.USER) Arrangement.End else Arrangement.Start
@@ -429,33 +429,21 @@ fun ChatBubble(
                 )
             }
         } else {
-            Column(modifier = Modifier.widthIn(max = 320.dp)) {
-                if (message.content.isNotBlank() || isGenerating) {
-                    Text(
-                        text = message.content,
-                        style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnBackground,
-                        modifier = Modifier.padding(vertical = 8.dp)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Reasoning / Thinking block
+                if (!message.reasoning.isNullOrBlank() || (isGenerating && message.content.isEmpty())) {
+                    ThinkingBlock(
+                        reasoning = message.reasoning ?: "",
+                        isGenerating = isGenerating && message.content.isEmpty()
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                if (isGenerating && message.content.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .padding(vertical = 8.dp)
-                            .width(12.dp)
-                            .height(16.dp)
-                            .alpha(cursorAlpha)
-                            .background(NexaraColors.Primary, RoundedCornerShape(2.dp))
-                    )
-                } else if (isGenerating) {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 4.dp, top = 4.dp)
-                            .width(12.dp)
-                            .height(16.dp)
-                            .alpha(cursorAlpha)
-                            .background(NexaraColors.Primary, RoundedCornerShape(2.dp))
+                if (message.content.isNotBlank() || isGenerating) {
+                    MarkdownText(
+                        markdown = message.content,
+                        isStreaming = isGenerating,
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
                 }
 
@@ -466,6 +454,91 @@ fun ChatBubble(
                         color = NexaraColors.Error,
                         modifier = Modifier.padding(top = 4.dp)
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThinkingBlock(
+    reasoning: String,
+    isGenerating: Boolean
+) {
+    var expanded by remember { mutableStateOf(true) }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(NexaraColors.SurfaceContainer.copy(alpha = 0.4f))
+            .border(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .clickable { expanded = !expanded }
+            .padding(12.dp)
+            .animateContentSize()
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Rounded.Memory,
+                null,
+                tint = NexaraColors.Primary,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = if (isGenerating && reasoning.isEmpty()) 
+                    stringResource(R.string.chat_status_thinking) 
+                else 
+                    stringResource(R.string.chat_status_thought),
+                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
+                color = NexaraColors.OnSurfaceVariant
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                if (expanded) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.ArrowDownward,
+                null,
+                tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            if (reasoning.isNotBlank()) {
+                MarkdownText(
+                    markdown = reasoning,
+                    isStreaming = isGenerating,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            } else if (isGenerating) {
+                // Loading indicator for thinking
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    repeat(3) { i ->
+                        val dotAlpha by rememberInfiniteTransition(label = "thinking_dot").animateFloat(
+                            initialValue = 0.2f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(600, delayMillis = i * 200),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "dotAlpha"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .alpha(dotAlpha)
+                                .background(NexaraColors.Primary)
+                        )
+                    }
                 }
             }
         }

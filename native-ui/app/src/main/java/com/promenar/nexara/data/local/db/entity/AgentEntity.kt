@@ -12,7 +12,7 @@ data class AgentEntity(
     val description: String = "",
     @ColumnInfo(name = "system_prompt")
     val systemPrompt: String = "",
-    val model: String = "gpt-4o",
+    val model: String = "",
     val icon: String = "✨",
     val color: String = "#C0C1FF",
     @ColumnInfo(name = "avatar_path")
@@ -21,4 +21,7 @@ data class AgentEntity(
     val isPinned: Int = 0,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
+    val temperature: Double? = null,
+    val top_p: Double? = null,
+    val max_tokens: Int? = null,
 )

@@ -33,7 +33,9 @@ android {
             resValue("string", "app_name", "Nexara Native (Dev)")
         }
         release {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
+            resValue("string", "app_name", "Nexara Native")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -107,7 +109,10 @@ dependencies {
     testImplementation("androidx.room:room-testing:$roomVersion")
 
     // ─── Markdown 渲染 ───
-    // TODO: 迁移阶段按需添加 Markdown 渲染库
+    val markdownRendererVersion = "0.40.2"
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:$markdownRendererVersion")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:$markdownRendererVersion")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-code:$markdownRendererVersion")
 
     // ─── 测试 ───
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")

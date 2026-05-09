@@ -13,6 +13,7 @@ import com.promenar.nexara.ui.chat.manager.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -37,28 +38,29 @@ class SessionListViewModel(
     private val _agentColor = MutableStateFlow("#C0C1FF")
     val agentColor: StateFlow<String> = _agentColor
 
-    val sessions: StateFlow<List<Session>> = store.state
-        .map { state ->
-            val agentId = _currentAgentId.value
-            val forAgent = if (agentId.isNotEmpty()) {
-                state.sessions.filter { it.agentId == agentId }
-            } else {
-                state.sessions
-            }
-            val filtered = if (_searchQuery.value.isBlank()) {
-                forAgent
-            } else {
-                forAgent.filter {
-                    it.title.contains(_searchQuery.value, ignoreCase = true) ||
-                    it.lastMessage?.contains(_searchQuery.value, ignoreCase = true) == true
-                }
-            }
-            filtered.sortedWith(
-                compareByDescending<Session> { it.isPinned }
-                    .thenByDescending { it.updatedAt }
-            )
+    val sessions: StateFlow<List<Session>> = combine(
+        store.state,
+        _currentAgentId,
+        _searchQuery
+    ) { state, agentId, query ->
+        val forAgent = if (agentId.isNotEmpty()) {
+            state.sessions.filter { it.agentId == agentId }
+        } else {
+            state.sessions
         }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        val filtered = if (query.isBlank()) {
+            forAgent
+        } else {
+            forAgent.filter {
+                it.title.contains(query, ignoreCase = true) ||
+                it.lastMessage?.contains(query, ignoreCase = true) == true
+            }
+        }
+        filtered.sortedWith(
+            compareByDescending<Session> { it.isPinned }
+                .thenByDescending { it.updatedAt }
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun loadSessions(agentId: String) {
         _currentAgentId.value = agentId
@@ -80,10 +82,19 @@ class SessionListViewModel(
 
     fun createSession(agentId: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
+            val agent = try { agentDao.getById(agentId) } catch (_: Exception) { null }
             val sessionId = "session_${System.currentTimeMillis()}"
             val session = Session(
                 id = sessionId,
                 agentId = agentId,
+                modelId = agent?.model,
+                inferenceParams = if (agent != null) {
+                    com.promenar.nexara.data.model.InferenceParams(
+                        temperature = agent.temperature,
+                        topP = agent.top_p,
+                        maxTokens = agent.max_tokens
+                    )
+                } else null,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )

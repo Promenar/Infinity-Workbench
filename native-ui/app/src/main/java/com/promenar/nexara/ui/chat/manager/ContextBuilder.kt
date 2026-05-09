@@ -20,7 +20,8 @@ data class ContextBuilderParams(
     val assistantMsgId: String,
     val session: Session,
     val ragOptions: com.promenar.nexara.data.model.RagOptions? = null,
-    val onRagProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null
+    val onRagProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null,
+    val agentSystemPrompt: String? = null
 )
 
 interface WebSearchProvider {
@@ -35,14 +36,28 @@ interface RagProvider {
     ): Triple<String, List<RagReference>, RagUsage?>
 }
 
+interface KgProvider {
+    suspend fun extractContext(
+        query: String,
+        sessionId: String,
+        topKResults: List<RagReference>
+    ): String?
+}
+
 class ContextBuilder(
     private val webSearchProvider: WebSearchProvider? = null,
-    private val ragProvider: RagProvider? = null
+    private val ragProvider: RagProvider? = null,
+    private val kgProvider: KgProvider? = null
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
         val searchContext = performClientSideSearch(params.content)
         val ragResult = performRagRetrieval(params)
-        val systemPrompt = buildSystemPrompt(params, ragResult.second, searchContext)
+        val kgContext = if (kgProvider != null && ragResult.second.isNotEmpty()) {
+            try {
+                kgProvider.extractContext(params.content, params.sessionId, ragResult.second) ?: ""
+            } catch (_: Exception) { "" }
+        } else ""
+        val systemPrompt = buildSystemPrompt(params, ragResult.second, searchContext, kgContext)
 
         return ContextBuilderResult(
             searchContext = searchContext,
@@ -94,7 +109,8 @@ class ContextBuilder(
     private fun buildSystemPrompt(
         params: ContextBuilderParams,
         ragReferences: List<RagReference>,
-        searchContext: String
+        searchContext: String,
+        kgContext: String = ""
     ): String {
         val sb = StringBuilder()
 
@@ -120,7 +136,11 @@ class ContextBuilder(
             sb.appendLine()
         }
 
-        sb.append(session.agentId)
+        params.agentSystemPrompt?.let { prompt ->
+            if (prompt.isNotBlank()) {
+                sb.appendLine(prompt)
+            }
+        }
 
         if (session.customPrompt != null) {
             sb.appendLine()
@@ -133,6 +153,12 @@ class ContextBuilder(
             ragReferences.forEach { ref ->
                 sb.appendLine("- [${ref.source}] ${ref.content.take(200)}")
             }
+        }
+
+        if (kgContext.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("## Knowledge Graph Relations")
+            sb.append(kgContext)
         }
 
         if (searchContext.isNotEmpty()) {

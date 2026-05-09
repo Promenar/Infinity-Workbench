@@ -27,7 +27,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     private val _name = MutableStateFlow("")
     private val _description = MutableStateFlow("")
     private val _systemPrompt = MutableStateFlow("")
-    private val _selectedModel = MutableStateFlow("gpt-4o")
+    private val _selectedModel = MutableStateFlow("")
     private val _selectedColor = MutableStateFlow("#C0C1FF")
     private val _selectedIcon = MutableStateFlow("✨")
     private val _avatarPath = MutableStateFlow<String?>(null)
@@ -49,8 +49,9 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     val hasChanges: StateFlow<Boolean> = combine(
         combine(_initialAgent, _name, _description) { initial, n, d -> Triple(initial, n, d) },
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
-        combine(_selectedIcon, _avatarPath, _temperature, _topP, _isPinned) { si, ap, temp, tp, pin -> listOf(si, ap, temp, tp, pin) }
-    ) { (initial, name, desc), (prompt, model, color), (icon, path, _, _, pin) ->
+        combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
+        combine(_temperature, _topP) { temp, tp -> Pair(temp, tp) }
+    ) { (initial, name, desc), (prompt, model, color), (icon, path, pin), _ ->
         initial == null || initial.name != name || initial.description != desc ||
         initial.systemPrompt != prompt || initial.model != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin
@@ -72,8 +73,8 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
                 _selectedIcon.value = agent.icon
                 _avatarPath.value = agent.avatarPath
                 _isPinned.value = agent.isPinned
-                _temperature.value = 0.7f
-                _topP.value = 0.9f
+                _temperature.value = agent.temperature?.toFloat() ?: 0.7f
+                _topP.value = agent.topP?.toFloat() ?: 0.9f
             }
         }
     }
@@ -148,7 +149,10 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
                 color = _selectedColor.value,
                 avatarPath = _avatarPath.value,
                 isPinned = if (_isPinned.value) 1 else 0,
-                createdAt = _initialAgent.value?.createdAt ?: System.currentTimeMillis()
+                createdAt = _initialAgent.value?.createdAt ?: System.currentTimeMillis(),
+                temperature = _temperature.value.toDouble(),
+                top_p = _topP.value.toDouble(),
+                max_tokens = 4096 // Default for now
             )
             agentDao.insert(entity)
             _initialAgent.value = entity.toAgent()
@@ -186,6 +190,9 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
             color = color,
             avatarPath = avatarPath,
             isPinned = isPinned != 0,
+            temperature = temperature,
+            topP = top_p,
+            maxTokens = max_tokens,
             createdAt = createdAt
         )
     }

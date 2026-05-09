@@ -355,7 +355,7 @@ private fun AddAgentDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("gpt-4o") }
+    var model by remember { mutableStateOf("") }
     var systemPrompt by remember { mutableStateOf("") }
 
     AlertDialog(

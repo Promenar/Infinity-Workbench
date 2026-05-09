@@ -359,6 +359,7 @@
     <string name="workspace_task_completed">Completed</string>
     <string name="workspace_sprint_pipeline">Sprint Pipeline</string>
     <string name="workspace_x_of_y_completed">%1$d of %2$d completed</string>
+    <string name="workspace_no_tasks">No active tasks</string>
     <string name="workspace_empty_tasks">No tasks yet</string>
     <string name="workspace_empty_artifacts">No artifacts yet</string>
     <string name="workspace_empty_files">No files yet</string>
@@ -722,4 +723,7 @@
     <string name="rag_status_indexing">Indexing</string>
     <string name="rag_status_error">Error</string>
     <string name="rag_status_pending">Pending</string>
+    <string name="chat_status_thinking">正在思考...</string>
+    <string name="chat_status_thought">已完成思考</string>
+    <string name="chat_model_placeholder">未配置模型</string>
 </resources>

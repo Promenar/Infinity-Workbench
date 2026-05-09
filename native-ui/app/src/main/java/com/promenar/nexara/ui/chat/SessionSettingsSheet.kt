@@ -220,10 +220,13 @@ fun SessionSettingsSheet(
                 indicator = { tabPositions ->
                     if (pagerState.currentPage < tabPositions.size) {
                         val pos = tabPositions[pagerState.currentPage]
-                        androidx.compose.material3.TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(pos),
-                            height = 2.dp,
-                            color = NexaraColors.Primary
+                        Box(
+                            Modifier
+                                .tabIndicatorOffset(pos)
+                                .padding(horizontal = 32.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(NexaraColors.Primary)
                         )
                     }
                 }
@@ -253,7 +256,7 @@ fun SessionSettingsSheet(
             ) { page ->
                 when (page) {
                     0 -> ModelPanel(
-                        selectedModelId = session?.modelId ?: "gpt-4o",
+                        selectedModelId = session?.modelId ?: "",
                         onSelect = { modelId ->
                             chatViewModel.updateModelId(modelId)
                             onDismiss()
@@ -290,7 +293,7 @@ private fun ModelPanel(
         ModelItem(
             id = info.id,
             name = info.name,
-            providerName = "", // Could be enhanced if ModelInfo had providerId
+            providerName = "Cloud Provider", // Default for now
             capabilities = info.capabilities.mapNotNull { capStr ->
                 try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
             },

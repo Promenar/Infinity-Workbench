@@ -234,7 +234,7 @@ fun ProviderModelsScreen(
                 NexaraSearchBar(
                     value = newModelId,
                     onValueChange = { newModelId = it },
-                    placeholder = "e.g. gpt-4o"
+                    placeholder = "e.g. model-id"
                 )
             }
             Column {

@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import android.app.Application
+import java.io.File
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -19,6 +20,8 @@ import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.rag.EmbeddingClient
+import com.promenar.nexara.data.rag.MemoryManager
+import com.promenar.nexara.data.rag.MemoryManagerRagAdapter
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.remote.protocol.PromptRequest
@@ -29,6 +32,7 @@ import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.ui.chat.manager.ApprovalManager
 import com.promenar.nexara.ui.chat.manager.ContextBuilder
 import com.promenar.nexara.ui.chat.manager.ContextBuilderParams
+import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.MessageManager
 import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
@@ -42,7 +46,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class ChatUiState(
@@ -55,20 +58,27 @@ data class ChatUiState(
 )
 
 class ChatViewModel(
+    private val application: Application,
     private val sessionRepository: ISessionRepository,
     private val messageRepository: IMessageRepository,
     private val llmProvider: LlmProvider,
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
-    private val textSplitter: RecursiveCharacterTextSplitter? = null
+    private val textSplitter: RecursiveCharacterTextSplitter? = null,
+    private val memoryManager: MemoryManager? = null,
+    private val kgProvider: KgProvider? = null,
+    private val skillRegistry: com.promenar.nexara.ui.chat.manager.SkillRegistry? = null
 ) : ViewModel() {
 
-    private val store = ChatStore()
+    private val store = (application as NexaraApplication).chatStore
 
     private val sessionManager = SessionManager(store, sessionRepository)
     private val messageManager = MessageManager(store, messageRepository, sessionRepository, viewModelScope)
-    private val contextBuilder = ContextBuilder()
-    private val toolExecutor = ToolExecutor(store, messageManager, null)
+    private val contextBuilder = ContextBuilder(
+        ragProvider = memoryManager?.let { MemoryManagerRagAdapter(it) },
+        kgProvider = kgProvider
+    )
+    private val toolExecutor = ToolExecutor(store, messageManager, skillRegistry)
     private val postProcessor = PostProcessor(store, sessionManager, messageManager, embeddingClient, vectorStore, textSplitter)
     private val approvalManager = ApprovalManager(store)
 
@@ -131,7 +141,7 @@ class ChatViewModel(
         _inputText.update { "" }
         _error.update { null }
 
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             val userMessage = Message(
                 id = userMsgId,
                 role = MessageRole.USER,
@@ -160,9 +170,11 @@ class ChatViewModel(
         isResumption: Boolean,
         existingAssistantMsgId: String? = null,
         userMsgId: String? = null,
-        userContent: String? = null
+        userContent: String? = null,
+        loopCount: Int = 0
     ) {
         val session = store.getSession(sessionId) ?: return
+        if (loopCount >= session.autoLoopLimit) return
 
         val assistantMsgId = existingAssistantMsgId
             ?: session.messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
@@ -178,11 +190,16 @@ class ChatViewModel(
         _isGenerating.update { true }
         _streamingContent.update { "" }
 
+        val agentDao = (application as NexaraApplication).database.agentDao()
+        val agentEntity = agentDao.getById(sessionForCtx.agentId)
+        val agentPrompt = agentEntity?.systemPrompt ?: ""
+
         val contextParams = ContextBuilderParams(
             sessionId = sessionId,
             content = effectiveUserContent,
             assistantMsgId = assistantMsgId,
-            session = sessionForCtx
+            session = sessionForCtx,
+            agentSystemPrompt = agentPrompt.ifBlank { sessionForCtx.customPrompt }
         )
 
         val contextResult = try {
@@ -195,12 +212,29 @@ class ChatViewModel(
 
         val protocolMessages = buildProtocolMessages(sessionForCtx, contextResult.finalSystemPrompt)
 
+        val activeTools = buildToolList(sessionForCtx)
+
+        // Fallback logic: if session lacks settings, use agent's defaults
+        val effectiveModel = sessionForCtx.modelId 
+            ?: agentEntity?.model 
+            ?: ""
+        
+        val effectiveParams = sessionForCtx.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams(
+            temperature = agentEntity?.temperature ?: 0.7,
+            topP = agentEntity?.top_p ?: 0.9,
+            maxTokens = agentEntity?.max_tokens ?: 4096
+        )
+
         val request = PromptRequest(
             messages = protocolMessages,
-            model = sessionForCtx.modelId ?: "gpt-4o",
-            temperature = sessionForCtx.inferenceParams?.temperature,
-            topP = sessionForCtx.inferenceParams?.topP,
-            maxTokens = sessionForCtx.inferenceParams?.maxTokens,
+            model = effectiveModel,
+            temperature = effectiveParams.temperature,
+            topP = effectiveParams.topP,
+            maxTokens = effectiveParams.maxTokens,
+            frequencyPenalty = effectiveParams.frequencyPenalty,
+            presencePenalty = effectiveParams.presencePenalty,
+            tools = activeTools.ifEmpty { null },
+            webSearch = sessionForCtx.options?.webSearch,
             stream = true
         )
 
@@ -293,11 +327,26 @@ class ChatViewModel(
         }
 
         messageManager.flushMessageUpdates(sessionId, assistantMsgId)
-        _isGenerating.update { false }
         _streamingContent.update { "" }
 
         if (accumulatedToolCalls.isNotEmpty() && currentCoroutineContext().isActive) {
             toolExecutor.executeTools(sessionId, accumulatedToolCalls.toList(), assistantMsgId)
+
+            _isGenerating.update { false }
+            if (currentCoroutineContext().isActive) {
+                val newAssistantMsgId = "msg_${System.currentTimeMillis()}_ai"
+                val newAssistantMsg = Message(
+                    id = newAssistantMsgId,
+                    role = MessageRole.ASSISTANT,
+                    content = "",
+                    modelId = sessionForCtx.modelId,
+                    createdAt = System.currentTimeMillis()
+                )
+                messageManager.addMessage(sessionId, newAssistantMsg)
+                generateMessage(sessionId, "", true, newAssistantMsgId, loopCount = loopCount + 1)
+            }
+        } else {
+            _isGenerating.update { false }
         }
 
         if (userMsgId != null && currentCoroutineContext().isActive) {
@@ -308,20 +357,29 @@ class ChatViewModel(
                         id = finalSession.agentId,
                         name = finalSession.agentId
                     )
-                    postProcessor.updateStats(
-                        com.promenar.nexara.ui.chat.manager.PostProcessorParams(
-                            sessionId = sessionId,
-                            assistantMsgId = assistantMsgId,
-                            userMsgId = userMsgId,
-                            userContent = effectiveUserContent,
-                            assistantContent = accumulatedContent,
-                            agent = agent,
-                            session = finalSession,
-                            ragEnabled = false,
-                            accumulatedUsage = accumulatedTokens,
-                            modelId = finalSession.modelId ?: "gpt-4o"
-                        )
+                    val sessionRagOpts = finalSession.ragOptions
+                    val isRagEnabled = sessionRagOpts?.enableMemory == true || sessionRagOpts?.enableDocs == true
+                    val ppParams = com.promenar.nexara.ui.chat.manager.PostProcessorParams(
+                        sessionId = sessionId,
+                        assistantMsgId = assistantMsgId,
+                        userMsgId = userMsgId,
+                        userContent = effectiveUserContent,
+                        assistantContent = accumulatedContent,
+                        agent = agent,
+                        session = finalSession,
+                        ragEnabled = isRagEnabled,
+                        ragUsage = contextResult.ragUsage,
+                        accumulatedUsage = accumulatedTokens,
+                        modelId = finalSession.modelId ?: ""
                     )
+                    postProcessor.updateStats(ppParams)
+
+                    val shouldArchive = sessionRagOpts?.enableMemory == true
+                    if (shouldArchive && accumulatedContent.isNotBlank()) {
+                        try {
+                            postProcessor.archiveToRag(ppParams)
+                        } catch (_: Exception) {}
+                    }
                 }
             } catch (_: Exception) {
             }
@@ -358,9 +416,14 @@ class ChatViewModel(
     fun createNewSession(agentId: String) {
         viewModelScope.launch {
             val sessionId = "session_${System.currentTimeMillis()}"
+            val workspacePath = File((application as NexaraApplication).filesDir, "workspaces/$sessionId").apply {
+                if (!exists()) mkdirs()
+            }.absolutePath
+            
             val session = Session(
                 id = sessionId,
                 agentId = agentId,
+                workspacePath = workspacePath,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
@@ -402,7 +465,7 @@ class ChatViewModel(
 
     fun approveRequest(intervention: String? = null) {
         val sessionId = _currentSessionId.value ?: return
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             approvalManager.resumeGeneration(sessionId, approved = true, intervention = intervention)
         }
     }
@@ -429,7 +492,7 @@ class ChatViewModel(
         val msgIndex = session.messages.indexOfFirst { it.id == messageId }
         if (msgIndex < 0) return
 
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             messageManager.updateMessageContent(sessionId, messageId, newContent, UpdateMessageOptions())
 
             val toRemove = session.messages.drop(msgIndex + 1).map { it.id }
@@ -454,40 +517,58 @@ class ChatViewModel(
 
     fun toggleTool(toolName: String, enabled: Boolean) {
         val sessionId = _currentSessionId.value ?: return
-        store.updateSession(sessionId) { session ->
-            val options = session.options ?: SessionOptions()
-            session.copy(options = when (toolName) {
-                "timeInjection" -> options.copy(enableTimeInjection = enabled)
-                "toolsEnabled" -> options.copy(toolsEnabled = enabled)
-                "webSearch" -> options.copy(webSearch = enabled)
-                else -> options
-            })
+        val session = store.getSession(sessionId) ?: return
+        val options = session.options ?: SessionOptions()
+        val nextOptions = when (toolName) {
+            "timeInjection" -> options.copy(enableTimeInjection = enabled)
+            "toolsEnabled" -> options.copy(toolsEnabled = enabled)
+            "webSearch" -> options.copy(webSearch = enabled)
+            else -> options
+        }
+        viewModelScope.launch {
+            sessionManager.updateSessionOptions(sessionId, nextOptions)
         }
     }
 
     fun updateSessionTitle(title: String) {
         val sessionId = _currentSessionId.value ?: return
-        store.updateSession(sessionId) { it.copy(title = title) }
+        viewModelScope.launch {
+            sessionManager.updateSessionTitle(sessionId, title)
+        }
     }
 
     fun updateInferenceParams(params: InferenceParams) {
         val sessionId = _currentSessionId.value ?: return
-        store.updateSession(sessionId) { it.copy(inferenceParams = params) }
+        viewModelScope.launch {
+            sessionManager.updateSessionInferenceParams(sessionId, params)
+        }
     }
 
     fun updateRagOptions(ragOptions: RagOptions) {
         val sessionId = _currentSessionId.value ?: return
-        store.updateSession(sessionId) { it.copy(ragOptions = ragOptions) }
+        val session = store.getSession(sessionId) ?: return
+        viewModelScope.launch {
+            sessionManager.updateSessionOptions(sessionId, session.options ?: SessionOptions(), ragOptions)
+        }
     }
 
     fun updateModelId(modelId: String) {
         val sessionId = _currentSessionId.value ?: return
-        store.updateSession(sessionId) { it.copy(modelId = modelId) }
+        viewModelScope.launch {
+            sessionManager.updateSessionModel(sessionId, modelId)
+        }
     }
 
     fun updateCustomPrompt(prompt: String) {
         val sessionId = _currentSessionId.value ?: return
-        store.updateSession(sessionId) { it.copy(customPrompt = prompt) }
+        viewModelScope.launch {
+            sessionManager.updateSessionPrompt(sessionId, prompt)
+        }
+    }
+
+    private fun buildToolList(session: Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> {
+        if (session.options?.toolsEnabled == false) return emptyList()
+        return (skillRegistry as? com.promenar.nexara.ui.chat.manager.DefaultSkillRegistry)?.getAllTools() ?: emptyList()
     }
 
     private fun buildProtocolMessages(
@@ -542,12 +623,16 @@ class ChatViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
                     return ChatViewModel(
+                        application = application,
                         sessionRepository = app.sessionRepository,
                         messageRepository = app.messageRepository,
                         llmProvider = app.llmProvider,
                         embeddingClient = app.embeddingClient,
                         vectorStore = app.vectorStore,
-                        textSplitter = app.textSplitter
+                        textSplitter = app.textSplitter,
+                        memoryManager = app.memoryManager,
+                        kgProvider = app.kgProvider,
+                        skillRegistry = app.skillRegistry
                     ) as T
                 }
             }

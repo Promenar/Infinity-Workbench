@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Markdown 富文本渲染能力升级 (MD-S1 ~ MD-S5)
+
+- **Markdown 渲染引擎**: 集成 mikepenz/multiplatform-markdown-renderer v0.40.2，支持完整 Markdown 语法（标题、列表、代码块、粗体、表格等）
+- **NexaraMarkdownTheme**: 新建主题映射层，将 Nexara 设计系统的颜色和排版映射到 markdown 渲染器
+- **流式输出保护**: 新增 `sanitizeStreamingMarkdown()` 预处理，自动修补未闭合代码围栏、截断未闭合 LaTeX 块
+- **ThinkingBlock Markdown**: AI 思考过程的 reasoning 文本支持 Markdown 格式渲染（粗体、列表、代码等）
+- **ChatBubble 全面接入**: 助手消息全部使用 MarkdownText 渲染，移除旧光标代码
+
+## [1.4.0] - 2026-05-09
+
+### UI/UX Consistency
+- **全局 Modal 高度限制**: 为了提升原生 Android 版本的视觉一致性，扫描并更新了全站所有 `ModalBottomSheet` 组件，将其内容高度统一限制在屏幕的 70% (`fillMaxHeight(0.7f)`)，避免了内容过多时撑破屏幕导致的不雅观现象。
+- **设置界面精简与优化**: 
+  - 移除了冗余的设置项间隔和文字标题，使设置界面视觉更加连续和沉浸。
+  - 移除了“振动反馈开关”，将其功能设为默认开启。
+  - 移除了“日志”相关冗余功能。
+- **消息气泡布局优化**: 主会话界面的 AI 回复气泡改为全宽布局，大幅提升了长文本和代码块的阅读体验，同时保持了优雅的左右间距。
+- **启动逻辑调整**: 优化了启动界面的触发逻辑，确保仅在应用首次安装/打开时显示。
+
+### Fixed
+- **流式传输与思考过程**: 修复了主会话文本瞬间显示的 Bug，并确保了思考过程（Thinking Process）UI 组件能正确展示。
+- **模型选择持久化**: 修复了主会话输入框上方模型选择器退出后再进入会话重置的问题，移除了 mock 的 `gpt-4o`，确保未配置时显示为 empty。
+
 ## [1.3.0] - 2026-05-09
 
 ### Fixed

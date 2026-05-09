@@ -85,9 +85,6 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private val _hapticEnabled = MutableStateFlow(true)
     val hapticEnabled: StateFlow<Boolean> = _hapticEnabled.asStateFlow()
 
-    private val _logEnabled = MutableStateFlow(false)
-    val logEnabled: StateFlow<Boolean> = _logEnabled.asStateFlow()
-
     private val _providers = MutableStateFlow<List<ProviderListItem>>(emptyList())
     val providers: StateFlow<List<ProviderListItem>> = _providers.asStateFlow()
 
@@ -98,7 +95,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
         _selectedSettingsTab.value = index
     }
 
-    private val _currentModelSummary = MutableStateFlow("gpt-4o")
+    private val _currentModelSummary = MutableStateFlow("")
     val currentModelSummary: StateFlow<String> = _currentModelSummary.asStateFlow()
 
     private val _activeSourcesCount = MutableStateFlow(0)
@@ -145,10 +142,9 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private fun loadPreferences() {
         _language.value = prefs.getString("language", "zh") ?: "zh"
         _themeMode.value = prefs.getString("theme_mode", "dark") ?: "dark"
-        _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
-        _logEnabled.value = prefs.getBoolean("log_enabled", false)
+        _hapticEnabled.value = true // Force enable
 
-        _summaryModelId.value = prefs.getString("preset_summary_model", "gpt-4o") ?: "gpt-4o"
+        _summaryModelId.value = prefs.getString("preset_summary_model", "") ?: ""
         _imageModelId.value = prefs.getString("preset_image_model", "") ?: ""
         _embeddingModelId.value = prefs.getString("preset_embedding_model", "BAAI/bge-m3") ?: "BAAI/bge-m3"
         _rerankModelId.value = prefs.getString("preset_rerank_model", "") ?: ""
@@ -310,13 +306,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
     }
 
     fun setHaptic(enabled: Boolean) {
-        _hapticEnabled.value = enabled
-        prefs.edit().putBoolean("haptic_enabled", enabled).apply()
-    }
-
-    fun setLogEnabled(enabled: Boolean) {
-        _logEnabled.value = enabled
-        prefs.edit().putBoolean("log_enabled", enabled).apply()
+        _hapticEnabled.value = true
     }
 
     fun deleteProvider(providerId: String) {

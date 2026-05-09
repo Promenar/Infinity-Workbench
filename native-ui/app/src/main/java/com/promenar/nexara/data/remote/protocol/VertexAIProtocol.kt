@@ -26,7 +26,7 @@ class VertexAIProtocol(
     private val serviceAccountKeyPath: String,
     private val projectId: String,
     private val location: String = "us-central1",
-    private val model: String = "gemini-3-flash-preview",
+    private val model: String = "",
     httpClient: HttpClient? = null
 ) : LlmProtocol {
 

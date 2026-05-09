@@ -10,7 +10,7 @@ import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.protocol.VertexAIProtocol
 import kotlinx.coroutines.flow.Flow
 
-class LlmProvider(private val protocol: LlmProtocol) {
+class LlmProvider(internal val protocol: LlmProtocol) {
 
     val protocolId: ProtocolId get() = protocol.id
 

@@ -1,11 +1,12 @@
 package com.promenar.nexara.ui.chat
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -40,6 +41,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,7 +54,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -87,13 +88,7 @@ private data class WorkspaceArtifact(
     val icon: ImageVector
 )
 
-private data class WorkspaceFile(
-    val id: String,
-    val name: String,
-    val path: String,
-    val isDirectory: Boolean,
-    val children: List<WorkspaceFile> = emptyList()
-)
+// WorkspaceTask and WorkspaceArtifact are kept here as they are UI-specific mappings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,10 +104,17 @@ fun WorkspaceSheet(
     val uiState by chatViewModel.uiState.collectAsState()
     val session = uiState.session
 
-    val configuration = LocalConfiguration.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 3 })
+    
+    val workspaceViewModel: WorkspaceViewModel = viewModel(factory = WorkspaceViewModel.factory(context.applicationContext as android.app.Application))
+    val workspaceFiles by workspaceViewModel.files.collectAsState()
+    val isFilesLoading by workspaceViewModel.isLoading.collectAsState()
+    
+    LaunchedEffect(session?.workspacePath) {
+        workspaceViewModel.loadWorkspaceFiles(session?.workspacePath)
+    }
     val tabTitles = listOf(
         stringResource(R.string.workspace_tab_tasks),
         stringResource(R.string.workspace_tab_artifacts),
@@ -171,22 +173,7 @@ fun WorkspaceSheet(
         } ?: emptyList()
     }
 
-    val files = remember {
-        listOf(
-            WorkspaceFile("f1", "src", "/workspace/src", true, listOf(
-                WorkspaceFile("f1.1", "main.py", "/workspace/src/main.py", false),
-                WorkspaceFile("f1.2", "config.json", "/workspace/src/config.json", false),
-                WorkspaceFile("f1.3", "utils", "/workspace/src/utils", true, listOf(
-                    WorkspaceFile("f1.3.1", "helpers.py", "/workspace/src/utils/helpers.py", false)
-                ))
-            )),
-            WorkspaceFile("f2", "data", "/workspace/data", true, listOf(
-                WorkspaceFile("f2.1", "input.csv", "/workspace/data/input.csv", false),
-                WorkspaceFile("f2.2", "output", "/workspace/data/output", true)
-            )),
-            WorkspaceFile("f3", "README.md", "/workspace/README.md", false)
-        )
-    }
+    val files = workspaceFiles
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -240,7 +227,7 @@ fun WorkspaceSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.85f)
+                .fillMaxHeight(0.7f)
         ) {
             TabRow(
                 selectedTabIndex = pagerState.currentPage,
@@ -252,10 +239,13 @@ fun WorkspaceSheet(
                 indicator = { tabPositions ->
                     if (pagerState.currentPage < tabPositions.size) {
                         val pos = tabPositions[pagerState.currentPage]
-                        androidx.compose.material3.TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(pos),
-                            height = 2.dp,
-                            color = NexaraColors.Primary
+                        Box(
+                            Modifier
+                                .tabIndicatorOffset(pos)
+                                .padding(horizontal = 32.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(NexaraColors.Primary)
                         )
                     }
                 }
@@ -291,7 +281,15 @@ fun WorkspaceSheet(
                 when (page) {
                     0 -> TasksPanel(tasks)
                     1 -> ArtifactsPanel(artifacts)
-                    2 -> FilesPanel(files)
+                    2 -> {
+                        if (isFilesLoading) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = NexaraColors.Primary)
+                            }
+                        } else {
+                            FilesPanel(files, workspaceViewModel)
+                        }
+                    }
                 }
             }
         }
@@ -318,18 +316,20 @@ private fun TasksPanel(tasks: List<WorkspaceTask>) {
                 ) {
                     Column {
                         Text(stringResource(R.string.workspace_sprint_pipeline), style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Medium), color = NexaraColors.OnSurface)
-                        Text(stringResource(R.string.workspace_x_of_y_completed, completedCount, tasks.size), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+                        Text(if (tasks.isNotEmpty()) stringResource(R.string.workspace_x_of_y_completed, completedCount, tasks.size) else stringResource(R.string.workspace_no_tasks), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
                     }
                     Box(contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
-                            progress = { completedCount.toFloat() / tasks.size.toFloat() },
+                            progress = { if (tasks.isNotEmpty()) completedCount.toFloat() / tasks.size.toFloat() else 0f },
                             modifier = Modifier.size(64.dp),
                             color = NexaraColors.Primary,
                             strokeWidth = 4.dp,
                             trackColor = NexaraColors.SurfaceHighest,
                             strokeCap = StrokeCap.Round
                         )
-                        Text("${(completedCount * 100 / tasks.size)}%", style = NexaraTypography.labelMedium.copy(color = NexaraColors.Primary))
+                        val totalTasks = tasks.size
+                        val progressText = if (totalTasks > 0) "${(completedCount * 100 / totalTasks)}%" else "0%"
+                        Text(progressText, style = NexaraTypography.labelMedium.copy(color = NexaraColors.Primary))
                     }
                 }
             }
@@ -470,13 +470,25 @@ private fun ArtifactsPanel(artifacts: List<WorkspaceArtifact>) {
 }
 
 @Composable
-private fun FilesPanel(files: List<WorkspaceFile>) {
+private fun FilesPanel(
+    files: List<WorkspaceFile>,
+    viewModel: WorkspaceViewModel = viewModel()
+) {
     var selectedFile by remember { mutableStateOf<WorkspaceFile?>(null) }
+    val content by viewModel.selectedFileContent.collectAsState()
 
     if (selectedFile != null) {
+        LaunchedEffect(selectedFile) {
+            viewModel.loadFileContent(selectedFile!!.path)
+        }
+        
         FilePreviewModal(
             file = selectedFile!!,
-            onDismiss = { selectedFile = null }
+            content = content,
+            onDismiss = { 
+                selectedFile = null
+                viewModel.clearFileContent()
+            }
         )
     }
 
@@ -529,14 +541,7 @@ private fun FileTreeItem(
 
         if (file.isDirectory && expanded) {
             file.children.forEach { child ->
-                FileTreeItem(file = child, depth = depth + 1, onClick = {
-                    if (!child.isDirectory) {
-                        val parentClick = onClick
-                        onClick
-                    } else {
-                        {}
-                    }
-                })
+                FileTreeItem(file = child, depth = depth + 1, onClick = onClick)
             }
         }
     }
@@ -545,6 +550,7 @@ private fun FileTreeItem(
 @Composable
 private fun FilePreviewModal(
     file: WorkspaceFile,
+    content: String?,
     onDismiss: () -> Unit
 ) {
     Dialog(
@@ -554,7 +560,7 @@ private fun FilePreviewModal(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.85f)
+                .fillMaxHeight(0.7f)
                 .padding(horizontal = 16.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(NexaraColors.SurfaceContainer)
@@ -594,11 +600,11 @@ private fun FilePreviewModal(
                     .background(NexaraColors.SurfaceLowest.copy(alpha = 0.5f))
                     .padding(16.dp)
             ) {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(file.path, style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace), color = NexaraColors.OutlineVariant)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "// File content preview\n// Path: ${file.path}\n\n// Content will be loaded here...",
+                        content ?: stringResource(R.string.shared_loading),
                         style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp, fontFamily = FontFamily.Monospace, lineHeight = 22.sp),
                         color = NexaraColors.OnSurfaceVariant
                     )

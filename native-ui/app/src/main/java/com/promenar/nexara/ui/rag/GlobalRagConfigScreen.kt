@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -347,7 +348,11 @@ fun GlobalRagConfigScreen(
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 40.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.7f)
+                    .padding(24.dp)
+                    .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(stringResource(R.string.rag_config_clear_vectors), style = NexaraTypography.headlineMedium, color = NexaraColors.Error)
@@ -412,7 +417,11 @@ fun GlobalRagConfigScreen(
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 40.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.7f)
+                    .padding(24.dp)
+                    .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(stringResource(R.string.rag_config_edit_template), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)

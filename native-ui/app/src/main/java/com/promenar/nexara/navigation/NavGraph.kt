@@ -139,8 +139,13 @@ fun NexaraNavGraph(
         }
     ) {
         composable(NavDestinations.WELCOME) {
+            val context = LocalContext.current
             WelcomeScreen(
                 onNavigateToChat = {
+                    context.getSharedPreferences("nexara_prefs", android.content.Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("has_shown_welcome", true)
+                        .apply()
                     navController.navigate(NavDestinations.MAIN_TAB_SCAFFOLD) {
                         popUpTo(NavDestinations.WELCOME) { inclusive = true }
                     }

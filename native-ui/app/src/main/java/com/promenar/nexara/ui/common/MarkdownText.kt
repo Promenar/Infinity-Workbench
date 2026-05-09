@@ -6,191 +6,85 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.compose.components.markdownComponents
+import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
+import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
+import com.mikepenz.markdown.compose.elements.MarkdownHighlightedCode
+import com.mikepenz.markdown.m3.Markdown
+import com.promenar.nexara.ui.renderer.CodeBlockWithHeader
+import com.promenar.nexara.ui.renderer.EChartsBlock
+import com.promenar.nexara.ui.renderer.LatexBlock
+import com.promenar.nexara.ui.renderer.MermaidBlock
+import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
+import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
 import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTheme
-import com.promenar.nexara.ui.theme.NexaraTypography
 
-private data class MarkdownBlock(
-    val type: BlockType,
-    val content: String,
-    val language: String? = null
-)
-
-private sealed class BlockType {
-    data class Heading(val level: Int) : BlockType()
-    data object Paragraph : BlockType()
-    data class CodeBlock(val language: String?) : BlockType()
-    data class UnorderedList(val items: List<String>) : BlockType()
-    data class OrderedList(val items: List<String>) : BlockType()
+private sealed class ContentSegment {
+    data class Markdown(val content: String) : ContentSegment()
+    data class Latex(val content: String) : ContentSegment()
+    data class Mermaid(val content: String) : ContentSegment()
+    data class ECharts(val content: String) : ContentSegment()
 }
 
-private fun parseMarkdown(markdown: String): List<MarkdownBlock> {
-    val blocks = mutableListOf<MarkdownBlock>()
-    val lines = markdown.lines()
-    var i = 0
+private fun splitRichSegments(text: String): List<ContentSegment> {
+    val blockPattern = Regex(
+        """```(mermaid|echarts)\s*\n(.*?)```""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+    val latexPattern = Regex("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
 
-    while (i < lines.size) {
-        val line = lines[i]
+    data class RichSpan(val start: Int, val end: Int, val segment: ContentSegment)
 
-        when {
-            line.startsWith("```") -> {
-                val language = line.removePrefix("```").trim().ifBlank { null }
-                val codeLines = mutableListOf<String>()
-                i++
-                while (i < lines.size && !lines[i].startsWith("```")) {
-                    codeLines.add(lines[i])
-                    i++
-                }
-                blocks.add(MarkdownBlock(BlockType.CodeBlock(language), codeLines.joinToString("\n")))
-                i++
-            }
-            line.startsWith("### ") -> {
-                blocks.add(MarkdownBlock(BlockType.Heading(3), line.removePrefix("### ")))
-                i++
-            }
-            line.startsWith("## ") -> {
-                blocks.add(MarkdownBlock(BlockType.Heading(2), line.removePrefix("## ")))
-                i++
-            }
-            line.startsWith("# ") -> {
-                blocks.add(MarkdownBlock(BlockType.Heading(1), line.removePrefix("# ")))
-                i++
-            }
-            line.trim().startsWith("- ") || line.trim().startsWith("* ") -> {
-                val items = mutableListOf<String>()
-                while (i < lines.size) {
-                    val trimmed = lines[i].trim()
-                    if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-                        items.add(trimmed.removePrefix("- ").removePrefix("* "))
-                        i++
-                    } else break
-                }
-                blocks.add(MarkdownBlock(BlockType.UnorderedList(items), ""))
-            }
-            line.trim().matches(Regex("^\\d+\\.\\s.*")) -> {
-                val items = mutableListOf<String>()
-                while (i < lines.size) {
-                    val trimmed = lines[i].trim()
-                    val match = Regex("^(\\d+)\\.\\s(.*)$").find(trimmed)
-                    if (match != null) {
-                        items.add(match.groupValues[2])
-                        i++
-                    } else break
-                }
-                blocks.add(MarkdownBlock(BlockType.OrderedList(items), ""))
-            }
-            line.isBlank() -> {
-                i++
-            }
-            else -> {
-                val paragraphLines = mutableListOf<String>()
-                while (i < lines.size && lines[i].isNotBlank() &&
-                    !lines[i].startsWith("#") &&
-                    !lines[i].startsWith("```") &&
-                    !lines[i].trim().startsWith("- ") &&
-                    !lines[i].trim().startsWith("* ") &&
-                    !lines[i].trim().matches(Regex("^\\d+\\.\\s.*"))
-                ) {
-                    paragraphLines.add(lines[i])
-                    i++
-                }
-                if (paragraphLines.isNotEmpty()) {
-                    blocks.add(MarkdownBlock(BlockType.Paragraph, paragraphLines.joinToString(" ")))
-                }
-            }
+    val spans = mutableListOf<RichSpan>()
+
+    for (m in blockPattern.findAll(text)) {
+        val type = m.groupValues[1].lowercase()
+        val content = m.groupValues[2].trim()
+        val seg = when (type) {
+            "mermaid" -> ContentSegment.Mermaid(content)
+            "echarts" -> ContentSegment.ECharts(content)
+            else -> continue
+        }
+        spans.add(RichSpan(m.range.first, m.range.last + 1, seg))
+    }
+
+    for (m in latexPattern.findAll(text)) {
+        if (spans.none { it.start <= m.range.first && m.range.last < it.end }) {
+            spans.add(RichSpan(m.range.first, m.range.last + 1,
+                ContentSegment.Latex(m.groupValues[1].trim())))
         }
     }
-    return blocks
-}
 
-private fun buildInlineAnnotatedString(text: String): AnnotatedString {
-    val combinedPattern = Regex("""(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|\[(.+?)]\((.+?)\))""")
+    if (spans.isEmpty()) return listOf(ContentSegment.Markdown(text))
 
-    return buildAnnotatedString {
-        var lastIndex = 0
+    spans.sortBy { it.start }
 
-        for (match in combinedPattern.findAll(text)) {
-            if (match.range.first > lastIndex) {
-                append(text.substring(lastIndex, match.range.first))
-            }
-
-            when {
-                match.groupValues[2].isNotEmpty() -> {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                        append(match.groupValues[2])
-                    }
-                }
-                match.groupValues[3].isNotEmpty() -> {
-                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                        append(match.groupValues[3])
-                    }
-                }
-                match.groupValues[4].isNotEmpty() -> {
-                    withStyle(
-                        SpanStyle(
-                            background = NexaraColors.SurfaceHigh,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp
-                        )
-                    ) {
-                        append(match.groupValues[4])
-                    }
-                }
-                match.groupValues[5].isNotEmpty() -> {
-                    val label = match.groupValues[5]
-                    val url = match.groupValues[6]
-                    pushLink(LinkAnnotation.Url(url))
-                    withStyle(
-                        SpanStyle(
-                            color = NexaraColors.Primary,
-                            textDecoration = TextDecoration.Underline
-                        )
-                    ) {
-                        append(label)
-                    }
-                    pop()
-                }
-            }
-            lastIndex = match.range.last + 1
+    val result = mutableListOf<ContentSegment>()
+    var cursor = 0
+    for (span in spans) {
+        if (span.start > cursor) {
+            result.add(ContentSegment.Markdown(text.substring(cursor, span.start)))
         }
-
-        if (lastIndex < text.length) {
-            append(text.substring(lastIndex))
-        }
+        result.add(span.segment)
+        cursor = span.end
     }
+    if (cursor < text.length) {
+        result.add(ContentSegment.Markdown(text.substring(cursor)))
+    }
+    return result
 }
 
 @Composable
@@ -199,81 +93,65 @@ fun MarkdownText(
     isStreaming: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val blocks = remember(markdown) { parseMarkdown(markdown) }
+    val processed = remember(markdown, isStreaming) {
+        if (isStreaming) sanitizeStreamingMarkdown(markdown) else markdown
+    }
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        for (block in blocks) {
-            when (block.type) {
-                is BlockType.Heading -> {
-                    val style = when (block.type.level) {
-                        1 -> NexaraTypography.headlineLarge
-                        2 -> NexaraTypography.headlineMedium
-                        else -> NexaraTypography.headlineMedium.copy(fontSize = 18.sp)
-                    }
-                    Text(
-                        text = buildInlineAnnotatedString(block.content),
-                        style = style,
-                        color = NexaraColors.OnSurface
-                    )
-                }
-                is BlockType.Paragraph -> {
-                    BasicText(
-                        text = buildInlineAnnotatedString(block.content),
-                        style = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface)
-                    )
-                }
-                is BlockType.CodeBlock -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(NexaraShapes.medium)
-                            .background(NexaraColors.SurfaceLowest)
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            text = block.content,
-                            style = NexaraTypography.bodySmall,
-                            color = NexaraColors.OnSurface,
-                            fontFamily = FontFamily.Monospace
+    val segments = remember(processed) { splitRichSegments(processed) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        for (segment in segments) {
+            when (segment) {
+                is ContentSegment.Markdown -> {
+                    if (segment.content.isNotBlank()) {
+                        Markdown(
+                            content = segment.content,
+                            colors = nexaraMarkdownColors(),
+                            typography = nexaraMarkdownTypography(),
+                            components = markdownComponents(
+                                codeFence = { model ->
+                                    MarkdownCodeFence(
+                                        content = model.content,
+                                        node = model.node,
+                                        style = model.typography.code,
+                                    ) { code, language, style ->
+                                        CodeBlockWithHeader(code = code, language = language) {
+                                            MarkdownHighlightedCode(
+                                                code = code,
+                                                language = language,
+                                                style = style,
+                                            )
+                                        }
+                                    }
+                                },
+                                codeBlock = { model ->
+                                    MarkdownCodeBlock(
+                                        content = model.content,
+                                        node = model.node,
+                                        style = model.typography.code,
+                                    ) { code, language, style ->
+                                        CodeBlockWithHeader(code = code, language = language) {
+                                            MarkdownHighlightedCode(
+                                                code = code,
+                                                language = language,
+                                                style = style,
+                                            )
+                                        }
+                                    }
+                                },
+                            ),
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
-                is BlockType.UnorderedList -> {
-                    block.type.items.forEach { item ->
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "\u2022",
-                                style = NexaraTypography.bodyMedium,
-                                color = NexaraColors.Primary,
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
-                            BasicText(
-                                text = buildInlineAnnotatedString(item),
-                                style = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                is ContentSegment.Latex -> {
+                    LatexBlock(latex = segment.content)
                 }
-                is BlockType.OrderedList -> {
-                    block.type.items.forEachIndexed { idx, item ->
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "${idx + 1}.",
-                                style = NexaraTypography.bodyMedium,
-                                color = NexaraColors.Primary,
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
-                            BasicText(
-                                text = buildInlineAnnotatedString(item),
-                                style = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                is ContentSegment.Mermaid -> {
+                    MermaidBlock(code = segment.content)
+                }
+                is ContentSegment.ECharts -> {
+                    EChartsBlock(optionJson = segment.content)
                 }
             }
         }
@@ -282,6 +160,25 @@ fun MarkdownText(
             StreamingCursor()
         }
     }
+}
+
+private fun sanitizeStreamingMarkdown(text: String): String {
+    var result = text
+
+    val fenceCount = Regex("```").findAll(result).count()
+    if (fenceCount % 2 != 0) {
+        result += "\n```"
+    }
+
+    val latexCount = Regex("""\$\$""").findAll(result).count()
+    if (latexCount % 2 != 0) {
+        val lastIdx = result.lastIndexOf("$$")
+        if (lastIdx >= 0) {
+            result = result.substring(0, lastIdx)
+        }
+    }
+
+    return result
 }
 
 @Composable
@@ -298,50 +195,10 @@ private fun StreamingCursor() {
     )
     Box(
         modifier = Modifier
-            .padding(start = 4.dp)
+            .padding(start = 4.dp, top = 4.dp)
             .width(8.dp)
             .height(16.dp)
             .alpha(alpha)
             .background(NexaraColors.Primary, RoundedCornerShape(1.dp))
     )
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF131315)
-@Composable
-private fun MarkdownTextPreview() {
-    NexaraTheme {
-        MarkdownText(
-            markdown = """
-                ## Hello World
-                
-                This is **bold** and *italic* and `inline code`.
-                
-                ### Features
-                - Item one
-                - Item two
-                
-                1. First
-                2. Second
-                
-                ```kotlin
-                fun main() {
-                    println("Hello")
-                }
-                ```
-                
-                Check out [Nexara](https://nexara.ai) for more.
-            """.trimIndent()
-        )
-    }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF131315)
-@Composable
-private fun MarkdownTextStreamingPreview() {
-    NexaraTheme {
-        MarkdownText(
-            markdown = "This is a streaming response with **bold** text...",
-            isStreaming = true
-        )
-    }
 }

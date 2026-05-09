@@ -6,6 +6,12 @@ import android.content.SharedPreferences
 import androidx.room.Room
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.rag.EmbeddingClient
+import com.promenar.nexara.data.rag.GraphStore
+import com.promenar.nexara.data.rag.KeywordSearcher
+import com.promenar.nexara.data.rag.MemoryManager
+import com.promenar.nexara.data.rag.MicroGraphExtractor
+import com.promenar.nexara.data.rag.MicroGraphKgAdapter
+import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.remote.protocol.ProtocolId
@@ -15,6 +21,10 @@ import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.MessageRepository
 import com.promenar.nexara.data.repository.SessionRepository
 import com.promenar.nexara.ui.chat.ChatStore
+import com.promenar.nexara.ui.chat.manager.DefaultSkillRegistry
+import com.promenar.nexara.ui.chat.manager.KgProvider
+import com.promenar.nexara.ui.chat.manager.skills.CalculatorSkill
+import com.promenar.nexara.ui.chat.manager.skills.CurrentTimeSkill
 import com.promenar.nexara.util.LocaleHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +45,13 @@ class NexaraApplication : Application() {
     }
 
     val chatStore: ChatStore by lazy { ChatStore() }
+
+    val skillRegistry: DefaultSkillRegistry by lazy {
+        DefaultSkillRegistry().apply {
+            register(CurrentTimeSkill())
+            register(CalculatorSkill())
+        }
+    }
 
     private val prefs: SharedPreferences by lazy {
         getSharedPreferences("nexara_provider", MODE_PRIVATE)
@@ -70,15 +87,49 @@ class NexaraApplication : Application() {
         )
     }
 
+    val graphStore: GraphStore by lazy {
+        GraphStore(
+            kgNodeDao = database.kgNodeDao(),
+            kgEdgeDao = database.kgEdgeDao()
+        )
+    }
+
+    val keywordSearcher: KeywordSearcher by lazy {
+        KeywordSearcher(vectorDao = database.vectorDao())
+    }
+
+    val memoryManager: MemoryManager by lazy {
+        MemoryManager(
+            vectorStore = vectorStore,
+            keywordSearcher = keywordSearcher,
+            graphStore = graphStore,
+            embeddingClient = embeddingClient,
+            ragConfig = RagConfiguration()
+        )
+    }
+
     val textSplitter: RecursiveCharacterTextSplitter by lazy {
         RecursiveCharacterTextSplitter(chunkSize = 800, chunkOverlap = 100)
     }
 
+    val microGraphExtractor: MicroGraphExtractor by lazy {
+        MicroGraphExtractor(
+            protocol = llmProvider.protocol,
+            graphStore = graphStore,
+            jitCacheDao = database.kgJitCacheDao(),
+            modelId = getSavedProviderConfig()?.model
+        )
+    }
+
+    val kgProvider: KgProvider by lazy {
+        MicroGraphKgAdapter(microGraphExtractor)
+    }
+
     val defaultAgents: List<com.promenar.nexara.data.model.Agent> by lazy {
         listOf(
-            com.promenar.nexara.data.model.Agent("super", "Nexara 超级助手", "原生加速版，支持实时流式响应", "", "gpt-4o", "✨", "#C0C1FF", null, true),
-            com.promenar.nexara.data.model.Agent("coder", "编程专家", "精通全栈开发与架构设计", "", "gpt-4o", "💻", "#6366F1", null, false),
-            com.promenar.nexara.data.model.Agent("writer", "创意写作", "文学创作、翻译与润色", "", "gpt-4o", "📝", "#10B981", null, false)
+            com.promenar.nexara.data.model.Agent("super", "Nexara 超级助手", "原生加速版，支持实时流式响应", "", "", "✨", "#C0C1FF", null, true),
+            com.promenar.nexara.data.model.Agent("coder", "编程专家", "精通全栈开发与架构设计", "", "", "💻", "#6366F1", null, false),
+            com.promenar.nexara.data.model.Agent("writer", "创意写作", "文学创作、翻译与润色", "", "", "📝", "#10B981", null, false)
         )
     }
 
@@ -112,7 +163,7 @@ class NexaraApplication : Application() {
             protocolId = try { ProtocolId.valueOf(protocolName) } catch (_: Exception) { ProtocolId.OPENAI },
             baseUrl = prefs.getString("base_url", "") ?: "",
             apiKey = prefs.getString("api_key", "") ?: "",
-            model = prefs.getString("model", "gpt-4o") ?: "gpt-4o",
+            model = prefs.getString("model", "") ?: "",
             name = prefs.getString("provider_name", null)
         )
     }
@@ -131,7 +182,7 @@ class NexaraApplication : Application() {
                 .protocolId(ProtocolId.OPENAI)
                 .baseUrl("")
                 .apiKey("")
-                .model("gpt-4o")
+                .model("")
                 .build()
         }
     }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Abstract Stylized 'N' Logo -->
+    <path
+        android:fillColor="#C0C1FF"
+        android:pathData="M30,30 L45,30 L78,78 L78,30 L88,30 L88,88 L73,88 L30,40 L30,88 L20,88 L20,30 L30,30 Z" />
+    <path
+        android:fillColor="#494BD6"
+        android:pathData="M35,35 L40,35 L73,83 L73,35 L78,35 L78,83 L40,40 L40,83 L35,83 Z"
+        android:alpha="0.5" />
+</vector>

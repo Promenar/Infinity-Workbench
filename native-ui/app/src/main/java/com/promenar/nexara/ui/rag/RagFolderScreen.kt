@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -44,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraGlassCard
@@ -116,12 +118,12 @@ fun RagFolderScreen(
                         )
                         Text(
                             text = stringResource(R.string.rag_folder_empty),
-                            style = NexaraTypography.headlineMedium,
-                            color = NexaraColors.OnSurfaceVariant
+                            style = NexaraTypography.labelMedium,
+                            color = NexaraColors.OnSurface
                         )
                         Text(
                             text = stringResource(R.string.rag_folder_empty_subtitle),
-                            style = NexaraTypography.bodyMedium,
+                            style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
                             color = NexaraColors.OnSurfaceVariant
                         )
                     }
@@ -253,6 +255,7 @@ fun RagFolderScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.7f)
                     .padding(24.dp)
                     .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -293,6 +296,7 @@ fun RagFolderScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.7f)
                     .padding(24.dp)
                     .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)

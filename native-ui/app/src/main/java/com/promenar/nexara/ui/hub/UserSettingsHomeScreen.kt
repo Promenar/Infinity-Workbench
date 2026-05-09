@@ -105,7 +105,6 @@ fun UserSettingsHomeScreen(
     val language by viewModel.language.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val haptic by viewModel.hapticEnabled.collectAsState()
-    val logEnabled by viewModel.logEnabled.collectAsState()
     val providers by viewModel.providers.collectAsState()
 
     val selectedSettingsTab by viewModel.selectedSettingsTab.collectAsState()
@@ -162,7 +161,6 @@ fun UserSettingsHomeScreen(
                             language = language,
                             themeMode = themeMode,
                             haptic = haptic,
-                            logEnabled = logEnabled,
                             onNavigateToSecondary = onNavigateToSecondary,
                             onEditName = {
                                 editingName = userName
@@ -355,7 +353,6 @@ private fun AppSettingsContent(
     language: String,
     themeMode: String,
     haptic: Boolean,
-    logEnabled: Boolean,
     onNavigateToSecondary: (String) -> Unit,
     onEditName: () -> Unit,
     onShowLanguageDialog: () -> Unit,
@@ -367,9 +364,8 @@ private fun AppSettingsContent(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item { UserProfileHeader(userName = userName, onEditName = onEditName) }
-        item { Spacer(modifier = Modifier.height(16.dp)) }
+        item { Spacer(modifier = Modifier.height(8.dp)) }
 
-        item { SettingsSectionHeader(stringResource(R.string.settings_section_general)) }
         item {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Key,
@@ -398,15 +394,8 @@ private fun AppSettingsContent(
                 onClick = { onNavigateToSecondary("theme_config") }
             )
         }
-        item {
-            SettingsToggle(
-                title = stringResource(R.string.settings_haptic),
-                checked = haptic,
-                onCheckedChange = { viewModel.setHaptic(it) }
-            )
-        }
+        // Haptic feedback is now enabled by default and removed from UI
 
-        item { SettingsSectionHeader(stringResource(R.string.settings_section_model_presets)) }
         item {
             val summaryId by viewModel.summaryModelId.collectAsState()
             NexaraSettingsItem(
@@ -444,7 +433,6 @@ private fun AppSettingsContent(
             )
         }
 
-        item { SettingsSectionHeader(stringResource(R.string.settings_section_knowledge)) }
         item {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Settings,
@@ -470,7 +458,6 @@ private fun AppSettingsContent(
             )
         }
 
-        item { SettingsSectionHeader(stringResource(R.string.settings_section_tools)) }
         item {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Speed,
@@ -504,7 +491,6 @@ private fun AppSettingsContent(
             )
         }
 
-        item { SettingsSectionHeader(stringResource(R.string.settings_section_data)) }
         item {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Settings,
@@ -513,24 +499,8 @@ private fun AppSettingsContent(
                 onClick = { onNavigateToSecondary("backup_settings") }
             )
         }
-        item {
-            SettingsToggle(
-                title = stringResource(R.string.settings_logs),
-                description = stringResource(R.string.settings_logs_desc),
-                checked = logEnabled,
-                onCheckedChange = { viewModel.setLogEnabled(it) }
-            )
-        }
-        item {
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Edit,
-                title = stringResource(R.string.settings_export_logs),
-                subtitle = stringResource(R.string.settings_export_logs_desc),
-                onClick = { }
-            )
-        }
+        // Logs settings removed from UI
 
-        item { SettingsSectionHeader(stringResource(R.string.settings_section_about)) }
         item {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Tune,
