@@ -66,16 +66,9 @@ fun RagAdvancedScreen(
     onNavigateToGraph: () -> Unit = {}
 ) {
     val config by viewModel.config.collectAsState()
+    val extractionModels by viewModel.availableModels.collectAsState()
     var showPromptEditor by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
-
-    val extractionModels = remember {
-        listOf(
-            "GPT-4 Omni" to "gpt-4o",
-            "Claude 3 Opus" to "claude-3-opus",
-            "Gemini 1.5 Pro" to "gemini-1.5-pro"
-        )
-    }
 
     NexaraPageLayout(
         title = stringResource(R.string.rag_advanced_title),
@@ -124,8 +117,9 @@ fun RagAdvancedScreen(
                             ) {
                                 Column {
                                     Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                                    val selectedModelName = extractionModels.find { it.second == config.kgExtractionModel }?.first
                                     Text(
-                                        config.kgExtractionModel ?: "GPT-4 Omni (Recommended)",
+                                        selectedModelName ?: stringResource(R.string.rag_advanced_select_model_placeholder),
                                         style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
                                         color = NexaraColors.OnSurfaceVariant
                                     )

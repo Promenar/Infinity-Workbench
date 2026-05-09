@@ -610,6 +610,7 @@
     <string name="rag_advanced_kg_desc">Extract entities and relationships from documents</string>
     <string name="rag_advanced_extract_config">Extraction Configuration</string>
     <string name="rag_advanced_extract_model">Extraction Model</string>
+    <string name="rag_advanced_select_model_placeholder">Select Model</string>
     <string name="rag_advanced_jit_section">JIT Micro-Graph</string>
     <string name="rag_advanced_jit_enable">Enable JIT</string>
     <string name="rag_advanced_jit_desc">Dynamically build micro-graphs for each query</string>

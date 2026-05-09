@@ -9,6 +9,14 @@ All notable changes to this project will be documented in this file.
   - 优化了 `UserSettingsHomeScreen` 的模型映射逻辑，整合 `type` 与 `capabilities` 字段，确保所有功能模型均能被正确过滤。
   - 修复了模型选择器中 `contextLength` 等元数据传递缺失的问题。
 
+### Native RAG & Persistence
+- **RAG 设置持久化修复**: 解决了原生 Android 版本中知识图谱和高级 RAG 设置在退出页面或重启应用后重置的问题。
+  - 在 `RagViewModel` 中实现了基于 `SharedPreferences` 的完整配置持久化方案。
+  - 覆盖了知识图谱开关、抽取模型、Prompt、JIT 块限制、成本策略等所有 30+ 项参数。
+- **抽取模型动态化**: 移除了知识图谱设置中的 Mock 数据，现在“抽取模型”选择器会动态加载用户在“供应商管理”中实际配置的模型。
+  - 修复了点击选择器后列表为空的问题，并能正确显示已选模型的名称。
+  - 增加了模型选择占位符的国际化支持。
+
 ### UI/UX
 - **模型管理功能增强**: 原生版本模型管理界面（ProviderModelsScreen）新增“图片”、“嵌入”、“重排”功能标签，支持用户手动校准模型能力。
 

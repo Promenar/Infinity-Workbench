@@ -609,6 +609,7 @@
     <string name="rag_advanced_kg_desc">从文档中提取实体与关系</string>
     <string name="rag_advanced_extract_config">抽取配置</string>
     <string name="rag_advanced_extract_model">抽取模型</string>
+    <string name="rag_advanced_select_model_placeholder">请选择模型</string>
     <string name="rag_advanced_jit_section">JIT 微图</string>
     <string name="rag_advanced_jit_enable">启用 JIT</string>
     <string name="rag_advanced_jit_desc">为每次查询动态构建微型图谱</string>
