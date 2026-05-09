@@ -62,11 +62,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 
 private data class WorkspaceTask(
     val id: String,
@@ -101,6 +104,11 @@ fun WorkspaceSheet(
 ) {
     if (!show) return
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(context.applicationContext as android.app.Application))
+    val uiState by chatViewModel.uiState.collectAsState()
+    val session = uiState.session
+
     val configuration = LocalConfiguration.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -111,23 +119,56 @@ fun WorkspaceSheet(
         stringResource(R.string.workspace_tab_files)
     )
 
-    val tasks = remember {
-        listOf(
-            WorkspaceTask("1", "Data Ingestion Pipeline", "Processed 2.4M records", "completed", time = "2h ago"),
-            WorkspaceTask("2", "Train Embedding Model", "Epoch 4/10 • Loss: 0.042", "in_progress", 0.4f),
-            WorkspaceTask("3", "Generate Vector Index", "Waiting for model training", "pending"),
-            WorkspaceTask("4", "Export Results", "Prepare final output", "pending")
-        )
+    // Real data mapping
+    val tasks = remember(session) {
+        val activeTask = session?.activeTask
+        val list = mutableListOf<WorkspaceTask>()
+        
+        // Add active task if present
+        activeTask?.let { state ->
+            state.steps.forEach { step ->
+                list.add(WorkspaceTask(
+                    id = step.id,
+                    title = step.title,
+                    subtitle = step.description,
+                    status = step.status,
+                    progress = if (step.status == "in_progress") state.progress / 100f else 0f
+                ))
+            }
+        }
+        
+        // If no active task, try to find the latest planning task from messages
+        if (list.isEmpty()) {
+            session?.messages?.lastOrNull { it.planningTask != null }?.planningTask?.let { state ->
+                state.steps.forEach { step ->
+                    list.add(WorkspaceTask(
+                        id = step.id,
+                        title = step.title,
+                        subtitle = step.description,
+                        status = step.status,
+                        progress = if (step.status == "in_progress") state.progress / 100f else 0f
+                    ))
+                }
+            }
+        }
+        
+        list.toList()
     }
 
-    val artifacts = remember {
-        listOf(
-            WorkspaceArtifact("a1", "report_q3.pdf", "pdf", Icons.Rounded.Description),
-            WorkspaceArtifact("a2", "embeddings.png", "image", Icons.Rounded.Image),
-            WorkspaceArtifact("a3", "schema.json", "code", Icons.Rounded.InsertDriveFile),
-            WorkspaceArtifact("a4", "summary.md", "text", Icons.Rounded.Description),
-            WorkspaceArtifact("a5", "metrics.csv", "data", Icons.Rounded.InsertDriveFile)
-        )
+    val artifacts = remember(session) {
+        session?.messages?.flatMap { it.toolResults ?: emptyList() }?.mapIndexed { index, artifact ->
+            WorkspaceArtifact(
+                id = "art_$index",
+                name = artifact.name ?: "Artifact ${index + 1}",
+                type = artifact.type,
+                icon = when (artifact.type.lowercase()) {
+                    "image" -> Icons.Rounded.Image
+                    "pdf" -> Icons.Rounded.Description
+                    "code" -> Icons.Rounded.InsertDriveFile
+                    else -> Icons.Rounded.InsertDriveFile
+                }
+            )
+        } ?: emptyList()
     }
 
     val files = remember {
@@ -209,14 +250,14 @@ fun WorkspaceSheet(
                     HorizontalDivider(thickness = 0.5.dp, color = NexaraColors.GlassBorder)
                 },
                 indicator = { tabPositions ->
-                    val pos = tabPositions[pagerState.currentPage]
-                    Box(
-                        Modifier
-                            .offset(x = pos.left)
-                            .width(pos.width)
-                            .height(2.dp)
-                            .background(NexaraColors.Primary)
-                    )
+                    if (pagerState.currentPage < tabPositions.size) {
+                        val pos = tabPositions[pagerState.currentPage]
+                        androidx.compose.material3.TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(pos),
+                            height = 2.dp,
+                            color = NexaraColors.Primary
+                        )
+                    }
                 }
             ) {
                 tabTitles.forEachIndexed { index, title ->

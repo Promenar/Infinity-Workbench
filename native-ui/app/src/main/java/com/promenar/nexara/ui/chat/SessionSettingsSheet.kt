@@ -8,7 +8,21 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -38,10 +52,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +75,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.ExecutionMode
 import com.promenar.nexara.ui.common.ExecutionModeSelector
@@ -66,6 +83,7 @@ import com.promenar.nexara.ui.common.ModelCapability
 import com.promenar.nexara.ui.common.ModelItem
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
+import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.launch
@@ -101,12 +119,7 @@ private fun thinkingLevelDesc(id: String): String = when (id) {
     else -> ""
 }
 
-private val sampleModels = listOf(
-    ModelItem("gpt-4o", "GPT-4o", "OpenAI", listOf(ModelCapability.VISION, ModelCapability.CHAT), 128000),
-    ModelItem("claude-3.5-sonnet", "Claude 3.5 Sonnet", "Anthropic", listOf(ModelCapability.CHAT, ModelCapability.REASONING), 200000),
-    ModelItem("deepseek-v3", "DeepSeek V3", "DeepSeek", listOf(ModelCapability.REASONING, ModelCapability.CHAT), 64000),
-    ModelItem("gemini-3-flash", "Gemini 3 Flash", "Google", listOf(ModelCapability.VISION, ModelCapability.CHAT), 1000000)
-)
+// Removed sampleModels as we now use real data
 
 private val capabilityColorMap: Map<ModelCapability, Pair<Color, Color>> = mapOf(
     ModelCapability.REASONING to (Color(0xFFA78BFA) to Color(0xFF1E1B4B)),
@@ -126,6 +139,13 @@ fun SessionSettingsSheet(
 ) {
     if (!show) return
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(context.applicationContext as android.app.Application))
+    val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
+    
+    val uiState by chatViewModel.uiState.collectAsState()
+    val session = uiState.session
+    
     val configuration = LocalConfiguration.current
     val sheetHeight = (configuration.screenHeightDp * 0.7f).dp
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -198,14 +218,14 @@ fun SessionSettingsSheet(
                     )
                 },
                 indicator = { tabPositions ->
-                    val pos = tabPositions[pagerState.currentPage]
-                    Box(
-                        Modifier
-                            .offset(x = pos.left)
-                            .width(pos.width)
-                            .height(2.dp)
-                            .background(NexaraColors.Primary)
-                    )
+                    if (pagerState.currentPage < tabPositions.size) {
+                        val pos = tabPositions[pagerState.currentPage]
+                        androidx.compose.material3.TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(pos),
+                            height = 2.dp,
+                            color = NexaraColors.Primary
+                        )
+                    }
                 }
             ) {
                 tabTitles.forEachIndexed { index, title ->
@@ -232,10 +252,23 @@ fun SessionSettingsSheet(
                     .weight(1f)
             ) { page ->
                 when (page) {
-                    0 -> ModelPanel(onSelect = { onDismiss() })
-                    1 -> ThinkingLevelPanel()
-                    2 -> StatsPanel()
-                    3 -> ToolsPanel()
+                    0 -> ModelPanel(
+                        selectedModelId = session?.modelId ?: "gpt-4o",
+                        onSelect = { modelId ->
+                            chatViewModel.updateModelId(modelId)
+                            onDismiss()
+                        },
+                        settingsViewModel = settingsViewModel
+                    )
+                    1 -> ThinkingLevelPanel(
+                        currentTemperature = (session?.inferenceParams?.temperature ?: 0.7).toFloat(),
+                        onUpdate = { temp ->
+                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                            chatViewModel.updateInferenceParams(params.copy(temperature = temp.toDouble()))
+                        }
+                    )
+                    2 -> StatsPanel(chatViewModel = chatViewModel, settingsViewModel = settingsViewModel)
+                    3 -> ToolsPanel(chatViewModel = chatViewModel, session = session)
                 }
             }
         }
@@ -244,8 +277,26 @@ fun SessionSettingsSheet(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ModelPanel(onSelect: () -> Unit) {
+private fun ModelPanel(
+    selectedModelId: String,
+    onSelect: (String) -> Unit,
+    settingsViewModel: SettingsViewModel
+) {
     var searchQuery by remember { mutableStateOf("") }
+    val allModels by settingsViewModel.providerModels.collectAsState()
+    
+    // Convert ModelInfo to ModelItem for UI
+    val modelItems = allModels.filter { it.enabled }.map { info ->
+        ModelItem(
+            id = info.id,
+            name = info.name,
+            providerName = "", // Could be enhanced if ModelInfo had providerId
+            capabilities = info.capabilities.mapNotNull { capStr ->
+                try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
+            },
+            contextLength = info.contextLength
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -261,8 +312,8 @@ private fun ModelPanel(onSelect: () -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        val filtered = if (searchQuery.isBlank()) sampleModels else sampleModels.filter {
-            it.name.contains(searchQuery, true) || it.providerName.contains(searchQuery, true)
+        val filtered = if (searchQuery.isBlank()) modelItems else modelItems.filter {
+            it.name.contains(searchQuery, true)
         }
 
         LazyColumn(
@@ -270,7 +321,7 @@ private fun ModelPanel(onSelect: () -> Unit) {
             modifier = Modifier.fillMaxSize()
         ) {
             items(filtered, key = { it.id }) { model ->
-                val isSelected = model.id == "gpt-4o"
+                val isSelected = model.id == selectedModelId
                 NexaraGlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -278,7 +329,7 @@ private fun ModelPanel(onSelect: () -> Unit) {
                             if (isSelected) Modifier.border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
                             else Modifier
                         )
-                        .clickable { onSelect() },
+                        .clickable { onSelect(model.id) },
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
@@ -350,8 +401,27 @@ private fun ModelPanel(onSelect: () -> Unit) {
 }
 
 @Composable
-private fun ThinkingLevelPanel() {
-    var selectedLevel by remember { mutableStateOf("medium") }
+private fun ThinkingLevelPanel(
+    currentTemperature: Float,
+    onUpdate: (Float) -> Unit
+) {
+    val selectedLevel = when {
+        currentTemperature <= 0.3f -> "minimal"
+        currentTemperature <= 0.6f -> "low"
+        currentTemperature <= 0.9f -> "medium"
+        else -> "high"
+    }
+
+    val onLevelClick: (String) -> Unit = { levelId ->
+        val newTemp = when (levelId) {
+            "minimal" -> 0.1f
+            "low" -> 0.4f
+            "medium" -> 0.7f
+            "high" -> 1.0f
+            else -> 0.7f
+        }
+        onUpdate(newTemp)
+    }
 
     Column(
         modifier = Modifier
@@ -374,7 +444,7 @@ private fun ThinkingLevelPanel() {
                                     if (isSelected) Modifier.border(1.dp, NexaraColors.Primary, RoundedCornerShape(12.dp))
                                     else Modifier
                                 )
-                                .clickable { selectedLevel = level.id },
+                                .clickable { onLevelClick(level.id) },
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(
@@ -407,19 +477,17 @@ private fun ThinkingLevelPanel() {
 }
 
 @Composable
-private fun StatsPanel() {
-    val infiniteTransition = rememberInfiniteTransition(label = "statsPulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
-        label = "pulse"
-    )
-
-    val totalTokens = 4250
-    val promptTokens = 1800
-    val completionTokens = 2100
-    val ragTokens = 350
+private fun StatsPanel(
+    chatViewModel: ChatViewModel,
+    settingsViewModel: SettingsViewModel
+) {
+    val uiState by chatViewModel.uiState.collectAsState()
+    val session = uiState.session
+    
+    val totalTokens = session?.messages?.sumOf { it.tokens?.total ?: 0 } ?: 0
+    val promptTokens = session?.messages?.sumOf { it.tokens?.input ?: 0 } ?: 0
+    val completionTokens = session?.messages?.sumOf { it.tokens?.output ?: 0 } ?: 0
+    val ragTokens = 0 // Placeholder for now
 
     Column(
         modifier = Modifier
@@ -429,7 +497,7 @@ private fun StatsPanel() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(contentAlignment = Alignment.Center) {
-            val animatedProgress = (totalTokens.toFloat() / 8192f).coerceIn(0f, 1f)
+            val animatedProgress = (totalTokens.toFloat() / 128000f).coerceIn(0f, 1f)
             androidx.compose.material3.CircularProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier.size(100.dp),
@@ -480,7 +548,7 @@ private fun StatsPanel() {
         Spacer(modifier = Modifier.height(24.dp))
 
         Surface(
-            onClick = {},
+            onClick = { settingsViewModel.clearTokenStats() },
             shape = RoundedCornerShape(12.dp),
             color = NexaraColors.ErrorContainer.copy(alpha = 0.2f),
             border = androidx.compose.foundation.BorderStroke(0.5.dp, NexaraColors.Error.copy(alpha = 0.3f))
@@ -544,15 +612,20 @@ private fun MetricRow(
 }
 
 @Composable
-private fun ToolsPanel() {
-    var timeInjection by remember { mutableStateOf(true) }
-    var strictMode by remember { mutableStateOf(false) }
-    var executionMode by remember { mutableStateOf(ExecutionMode.AUTO) }
-    var skillSearch by remember { mutableStateOf(true) }
-    var skillCodeAnalysis by remember { mutableStateOf(true) }
-    var skillWebSearch by remember { mutableStateOf(false) }
-    var mcpServer1 by remember { mutableStateOf(true) }
-    var mcpServer2 by remember { mutableStateOf(false) }
+private fun ToolsPanel(
+    chatViewModel: ChatViewModel,
+    session: com.promenar.nexara.data.model.Session?
+) {
+    val options = session?.options ?: com.promenar.nexara.data.model.SessionOptions()
+    
+    var timeInjection by remember(options.enableTimeInjection) { mutableStateOf(options.enableTimeInjection) }
+    var toolsEnabled by remember(options.toolsEnabled) { mutableStateOf(options.toolsEnabled) }
+    var webSearch by remember(options.webSearch) { mutableStateOf(options.webSearch ?: false) }
+    
+    // We'll map these to session options
+    val onToggle: (String, Boolean) -> Unit = { tool, enabled ->
+        chatViewModel.toggleTool(tool, enabled)
+    }
 
     Column(
         modifier = Modifier
@@ -561,21 +634,20 @@ private fun ToolsPanel() {
             .padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        ToolToggleRow(stringResource(R.string.sheet_tool_time_injection), Icons.Rounded.Timer, timeInjection) { timeInjection = it }
+        ToolToggleRow(stringResource(R.string.sheet_tool_time_injection), Icons.Rounded.Timer, timeInjection) { 
+            timeInjection = it
+            onToggle("timeInjection", it)
+        }
 
-        Text(stringResource(R.string.sheet_tool_skills), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)
-        ToolToggleRow(stringResource(R.string.sheet_tool_search_retrieval), Icons.Rounded.Storage, skillSearch) { skillSearch = it }
-        ToolToggleRow(stringResource(R.string.sheet_tool_code_analysis), Icons.Rounded.Psychology, skillCodeAnalysis) { skillCodeAnalysis = it }
-        ToolToggleRow(stringResource(R.string.sheet_tool_web_search), Icons.Rounded.Memory, skillWebSearch) { skillWebSearch = it }
-
-        ToolToggleRow(stringResource(R.string.sheet_tool_strict_mode), Icons.Rounded.School, strictMode) { strictMode = it }
-
-        Text(stringResource(R.string.sheet_tool_execution_mode), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)
-        ExecutionModeSelector(selected = executionMode, onSelect = { executionMode = it })
-
-        Text(stringResource(R.string.sheet_tool_mcp_servers), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)
-        ToolToggleRow(stringResource(R.string.sheet_tool_filesystem_server), Icons.Rounded.Storage, mcpServer1) { mcpServer1 = it }
-        ToolToggleRow(stringResource(R.string.sheet_tool_github_server), Icons.Rounded.Storage, mcpServer2) { mcpServer2 = it }
+        Text(stringResource(R.string.sheet_tab_tools), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)
+        ToolToggleRow(stringResource(R.string.sheet_tool_search_retrieval), Icons.Rounded.Storage, toolsEnabled) { 
+            toolsEnabled = it
+            onToggle("toolsEnabled", it)
+        }
+        ToolToggleRow(stringResource(R.string.sheet_tool_web_search), Icons.Rounded.Memory, webSearch) { 
+            webSearch = it
+            onToggle("webSearch", it)
+        }
     }
 }
 

@@ -239,33 +239,43 @@ fun AgentEditScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(presetIcons) { option ->
-                                val isSelected = option.id == selectedIcon
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(NexaraColors.GlassSurface)
-                                        .then(
-                                            if (isSelected) Modifier.border(2.dp, parsedColor, RoundedCornerShape(12.dp))
-                                            else Modifier.border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
-                                        )
-                                        .clickable { viewModel.setIcon(option.id) },
-                                    contentAlignment = Alignment.Center
+                            presetIcons.chunked(3).forEach { rowIcons ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = option.icon,
-                                        contentDescription = option.label,
-                                        tint = if (isSelected) parsedColor else NexaraColors.OnSurfaceVariant,
-                                        modifier = Modifier.size(28.dp)
-                                    )
+                                    rowIcons.forEach { option ->
+                                        val isSelected = option.id == selectedIcon
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .aspectRatio(1f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(NexaraColors.GlassSurface)
+                                                .then(
+                                                    if (isSelected) Modifier.border(2.dp, parsedColor, RoundedCornerShape(12.dp))
+                                                    else Modifier.border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
+                                                )
+                                                .clickable { viewModel.setIcon(option.id) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = option.icon,
+                                                contentDescription = option.label,
+                                                tint = if (isSelected) parsedColor else NexaraColors.OnSurfaceVariant,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                    if (rowIcons.size < 3) {
+                                        repeat(3 - rowIcons.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
                                 }
                             }
                         }
