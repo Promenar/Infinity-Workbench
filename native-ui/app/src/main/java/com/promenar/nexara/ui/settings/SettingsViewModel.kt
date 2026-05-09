@@ -110,6 +110,18 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private val _isFetchingModels = MutableStateFlow(false)
     val isFetchingModels: StateFlow<Boolean> = _isFetchingModels.asStateFlow()
 
+    private val _summaryModelId = MutableStateFlow("")
+    val summaryModelId = _summaryModelId.asStateFlow()
+
+    private val _imageModelId = MutableStateFlow("")
+    val imageModelId = _imageModelId.asStateFlow()
+
+    private val _embeddingModelId = MutableStateFlow("")
+    val embeddingModelId = _embeddingModelId.asStateFlow()
+
+    private val _rerankModelId = MutableStateFlow("")
+    val rerankModelId = _rerankModelId.asStateFlow()
+
     init {
         loadAll()
     }
@@ -135,6 +147,11 @@ class SettingsViewModel(application: Application) : ViewModel() {
         _themeMode.value = prefs.getString("theme_mode", "dark") ?: "dark"
         _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
         _logEnabled.value = prefs.getBoolean("log_enabled", false)
+
+        _summaryModelId.value = prefs.getString("preset_summary_model", "gpt-4o") ?: "gpt-4o"
+        _imageModelId.value = prefs.getString("preset_image_model", "") ?: ""
+        _embeddingModelId.value = prefs.getString("preset_embedding_model", "BAAI/bge-m3") ?: "BAAI/bge-m3"
+        _rerankModelId.value = prefs.getString("preset_rerank_model", "") ?: ""
     }
 
     fun refreshProviders() {
@@ -330,6 +347,16 @@ class SettingsViewModel(application: Application) : ViewModel() {
         editor.apply()
     }
 
+    fun updateModel(updatedModel: ModelInfo) {
+        _providerModels.update { models ->
+            val updated = models.map {
+                if (it.id == updatedModel.id) updatedModel else it
+            }
+            saveEnabledModels(updated)
+            updated
+        }
+    }
+
     fun toggleModel(id: String) {
         _providerModels.update { models ->
             val updated = models.map {
@@ -384,6 +411,9 @@ class SettingsViewModel(application: Application) : ViewModel() {
                                     if (caps.vision) add("vision")
                                     if (caps.internet) add("internet")
                                     if (caps.reasoning) add("reasoning")
+                                    if (caps.image) add("image")
+                                    if (caps.embedding) add("embedding")
+                                    if (caps.rerank) add("rerank")
                                 }
                             }
                         )
@@ -431,6 +461,9 @@ class SettingsViewModel(application: Application) : ViewModel() {
                     if (caps.vision) add("vision")
                     if (caps.internet) add("internet")
                     if (caps.reasoning) add("reasoning")
+                    if (caps.image) add("image")
+                    if (caps.embedding) add("embedding")
+                    if (caps.rerank) add("rerank")
                 }
             }
         )
@@ -466,6 +499,28 @@ class SettingsViewModel(application: Application) : ViewModel() {
         val current = _providerModels.value.filter { it.id != id }
         _providerModels.value = current
         persistModels(current)
+    }
+
+    fun setPresetModel(type: String, modelId: String) {
+        when (type) {
+            "summary" -> {
+                _summaryModelId.value = modelId
+                prefs.edit().putString("preset_summary_model", modelId).apply()
+                _currentModelSummary.value = modelId
+            }
+            "image" -> {
+                _imageModelId.value = modelId
+                prefs.edit().putString("preset_image_model", modelId).apply()
+            }
+            "embedding" -> {
+                _embeddingModelId.value = modelId
+                prefs.edit().putString("preset_embedding_model", modelId).apply()
+            }
+            "rerank" -> {
+                _rerankModelId.value = modelId
+                prefs.edit().putString("preset_rerank_model", modelId).apply()
+            }
+        }
     }
 
     companion object {

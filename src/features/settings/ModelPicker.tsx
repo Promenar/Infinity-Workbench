@@ -61,16 +61,19 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
     providers.forEach((p) => {
       p.models.forEach((m) => {
         if (m.enabled) {
-          // Smart filtering: If filterType is 'chat', we carefully exclude non-chat models
-          // even if they don't have an explicit type set.
-          // We explicitly ALLOW 'reasoning' models when filter is 'chat'.
-          const isExplicitMatch = m.type === filterType;
-          const isChatLogicMatch = filterType === 'chat' && (m.type === 'reasoning' || !m.type);
+          const spec = findModelSpec(m.id);
+          const effectiveType = m.type || spec?.type || 'chat';
+
+          const isExplicitMatch = effectiveType === filterType;
+          const isChatLogicMatch =
+            filterType === 'chat' && (effectiveType === 'reasoning' || effectiveType === 'chat');
 
           if (!filterType || isExplicitMatch || isChatLogicMatch) {
             // Extra safety check for chat: exclude embedding/audio by ID keywords
+            // if they are not explicitly typed as chat
             if (
               filterType === 'chat' &&
+              effectiveType === 'chat' &&
               (m.id.toLowerCase().includes('embedding') ||
                 m.id.toLowerCase().includes('embed') ||
                 m.id.toLowerCase().includes('audio') ||
@@ -106,39 +109,47 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({
 
   const getModelTags = (item: ModelConfig) => {
     const tags: { text: string; color: string; bg: string }[] = [];
+    const spec = findModelSpec(item.id);
+    const effectiveType = item.type || spec?.type || 'chat';
+    const effectiveCaps = { ...spec?.capabilities, ...item.capabilities };
 
     // Reasoning Tag
-    if (item.type === 'reasoning' || item.capabilities?.reasoning) {
+    if (effectiveType === 'reasoning' || effectiveCaps?.reasoning) {
       tags.push({ text: 'Reasoning', color: '#7c3aed', bg: '#f5f3ff' }); // Violet
     }
 
     // Vision Tag
-    if (item.type === 'image' || item.capabilities?.vision) {
+    if (effectiveType === 'image' || effectiveCaps?.vision) {
       tags.push({ text: 'Vision', color: '#db2777', bg: '#fdf2f8' }); // Pink
     }
 
     // Web/Internet Tag
-    if (item.capabilities?.internet) {
+    if (effectiveCaps?.internet) {
       tags.push({ text: 'Web', color: '#0ea5e9', bg: '#e0f2fe' }); // Sky Blue
     }
 
     // Rerank Model Tag
-    if (item.type === 'rerank') {
+    if (effectiveType === 'rerank') {
       tags.push({ text: 'Rerank', color: '#ea580c', bg: '#ffedd5' }); // Orange
     }
 
     // Embedding Model Tag
-    if (item.type === 'embedding') {
+    if (effectiveType === 'embedding') {
       tags.push({ text: 'Embedding', color: '#0891b2', bg: '#cffafe' }); // Cyan
     }
 
     // Default 'Chat' tag only if no other specific capability tags exist and it's not a text processing model
-    if (tags.length === 0 && item.type !== 'rerank' && item.type !== 'embedding') {
+    if (
+      tags.length === 0 &&
+      effectiveType !== 'rerank' &&
+      effectiveType !== 'embedding' &&
+      effectiveType !== 'image'
+    ) {
       tags.push({ text: 'Chat', color: '#059669', bg: '#ecfdf5' }); // Emerald
     }
 
     // Context Length Tag (Always shown if available)
-    const contextStr = formatContextLength(item.contextLength);
+    const contextStr = formatContextLength(item.contextLength || spec?.contextLength);
     if (contextStr) {
       tags.push({ text: contextStr, color: '#2563eb', bg: '#eff6ff' }); // Blue
     }

@@ -168,10 +168,10 @@ export const MODEL_SPECS: ModelSpec[] = [
   {
     pattern: /glm-?4\.7/i,
     contextLength: 128000,
-    type: 'reasoning',
+    type: 'chat',
     capabilities: { reasoning: true },
     icon: 'zhipu',
-    note: 'GLM-4.7 (Reasoning)',
+    note: 'GLM-4.7 (High Capability)',
   },
   {
     pattern: /glm-?4\.6.*v/i,
@@ -184,10 +184,10 @@ export const MODEL_SPECS: ModelSpec[] = [
   {
     pattern: /glm-?4\.5/i,
     contextLength: 128000,
-    type: 'reasoning',
+    type: 'chat',
     capabilities: { reasoning: true },
     icon: 'zhipu',
-    note: 'GLM-4.5 (Reasoning)',
+    note: 'GLM-4.5 (High Capability)',
   },
   {
     pattern: /glm.*v(?:ision)?$/i,
@@ -268,6 +268,43 @@ export const MODEL_SPECS: ModelSpec[] = [
   { pattern: /mistral-small/i, contextLength: 32000, icon: 'mistral', note: 'Mistral Small' },
   { pattern: /mixtral-8x7b/i, contextLength: 32000, icon: 'mistral', note: 'Mixtral 8x7B' },
 
+  // ==================== Embedding Models (嵌入/向量化) ====================
+  {
+    pattern: /text-embedding-3/i,
+    contextLength: 8192,
+    type: 'embedding',
+    icon: 'layers',
+    note: 'OpenAI Embedding v3',
+  },
+  {
+    pattern: /text-embedding-ada/i,
+    contextLength: 8192,
+    type: 'embedding',
+    icon: 'layers',
+    note: 'OpenAI Ada Embedding',
+  },
+  {
+    pattern: /bge-m3/i,
+    contextLength: 8192,
+    type: 'embedding',
+    icon: 'layers',
+    note: 'BGE M3 Embedding',
+  },
+  {
+    pattern: /bge-large/i,
+    contextLength: 512,
+    type: 'embedding',
+    icon: 'layers',
+    note: 'BGE Large Embedding',
+  },
+  {
+    pattern: /embedding/i,
+    contextLength: 8192,
+    type: 'embedding',
+    icon: 'layers',
+    note: 'Generic Embedding Model',
+  },
+
   // ==================== Rerank Models (重排序) ====================
   {
     pattern: /bge-reranker/i,
@@ -296,6 +333,29 @@ export const MODEL_SPECS: ModelSpec[] = [
     type: 'rerank',
     icon: 'rerank',
     note: 'Generic Rerank Model',
+  },
+
+  // ==================== Image Models (图像生成) ====================
+  {
+    pattern: /dall-e/i,
+    contextLength: 1,
+    type: 'image',
+    icon: 'image',
+    note: 'DALL-E series',
+  },
+  {
+    pattern: /stable-diffusion/i,
+    contextLength: 1,
+    type: 'image',
+    icon: 'image',
+    note: 'Stable Diffusion',
+  },
+  {
+    pattern: /flux/i,
+    contextLength: 1,
+    type: 'image',
+    icon: 'image',
+    note: 'Flux Image Model',
   },
 ];
 

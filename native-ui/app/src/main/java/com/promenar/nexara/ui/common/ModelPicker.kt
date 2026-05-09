@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -48,7 +49,7 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
 
 enum class ModelCapability {
-    REASONING, VISION, WEB, RERANK, EMBEDDING, CHAT
+    REASONING, VISION, WEB, RERANK, EMBEDDING, CHAT, IMAGE
 }
 
 data class ModelItem(
@@ -65,7 +66,8 @@ private val capabilityColors: Map<ModelCapability, Pair<Color, Color>> = mapOf(
     ModelCapability.WEB to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
     ModelCapability.RERANK to (Color(0xFFFB923C) to Color(0xFF431407)),
     ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344)),
-    ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22))
+    ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22)),
+    ModelCapability.IMAGE to (Color(0xFFFCD34D) to Color(0xFF451A03))
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -75,7 +77,9 @@ fun ModelPicker(
     onDismiss: () -> Unit,
     onSelect: (modelId: String, modelName: String) -> Unit,
     currentModelId: String = "",
-    models: List<ModelItem> = emptyList()
+    models: List<ModelItem> = emptyList(),
+    title: String? = null,
+    filterTag: String? = null
 ) {
     if (!show) return
 
@@ -87,9 +91,21 @@ fun ModelPicker(
         debouncedQuery = searchQuery
     }
 
-    val filteredModels = remember(debouncedQuery, models) {
-        if (debouncedQuery.isBlank()) models
-        else models.filter {
+    val filteredModels = remember(debouncedQuery, models, filterTag) {
+        val baseList = if (filterTag == null) models
+        else models.filter { item ->
+            when (filterTag) {
+                "chat" -> item.capabilities.contains(ModelCapability.CHAT) || item.capabilities.contains(ModelCapability.REASONING)
+                "reasoning" -> item.capabilities.contains(ModelCapability.REASONING)
+                "image" -> item.capabilities.contains(ModelCapability.IMAGE)
+                "embedding" -> item.capabilities.contains(ModelCapability.EMBEDDING)
+                "rerank" -> item.capabilities.contains(ModelCapability.RERANK)
+                else -> true
+            }
+        }
+
+        if (debouncedQuery.isBlank()) baseList
+        else baseList.filter {
             it.name.contains(debouncedQuery, ignoreCase = true) ||
                     it.providerName.contains(debouncedQuery, ignoreCase = true)
         }
@@ -107,7 +123,7 @@ fun ModelPicker(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = stringResource(R.string.common_model_picker_title),
+                text = title ?: stringResource(R.string.common_model_picker_title),
                 style = NexaraTypography.headlineMedium,
                 color = NexaraColors.OnSurface
             )
@@ -167,7 +183,7 @@ fun ModelPicker(
                                 Icon(
                                     imageVector = Icons.Rounded.Memory,
                                     contentDescription = null,
-                                    tint = NexaraColors.Primary,
+                                    tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
                                     modifier = Modifier.size(16.dp)
                                 )
 
@@ -177,9 +193,9 @@ fun ModelPicker(
                                     Text(
                                         text = model.name,
                                         style = NexaraTypography.bodyMedium.copy(
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                         ),
-                                        color = NexaraColors.OnSurface
+                                        color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface
                                     )
 
                                     Spacer(modifier = Modifier.height(2.dp))
@@ -199,51 +215,49 @@ fun ModelPicker(
                                         )
                                     }
 
-                                    if (model.capabilities.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        FlowRow(
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            model.capabilities.forEach { cap ->
-                                                val (fg, bg) = capabilityColors[cap]!!
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(bg, RoundedCornerShape(50))
-                                                        .border(
-                                                            0.5.dp,
-                                                            fg.copy(alpha = 0.3f),
-                                                            RoundedCornerShape(50)
-                                                        )
-                                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text(
-                                                        text = cap.name.lowercase()
-                                                            .replaceFirstChar { it.uppercase() },
-                                                        style = NexaraTypography.labelMedium.copy(
-                                                            fontSize = 10.sp
-                                                        ),
-                                                        color = fg
-                                                    )
-                                                }
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        model.capabilities.forEach { cap ->
+                                            val (textCol, bgCol) = capabilityColors[cap] ?: (Color.Gray to Color.DarkGray)
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(bgCol)
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = cap.name,
+                                                    style = NexaraTypography.labelMedium.copy(fontSize = 9.sp),
+                                                    color = textCol
+                                                )
                                             }
                                         }
-                                    }
-
-                                    if (model.contextLength != null) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = "${model.contextLength / 1000}${stringResource(R.string.common_model_picker_k_context)}",
-                                            style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                            color = NexaraColors.Outline
-                                        )
+                                        
+                                        model.contextLength?.let {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(NexaraColors.SurfaceHigh)
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (it >= 1024) "${it / 1024}k" else "$it",
+                                                    style = NexaraTypography.labelMedium.copy(fontSize = 9.sp),
+                                                    color = NexaraColors.OnSurfaceVariant
+                                                )
+                                            }
+                                        }
                                     }
                                 }
 
                                 if (isSelected) {
                                     Icon(
                                         imageVector = Icons.Rounded.Check,
-                                        contentDescription = stringResource(R.string.common_model_picker_selected),
+                                        contentDescription = null,
                                         tint = NexaraColors.Primary,
                                         modifier = Modifier.size(20.dp)
                                     )

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-05-09
+
+### Fixed
+- **模型预设选择逻辑修复**: 彻底解决了原生 Android 版本设置页面中，功能模型（嵌入、重排、图像）选择器点开后列表为空的问题。
+  - 优化了 `UserSettingsHomeScreen` 的模型映射逻辑，整合 `type` 与 `capabilities` 字段，确保所有功能模型均能被正确过滤。
+  - 修复了模型选择器中 `contextLength` 等元数据传递缺失的问题。
+
+### UI/UX
+- **模型管理功能增强**: 原生版本模型管理界面（ProviderModelsScreen）新增“图片”、“嵌入”、“重排”功能标签，支持用户手动校准模型能力。
+
+### Added
+- **模型规格库扩展**: `MODEL_SPECS` 数据库新增了数十种常用模型规格，包括：
+  - **嵌入模型**: OpenAI text-embedding-3, BAAI bge-m3 等。
+  - **重排序模型**: BGE Reranker, Jina Reranker 等。
+  - **图像模型**: DALL-E, Stable Diffusion, Flux 等。
+  - **智谱 GLM 系列**: 补全了 GLM-4.7, 4.5 等高能力模型的规格配置。
+
 ## [1.2.52] - 2026-02-17
 
 ### Changed

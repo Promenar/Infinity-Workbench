@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,7 +34,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
@@ -67,6 +72,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.ModelItem
+import com.promenar.nexara.ui.common.ModelCapability
+import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsItem
@@ -93,8 +101,6 @@ fun UserSettingsHomeScreen(
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val userName by viewModel.userName.collectAsState()
-    val currentModel by viewModel.currentModelSummary.collectAsState()
-    val activeSources by viewModel.activeSourcesCount.collectAsState()
     val tokenCost by viewModel.tokenCostThisMonth.collectAsState()
     val language by viewModel.language.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
@@ -108,6 +114,7 @@ fun UserSettingsHomeScreen(
     var editingName by remember { mutableStateOf(userName) }
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showModelPickerType by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == SettingsTab.PROVIDER) {
@@ -151,8 +158,6 @@ fun UserSettingsHomeScreen(
                         AppSettingsContent(
                             viewModel = viewModel,
                             userName = userName,
-                            currentModel = currentModel,
-                            activeSources = activeSources,
                             tokenCost = tokenCost,
                             language = language,
                             themeMode = themeMode,
@@ -163,7 +168,10 @@ fun UserSettingsHomeScreen(
                                 editingName = userName
                                 showNameEditor = true
                             },
-                            onShowLanguageDialog = { showLanguageDialog = true }
+                            onShowLanguageDialog = { showLanguageDialog = true },
+                            onShowModelPicker = { type ->
+                                showModelPickerType = type
+                            }
                         )
                     }
                     SettingsTab.PROVIDER -> {
@@ -176,6 +184,85 @@ fun UserSettingsHomeScreen(
                 }
             }
         }
+    }
+
+    val allModels by viewModel.providerModels.collectAsState()
+    val modelItems = remember(allModels) {
+        allModels.map { model ->
+            val mappedCaps = mutableSetOf<ModelCapability>()
+            
+            // 1. Map from model type (Primary capability)
+            when (model.type) {
+                "chat" -> mappedCaps.add(ModelCapability.CHAT)
+                "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
+                "image" -> mappedCaps.add(ModelCapability.IMAGE)
+                "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
+                "rerank" -> mappedCaps.add(ModelCapability.RERANK)
+            }
+            
+            // 2. Map from additional capabilities list
+            model.capabilities.forEach { cap ->
+                when (cap) {
+                    "vision" -> mappedCaps.add(ModelCapability.VISION)
+                    "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
+                    "image" -> mappedCaps.add(ModelCapability.IMAGE)
+                    "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
+                    "rerank" -> mappedCaps.add(ModelCapability.RERANK)
+                    "internet" -> mappedCaps.add(ModelCapability.WEB)
+                }
+            }
+            
+            // 3. Fallback to CHAT if empty
+            if (mappedCaps.isEmpty()) mappedCaps.add(ModelCapability.CHAT)
+
+            ModelItem(
+                id = model.id,
+                name = model.name,
+                providerName = "Provider",
+                capabilities = mappedCaps.toList(),
+                contextLength = model.contextLength
+            )
+        }
+    }
+
+    if (showModelPickerType != null) {
+        val type = showModelPickerType!!
+        val currentIdState = when (type) {
+            "summary" -> viewModel.summaryModelId.collectAsState()
+            "image" -> viewModel.imageModelId.collectAsState()
+            "embedding" -> viewModel.embeddingModelId.collectAsState()
+            "rerank" -> viewModel.rerankModelId.collectAsState()
+            else -> remember { mutableStateOf("") }
+        }
+        val currentId = currentIdState.value
+
+        val filter = when (type) {
+            "summary" -> "chat"
+            "image" -> "image"
+            "embedding" -> "embedding"
+            "rerank" -> "rerank"
+            else -> null
+        }
+        val title = when (type) {
+            "summary" -> stringResource(R.string.settings_model_summary)
+            "image" -> stringResource(R.string.settings_model_image)
+            "embedding" -> stringResource(R.string.settings_model_embedding)
+            "rerank" -> stringResource(R.string.settings_model_rerank)
+            else -> ""
+        }
+
+        ModelPicker(
+            show = true,
+            title = title,
+            filterTag = filter,
+            currentModelId = currentId,
+            models = modelItems,
+            onDismiss = { showModelPickerType = null },
+            onSelect = { id, _ ->
+                viewModel.setPresetModel(type, id)
+                showModelPickerType = null
+            }
+        )
     }
 
     if (showNameEditor) {
@@ -251,7 +338,7 @@ private fun TabBar(
                         .width(24.dp)
                         .height(2.dp)
                         .background(
-                            if (isSelected) NexaraColors.Primary else NexaraColors.Primary.copy(alpha = 0f),
+                            if (isSelected) NexaraColors.Primary else Color.Transparent,
                             RoundedCornerShape(1.dp)
                         )
                 )
@@ -264,8 +351,6 @@ private fun TabBar(
 private fun AppSettingsContent(
     viewModel: SettingsViewModel,
     userName: String,
-    currentModel: String,
-    activeSources: Int,
     tokenCost: String,
     language: String,
     themeMode: String,
@@ -273,7 +358,8 @@ private fun AppSettingsContent(
     logEnabled: Boolean,
     onNavigateToSecondary: (String) -> Unit,
     onEditName: () -> Unit,
-    onShowLanguageDialog: () -> Unit
+    onShowLanguageDialog: () -> Unit,
+    onShowModelPicker: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -322,35 +408,39 @@ private fun AppSettingsContent(
 
         item { SettingsSectionHeader(stringResource(R.string.settings_section_model_presets)) }
         item {
+            val summaryId by viewModel.summaryModelId.collectAsState()
             NexaraSettingsItem(
-                icon = Icons.Rounded.Speed,
+                icon = Icons.Rounded.Psychology,
                 title = stringResource(R.string.settings_model_summary),
-                subtitle = currentModel,
-                onClick = { onNavigateToSecondary("provider_form") }
+                subtitle = summaryId,
+                onClick = { onShowModelPicker("summary") }
             )
         }
         item {
+            val imageId by viewModel.imageModelId.collectAsState()
             NexaraSettingsItem(
-                icon = Icons.Rounded.Speed,
+                icon = Icons.Rounded.Image,
                 title = stringResource(R.string.settings_model_image),
-                subtitle = stringResource(R.string.settings_not_set),
-                onClick = { onNavigateToSecondary("provider_form") }
+                subtitle = imageId.ifEmpty { stringResource(R.string.settings_not_set) },
+                onClick = { onShowModelPicker("image") }
             )
         }
         item {
+            val embeddingId by viewModel.embeddingModelId.collectAsState()
             NexaraSettingsItem(
-                icon = Icons.Rounded.Speed,
+                icon = Icons.Rounded.Link,
                 title = stringResource(R.string.settings_model_embedding),
-                subtitle = "BAAI/bge-m3",
-                onClick = { onNavigateToSecondary("provider_form") }
+                subtitle = embeddingId,
+                onClick = { onShowModelPicker("embedding") }
             )
         }
         item {
+            val rerankId by viewModel.rerankModelId.collectAsState()
             NexaraSettingsItem(
-                icon = Icons.Rounded.Speed,
+                icon = Icons.Rounded.Route,
                 title = stringResource(R.string.settings_model_rerank),
-                subtitle = stringResource(R.string.settings_not_set),
-                onClick = { onNavigateToSecondary("provider_form") }
+                subtitle = rerankId.ifEmpty { stringResource(R.string.settings_not_set) },
+                onClick = { onShowModelPicker("rerank") }
             )
         }
 
@@ -504,12 +594,11 @@ private fun ProviderSettingsContent(
                 }
             }
         } else {
-            items(providers.size) { index ->
-                val provider = providers[index]
+            items(providers, key = { it.id }) { provider ->
                 ProviderCard(
                     provider = provider,
-                    onEdit = { onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.providerForm(provider.id)) },
-                    onManageModels = { onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.providerModels(provider.id)) },
+                    onClick = { onNavigateToSecondary("provider_models/${provider.id}") },
+                    onEdit = { onNavigateToSecondary("provider_form?providerId=${provider.id}") },
                     onDelete = { onDeleteProvider(provider.id) }
                 )
             }
@@ -522,98 +611,76 @@ private fun UserProfileHeader(
     userName: String,
     onEditName: () -> Unit
 ) {
-    val gradientBrush = Brush.linearGradient(
-        colors = listOf(
-            NexaraColors.PrimaryContainer.copy(alpha = 0.5f),
-            NexaraColors.TertiaryContainer.copy(alpha = 0.5f)
-        )
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(NexaraShapes.large)
-            .background(gradientBrush)
-            .padding(1.dp)
+    NexaraGlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = NexaraShapes.large as RoundedCornerShape
     ) {
-        NexaraGlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = NexaraShapes.large as RoundedCornerShape
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(NexaraColors.SurfaceContainer.copy(alpha = 0.9f))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(NexaraColors.Primary, NexaraColors.Primary.copy(alpha = 0.7f))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(NexaraColors.Primary, NexaraColors.Tertiary)
-                            ),
-                            shape = CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = userName.take(2).uppercase(),
-                        style = NexaraTypography.headlineMedium,
-                        color = NexaraColors.OnPrimary
-                    )
-                }
+                Text(
+                    text = userName.take(1).uppercase(),
+                    style = NexaraTypography.headlineLarge,
+                    color = NexaraColors.OnPrimary
+                )
+            }
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = userName,
-                        style = NexaraTypography.headlineMedium,
-                        color = NexaraColors.OnSurface
-                    )
-                    Text(
-                        text = "Pro Plan · Active",
-                        style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                }
+            Spacer(modifier = Modifier.width(16.dp))
 
-                IconButton(
-                    onClick = onEditName,
-                    modifier = Modifier
-                        .background(NexaraColors.GlassSurface, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = stringResource(R.string.settings_edit_name),
-                        tint = NexaraColors.Primary
-                    )
-                }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = userName,
+                    style = NexaraTypography.headlineMedium,
+                    color = NexaraColors.OnSurface
+                )
+                Text(
+                    text = "ID: 8823192",
+                    style = NexaraTypography.bodyMedium,
+                    color = NexaraColors.OnSurfaceVariant
+                )
+            }
+
+            IconButton(onClick = onEditName) {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = null,
+                    tint = NexaraColors.OnSurfaceVariant
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AddProviderButton(onClick: () -> Unit) {
-    Box(
+private fun AddProviderButton(
+    onClick: () -> Unit
+) {
+    NexaraGlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(NexaraShapes.large)
-            .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
-            .border(
-                1.dp,
-                Brush.linearGradient(listOf(NexaraColors.Outline, NexaraColors.Outline)),
-                NexaraShapes.large
-            )
-            .clickable(onClick = onClick)
-            .padding(vertical = 20.dp),
-        contentAlignment = Alignment.Center
+            .clickable { onClick() },
+        shape = NexaraShapes.medium as RoundedCornerShape
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
             Icon(
                 imageVector = Icons.Rounded.Add,
@@ -621,9 +688,10 @@ private fun AddProviderButton(onClick: () -> Unit) {
                 tint = NexaraColors.Primary,
                 modifier = Modifier.size(20.dp)
             )
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = stringResource(R.string.settings_add_provider),
-                style = NexaraTypography.labelMedium,
+                style = NexaraTypography.labelLarge,
                 color = NexaraColors.Primary
             )
         }
@@ -633,100 +701,67 @@ private fun AddProviderButton(onClick: () -> Unit) {
 @Composable
 private fun ProviderCard(
     provider: ProviderListItem,
+    onClick: () -> Unit,
     onEdit: () -> Unit,
-    onManageModels: () -> Unit,
     onDelete: () -> Unit
 ) {
     NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NexaraShapes.large as RoundedCornerShape
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = NexaraShapes.medium as RoundedCornerShape
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(NexaraColors.SurfaceHigh, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Speed,
-                            contentDescription = null,
-                            tint = NexaraColors.Primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = provider.name,
-                            style = NexaraTypography.headlineMedium,
-                            color = NexaraColors.OnSurface
-                        )
-                        Text(
-                            text = provider.typeName,
-                            style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                            color = NexaraColors.OnSurfaceVariant
-                        )
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = stringResource(R.string.shared_btn_edit),
-                            tint = NexaraColors.OnSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = stringResource(R.string.shared_btn_delete),
-                            tint = NexaraColors.Error,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = provider.name,
+                    style = NexaraTypography.headlineSmall,
+                    color = NexaraColors.OnSurface
+                )
+                Text(
+                    text = provider.typeName,
+                    style = NexaraTypography.bodySmall,
+                    color = NexaraColors.OnSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = provider.baseUrl,
+                    style = NexaraTypography.bodySmall.copy(fontFamily = SpaceGrotesk),
+                    color = NexaraColors.Outline,
+                    maxLines = 1
+                )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = provider.baseUrl,
-                style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp, fontFamily = SpaceGrotesk),
-                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.7f)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(NexaraShapes.medium)
-                    .background(NexaraColors.SurfaceHigh)
-                    .clickable(onClick = onManageModels)
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_manage_models),
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClick) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = stringResource(R.string.settings_manage_models),
+                        tint = NexaraColors.Primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = null,
+                        tint = NexaraColors.StatusError.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }
@@ -743,44 +778,24 @@ private fun NameEditDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = NexaraColors.SurfaceContainer,
-        title = {
-            Text(
-                stringResource(R.string.settings_edit_name),
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
-            )
-        },
+        title = { Text(stringResource(R.string.settings_edit_name), style = NexaraTypography.headlineMedium) },
         text = {
-            Column {
-                Text(
-                    stringResource(R.string.settings_edit_name_placeholder),
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NexaraColors.Primary,
-                        unfocusedBorderColor = NexaraColors.GlassBorder,
-                        focusedContainerColor = NexaraColors.SurfaceContainer,
-                        unfocusedContainerColor = NexaraColors.SurfaceContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = NexaraTypography.bodyLarge,
+                singleLine = true
+            )
         },
         confirmButton = {
             TextButton(onClick = { onSave(name) }) {
-                Text(stringResource(R.string.settings_btn_save), color = NexaraColors.Primary)
+                Text(stringResource(R.string.settings_btn_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.settings_btn_cancel), color = NexaraColors.OnSurfaceVariant)
+                Text(stringResource(R.string.settings_btn_cancel))
             }
         }
     )
@@ -794,64 +809,45 @@ private fun LanguageSelectorDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(R.string.settings_language),
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
-            )
-        },
+        containerColor = NexaraColors.SurfaceContainer,
+        title = { Text(stringResource(R.string.settings_language), style = NexaraTypography.headlineMedium) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LanguageOption(
-                    label = "English",
-                    selected = currentLanguage == "en",
-                    onClick = { onSelect("en") }
+                    label = stringResource(R.string.settings_language_zh),
+                    isSelected = currentLanguage == "zh",
+                    onSelect = { onSelect("zh") }
                 )
                 LanguageOption(
-                    label = "中文 (简体)",
-                    selected = currentLanguage == "zh",
-                    onClick = { onSelect("zh") }
+                    label = stringResource(R.string.settings_language_en),
+                    isSelected = currentLanguage == "en",
+                    onSelect = { onSelect("en") }
                 )
             }
         },
-        confirmButton = {},
-        containerColor = NexaraColors.SurfaceDim
+        confirmButton = {}
     )
 }
 
 @Composable
 private fun LanguageOption(
     label: String,
-    selected: Boolean,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    onSelect: () -> Unit
 ) {
-    val bgColor by animateColorAsState(
-        if (selected) NexaraColors.Primary.copy(alpha = 0.1f) else Color.Transparent,
-        label = "langBg"
-    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(bgColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isSelected) NexaraColors.Primary.copy(alpha = 0.1f) else Color.Transparent)
+            .clickable { onSelect() }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = label,
-            style = NexaraTypography.labelMedium,
-            color = if (selected) NexaraColors.Primary else NexaraColors.OnSurface
-        )
-        if (selected) {
-            Icon(
-                imageVector = Icons.Rounded.Check,
-                contentDescription = null,
-                tint = NexaraColors.Primary,
-                modifier = Modifier.size(20.dp)
-            )
+        Text(text = label, style = NexaraTypography.bodyLarge, color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface)
+        if (isSelected) {
+            Icon(imageVector = Icons.Rounded.Check, contentDescription = null, tint = NexaraColors.Primary)
         }
     }
 }

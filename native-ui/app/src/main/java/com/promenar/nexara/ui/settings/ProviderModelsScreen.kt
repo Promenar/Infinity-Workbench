@@ -34,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,7 +75,10 @@ private data class CapabilityTag(
 private val CapabilityTags = listOf(
     CapabilityTag("vision", "Vision", "visibility", NexaraColors.StatusError.copy(alpha = 0.8f)),
     CapabilityTag("internet", "Internet", "public", NexaraColors.StatusInfo),
-    CapabilityTag("reasoning", "Reasoning", "psychology", NexaraColors.PrimaryContainer)
+    CapabilityTag("reasoning", "Reasoning", "psychology", NexaraColors.PrimaryContainer),
+    CapabilityTag("image", "Image", "image", NexaraColors.StatusSuccess),
+    CapabilityTag("embedding", "Embed", "layers", NexaraColors.Primary),
+    CapabilityTag("rerank", "Rerank", "sort", NexaraColors.StatusWarning)
 )
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -173,11 +177,12 @@ fun ProviderModelsScreen(
             contentPadding = PaddingValues(bottom = 40.dp),
             modifier = Modifier.weight(1f)
         ) {
-            items(filteredModels) { model ->
+            items(filteredModels, key = { it.id }) { model ->
                 EnhancedModelCard(
                     model = model,
                     isTesting = testingModel == model.id,
                     testResult = if (testingModel == model.id) testResult else null,
+                    onUpdate = { viewModel.updateModel(it) },
                     onToggle = { viewModel.toggleModel(model.id) },
                     onTest = {
                         testingModel = model.id
@@ -328,6 +333,7 @@ private fun EnhancedModelCard(
     model: ModelInfo,
     isTesting: Boolean,
     testResult: String?,
+    onUpdate: (ModelInfo) -> Unit,
     onToggle: () -> Unit,
     onTest: () -> Unit,
     onDelete: () -> Unit
@@ -337,6 +343,18 @@ private fun EnhancedModelCard(
     var editId by remember { mutableStateOf(model.id) }
     var editContext by remember { mutableStateOf(model.contextLength.toString()) }
     var activeCaps by remember { mutableStateOf(model.capabilities.toSet()) }
+
+    LaunchedEffect(selectedType, editName, editContext, activeCaps) {
+        val updated = model.copy(
+            type = selectedType,
+            name = editName,
+            contextLength = editContext.toIntOrNull() ?: model.contextLength,
+            capabilities = activeCaps.toList()
+        )
+        if (updated != model) {
+            onUpdate(updated)
+        }
+    }
 
     val rotation by animateFloatAsState(
         targetValue = if (isTesting) 360f else 0f,

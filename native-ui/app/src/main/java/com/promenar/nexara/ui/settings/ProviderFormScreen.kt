@@ -11,14 +11,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -26,14 +24,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -68,21 +63,7 @@ data class ProviderPreset(
 val PROVIDER_PRESETS = listOf(
     ProviderPreset("OpenAI", "https://logo.clearbit.com/openai.com", "https://api.openai.com/v1", ProtocolId.OPENAI),
     ProviderPreset("Anthropic", "https://logo.clearbit.com/anthropic.com", "https://api.anthropic.com", ProtocolId.ANTHROPIC),
-    ProviderPreset("Gemini", "https://logo.clearbit.com/google.com", "https://generativelanguage.googleapis.com", ProtocolId.VERTEX_AI),
-    ProviderPreset("DeepSeek", "https://logo.clearbit.com/deepseek.com", "https://api.deepseek.com/v1", ProtocolId.OPENAI),
-    ProviderPreset("Groq", "https://logo.clearbit.com/groq.com", "https://api.groq.com/openai/v1", ProtocolId.OPENAI),
-    ProviderPreset("Mistral", "https://logo.clearbit.com/mistral.ai", "https://api.mistral.ai/v1", ProtocolId.OPENAI),
-    ProviderPreset("Together", "https://logo.clearbit.com/together.ai", "https://api.together.xyz/v1", ProtocolId.OPENAI),
-    ProviderPreset("Cohere", "https://logo.clearbit.com/cohere.com", "https://api.cohere.ai/v1", ProtocolId.OPENAI),
-    ProviderPreset("Fireworks", "https://logo.clearbit.com/fireworks.ai", "https://api.fireworks.ai/inference/v1", ProtocolId.OPENAI),
-    ProviderPreset("Perplexity", "https://logo.clearbit.com/perplexity.ai", "https://api.perplexity.ai", ProtocolId.OPENAI),
-    ProviderPreset("OpenRouter", "https://openrouter.ai/favicon.ico", "https://openrouter.ai/api/v1", ProtocolId.OPENAI),
-    ProviderPreset("xAI", "https://logo.clearbit.com/x.ai", "https://api.x.ai/v1", ProtocolId.OPENAI),
-    ProviderPreset("SiliconFlow", "https://logo.clearbit.com/siliconflow.cn", "https://api.siliconflow.cn/v1", ProtocolId.OPENAI),
-    ProviderPreset("ByteDance", "https://logo.clearbit.com/volcengine.com", "https://ark.cn-beijing.volces.com/api/v3", ProtocolId.OPENAI),
-    ProviderPreset("Baidu", "https://logo.clearbit.com/baidu.com", "https://qianfan.baidubce.com/v2", ProtocolId.OPENAI),
-    ProviderPreset("Alibaba", "https://logo.clearbit.com/aliyun.com", "https://dashscope.aliyuncs.com/compatible-mode/v1", ProtocolId.OPENAI),
-    ProviderPreset("Tencent", "https://logo.clearbit.com/tencent.com", "https://api.hunyuan.cloud.tencent.com/v1", ProtocolId.OPENAI),
+    ProviderPreset("VertexAI", "https://logo.clearbit.com/google.com", "https://generativelanguage.googleapis.com", ProtocolId.VERTEX_AI),
     ProviderPreset("Custom", "", "", ProtocolId.OPENAI)
 )
 
@@ -121,84 +102,19 @@ fun ProviderFormScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            contentPadding = PaddingValues(0.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.height(280.dp)
-        ) {
-            items(PROVIDER_PRESETS) { preset ->
-                val isSelected = selectedPreset.name == preset.name
-                val borderColor by animateColorAsState(
-                    targetValue = if (isSelected) NexaraColors.Primary else NexaraColors.GlassBorder,
-                    animationSpec = tween(200),
-                    label = "presetBorder"
-                )
-                val bgAlpha by animateColorAsState(
-                    targetValue = if (isSelected) NexaraColors.Primary.copy(alpha = 0.1f) else NexaraColors.SurfaceContainer.copy(alpha = 0.3f),
-                    animationSpec = tween(200),
-                    label = "presetBg"
-                )
-
-                Box(
-                    modifier = Modifier
-                        .clip(NexaraShapes.large)
-                        .background(bgAlpha)
-                        .border(1.dp, borderColor, NexaraShapes.large)
-                        .clickable {
-                            selectedPreset = preset
-                            if (preset.name != "Custom") {
-                                name = preset.name
-                                baseUrl = preset.defaultBaseUrl
-                            }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            PROVIDER_PRESETS.forEach { preset ->
+                PresetItem(
+                    preset = preset,
+                    isSelected = selectedPreset.name == preset.name,
+                    onClick = {
+                        selectedPreset = preset
+                        if (preset.name != "Custom") {
+                            name = preset.name
+                            baseUrl = preset.defaultBaseUrl
                         }
-                        .padding(vertical = 12.dp, horizontal = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(
-                                    if (isSelected) NexaraColors.Primary.copy(alpha = 0.2f)
-                                    else NexaraColors.SurfaceHigh,
-                                    RoundedCornerShape(8.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CheckCircle,
-                                    contentDescription = null,
-                                    tint = NexaraColors.Primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            } else if (preset.iconUrl.isNotEmpty()) {
-                                coil3.compose.AsyncImage(
-                                    model = preset.iconUrl,
-                                    contentDescription = preset.name,
-                                    modifier = Modifier.size(20.dp).clip(RoundedCornerShape(4.dp))
-                                )
-                            } else {
-                                Text(
-                                    text = preset.name.take(1),
-                                    style = NexaraTypography.labelMedium.copy(fontSize = 14.sp),
-                                    color = NexaraColors.OnSurfaceVariant
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = preset.name,
-                            style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                            color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
-                        )
                     }
-                }
+                )
             }
         }
 
@@ -389,6 +305,80 @@ fun ProviderFormScreen(
         }
 
         Spacer(modifier = Modifier.height(32.dp))
+    }
+}
+
+@Composable
+private fun PresetItem(
+    preset: ProviderPreset,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) NexaraColors.Primary else NexaraColors.GlassBorder,
+        animationSpec = tween(200),
+        label = "presetBorder"
+    )
+    val bgAlpha by animateColorAsState(
+        targetValue = if (isSelected) NexaraColors.Primary.copy(alpha = 0.1f) else NexaraColors.SurfaceContainer.copy(alpha = 0.3f),
+        animationSpec = tween(200),
+        label = "presetBg"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(NexaraShapes.large)
+            .background(bgAlpha)
+            .border(1.dp, borderColor, NexaraShapes.large)
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(
+                        if (isSelected) NexaraColors.Primary.copy(alpha = 0.2f)
+                        else NexaraColors.SurfaceHigh,
+                        RoundedCornerShape(10.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (preset.iconUrl.isNotEmpty()) {
+                    coil3.compose.AsyncImage(
+                        model = preset.iconUrl,
+                        contentDescription = preset.name,
+                        modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp))
+                    )
+                } else {
+                    Text(
+                        text = preset.name.take(1),
+                        style = NexaraTypography.labelLarge,
+                        color = NexaraColors.OnSurfaceVariant
+                    )
+                }
+            }
+
+            Text(
+                text = preset.name,
+                style = NexaraTypography.bodyLarge,
+                color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface,
+                modifier = Modifier.weight(1f)
+            )
+
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = NexaraColors.Primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 

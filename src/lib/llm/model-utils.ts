@@ -41,7 +41,7 @@ export function findModelSpec(modelId: string) {
           ...spec,
           pattern: storeModel.id,
           contextLength: storeModel.contextLength || spec.contextLength || 4096,
-          type: storeModel.type || spec.type || 'chat',
+          type: (storeModel.type && storeModel.type !== 'chat') ? storeModel.type : (spec.type || 'chat'),
           capabilities: {
             ...spec.capabilities,
             ...storeModel.capabilities,

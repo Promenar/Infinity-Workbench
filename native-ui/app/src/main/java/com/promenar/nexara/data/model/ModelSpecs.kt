@@ -7,7 +7,10 @@ enum class ModelType {
 data class ModelCapabilities(
     val vision: Boolean = false,
     val internet: Boolean = false,
-    val reasoning: Boolean = false
+    val reasoning: Boolean = false,
+    val image: Boolean = false,
+    val embedding: Boolean = false,
+    val rerank: Boolean = false
 )
 
 sealed class ModelPattern {
@@ -616,8 +619,45 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         pattern = ModelPattern.RegexPattern(Regex("""rerank""", RegexOption.IGNORE_CASE)),
         contextLength = 4096,
         type = ModelType.RERANK,
+        capabilities = ModelCapabilities(rerank = true),
         icon = "rerank",
         note = "Generic Rerank Model"
+    ),
+
+    // ==================== Embedding Models ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""bge-m3""", RegexOption.IGNORE_CASE)),
+        contextLength = 8192,
+        type = ModelType.EMBEDDING,
+        capabilities = ModelCapabilities(embedding = true),
+        icon = "embedding",
+        note = "BGE M3 Embedding"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""embedding""", RegexOption.IGNORE_CASE)),
+        contextLength = 8192,
+        type = ModelType.EMBEDDING,
+        capabilities = ModelCapabilities(embedding = true),
+        icon = "embedding",
+        note = "Generic Embedding Model"
+    ),
+
+    // ==================== Image Models ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""dall-e""", RegexOption.IGNORE_CASE)),
+        contextLength = 1,
+        type = ModelType.IMAGE,
+        capabilities = ModelCapabilities(image = true),
+        icon = "image",
+        note = "DALL-E Series"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""flux""", RegexOption.IGNORE_CASE)),
+        contextLength = 1,
+        type = ModelType.IMAGE,
+        capabilities = ModelCapabilities(image = true),
+        icon = "image",
+        note = "Flux Series"
     )
 )
 
