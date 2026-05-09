@@ -76,9 +76,9 @@ class NexaraApplication : Application() {
 
     val defaultAgents: List<com.promenar.nexara.data.model.Agent> by lazy {
         listOf(
-            com.promenar.nexara.data.model.Agent("super", "Nexara 超级助手", "原生加速版，支持实时流式响应", "", "gpt-4o", "✨", "#C0C1FF", true),
-            com.promenar.nexara.data.model.Agent("coder", "编程专家", "精通全栈开发与架构设计", "", "gpt-4o", "💻", "#6366F1", false),
-            com.promenar.nexara.data.model.Agent("writer", "创意写作", "文学创作、翻译与润色", "", "gpt-4o", "📝", "#10B981", false)
+            com.promenar.nexara.data.model.Agent("super", "Nexara 超级助手", "原生加速版，支持实时流式响应", "", "gpt-4o", "✨", "#C0C1FF", null, true),
+            com.promenar.nexara.data.model.Agent("coder", "编程专家", "精通全栈开发与架构设计", "", "gpt-4o", "💻", "#6366F1", null, false),
+            com.promenar.nexara.data.model.Agent("writer", "创意写作", "文学创作、翻译与润色", "", "gpt-4o", "📝", "#10B981", null, false)
         )
     }
 

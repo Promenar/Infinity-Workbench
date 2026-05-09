@@ -15,6 +15,8 @@ data class AgentEntity(
     val model: String = "gpt-4o",
     val icon: String = "✨",
     val color: String = "#C0C1FF",
+    @ColumnInfo(name = "avatar_path")
+    val avatarPath: String? = null,
     @ColumnInfo(name = "is_pinned")
     val isPinned: Int = 0,
     @ColumnInfo(name = "created_at")

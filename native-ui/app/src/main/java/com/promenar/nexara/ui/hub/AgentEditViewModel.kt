@@ -30,6 +30,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     private val _selectedModel = MutableStateFlow("gpt-4o")
     private val _selectedColor = MutableStateFlow("#C0C1FF")
     private val _selectedIcon = MutableStateFlow("✨")
+    private val _avatarPath = MutableStateFlow<String?>(null)
     private val _temperature = MutableStateFlow(0.7f)
     private val _topP = MutableStateFlow(0.9f)
     private val _isPinned = MutableStateFlow(false)
@@ -40,6 +41,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
     val selectedColor: StateFlow<String> = _selectedColor.asStateFlow()
     val selectedIcon: StateFlow<String> = _selectedIcon.asStateFlow()
+    val avatarPath: StateFlow<String?> = _avatarPath.asStateFlow()
     val temperature: StateFlow<Float> = _temperature.asStateFlow()
     val topP: StateFlow<Float> = _topP.asStateFlow()
     val isPinned: StateFlow<Boolean> = _isPinned.asStateFlow()
@@ -47,11 +49,11 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     val hasChanges: StateFlow<Boolean> = combine(
         combine(_initialAgent, _name, _description) { initial, n, d -> Triple(initial, n, d) },
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
-        combine(_selectedIcon, _temperature, _topP, _isPinned) { si, temp, tp, pin -> listOf(si, temp.toDouble(), tp.toDouble(), pin) }
-    ) { (initial, name, desc), (prompt, model, color), (icon, _, _, _) ->
+        combine(_selectedIcon, _avatarPath, _temperature, _topP, _isPinned) { si, ap, temp, tp, pin -> listOf(si, ap, temp, tp, pin) }
+    ) { (initial, name, desc), (prompt, model, color), (icon, path, _, _, pin) ->
         initial == null || initial.name != name || initial.description != desc ||
         initial.systemPrompt != prompt || initial.model != model ||
-        initial.color != color || initial.icon != icon
+        initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private var saveJob: Job? = null
@@ -68,6 +70,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
                 _selectedModel.value = agent.model
                 _selectedColor.value = agent.color
                 _selectedIcon.value = agent.icon
+                _avatarPath.value = agent.avatarPath
                 _isPinned.value = agent.isPinned
                 _temperature.value = 0.7f
                 _topP.value = 0.9f
@@ -102,6 +105,12 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setIcon(value: String) {
         _selectedIcon.value = value
+        _avatarPath.value = null // Clear custom image if preset icon selected
+        scheduleSave()
+    }
+
+    fun setAvatarPath(value: String?) {
+        _avatarPath.value = value
         scheduleSave()
     }
 
@@ -112,6 +121,11 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setTopP(value: Float) {
         _topP.value = value
+        scheduleSave()
+    }
+
+    fun setPinned(value: Boolean) {
+        _isPinned.value = value
         scheduleSave()
     }
 
@@ -132,6 +146,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
                 model = _selectedModel.value,
                 icon = _selectedIcon.value,
                 color = _selectedColor.value,
+                avatarPath = _avatarPath.value,
                 isPinned = if (_isPinned.value) 1 else 0,
                 createdAt = _initialAgent.value?.createdAt ?: System.currentTimeMillis()
             )
@@ -169,6 +184,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
             model = model,
             icon = icon,
             color = color,
+            avatarPath = avatarPath,
             isPinned = isPinned != 0,
             createdAt = createdAt
         )

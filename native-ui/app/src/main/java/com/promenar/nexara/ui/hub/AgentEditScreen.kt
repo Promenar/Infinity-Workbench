@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.hub
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
+import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -113,9 +117,29 @@ fun AgentEditScreen(
         placeholder = stringResource(R.string.agent_edit_prompt_placeholder)
     )
 
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(context.applicationContext as android.app.Application)
+    )
+
+    val allModels by settingsViewModel.providerModels.collectAsState()
+    val modelItems = remember(allModels) {
+        allModels.filter { it.enabled }.map { info ->
+            ModelItem(
+                id = info.id,
+                name = info.name,
+                providerName = "",
+                capabilities = info.capabilities.mapNotNull { capStr ->
+                    try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
+                },
+                contextLength = info.contextLength
+            )
+        }
+    }
+
     ModelPicker(
         show = showModelPicker,
         onDismiss = { showModelPicker = false },
+        models = modelItems,
         onSelect = { modelId, modelName ->
             viewModel.setModel(modelId)
             showModelPicker = false
@@ -215,78 +239,146 @@ fun AgentEditScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
+                    var isExpanded by remember { mutableStateOf(false) }
+                    val avatarPath by viewModel.avatarPath.collectAsState()
+                    val isPinned by viewModel.isPinned.collectAsState()
+                    
+                    val imagePickerLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        uri?.let { viewModel.setAvatarPath(it.toString()) }
+                    }
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Avatar Preview & Main Action
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            AgentAvatar(
-                                icon = currentIconVector,
-                                backgroundColor = parsedColor,
-                                size = 80.dp
-                            )
+                            Box(contentAlignment = Alignment.BottomEnd) {
+                                AgentAvatar(
+                                    icon = if (avatarPath == null) currentIconVector else null,
+                                    customImageUri = avatarPath,
+                                    backgroundColor = parsedColor,
+                                    size = 100.dp,
+                                    onClick = { imagePickerLauncher.launch("image/*") }
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(NexaraColors.Primary)
+                                        .border(2.dp, NexaraColors.SurfaceContainer, CircleShape)
+                                        .clickable { imagePickerLauncher.launch("image/*") },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AddAPhoto,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                         }
 
-                        Text(
-                            text = stringResource(R.string.agent_edit_label_icon),
-                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = NexaraColors.OnSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Column(
+                        // Icon Selection Header
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            presetIcons.chunked(3).forEach { rowIcons ->
+                            Text(
+                                text = stringResource(R.string.agent_edit_label_icon),
+                                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = NexaraColors.OnSurface
+                            )
+                            
+                            Row(
+                                modifier = Modifier.clickable { isExpanded = !isExpanded },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (isExpanded) "收起" else "查看全部",
+                                    style = NexaraTypography.labelMedium.copy(color = NexaraColors.Primary, fontSize = 12.sp)
+                                )
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                    contentDescription = null,
+                                    tint = NexaraColors.Primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Dynamic Folding Grid/Row
+                        AnimatedContent(
+                            targetState = isExpanded,
+                            transitionSpec = {
+                                fadeIn() togetherWith fadeOut()
+                            },
+                            label = "IconSelection"
+                        ) { expanded ->
+                            if (expanded) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    presetIcons.chunked(4).forEach { rowIcons ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            rowIcons.forEach { option ->
+                                                IconSelectionItem(
+                                                    option = option,
+                                                    isSelected = selectedIcon == option.id && avatarPath == null,
+                                                    activeColor = parsedColor,
+                                                    onClick = { viewModel.setIcon(option.id) }
+                                                )
+                                            }
+                                            repeat(4 - rowIcons.size) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    rowIcons.forEach { option ->
-                                        val isSelected = option.id == selectedIcon
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .aspectRatio(1f)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(NexaraColors.GlassSurface)
-                                                .then(
-                                                    if (isSelected) Modifier.border(2.dp, parsedColor, RoundedCornerShape(12.dp))
-                                                    else Modifier.border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
-                                                )
-                                                .clickable { viewModel.setIcon(option.id) },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = option.icon,
-                                                contentDescription = option.label,
-                                                tint = if (isSelected) parsedColor else NexaraColors.OnSurfaceVariant,
-                                                modifier = Modifier.size(28.dp)
-                                            )
-                                        }
-                                    }
-                                    if (rowIcons.size < 3) {
-                                        repeat(3 - rowIcons.size) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
+                                    presetIcons.take(4).forEach { option ->
+                                        IconSelectionItem(
+                                            option = option,
+                                            isSelected = selectedIcon == option.id && avatarPath == null,
+                                            activeColor = parsedColor,
+                                            onClick = { viewModel.setIcon(option.id) }
+                                        )
                                     }
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
                         ColorPickerPanel(
                             selectedColor = parsedColor,
                             onColorSelected = { color ->
                                 val hex = String.format("#%02X%02X%02X", (color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt())
                                 viewModel.setColor(hex)
                             }
+                        )
+
+                        Divider(color = NexaraColors.GlassBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+
+                        SettingsToggle(
+                            title = "固定在侧边栏",
+                            checked = isPinned,
+                            onCheckedChange = { viewModel.setPinned(it) }
                         )
                     }
                 }
@@ -460,5 +552,34 @@ fun AgentEditScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun IconSelectionItem(
+    option: AgentIconOption,
+    isSelected: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(NexaraColors.GlassSurface)
+            .then(
+                if (isSelected) Modifier.border(2.dp, activeColor, RoundedCornerShape(12.dp))
+                else Modifier.border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
+            )
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = option.icon,
+            contentDescription = option.label,
+            tint = if (isSelected) activeColor else NexaraColors.OnSurfaceVariant,
+            modifier = Modifier.size(28.dp)
+        )
     }
 }

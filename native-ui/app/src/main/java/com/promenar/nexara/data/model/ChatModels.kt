@@ -11,6 +11,7 @@ data class Agent(
     val model: String = "gpt-4o",
     val icon: String = "✨",
     val color: String = "#C0C1FF",
+    val avatarPath: String? = null,
     val isPinned: Boolean = false,
     val createdAt: Long = 0L
 )
