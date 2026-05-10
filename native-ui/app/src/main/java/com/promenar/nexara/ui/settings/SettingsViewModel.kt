@@ -1,7 +1,9 @@
 package com.promenar.nexara.ui.settings
 
 import android.app.Application
+import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -9,9 +11,13 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.MODEL_SPECS
 import com.promenar.nexara.data.remote.protocol.ProtocolId
+import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
+import com.promenar.nexara.data.local.db.entity.McpServerEntity
+import com.promenar.nexara.data.repository.ISkillRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -40,6 +46,18 @@ data class ModelStat(
     val cost: Double
 )
 
+data class McpServerUiModel(
+    val id: String,
+    val name: String,
+    val url: String,
+    val type: String,
+    val isConnected: Boolean,
+    val isEnabled: Boolean,
+    val isDefault: Boolean,
+    val callIntervalMs: Long,
+    val tools: List<String>
+)
+
 data class SkillInfo(
     val id: String,
     val name: String,
@@ -48,11 +66,19 @@ data class SkillInfo(
 )
 
 data class ProviderListItem(
-    val id: String,
-    val name: String,
-    val typeName: String,
-    val baseUrl: String,
-    val model: String
+    val id: String = "",
+    val name: String = "",
+    val typeName: String = "",
+    val baseUrl: String = "",
+    val model: String = ""
+)
+
+data class SearchSettings(
+    val engine: String,
+    val tavilyKey: String,
+    val searxngUrl: String,
+    val depth: String,
+    val resultCount: Int
 )
 
 class SettingsViewModel(application: Application) : ViewModel() {
@@ -69,6 +95,12 @@ class SettingsViewModel(application: Application) : ViewModel() {
 
     private val _skills = MutableStateFlow<List<SkillInfo>>(emptyList())
     val skills: StateFlow<List<SkillInfo>> = _skills.asStateFlow()
+
+    private val _userSkills = MutableStateFlow<List<CustomSkillEntity>>(emptyList())
+    val userSkills: StateFlow<List<CustomSkillEntity>> = _userSkills.asStateFlow()
+
+    private val _mcpServers = MutableStateFlow<List<McpServerUiModel>>(emptyList())
+    val mcpServers: StateFlow<List<McpServerUiModel>> = _mcpServers.asStateFlow()
 
     private val _userName = MutableStateFlow(application.getString(R.string.settings_default_user_name))
     val userName: StateFlow<String> = _userName.asStateFlow()
@@ -119,6 +151,20 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private val _rerankModelId = MutableStateFlow("")
     val rerankModelId = _rerankModelId.asStateFlow()
 
+    private val _searchSettings = MutableStateFlow(SearchSettings("duckduckgo", "", "https://searx.be", "basic", 5))
+    val searchSettings = _searchSettings.asStateFlow()
+
+    private val searchPrefs: SharedPreferences =
+        application.getSharedPreferences("nexara_search", 0)
+
+    private val _loopLimit = MutableStateFlow(prefs.getInt("loop_limit", 15))
+    val loopLimit: StateFlow<Int> = _loopLimit.asStateFlow()
+
+    fun updateLoopLimit(limit: Int) {
+        _loopLimit.value = limit
+        prefs.edit().putInt("loop_limit", limit).apply()
+    }
+
     init {
         loadAll()
     }
@@ -129,8 +175,37 @@ class SettingsViewModel(application: Application) : ViewModel() {
         loadProviders()
         loadModels()
         loadTokenStats()
-        loadSkills()
         loadKnowledgeStats()
+        loadSkills()
+        observeSkills()
+    }
+
+    private fun observeSkills() {
+        viewModelScope.launch {
+            app.skillRepository.getAllCustomSkills().collectLatest { all ->
+                // Filter out any skills that might have IDs matching preset skills to avoid duplication in UI
+                val presetIds = setOf("web_search", "calculator", "current_time", "weather_lookup", "create_tool")
+                _userSkills.value = all.filter { it.id !in presetIds }
+            }
+        }
+        viewModelScope.launch {
+            app.skillRepository.getAllMcpServers().collectLatest { entities ->
+                _mcpServers.value = entities.map { entity ->
+                    // Map entity to UI model, for now just use defaults for connected status
+                    McpServerUiModel(
+                        id = entity.id,
+                        name = entity.name,
+                        url = entity.url,
+                        type = entity.type,
+                        isConnected = false, // Will be updated via sync
+                        isEnabled = entity.enabled,
+                        isDefault = entity.isDefault,
+                        callIntervalMs = entity.callIntervalMs,
+                        tools = emptyList() // Fetching tools would be part of sync
+                    )
+                }
+            }
+        }
     }
 
     private fun loadUserProfile() {
@@ -142,12 +217,37 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private fun loadPreferences() {
         _language.value = prefs.getString("language", "zh") ?: "zh"
         _themeMode.value = prefs.getString("theme_mode", "dark") ?: "dark"
-        _hapticEnabled.value = true // Force enable
+        _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
+
+        _loopLimit.value = prefs.getInt("loop_limit", 15)
 
         _summaryModelId.value = prefs.getString("preset_summary_model", "") ?: ""
         _imageModelId.value = prefs.getString("preset_image_model", "") ?: ""
-        _embeddingModelId.value = prefs.getString("preset_embedding_model", "BAAI/bge-m3") ?: "BAAI/bge-m3"
+        _embeddingModelId.value = prefs.getString("preset_embedding_model", "") ?: ""
         _rerankModelId.value = prefs.getString("preset_rerank_model", "") ?: ""
+
+        loadSearchSettings()
+    }
+
+    private fun loadSearchSettings() {
+        _searchSettings.value = SearchSettings(
+            engine = searchPrefs.getString("search_engine", "duckduckgo") ?: "duckduckgo",
+            tavilyKey = searchPrefs.getString("tavily_api_key", "") ?: "",
+            searxngUrl = searchPrefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be",
+            depth = searchPrefs.getString("search_depth", "basic") ?: "basic",
+            resultCount = searchPrefs.getInt("search_result_count", 5)
+        )
+    }
+
+    fun updateSearchSettings(settings: SearchSettings) {
+        _searchSettings.value = settings
+        searchPrefs.edit()
+            .putString("search_engine", settings.engine)
+            .putString("tavily_api_key", settings.tavilyKey)
+            .putString("searxng_url", settings.searxngUrl)
+            .putString("search_depth", settings.depth)
+            .putInt("result_count", settings.resultCount)
+            .apply()
     }
 
     fun refreshProviders() {
@@ -269,15 +369,16 @@ class SettingsViewModel(application: Application) : ViewModel() {
 
     private fun loadSkills() {
         val enabledSet = prefs.getStringSet("enabled_skills", setOf(
-            "web_search", "code_interpreter", "knowledge_retrieval"
+            "web_search", "calculator", "current_time", "weather_lookup", "create_tool"
         ))
         _skills.value = listOf(
-            SkillInfo("web_search", "Web Search", "Search the internet for real-time information", enabledSet?.contains("web_search") ?: true),
-            SkillInfo("code_interpreter", "Code Interpreter", "Execute Python code in a sandboxed environment", enabledSet?.contains("code_interpreter") ?: true),
-            SkillInfo("image_generation", "Image Generation", "Generate images from text descriptions", enabledSet?.contains("image_generation") ?: false),
-            SkillInfo("knowledge_retrieval", "Knowledge Retrieval", "Search through uploaded documents and knowledge bases", enabledSet?.contains("knowledge_retrieval") ?: true),
-            SkillInfo("weather_lookup", "Weather Lookup", "Get current weather conditions for any location", enabledSet?.contains("weather_lookup") ?: false),
-            SkillInfo("calendar", "Calendar", "Manage events and reminders", enabledSet?.contains("calendar") ?: false)
+            SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
+            SkillInfo("search_tavily", app.getString(R.string.skill_tavily), app.getString(R.string.skill_tavily_desc), enabledSet?.contains("search_tavily") ?: true),
+            SkillInfo("search_searxng", app.getString(R.string.skill_searxng), app.getString(R.string.skill_searxng_desc), enabledSet?.contains("search_searxng") ?: true),
+            SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
+            SkillInfo("current_time", app.getString(R.string.skill_current_time), app.getString(R.string.skill_current_time_desc), enabledSet?.contains("current_time") ?: true),
+            SkillInfo("weather_lookup", app.getString(R.string.skill_weather), app.getString(R.string.skill_weather_desc), enabledSet?.contains("weather_lookup") ?: true),
+            SkillInfo("create_tool", app.getString(R.string.skill_create_tool), app.getString(R.string.skill_create_tool_desc), enabledSet?.contains("create_tool") ?: true)
         )
     }
 
@@ -295,6 +396,22 @@ class SettingsViewModel(application: Application) : ViewModel() {
         prefs.edit().putString("user_name", name).apply()
     }
 
+    fun updateUserAvatar(uriStr: String?) {
+        if (uriStr != null) {
+            val uri = Uri.parse(uriStr)
+            try {
+                app.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                // Not a persistable URI, ignore
+            }
+        }
+        _userAvatar.value = uriStr
+        prefs.edit().putString("user_avatar", uriStr).apply()
+    }
+
     fun setLanguage(lang: String) {
         _language.value = lang
         prefs.edit().putString("language", lang).apply()
@@ -306,7 +423,8 @@ class SettingsViewModel(application: Application) : ViewModel() {
     }
 
     fun setHaptic(enabled: Boolean) {
-        _hapticEnabled.value = true
+        _hapticEnabled.value = enabled
+        prefs.edit().putBoolean("haptic_enabled", enabled).apply()
     }
 
     fun deleteProvider(providerId: String) {
@@ -462,18 +580,110 @@ class SettingsViewModel(application: Application) : ViewModel() {
     }
 
     fun toggleSkill(id: String) {
-        _skills.update { skills ->
-            val updated = skills.map {
-                if (it.id == id) it.copy(enabled = !it.enabled) else it
+        if (id.startsWith("user_")) {
+            viewModelScope.launch {
+                val skill = _userSkills.value.find { it.id == id }
+                if (skill != null) {
+                    app.skillRepository.updateCustomSkillEnabled(id, !skill.enabled)
+                }
             }
-            saveEnabledSkills(updated)
-            updated
+        } else {
+            _skills.update { skills ->
+                val updated = skills.map {
+                    if (it.id == id) it.copy(enabled = !it.enabled) else it
+                }
+                saveEnabledSkills(updated)
+                updated
+            }
         }
     }
 
     private fun saveEnabledSkills(skills: List<SkillInfo>) {
         val enabled = skills.filter { it.enabled }.map { it.id }.toSet()
         prefs.edit().putStringSet("enabled_skills", enabled).apply()
+    }
+
+    // MCP Methods
+    fun addMcpServer(name: String, url: String, type: String) {
+        viewModelScope.launch {
+            val server = McpServerEntity(
+                id = "mcp_${System.currentTimeMillis()}",
+                name = name,
+                url = url,
+                type = type
+            )
+            app.skillRepository.insertMcpServer(server)
+        }
+    }
+
+    fun deleteMcpServer(id: String) {
+        viewModelScope.launch {
+            val server = _mcpServers.value.find { it.id == id }
+            if (server != null) {
+                app.skillRepository.deleteMcpServer(com.promenar.nexara.data.local.db.entity.McpServerEntity(
+                    id = server.id,
+                    name = server.name,
+                    url = server.url,
+                    type = server.type,
+                    enabled = server.isEnabled,
+                    callIntervalMs = server.callIntervalMs,
+                    isDefault = server.isDefault
+                ))
+            }
+        }
+    }
+
+    fun toggleMcpServer(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            app.skillRepository.updateMcpServerEnabled(id, enabled)
+        }
+    }
+
+    // User Skill Methods
+    fun addCustomSkill(name: String, description: String, schema: String, code: String, id: String? = null) {
+        viewModelScope.launch {
+            val skill = CustomSkillEntity(
+                id = id ?: "user_${System.currentTimeMillis()}",
+                name = name,
+                description = description,
+                parametersSchema = schema,
+                code = code,
+                enabled = true
+            )
+            app.skillRepository.insertCustomSkill(skill)
+        }
+    }
+
+    fun deleteCustomSkill(id: String) {
+        viewModelScope.launch {
+            val skill = _userSkills.value.find { it.id == id }
+            if (skill != null) {
+                app.skillRepository.deleteCustomSkill(skill)
+            }
+        }
+    }
+
+    fun syncMcpServer(id: String) {
+        viewModelScope.launch {
+            val server = _mcpServers.value.find { it.id == id } ?: return@launch
+            try {
+                val client = com.promenar.nexara.data.remote.mcp.McpClient(app.httpClient, server.url)
+                val tools = client.listTools()
+                _mcpServers.update { list ->
+                    list.map { 
+                        if (it.id == id) it.copy(isConnected = true, tools = tools.map { t -> t.name })
+                        else it
+                    }
+                }
+            } catch (e: Exception) {
+                _mcpServers.update { list ->
+                    list.map { 
+                        if (it.id == id) it.copy(isConnected = false)
+                        else it
+                    }
+                }
+            }
+        }
     }
 
     fun clearTokenStats() {

@@ -42,6 +42,7 @@
     <string name="common_cd_pin">Pin</string>
     <string name="common_cd_unpin">Unpin</string>
     <string name="common_cd_selected">Selected</string>
+    <string name="workbench_refresh">Refresh</string>
 
     <!-- ============ Navigation ============ -->
     <string name="nav_tab_chat">Chat</string>
@@ -203,10 +204,8 @@
     <string name="settings_section_tools">Tools</string>
     <string name="settings_web_search">Web Search</string>
     <string name="settings_web_search_desc">Tavily deep search</string>
-    <string name="settings_workbench">Workbench</string>
-    <string name="settings_workbench_desc">Portable server · Experimental</string>
-    <string name="settings_skills">Skills</string>
-    <string name="settings_skills_desc">Agent skills and MCP</string>
+    <string name="settings_skills">Tool Management</string>
+    <string name="settings_skills_desc">Configure Agent tools and MCP servers</string>
     <string name="settings_local_models">Local Models</string>
     <string name="settings_local_models_desc">GGUF on-device · Experimental</string>
     <string name="settings_section_data">Data</string>
@@ -244,6 +243,20 @@
     <string name="chat_cd_stop">Stop</string>
     <string name="chat_cd_send">Send</string>
     <string name="chat_cd_scroll_bottom">Scroll to bottom</string>
+
+    <!-- Chat Inline Components -->
+    <string name="chat_rag_knowledge_retrieval">Knowledge Retrieval</string>
+    <string name="chat_rag_active">Active</string>
+    <string name="chat_rag_scanning">Scanning document structure…</string>
+    <string name="chat_tool_execution_pipeline">Tool Execution Pipeline</string>
+    <string name="chat_tool_pipeline_running">Running sequential tasks</string>
+    <string name="chat_tool_running">Running</string>
+    <string name="chat_tool_completed">Completed</string>
+    <string name="chat_approval_required">Approval Required</string>
+    <string name="chat_approval_executed">Executed</string>
+    <string name="chat_approval_desc_tool">The agent is requesting permission to execute a tool, which may affect system state or incur external costs.</string>
+    <string name="common_decline">Decline</string>
+    <string name="common_approve">Approve</string>
 
     <!-- SessionSettingsScreen -->
     <string name="session_settings_title">Settings</string>
@@ -428,26 +441,6 @@
     <string name="local_models_load">Load</string>
     <string name="local_models_cd_delete">Delete</string>
 
-    <!-- WorkbenchScreen -->
-    <string name="workbench_title">Workbench</string>
-    <string name="workbench_desc">Turn your device into a local web server for browser access.</string>
-    <string name="workbench_section_stability">Stability Guide</string>
-    <string name="workbench_stability_intro">To ensure stable background service, complete the following settings:</string>
-    <string name="workbench_notification_perm">Notification Permission</string>
-    <string name="workbench_battery_opt">Battery Optimization</string>
-    <string name="workbench_recent_apps">Lock Recent Apps</string>
-    <string name="workbench_recent_apps_desc">Swipe the app card in the recent tasks list and tap the lock icon</string>
-    <string name="workbench_section_connection">Connection Details</string>
-    <string name="workbench_access_code">Access Code</string>
-    <string name="workbench_connected_clients">Connected Clients</string>
-    <string name="workbench_active_count">%1$d active</string>
-    <string name="workbench_latency">%1$s latency</string>
-    <string name="workbench_copy">Copy</string>
-    <string name="workbench_refresh">Refresh</string>
-    <string name="workbench_endpoint_url">Endpoint URL</string>
-    <string name="workbench_status_online">Online · Routing</string>
-    <string name="workbench_status_offline">Offline · Stopped</string>
-    <string name="workbench_refresh_at">Refresh at %1$s</string>
 
     <!-- ProviderFormScreen -->
     <string name="provider_form_title_add">Add Provider</string>
@@ -500,7 +493,7 @@
     <string name="search_config_depth_advanced">Advanced</string>
 
     <!-- SkillsScreen -->
-    <string name="skills_title">Agent Skills</string>
+    <string name="skills_title">Agent Tools</string>
     <string name="skills_desc">Configure capabilities and external tool connections for your AI agents.</string>
     <string name="skills_loop_limit">Execution Loop Limit</string>
     <string name="skills_loop_limit_desc">Maximum tool-calling iterations per request</string>
@@ -518,8 +511,36 @@
     <string name="skills_mcp_enabled">Enabled</string>
     <string name="skills_mcp_default">Default</string>
     <string name="skills_mcp_tools">Tools (%1$d)</string>
+
+    <string name="skill_web_search">Web Search</string>
+    <string name="skill_web_search_desc">Search using the default search engine</string>
+    <string name="skill_tavily">Tavily Search</string>
+    <string name="skill_tavily_desc">Deep AI search (Tavily)</string>
+    <string name="skill_searxng">SearXNG Search</string>
+    <string name="skill_searxng_desc">Private meta-search (SearXNG instance)</string>
+    <string name="skill_calculator">Calculator</string>
+    <string name="skill_calculator_desc">Perform mathematical calculations</string>
+    <string name="skill_current_time">Current Time</string>
+    <string name="skill_current_time_desc">Get current date and time</string>
+    <string name="skill_weather">Weather Lookup</string>
+    <string name="skill_weather_desc">Get current weather for a location</string>
+    <string name="skill_create_tool">Create Tool</string>
+    <string name="skill_create_tool_desc">Create new custom tools via meta-tool</string>
     <string name="skills_configure">Configure</string>
     <string name="skills_edit_skill">Edit Skill Config</string>
+    <string name="skills_user_empty">No custom skills yet.\nTap the button below to create your first tool.</string>
+    <string name="skills_mcp_empty">No MCP servers yet.\nExtend agent capabilities via Model Context Protocol.</string>
+    <string name="skills_edit_custom">Edit Custom Skill</string>
+    <string name="search_engine_select">Select Search Engine</string>
+    <string name="search_engine_duckduckgo">DuckDuckGo (Local)</string>
+    <string name="search_engine_tavily">Tavily AI (Deep Search)</string>
+    <string name="search_engine_searxng">SearXNG (Privacy Meta-Search)</string>
+    <string name="search_count_label">Result Count</string>
+    <string name="search_api_key">API Key</string>
+    <string name="search_depth_label">Search Depth</string>
+    <string name="search_depth_basic">Basic (Fast)</string>
+    <string name="search_depth_advanced">Advanced (Thorough)</string>
+    <string name="search_instance_url">Instance URL (SearXNG)</string>
 
     <!-- ThemeScreen -->
     <string name="theme_title">Appearance</string>
@@ -554,8 +575,8 @@
     <string name="rag_home_section_collections">Collections</string>
     <string name="rag_home_new">New</string>
     <string name="rag_home_graph_btn">Graph</string>
-    <string name="rag_home_upload_area">Drag &amp; drop files to upload</string>
-    <string name="rag_home_upload_hint">PDF, Markdown, TXT up to 50MB</string>
+    <string name="rag_home_upload_area">Tap to upload documents</string>
+    <string name="rag_home_upload_hint">Supports PDF, Markdown, TXT, max 50MB</string>
     <string name="rag_home_empty_title">No collections yet</string>
     <string name="rag_home_empty_subtitle">Upload documents or create a folder to get started.</string>
     <string name="rag_home_search_results">Search Results</string>
@@ -726,4 +747,12 @@
     <string name="chat_status_thinking">正在思考...</string>
     <string name="chat_status_thought">已完成思考</string>
     <string name="chat_model_placeholder">未配置模型</string>
+
+    <!-- SearchConfigScreen engine labels -->
+    <string name="search_config_engine_label">Search Engine Provider</string>
+    <string name="search_config_searxng_url_label">SearXNG Instance URL</string>
+    <string name="search_config_tavily_key_label">Tavily API Key</string>
+    <string name="search_config_engine_duckduckgo">DuckDuckGo (Local / Free)</string>
+    <string name="search_config_engine_searxng">SearXNG (Meta-Search / Public Node)</string>
+    <string name="search_config_engine_tavily">Tavily (AI Optimized / API Key)</string>
 </resources>

@@ -23,14 +23,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.ArrowDownward
+
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.AutoFixHigh
+
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Construction
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Settings
@@ -265,7 +266,9 @@ fun ChatScreen(
                 items(uiState.messages, key = { it.id }) { msg ->
                     ChatBubble(
                         message = msg,
-                        isGenerating = uiState.isGenerating && msg.id == uiState.messages.lastOrNull()?.id && msg.role == MessageRole.ASSISTANT
+                        isGenerating = uiState.isGenerating && msg.id == uiState.messages.lastOrNull()?.id && msg.role == MessageRole.ASSISTANT,
+                        onApprove = { chatViewModel.approveRequest() },
+                        onDecline = { chatViewModel.rejectRequest() }
                     )
                 }
             }
@@ -388,33 +391,23 @@ private fun ChatInputTopBar(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        if (true) {
-            NexaraGlassCard(
-                onClick = { },
-                shape = RoundedCornerShape(50),
-                modifier = Modifier
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.AutoFixHigh, null, tint = NexaraColors.Primary, modifier = Modifier.size(14.dp))
-                }
-            }
-        }
     }
 }
 
 @Composable
 fun ChatBubble(
     message: Message,
-    isGenerating: Boolean = false
+    isGenerating: Boolean = false,
+    onApprove: () -> Unit = {},
+    onDecline: () -> Unit = {}
 ) {
+    val isUser = message.role == MessageRole.USER
+    
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.role == MessageRole.USER) Arrangement.End else Arrangement.Start
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        if (message.role == MessageRole.USER) {
+        if (isUser) {
             Surface(
                 shape = NexaraCustomShapes.ChatBubbleUser,
                 color = NexaraColors.SurfaceHigh,
@@ -430,16 +423,49 @@ fun ChatBubble(
             }
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Reasoning / Thinking block
-                if (!message.reasoning.isNullOrBlank() || (isGenerating && message.content.isEmpty())) {
+                // 1. Thinking / Summary block
+                if (!message.reasoning.isNullOrBlank()) {
                     ThinkingBlock(
-                        reasoning = message.reasoning ?: "",
-                        isGenerating = isGenerating && message.content.isEmpty()
+                        reasoning = message.reasoning!!,
+                        isGenerating = isGenerating
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                } else if (isGenerating && message.content.isEmpty() && (message.executionSteps == null || message.executionSteps.isEmpty())) {
+                    SummaryIndicator(text = stringResource(R.string.chat_status_thinking))
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // 2. RAG Indicator
+                if (message.ragProgress != null || message.ragReferencesLoading || (message.ragReferences != null && message.ragReferences.isNotEmpty())) {
+                    RagOmniIndicator(
+                        progress = message.ragProgress,
+                        metadata = message.ragMetadata,
+                        references = message.ragReferences,
+                        isLoading = message.ragReferencesLoading
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                if (message.content.isNotBlank() || isGenerating) {
+                // 3. Tool Execution Timeline
+                if (message.executionSteps != null && message.executionSteps.isNotEmpty()) {
+                    ToolExecutionTimeline(steps = message.executionSteps)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // 4. Approval Card
+                if (message.pendingApprovalToolIds != null && message.pendingApprovalToolIds.isNotEmpty()) {
+                    // Find the approval details if available in session (though message usually has enough info for simple display)
+                    ApprovalCard(
+                        toolName = message.pendingApprovalToolIds.first(), // Simplified: show first one
+                        description = stringResource(R.string.chat_approval_desc_tool),
+                        onApprove = onApprove,
+                        onDecline = onDecline
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // 5. Main Content
+                if (message.content.isNotBlank() || (isGenerating && message.content.isEmpty())) {
                     MarkdownText(
                         markdown = message.content,
                         isStreaming = isGenerating,
@@ -447,6 +473,7 @@ fun ChatBubble(
                     )
                 }
 
+                // 6. Error states
                 if (message.isError && message.errorMessage != null) {
                     Text(
                         text = message.errorMessage!!,
@@ -460,90 +487,6 @@ fun ChatBubble(
     }
 }
 
-@Composable
-private fun ThinkingBlock(
-    reasoning: String,
-    isGenerating: Boolean
-) {
-    var expanded by remember { mutableStateOf(true) }
-    
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(NexaraColors.SurfaceContainer.copy(alpha = 0.4f))
-            .border(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            .clickable { expanded = !expanded }
-            .padding(12.dp)
-            .animateContentSize()
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                Icons.Rounded.Memory,
-                null,
-                tint = NexaraColors.Primary,
-                modifier = Modifier.size(14.dp)
-            )
-            Text(
-                text = if (isGenerating && reasoning.isEmpty()) 
-                    stringResource(R.string.chat_status_thinking) 
-                else 
-                    stringResource(R.string.chat_status_thought),
-                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                color = NexaraColors.OnSurfaceVariant
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Icon(
-                if (expanded) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.ArrowDownward,
-                null,
-                tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(14.dp)
-            )
-        }
-        
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            if (reasoning.isNotBlank()) {
-                MarkdownText(
-                    markdown = reasoning,
-                    isStreaming = isGenerating,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            } else if (isGenerating) {
-                // Loading indicator for thinking
-                Row(
-                    modifier = Modifier.padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    repeat(3) { i ->
-                        val dotAlpha by rememberInfiniteTransition(label = "thinking_dot").animateFloat(
-                            initialValue = 0.2f,
-                            targetValue = 1f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(600, delayMillis = i * 200),
-                                repeatMode = RepeatMode.Reverse
-                            ),
-                            label = "dotAlpha"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(4.dp)
-                                .clip(CircleShape)
-                                .alpha(dotAlpha)
-                                .background(NexaraColors.Primary)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun ChatInputBar(

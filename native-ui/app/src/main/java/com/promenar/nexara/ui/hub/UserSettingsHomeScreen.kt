@@ -1,6 +1,9 @@
 package com.promenar.nexara.ui.hub
 
 import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -87,6 +90,9 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.SpaceGrotesk
 import com.promenar.nexara.ui.theme.Manrope
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 
 private enum class SettingsTab(val labelRes: Int) {
     APP(R.string.settings_tab_app),
@@ -101,6 +107,7 @@ fun UserSettingsHomeScreen(
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val userName by viewModel.userName.collectAsState()
+    val userAvatar by viewModel.userAvatar.collectAsState()
     val tokenCost by viewModel.tokenCostThisMonth.collectAsState()
     val language by viewModel.language.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
@@ -114,6 +121,14 @@ fun UserSettingsHomeScreen(
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showModelPickerType by remember { mutableStateOf<String?>(null) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.updateUserAvatar(uri.toString())
+        }
+    }
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == SettingsTab.PROVIDER) {
@@ -162,6 +177,10 @@ fun UserSettingsHomeScreen(
                             themeMode = themeMode,
                             haptic = haptic,
                             onNavigateToSecondary = onNavigateToSecondary,
+                            userAvatar = userAvatar,
+                            onChangeAvatar = {
+                                photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                            },
                             onEditName = {
                                 editingName = userName
                                 showNameEditor = true
@@ -354,6 +373,8 @@ private fun AppSettingsContent(
     themeMode: String,
     haptic: Boolean,
     onNavigateToSecondary: (String) -> Unit,
+    userAvatar: String?,
+    onChangeAvatar: () -> Unit,
     onEditName: () -> Unit,
     onShowLanguageDialog: () -> Unit,
     onShowModelPicker: (String) -> Unit
@@ -363,7 +384,7 @@ private fun AppSettingsContent(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item { UserProfileHeader(userName = userName, onEditName = onEditName) }
+        item { UserProfileHeader(userName = userName, avatarUri = userAvatar, onEditName = onEditName, onChangeAvatar = onChangeAvatar) }
         item { Spacer(modifier = Modifier.height(8.dp)) }
 
         item {
@@ -386,14 +407,6 @@ private fun AppSettingsContent(
                 onClick = { onNavigateToSecondary("theme_config") }
             )
         }
-        item {
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Visibility,
-                title = stringResource(R.string.settings_theme_color),
-                subtitle = stringResource(R.string.settings_theme_color_desc),
-                onClick = { onNavigateToSecondary("theme_config") }
-            )
-        }
         // Haptic feedback is now enabled by default and removed from UI
 
         item {
@@ -401,7 +414,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Psychology,
                 title = stringResource(R.string.settings_model_summary),
-                subtitle = summaryId,
+                subtitle = summaryId.ifEmpty { stringResource(R.string.settings_not_set) },
                 onClick = { onShowModelPicker("summary") }
             )
         }
@@ -419,7 +432,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Link,
                 title = stringResource(R.string.settings_model_embedding),
-                subtitle = embeddingId,
+                subtitle = embeddingId.ifEmpty { stringResource(R.string.settings_not_set) },
                 onClick = { onShowModelPicker("embedding") }
             )
         }
@@ -458,22 +471,6 @@ private fun AppSettingsContent(
             )
         }
 
-        item {
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Speed,
-                title = stringResource(R.string.settings_web_search),
-                subtitle = stringResource(R.string.settings_web_search_desc),
-                onClick = { onNavigateToSecondary("search_config") }
-            )
-        }
-        item {
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Settings,
-                title = stringResource(R.string.settings_workbench),
-                subtitle = stringResource(R.string.settings_workbench_desc),
-                onClick = { onNavigateToSecondary("workbench") }
-            )
-        }
         item {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Tune,
@@ -579,7 +576,9 @@ private fun ProviderSettingsContent(
 @Composable
 private fun UserProfileHeader(
     userName: String,
-    onEditName: () -> Unit
+    avatarUri: String?,
+    onEditName: () -> Unit,
+    onChangeAvatar: () -> Unit
 ) {
     NexaraGlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -599,14 +598,27 @@ private fun UserProfileHeader(
                         Brush.linearGradient(
                             colors = listOf(NexaraColors.Primary, NexaraColors.Primary.copy(alpha = 0.7f))
                         )
-                    ),
+                    )
+                    .clickable { onChangeAvatar() },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = userName.take(1).uppercase(),
-                    style = NexaraTypography.headlineLarge,
-                    color = NexaraColors.OnPrimary
-                )
+                if (avatarUri != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(avatarUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Avatar",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        text = userName.take(1).uppercase(),
+                        style = NexaraTypography.headlineLarge,
+                        color = NexaraColors.OnPrimary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(16.dp))

@@ -42,6 +42,7 @@
     <string name="common_cd_pin">置顶</string>
     <string name="common_cd_unpin">取消置顶</string>
     <string name="common_cd_selected">已选中</string>
+    <string name="workbench_refresh">刷新</string>
 
     <!-- ============ Navigation ============ -->
     <string name="nav_tab_chat">对话</string>
@@ -203,10 +204,8 @@
     <string name="settings_section_tools">工具</string>
     <string name="settings_web_search">Web 搜索</string>
     <string name="settings_web_search_desc">Tavily 深度搜索</string>
-    <string name="settings_workbench">工作台</string>
-    <string name="settings_workbench_desc">便携服务器 · 实验性</string>
-    <string name="settings_skills">技能</string>
-    <string name="settings_skills_desc">Agent 技能与 MCP</string>
+    <string name="settings_skills">工具管理</string>
+    <string name="settings_skills_desc">配置 Agent 工具与 MCP 服务器</string>
     <string name="settings_local_models">本地模型</string>
     <string name="settings_local_models_desc">GGUF 端侧推理 · 实验性</string>
     <string name="settings_section_data">数据</string>
@@ -244,6 +243,20 @@
     <string name="chat_cd_stop">停止</string>
     <string name="chat_cd_send">发送</string>
     <string name="chat_cd_scroll_bottom">回到底部</string>
+
+    <!-- Chat Inline Components -->
+    <string name="chat_rag_knowledge_retrieval">知识检索</string>
+    <string name="chat_rag_active">活跃</string>
+    <string name="chat_rag_scanning">正在检索相关文档…</string>
+    <string name="chat_tool_execution_pipeline">工具执行流水线</string>
+    <string name="chat_tool_pipeline_running">正在运行顺序任务</string>
+    <string name="chat_tool_running">运行中</string>
+    <string name="chat_tool_completed">已完成</string>
+    <string name="chat_approval_required">需要审批</string>
+    <string name="chat_approval_executed">已执行</string>
+    <string name="chat_approval_desc_tool">Agent 请求执行工具权限，这可能会改变系统状态或产生外部影响。</string>
+    <string name="common_decline">拒绝</string>
+    <string name="common_approve">批准</string>
 
     <!-- SessionSettingsScreen -->
     <string name="session_settings_title">设置</string>
@@ -427,26 +440,6 @@
     <string name="local_models_load">加载</string>
     <string name="local_models_cd_delete">删除</string>
 
-    <!-- WorkbenchScreen -->
-    <string name="workbench_title">工作台</string>
-    <string name="workbench_desc">将设备变成本地 Web 服务器供浏览器访问。</string>
-    <string name="workbench_section_stability">稳定性引导</string>
-    <string name="workbench_stability_intro">为确保后台服务稳定运行，建议完成以下设置：</string>
-    <string name="workbench_notification_perm">通知权限</string>
-    <string name="workbench_battery_opt">电池优化</string>
-    <string name="workbench_recent_apps">锁定最近应用</string>
-    <string name="workbench_recent_apps_desc">从最近任务列表中滑动应用卡片并点击锁定图标</string>
-    <string name="workbench_section_connection">连接详情</string>
-    <string name="workbench_access_code">访问码</string>
-    <string name="workbench_connected_clients">已连接客户端</string>
-    <string name="workbench_active_count">%1$d 活跃</string>
-    <string name="workbench_latency">%1$s 延迟</string>
-    <string name="workbench_copy">复制</string>
-    <string name="workbench_refresh">刷新</string>
-    <string name="workbench_endpoint_url">端点 URL</string>
-    <string name="workbench_status_online">在线 · 路由中</string>
-    <string name="workbench_status_offline">离线 · 已停止</string>
-    <string name="workbench_refresh_at">%1$s 后刷新</string>
 
     <!-- ProviderFormScreen -->
     <string name="provider_form_title_add">添加提供商</string>
@@ -498,7 +491,7 @@
     <string name="search_config_depth_advanced">高级</string>
 
     <!-- SkillsScreen -->
-    <string name="skills_title">Agent 技能</string>
+    <string name="skills_title">Agent 工具</string>
     <string name="skills_desc">配置 AI 助手的能力与外部工具连接。</string>
     <string name="skills_loop_limit">执行循环限制</string>
     <string name="skills_loop_limit_desc">每次请求的最大工具调用迭代次数</string>
@@ -516,8 +509,38 @@
     <string name="skills_mcp_enabled">已启用</string>
     <string name="skills_mcp_default">默认</string>
     <string name="skills_mcp_tools">工具 (%1$d)</string>
+    
+    <string name="skill_web_search">Web 搜索</string>
+    <string name="skill_web_search_desc">基于配置的默认搜索引擎进行搜索</string>
+    <string name="skill_tavily">Tavily 搜索</string>
+    <string name="skill_tavily_desc">深度 AI 搜索 (Tavily)</string>
+    <string name="skill_searxng">SearXNG 搜索</string>
+    <string name="skill_searxng_desc">隐私元搜索 (SearXNG 实例)</string>
+    <string name="skill_calculator">计算器</string>
+    <string name="skill_calculator_desc">执行数学计算</string>
+    <string name="skill_current_time">当前时间</string>
+    <string name="skill_current_time_desc">获取当前的日期与时间</string>
+    <string name="skill_weather">天气查询</string>
+    <string name="skill_weather_desc">获取指定地点的实时天气状况</string>
+    <string name="skill_create_tool">创建工具</string>
+    <string name="skill_create_tool_desc">通过元工具创建新的自定义技能</string>
     <string name="skills_configure">配置</string>
     <string name="skills_edit_skill">编辑技能配置</string>
+    <string name="skills_edit_custom">编辑自定义技能</string>
+    <string name="skills_user_empty">暂无自定义技能\n点击下方按钮创建你的第一个工具</string>
+    <string name="skills_mcp_empty">暂无 MCP 服务器\n通过 Model Context Protocol 扩展 Agent 能力</string>
+    <string name="search_engine_select">选择搜索引擎</string>
+    <string name="search_engine_tavily">Tavily AI (深度搜索)</string>
+    <string name="search_engine_searxng">SearXNG (隐私元搜索)</string>
+    <string name="search_engine_duckduckgo">DuckDuckGo (本地解析)</string>
+    <string name="search_api_key">API 密钥</string>
+    <string name="search_instance_url">实例地址 (SearXNG)</string>
+    <string name="search_depth_label">搜索深度</string>
+    <string name="search_depth_basic">基础 (快速)</string>
+    <string name="search_depth_advanced">高级 (详尽)</string>
+    <string name="search_count_label">结果数量</string>
+
+
 
     <!-- ThemeScreen -->
     <string name="theme_title">个性化</string>
@@ -552,8 +575,8 @@
     <string name="rag_home_section_collections">集合</string>
     <string name="rag_home_new">新建</string>
     <string name="rag_home_graph_btn">图谱</string>
-    <string name="rag_home_upload_area">拖放文件到此处上传</string>
-    <string name="rag_home_upload_hint">PDF、Markdown、TXT，最大 50MB</string>
+    <string name="rag_home_upload_area">点击上传文档</string>
+    <string name="rag_home_upload_hint">支持 PDF, Markdown, TXT, 最大 50MB</string>
     <string name="rag_home_empty_title">暂无集合</string>
     <string name="rag_home_empty_subtitle">上传文档或创建文件夹以开始。</string>
     <string name="rag_home_search_results">搜索结果</string>
@@ -721,4 +744,12 @@
     <string name="rag_status_indexing">索引中</string>
     <string name="rag_status_error">错误</string>
     <string name="rag_status_pending">等待中</string>
+
+    <!-- SearchConfigScreen engine labels -->
+    <string name="search_config_engine_label">搜索引擎提供商</string>
+    <string name="search_config_searxng_url_label">SearXNG 节点地址</string>
+    <string name="search_config_tavily_key_label">Tavily API Key</string>
+    <string name="search_config_engine_duckduckgo">DuckDuckGo (本地解析/免费)</string>
+    <string name="search_config_engine_searxng">SearXNG (元搜索/公共节点)</string>
+    <string name="search_config_engine_tavily">Tavily (AI 优化/API Key)</string>
 </resources>

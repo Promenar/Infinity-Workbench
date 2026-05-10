@@ -24,6 +24,12 @@ data class RagStats(
     val graphEntityCount: Int = 0
 )
 
+data class QueueState(
+    val queueLength: Int = 0,
+    val isProcessing: Boolean = false,
+    val progress: Float = 0f
+)
+
 class RagViewModel(
     application: Application
 ) : ViewModel() {
@@ -78,6 +84,18 @@ class RagViewModel(
         loadDocuments()
         loadVectorStats()
         loadFolderStats()
+        observeQueue()
+    }
+
+    private fun observeQueue() {
+        app.vectorizationQueue.setOnStateChange { queue, currentTask ->
+            _isIndexing.value = app.vectorizationQueue.getState().isProcessing
+            _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
+            if (queue.isEmpty() && currentTask == null) {
+                loadStats()
+                loadDocuments()
+            }
+        }
     }
 
     private fun loadConfig() {
@@ -186,7 +204,7 @@ class RagViewModel(
     private fun loadStats() {
         viewModelScope.launch {
             try {
-                val docCount = _documents.value.size
+                val docCount = documentDao.getCount()
                 val nodeCount = kgNodeDao.getCount()
                 val vStats = vectorStatsService.getStats()
                 _vectorStats.value = vStats
@@ -236,9 +254,16 @@ class RagViewModel(
             try {
                 for (docId in ids) {
                     documentDao.deleteById(docId)
+                    vectorDao.deleteByDocId(docId)
                 }
                 loadStats()
             } catch (_: Exception) { }
+        }
+    }
+
+    fun importDocuments(uris: List<android.net.Uri>, folderId: String? = null) {
+        viewModelScope.launch {
+            app.documentImporter.importFromUris(uris, folderId)
         }
     }
 

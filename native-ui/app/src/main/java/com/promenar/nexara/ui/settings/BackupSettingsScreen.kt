@@ -55,25 +55,55 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.SpaceGrotesk
 
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.collectAsState
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackupSettingsScreen(
     onNavigateBack: () -> Unit
 ) {
-    var sessionsChecked by remember { mutableStateOf(true) }
-    var libraryChecked by remember { mutableStateOf(true) }
-    var filesChecked by remember { mutableStateOf(true) }
-    var settingsChecked by remember { mutableStateOf(true) }
-    var keysChecked by remember { mutableStateOf(true) }
-    var contentExpanded by remember { mutableStateOf(true) }
-    var webdavEnabled by remember { mutableStateOf(false) }
-    var autoBackup by remember { mutableStateOf(false) }
-    var showWebdavSheet by remember { mutableStateOf(false) }
-    var webdavUrl by remember { mutableStateOf("") }
-    var webdavUser by remember { mutableStateOf("") }
-    var webdavPass by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val viewModel: BackupViewModel = viewModel(factory = BackupViewModel.factory(context.applicationContext as android.app.Application))
+    val uiState by viewModel.uiState.collectAsState()
 
-    val selectedCount = listOf(sessionsChecked, libraryChecked, filesChecked, settingsChecked, keysChecked).count { it }
+    var contentExpanded by remember { mutableStateOf(true) }
+    var showWebdavSheet by remember { mutableStateOf(false) }
+    
+    // WebDAV local editing states for the sheet
+    var tempWebdavUrl by remember(uiState.webdavUrl) { mutableStateOf(uiState.webdavUrl) }
+    var tempWebdavUser by remember(uiState.webdavUser) { mutableStateOf(uiState.webdavUser) }
+    var tempWebdavPass by remember(uiState.webdavPass) { mutableStateOf(uiState.webdavPass) }
+
+    val selectedCount = listOf(
+        uiState.sessionsChecked, 
+        uiState.libraryChecked, 
+        uiState.filesChecked, 
+        uiState.settingsChecked, 
+        uiState.keysChecked
+    ).count { it }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openOutputStream(it)?.let { os ->
+                viewModel.performExport(os)
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openInputStream(it)?.let { `is` ->
+                viewModel.performImport(`is`)
+            }
+        }
+    }
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
@@ -173,11 +203,11 @@ fun BackupSettingsScreen(
                                     .padding(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                SettingsToggle(stringResource(R.string.backup_content_sessions), checked = sessionsChecked, onCheckedChange = { sessionsChecked = it })
-                                SettingsToggle(stringResource(R.string.backup_content_library), checked = libraryChecked, onCheckedChange = { libraryChecked = it })
-                                SettingsToggle(stringResource(R.string.backup_content_files), checked = filesChecked, onCheckedChange = { filesChecked = it })
-                                SettingsToggle(stringResource(R.string.backup_content_settings), checked = settingsChecked, onCheckedChange = { settingsChecked = it })
-                                SettingsToggle(stringResource(R.string.backup_content_keys), checked = keysChecked, onCheckedChange = { keysChecked = it })
+                                SettingsToggle(stringResource(R.string.backup_content_sessions), checked = uiState.sessionsChecked, onCheckedChange = { viewModel.toggleCheck("sessions", it) })
+                                SettingsToggle(stringResource(R.string.backup_content_library), checked = uiState.libraryChecked, onCheckedChange = { viewModel.toggleCheck("library", it) })
+                                SettingsToggle(stringResource(R.string.backup_content_files), checked = uiState.filesChecked, onCheckedChange = { viewModel.toggleCheck("files", it) })
+                                SettingsToggle(stringResource(R.string.backup_content_settings), checked = uiState.settingsChecked, onCheckedChange = { viewModel.toggleCheck("settings", it) })
+                                SettingsToggle(stringResource(R.string.backup_content_keys), checked = uiState.keysChecked, onCheckedChange = { viewModel.toggleCheck("keys", it) })
                             }
                         }
                     }
@@ -194,16 +224,16 @@ fun BackupSettingsScreen(
                     ExportButton(
                         icon = Icons.Rounded.Download,
                         title = stringResource(R.string.backup_export_title),
-                        subtitle = stringResource(R.string.backup_export_subtitle),
+                        subtitle = if (uiState.isExporting) "Exporting..." else stringResource(R.string.backup_export_subtitle),
                         modifier = Modifier.weight(1f),
-                        onClick = { }
+                        onClick = { exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara") }
                     )
                     ExportButton(
                         icon = Icons.Rounded.Upload,
                         title = stringResource(R.string.backup_import_title),
-                        subtitle = stringResource(R.string.backup_import_subtitle),
+                        subtitle = if (uiState.isImporting) "Importing..." else stringResource(R.string.backup_import_subtitle),
                         modifier = Modifier.weight(1f),
-                        onClick = { }
+                        onClick = { importLauncher.launch("*/*") }
                     )
                 }
             }
@@ -250,18 +280,18 @@ fun BackupSettingsScreen(
                                         color = NexaraColors.OnSurface
                                     )
                                     Text(
-                                        text = if (webdavEnabled) stringResource(R.string.backup_webdav_configured) else stringResource(R.string.backup_webdav_not_configured),
+                                        text = if (uiState.webdavEnabled) stringResource(R.string.backup_webdav_configured) else stringResource(R.string.backup_webdav_not_configured),
                                         style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
                                         color = NexaraColors.OnSurfaceVariant
                                     )
                                 }
                             }
-                            SettingsToggle("", checked = webdavEnabled, onCheckedChange = { webdavEnabled = it })
+                            SettingsToggle("", checked = uiState.webdavEnabled, onCheckedChange = { viewModel.setWebdavEnabled(it) })
                         }
 
-                        AnimatedVisibility(visible = webdavEnabled) {
+                        AnimatedVisibility(visible = uiState.webdavEnabled) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SettingsToggle(stringResource(R.string.backup_auto_backup), checked = autoBackup, onCheckedChange = { autoBackup = it })
+                                SettingsToggle(stringResource(R.string.backup_auto_backup), checked = uiState.autoBackup, onCheckedChange = { viewModel.setAutoBackup(it) })
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -270,13 +300,16 @@ fun BackupSettingsScreen(
                                         label = stringResource(R.string.backup_upload_cloud),
                                         icon = Icons.Rounded.Upload,
                                         modifier = Modifier.weight(1f),
-                                        onClick = { }
+                                        onClick = { viewModel.uploadToCloud() }
                                     )
                                     ActionButton(
                                         label = stringResource(R.string.backup_restore_cloud),
                                         icon = Icons.Rounded.Download,
                                         modifier = Modifier.weight(1f),
-                                        onClick = { }
+                                        onClick = { 
+                                            // TODO: Add file picker for cloud files. For now use common name.
+                                            viewModel.downloadFromCloud("nexara_latest.nexara") 
+                                        }
                                     )
                                 }
                                 ActionButton(
@@ -342,21 +375,27 @@ fun BackupSettingsScreen(
                     style = NexaraTypography.headlineMedium,
                     color = NexaraColors.OnSurface
                 )
-                GlassInputField(stringResource(R.string.backup_webdav_url_label), webdavUrl, { webdavUrl = it }, stringResource(R.string.backup_webdav_url_hint))
-                GlassInputField(stringResource(R.string.backup_webdav_user_label), webdavUser, { webdavUser = it }, "user")
-                GlassInputField(stringResource(R.string.backup_webdav_pass_label), webdavPass, { webdavPass = it }, "••••••••", isPassword = true)
+                GlassInputField(stringResource(R.string.backup_webdav_url_label), tempWebdavUrl, { tempWebdavUrl = it }, stringResource(R.string.backup_webdav_url_hint))
+                GlassInputField(stringResource(R.string.backup_webdav_user_label), tempWebdavUser, { tempWebdavUser = it }, "user")
+                GlassInputField(stringResource(R.string.backup_webdav_pass_label), tempWebdavPass, { tempWebdavPass = it }, "••••••••", isPassword = true)
                 ActionButton(
                     label = stringResource(R.string.backup_test_connection),
                     icon = Icons.Rounded.Link,
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { showWebdavSheet = false }
+                    onClick = { 
+                        // TODO: Implement test connection
+                        showWebdavSheet = false 
+                    }
                 )
                 ActionButton(
                     label = stringResource(R.string.backup_save_config),
                     icon = Icons.Rounded.CloudSync,
                     modifier = Modifier.fillMaxWidth(),
                     isPrimary = true,
-                    onClick = { showWebdavSheet = false }
+                    onClick = { 
+                        viewModel.updateWebdavConfig(tempWebdavUrl, tempWebdavUser, tempWebdavPass)
+                        showWebdavSheet = false 
+                    }
                 )
             }
         }

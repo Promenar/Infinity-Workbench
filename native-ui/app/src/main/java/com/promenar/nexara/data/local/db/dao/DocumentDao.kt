@@ -49,4 +49,7 @@ interface DocumentDao {
 
     @Query("SELECT COUNT(*) FROM documents WHERE folder_id = :folderId")
     suspend fun countByFolderId(folderId: String): Int
+
+    @Query("SELECT COUNT(*) FROM documents")
+    suspend fun getCount(): Int
 }

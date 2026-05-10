@@ -7,10 +7,16 @@ All notable changes to this project will be documented in this file.
 ### Markdown 富文本渲染能力升级 (MD-S1 ~ MD-S5)
 
 - **Markdown 渲染引擎**: 集成 mikepenz/multiplatform-markdown-renderer v0.40.2，支持完整 Markdown 语法（标题、列表、代码块、粗体、表格等）
-- **NexaraMarkdownTheme**: 新建主题映射层，将 Nexara 设计系统的颜色和排版映射到 markdown 渲染器
-- **流式输出保护**: 新增 `sanitizeStreamingMarkdown()` 预处理，自动修补未闭合代码围栏、截断未闭合 LaTeX 块
+- **LaTeX 数学公式**: 引入基于 WebView 的 KaTeX 离线渲染基座，支持 `$$ ... $$` 块级数学公式渲染
+- **高级可视化**: 接入 Mermaid 流程图与 ECharts 数据图表渲染能力，支持在会话中直接展示动态图表
+- **代码高亮与交互**: 集成 `multiplatform-markdown-renderer-code` 模块，新增带语言标签和一键复制功能的代码块 Header
+- **流式输出保护**: 新增 `sanitizeStreamingMarkdown()` 预处理，自动修补未闭合代码围栏、截断未闭合 LaTeX 块，确保打字机输出流畅不闪烁
 - **ThinkingBlock Markdown**: AI 思考过程的 reasoning 文本支持 Markdown 格式渲染（粗体、列表、代码等）
-- **ChatBubble 全面接入**: 助手消息全部使用 MarkdownText 渲染，移除旧光标代码
+- **ChatBubble 全面接入**: 助手消息全部使用 MarkdownText 渲染，统一了 AI 回复与思考过程的视觉体验
+
+### Fixed
+- **Agent 状态同步**: 修复了 `AgentEditViewModel` 中 `StateFlow.combine` 的类型安全问题，解决了修改助手设置时因类型不匹配导致的 UI 状态更新异常。
+- **资源清理**: 移除了 `MarkdownText.kt` 中的冗余引用，优化了代码洁净度。
 
 ## [1.4.0] - 2026-05-09
 
@@ -20,14 +26,26 @@ All notable changes to this project will be documented in this file.
   - 移除了冗余的设置项间隔和文字标题，使设置界面视觉更加连续和沉浸。
   - 移除了“振动反馈开关”，将其功能设为默认开启。
   - 移除了“日志”相关冗余功能。
-- **消息气泡布局优化**: 主会话界面的 AI 回复气泡改为全宽布局，大幅提升了长文本和代码块的阅读体验，同时保持了优雅的左右间距。
+- **消息气泡布局优化**: 主会话界的 AI 回复气泡改为全宽布局，大幅提升了长文本和代码块的阅读体验，同时保持了优雅的左右间距。
 - **启动逻辑调整**: 优化了启动界面的触发逻辑，确保仅在应用首次安装/打开时显示。
+
+### Added
+- **备份系统 (Backup System)**: 全面重构备份功能，彻底移除占位符。
+    - 实现 `BackupRepository`，支持 Room 数据库实体的 GZIP JSON 序列化。
+    - 集成 Android SAF (Storage Access Framework)，支持本地 `.nexara` 备份文件的导出与导入。
+    - 实现 WebDAV 协议同步，支持云端备份上传与还原。
+    - 为核心 Entity 类（Agent, Session, Message, Skill, Document）添加 `@Serializable` 支持。
+- **BackupViewModel**: 引入备份业务状态机，实现备份配置的持久化存储。
 
 ### Fixed
 - **流式传输与思考过程**: 修复了主会话文本瞬间显示的 Bug，并确保了思考过程（Thinking Process）UI 组件能正确展示。
 - **模型选择持久化**: 修复了主会话输入框上方模型选择器退出后再进入会话重置的问题，移除了 mock 的 `gpt-4o`，确保未配置时显示为 empty。
+- 修复设置页“备份”项配置无法保存的问题。
+- 修复“工具”设置页底部显示不全及样式生硬问题。
+- 移除“设置”中重复的“主题色”选项。
+- 移除占位用的“工作台”功能。
 
-## [1.3.0] - 2026-05-09
+## [0.2.5] - 2026-05-09
 
 ### Fixed
 - **模型预设选择逻辑修复**: 彻底解决了原生 Android 版本设置页面中，功能模型（嵌入、重排、图像）选择器点开后列表为空的问题。

@@ -18,11 +18,9 @@ fun MermaidBlock(
 }
 
 private fun buildMermaidHtml(code: String): String {
-    val escaped = code
-        .replace("\\", "\\\\")
-        .replace("`", "\\`")
-        .replace("$", "\\$")
-
+    val encoded = android.util.Base64.encodeToString(
+        code.toByteArray(), android.util.Base64.NO_WRAP
+    )
     return """
     <!DOCTYPE html>
     <html>
@@ -41,10 +39,10 @@ private fun buildMermaidHtml(code: String): String {
         </style>
     </head>
     <body>
-        <div class="mermaid">
-            $escaped
-        </div>
+        <div class="mermaid" id="mermaid-diagram"></div>
         <script>
+            var diagramCode = atob("$encoded");
+            document.getElementById('mermaid-diagram').textContent = diagramCode;
             mermaid.initialize({
                 startOnLoad: true,
                 theme: 'dark',
@@ -58,6 +56,7 @@ private fun buildMermaidHtml(code: String): String {
                     tertiaryColor: '#201F22'
                 }
             });
+            mermaid.run();
         </script>
     </body>
     </html>

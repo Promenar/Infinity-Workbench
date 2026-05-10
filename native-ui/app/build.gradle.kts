@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.promenar.nexara"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.promenar.nexara.native"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
 
@@ -97,6 +97,7 @@ dependencies {
     // ─── 图片 (Multiplatform-Ready) ───
     implementation("io.coil-kt.coil3:coil-compose:3.0.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.0")
+    implementation("io.coil-kt.coil3:coil-video:3.0.0")
 
     // ─── 数据存储 (Multiplatform-Ready) ───
     implementation("androidx.datastore:datastore-preferences:1.0.0")
@@ -113,6 +114,9 @@ dependencies {
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-code:$markdownRendererVersion")
+
+    // ─── HTML 解析 ───
+    implementation("org.jsoup:jsoup:1.17.2")
 
     // ─── 测试 ───
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")

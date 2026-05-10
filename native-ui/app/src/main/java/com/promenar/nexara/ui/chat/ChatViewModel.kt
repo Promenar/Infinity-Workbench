@@ -67,7 +67,7 @@ class ChatViewModel(
     private val textSplitter: RecursiveCharacterTextSplitter? = null,
     private val memoryManager: MemoryManager? = null,
     private val kgProvider: KgProvider? = null,
-    private val skillRegistry: com.promenar.nexara.ui.chat.manager.SkillRegistry? = null
+    private val skillRegistry: com.promenar.nexara.ui.chat.manager.registry.SkillRegistry? = null
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -567,8 +567,24 @@ class ChatViewModel(
     }
 
     private fun buildToolList(session: Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> {
-        if (session.options?.toolsEnabled == false) return emptyList()
-        return (skillRegistry as? com.promenar.nexara.ui.chat.manager.DefaultSkillRegistry)?.getAllTools() ?: emptyList()
+        val options = session.options ?: return emptyList()
+        if (!options.toolsEnabled) return emptyList()
+        
+        val prefs = application.getSharedPreferences("nexara_settings", 0)
+        val enabledSkills = prefs.getStringSet("enabled_skills", null)
+        
+        if (enabledSkills.isNullOrEmpty()) return emptyList()
+        
+        val allowedIds = enabledSkills.toMutableList()
+        
+        if (options.webSearch == true && "web_search" !in allowedIds) {
+            allowedIds.add("web_search")
+        }
+        if (options.webSearch != true) {
+            allowedIds.removeAll { it == "web_search" || it.startsWith("search_") }
+        }
+        
+        return skillRegistry?.getAllTools(allowedIds) ?: emptyList()
     }
 
     private fun buildProtocolMessages(

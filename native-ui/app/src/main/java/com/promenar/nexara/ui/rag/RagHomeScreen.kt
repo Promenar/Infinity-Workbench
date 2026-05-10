@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -101,6 +103,14 @@ fun RagHomeScreen(
     val selectedIds = remember { mutableStateListOf<String>() }
     var showMoveSheet by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importDocuments(uris)
+        }
+    }
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
@@ -296,21 +306,6 @@ fun RagHomeScreen(
                                             Text(stringResource(R.string.rag_home_new), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.Primary)
                                         }
                                     }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(NexaraColors.SurfaceHigh)
-                                            .clickable { onNavigateToGraph() }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = NexaraColors.OnSurface, modifier = Modifier.size(16.dp))
-                                            Text(stringResource(R.string.rag_home_graph_btn), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurface)
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -322,7 +317,9 @@ fun RagHomeScreen(
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(NexaraColors.SurfaceContainer.copy(alpha = 0.5f))
                                     .border(1.dp, NexaraColors.OutlineVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                                    .clickable { }
+                                    .clickable {
+                                        filePickerLauncher.launch(arrayOf("*/*"))
+                                    }
                                     .padding(32.dp),
                                 contentAlignment = Alignment.Center
                             ) {

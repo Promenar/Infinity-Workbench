@@ -208,14 +208,26 @@ val config = Json.decodeFromString<TestConfig>(
 
 ## 排除范围
 - Workbench 服务器（远期）
-- 本地模型推理 llama.rn（远期）
 - web-client/（独立项目）
+
+## 本地模型推理（待开发）
+
+**当前状态**：`LocalModelsScreen` 为纯占位符，零实际实现。详见 `.agent/plans/20260510-local-model-implementation.md`。
+
+**技术选型**：llama.cpp + JNI 绑定 + GGUF 格式，Vulkan GPU 加速。
+
+**核心模块**（待实现）：
+- `data/local/inference/` — 推理引擎、模型管理、GGUF 解析
+- `data/remote/protocol/LocalProtocol.kt` — 实现 `LlmProtocol` 接口
+- `ui/settings/LocalModelsViewModel.kt` — 模型管理 UI 状态
+- `cpp/` — JNI 桥接层
 
 ## 编译命令
 ```bash
 .\gradlew.bat compileDebugKotlin
 .\gradlew.bat test
 .\gradlew.bat assembleDebug
+.\gradlew.bat assembleRelease
 ```
 
 ## TS 源码参考位置（只读）

@@ -39,7 +39,6 @@ import com.promenar.nexara.ui.settings.SearchConfigScreen
 import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
 import com.promenar.nexara.ui.settings.TokenUsageScreen
-import com.promenar.nexara.ui.settings.WorkbenchScreen
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.welcome.WelcomeScreen
@@ -70,7 +69,6 @@ object NavDestinations {
     const val SKILLS_CONFIG = "skills_config"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
-    const val WORKBENCH = "workbench"
     const val LOCAL_MODELS = "local_models"
 
     fun sessionList(agentId: String) = "session_list/$agentId"
@@ -398,12 +396,6 @@ fun NexaraNavGraph(
 
         composable(NavDestinations.BACKUP_SETTINGS) {
             BackupSettingsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(NavDestinations.WORKBENCH) {
-            WorkbenchScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

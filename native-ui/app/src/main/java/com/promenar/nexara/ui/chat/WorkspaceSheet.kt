@@ -413,10 +413,6 @@ private fun TaskCard(task: WorkspaceTask) {
                 Text(task.time, style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace), color = NexaraColors.OutlineVariant)
             } else if (task.status == "in_progress") {
                 Text(stringResource(R.string.workspace_task_running), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace), color = NexaraColors.Primary)
-            } else if (task.status == "pending") {
-                IconButton(onClick = {}, modifier = Modifier.size(20.dp)) {
-                    Icon(Icons.Rounded.MoreVert, null, tint = NexaraColors.OutlineVariant, modifier = Modifier.size(16.dp))
-                }
             }
         }
     }
@@ -435,8 +431,7 @@ private fun ArtifactsPanel(artifacts: List<WorkspaceArtifact>) {
         items(artifacts, key = { it.id }) { artifact ->
             NexaraGlassCard(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { },
+                    .fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(

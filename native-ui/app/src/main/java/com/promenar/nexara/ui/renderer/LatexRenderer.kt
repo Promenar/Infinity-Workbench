@@ -18,12 +18,9 @@ fun LatexBlock(
 }
 
 private fun buildLatexHtml(latex: String): String {
-    val escaped = latex
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "")
-
+    val encoded = android.util.Base64.encodeToString(
+        latex.toByteArray(), android.util.Base64.NO_WRAP
+    )
     return """
     <!DOCTYPE html>
     <html>
@@ -48,7 +45,8 @@ private fun buildLatexHtml(latex: String): String {
         <div id="math"></div>
         <script>
             try {
-                katex.render("$escaped", document.getElementById("math"), {
+                var latex = atob("$encoded");
+                katex.render(latex, document.getElementById("math"), {
                     throwOnError: false,
                     displayMode: true
                 });

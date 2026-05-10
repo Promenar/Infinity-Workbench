@@ -8,23 +8,9 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.ui.chat.ChatStore
 
-interface SkillRegistry {
-    fun getSkill(name: String): SkillDefinition?
-}
-
-interface SkillDefinition {
-    val id: String
-    val name: String
-    val description: String
-    val mcpServerId: String?
-    suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult
-}
-
-interface SkillExecutionContext {
-    val sessionId: String
-    val agentId: String
-    val workspacePath: String?
-}
+import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
+import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
+import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 
 class ToolExecutor(
     private val store: ChatStore,

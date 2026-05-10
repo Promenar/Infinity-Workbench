@@ -39,6 +39,13 @@ private sealed class ContentSegment {
     data class ECharts(val content: String) : ContentSegment()
 }
 
+private class ParseCache {
+    var text: String = ""
+    var segments: List<ContentSegment> = emptyList()
+}
+
+private const val RE_PARSE_THRESHOLD = 100
+
 private fun splitRichSegments(text: String): List<ContentSegment> {
     val blockPattern = Regex(
         """```(mermaid|echarts)\s*\n(.*?)```""",
@@ -97,10 +104,69 @@ fun MarkdownText(
         if (isStreaming) sanitizeStreamingMarkdown(markdown) else markdown
     }
 
-    val segments = remember(processed) { splitRichSegments(processed) }
+    val cache = remember { ParseCache() }
+    val segments = remember(processed) {
+        if (cache.text.isNotEmpty()
+            && processed.startsWith(cache.text)
+            && processed.length - cache.text.length < RE_PARSE_THRESHOLD
+        ) {
+            val newPart = processed.substring(cache.text.length)
+            cache.segments + ContentSegment.Markdown(newPart)
+        } else {
+            val result = splitRichSegments(processed)
+            cache.text = processed
+            cache.segments = result
+            result
+        }
+    }
+
+    val mergedSegments = remember(segments) {
+        val result = mutableListOf<ContentSegment>()
+        val pendingLatex = mutableListOf<String>()
+        val pendingMermaid = mutableListOf<String>()
+        val pendingECharts = mutableListOf<String>()
+
+        fun flushPending() {
+            if (pendingLatex.isNotEmpty()) {
+                result.add(ContentSegment.Latex(pendingLatex.joinToString("\n\n")))
+                pendingLatex.clear()
+            }
+            if (pendingMermaid.isNotEmpty()) {
+                result.add(ContentSegment.Mermaid(pendingMermaid.joinToString("\n")))
+                pendingMermaid.clear()
+            }
+            if (pendingECharts.isNotEmpty()) {
+                pendingECharts.forEach { result.add(ContentSegment.ECharts(it)) }
+                pendingECharts.clear()
+            }
+        }
+
+        for (segment in segments) {
+            when (segment) {
+                is ContentSegment.Markdown -> {
+                    flushPending()
+                    result.add(segment)
+                }
+                is ContentSegment.Latex -> {
+                    if (pendingMermaid.isNotEmpty() || pendingECharts.isNotEmpty()) flushPending()
+                    pendingLatex.add(segment.content)
+                }
+                is ContentSegment.Mermaid -> {
+                    if (pendingLatex.isNotEmpty() || pendingECharts.isNotEmpty()) flushPending()
+                    pendingMermaid.add(segment.content)
+                }
+                is ContentSegment.ECharts -> {
+                    if (pendingLatex.isNotEmpty() || pendingMermaid.isNotEmpty()) flushPending()
+                    pendingECharts.add(segment.content)
+                }
+            }
+        }
+        flushPending()
+        result
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        for (segment in segments) {
+        for (segment in mergedSegments) {
             when (segment) {
                 is ContentSegment.Markdown -> {
                     if (segment.content.isNotBlank()) {

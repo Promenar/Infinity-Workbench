@@ -64,8 +64,13 @@ fun NexaraTheme(
             val window = (view.context as Activity).window
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
+            
+            // Since the app currently only uses a dark color scheme, we should always 
+            // use light icons (isAppearanceLightStatusBars = false).
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = false
+            insetsController.isAppearanceLightNavigationBars = false
+            
             WindowCompat.setDecorFitsSystemWindows(window, false)
         }
     }

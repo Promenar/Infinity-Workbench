@@ -17,7 +17,11 @@ fun EChartsBlock(
     )
 }
 
-private fun buildEChartsHtml(optionJson: String): String = """
+private fun buildEChartsHtml(optionJson: String): String {
+    val encoded = android.util.Base64.encodeToString(
+        optionJson.toByteArray(), android.util.Base64.NO_WRAP
+    )
+    return """
     <!DOCTYPE html>
     <html>
     <head>
@@ -34,7 +38,7 @@ private fun buildEChartsHtml(optionJson: String): String = """
         <script>
             try {
                 var chart = echarts.init(document.getElementById('chart'), 'dark');
-                var option = $optionJson;
+                var option = JSON.parse(atob("$encoded"));
                 option.backgroundColor = 'transparent';
                 chart.setOption(option);
                 window.addEventListener('resize', function() { chart.resize(); });
@@ -45,4 +49,5 @@ private fun buildEChartsHtml(optionJson: String): String = """
         </script>
     </body>
     </html>
-""".trimIndent()
+    """.trimIndent()
+}

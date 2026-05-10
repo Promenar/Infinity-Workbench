@@ -35,6 +35,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
@@ -44,13 +49,11 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
 fun SearchConfigScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: SearchConfigViewModel = viewModel()
 ) {
-    var webSearchEnabled by remember { mutableStateOf(true) }
-    var searchDepth by remember { mutableStateOf("advanced") }
-    var resultCount by remember { mutableStateOf(10f) }
-    var includeDomains by remember { mutableStateOf(listOf<String>()) }
-    var excludeDomains by remember { mutableStateOf(listOf<String>()) }
+    val uiState by viewModel.uiState.collectAsState()
+    
     var newIncludeDomain by remember { mutableStateOf("") }
     var newExcludeDomain by remember { mutableStateOf("") }
 
@@ -90,8 +93,8 @@ fun SearchConfigScreen(
                     )
                 }
                 Switch(
-                    checked = webSearchEnabled,
-                    onCheckedChange = { webSearchEnabled = it },
+                    checked = uiState.webSearchEnabled,
+                    onCheckedChange = { viewModel.updateWebSearchEnabled(it) },
                     colors = SwitchDefaults.colors(
                         checkedTrackColor = NexaraColors.Primary,
                         checkedThumbColor = NexaraColors.OnPrimary
@@ -100,7 +103,90 @@ fun SearchConfigScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Search Engine Selection
+        Text(
+            text = stringResource(R.string.search_config_engine_label),
+            style = NexaraTypography.headlineMedium,
+            color = NexaraColors.OnSurface
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val engines = listOf(
+                "duckduckgo" to stringResource(R.string.search_config_engine_duckduckgo),
+                "searxng" to stringResource(R.string.search_config_engine_searxng),
+                "tavily" to stringResource(R.string.search_config_engine_tavily)
+            )
+            
+            engines.forEach { (id, label) ->
+                val isSelected = uiState.searchEngine == id
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(NexaraShapes.medium)
+                        .background(if (isSelected) NexaraColors.Primary.copy(alpha = 0.1f) else NexaraColors.SurfaceContainer)
+                        .border(1.dp, if (isSelected) NexaraColors.Primary else NexaraColors.GlassBorder, NexaraShapes.medium)
+                        .clickable { viewModel.updateSearchEngine(id) }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = isSelected,
+                        onClick = { viewModel.updateSearchEngine(id) },
+                        colors = RadioButtonDefaults.colors(selectedColor = NexaraColors.Primary)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = label, style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurface)
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Engine Specific Config
+        if (uiState.searchEngine == "searxng") {
+            Text(text = stringResource(R.string.search_config_searxng_url_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(NexaraShapes.medium)
+                    .background(NexaraColors.SurfaceContainer)
+                    .padding(12.dp)
+            ) {
+                BasicTextField(
+                    value = uiState.searXngUrl,
+                    onValueChange = { viewModel.updateSearXngUrl(it) },
+                    textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
+                    cursorBrush = SolidColor(NexaraColors.Primary),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        if (uiState.searchEngine == "tavily") {
+            Text(text = stringResource(R.string.search_config_tavily_key_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(NexaraShapes.medium)
+                    .background(NexaraColors.SurfaceContainer)
+                    .padding(12.dp)
+            ) {
+                BasicTextField(
+                    value = uiState.tavilyApiKey,
+                    onValueChange = { viewModel.updateTavilyApiKey(it) },
+                    textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
+                    cursorBrush = SolidColor(NexaraColors.Primary),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         Text(
             text = stringResource(R.string.search_config_search_depth),
@@ -115,7 +201,7 @@ fun SearchConfigScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf("basic", "advanced").forEach { depth ->
-                val isSelected = searchDepth == depth
+                val isSelected = uiState.searchDepth == depth
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -129,7 +215,7 @@ fun SearchConfigScreen(
                             if (isSelected) NexaraColors.Primary else NexaraColors.GlassBorder,
                             NexaraShapes.medium
                         )
-                        .clickable { searchDepth = depth }
+                        .clickable { viewModel.updateSearchDepth(depth) }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -157,15 +243,15 @@ fun SearchConfigScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = stringResource(R.string.search_config_results, resultCount.toInt()),
+                text = stringResource(R.string.search_config_results, uiState.resultCount),
                 style = NexaraTypography.labelMedium,
                 color = NexaraColors.OnSurfaceVariant
             )
         }
 
         Slider(
-            value = resultCount,
-            onValueChange = { resultCount = it },
+            value = uiState.resultCount.toFloat(),
+            onValueChange = { viewModel.updateResultCount(it.toInt()) },
             valueRange = 1f..20f,
             steps = 18,
             colors = SliderDefaults.colors(
@@ -179,32 +265,32 @@ fun SearchConfigScreen(
 
         DomainListSection(
             title = stringResource(R.string.search_config_include_domains),
-            domains = includeDomains,
+            domains = uiState.includeDomains,
             newValue = newIncludeDomain,
             onNewValueChange = { newIncludeDomain = it },
             onAdd = {
-                if (newIncludeDomain.isNotBlank() && newIncludeDomain !in includeDomains) {
-                    includeDomains = includeDomains + newIncludeDomain
+                if (newIncludeDomain.isNotBlank() && newIncludeDomain !in uiState.includeDomains) {
+                    viewModel.addIncludeDomain(newIncludeDomain)
                     newIncludeDomain = ""
                 }
             },
-            onRemove = { includeDomains = includeDomains - it }
+            onRemove = { viewModel.removeIncludeDomain(it) }
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         DomainListSection(
             title = stringResource(R.string.search_config_exclude_domains),
-            domains = excludeDomains,
+            domains = uiState.excludeDomains,
             newValue = newExcludeDomain,
             onNewValueChange = { newExcludeDomain = it },
             onAdd = {
-                if (newExcludeDomain.isNotBlank() && newExcludeDomain !in excludeDomains) {
-                    excludeDomains = excludeDomains + newExcludeDomain
+                if (newExcludeDomain.isNotBlank() && newExcludeDomain !in uiState.excludeDomains) {
+                    viewModel.addExcludeDomain(newExcludeDomain)
                     newExcludeDomain = ""
                 }
             },
-            onRemove = { excludeDomains = excludeDomains - it }
+            onRemove = { viewModel.removeExcludeDomain(it) }
         )
     }
 }

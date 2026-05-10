@@ -625,14 +625,7 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
     ),
 
     // ==================== Embedding Models ====================
-    ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""bge-m3""", RegexOption.IGNORE_CASE)),
-        contextLength = 8192,
-        type = ModelType.EMBEDDING,
-        capabilities = ModelCapabilities(embedding = true),
-        icon = "embedding",
-        note = "BGE M3 Embedding"
-    ),
+
     ModelSpec(
         pattern = ModelPattern.RegexPattern(Regex("""embedding""", RegexOption.IGNORE_CASE)),
         contextLength = 8192,

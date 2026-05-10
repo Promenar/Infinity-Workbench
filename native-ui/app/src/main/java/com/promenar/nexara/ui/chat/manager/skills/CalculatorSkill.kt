@@ -1,11 +1,10 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
-import com.promenar.nexara.ui.chat.manager.ParameterizedSkill
-import com.promenar.nexara.ui.chat.manager.SkillDefinition
-import com.promenar.nexara.ui.chat.manager.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
+import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 
-class CalculatorSkill : SkillDefinition, ParameterizedSkill {
+class CalculatorSkill : SkillDefinition {
     override val id = "calculator"
     override val name = "calculator"
     override val description = "Evaluate a mathematical expression"
@@ -51,7 +50,7 @@ class CalculatorSkill : SkillDefinition, ParameterizedSkill {
             val c = expr[i]
             when {
                 c.isWhitespace() -> i++
-                c in "+-*/()" -> {
+                c in "+-*/^%()" -> {
                     tokens.add(Token(c.toString(), TokenType.OP))
                     i++
                 }
@@ -86,23 +85,38 @@ class CalculatorSkill : SkillDefinition, ParameterizedSkill {
 
         private fun parseTerm(): Double {
             var result = parseFactor()
-            while (pos < tokens.size && tokens[pos].value in listOf("*", "/")) {
+            while (pos < tokens.size && tokens[pos].value in listOf("*", "/", "%")) {
                 val op = tokens[pos].value
                 pos++
                 val right = parseFactor()
-                result = if (op == "*") result * right else result / right
+                result = when (op) {
+                    "*" -> result * right
+                    "/" -> result / right
+                    "%" -> result % right
+                    else -> result
+                }
             }
             return result
         }
 
         private fun parseFactor(): Double {
+            var result = parseUnary()
+            while (pos < tokens.size && tokens[pos].value == "^") {
+                pos++
+                val right = parseUnary()
+                result = Math.pow(result, right)
+            }
+            return result
+        }
+
+        private fun parseUnary(): Double {
             if (pos < tokens.size && tokens[pos].value == "-") {
                 pos++
-                return -parseFactor()
+                return -parseUnary()
             }
             if (pos < tokens.size && tokens[pos].value == "+") {
                 pos++
-                return parseFactor()
+                return parseUnary()
             }
             if (pos < tokens.size && tokens[pos].value == "(") {
                 pos++

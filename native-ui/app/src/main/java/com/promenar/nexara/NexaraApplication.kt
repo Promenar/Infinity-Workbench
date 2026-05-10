@@ -20,19 +20,38 @@ import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.MessageRepository
 import com.promenar.nexara.data.repository.SessionRepository
-import com.promenar.nexara.ui.chat.ChatStore
-import com.promenar.nexara.ui.chat.manager.DefaultSkillRegistry
-import com.promenar.nexara.ui.chat.manager.KgProvider
+import com.promenar.nexara.ui.chat.manager.registry.DefaultSkillRegistry
+import com.promenar.nexara.ui.chat.manager.registry.ModularSkillRegistry
+import com.promenar.nexara.ui.chat.manager.registry.UserSkillRegistry
+import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
+import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.ui.chat.manager.skills.CalculatorSkill
 import com.promenar.nexara.ui.chat.manager.skills.CurrentTimeSkill
+import com.promenar.nexara.ui.chat.ChatStore
+import com.promenar.nexara.ui.chat.manager.KgProvider
+import com.promenar.nexara.ui.chat.manager.skills.WebSearchSkill
+import com.promenar.nexara.ui.chat.manager.skills.WebSearchSearXNGSkill
+import com.promenar.nexara.ui.chat.manager.skills.WebSearchTavilySkill
+import com.promenar.nexara.ui.chat.manager.skills.WeatherSkill
+import com.promenar.nexara.ui.chat.manager.skills.CreateToolSkill
+import com.promenar.nexara.data.repository.SkillRepository
+import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.util.LocaleHelper
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.video.VideoFrameDecoder
 
-class NexaraApplication : Application() {
+class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(NexaraDatabase.MIGRATION_4_5)
             .build()
     }
 
@@ -45,12 +64,43 @@ class NexaraApplication : Application() {
     }
 
     val chatStore: ChatStore by lazy { ChatStore() }
+    
+    val skillRepository: ISkillRepository by lazy {
+        com.promenar.nexara.data.repository.SkillRepository(database.skillDao())
+    }
 
-    val skillRegistry: DefaultSkillRegistry by lazy {
+    val httpClient: HttpClient by lazy {
+        HttpClient(OkHttp) {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+    }
+
+    val presetSkillRegistry: DefaultSkillRegistry by lazy {
         DefaultSkillRegistry().apply {
             register(CurrentTimeSkill())
             register(CalculatorSkill())
+            register(WebSearchSkill(this@NexaraApplication, httpClient))
+            register(WebSearchTavilySkill(this@NexaraApplication, httpClient))
+            register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
+            register(WeatherSkill(httpClient))
+            register(CreateToolSkill(database.skillDao()))
         }
+    }
+
+    val userSkillRegistry: UserSkillRegistry by lazy {
+        UserSkillRegistry(skillRepository as SkillRepository)
+    }
+
+    val mcpSkillRegistry: McpSkillRegistry by lazy {
+        McpSkillRegistry(skillRepository as SkillRepository, httpClient)
+    }
+
+    val skillRegistry: SkillRegistry by lazy {
+        ModularSkillRegistry(
+            listOf(presetSkillRegistry, userSkillRegistry, mcpSkillRegistry)
+        )
     }
 
     private val prefs: SharedPreferences by lazy {
@@ -60,6 +110,14 @@ class NexaraApplication : Application() {
     private lateinit var _llmProvider: MutableStateFlow<LlmProvider>
     val llmProvider: LlmProvider get() = _llmProvider.value
     val llmProviderFlow: StateFlow<LlmProvider> get() = _llmProvider
+
+    override fun newImageLoader(context: Context): ImageLoader {
+        return ImageLoader.Builder(context)
+            .components {
+                add(VideoFrameDecoder.Factory())
+            }
+            .build()
+    }
 
     override fun attachBaseContext(base: Context) {
         val lang = LocaleHelper.getSavedLanguage(base)
@@ -72,9 +130,9 @@ class NexaraApplication : Application() {
     }
 
     val embeddingClient: EmbeddingClient by lazy {
-        val baseUrl = prefs.getString("embedding_base_url", "https://api.siliconflow.cn") ?: "https://api.siliconflow.cn"
+        val baseUrl = prefs.getString("embedding_base_url", "") ?: ""
         val apiKey = prefs.getString("embedding_api_key", "") ?: ""
-        val model = prefs.getString("embedding_model", "BAAI/bge-m3") ?: "BAAI/bge-m3"
+        val model = prefs.getString("embedding_model", "") ?: ""
         EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model)
     }
 
@@ -123,6 +181,33 @@ class NexaraApplication : Application() {
 
     val kgProvider: KgProvider by lazy {
         MicroGraphKgAdapter(microGraphExtractor)
+    }
+
+    val graphExtractor: com.promenar.nexara.data.rag.GraphExtractor by lazy {
+        com.promenar.nexara.data.rag.GraphExtractor(
+            protocol = llmProvider.protocol,
+            graphStore = graphStore,
+            modelId = getSavedProviderConfig()?.model
+        )
+    }
+
+    val vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue by lazy {
+        com.promenar.nexara.data.rag.VectorizationQueue(
+            vectorStore = vectorStore,
+            embeddingClient = embeddingClient,
+            graphExtractor = graphExtractor,
+            documentDao = database.documentDao(),
+            vectorDao = database.vectorDao(),
+            vectorizationTaskDao = database.vectorizationTaskDao()
+        )
+    }
+
+    val documentImporter: com.promenar.nexara.data.rag.DocumentImporter by lazy {
+        com.promenar.nexara.data.rag.DocumentImporter(
+            context = this,
+            documentDao = database.documentDao(),
+            vectorizationQueue = vectorizationQueue
+        )
     }
 
     val defaultAgents: List<com.promenar.nexara.data.model.Agent> by lazy {

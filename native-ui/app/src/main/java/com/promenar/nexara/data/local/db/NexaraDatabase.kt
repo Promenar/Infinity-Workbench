@@ -16,6 +16,7 @@ import com.promenar.nexara.data.local.db.dao.KgJitCacheDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.dao.MessageDao
 import com.promenar.nexara.data.local.db.dao.SessionDao
+import com.promenar.nexara.data.local.db.dao.SkillDao
 import com.promenar.nexara.data.local.db.dao.TagDao
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
@@ -36,6 +37,8 @@ import com.promenar.nexara.data.local.db.entity.TagEntity
 import com.promenar.nexara.data.local.db.entity.VectorEntity
 import com.promenar.nexara.data.local.db.entity.VectorFtsEntity
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
+import com.promenar.nexara.data.local.db.entity.McpServerEntity
 
 @Database(
     entities = [
@@ -56,8 +59,10 @@ import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
         VectorizationTaskEntity::class,
         AuditLogEntity::class,
         ArtifactEntity::class,
+        CustomSkillEntity::class,
+        McpServerEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -78,4 +83,38 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun vectorizationTaskDao(): VectorizationTaskDao
     abstract fun auditLogDao(): AuditLogDao
     abstract fun artifactDao(): ArtifactDao
+    abstract fun skillDao(): SkillDao
+
+    companion object {
+        val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `custom_skills` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `parametersSchema` TEXT NOT NULL,
+                        `code` TEXT NOT NULL,
+                        `type` TEXT NOT NULL DEFAULT 'user',
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `mcp_servers` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `url` TEXT NOT NULL,
+                        `type` TEXT NOT NULL DEFAULT 'http',
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `callIntervalMs` INTEGER NOT NULL DEFAULT 1000,
+                        `isDefault` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+            }
+        }
+    }
 }
