@@ -51,6 +51,7 @@ import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
+import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
@@ -59,6 +60,8 @@ fun AdvancedRetrievalScreen(
     onNavigateBack: () -> Unit
 ) {
     val config by viewModel.config.collectAsState()
+    val availableModels by viewModel.availableModels.collectAsState()
+    var showModelPicker by remember { mutableStateOf(false) }
     var queryRewriteStrategy by remember { mutableStateOf("hyde") }
 
     NexaraPageLayout(
@@ -128,18 +131,7 @@ fun AdvancedRetrievalScreen(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(30.dp).background(NexaraColors.SurfaceContainer, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.Tune, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(15.dp))
-                        }
-                        Text(stringResource(R.string.retrieval_doc_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                    }
+                    SettingsSectionHeader(stringResource(R.string.retrieval_doc_section))
                     AdaptiveSlider(
                         label = stringResource(R.string.retrieval_doc_limit),
                         value = config.docLimit.toFloat(),
@@ -158,6 +150,62 @@ fun AdvancedRetrievalScreen(
                         rerankBadge = config.enableRerank,
                         onValueChange = { v -> viewModel.updateConfig { c -> c.copy(docThreshold = v) } }
                     )
+                }
+            }
+
+            // Knowledge Graph Extraction
+            NexaraGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.large as RoundedCornerShape
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(30.dp).background(NexaraColors.SurfaceContainer, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(15.dp))
+                        }
+                        Text(stringResource(R.string.rag_advanced_kg_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+                    }
+
+                    SettingsToggle(
+                        title = stringResource(R.string.rag_advanced_kg_enable),
+                        description = stringResource(R.string.rag_advanced_kg_desc),
+                        checked = config.enableKnowledgeGraph,
+                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(enableKnowledgeGraph = enabled) } }
+                    )
+
+                    if (config.enableKnowledgeGraph) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
+                            NexaraGlassCard(
+                                modifier = Modifier.fillMaxWidth().clickable { showModelPicker = true },
+                                shape = RoundedCornerShape(10.dp),
+                                containerColor = NexaraColors.SurfaceContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val currentModel = availableModels.find { it.id == config.kgExtractionModel }
+                                    Text(
+                                        text = currentModel?.name ?: stringResource(R.string.rag_advanced_select_model_placeholder),
+                                        style = NexaraTypography.bodyMedium,
+                                        color = if (currentModel != null) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant
+                                    )
+                                    Icon(Icons.Rounded.Memory, null, modifier = Modifier.size(16.dp), tint = NexaraColors.Primary)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -298,22 +346,22 @@ fun AdvancedRetrievalScreen(
                     SettingsToggle(
                         title = stringResource(R.string.retrieval_show_progress),
                         description = stringResource(R.string.retrieval_show_progress_desc),
-                        checked = config.enableQueryRewrite,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableQueryRewrite = enabled) } },
+                        checked = config.showRetrievalProgress,
+                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(showRetrievalProgress = enabled) } },
                         icon = Icons.Rounded.Visibility
                     )
                     SettingsToggle(
                         title = stringResource(R.string.retrieval_show_details),
                         description = stringResource(R.string.retrieval_show_details_desc),
-                        checked = config.enableDocs,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableDocs = enabled) } },
+                        checked = config.showRetrievalDetails,
+                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(showRetrievalDetails = enabled) } },
                         icon = Icons.Rounded.BarChart
                     )
                     SettingsToggle(
                         title = stringResource(R.string.retrieval_track_metrics),
                         description = stringResource(R.string.retrieval_track_metrics_desc),
                         checked = config.trackRetrievalMetrics,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(trackRetrievalMetrics = enabled) } },
+                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(trackRetrievalMetrics = enabled) } },
                         icon = Icons.Rounded.Tune
                     )
                 }
@@ -321,6 +369,18 @@ fun AdvancedRetrievalScreen(
 
             Spacer(modifier = Modifier.height(80.dp))
         }
+
+        ModelPicker(
+            show = showModelPicker,
+            onDismiss = { showModelPicker = false },
+            onSelect = { id, _ ->
+                viewModel.updateConfig { it.copy(kgExtractionModel = id) }
+                showModelPicker = false
+            },
+            currentModelId = config.kgExtractionModel ?: "",
+            models = availableModels,
+            filterTag = "chat"
+        )
     }
 }
 

@@ -27,6 +27,7 @@ import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -82,6 +83,13 @@ fun ThinkingBlock(
     isGenerating: Boolean
 ) {
     var isExpanded by remember { mutableStateOf(false) }
+
+    // Auto-expand when reasoning starts appearing during generation
+    LaunchedEffect(reasoning.isNotBlank(), isGenerating) {
+        if (reasoning.isNotBlank() && isGenerating) {
+            isExpanded = true
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -156,15 +164,13 @@ fun ThinkingBlock(
                     .fillMaxWidth(),
                 border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.2f))
             ) {
-                Text(
-                    text = reasoning,
-                    style = NexaraTypography.bodySmall.copy(
-                        lineHeight = 20.sp,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                    ),
-                    color = NexaraColors.OnSurfaceVariant,
-                    modifier = Modifier.padding(12.dp)
-                )
+                Column(modifier = Modifier.padding(12.dp)) {
+                    MarkdownText(
+                        markdown = reasoning,
+                        modifier = Modifier.fillMaxWidth(),
+                        isStreaming = isGenerating
+                    )
+                }
             }
         }
     }

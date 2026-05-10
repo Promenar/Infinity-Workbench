@@ -329,11 +329,12 @@ class LlmProtocolSerializationTest {
             assertThat(ProtocolId.OPENAI.name).isEqualTo("OPENAI")
             assertThat(ProtocolId.ANTHROPIC.name).isEqualTo("ANTHROPIC")
             assertThat(ProtocolId.VERTEX_AI.name).isEqualTo("VERTEX_AI")
+            assertThat(ProtocolId.LOCAL.name).isEqualTo("LOCAL")
         }
 
         @Test
-        fun `values returns all three`() {
-            assertThat(ProtocolId.entries).hasSize(3)
+        fun `values returns all four`() {
+            assertThat(ProtocolId.entries).hasSize(4)
         }
     }
 

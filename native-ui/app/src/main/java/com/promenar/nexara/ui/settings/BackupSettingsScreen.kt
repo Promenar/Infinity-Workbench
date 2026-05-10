@@ -58,6 +58,8 @@ import com.promenar.nexara.ui.theme.SpaceGrotesk
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.collectAsState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -286,7 +288,16 @@ fun BackupSettingsScreen(
                                     )
                                 }
                             }
-                            SettingsToggle("", checked = uiState.webdavEnabled, onCheckedChange = { viewModel.setWebdavEnabled(it) })
+                            androidx.compose.material3.Switch(
+                                checked = uiState.webdavEnabled,
+                                onCheckedChange = { viewModel.setWebdavEnabled(it) },
+                                colors = androidx.compose.material3.SwitchDefaults.colors(
+                                    checkedTrackColor = NexaraColors.Primary,
+                                    checkedThumbColor = NexaraColors.OnPrimary,
+                                    uncheckedTrackColor = NexaraColors.SurfaceHighest,
+                                    uncheckedThumbColor = NexaraColors.Secondary
+                                )
+                            )
                         }
 
                         AnimatedVisibility(visible = uiState.webdavEnabled) {

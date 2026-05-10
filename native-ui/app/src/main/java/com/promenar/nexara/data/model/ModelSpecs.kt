@@ -238,65 +238,269 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
 
     // ==================== Zhipu AI (GLM) ====================
     ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""glm-?4\.7""", RegexOption.IGNORE_CASE)),
+        pattern = ModelPattern.RegexPattern(Regex("""glm-?4[.-]?9b""", RegexOption.IGNORE_CASE)),
         contextLength = 128000,
-        type = ModelType.REASONING,
-        capabilities = ModelCapabilities(reasoning = true),
+        type = ModelType.CHAT,
         icon = "zhipu",
-        note = "GLM-4.7 (Reasoning)"
+        note = "GLM-4-9B"
     ),
     ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""glm-?4\.6.*v""", RegexOption.IGNORE_CASE)),
+        pattern = ModelPattern.RegexPattern(Regex("""glm-?4[.-]?v""", RegexOption.IGNORE_CASE)),
         contextLength = 128000,
         type = ModelType.CHAT,
         capabilities = ModelCapabilities(vision = true),
         icon = "zhipu",
-        note = "GLM-4.6V (Vision)"
+        note = "GLM-4V"
     ),
     ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""glm-?4\.5""", RegexOption.IGNORE_CASE)),
+        pattern = ModelPattern.RegexPattern(Regex("""glm-?4""", RegexOption.IGNORE_CASE)),
         contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "zhipu",
+        note = "GLM-4 Series"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("glm-edge"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "zhipu",
+        note = "GLM-Edge"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("cogview"),
+        contextLength = 1,
+        type = ModelType.IMAGE,
+        capabilities = ModelCapabilities(image = true),
+        icon = "zhipu",
+        note = "CogView (Image Generation)"
+    ),
+
+    // ==================== Alibaba (Qwen) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen-?2\.5-?math""", RegexOption.IGNORE_CASE)),
+        contextLength = 32768,
         type = ModelType.REASONING,
         capabilities = ModelCapabilities(reasoning = true),
-        icon = "zhipu",
-        note = "GLM-4.5 (Reasoning)"
+        icon = "qwen",
+        note = "Qwen 2.5 Math"
     ),
     ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""glm.*v(?:ision)?$""", RegexOption.IGNORE_CASE)),
+        pattern = ModelPattern.RegexPattern(Regex("""qwen-?2\.5-?coder""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "qwen",
+        note = "Qwen 2.5 Coder"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen-?2\.5""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "qwen",
+        note = "Qwen 2.5"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen-?vl""", RegexOption.IGNORE_CASE)),
+        contextLength = 32768,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true),
+        icon = "qwen",
+        note = "Qwen-VL"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("qwen"),
+        contextLength = 32768,
+        type = ModelType.CHAT,
+        icon = "qwen"
+    ),
+
+    // ==================== Meta (Llama) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""llama-?3\.2-?vision""", RegexOption.IGNORE_CASE)),
         contextLength = 128000,
         type = ModelType.CHAT,
         capabilities = ModelCapabilities(vision = true),
-        icon = "zhipu",
-        note = "GLM Vision Series"
+        icon = "meta",
+        note = "Llama 3.2 Vision"
     ),
     ModelSpec(
-        pattern = ModelPattern.StringPattern("glm-4-plus"),
+        pattern = ModelPattern.RegexPattern(Regex("""llama-?3\.2""", RegexOption.IGNORE_CASE)),
         contextLength = 128000,
         type = ModelType.CHAT,
-        icon = "zhipu",
-        note = "GLM-4 Plus"
+        icon = "meta",
+        note = "Llama 3.2"
     ),
     ModelSpec(
-        pattern = ModelPattern.StringPattern("glm-4"),
+        pattern = ModelPattern.RegexPattern(Regex("""llama-?3\.1""", RegexOption.IGNORE_CASE)),
         contextLength = 128000,
         type = ModelType.CHAT,
-        icon = "zhipu",
-        note = "GLM-4"
+        icon = "meta",
+        note = "Llama 3.1"
     ),
     ModelSpec(
-        pattern = ModelPattern.StringPattern("glm-3"),
+        pattern = ModelPattern.StringPattern("llama-3"),
+        contextLength = 8192,
+        type = ModelType.CHAT,
+        icon = "meta"
+    ),
+
+    // ==================== Mistral AI ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("pixtral"),
         contextLength = 128000,
-        icon = "zhipu"
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true),
+        icon = "mistral",
+        note = "Pixtral (Vision)"
     ),
     ModelSpec(
-        pattern = ModelPattern.StringPattern("zhipu"),
+        pattern = ModelPattern.StringPattern("mistral-large"),
         contextLength = 128000,
-        icon = "zhipu"
+        type = ModelType.CHAT,
+        icon = "mistral"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("mistral"),
+        contextLength = 32768,
+        type = ModelType.CHAT,
+        icon = "mistral"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("mixtral"),
+        contextLength = 32768,
+        type = ModelType.CHAT,
+        icon = "mistral"
+    ),
+
+    // ==================== 01.AI (Yi) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("yi-lightning"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "yi"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("yi-vision"),
+        contextLength = 16384,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true),
+        icon = "yi"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("yi"),
+        contextLength = 32768,
+        type = ModelType.CHAT,
+        icon = "yi"
     ),
 
     // ==================== Moonshot (Kimi) ====================
     ModelSpec(
-        pattern = ModelPattern.StringPattern("thinking"),
+        pattern = ModelPattern.StringPattern("kimi"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "kimi"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("moonshot"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "kimi"
+    ),
+
+    // ==================== ByteDance (Doubao) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("doubao"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "bytedance"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("skylark"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "bytedance"
+    ),
+
+    // ==================== MiniMax ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("abab6.5"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "minimax"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("abab7"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "minimax"
+    ),
+
+    // ==================== Baichuan ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("baichuan"),
+        contextLength = 32768,
+        type = ModelType.CHAT,
+        icon = "baichuan"
+    ),
+
+    // ==================== StepFun (阶跃星辰) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("step-"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "stepfun"
+    ),
+
+    // ==================== SenseTime (商汤日日新) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("sensechat"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "sensetime"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("sensenova"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "sensetime"
+    ),
+
+    // ==================== Grok ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("grok-2"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "xai"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("grok"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "xai"
+    ),
+
+    // ==================== Local / Other ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""llama""", RegexOption.IGNORE_CASE)),
+        contextLength = 4096,
+        type = ModelType.CHAT
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""mistral""", RegexOption.IGNORE_CASE)),
+        contextLength = 8192,
+        type = ModelType.CHAT
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gemma""", RegexOption.IGNORE_CASE)),
+        contextLength = 8192,
+        type = ModelType.CHAT
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""command-r""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("kimi-k1.5"),
         contextLength = 128000,
         type = ModelType.REASONING,
         capabilities = ModelCapabilities(reasoning = true),
@@ -651,6 +855,30 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         capabilities = ModelCapabilities(image = true),
         icon = "image",
         note = "Flux Series"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""stable-diffusion""", RegexOption.IGNORE_CASE)),
+        contextLength = 1,
+        type = ModelType.IMAGE,
+        capabilities = ModelCapabilities(image = true),
+        icon = "image",
+        note = "Stable Diffusion"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""sdxl""", RegexOption.IGNORE_CASE)),
+        contextLength = 1,
+        type = ModelType.IMAGE,
+        capabilities = ModelCapabilities(image = true),
+        icon = "image",
+        note = "SDXL"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""kolors""", RegexOption.IGNORE_CASE)),
+        contextLength = 1,
+        type = ModelType.IMAGE,
+        capabilities = ModelCapabilities(image = true),
+        icon = "image",
+        note = "Kolors"
     )
 )
 

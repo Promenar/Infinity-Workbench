@@ -127,7 +127,8 @@ private val capabilityColorMap: Map<ModelCapability, Pair<Color, Color>> = mapOf
     ModelCapability.WEB to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
     ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22)),
     ModelCapability.RERANK to (Color(0xFFFB923C) to Color(0xFF431407)),
-    ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344))
+    ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344)),
+    ModelCapability.IMAGE to (Color(0xFFFCD34D) to Color(0xFF451A03))
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -238,7 +239,9 @@ fun SessionSettingsSheet(
                         text = {
                             Text(
                                 title,
-                                style = NexaraTypography.labelMedium,
+                                style = NexaraTypography.labelMedium.copy(
+                                    fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal
+                                ),
                                 color = if (pagerState.currentPage == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
                             )
                         },
@@ -290,13 +293,37 @@ private fun ModelPanel(
     
     // Convert ModelInfo to ModelItem for UI
     val modelItems = allModels.filter { it.enabled }.map { info ->
+        val mappedCaps = mutableSetOf<ModelCapability>()
+        
+        // Map from primary type
+        when (info.type) {
+            "chat" -> mappedCaps.add(ModelCapability.CHAT)
+            "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
+            "image" -> mappedCaps.add(ModelCapability.IMAGE)
+            "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
+            "rerank" -> mappedCaps.add(ModelCapability.RERANK)
+        }
+        
+        // Map from tags
+        info.capabilities.forEach { capStr ->
+            when (capStr.lowercase()) {
+                "vision" -> mappedCaps.add(ModelCapability.VISION)
+                "internet", "web" -> mappedCaps.add(ModelCapability.WEB)
+                "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
+                "image" -> mappedCaps.add(ModelCapability.IMAGE)
+                "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
+                "rerank" -> mappedCaps.add(ModelCapability.RERANK)
+                "chat" -> mappedCaps.add(ModelCapability.CHAT)
+            }
+        }
+        
+        if (mappedCaps.isEmpty()) mappedCaps.add(ModelCapability.CHAT)
+
         ModelItem(
             id = info.id,
             name = info.name,
-            providerName = "Cloud Provider", // Default for now
-            capabilities = info.capabilities.mapNotNull { capStr ->
-                try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
-            },
+            providerName = info.providerName,
+            capabilities = mappedCaps.toList(),
             contextLength = info.contextLength
         )
     }
@@ -323,7 +350,7 @@ private fun ModelPanel(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(filtered, key = { it.id }) { model ->
+            items(filtered) { model ->
                 val isSelected = model.id == selectedModelId
                 NexaraGlassCard(
                     modifier = Modifier
@@ -375,7 +402,8 @@ private fun ModelPanel(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                     model.capabilities.forEach { cap ->
-                                        val (fg, bg) = capabilityColorMap[cap]!!
+                                        val colors = capabilityColorMap[cap] ?: (Color.Gray to Color.DarkGray)
+                                        val (fg, bg) = colors
                                         Box(
                                             modifier = Modifier
                                                 .background(bg, RoundedCornerShape(50))

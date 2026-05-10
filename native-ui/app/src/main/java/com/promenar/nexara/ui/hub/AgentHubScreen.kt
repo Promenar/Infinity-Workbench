@@ -81,26 +81,7 @@ fun AgentHubScreen(
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets.systemBars,
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onNavigateToSuperChat,
-                containerColor = NexaraColors.Primary,
-                contentColor = NexaraColors.OnPrimary,
-                shape = CircleShape,
-                modifier = Modifier.size(56.dp),
-                elevation = FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 8.dp,
-                    pressedElevation = 12.dp
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.AutoAwesome,
-                    contentDescription = stringResource(R.string.hub_fab_super),
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        }
+        contentWindowInsets = WindowInsets.systemBars
     ) { paddingValues ->
         if (showAddDialog) {
             AddAgentDialog(

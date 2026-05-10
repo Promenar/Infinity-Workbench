@@ -1,9 +1,15 @@
 package com.promenar.nexara
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.room.Room
+import com.promenar.nexara.data.local.inference.LocalInferenceEngine
+import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.GraphStore
@@ -42,8 +48,11 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
@@ -53,6 +62,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
             .addMigrations(NexaraDatabase.MIGRATION_4_5)
             .build()
+    }
+
+    val localInferenceEngine: LocalInferenceEngine by lazy {
+        LocalInferenceEngine(this)
     }
 
     val sessionRepository: ISessionRepository by lazy {
@@ -127,6 +140,26 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         _llmProvider = MutableStateFlow(buildProviderFromPrefs())
+
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) {
+                val mainPath = localInferenceEngine.mainSlot.value.modelPath
+                if (mainPath != null) {
+                    prefs.edit().putString("last_local_model", mainPath).apply()
+                }
+            }
+        })
+
+        val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
+        if (settingsPrefs.getBoolean("local_models_enabled", false) &&
+            settingsPrefs.getBoolean("local_auto_load", false)) {
+            val lastModel = prefs.getString("last_local_model", null)
+            if (lastModel != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    localInferenceEngine.loadModel(SlotType.MAIN, lastModel)
+                }
+            }
+        }
     }
 
     val embeddingClient: EmbeddingClient by lazy {
@@ -234,12 +267,19 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         if (name != null) {
             prefs.edit().putString("provider_name", name).apply()
         }
-        _llmProvider.value = LlmProvider.builder()
-            .protocolId(protocolId)
-            .baseUrl(baseUrl)
-            .apiKey(apiKey)
-            .model(model)
-            .build()
+        _llmProvider.value = when (protocolId) {
+            ProtocolId.LOCAL -> LlmProvider.local(localInferenceEngine, model)
+            else -> LlmProvider.builder()
+                .protocolId(protocolId)
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .model(model)
+                .build()
+        }
+    }
+
+    fun switchToLocalProvider(modelName: String = "") {
+        _llmProvider.value = LlmProvider.local(localInferenceEngine, modelName)
     }
 
     fun getSavedProviderConfig(): ProviderConfig? {
@@ -256,12 +296,15 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     private fun buildProviderFromPrefs(): LlmProvider {
         val config = getSavedProviderConfig()
         return if (config != null) {
-            LlmProvider.builder()
-                .protocolId(config.protocolId)
-                .baseUrl(config.baseUrl)
-                .apiKey(config.apiKey)
-                .model(config.model)
-                .build()
+            when (config.protocolId) {
+                ProtocolId.LOCAL -> LlmProvider.local(localInferenceEngine, config.model)
+                else -> LlmProvider.builder()
+                    .protocolId(config.protocolId)
+                    .baseUrl(config.baseUrl)
+                    .apiKey(config.apiKey)
+                    .model(config.model)
+                    .build()
+            }
         } else {
             LlmProvider.builder()
                 .protocolId(ProtocolId.OPENAI)
@@ -269,6 +312,20 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 .apiKey("")
                 .model("")
                 .build()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        when (level) {
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                CoroutineScope(Dispatchers.IO).launch {
+                    localInferenceEngine.unloadModel(SlotType.RERANK)
+                    localInferenceEngine.unloadModel(SlotType.EMBEDDING)
+                }
+            }
         }
     }
 

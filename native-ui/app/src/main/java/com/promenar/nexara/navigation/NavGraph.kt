@@ -353,6 +353,11 @@ fun NexaraNavGraph(
                         popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
                     }
                 },
+                onNavigateToLocalModels = {
+                    navController.navigate(NavDestinations.LOCAL_MODELS) {
+                        popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
+                    }
+                },
                 onSave = { protocolId, baseUrl, apiKey, model, name ->
                     app.updateProvider(protocolId, baseUrl, apiKey, model, name)
                 }

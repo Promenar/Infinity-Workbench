@@ -36,9 +36,11 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
@@ -64,6 +66,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.NexaraGlassCard
@@ -177,45 +180,47 @@ fun SkillsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Modern TabRow with rounded background
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .background(NexaraColors.SurfaceLow.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .padding(4.dp)
-            ) {
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Color.Transparent,
-                    contentColor = NexaraColors.Primary,
-                    divider = {},
-                    indicator = { tabPositions ->
-                        if (selectedTab < tabPositions.size) {
-                            Box(
-                                Modifier
-                                    .tabIndicatorOffset(tabPositions[selectedTab])
-                                    .fillMaxSize()
-                                    .background(NexaraColors.SurfaceHigh.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                                    .border(0.5.dp, NexaraColors.GlassBorder.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                            )
-                        }
-                    }
-                ) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)),
-                            text = {
-                                Text(
-                                    title,
-                                    style = NexaraTypography.labelMedium,
-                                    color = if (selectedTab == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
-                                )
-                            }
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Color.Transparent,
+                contentColor = NexaraColors.OnSurface,
+                edgePadding = 24.dp,
+                divider = {
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = NexaraColors.GlassBorder
+                    )
+                },
+                indicator = { tabPositions ->
+                    if (selectedTab < tabPositions.size) {
+                        val pos = tabPositions[selectedTab]
+                        Box(
+                            Modifier
+                                .tabIndicatorOffset(pos)
+                                .padding(horizontal = 32.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(NexaraColors.Primary)
                         )
                     }
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                title,
+                                style = NexaraTypography.labelMedium.copy(
+                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
+                                ),
+                                color = if (selectedTab == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                            )
+                        },
+                        selectedContentColor = NexaraColors.Primary,
+                        unselectedContentColor = NexaraColors.OnSurfaceVariant
+                    )
                 }
             }
 

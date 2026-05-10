@@ -29,6 +29,7 @@ data class ModelInfo(
     val type: String = "chat",
     val contextLength: Int = 8192,
     val capabilities: List<String> = emptyList(),
+    val providerName: String = "Cloud",
     val testStatus: String? = null
 )
 
@@ -154,6 +155,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private val _searchSettings = MutableStateFlow(SearchSettings("duckduckgo", "", "https://searx.be", "basic", 5))
     val searchSettings = _searchSettings.asStateFlow()
 
+
     private val searchPrefs: SharedPreferences =
         application.getSharedPreferences("nexara_search", 0)
 
@@ -164,6 +166,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
         _loopLimit.value = limit
         prefs.edit().putInt("loop_limit", limit).apply()
     }
+
 
     init {
         loadAll()
@@ -262,6 +265,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
                 ProtocolId.OPENAI -> "OpenAI"
                 ProtocolId.ANTHROPIC -> "Anthropic"
                 ProtocolId.VERTEX_AI -> "Vertex AI"
+                ProtocolId.LOCAL -> "本地模型"
             }
             items.add(
                 ProviderListItem(
@@ -328,11 +332,12 @@ class SettingsViewModel(application: Application) : ViewModel() {
             ModelInfo(
                 name = prefs.getString("${prefix}_name", id) ?: id,
                 id = id,
-                description = "", // Not strictly needed for UI list
+                description = "", 
                 enabled = enabledSet?.contains(id) ?: false,
                 type = prefs.getString("${prefix}_type", "chat") ?: "chat",
                 contextLength = prefs.getInt("${prefix}_context", 8192),
-                capabilities = caps.toList()
+                capabilities = caps.toList(),
+                providerName = prefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
             )
         }.sortedByDescending { it.enabled }
         
@@ -492,6 +497,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
             editor.putString("${prefix}_type", model.type)
             editor.putInt("${prefix}_context", model.contextLength)
             editor.putStringSet("${prefix}_caps", model.capabilities.toSet())
+            editor.putString("${prefix}_provider", model.providerName)
         }
         editor.apply()
     }
@@ -507,21 +513,19 @@ class SettingsViewModel(application: Application) : ViewModel() {
                     
                     val newModels = fetchedIds.filter { it !in existingIds }.map { id ->
                         val spec = com.promenar.nexara.data.model.findModelSpec(id)
+                        val type = spec?.type?.name?.lowercase() ?: "chat"
                         ModelInfo(
-                            name = spec?.note ?: id,
+                            name = id,
                             id = id,
                             description = spec?.note ?: "Fetched model",
                             enabled = false,
-                            type = spec?.type?.name?.lowercase() ?: "chat",
+                            type = type,
                             contextLength = spec?.contextLength ?: 8192,
+                            providerName = _providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
                             capabilities = buildList {
                                 spec?.capabilities?.let { caps ->
-                                    if (caps.vision) add("vision")
-                                    if (caps.internet) add("internet")
-                                    if (caps.reasoning) add("reasoning")
-                                    if (caps.image) add("image")
-                                    if (caps.embedding) add("embedding")
-                                    if (caps.rerank) add("rerank")
+                                    if (caps.vision && type != "vision") add("vision")
+                                    if (caps.internet && type != "internet") add("internet")
                                 }
                             }
                         )
@@ -557,21 +561,19 @@ class SettingsViewModel(application: Application) : ViewModel() {
 
     fun addCustomModel(id: String, name: String) {
         val spec = com.promenar.nexara.data.model.findModelSpec(id)
+        val type = spec?.type?.name?.lowercase() ?: "chat"
         val newModel = ModelInfo(
-            name = name.ifEmpty { spec?.note ?: id },
+            name = name.ifEmpty { id },
             id = id,
             description = spec?.note ?: "Custom model",
             enabled = true,
-            type = spec?.type?.name?.lowercase() ?: "chat",
+            type = type,
             contextLength = spec?.contextLength ?: 8192,
+            providerName = _providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
             capabilities = buildList {
                 spec?.capabilities?.let { caps ->
-                    if (caps.vision) add("vision")
-                    if (caps.internet) add("internet")
-                    if (caps.reasoning) add("reasoning")
-                    if (caps.image) add("image")
-                    if (caps.embedding) add("embedding")
-                    if (caps.rerank) add("rerank")
+                    if (caps.vision && type != "vision") add("vision")
+                    if (caps.internet && type != "internet") add("internet")
                 }
             }
         )

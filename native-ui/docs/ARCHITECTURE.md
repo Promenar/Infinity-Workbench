@@ -82,6 +82,7 @@ graph TD
 | `data/remote/search` | Web 搜索提供商 (DuckDuckGo, SearXNG, Tavily) |
 | `ui/chat/manager/skills` | 智能体技能实现 (WebSearch, Calculator, Time) |
 | `ui/settings` | 设置中心，包括模型配置与搜索设置 (SearchConfigViewModel) |
+| `ui/common` | 通用 UI 组件与业务枚举，如 `ModelPicker` 和 `ModelCapability` 映射 |
 | `ui/theme` | 全局设计系统 (Colors, Typography, Theme) |
 | `data/local/inference` | (规划中) 本地推理引擎 (LocalInferenceEngine, LlamaContext, ModelStorageManager) |
 | `cpp` | (规划中) llama.cpp JNI 桥接层 |

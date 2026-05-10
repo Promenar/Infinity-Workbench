@@ -219,23 +219,26 @@ fun UserSettingsHomeScreen(
             
             // 2. Map from additional capabilities list
             model.capabilities.forEach { cap ->
-                when (cap) {
+                when (cap.lowercase()) {
                     "vision" -> mappedCaps.add(ModelCapability.VISION)
+                    "internet", "web" -> mappedCaps.add(ModelCapability.WEB)
                     "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
                     "image" -> mappedCaps.add(ModelCapability.IMAGE)
                     "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
                     "rerank" -> mappedCaps.add(ModelCapability.RERANK)
-                    "internet" -> mappedCaps.add(ModelCapability.WEB)
+                    "chat" -> mappedCaps.add(ModelCapability.CHAT)
                 }
             }
             
-            // 3. Fallback to CHAT if empty
-            if (mappedCaps.isEmpty()) mappedCaps.add(ModelCapability.CHAT)
+            // 3. Fallback to CHAT ONLY IF it's not any of the special types
+            if (mappedCaps.isEmpty()) {
+                mappedCaps.add(ModelCapability.CHAT)
+            }
 
             ModelItem(
                 id = model.id,
                 name = model.name,
-                providerName = "Provider",
+                providerName = model.providerName,
                 capabilities = mappedCaps.toList(),
                 contextLength = model.contextLength
             )
@@ -479,6 +482,7 @@ private fun AppSettingsContent(
                 onClick = { onNavigateToSecondary("skills_config") }
             )
         }
+
         item {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Edit,

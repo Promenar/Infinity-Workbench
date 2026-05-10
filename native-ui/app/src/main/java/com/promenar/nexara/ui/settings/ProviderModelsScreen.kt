@@ -60,6 +60,7 @@ import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.ui.theme.SpaceGrotesk
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
@@ -74,11 +75,7 @@ private data class CapabilityTag(
 
 private val CapabilityTags = listOf(
     CapabilityTag("vision", "Vision", "visibility", NexaraColors.StatusError.copy(alpha = 0.8f)),
-    CapabilityTag("internet", "Internet", "public", NexaraColors.StatusInfo),
-    CapabilityTag("reasoning", "Reasoning", "psychology", NexaraColors.PrimaryContainer),
-    CapabilityTag("image", "Image", "image", NexaraColors.StatusSuccess),
-    CapabilityTag("embedding", "Embed", "layers", NexaraColors.Primary),
-    CapabilityTag("rerank", "Rerank", "sort", NexaraColors.StatusWarning)
+    CapabilityTag("internet", "Internet", "public", NexaraColors.StatusInfo)
 )
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -191,11 +188,6 @@ fun ProviderModelsScreen(
                     onDelete = { viewModel.deleteModel(model.id) }
                 )
             }
-
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                AddCustomModelButton(onClick = { showAddDialog = true })
-            }
         }
     }
 
@@ -300,27 +292,27 @@ private fun ActionChip(
 
     Box(
         modifier = modifier
-            .height(30.dp)
+            .height(36.dp)
             .clip(NexaraShapes.medium)
             .background(bgColor)
             .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
             .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(12.dp).then(iconModifier)
+                modifier = Modifier.size(16.dp).then(iconModifier)
             )
             Text(
                 text = label,
-                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
                 color = contentColor
             )
         }
@@ -383,22 +375,31 @@ private fun EnhancedModelCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(NexaraColors.SurfaceLow.copy(alpha = 0.5f))
+                            .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
                         BasicTextField(
                             value = editName,
                             onValueChange = { editName = it },
                             singleLine = true,
                             textStyle = NexaraTypography.headlineSmall.copy(
                                 color = NexaraColors.OnSurface,
-                                fontSize = 16.sp
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
                             ),
-                            cursorBrush = SolidColor(NexaraColors.Primary)
+                            cursorBrush = SolidColor(NexaraColors.Primary),
+                            modifier = Modifier.fillMaxWidth()
                         )
                         if (editName.isEmpty()) {
                             Text(
                                 text = model.name,
-                                style = NexaraTypography.headlineSmall.copy(fontSize = 16.sp),
-                                color = NexaraColors.OnSurfaceVariant
+                                style = NexaraTypography.headlineSmall.copy(fontSize = 15.sp),
+                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
                             )
                         }
                     }
@@ -528,7 +529,9 @@ private fun EnhancedModelCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    CapabilityTags.forEach { cap ->
+                    CapabilityTags.filter { 
+                        it.key !in listOf("reasoning", "image", "embedding", "rerank") 
+                    }.forEach { cap ->
                         val isActive = activeCaps.contains(cap.key)
                         Box(
                             modifier = Modifier

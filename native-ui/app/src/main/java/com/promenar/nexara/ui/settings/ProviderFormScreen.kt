@@ -24,6 +24,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -37,7 +43,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -57,14 +65,16 @@ data class ProviderPreset(
     val name: String,
     val iconUrl: String,
     val defaultBaseUrl: String,
-    val protocolId: ProtocolId
+    val protocolId: ProtocolId,
+    val fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector
 )
 
 val PROVIDER_PRESETS = listOf(
-    ProviderPreset("OpenAI", "https://logo.clearbit.com/openai.com", "https://api.openai.com/v1", ProtocolId.OPENAI),
-    ProviderPreset("Anthropic", "https://logo.clearbit.com/anthropic.com", "https://api.anthropic.com", ProtocolId.ANTHROPIC),
-    ProviderPreset("VertexAI", "https://logo.clearbit.com/google.com", "https://generativelanguage.googleapis.com", ProtocolId.VERTEX_AI),
-    ProviderPreset("Custom", "", "", ProtocolId.OPENAI)
+    ProviderPreset("OpenAI", "https://api.iconify.design/simple-icons:openai.svg?color=%23ffffff", "https://api.openai.com/v1", ProtocolId.OPENAI, Icons.Rounded.AutoAwesome),
+    ProviderPreset("Anthropic", "https://api.iconify.design/simple-icons:anthropic.svg?color=%23ffffff", "https://api.anthropic.com", ProtocolId.ANTHROPIC, Icons.Rounded.Psychology),
+    ProviderPreset("VertexAI", "https://api.iconify.design/simple-icons:googlecloud.svg?color=%23ffffff", "https://generativelanguage.googleapis.com", ProtocolId.VERTEX_AI, Icons.Rounded.Hub),
+    ProviderPreset("Local", "", "", ProtocolId.LOCAL, Icons.Rounded.Memory),
+    ProviderPreset("Custom", "", "", ProtocolId.OPENAI, Icons.Rounded.Extension)
 )
 
 @Composable
@@ -72,6 +82,7 @@ fun ProviderFormScreen(
     providerId: String? = null,
     onNavigateBack: () -> Unit,
     onNavigateToModels: () -> Unit = {},
+    onNavigateToLocalModels: () -> Unit = {},
     onSave: (protocolId: ProtocolId, baseUrl: String, apiKey: String, model: String, name: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
     var name by remember { mutableStateOf("") }
@@ -81,6 +92,7 @@ fun ProviderFormScreen(
     var apiKeyVisible by remember { mutableStateOf(false) }
 
     val isEditing = providerId != null
+    val isLocal = selectedPreset.protocolId == ProtocolId.LOCAL
 
     NexaraPageLayout(
         title = if (isEditing) stringResource(R.string.provider_form_title_edit) else stringResource(R.string.provider_form_title_add),
@@ -109,7 +121,7 @@ fun ProviderFormScreen(
                     isSelected = selectedPreset.name == preset.name,
                     onClick = {
                         selectedPreset = preset
-                        if (preset.name != "Custom") {
+                        if (preset.name != "Custom" && preset.name != "Local") {
                             name = preset.name
                             baseUrl = preset.defaultBaseUrl
                         }
@@ -120,6 +132,44 @@ fun ProviderFormScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        if (isLocal) {
+            NexaraGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.large as RoundedCornerShape
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.local_models_desc),
+                        style = NexaraTypography.bodyMedium,
+                        color = NexaraColors.OnSurfaceVariant
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(NexaraShapes.medium)
+                            .background(NexaraColors.InversePrimary)
+                            .clickable {
+                                onSave(ProtocolId.LOCAL, "", "", "", "本地模型")
+                                onNavigateToLocalModels()
+                            }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.local_models_title),
+                            style = NexaraTypography.labelMedium,
+                            color = NexaraColors.OnPrimary
+                        )
+                    }
+                }
+            }
+        } else {
         NexaraGlassCard(
             modifier = Modifier.fillMaxWidth(),
             shape = NexaraShapes.large as RoundedCornerShape
@@ -304,6 +354,8 @@ fun ProviderFormScreen(
             }
         }
 
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
     }
 }
@@ -352,13 +404,31 @@ private fun PresetItem(
                     coil3.compose.AsyncImage(
                         model = preset.iconUrl,
                         contentDescription = preset.name,
-                        modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp))
+                        modifier = Modifier.size(22.dp).clip(RoundedCornerShape(4.dp)),
+                        error = androidx.compose.ui.graphics.painter.ColorPainter(Color.Transparent),
+                        fallback = androidx.compose.ui.graphics.painter.ColorPainter(Color.Transparent)
+                    )
+                    // If AsyncImage fails or is loading, the fallback icon below will show through or be shown instead
+                    // However, AsyncImage doesn't easily tell us it failed without state.
+                    // We'll use a simpler approach: always show fallback icon if it's Local/Custom, 
+                    // and use Icon for fallback if URL is empty.
+                }
+                
+                if (preset.iconUrl.isEmpty()) {
+                    Icon(
+                        imageVector = preset.fallbackIcon,
+                        contentDescription = null,
+                        tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 } else {
-                    Text(
-                        text = preset.name.take(1),
-                        style = NexaraTypography.labelLarge,
-                        color = NexaraColors.OnSurfaceVariant
+                    // Overlay icon as fallback if URL fails (crude but effective if we don't want complex state)
+                    // Better: use a dedicated fallback Icon component
+                    Icon(
+                        imageVector = preset.fallbackIcon,
+                        contentDescription = null,
+                        tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(20.dp).alpha(0.5f)
                     )
                 }
             }

@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.model.*
 import com.promenar.nexara.data.remote.protocol.*
 import com.promenar.nexara.data.remote.provider.LlmProvider
@@ -18,8 +19,14 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import androidx.test.core.app.ApplicationProvider
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(application = NexaraApplication::class)
 class ChatViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
     private val testScope = TestScope(testDispatcher)
@@ -86,6 +93,7 @@ class ChatViewModelTest {
         deletedMessages.clear()
         fakeStreamChunks = emptyList()
         viewModel = ChatViewModel(
+            application = ApplicationProvider.getApplicationContext(),
             sessionRepository = stubSessionRepo,
             messageRepository = stubMessageRepo,
             llmProvider = fakeLlmProvider

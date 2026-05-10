@@ -574,6 +574,8 @@
     <string name="rag_home_graph">图谱</string>
     <string name="rag_home_section_collections">集合</string>
     <string name="rag_home_new">新建</string>
+    <string name="rag_home_new_folder_title">新建文件夹</string>
+    <string name="rag_home_folder_name">文件夹名称</string>
     <string name="rag_home_graph_btn">图谱</string>
     <string name="rag_home_upload_area">点击上传文档</string>
     <string name="rag_home_upload_hint">支持 PDF, Markdown, TXT, 最大 50MB</string>

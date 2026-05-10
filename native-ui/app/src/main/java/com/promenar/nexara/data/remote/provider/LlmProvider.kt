@@ -1,7 +1,9 @@
 package com.promenar.nexara.data.remote.provider
 
+import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.remote.protocol.AnthropicProtocol
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
+import com.promenar.nexara.data.remote.protocol.LocalProtocol
 import com.promenar.nexara.data.remote.protocol.OpenAIProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
@@ -70,6 +72,13 @@ class LlmProvider(internal val protocol: LlmProtocol) {
                 location = location,
                 model = model
             )
+            ProtocolId.LOCAL -> throw IllegalStateException(
+                "Use LlmProvider.local(engine) factory for local models"
+            )
+        }
+
+        fun local(engine: LocalInferenceEngine, modelName: String = ""): LlmProvider {
+            return LlmProvider(LocalProtocol(engine, modelName))
         }
     }
 }

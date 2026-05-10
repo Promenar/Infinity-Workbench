@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 class OpenAIProtocol(
@@ -84,9 +85,19 @@ class OpenAIProtocol(
             val sb = StringBuilder()
             while (!channel.isClosedForRead) {
                 sb.clear()
-                if (!channel.readUTF8LineTo(sb, 1_048_576)) break
+                val readSuccess = withTimeoutOrNull(30000) {
+                    channel.readUTF8LineTo(sb, 1_048_576)
+                }
+                
+                if (readSuccess == null) {
+                    // Timeout occurred
+                    send(StreamChunk.Error("Streaming timeout after 30s of inactivity."))
+                    break
+                }
+                
+                if (!readSuccess) break
 
-                val line = sb.toString()
+                val line = sb.toString().trim()
                 if (line.isEmpty()) continue
 
                 if (line.trimStart().startsWith('<')) {
@@ -364,8 +375,9 @@ class OpenAIProtocol(
     }
 
     private fun extractSseData(line: String): String? {
-        if (!line.startsWith("data: ")) return null
-        return line.substring(6).trim()
+        if (line.startsWith("data: ")) return line.substring(6).trim()
+        if (line.startsWith("data:")) return line.substring(5).trim()
+        return null
     }
 
     private fun cleanSpecialTokens(text: String): String {

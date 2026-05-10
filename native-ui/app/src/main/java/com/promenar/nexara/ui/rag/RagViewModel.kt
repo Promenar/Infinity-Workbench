@@ -17,10 +17,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.promenar.nexara.ui.common.ModelItem
+import com.promenar.nexara.ui.common.ModelCapability
 
 data class RagStats(
     val documentCount: Int = 0,
-    val memoryBytes: Long = 0L,
+    val memoryCount: Int = 0,
     val graphEntityCount: Int = 0
 )
 
@@ -65,8 +67,8 @@ class RagViewModel(
     private val _config = MutableStateFlow(RagConfiguration())
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
 
-    private val _availableModels = MutableStateFlow<List<Pair<String, String>>>(emptyList())
-    val availableModels: StateFlow<List<Pair<String, String>>> = _availableModels.asStateFlow()
+    private val _availableModels = MutableStateFlow<List<ModelItem>>(emptyList())
+    val availableModels: StateFlow<List<ModelItem>> = _availableModels.asStateFlow()
 
     private val prefs = app.getSharedPreferences("rag_settings", 0)
     private val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
@@ -172,8 +174,38 @@ class RagViewModel(
         val allIds = settingsPrefs.getStringSet("all_models", null) ?: emptySet()
         val models = allIds.map { id ->
             val name = settingsPrefs.getString("model_info_${id}_name", id) ?: id
-            name to id
-        }.sortedBy { it.first }
+            val type = settingsPrefs.getString("model_info_${id}_type", "chat") ?: "chat"
+            val provider = settingsPrefs.getString("model_info_${id}_provider", "Cloud") ?: "Cloud"
+            val contextLength = settingsPrefs.getInt("model_info_${id}_context", 8192)
+            val caps = settingsPrefs.getStringSet("model_info_${id}_caps", emptySet()) ?: emptySet()
+            
+            ModelItem(
+                id = id,
+                name = name,
+                providerName = provider,
+                contextLength = contextLength,
+                capabilities = buildList {
+                    // Map type to capability
+                    when (type) {
+                        "chat" -> add(ModelCapability.CHAT)
+                        "reasoning" -> add(ModelCapability.REASONING)
+                        "vision" -> add(ModelCapability.VISION)
+                        "internet" -> add(ModelCapability.WEB)
+                        "embedding" -> add(ModelCapability.EMBEDDING)
+                        "rerank" -> add(ModelCapability.RERANK)
+                        "image" -> add(ModelCapability.IMAGE)
+                    }
+                    // Add extra caps
+                    caps.forEach { capStr ->
+                        try { add(ModelCapability.valueOf(capStr.uppercase())) } catch (_: Exception) {}
+                    }
+                    // Ensure consistency
+                    if (contains(ModelCapability.REASONING) && !contains(ModelCapability.CHAT)) {
+                        add(ModelCapability.CHAT)
+                    }
+                }.distinct()
+            )
+        }.sortedBy { it.name }
         _availableModels.value = models
     }
 
@@ -210,7 +242,7 @@ class RagViewModel(
                 _vectorStats.value = vStats
                 _stats.value = RagStats(
                     documentCount = docCount,
-                    memoryBytes = (vStats.total * 4L * 1536),
+                    memoryCount = vStats.byType.memory,
                     graphEntityCount = nodeCount
                 )
             } catch (_: Exception) { }
@@ -227,6 +259,19 @@ class RagViewModel(
                     }
                     _folderStats.value = stats
                 }
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun createFolder(name: String) {
+        viewModelScope.launch {
+            try {
+                val folder = FolderEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = name,
+                    createdAt = System.currentTimeMillis()
+                )
+                folderDao.insert(folder)
             } catch (_: Exception) { }
         }
     }

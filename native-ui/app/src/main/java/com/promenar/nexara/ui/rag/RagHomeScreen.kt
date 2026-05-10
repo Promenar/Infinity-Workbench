@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,6 +79,11 @@ import com.promenar.nexara.ui.rag.components.RagStatus
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.SpaceGrotesk
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 
 private enum class PortalView { DOCUMENTS, MEMORY, GRAPH }
 
@@ -103,6 +109,7 @@ fun RagHomeScreen(
     val selectedIds = remember { mutableStateListOf<String>() }
     var showMoveSheet by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -135,6 +142,15 @@ fun RagHomeScreen(
             )
         }
     ) { paddingValues ->
+        if (showNewFolderDialog) {
+            NewFolderDialog(
+                onDismiss = { showNewFolderDialog = false },
+                onConfirm = { name ->
+                    viewModel.createFolder(name)
+                    showNewFolderDialog = false
+                }
+            )
+        }
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -198,9 +214,9 @@ fun RagHomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         listOf(
-                            PortalView.DOCUMENTS to Triple(Icons.Rounded.Description, stringResource(R.string.rag_home_documents), "${stats.documentCount}"),
-                            PortalView.MEMORY to Triple(Icons.Rounded.Psychology, stringResource(R.string.rag_home_memory), formatBytes(stats.memoryBytes)),
-                            PortalView.GRAPH to Triple(Icons.Rounded.AccountTree, stringResource(R.string.rag_home_graph), "${stats.graphEntityCount}")
+                            PortalView.DOCUMENTS to Triple(Icons.Rounded.Description, stringResource(R.string.rag_home_documents), stringResource(R.string.rag_home_count_docs, stats.documentCount)),
+                            PortalView.MEMORY to Triple(Icons.Rounded.Psychology, stringResource(R.string.rag_home_memory), stringResource(R.string.rag_home_count_items, stats.memoryCount)),
+                            PortalView.GRAPH to Triple(Icons.Rounded.AccountTree, stringResource(R.string.rag_home_graph), stringResource(R.string.rag_home_count_nodes, stats.graphEntityCount))
                         ).forEach { (view, data) ->
                             val (icon, title, subtitle) = data
                             Box(modifier = Modifier.weight(1f)) {
@@ -252,17 +268,28 @@ fun RagHomeScreen(
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
-                                        Column {
+                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                             Text(
                                                 text = title,
-                                                style = NexaraTypography.labelMedium,
-                                                color = NexaraColors.OnSurface
-                                            )
-                                            Text(
-                                                text = subtitle,
-                                                style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
+                                                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
                                                 color = NexaraColors.OnSurfaceVariant
                                             )
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(if (currentView == view) NexaraColors.Primary.copy(alpha = 0.15f) else Color.Transparent)
+                                                    .padding(horizontal = 4.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(
+                                                    text = subtitle,
+                                                    style = NexaraTypography.bodySmall.copy(
+                                                        fontSize = 12.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    ),
+                                                    color = if (currentView == view) NexaraColors.Primary else NexaraColors.OnSurface
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -295,7 +322,7 @@ fun RagHomeScreen(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(NexaraColors.SurfaceHigh)
-                                            .clickable { }
+                                            .clickable { showNewFolderDialog = true }
                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                     ) {
                                         Row(
@@ -687,6 +714,42 @@ private fun DocListItem(
             if (showCheckbox) onSelect(!isSelected)
             else onClick()
         }
+    )
+}
+
+@Composable
+private fun NewFolderDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.rag_home_new_folder_title), style = NexaraTypography.headlineSmall) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.rag_home_folder_name)) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(name) },
+                enabled = name.isNotBlank()
+            ) {
+                Text(stringResource(R.string.shared_btn_add))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_btn_cancel))
+            }
+        },
+        containerColor = NexaraColors.SurfaceDim,
+        titleContentColor = NexaraColors.OnSurface,
+        textContentColor = NexaraColors.OnSurfaceVariant
     )
 }
 

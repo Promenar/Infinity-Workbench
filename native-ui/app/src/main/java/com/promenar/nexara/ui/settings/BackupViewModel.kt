@@ -7,11 +7,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.repository.BackupRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.InputStream
+import java.io.OutputStream
 
 data class BackupUiState(
     val sessionsChecked: Boolean = true,
@@ -29,10 +32,6 @@ data class BackupUiState(
     val isImporting: Boolean = false,
     val error: String? = null
 )
-
-import com.promenar.nexara.data.repository.BackupRepository
-import java.io.InputStream
-import java.io.OutputStream
 
 class BackupViewModel(application: Application) : ViewModel() {
     private val app = application as NexaraApplication

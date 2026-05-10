@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import io.ktor.client.*
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.*
@@ -19,7 +20,8 @@ class EmbeddingClient(
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
         }
-    }
+    },
+    private val localEngine: LocalInferenceEngine? = null
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -82,5 +84,17 @@ class EmbeddingClient(
         }
 
         return EmbeddingResult(embeddings = embeddings, usage = usage)
+    }
+
+    suspend fun embedLocal(text: String): Result<FloatArray> {
+        val engine = localEngine
+            ?: return Result.failure(IllegalStateException("Local engine not configured"))
+        return engine.embed(text)
+    }
+
+    suspend fun embedLocalBatch(texts: List<String>): Result<List<FloatArray>> {
+        val engine = localEngine
+            ?: return Result.failure(IllegalStateException("Local engine not configured"))
+        return engine.embedBatch(texts)
     }
 }

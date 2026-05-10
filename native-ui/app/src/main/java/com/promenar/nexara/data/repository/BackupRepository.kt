@@ -4,14 +4,20 @@ import android.content.Context
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.local.db.entity.*
 import com.promenar.nexara.ui.settings.BackupUiState
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.util.zip.GZIPInputStream
-import java.util.zip.GZIPOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Serializable
 data class BackupDataPackage(
@@ -25,13 +31,6 @@ data class BackupDataPackage(
     val documents: List<DocumentEntity> = emptyList()
 )
 
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.util.*
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
-
 class BackupRepository(private val context: Context) {
     private val app = context.applicationContext as NexaraApplication
     private val json = Json { 
@@ -42,16 +41,16 @@ class BackupRepository(private val context: Context) {
 
     suspend fun prepareBackupPackage(state: BackupUiState): ByteArray {
         val agents = if (state.settingsChecked) app.database.agentDao().getAll() else emptyList()
-        val sessions = if (state.sessionsChecked) app.database.sessionDao().getAllSessions() else emptyList()
+        val sessions = if (state.sessionsChecked) app.database.sessionDao().getAll() else emptyList()
         
         val messages = if (state.sessionsChecked) {
-            app.database.messageDao().getAllMessages() 
+            sessions.flatMap { app.database.messageDao().getBySession(it.id) }
         } else emptyList()
 
-        val skills = if (state.keysChecked) app.database.skillDao().getAllCustomSkills() else emptyList()
-        val mcpServers = if (state.keysChecked) app.database.skillDao().getAllMcpServers() else emptyList()
+        val skills = if (state.keysChecked) app.database.skillDao().getAllCustomSkills().first() else emptyList()
+        val mcpServers = if (state.keysChecked) app.database.skillDao().getAllMcpServers().first() else emptyList()
         
-        val documents = if (state.libraryChecked) app.database.documentDao().getAllDocuments() else emptyList()
+        val documents = if (state.libraryChecked) app.database.documentDao().observeAll().first() else emptyList()
 
         val pkg = BackupDataPackage(
             agents = agents,

@@ -2,9 +2,13 @@ package com.promenar.nexara.ui.chat.manager
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.*
+import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.ui.chat.ChatStore
+import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
+import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -110,6 +114,7 @@ class ToolExecutorTest {
                         override val name = "read_file"
                         override val description = "Read a file"
                         override val mcpServerId: String? = null
+                        override val parametersSchema = "{}"
                         override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
                             return ToolResult(id = "tc1", content = "File contents here", status = "success")
                         }
@@ -117,6 +122,8 @@ class ToolExecutorTest {
                 }
                 return null
             }
+            override fun getAllSkills(): List<SkillDefinition> = emptyList()
+            override fun getAllTools(allowedIds: List<String>?) = emptyList<ProtocolTool>()
         }
 
         val executorWithRegistry = ToolExecutor(store, messageManager, customRegistry)
@@ -136,6 +143,8 @@ class ToolExecutorTest {
 
         val customRegistry = object : SkillRegistry {
             override fun getSkill(name: String) = null
+            override fun getAllSkills(): List<SkillDefinition> = emptyList()
+            override fun getAllTools(allowedIds: List<String>?) = emptyList<ProtocolTool>()
         }
 
         val executorWithRegistry = ToolExecutor(store, messageManager, customRegistry)
@@ -160,11 +169,14 @@ class ToolExecutorTest {
                     override val name = "fail_tool"
                     override val description = "Fails"
                     override val mcpServerId: String? = null
+                    override val parametersSchema = "{}"
                     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
                         throw RuntimeException("Something went wrong")
                     }
                 }
             }
+            override fun getAllSkills(): List<SkillDefinition> = emptyList()
+            override fun getAllTools(allowedIds: List<String>?) = emptyList<ProtocolTool>()
         }
 
         val executorWithRegistry = ToolExecutor(store, messageManager, customRegistry)

@@ -1,5 +1,10 @@
 package com.promenar.nexara.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,6 +35,7 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -36,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,42 +51,44 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.data.local.inference.SlotState
+import com.promenar.nexara.data.local.inference.SlotType
+import com.promenar.nexara.data.local.inference.StoredModel
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.SpaceGrotesk
 
-private data class LocalModelInfo(
-    val id: String,
-    val name: String,
-    val size: String,
-    val quantization: String,
-    val memoryWarning: Boolean = false,
-    val slotMain: Boolean = false,
-    val slotEmb: Boolean = false,
-    val slotRerank: Boolean = false
-)
-
-private val PlaceholderModels = listOf(
-    LocalModelInfo("1", "Mistral-7B-Instruct-v0.2", "7.2 GB", "Q8_0", memoryWarning = true),
-    LocalModelInfo("2", "Llama-3-8B-Instruct.Q5_K_M", "5.7 GB", "Q5_K_M", slotMain = true),
-    LocalModelInfo("3", "nomic-embed-text-v1.5.f16", "274 MB", "F16", slotEmb = true)
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocalModelsScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: LocalModelsViewModel = viewModel(
+        factory = LocalModelsViewModel.factory(LocalContext.current.applicationContext as android.app.Application)
+    )
 ) {
-    var engineEnabled by remember { mutableStateOf(true) }
-    var models by remember { mutableStateOf(PlaceholderModels) }
+    val context = LocalContext.current
+    val availableModels by viewModel.availableModels.collectAsState()
+    val engineEnabled by viewModel.isEngineEnabled.collectAsState()
+    val mainSlot by viewModel.mainSlot.collectAsState()
+    val embeddingSlot by viewModel.embeddingSlot.collectAsState()
+    val rerankSlot by viewModel.rerankSlot.collectAsState()
+    val isImporting by viewModel.isImporting.collectAsState()
+
+    val ggufPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.importModel(uri)
+    }
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
@@ -167,7 +177,7 @@ fun LocalModelsScreen(
                         }
                         Switch(
                             checked = engineEnabled,
-                            onCheckedChange = { engineEnabled = it },
+                            onCheckedChange = { viewModel.setEngineEnabled(it) },
                             colors = SwitchDefaults.colors(
                                 checkedTrackColor = NexaraColors.Primary,
                                 checkedThumbColor = NexaraColors.OnPrimary
@@ -182,13 +192,19 @@ fun LocalModelsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(NexaraShapes.large)
-                        .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
+                        .background(
+                            if (isImporting) NexaraColors.PrimaryContainer.copy(alpha = 0.1f)
+                            else NexaraColors.SurfaceContainer.copy(alpha = 0.3f)
+                        )
                         .border(
                             1.dp,
-                            NexaraColors.OutlineVariant,
+                            if (isImporting) NexaraColors.Primary.copy(alpha = 0.5f)
+                            else NexaraColors.OutlineVariant,
                             NexaraShapes.large
                         )
-                        .clickable { }
+                        .clickable(enabled = !isImporting) {
+                            ggufPickerLauncher.launch(arrayOf("*/*"))
+                        }
                         .padding(vertical = 20.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -196,17 +212,17 @@ fun LocalModelsScreen(
                         Icon(
                             imageVector = Icons.Rounded.UploadFile,
                             contentDescription = null,
-                            tint = NexaraColors.Primary,
+                            tint = if (isImporting) NexaraColors.Primary.copy(alpha = 0.5f) else NexaraColors.Primary,
                             modifier = Modifier.size(32.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = stringResource(R.string.local_models_import_title),
+                            text = if (isImporting) "Importing..." else stringResource(R.string.local_models_import_title),
                             style = NexaraTypography.headlineMedium,
                             color = NexaraColors.OnSurface
                         )
                         Text(
-                            text = stringResource(R.string.local_models_import_subtitle),
+                            text = if (isImporting) "Please wait" else stringResource(R.string.local_models_import_subtitle),
                             style = NexaraTypography.labelMedium,
                             color = NexaraColors.OnSurfaceVariant
                         )
@@ -218,34 +234,40 @@ fun LocalModelsScreen(
 
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SlotCard(
                         label = stringResource(R.string.local_models_slot_main),
-                        slotType = "GPU",
-                        modelName = "Llama-3-8B-Instruct.Q5_K_M",
-                        size = "5.7 GB",
-                        active = true,
+                        slotState = mainSlot,
                         color = NexaraColors.Primary,
+                        enabled = engineEnabled,
+                        onLoadClick = { path -> viewModel.loadModel(SlotType.MAIN, path) },
+                        onUnloadClick = { viewModel.unloadModel(SlotType.MAIN) },
+                        models = availableModels,
+                        formatFileSize = { viewModel.formatFileSize(it) },
                         modifier = Modifier.weight(1f)
                     )
                     SlotCard(
                         label = stringResource(R.string.local_models_slot_embeddings),
-                        slotType = "CPU",
-                        modelName = "nomic-embed-text-v1.5.f16",
-                        size = "274 MB",
-                        active = true,
+                        slotState = embeddingSlot,
                         color = NexaraColors.Tertiary,
+                        enabled = engineEnabled,
+                        onLoadClick = { path -> viewModel.loadModel(SlotType.EMBEDDING, path) },
+                        onUnloadClick = { viewModel.unloadModel(SlotType.EMBEDDING) },
+                        models = availableModels,
+                        formatFileSize = { viewModel.formatFileSize(it) },
                         modifier = Modifier.weight(1f)
                     )
                     SlotCard(
                         label = stringResource(R.string.local_models_slot_reranker),
-                        slotType = "Idle",
-                        modelName = null,
-                        size = null,
-                        active = false,
+                        slotState = rerankSlot,
                         color = NexaraColors.Outline,
+                        enabled = engineEnabled,
+                        onLoadClick = { path -> viewModel.loadModel(SlotType.RERANK, path) },
+                        onUnloadClick = { viewModel.unloadModel(SlotType.RERANK) },
+                        models = availableModels,
+                        formatFileSize = { viewModel.formatFileSize(it) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -253,14 +275,46 @@ fun LocalModelsScreen(
 
             item { SettingsSectionHeader(stringResource(R.string.local_models_imported)) }
 
-            items(models) { model ->
-                ModelCard(
-                    model = model,
-                    onLoad = { },
-                    onDelete = {
-                        models = models.filter { it.id != model.id }
+            if (availableModels.isEmpty()) {
+                item {
+                    NexaraGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = NexaraShapes.large as RoundedCornerShape
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No models imported yet",
+                                style = NexaraTypography.bodyMedium,
+                                color = NexaraColors.OnSurfaceVariant
+                            )
+                        }
                     }
-                )
+                }
+            } else {
+                items(availableModels, key = { it.id }) { model ->
+                    ModelCard(
+                        model = model,
+                        isLoadedInSlot = viewModel.isModelLoadedInSlot(model.filePath),
+                        loadedSlot = viewModel.findSlotForModel(model.filePath),
+                        engineEnabled = engineEnabled,
+                        formatFileSize = { viewModel.formatFileSize(it) },
+                        onLoad = { slot ->
+                            if (viewModel.isModelLoadedInSlot(model.filePath)) {
+                                val s = viewModel.findSlotForModel(model.filePath)
+                                if (s != null) viewModel.unloadModel(s)
+                            } else {
+                                viewModel.loadModel(slot, model.filePath)
+                            }
+                        },
+                        onDelete = { viewModel.deleteModel(model.filePath) }
+                    )
+                }
             }
 
             item { SettingsSectionHeader(stringResource(R.string.local_models_engine_status)) }
@@ -278,13 +332,31 @@ fun LocalModelsScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "llama.cpp · v3.2.1",
+                            text = "llama.cpp · ${if (viewModel.gpuAvailable) "Vulkan GPU" else "CPU"}",
                             style = NexaraTypography.headlineMedium,
                             color = NexaraColors.OnSurface
                         )
-                        EngineSlotStatus("Main", "Llama-3-8B-Instruct.Q5_K_M", active = true, badge = "GPU")
-                        EngineSlotStatus("Embedding", "nomic-embed-text-v1.5.f16", active = true, badge = "CPU")
-                        EngineSlotStatus("Reranker", stringResource(R.string.local_models_not_loaded), active = false, badge = "Idle")
+                        EngineSlotStatus(
+                            label = "Main",
+                            modelName = mainSlot.modelName.ifEmpty { null },
+                            active = mainSlot.isLoaded,
+                            isLoading = mainSlot.isLoading,
+                            badge = mainSlot.backendType.displayName
+                        )
+                        EngineSlotStatus(
+                            label = "Embedding",
+                            modelName = embeddingSlot.modelName.ifEmpty { null },
+                            active = embeddingSlot.isLoaded,
+                            isLoading = embeddingSlot.isLoading,
+                            badge = embeddingSlot.backendType.displayName
+                        )
+                        EngineSlotStatus(
+                            label = "Reranker",
+                            modelName = rerankSlot.modelName.ifEmpty { null },
+                            active = rerankSlot.isLoaded,
+                            isLoading = rerankSlot.isLoading,
+                            badge = if (rerankSlot.isLoaded) rerankSlot.backendType.displayName else "Idle"
+                        )
                     }
                 }
             }
@@ -295,15 +367,19 @@ fun LocalModelsScreen(
 @Composable
 private fun SlotCard(
     label: String,
-    slotType: String,
-    modelName: String?,
-    size: String?,
-    active: Boolean,
+    slotState: SlotState,
     color: androidx.compose.ui.graphics.Color,
+    enabled: Boolean,
+    onLoadClick: (String) -> Unit,
+    onUnloadClick: () -> Unit,
+    models: List<StoredModel>,
+    formatFileSize: (Long) -> String,
     modifier: Modifier = Modifier
 ) {
+    var showModelPicker by remember { mutableStateOf(false) }
+
     NexaraGlassCard(
-        modifier = modifier,
+        modifier = modifier.fillMaxHeight(),
         shape = NexaraShapes.large as RoundedCornerShape
     ) {
         Column(
@@ -330,14 +406,26 @@ private fun SlotCard(
                         .padding(horizontal = 6.dp, vertical = 1.dp)
                 ) {
                     Text(
-                        text = slotType,
+                        text = if (slotState.isLoading) "Loading" else slotState.backendType.displayName,
                         style = NexaraTypography.labelMedium.copy(fontSize = 9.sp),
                         color = color
                     )
                 }
             }
 
-            if (modelName != null) {
+            if (slotState.isLoading) {
+                LinearProgressIndicator(
+                    progress = { slotState.loadProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = NexaraColors.Primary,
+                    trackColor = NexaraColors.SurfaceContainer
+                )
+            }
+
+            if (slotState.isLoaded && slotState.modelName.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Rounded.Memory,
@@ -347,7 +435,7 @@ private fun SlotCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = modelName,
+                        text = slotState.modelName,
                         style = NexaraTypography.headlineMedium.copy(
                             fontSize = 14.sp,
                             fontFamily = SpaceGrotesk
@@ -356,9 +444,49 @@ private fun SlotCard(
                         maxLines = 2
                     )
                 }
-            } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = slotState.modelSize,
+                        style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = SpaceGrotesk),
+                        color = NexaraColors.OnSurfaceVariant
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(NexaraColors.StatusSuccess, RoundedCornerShape(50))
+                    )
+                }
+            } else if (slotState.error != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = NexaraColors.Error,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = slotState.error.take(30),
+                        style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
+                        color = NexaraColors.Error,
+                        maxLines = 2
+                    )
+                }
+            } else if (!slotState.isLoading) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = enabled && models.isNotEmpty()) {
+                            if (models.size == 1) {
+                                onLoadClick(models.first().filePath)
+                            } else {
+                                showModelPicker = true
+                            }
+                        },
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -368,45 +496,96 @@ private fun SlotCard(
                         tint = NexaraColors.OnSurfaceVariant,
                         modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(4.dp)
+                    )
                     Text(
-                        text = stringResource(R.string.local_models_load_model),
+                        text = if (models.isEmpty()) "No models" else stringResource(R.string.local_models_load_model),
                         style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
                         color = NexaraColors.OnSurfaceVariant
                     )
                 }
             }
-
-            if (size != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = size,
-                        style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = SpaceGrotesk),
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                    if (active) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(NexaraColors.StatusSuccess, CircleShape())
-                        )
-                    }
-                }
-            }
         }
+    }
+
+    if (showModelPicker) {
+        ModelPickerDialog(
+            models = models,
+            formatFileSize = formatFileSize,
+            onDismiss = { showModelPicker = false },
+            onSelect = { model ->
+                showModelPicker = false
+                onLoadClick(model.filePath)
+            }
+        )
     }
 }
 
 @Composable
+private fun ModelPickerDialog(
+    models: List<StoredModel>,
+    formatFileSize: (Long) -> String,
+    onDismiss: () -> Unit,
+    onSelect: (StoredModel) -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Select Model", style = NexaraTypography.headlineMedium)
+        },
+        text = {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(models) { model ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onSelect(model) }
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = model.fileName,
+                                style = NexaraTypography.bodyMedium,
+                                color = NexaraColors.OnSurface,
+                                maxLines = 2
+                            )
+                            Text(
+                                text = formatFileSize(model.sizeBytes),
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.OnSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Text(
+                text = "Cancel",
+                modifier = Modifier.clickable { onDismiss() },
+                color = NexaraColors.Primary
+            )
+        }
+    )
+}
+
+@Composable
 private fun ModelCard(
-    model: LocalModelInfo,
-    onLoad: () -> Unit,
+    model: StoredModel,
+    isLoadedInSlot: Boolean,
+    loadedSlot: SlotType?,
+    engineEnabled: Boolean,
+    formatFileSize: (Long) -> String,
+    onLoad: (SlotType) -> Unit,
     onDelete: () -> Unit
 ) {
+    val isHighMemory = model.quantization.contains("Q8", ignoreCase = true)
+
     NexaraGlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = NexaraShapes.large as RoundedCornerShape
@@ -425,11 +604,11 @@ private fun ModelCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = model.name,
+                        text = model.fileName,
                         style = NexaraTypography.headlineMedium.copy(fontSize = 16.sp),
                         color = NexaraColors.OnSurface
                     )
-                    if (model.memoryWarning) {
+                    if (isHighMemory) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
@@ -452,7 +631,7 @@ private fun ModelCard(
                             }
                         }
                     }
-                    if (model.slotMain) {
+                    if (isLoadedInSlot && loadedSlot != null) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
@@ -461,7 +640,11 @@ private fun ModelCard(
                                 .padding(horizontal = 6.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = stringResource(R.string.local_models_active_main),
+                                text = when (loadedSlot) {
+                                    SlotType.MAIN -> stringResource(R.string.local_models_active_main)
+                                    SlotType.EMBEDDING -> "Active Emb"
+                                    SlotType.RERANK -> "Active Rerank"
+                                },
                                 style = NexaraTypography.labelMedium.copy(fontSize = 9.sp),
                                 color = NexaraColors.Primary
                             )
@@ -481,7 +664,7 @@ private fun ModelCard(
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = model.size,
+                            text = formatFileSize(model.sizeBytes),
                             style = NexaraTypography.bodyMedium.copy(
                                 fontSize = 11.sp,
                                 fontFamily = SpaceGrotesk
@@ -498,13 +681,32 @@ private fun ModelCard(
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = model.quantization,
+                            text = model.quantization.ifEmpty { "N/A" },
                             style = NexaraTypography.bodyMedium.copy(
                                 fontSize = 11.sp,
                                 fontFamily = SpaceGrotesk
                             ),
                             color = NexaraColors.OnSurfaceVariant
                         )
+                    }
+                    if (model.architecture.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Memory,
+                                contentDescription = null,
+                                tint = NexaraColors.OnSurfaceVariant,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = model.architecture,
+                                style = NexaraTypography.bodyMedium.copy(
+                                    fontSize = 11.sp,
+                                    fontFamily = SpaceGrotesk
+                                ),
+                                color = NexaraColors.OnSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -515,13 +717,19 @@ private fun ModelCard(
                         .clip(NexaraShapes.medium)
                         .background(NexaraColors.SurfaceContainer)
                         .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
-                        .clickable(onClick = onLoad)
+                        .clickable(enabled = engineEnabled) {
+                            if (isLoadedInSlot && loadedSlot != null) {
+                                onLoad(loadedSlot)
+                            } else {
+                                onLoad(SlotType.MAIN)
+                            }
+                        }
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        text = if (model.slotMain) stringResource(R.string.local_models_loaded) else stringResource(R.string.local_models_load),
+                        text = if (isLoadedInSlot) stringResource(R.string.local_models_loaded) else stringResource(R.string.local_models_load),
                         style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                        color = if (model.slotMain) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface
+                        color = if (isLoadedInSlot) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface
                     )
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
@@ -540,8 +748,9 @@ private fun ModelCard(
 @Composable
 private fun EngineSlotStatus(
     label: String,
-    modelName: String,
+    modelName: String?,
     active: Boolean,
+    isLoading: Boolean,
     badge: String
 ) {
     Row(
@@ -563,7 +772,11 @@ private fun EngineSlotStatus(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = modelName,
+                text = when {
+                    isLoading -> "Loading..."
+                    modelName != null -> modelName
+                    else -> stringResource(R.string.local_models_not_loaded)
+                },
                 style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp, fontFamily = SpaceGrotesk),
                 color = if (active) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant
             )
@@ -582,7 +795,11 @@ private fun EngineSlotStatus(
                     .padding(horizontal = 6.dp, vertical = 1.dp)
             ) {
                 Text(
-                    text = badge,
+                    text = when {
+                        isLoading -> "..."
+                        active -> badge
+                        else -> stringResource(R.string.local_models_slot_idle)
+                    },
                     style = NexaraTypography.labelMedium.copy(fontSize = 9.sp),
                     color = if (active) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
                 )

@@ -92,6 +92,8 @@ data class RagConfiguration(
     val kgDomainHint: String? = null,
     val costStrategy: String = "on-demand",
     val trackRetrievalMetrics: Boolean = false,
+    val showRetrievalProgress: Boolean = false,
+    val showRetrievalDetails: Boolean = false,
     val jitMaxChunks: Int = 0,
     val jitTimeoutMs: Long = 5000,
     val jitMaxCharsPerChunk: Int = 2000,

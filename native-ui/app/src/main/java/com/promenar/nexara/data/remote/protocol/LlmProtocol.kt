@@ -117,7 +117,8 @@ sealed class StreamChunk {
 enum class ProtocolId {
     OPENAI,
     ANTHROPIC,
-    VERTEX_AI
+    VERTEX_AI,
+    LOCAL
 }
 
 interface LlmProtocol {
