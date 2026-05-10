@@ -85,13 +85,14 @@ class OpenAIProtocol(
             val sb = StringBuilder()
             while (!channel.isClosedForRead) {
                 sb.clear()
-                val readSuccess = withTimeoutOrNull(30000) {
+                val timeoutMs = request.streamTimeout ?: 120000L
+                val readSuccess = withTimeoutOrNull(timeoutMs) {
                     channel.readUTF8LineTo(sb, 1_048_576)
                 }
                 
                 if (readSuccess == null) {
                     // Timeout occurred
-                    send(StreamChunk.Error("Streaming timeout after 30s of inactivity."))
+                    send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
                     break
                 }
                 

@@ -90,7 +90,8 @@ class ContextBuilder(
             enableDocs = tempRagOptions.enableDocs && sessionRagOptions.enableDocs,
             activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
             activeFolderIds = tempRagOptions.activeFolderIds.ifEmpty { sessionRagOptions.activeFolderIds },
-            isGlobal = tempRagOptions.isGlobal
+            isGlobal = tempRagOptions.isGlobal,
+            enableRerank = sessionRagOptions.enableRerank
         )
 
         val isRagEnabled = finalRagOptions.enableMemory || finalRagOptions.enableDocs
@@ -116,6 +117,7 @@ class ContextBuilder(
 
         val session = params.session
 
+        // 1. System Time
         val enableTimeInjection = session.options?.enableTimeInjection ?: true
         if (enableTimeInjection) {
             val now = java.text.SimpleDateFormat(
@@ -126,6 +128,9 @@ class ContextBuilder(
             sb.appendLine()
         }
 
+        // 2. Tools Instructions (Placeholder for now as instructions usually come from Agent prompt)
+        
+        // 3. Task Information
         if (session.activeTask != null && session.activeTask?.status == "in-progress") {
             val task = session.activeTask!!
             val currentStepIndex = task.steps.indexOfFirst { it.status == "pending" }
@@ -136,35 +141,51 @@ class ContextBuilder(
             sb.appendLine()
         }
 
+        // 4. Agent System Prompt
         params.agentSystemPrompt?.let { prompt ->
             if (prompt.isNotBlank()) {
                 sb.appendLine(prompt)
             }
         }
 
+        // 5. Session Custom Prompt
         if (session.customPrompt != null) {
             sb.appendLine()
             sb.appendLine(session.customPrompt)
         }
 
+        // 6. RAG Context (Memory & Docs)
         if (ragReferences.isNotEmpty()) {
             sb.appendLine()
             sb.appendLine("## Retrieved Context")
             ragReferences.forEach { ref ->
-                sb.appendLine("- [${ref.source}] ${ref.content.take(200)}")
+                sb.appendLine("- [${ref.source}] ${ref.content.take(400)}") // Increased preview slightly
             }
         }
 
+        // 7. Knowledge Graph Context
         if (kgContext.isNotEmpty()) {
             sb.appendLine()
             sb.appendLine("## Knowledge Graph Relations")
             sb.append(kgContext)
         }
 
+        // 8. Web Search Results
         if (searchContext.isNotEmpty()) {
             sb.appendLine()
             sb.appendLine("## Web Search Results")
             sb.append(searchContext)
+        }
+
+        // 9. History Summary
+        session.summary?.let { summary ->
+            if (summary.isNotBlank()) {
+                sb.appendLine()
+                sb.appendLine("## History Summary")
+                sb.appendLine("<history_summary>")
+                sb.appendLine(summary)
+                sb.appendLine("</history_summary>")
+            }
         }
 
         return sb.toString()

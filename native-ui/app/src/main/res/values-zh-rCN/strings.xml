@@ -69,6 +69,8 @@
     <string name="shared_btn_retry">重试</string>
     <string name="shared_confirm_delete_title">确认删除</string>
     <string name="shared_action_cannot_undo">此操作无法撤销。</string>
+    <string name="shared_btn_copy">复制</string>
+    <string name="shared_btn_regenerate">重新生成</string>
 
     <!-- ============ Hub ============ -->
     <string name="hub_title">智能助手</string>
@@ -233,6 +235,11 @@
     <!-- ChatScreen -->
     <string name="chat_title_new">新对话</string>
     <string name="chat_menu_session_settings">会话设置</string>
+    <string name="chat_action_copy">复制</string>
+    <string name="chat_action_edit">编辑</string>
+    <string name="chat_action_delete">删除</string>
+    <string name="chat_action_resend">重发</string>
+    <string name="chat_action_regenerate">重新生成</string>
     <string name="chat_menu_token_stats">Token 统计</string>
     <string name="chat_menu_super_assistant">超级助手</string>
     <string name="chat_menu_export">导出对话</string>
@@ -270,6 +277,8 @@
     <string name="session_settings_temperature">温度</string>
     <string name="session_settings_top_p">Top P</string>
     <string name="session_settings_max_tokens">最大 Token 数</string>
+    <string name="session_settings_stream_timeout">请求超时</string>
+    <string name="session_settings_unit_seconds">%1$d 秒</string>
     <string name="session_settings_label_focused">聚焦</string>
     <string name="session_settings_label_diverse">多样</string>
     <string name="session_settings_label_short">短</string>
@@ -320,7 +329,6 @@
     <string name="sheet_tool_skills">Agent 技能</string>
     <string name="sheet_tool_mcp_servers">MCP 服务器</string>
     <string name="sheet_tool_user_skills">用户技能</string>
-    <string name="sheet_stats_tokens">token</string>
     <string name="sheet_tool_execution_mode">执行模式</string>
     <string name="sheet_tool_search_retrieval">搜索与检索</string>
     <string name="sheet_tool_code_analysis">代码分析</string>

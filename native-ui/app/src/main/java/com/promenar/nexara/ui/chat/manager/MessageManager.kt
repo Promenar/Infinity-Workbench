@@ -87,6 +87,24 @@ class MessageManager(
         }
     }
 
+    fun updateMessage(sessionId: String, messageId: String, message: Message) {
+        scope.launch {
+            try {
+                val updates = mapOf(
+                    "content" to message.content,
+                    "reasoning" to message.reasoning,
+                    "isArchived" to message.isArchived,
+                    "tokens" to message.tokens,
+                    "isError" to message.isError,
+                    "errorMessage" to message.errorMessage
+                )
+                messageRepository.updatePartial(messageId, updates)
+            } catch (_: Exception) {}
+            
+            store.updateMessageInSession(sessionId, messageId) { message }
+        }
+    }
+
     fun updateMessageContent(
         sessionId: String,
         messageId: String,

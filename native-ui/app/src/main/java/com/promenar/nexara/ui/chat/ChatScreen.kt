@@ -2,18 +2,13 @@ package com.promenar.nexara.ui.chat
 
 import android.app.Activity
 import android.view.WindowManager
-import androidx.compose.animation.*
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,52 +17,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-
-import androidx.compose.material.icons.rounded.ArrowUpward
-
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Construction
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SmartToy
-import androidx.compose.material.icons.rounded.Token
-import androidx.compose.material.icons.rounded.WorkspacePremium
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -94,10 +56,10 @@ fun ChatScreen(
     val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(context.applicationContext as android.app.Application))
     val uiState by chatViewModel.uiState.collectAsState()
     val inputText by chatViewModel.inputText.collectAsState()
+    val tokenState by chatViewModel.tokenIndicatorState.collectAsState()
 
     val listState = rememberLazyListState()
     var showSettingsSheet by remember { mutableStateOf(false) }
-    var showWorkspaceSheet by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -133,215 +95,131 @@ fun ChatScreen(
         }
     }
 
-    // Auto-scroll when last message content grows during generation
-    val lastMessageContent = uiState.messages.lastOrNull()?.content ?: ""
-    val lastMessageReasoning = uiState.messages.lastOrNull()?.reasoning ?: ""
-    LaunchedEffect(lastMessageContent.length, lastMessageReasoning.length) {
-        if (uiState.isGenerating && !isUserScrolledAway && uiState.messages.isNotEmpty()) {
-            listState.scrollToItem(uiState.messages.size - 1)
-        }
-    }
-
-    if (showSettingsSheet) {
-        SessionSettingsSheet(
-            show = showSettingsSheet,
-            onDismiss = { showSettingsSheet = false },
-            sessionId = sessionId
-        )
-    }
-
-    if (showWorkspaceSheet) {
-        WorkspaceSheet(
-            show = showWorkspaceSheet,
-            onDismiss = { showWorkspaceSheet = false },
-            sessionId = sessionId
-        )
-    }
-
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            sessionTitle,
-                            style = NexaraTypography.headlineMedium.copy(fontSize = 18.sp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = NexaraColors.OnBackground
-                        )
-                        if (agentName.isNotBlank()) {
-                            Text(
-                                agentName,
-                                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                                color = NexaraColors.OnSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_cd_back), tint = NexaraColors.OnBackground)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showWorkspaceSheet = true }) {
-                        Icon(Icons.Rounded.WorkspacePremium, contentDescription = stringResource(R.string.chat_cd_workspace), tint = NexaraColors.OnSurfaceVariant)
-                    }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.chat_cd_options), tint = NexaraColors.OnBackground)
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            containerColor = NexaraColors.SurfaceContainer
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_menu_session_settings), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurface) },
-                                onClick = { showMenu = false; onNavigateToSettings() },
-                                leadingIcon = { Icon(Icons.Rounded.Settings, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp)) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_menu_token_stats), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurface) },
-                                onClick = { showMenu = false; showSettingsSheet = true },
-                                leadingIcon = { Icon(Icons.Rounded.Token, null, tint = NexaraColors.Tertiary, modifier = Modifier.size(18.dp)) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_menu_super_assistant), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurface) },
-                                onClick = { showMenu = false; onNavigateToSpaSettings() },
-                                leadingIcon = { Icon(Icons.Rounded.SmartToy, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp)) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_menu_export), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurface) },
-                                onClick = { showMenu = false },
-                                leadingIcon = { Icon(Icons.Rounded.Download, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(18.dp)) }
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f),
-                    titleContentColor = NexaraColors.OnBackground,
-                    navigationIconContentColor = NexaraColors.OnBackground,
-                    actionIconContentColor = NexaraColors.OnBackground
-                )
+            ChatTopBar(
+                title = sessionTitle,
+                subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName,
+                onBack = onNavigateBack,
+                onSettings = { showSettingsSheet = true },
+                onMenuClick = { showMenu = true }
             )
         }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (uiState.error != null) {
-                Snackbar(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(16.dp),
-                    containerColor = NexaraColors.ErrorContainer
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(uiState.error!!, color = NexaraColors.OnErrorContainer, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { chatViewModel.clearError() }) {
-                            Icon(Icons.Rounded.Close, null, tint = NexaraColors.OnErrorContainer, modifier = Modifier.size(16.dp))
+                    items(uiState.messages, key = { it.id }) { message ->
+                        var showActionSheet by remember { mutableStateOf(false) }
+                        
+                        ChatBubble(
+                            message = message,
+                            isGenerating = uiState.isGenerating && message.id == uiState.messages.lastOrNull()?.id,
+                            onLongClick = { showActionSheet = true },
+                            onApprove = { chatViewModel.approveRequest() },
+                            onDecline = { chatViewModel.rejectRequest() }
+                        )
+
+                        if (showActionSheet) {
+                            MessageActionSheet(
+                                message = message,
+                                onDismiss = { showActionSheet = false },
+                                onCopy = {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Nexara", message.content)
+                                    clipboard.setPrimaryClip(clip)
+                                    showActionSheet = false
+                                },
+                                onEdit = { newContent ->
+                                    chatViewModel.editMessage(message.id, newContent)
+                                    showActionSheet = false
+                                },
+                                onDelete = {
+                                    chatViewModel.deleteMessage(message.id)
+                                    showActionSheet = false
+                                },
+                                onResend = {
+                                    chatViewModel.resendMessage(message.id)
+                                    showActionSheet = false
+                                }
+                            )
                         }
                     }
                 }
-            }
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 20.dp,
-                    end = 20.dp,
-                    top = 16.dp,
-                    bottom = 140.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(uiState.messages, key = { it.id }) { msg ->
-                    ChatBubble(
-                        message = msg,
-                        isGenerating = uiState.isGenerating && msg.id == uiState.messages.lastOrNull()?.id && msg.role == MessageRole.ASSISTANT,
-                        onApprove = { chatViewModel.approveRequest() },
-                        onDecline = { chatViewModel.rejectRequest() }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ChatInputTopBar(
+                        modelName = uiState.session?.modelId ?: "",
+                        tokenState = tokenState,
+                        onModelClick = { showSettingsSheet = true },
+                        onManualSummary = { chatViewModel.summarizeHistory() }
+                    )
+
+                    ChatInputBar(
+                        text = inputText,
+                        placeholder = if (agentName.isNotBlank()) stringResource(R.string.chat_input_placeholder, agentName) else stringResource(R.string.chat_input_placeholder_default),
+                        onTextChange = { chatViewModel.updateInputText(it) },
+                        onSend = {
+                            if (inputText.isNotBlank()) {
+                                chatViewModel.sendMessage(inputText)
+                            }
+                        },
+                        isGenerating = uiState.isGenerating,
+                        onStop = { chatViewModel.stopGeneration() }
                     )
                 }
             }
 
             AnimatedVisibility(
                 visible = isUserScrolledAway,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 152.dp),
-                enter = fadeIn(tween(200)),
-                exit = fadeOut(tween(200))
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp)
             ) {
                 FloatingActionButton(
-                    onClick = {
-                        scope.launch {
-                            if (uiState.messages.isNotEmpty()) {
-                                listState.animateScrollToItem(uiState.messages.size - 1)
-                            }
-                        }
-                    },
+                    onClick = { scope.launch { listState.animateScrollToItem(uiState.messages.size - 1) } },
                     containerColor = NexaraColors.SurfaceHigh,
                     contentColor = NexaraColors.Primary,
-                    modifier = Modifier.size(40.dp),
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                    shape = CircleShape,
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.chat_cd_scroll_bottom), modifier = Modifier.size(22.dp))
+                    Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(20.dp))
                 }
-            }
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.ime)
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ChatInputTopBar(
-                    modelName = uiState.session?.modelId ?: "",
-                    onModelClick = { showSettingsSheet = true },
-                    onToolClick = { showSettingsSheet = true },
-                    onWorkspaceClick = { showWorkspaceSheet = true }
-                )
-
-                ChatInputBar(
-                    text = inputText,
-                    placeholder = if (agentName.isNotBlank()) stringResource(R.string.chat_input_placeholder, agentName) else stringResource(R.string.chat_input_placeholder_default),
-                    onTextChange = { chatViewModel.updateInputText(it) },
-                    onSend = {
-                        if (inputText.isNotBlank()) {
-                            chatViewModel.sendMessage(inputText)
-                        }
-                    },
-                    isGenerating = uiState.isGenerating,
-                    onStop = { chatViewModel.stopGeneration() }
-                )
             }
         }
     }
+
+    SessionSettingsSheet(
+        show = showSettingsSheet,
+        onDismiss = { showSettingsSheet = false },
+        sessionId = sessionId
+    )
 }
 
 @Composable
 private fun ChatInputTopBar(
     modelName: String,
+    tokenState: ChatViewModel.TokenIndicatorState,
     onModelClick: () -> Unit,
-    onToolClick: () -> Unit,
-    onWorkspaceClick: () -> Unit
+    onManualSummary: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Model Indicator
         NexaraGlassCard(
             onClick = onModelClick,
             shape = RoundedCornerShape(50),
@@ -361,37 +239,121 @@ private fun ChatInputTopBar(
             }
         }
 
-        NexaraGlassCard(
-            onClick = onToolClick,
-            shape = RoundedCornerShape(50),
-            modifier = Modifier
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(Icons.Rounded.Construction, null, tint = NexaraColors.Tertiary, modifier = Modifier.size(14.dp))
-            }
-        }
-
-        NexaraGlassCard(
-            onClick = onWorkspaceClick,
-            shape = RoundedCornerShape(50),
-            modifier = Modifier
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(Icons.Rounded.Image, null, tint = NexaraColors.StatusSuccess, modifier = Modifier.size(14.dp))
-            }
-        }
+        // Token Indicator
+        TokenIndicator(state = tokenState, onManualSummary = onManualSummary)
 
         Spacer(modifier = Modifier.weight(1f))
-
     }
+}
+
+@Composable
+private fun TokenIndicator(
+    state: ChatViewModel.TokenIndicatorState,
+    onManualSummary: () -> Unit
+) {
+    var showTooltip by remember { mutableStateOf(false) }
+
+    Box {
+        NexaraGlassCard(
+            onClick = { showTooltip = !showTooltip },
+            shape = RoundedCornerShape(50),
+            modifier = Modifier
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Token,
+                    null,
+                    tint = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "${state.used / 1000}K / ${state.max / 1000}K",
+                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                    color = NexaraColors.OnSurface
+                )
+            }
+        }
+
+        if (showTooltip) {
+            DropdownMenu(
+                expanded = showTooltip,
+                onDismissRequest = { showTooltip = false },
+                modifier = Modifier.background(NexaraColors.SurfaceContainer).width(200.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Context Usage", style = NexaraTypography.titleSmall, color = NexaraColors.Primary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TokenDetailRow("System", state.systemTokens)
+                    TokenDetailRow("Summary", state.summaryTokens)
+                    TokenDetailRow("Active", state.activeTokens)
+                    TokenDetailRow("RAG", state.ragTokens)
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = NexaraColors.OutlineVariant)
+                    
+                    Button(
+                        onClick = {
+                            onManualSummary()
+                            showTooltip = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Primary)
+                    ) {
+                        Text("Compress History", style = NexaraTypography.labelMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TokenDetailRow(label: String, value: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = NexaraTypography.bodySmall, color = NexaraColors.OnSurfaceVariant)
+        Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), color = NexaraColors.OnSurface)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatTopBar(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+    onSettings: () -> Unit,
+    onMenuClick: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Column {
+                Text(title, style = NexaraTypography.titleMedium, color = NexaraColors.OnSurface)
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, style = NexaraTypography.labelSmall, color = NexaraColors.OnSurfaceVariant)
+                }
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Rounded.ArrowBack, null, tint = NexaraColors.OnSurface)
+            }
+        },
+        actions = {
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Rounded.Tune, null, tint = NexaraColors.OnSurface)
+            }
+            IconButton(onClick = onMenuClick) {
+                Icon(Icons.Rounded.MoreVert, null, tint = NexaraColors.OnSurface)
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+    )
 }
 
 @Composable
@@ -399,87 +361,88 @@ fun ChatBubble(
     message: Message,
     isGenerating: Boolean = false,
     onApprove: () -> Unit = {},
-    onDecline: () -> Unit = {}
+    onDecline: () -> Unit = {},
+    onLongClick: () -> Unit = {}
 ) {
     val isUser = message.role == MessageRole.USER
+    val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
+    val timestamp = remember(message.createdAt) { timeFormat.format(java.util.Date(message.createdAt)) }
     
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                detectTapGestures(onLongPress = { onLongClick() })
+            },
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         if (isUser) {
-            Surface(
-                shape = NexaraCustomShapes.ChatBubbleUser,
-                color = NexaraColors.SurfaceHigh,
-                border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
-                modifier = Modifier.widthIn(max = 280.dp)
-            ) {
+            Column(horizontalAlignment = Alignment.End) {
+                Surface(
+                    shape = NexaraCustomShapes.ChatBubbleUser,
+                    color = NexaraColors.SurfaceHigh,
+                    border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
+                    modifier = Modifier.widthIn(max = 280.dp)
+                ) {
+                    Text(
+                        text = message.content,
+                        style = NexaraTypography.bodyMedium,
+                        color = NexaraColors.OnBackground,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
                 Text(
-                    text = message.content,
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnBackground,
-                    modifier = Modifier.padding(16.dp)
+                    text = timestamp,
+                    style = NexaraTypography.labelSmall.copy(
+                        color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 11.sp
+                    ),
+                    modifier = Modifier.padding(top = 4.dp, end = 4.dp)
                 )
             }
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // 1. Thinking / Summary block
                 if (!message.reasoning.isNullOrBlank()) {
                     ThinkingBlock(
                         reasoning = message.reasoning!!,
                         isGenerating = isGenerating
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                } else if (isGenerating && message.content.isEmpty() && (message.executionSteps == null || message.executionSteps.isEmpty())) {
-                    SummaryIndicator(text = stringResource(R.string.chat_status_thinking))
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // 2. RAG Indicator
-                if (message.ragProgress != null || message.ragReferencesLoading || (message.ragReferences != null && message.ragReferences.isNotEmpty())) {
-                    RagOmniIndicator(
-                        progress = message.ragProgress,
-                        metadata = message.ragMetadata,
-                        references = message.ragReferences,
-                        isLoading = message.ragReferencesLoading
+                MarkdownText(
+                    markdown = message.content,
+                    isStreaming = isGenerating,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    val metaStyle = NexaraTypography.labelSmall.copy(
+                        color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 11.sp
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // 3. Tool Execution Timeline
-                if (message.executionSteps != null && message.executionSteps.isNotEmpty()) {
-                    ToolExecutionTimeline(steps = message.executionSteps)
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // 4. Approval Card
-                if (message.pendingApprovalToolIds != null && message.pendingApprovalToolIds.isNotEmpty()) {
-                    // Find the approval details if available in session (though message usually has enough info for simple display)
-                    ApprovalCard(
-                        toolName = message.pendingApprovalToolIds.first(), // Simplified: show first one
-                        description = stringResource(R.string.chat_approval_desc_tool),
-                        onApprove = onApprove,
-                        onDecline = onDecline
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // 5. Main Content
-                if (message.content.isNotBlank() || (isGenerating && message.content.isEmpty())) {
-                    MarkdownText(
-                        markdown = message.content,
-                        isStreaming = isGenerating,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                    if (!message.modelId.isNullOrBlank()) {
+                        Text(
+                            text = message.modelId!!,
+                            style = metaStyle,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                    Text(
+                        text = timestamp,
+                        style = metaStyle
                     )
                 }
 
-                // 6. Error states
                 if (message.isError && message.errorMessage != null) {
                     Text(
                         text = message.errorMessage!!,
-                        style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
+                        style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
                         color = NexaraColors.Error,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 6.dp)
                     )
                 }
             }
@@ -559,6 +522,123 @@ fun ChatInputBar(
                     )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MessageActionSheet(
+    message: Message,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+    onEdit: (String) -> Unit,
+    onDelete: () -> Unit,
+    onResend: () -> Unit
+) {
+    var isEditing by remember { mutableStateOf(false) }
+    var editContent by remember { mutableStateOf(message.content) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = NexaraColors.SurfaceContainer,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = NexaraColors.OutlineVariant) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            if (isEditing) {
+                Text(
+                    stringResource(R.string.chat_action_edit),
+                    style = NexaraTypography.titleMedium,
+                    color = NexaraColors.OnSurface
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                BasicTextField(
+                    value = editContent,
+                    onValueChange = { editContent = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 100.dp, max = 300.dp)
+                        .background(NexaraColors.SurfaceVariant, NexaraShapes.medium)
+                        .padding(12.dp),
+                    textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
+                    cursorBrush = SolidColor(NexaraColors.Primary),
+                    decorationBox = { innerTextField ->
+                        innerTextField()
+                    }
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { isEditing = false }) {
+                        Text(stringResource(R.string.common_decline), color = NexaraColors.OnSurfaceVariant)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Button(
+                        onClick = { onEdit(editContent) },
+                        colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Primary)
+                    ) {
+                        Text(stringResource(R.string.common_approve))
+                    }
+                }
+            } else {
+                ActionMenuItem(
+                    icon = Icons.Rounded.ContentCopy,
+                    label = stringResource(R.string.chat_action_copy),
+                    onClick = onCopy
+                )
+                if (message.role == MessageRole.USER) {
+                    ActionMenuItem(
+                        icon = Icons.Rounded.Edit,
+                        label = stringResource(R.string.chat_action_edit),
+                        onClick = { isEditing = true }
+                    )
+                    ActionMenuItem(
+                        icon = Icons.Rounded.Refresh,
+                        label = stringResource(R.string.chat_action_resend),
+                        onClick = onResend
+                    )
+                } else {
+                    ActionMenuItem(
+                        icon = Icons.Rounded.Refresh,
+                        label = stringResource(R.string.chat_action_regenerate),
+                        onClick = onResend
+                    )
+                }
+                ActionMenuItem(
+                    icon = Icons.Rounded.Delete,
+                    label = stringResource(R.string.chat_action_delete),
+                    color = NexaraColors.Error,
+                    onClick = onDelete
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionMenuItem(
+    icon: ImageVector,
+    label: String,
+    color: Color = NexaraColors.OnSurface,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(label, style = NexaraTypography.bodyLarge, color = color)
         }
     }
 }

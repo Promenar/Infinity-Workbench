@@ -36,6 +36,7 @@ import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.MessageManager
 import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
+import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -80,6 +81,7 @@ class ChatViewModel(
     )
     private val toolExecutor = ToolExecutor(store, messageManager, skillRegistry)
     private val postProcessor = PostProcessor(store, sessionManager, messageManager, embeddingClient, vectorStore, textSplitter)
+    private val summaryManager = SummaryManager(llmProvider)
     private val approvalManager = ApprovalManager(store)
 
     private val _inputText = MutableStateFlow("")
@@ -91,6 +93,17 @@ class ChatViewModel(
     private val _error = MutableStateFlow<String?>(null)
     private val _isGenerating = MutableStateFlow(false)
 
+    data class TokenIndicatorState(
+        val used: Int = 0,
+        val max: Int = 128000,
+        val systemTokens: Int = 0,
+        val summaryTokens: Int = 0,
+        val activeTokens: Int = 0,
+        val ragTokens: Int = 0
+    )
+    private val _tokenIndicatorState = MutableStateFlow(TokenIndicatorState())
+    val tokenIndicatorState: StateFlow<TokenIndicatorState> = _tokenIndicatorState
+
     private var generationJob: Job? = null
 
     val uiState: StateFlow<ChatUiState> = combine(
@@ -100,7 +113,11 @@ class ChatViewModel(
         _streamingContent,
         _error
     ) { chatState, sessionId, isGenerating, streamingContent, error ->
-        val session = sessionId?.let { chatState.sessions.find { it.id == sessionId } }
+        val session = sessionId?.let { id -> chatState.sessions.find { it.id == id } }
+        if (session != null) {
+            updateTokenIndicator(session)
+        }
+        
         ChatUiState(
             session = session,
             messages = session?.messages ?: emptyList(),
@@ -235,7 +252,8 @@ class ChatViewModel(
             presencePenalty = effectiveParams.presencePenalty,
             tools = activeTools.ifEmpty { null },
             webSearch = sessionForCtx.options?.webSearch,
-            stream = true
+            stream = true,
+            streamTimeout = (effectiveParams.streamTimeout ?: 120).toLong() * 1000
         )
 
         var accumulatedContent = ""
@@ -324,6 +342,7 @@ class ChatViewModel(
                     UpdateMessageOptions(isError = true, errorMessage = e.message)
                 )
             }
+            _isGenerating.update { false }
         }
 
         messageManager.flushMessageUpdates(sessionId, assistantMsgId)
@@ -350,15 +369,18 @@ class ChatViewModel(
         }
 
         if (userMsgId != null && currentCoroutineContext().isActive) {
-            try {
-                val finalSession = store.getSession(sessionId)
-                if (finalSession != null) {
+            viewModelScope.launch {
+                try {
+                    val finalSession = store.getSession(sessionId) ?: return@launch
                     val agent = com.promenar.nexara.data.model.Agent(
                         id = finalSession.agentId,
                         name = finalSession.agentId
                     )
                     val sessionRagOpts = finalSession.ragOptions
                     val isRagEnabled = sessionRagOpts?.enableMemory == true || sessionRagOpts?.enableDocs == true
+                    
+                    val totalCtxTokens = contextResult.ragUsage?.ragSystem ?: 0
+                    
                     val ppParams = com.promenar.nexara.ui.chat.manager.PostProcessorParams(
                         sessionId = sessionId,
                         assistantMsgId = assistantMsgId,
@@ -370,18 +392,55 @@ class ChatViewModel(
                         ragEnabled = isRagEnabled,
                         ragUsage = contextResult.ragUsage,
                         accumulatedUsage = accumulatedTokens,
+                        totalContextTokens = totalCtxTokens,
                         modelId = finalSession.modelId ?: ""
                     )
                     postProcessor.updateStats(ppParams)
 
-                    val shouldArchive = sessionRagOpts?.enableMemory == true
-                    if (shouldArchive && accumulatedContent.isNotBlank()) {
-                        try {
-                            postProcessor.archiveToRag(ppParams)
-                        } catch (_: Exception) {}
+                    // Sliding window and archiving logic
+                    val windowSize = finalSession.inferenceParams?.activeContextWindow ?: 10
+                    if (finalSession.messages.size > windowSize) {
+                        val activeMsgs = getSafeActiveWindow(finalSession.messages, windowSize)
+                        val activeMsgIds = activeMsgs.map { it.id }.toSet()
+                        
+                        val overflowMsgs = finalSession.messages.filter { it.id !in activeMsgIds && !it.isArchived }
+                        
+                        if (overflowMsgs.isNotEmpty()) {
+                            // 1. Archive to RAG
+                            if (sessionRagOpts?.enableMemory == true) {
+                                postProcessor.archiveMessagesToRag(sessionId, overflowMsgs, finalSession.modelId ?: "")
+                            }
+                            
+                            // 2. Mark as archived in DB
+                            overflowMsgs.forEach { msg ->
+                                messageManager.updateMessage(sessionId, msg.id, msg.copy(isArchived = true))
+                            }
+                            
+                            // 3. Auto-summary trigger
+                            val threshold = finalSession.inferenceParams?.autoSummaryThreshold ?: 0.8
+                            val totalTokens = (accumulatedTokens?.total ?: 0)
+                            val maxTokens = 128000 // TODO: Get from model spec
+                            
+                            if (totalTokens > maxTokens * threshold) {
+                                val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
+                                val summaryModelId = settingsPrefs.getString("preset_summary_model", "")
+                                
+                                val newSummary = summaryManager.summarize(
+                                    oldSummary = finalSession.summary,
+                                    overflowMessages = overflowMsgs,
+                                    summaryModelId = summaryModelId,
+                                    currentModelId = finalSession.modelId ?: ""
+                                )
+                                
+                                if (newSummary != finalSession.summary) {
+                                    sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
+                                }
+                            }
+                        }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (_: Exception) {
             }
         }
     }
@@ -515,6 +574,68 @@ class ChatViewModel(
         }
     }
 
+    fun updateRagOptions(options: com.promenar.nexara.data.model.RagOptions) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            sessionManager.updateSession(sessionId, mapOf("ragOptions" to options))
+        }
+    }
+
+    fun summarizeHistory() {
+        val sessionId = _currentSessionId.value ?: return
+        val session = store.getSession(sessionId) ?: return
+        
+        viewModelScope.launch {
+            try {
+                _isGenerating.update { true }
+                val messages = session.messages.filter { !it.isArchived }
+                val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
+                val summaryModelId = settingsPrefs.getString("preset_summary_model", "")
+                
+                val newSummary = summaryManager.summarize(
+                    oldSummary = session.summary,
+                    overflowMessages = messages,
+                    summaryModelId = summaryModelId,
+                    currentModelId = session.modelId ?: ""
+                )
+                
+                sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
+                
+                // Mark these as archived
+                messages.forEach { msg ->
+                    messageManager.updateMessage(sessionId, msg.id, msg.copy(isArchived = true))
+                }
+            } catch (e: Exception) {
+                _error.update { "Manual summary failed: ${e.message}" }
+            } finally {
+                _isGenerating.update { false }
+            }
+        }
+    }
+
+    fun resendMessage(messageId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        val session = store.getSession(sessionId) ?: return
+        val message = session.messages.find { it.id == messageId } ?: return
+        
+        if (message.role == MessageRole.USER) {
+            // Re-trigger from user message
+            regenerateMessage(messageId)
+        } else {
+            // Find preceding user message
+            val userMsg = session.messages.takeWhile { it.id != messageId }.lastOrNull { it.role == MessageRole.USER }
+            if (userMsg != null) {
+                regenerateMessage(userMsg.id)
+            } else {
+                // Just regenerate from current state
+                viewModelScope.launch {
+                    messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
+                    generateMessage(sessionId, "", false)
+                }
+            }
+        }
+    }
+
     fun toggleTool(toolName: String, enabled: Boolean) {
         val sessionId = _currentSessionId.value ?: return
         val session = store.getSession(sessionId) ?: return
@@ -544,13 +665,6 @@ class ChatViewModel(
         }
     }
 
-    fun updateRagOptions(ragOptions: RagOptions) {
-        val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-        viewModelScope.launch {
-            sessionManager.updateSessionOptions(sessionId, session.options ?: SessionOptions(), ragOptions)
-        }
-    }
 
     fun updateModelId(modelId: String) {
         val sessionId = _currentSessionId.value ?: return
@@ -597,7 +711,10 @@ class ChatViewModel(
             messages.add(ProtocolMessage(role = "system", content = systemPrompt))
         }
 
-        for (msg in session.messages) {
+        val activeWindowSize = session.inferenceParams?.activeContextWindow ?: 10
+        val activeMessages = getSafeActiveWindow(session.messages, activeWindowSize)
+
+        for (msg in activeMessages) {
             val protocolMsg = when (msg.role) {
                 MessageRole.USER -> ProtocolMessage(role = "user", content = msg.content)
                 MessageRole.ASSISTANT -> ProtocolMessage(
@@ -626,10 +743,62 @@ class ChatViewModel(
         return messages
     }
 
+    private fun getSafeActiveWindow(messages: List<Message>, windowSize: Int): List<Message> {
+        if (messages.size <= windowSize) return messages
+        
+        var startIdx = messages.size - windowSize
+        
+        // Ensure we don't break tool pairs
+        // If we start at a TOOL message, we must include its parent ASSISTANT message
+        while (startIdx > 0 && messages[startIdx].role == MessageRole.TOOL) {
+            startIdx--
+        }
+        
+        // If we start AFTER an ASSISTANT message that has tool calls, we must check if any of its tools are later
+        // But tool results always come after. So the main risk is starting at a TOOL message.
+        
+        return messages.drop(startIdx)
+    }
+
     override fun onCleared() {
         super.onCleared()
         generationJob?.cancel()
         llmProvider.cancel()
+    }
+
+    fun deleteMessage(messageId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
+        }
+    }
+
+    fun editMessage(messageId: String, newContent: String) {
+        val sessionId = _currentSessionId.value ?: return
+        val session = store.getSession(sessionId) ?: return
+        val message = session.messages.find { it.id == messageId } ?: return
+        
+        viewModelScope.launch {
+            // Delete all messages after this one
+            messageManager.deleteMessagesAfter(sessionId, message.createdAt) { stopGeneration() }
+            // Update this message content
+            messageManager.updateMessageContent(sessionId, messageId, newContent)
+            // Trigger regeneration
+            generateMessage(sessionId, "", false)
+        }
+    }
+
+    fun regenerateMessage(messageId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        val session = store.getSession(sessionId) ?: return
+        val message = session.messages.find { it.id == messageId } ?: return
+        
+        viewModelScope.launch {
+            // Delete this message and all after
+            messageManager.deleteMessagesAfter(sessionId, message.createdAt) { stopGeneration() }
+            // Trigger regeneration
+            generateMessage(sessionId, "", false)
+        }
     }
 
     companion object {
@@ -652,5 +821,29 @@ class ChatViewModel(
                     ) as T
                 }
             }
+    }
+
+    private fun updateTokenIndicator(session: Session) {
+        val summary = session.summary ?: ""
+        val activeMsgs = getSafeActiveWindow(session.messages, session.inferenceParams?.activeContextWindow ?: 10)
+        
+        val systemTokens = 500 // Estimated base
+        val summaryTokens = PostProcessor.estimateTokens(summary)
+        val activeTokens = activeMsgs.sumOf { PostProcessor.estimateTokens(it.content) }
+        val ragTokens = 0 // Will be updated by context builder results
+        
+        val used = systemTokens + summaryTokens + activeTokens + ragTokens
+        val max = 128000 // TODO: Get from model spec
+        
+        _tokenIndicatorState.update { 
+            it.copy(
+                used = used,
+                max = max,
+                systemTokens = systemTokens,
+                summaryTokens = summaryTokens,
+                activeTokens = activeTokens,
+                ragTokens = ragTokens
+            )
+        }
     }
 }

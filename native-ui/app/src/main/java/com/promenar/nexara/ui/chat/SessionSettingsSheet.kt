@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Token
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -119,8 +121,6 @@ private fun thinkingLevelDesc(id: String): String = when (id) {
     else -> ""
 }
 
-// Removed sampleModels as we now use real data
-
 private val capabilityColorMap: Map<ModelCapability, Pair<Color, Color>> = mapOf(
     ModelCapability.REASONING to (Color(0xFFA78BFA) to Color(0xFF1E1B4B)),
     ModelCapability.VISION to (Color(0xFFF472B6) to Color(0xFF4A1942)),
@@ -158,8 +158,6 @@ fun SessionSettingsSheet(
         stringResource(R.string.sheet_tab_stats),
         stringResource(R.string.sheet_tab_tools)
     )
-
-    LaunchedEffect(pagerState.currentPage) {}
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -205,7 +203,7 @@ fun SessionSettingsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.7f)
+                .fillMaxHeight(0.85f) // Increased slightly for more content
         ) {
             ScrollableTabRow(
                 selectedTabIndex = pagerState.currentPage,
@@ -268,9 +266,24 @@ fun SessionSettingsSheet(
                     )
                     1 -> ThinkingLevelPanel(
                         currentTemperature = (session?.inferenceParams?.temperature ?: 0.7).toFloat(),
+                        currentTimeout = session?.inferenceParams?.streamTimeout ?: 120,
+                        currentSummaryThreshold = (session?.inferenceParams?.autoSummaryThreshold ?: 0.8).toFloat(),
+                        currentActiveWindow = session?.inferenceParams?.activeContextWindow ?: 10,
                         onUpdate = { temp ->
                             val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
                             chatViewModel.updateInferenceParams(params.copy(temperature = temp.toDouble()))
+                        },
+                        onTimeoutUpdate = { timeout ->
+                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                            chatViewModel.updateInferenceParams(params.copy(streamTimeout = timeout))
+                        },
+                        onSummaryThresholdUpdate = { threshold ->
+                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                            chatViewModel.updateInferenceParams(params.copy(autoSummaryThreshold = threshold.toDouble()))
+                        },
+                        onActiveWindowUpdate = { window ->
+                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                            chatViewModel.updateInferenceParams(params.copy(activeContextWindow = window))
                         }
                     )
                     2 -> StatsPanel(chatViewModel = chatViewModel, settingsViewModel = settingsViewModel)
@@ -291,11 +304,8 @@ private fun ModelPanel(
     var searchQuery by remember { mutableStateOf("") }
     val allModels by settingsViewModel.providerModels.collectAsState()
     
-    // Convert ModelInfo to ModelItem for UI
     val modelItems = allModels.filter { it.enabled }.map { info ->
         val mappedCaps = mutableSetOf<ModelCapability>()
-        
-        // Map from primary type
         when (info.type) {
             "chat" -> mappedCaps.add(ModelCapability.CHAT)
             "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
@@ -303,8 +313,6 @@ private fun ModelPanel(
             "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
             "rerank" -> mappedCaps.add(ModelCapability.RERANK)
         }
-        
-        // Map from tags
         info.capabilities.forEach { capStr ->
             when (capStr.lowercase()) {
                 "vision" -> mappedCaps.add(ModelCapability.VISION)
@@ -316,7 +324,6 @@ private fun ModelPanel(
                 "chat" -> mappedCaps.add(ModelCapability.CHAT)
             }
         }
-        
         if (mappedCaps.isEmpty()) mappedCaps.add(ModelCapability.CHAT)
 
         ModelItem(
@@ -434,7 +441,13 @@ private fun ModelPanel(
 @Composable
 private fun ThinkingLevelPanel(
     currentTemperature: Float,
-    onUpdate: (Float) -> Unit
+    currentTimeout: Int,
+    currentSummaryThreshold: Float,
+    currentActiveWindow: Int,
+    onUpdate: (Float) -> Unit,
+    onTimeoutUpdate: (Int) -> Unit,
+    onSummaryThresholdUpdate: (Float) -> Unit,
+    onActiveWindowUpdate: (Int) -> Unit
 ) {
     val selectedLevel = when {
         currentTemperature <= 0.3f -> "minimal"
@@ -454,55 +467,150 @@ private fun ThinkingLevelPanel(
         onUpdate(newTemp)
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 24.dp)
             .padding(top = 16.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (row in listOf(thinkingLevels.take(2), thinkingLevels.drop(2))) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    row.forEach { level ->
-                        val isSelected = selectedLevel == level.id
-                        NexaraGlassCard(
-                            modifier = Modifier
-                                .weight(1f)
-                                .then(
-                                    if (isSelected) Modifier.border(1.dp, NexaraColors.Primary, RoundedCornerShape(12.dp))
-                                    else Modifier
-                                )
-                                .clickable { onLevelClick(level.id) },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (row in listOf(thinkingLevels.take(2), thinkingLevels.drop(2))) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        row.forEach { level ->
+                            val isSelected = selectedLevel == level.id
+                            NexaraGlassCard(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(if (isSelected) Modifier.background(NexaraColors.Primary.copy(alpha = 0.08f)) else Modifier)
-                                    .padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                    .weight(1f)
+                                    .then(
+                                        if (isSelected) Modifier.border(1.dp, NexaraColors.Primary, RoundedCornerShape(12.dp))
+                                        else Modifier
+                                    )
+                                    .clickable { onLevelClick(level.id) },
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Box(
+                                Column(
                                     modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(level.tint.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxWidth()
+                                        .then(if (isSelected) Modifier.background(NexaraColors.Primary.copy(alpha = 0.08f)) else Modifier)
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(level.icon, null, tint = level.tint, modifier = Modifier.size(20.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(level.tint.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(level.icon, null, tint = level.tint, modifier = Modifier.size(20.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(thinkingLevelTitle(level.id), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(thinkingLevelDesc(level.id), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(thinkingLevelTitle(level.id), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(thinkingLevelDesc(level.id), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
                             }
                         }
                     }
                 }
             }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
+            Text(
+                text = stringResource(R.string.session_settings_stream_timeout),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentTimeout.toFloat(),
+                    onValueChange = { onTimeoutUpdate(it.toInt()) },
+                    valueRange = 30f..300f,
+                    steps = 26,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = stringResource(R.string.session_settings_unit_seconds, currentTimeout),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.session_settings_summary_threshold),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentSummaryThreshold,
+                    onValueChange = { onSummaryThresholdUpdate(it) },
+                    valueRange = 0.5f..0.95f,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "${(currentSummaryThreshold * 100).toInt()}%",
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.session_settings_active_window),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentActiveWindow.toFloat(),
+                    onValueChange = { onActiveWindowUpdate(it.toInt()) },
+                    valueRange = 5f..50f,
+                    steps = 8,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "$currentActiveWindow Msg",
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
@@ -513,12 +621,13 @@ private fun StatsPanel(
     settingsViewModel: SettingsViewModel
 ) {
     val uiState by chatViewModel.uiState.collectAsState()
+    val tokenIndicator by chatViewModel.tokenIndicatorState.collectAsState()
     val session = uiState.session
     
-    val totalTokens = session?.messages?.sumOf { it.tokens?.total ?: 0 } ?: 0
-    val promptTokens = session?.messages?.sumOf { it.tokens?.input ?: 0 } ?: 0
-    val completionTokens = session?.messages?.sumOf { it.tokens?.output ?: 0 } ?: 0
-    val ragTokens = 0 // Placeholder for now
+    val totalTokens = tokenIndicator.used
+    val promptTokens = tokenIndicator.activeTokens
+    val summaryTokens = tokenIndicator.summaryTokens
+    val ragTokens = tokenIndicator.ragTokens
 
     Column(
         modifier = Modifier
@@ -528,7 +637,7 @@ private fun StatsPanel(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(contentAlignment = Alignment.Center) {
-            val animatedProgress = (totalTokens.toFloat() / 128000f).coerceIn(0f, 1f)
+            val animatedProgress = (totalTokens.toFloat() / tokenIndicator.max.toFloat()).coerceIn(0f, 1f)
             androidx.compose.material3.CircularProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier.size(100.dp),
@@ -539,11 +648,11 @@ private fun StatsPanel(
             )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    totalTokens.toString(),
+                    if (totalTokens > 1000) "${totalTokens/1000}K" else totalTokens.toString(),
                     style = NexaraTypography.headlineLarge.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold),
                     color = NexaraColors.OnSurface
                 )
-                Text(stringResource(R.string.sheet_stats_tokens), style = NexaraTypography.labelMedium.copy(fontSize = 10.sp), color = NexaraColors.OnSurfaceVariant)
+                Text(stringResource(R.string.token_tokens), style = NexaraTypography.labelMedium.copy(fontSize = 10.sp), color = NexaraColors.OnSurfaceVariant)
             }
         }
 
@@ -555,15 +664,15 @@ private fun StatsPanel(
                 iconTint = Color(0xFFA78BFA),
                 label = stringResource(R.string.sheet_stats_prompt),
                 value = promptTokens,
-                max = 8192,
+                max = tokenIndicator.max,
                 color = Color(0xFFA78BFA)
             )
             MetricRow(
-                icon = Icons.Rounded.Bolt,
+                icon = Icons.Rounded.AutoFixHigh,
                 iconTint = Color(0xFFFBBF24),
-                label = stringResource(R.string.sheet_stats_completion),
-                value = completionTokens,
-                max = 8192,
+                label = stringResource(R.string.sheet_tab_thinking), // "Summary"
+                value = summaryTokens,
+                max = tokenIndicator.max,
                 color = Color(0xFFFBBF24)
             )
             MetricRow(
@@ -571,7 +680,7 @@ private fun StatsPanel(
                 iconTint = Color(0xFF10B981),
                 label = stringResource(R.string.sheet_stats_rag),
                 value = ragTokens,
-                max = 8192,
+                max = tokenIndicator.max,
                 color = Color(0xFF10B981)
             )
         }
@@ -648,12 +757,13 @@ private fun ToolsPanel(
     session: com.promenar.nexara.data.model.Session?
 ) {
     val options = session?.options ?: com.promenar.nexara.data.model.SessionOptions()
+    val ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
     
     var timeInjection by remember(options.enableTimeInjection) { mutableStateOf(options.enableTimeInjection) }
     var toolsEnabled by remember(options.toolsEnabled) { mutableStateOf(options.toolsEnabled) }
     var webSearch by remember(options.webSearch) { mutableStateOf(options.webSearch ?: false) }
+    var rerankEnabled by remember(ragOptions.enableRerank) { mutableStateOf(ragOptions.enableRerank) }
     
-    // We'll map these to session options
     val onToggle: (String, Boolean) -> Unit = { tool, enabled ->
         chatViewModel.toggleTool(tool, enabled)
     }
@@ -678,6 +788,12 @@ private fun ToolsPanel(
         ToolToggleRow(stringResource(R.string.sheet_tool_web_search), Icons.Rounded.Memory, webSearch) { 
             webSearch = it
             onToggle("webSearch", it)
+        }
+        
+        ToolToggleRow(stringResource(R.string.sheet_tool_rerank), Icons.Rounded.Sync, rerankEnabled) { 
+            rerankEnabled = it
+            // Need a new toggle function or updateRagOptions
+            chatViewModel.updateRagOptions(ragOptions.copy(enableRerank = it))
         }
     }
 }

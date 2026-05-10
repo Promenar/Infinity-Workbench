@@ -118,7 +118,7 @@ fun RagAdvancedScreen(
                             ) {
                                 Column {
                                     Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                                    val selectedModelName = extractionModels.find { it.second == config.kgExtractionModel }?.first
+                                    val selectedModelName = extractionModels.find { it.id == config.kgExtractionModel }?.name
                                     Text(
                                         selectedModelName ?: stringResource(R.string.rag_advanced_select_model_placeholder),
                                         style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),

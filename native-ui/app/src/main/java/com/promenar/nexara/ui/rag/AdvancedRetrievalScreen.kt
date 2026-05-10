@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Tune
@@ -187,8 +188,7 @@ fun AdvancedRetrievalScreen(
                             Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
                             NexaraGlassCard(
                                 modifier = Modifier.fillMaxWidth().clickable { showModelPicker = true },
-                                shape = RoundedCornerShape(10.dp),
-                                containerColor = NexaraColors.SurfaceContainer
+                                shape = RoundedCornerShape(10.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(12.dp),

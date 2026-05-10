@@ -69,6 +69,8 @@
     <string name="shared_btn_retry">Retry</string>
     <string name="shared_confirm_delete_title">Confirm Delete</string>
     <string name="shared_action_cannot_undo">This action cannot be undone.</string>
+    <string name="shared_btn_copy">Copy</string>
+    <string name="shared_btn_regenerate">Regenerate</string>
 
     <!-- ============ Hub ============ -->
     <string name="hub_title">Agents</string>
@@ -233,6 +235,11 @@
     <!-- ChatScreen -->
     <string name="chat_title_new">New Chat</string>
     <string name="chat_menu_session_settings">Session Settings</string>
+    <string name="chat_action_copy">Copy</string>
+    <string name="chat_action_edit">Edit</string>
+    <string name="chat_action_delete">Delete</string>
+    <string name="chat_action_resend">Resend</string>
+    <string name="chat_action_regenerate">Regenerate</string>
     <string name="chat_menu_token_stats">Token Stats</string>
     <string name="chat_menu_super_assistant">Super Assistant</string>
     <string name="chat_menu_export">Export Chat</string>
@@ -270,6 +277,10 @@
     <string name="session_settings_temperature">Temperature</string>
     <string name="session_settings_top_p">Top P</string>
     <string name="session_settings_max_tokens">Max Tokens</string>
+    <string name="session_settings_stream_timeout">Request Timeout</string>
+    <string name="session_settings_unit_seconds">%1$d seconds</string>
+    <string name="session_settings_summary_threshold">Auto-Summary Threshold</string>
+    <string name="session_settings_active_window">Active Context Window</string>
     <string name="session_settings_label_focused">Focused</string>
     <string name="session_settings_label_diverse">Diverse</string>
     <string name="session_settings_label_short">Short</string>
@@ -311,7 +322,7 @@
     <string name="sheet_thinking_high_desc">Strongest reasoning, highest quality</string>
     <string name="sheet_stats_prompt">Prompt</string>
     <string name="sheet_stats_completion">Completion</string>
-    <string name="sheet_stats_rag">RAG System</string>
+    <string name="sheet_stats_rag">Memory RAG</string>
     <string name="sheet_stats_total">Total Tokens</string>
     <string name="sheet_stats_reset">Reset Stats</string>
     <string name="sheet_stats_disclaimer">Estimated token usage</string>
@@ -320,13 +331,13 @@
     <string name="sheet_tool_skills">Agent Skills</string>
     <string name="sheet_tool_mcp_servers">MCP Servers</string>
     <string name="sheet_tool_user_skills">User Skills</string>
-    <string name="sheet_stats_tokens">tokens</string>
     <string name="sheet_tool_execution_mode">Execution Mode</string>
     <string name="sheet_tool_search_retrieval">Search &amp; Retrieval</string>
     <string name="sheet_tool_code_analysis">Code Analysis</string>
     <string name="sheet_tool_web_search">Web Search</string>
     <string name="sheet_tool_filesystem_server">Filesystem Server</string>
     <string name="sheet_tool_github_server">GitHub Server</string>
+    <string name="sheet_tool_rerank">Passively RAG (Long-term Memory)</string>
 
     <!-- SpaSettingsScreen -->
     <string name="spa_title">Super Assistant Settings</string>

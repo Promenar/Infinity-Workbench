@@ -25,6 +25,7 @@ graph TD
         SRG --> WS[WebSearchSkill]
         WS --> WSP[WebSearchProviders]
         CM --> RP[PostProcessor]
+        D1V --> SM[SummaryManager]
         CB --> KG[KgProvider]
     end
 
@@ -75,7 +76,7 @@ graph TD
 | `data/remote` | LLM 协议实现 (OpenAI, Anthropic, VertexAI) 与流式解析器 |
 | `data/rag` | RAG 核心逻辑：向量存储 (VectorStore)、知识图谱 (GraphStore)、文本切分等 |
 | `data/repository` | 数据仓库层，封装本地数据库与业务逻辑的交互 |
-| `ui/chat` | 聊天会话核心界面及逻辑管理 (MessageManager, ContextBuilder) |
+| `ui/chat` | 聊天会话核心界面及逻辑管理 (MessageManager, ContextBuilder, SummaryManager) |
 | `ui/hub` | 智能体中心 (Agent Hub) 相关界面 |
 | `ui/rag` | 知识库管理与 RAG 配置界面 |
 | `ui/renderer` | Markdown 增强渲染器 (LaTeX, Mermaid, ECharts) |

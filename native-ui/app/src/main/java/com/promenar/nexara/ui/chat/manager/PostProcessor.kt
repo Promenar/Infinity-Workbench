@@ -98,12 +98,11 @@ class PostProcessor(
         }
     }
 
-    suspend fun archiveToRag(params: PostProcessorParams) {
-        messageManager.setVectorizationStatus(
-            params.sessionId,
-            listOf(params.userMsgId, params.assistantMsgId),
-            "processing"
-        )
+    suspend fun archiveMessagesToRag(sessionId: String, messages: List<com.promenar.nexara.data.model.Message>, modelId: String) {
+        if (messages.isEmpty()) return
+        
+        val msgIds = messages.map { it.id }
+        messageManager.setVectorizationStatus(sessionId, msgIds, "processing")
 
         val client = embeddingClient
         val store = vectorStore
@@ -111,27 +110,18 @@ class PostProcessor(
 
         if (client == null || store == null || splitter == null) {
             Log.w(TAG, "Embedding pipeline not configured, skipping archive")
-            messageManager.setVectorizationStatus(
-                params.sessionId,
-                listOf(params.userMsgId, params.assistantMsgId),
-                "skipped"
-            )
+            messageManager.setVectorizationStatus(sessionId, msgIds, "skipped")
             return
         }
 
         try {
-            val combinedText = buildString {
-                append("User: ").append(params.userContent).append("\n\n")
-                append("Assistant: ").append(params.assistantContent)
+            val combinedText = messages.joinToString("\n\n") { msg ->
+                "${msg.role.name}: ${msg.content}"
             }
 
             val chunks = splitter.splitText(combinedText)
             if (chunks.isEmpty()) {
-                messageManager.setVectorizationStatus(
-                    params.sessionId,
-                    listOf(params.userMsgId, params.assistantMsgId),
-                    "success"
-                )
+                messageManager.setVectorizationStatus(sessionId, msgIds, "success")
                 return
             }
 
@@ -141,12 +131,12 @@ class PostProcessor(
 
             val vectorRecords = chunks.mapIndexed { index, chunk ->
                 VectorStore.NewVectorRecord(
-                    sessionId = params.sessionId,
+                    sessionId = sessionId,
                     content = chunk,
                     embedding = embeddingResult.embeddings[index],
-                    metadata = """{"type":"memory","modelId":"${params.modelId}"}""",
-                    startMessageId = params.userMsgId,
-                    endMessageId = params.assistantMsgId
+                    metadata = """{"type":"memory","modelId":"$modelId"}""",
+                    startMessageId = msgIds.first(),
+                    endMessageId = msgIds.last()
                 )
             }
 
@@ -154,18 +144,10 @@ class PostProcessor(
                 store.addVectorRecords(vectorRecords)
             }
 
-            messageManager.setVectorizationStatus(
-                params.sessionId,
-                listOf(params.userMsgId, params.assistantMsgId),
-                "success"
-            )
+            messageManager.setVectorizationStatus(sessionId, msgIds, "success")
         } catch (e: Exception) {
-            Log.e(TAG, "archiveToRag failed for session ${params.sessionId}", e)
-            messageManager.setVectorizationStatus(
-                params.sessionId,
-                listOf(params.userMsgId, params.assistantMsgId),
-                "error"
-            )
+            Log.e(TAG, "archiveMessagesToRag failed for session $sessionId", e)
+            messageManager.setVectorizationStatus(sessionId, msgIds, "error")
         }
     }
 

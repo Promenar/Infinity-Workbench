@@ -61,7 +61,8 @@ data class PromptRequest(
     val tools: List<ProtocolTool>? = null,
     val stream: Boolean = true,
     val reasoning: Boolean? = null,
-    val webSearch: Boolean? = null
+    val webSearch: Boolean? = null,
+    val streamTimeout: Long? = null
 )
 
 @Serializable

@@ -47,7 +47,10 @@ data class InferenceParams(
     val maxTokens: Int? = null,
     val frequencyPenalty: Double? = null,
     val presencePenalty: Double? = null,
-    val thinkingLevel: String? = null
+    val thinkingLevel: String? = null,
+    val streamTimeout: Int? = 120,
+    val autoSummaryThreshold: Double = 0.8,
+    val activeContextWindow: Int = 10
 )
 
 @Serializable
@@ -183,7 +186,8 @@ data class RagOptions(
     val activeDocIds: List<String> = emptyList(),
     val activeFolderIds: List<String> = emptyList(),
     val isGlobal: Boolean = false,
-    val enableKnowledgeGraph: Boolean? = null
+    val enableKnowledgeGraph: Boolean? = null,
+    val enableRerank: Boolean = false
 )
 
 @Serializable
@@ -262,6 +266,7 @@ data class Message(
 data class Session(
     val id: String,
     val agentId: String,
+    val summary: String? = null,
     val title: String = "New Chat",
     val lastMessage: String? = null,
     val time: String? = null,
