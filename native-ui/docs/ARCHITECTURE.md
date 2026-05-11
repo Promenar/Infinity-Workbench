@@ -95,3 +95,16 @@ graph TD
 - **Markdown**: `multiplatform-markdown-renderer` (mikepenz)
 - **公式/图表**: KaTeX, Mermaid.js, ECharts (通过 WebView 渲染)
 - **网络**: Ktor (用于 LLM API 通信)
+
+## 远期设计目标 (Roadmap)
+
+### 1. 多分支会话系统 (Multi-branching System)
+- **目标**: 允许用户对历史消息进行非破坏性的重发或编辑。
+- **设计**: 将消息列表结构升级为树状结构 (Tree Structure)，引入 `parent_id` 概念。
+- **交互**: 在消息气泡上增加版本切换组件 (如 `1/2`, `2/2`)，支持在不同对话路径间快速切换。
+
+### 2. 精确 Token 计费
+- **目标**: 接入 `tiktoken` 等库实现针对具体模型的精确 Token 消耗统计。
+
+### 3. 自动化插件系统
+- **目标**: 深度集成 MCP (Model Context Protocol) 协议，允许模型自主调用外部工具。

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 聊天会话管理功能重构
+- **菜单位置修复**: 解决了聊天界面右上角三点菜单位置偏移的问题，将其正确锚定在操作按钮下方。
+- **核心功能实现**:
+    - **清除历史**: 实现了清空当前会话所有消息的功能，并配有二次确认对话框。
+    - **重命名会话**: 实现了自定义会话标题的功能，新增毛玻璃样式的重命名对话框。
+    - **删除会话**: 实现了彻底删除当前会话及其所有内容的功能。
+- **国际化补全**: 为上述功能补全了中英文资源，并修复了中文资源中的字符乱码问题。
+- **UI 细节优化**: 将会话管理菜单项与标准 Material 图标（History, Edit, Delete）对接。
+
 ### Markdown 富文本渲染能力升级 (MD-S1 ~ MD-S5)
 
 - **Markdown 渲染引擎**: 集成 mikepenz/multiplatform-markdown-renderer v0.40.2，支持完整 Markdown 语法（标题、列表、代码块、粗体、表格等）
@@ -66,6 +75,14 @@ All notable changes to this project will be documented in this file.
 - 重构了 `PostProcessor` 以支持批量消息归档。
 - 优化了 `ContextBuilder` 以支持历史摘要注入。
 - 更新了 `ChatScreen` 输入栏布局，集成了 Token 统计。
+
+### 修复
+- **主会话第一个气泡重发逻辑**: 修复了在会话第一个气泡执行“重发”操作时导致整个会话消息记录被清空的严重 Bug。
+    - 调整了 `deleteMessagesAfter` 的调用时间戳，确保保留触发操作的 User 消息本身。
+    - 修复了 `editMessage` 中由于消息被错误删除导致的编辑内容无法保存的问题。
+- **主模型选择器筛选**: 修复了会话设置和模型选择器中会出现 Embedding 或 Rerank 模型的问题。
+    - 现在主模型列表仅筛选 `chat`、`reasoning`、`image` 类型的模型。
+    - 同步更新了通用 `ModelPicker` 的过滤逻辑，将 `IMAGE` 归类至主对话能力。
 
 ## [v0.9.5] - 2026-05-09
 

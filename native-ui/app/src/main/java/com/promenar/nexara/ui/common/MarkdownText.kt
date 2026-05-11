@@ -34,12 +34,12 @@ import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import com.promenar.nexara.ui.renderer.CodeBlockWithHeader
 import com.promenar.nexara.ui.renderer.EChartsBlock
-import com.promenar.nexara.ui.renderer.InlineLatexSpan
-import com.promenar.nexara.ui.renderer.PlantUmlBlock
 import com.promenar.nexara.ui.renderer.ImageLightbox
+import com.promenar.nexara.ui.renderer.InlineLatexSpan
 import com.promenar.nexara.ui.renderer.LatexBlock
 import com.promenar.nexara.ui.renderer.MermaidBlock
 import com.promenar.nexara.ui.renderer.NexaraTableWidget
+import com.promenar.nexara.ui.renderer.PlantUmlBlock
 import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
 import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -267,8 +267,7 @@ fun MarkdownText(
                                             MarkdownHighlightedCode(
                                                 code = code,
                                                 language = language,
-                                                style = style,
-                                                modifier = Modifier.fillMaxWidth()
+                                                style = style
                                             )
                                         }
                                     }
@@ -283,8 +282,7 @@ fun MarkdownText(
                                             MarkdownHighlightedCode(
                                                 code = code,
                                                 language = language,
-                                                style = style,
-                                                modifier = Modifier.fillMaxWidth()
+                                                style = style
                                             )
                                         }
                                     }

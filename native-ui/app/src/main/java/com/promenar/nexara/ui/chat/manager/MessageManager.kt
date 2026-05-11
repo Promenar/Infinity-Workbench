@@ -385,6 +385,23 @@ class MessageManager(
         }
     }
 
+    suspend fun clearMessages(sessionId: String) {
+        try {
+            messageRepository.deleteBySessionId(sessionId)
+        } catch (_: Exception) {
+        }
+
+        store.update { state ->
+            state.copy(
+                sessions = state.sessions.map { s ->
+                    if (s.id == sessionId) {
+                        s.copy(messages = emptyList(), lastMessage = null)
+                    } else s
+                }
+            )
+        }
+    }
+
     suspend fun flushMessageUpdates(sessionId: String, messageId: String) {
         flushUpdate(sessionId, messageId)
     }

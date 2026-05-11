@@ -250,6 +250,17 @@
     <string name="chat_cd_stop">停止</string>
     <string name="chat_cd_send">发送</string>
     <string name="chat_cd_scroll_bottom">回到底部</string>
+    <string name="chat_confirm_truncate_title">确认抛弃后续内容？</string>
+    <string name="chat_confirm_truncate_message">此操作将永久删除当前位置之后的所有对话记录。确认继续吗？</string>
+    <string name="chat_undo_truncate">已抛弃后续内容</string>
+    <string name="chat_undo_delete">消息已删除</string>
+    <string name="chat_btn_undo">撤销</string>
+    <string name="chat_context_usage_title">上下文用量</string>
+    <string name="chat_context_label_system">系统指令</string>
+    <string name="chat_context_label_summary">历史摘要</string>
+    <string name="chat_context_label_active">活跃对话</string>
+    <string name="chat_context_label_rag">知识增强</string>
+    <string name="chat_context_btn_compress">压缩历史</string>
 
     <!-- Chat Inline Components -->
     <string name="chat_rag_knowledge_retrieval">知识检索</string>
@@ -308,8 +319,8 @@
     <string name="sheet_title">会话设置</string>
     <string name="sheet_tab_model">模型</string>
     <string name="sheet_tab_thinking">思考级别</string>
-    <string name="sheet_tab_stats">统计</string>
     <string name="sheet_tab_tools">工具</string>
+    <string name="sheet_tab_settings">设置</string>
     <string name="sheet_thinking_minimal">最小</string>
     <string name="sheet_thinking_minimal_desc">快速响应，最低计算</string>
     <string name="sheet_thinking_low">低</string>
@@ -335,6 +346,20 @@
     <string name="sheet_tool_web_search">Web 搜索</string>
     <string name="sheet_tool_filesystem_server">文件系统服务器</string>
     <string name="sheet_tool_github_server">GitHub 服务器</string>
+    <string name="sheet_tool_rerank">被动 RAG（长期记忆）</string>
+    <string name="sheet_settings_section_inference">生成参数</string>
+    <string name="sheet_settings_section_vectorization">会话向量化</string>
+    <string name="sheet_settings_section_retrieval">向量检索</string>
+    <string name="sheet_settings_summary_threshold">自动摘要阈值</string>
+    <string name="sheet_settings_active_window">活跃上下文窗口</string>
+    <string name="sheet_settings_active_window_unit">%1$d 条消息</string>
+    <string name="sheet_settings_stream_timeout">请求超时</string>
+    <string name="sheet_settings_top_p">Top P</string>
+    <string name="sheet_settings_max_tokens">最大 Token 数</string>
+    <string name="sheet_settings_memory">长期记忆</string>
+    <string name="sheet_settings_docs">知识库检索</string>
+    <string name="sheet_settings_kg">知识图谱</string>
+    <string name="sheet_settings_unlimited">无限制</string>
 
     <!-- SpaSettingsScreen -->
     <string name="spa_title">超级助手设置</string>
@@ -762,4 +787,15 @@
     <string name="search_config_engine_duckduckgo">DuckDuckGo (本地解析/免费)</string>
     <string name="search_config_engine_searxng">SearXNG (元搜索/公共节点)</string>
     <string name="search_config_engine_tavily">Tavily (AI 优化/API Key)</string>
+    <string name="chat_status_thinking">思考中...</string>
+    <string name="chat_status_thought">已完成思考</string>
+    <string name="chat_menu_clear_history">清除历史</string>
+    <string name="chat_menu_rename">重命名</string>
+    <string name="chat_menu_delete_session">删除会话</string>
+    <string name="chat_dialog_clear_history_title">清除历史记录？</string>
+    <string name="chat_dialog_clear_history_msg">此操作将删除当前会话中的所有消息，且无法撤回。</string>
+    <string name="chat_dialog_delete_session_title">删除会话？</string>
+    <string name="chat_dialog_delete_session_msg">此操作将永久删除此会话及其所有内容。</string>
+    <string name="chat_dialog_rename_title">重命名会话</string>
+    <string name="chat_dialog_rename_placeholder">输入新名称...</string>
 </resources>

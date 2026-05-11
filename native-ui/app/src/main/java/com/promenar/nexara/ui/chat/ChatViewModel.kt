@@ -1,21 +1,16 @@
 package com.promenar.nexara.ui.chat
 
 import android.app.Application
-import java.io.File
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
-import com.promenar.nexara.data.model.InferenceParams
-import com.promenar.nexara.data.model.RagOptions
-import com.promenar.nexara.data.model.SessionOptions
-import com.promenar.nexara.data.remote.protocol.ProtocolCitation
-import com.promenar.nexara.data.remote.protocol.ProtocolMessage
-import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
@@ -25,6 +20,7 @@ import com.promenar.nexara.data.rag.MemoryManagerRagAdapter
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.remote.protocol.PromptRequest
+import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
@@ -38,21 +34,33 @@ import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
+
+enum class GenerationStatus {
+    IDLE,
+    UPLOADING,
+    THINKING,
+    RECEIVING,
+    COMPLETED,
+    ERROR
+}
 
 data class ChatUiState(
     val session: Session? = null,
     val messages: List<Message> = emptyList(),
     val isGenerating: Boolean = false,
+    val status: GenerationStatus = GenerationStatus.IDLE,
     val streamingContent: String = "",
     val error: String? = null,
     val approvalRequest: ApprovalRequest? = null
@@ -95,6 +103,7 @@ class ChatViewModel(
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
     private val _isGenerating = MutableStateFlow(false)
+    private val _generationStatus = MutableStateFlow(GenerationStatus.IDLE)
 
     data class TokenIndicatorState(
         val used: Int = 0,
@@ -109,27 +118,36 @@ class ChatViewModel(
 
     private var generationJob: Job? = null
 
+    @Suppress("UNCHECKED_CAST")
     val uiState: StateFlow<ChatUiState> = combine(
         store.state,
         _currentSessionId,
         _isGenerating,
+        _generationStatus,
         _streamingContent,
         _error
-    ) { chatState, sessionId, isGenerating, streamingContent, error ->
-        val session = sessionId?.let { id -> chatState.sessions.find { it.id == id } }
+    ) { args: Array<Any?> ->
+        val state = args[0] as com.promenar.nexara.ui.chat.ChatState
+        val sessionId = args[1] as String?
+        val isGenerating = args[2] as Boolean
+        val status = args[3] as GenerationStatus
+        val streamingContent = args[4] as String
+        val error = args[5] as String?
+
+        val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
             updateTokenIndicator(session)
         }
-        
         ChatUiState(
             session = session,
             messages = session?.messages ?: emptyList(),
             isGenerating = isGenerating,
+            status = status,
             streamingContent = streamingContent,
             error = error,
             approvalRequest = session?.approvalRequest
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, ChatUiState())
 
     init {
         approvalManager.setCallbacks(
@@ -210,6 +228,7 @@ class ChatViewModel(
             ?: ""
 
         _isGenerating.update { true }
+        _generationStatus.update { GenerationStatus.UPLOADING }
         _streamingContent.update { "" }
 
         val agentDao = (application as NexaraApplication).database.agentDao()
@@ -229,6 +248,11 @@ class ChatViewModel(
         } catch (e: Exception) {
             _error.update { "Context build failed: ${e.message}" }
             _isGenerating.update { false }
+            _generationStatus.update { GenerationStatus.ERROR }
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(2000)
+                _generationStatus.update { GenerationStatus.IDLE }
+            }
             return
         }
 
@@ -268,7 +292,12 @@ class ChatViewModel(
 
         try {
             val flow = llmProvider.sendPrompt(request)
+            _generationStatus.update { GenerationStatus.THINKING }
+            
             flow.collect { chunk ->
+                if (_generationStatus.value == GenerationStatus.THINKING && (chunk is StreamChunk.TextDelta || chunk is StreamChunk.Thinking)) {
+                    _generationStatus.update { GenerationStatus.RECEIVING }
+                }
                 when (chunk) {
                     is StreamChunk.TextDelta -> {
                         accumulatedContent += chunk.content
@@ -348,6 +377,11 @@ class ChatViewModel(
                 )
             }
             _isGenerating.update { false }
+            _generationStatus.update { GenerationStatus.ERROR }
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(2000)
+                _generationStatus.update { GenerationStatus.IDLE }
+            }
         }
 
         messageManager.flushMessageUpdates(sessionId, assistantMsgId)
@@ -371,6 +405,11 @@ class ChatViewModel(
             }
         } else {
             _isGenerating.update { false }
+            _generationStatus.update { GenerationStatus.COMPLETED }
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(1000)
+                _generationStatus.update { GenerationStatus.IDLE }
+            }
         }
 
         if (userMsgId != null && currentCoroutineContext().isActive) {
@@ -767,6 +806,30 @@ class ChatViewModel(
         return messages.drop(startIdx)
     }
 
+    private val lastDeletedMessages = mutableListOf<Pair<String, Message>>()
+
+    fun undoLastDeletion() {
+        if (lastDeletedMessages.isEmpty()) return
+        viewModelScope.launch {
+            // Sort by createdAt to ensure correct order when re-inserting
+            val sorted = lastDeletedMessages.sortedBy { it.second.createdAt }
+            sorted.forEach { (sid, msg) ->
+                messageManager.addMessage(sid, msg)
+            }
+            lastDeletedMessages.clear()
+        }
+    }
+
+    private suspend fun backupAndTruncate(sessionId: String, timestamp: Long) {
+        val session = store.getSession(sessionId) ?: return
+        val toDelete = session.messages.filter { it.createdAt >= timestamp }
+        if (toDelete.isNotEmpty()) {
+            lastDeletedMessages.clear()
+            toDelete.forEach { lastDeletedMessages.add(sessionId to it) }
+            messageManager.deleteMessagesAfter(sessionId, timestamp) { stopGeneration() }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         generationJob?.cancel()
@@ -775,7 +838,12 @@ class ChatViewModel(
 
     fun deleteMessage(messageId: String) {
         val sessionId = _currentSessionId.value ?: return
+        val session = store.getSession(sessionId) ?: return
+        val message = session.messages.find { it.id == messageId } ?: return
+        
         viewModelScope.launch {
+            lastDeletedMessages.clear()
+            lastDeletedMessages.add(sessionId to message)
             messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
         }
     }
@@ -786,8 +854,8 @@ class ChatViewModel(
         val message = session.messages.find { it.id == messageId } ?: return
         
         viewModelScope.launch {
-            // Delete all messages after this one
-            messageManager.deleteMessagesAfter(sessionId, message.createdAt) { stopGeneration() }
+            // Delete all messages strictly after this one with backup
+            backupAndTruncate(sessionId, message.createdAt + 1)
             // Update this message content
             messageManager.updateMessageContent(sessionId, messageId, newContent)
             // Trigger regeneration
@@ -801,10 +869,31 @@ class ChatViewModel(
         val message = session.messages.find { it.id == messageId } ?: return
         
         viewModelScope.launch {
-            // Delete this message and all after
-            messageManager.deleteMessagesAfter(sessionId, message.createdAt) { stopGeneration() }
+            // Delete all messages strictly after this one with backup
+            backupAndTruncate(sessionId, message.createdAt + 1)
             // Trigger regeneration
             generateMessage(sessionId, "", false)
+        }
+    }
+
+    fun clearHistory() {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            messageManager.clearMessages(sessionId)
+        }
+    }
+
+    fun renameSession(newName: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            sessionManager.updateSessionTitle(sessionId, newName)
+        }
+    }
+
+    fun deleteSession() {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            sessionManager.deleteSession(sessionId)
         }
     }
 
@@ -831,33 +920,65 @@ class ChatViewModel(
     }
 
     private fun updateTokenIndicator(session: Session) {
-        val summary = session.summary ?: ""
-        val activeMsgs = getSafeActiveWindow(session.messages, session.inferenceParams?.activeContextWindow ?: 10)
-        
-        val systemTokens = 500 // Estimated base
-        val summaryTokens = PostProcessor.estimateTokens(summary)
-        val activeTokens = activeMsgs.sumOf { PostProcessor.estimateTokens(it.content) }
-        val ragTokens = 0 // Will be updated by context builder results
-        
-        val used = systemTokens + summaryTokens + activeTokens + ragTokens
-        
-        // Robust way to get context length: check local settings first, then fallback to model spec
-        val modelId = session.modelId ?: ""
-        val prefs = application.getSharedPreferences("nexara_settings", 0)
-        val savedContext = prefs.getInt("model_info_${modelId}_context", 0)
-        
-        val max = if (savedContext > 0) savedContext 
-                 else com.promenar.nexara.data.model.findModelSpec(modelId)?.contextLength ?: 128000
-        
-        _tokenIndicatorState.update { 
-            it.copy(
-                used = used,
-                max = max,
-                systemTokens = systemTokens,
-                summaryTokens = summaryTokens,
-                activeTokens = activeTokens,
-                ragTokens = ragTokens
-            )
+        val agentDao = (application as NexaraApplication).database.agentDao()
+        viewModelScope.launch(Dispatchers.IO) {
+            val agent = session.agentId.let { agentDao.getById(it) }
+            
+            // Reconstruct system prompt parts for accurate estimation (matching ContextBuilder)
+            val agentPrompt = agent?.systemPrompt ?: ""
+            val sessionPrompt = session.customPrompt ?: ""
+            
+            // Metadata overhead (Time, Tools instructions, Active Task)
+            var metadataText = ""
+            if (session.options?.enableTimeInjection != false) {
+                metadataText += "[System Time: 2024-01-01 12:00:00 Monday]\n\n"
+            }
+            if (session.options?.toolsEnabled == true) {
+                metadataText += "[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]\n\n"
+            }
+            if (session.activeTask != null && session.activeTask?.status == "in-progress") {
+                metadataText += "## Active Task\n- **Current Task**: \"Title\"\n- **Immediate Goal**: Goal\n\n"
+            }
+
+            val fullSystemPrompt = buildString {
+                append(metadataText)
+                if (agentPrompt.isNotBlank()) appendLine(agentPrompt)
+                if (sessionPrompt.isNotBlank()) {
+                    appendLine()
+                    appendLine(sessionPrompt)
+                }
+            }
+            
+            val summary = session.summary ?: ""
+            val activeMsgs = getSafeActiveWindow(session.messages, session.inferenceParams?.activeContextWindow ?: 10)
+            
+            val systemTokens = PostProcessor.estimateTokens(fullSystemPrompt)
+            val summaryTokens = PostProcessor.estimateTokens(summary)
+            val activeTokens = activeMsgs.sumOf { PostProcessor.estimateTokens(it.content) }
+            
+            // Fetch real RAG tokens from last stats if available
+            val ragTokens = session.stats?.billing?.ragSystem?.count ?: 0
+            
+            val used = systemTokens + summaryTokens + activeTokens + ragTokens
+            
+            // Robust way to get context length: check local settings first, then fallback to model spec
+            val modelId = session.modelId ?: ""
+            val prefs = application.getSharedPreferences("nexara_settings", 0)
+            val savedContext = prefs.getInt("model_info_${modelId}_context", 0)
+            
+            val max = if (savedContext > 0) savedContext 
+                     else com.promenar.nexara.data.model.findModelSpec(modelId)?.contextLength ?: 128000
+            
+            _tokenIndicatorState.update { 
+                it.copy(
+                    used = used,
+                    max = max,
+                    systemTokens = systemTokens,
+                    summaryTokens = summaryTokens,
+                    activeTokens = activeTokens,
+                    ragTokens = ragTokens
+                )
+            }
         }
     }
 }

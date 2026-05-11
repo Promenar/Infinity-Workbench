@@ -43,6 +43,9 @@ import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Token
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -155,8 +158,8 @@ fun SessionSettingsSheet(
     val tabTitles = listOf(
         stringResource(R.string.sheet_tab_model),
         stringResource(R.string.sheet_tab_thinking),
-        stringResource(R.string.sheet_tab_stats),
-        stringResource(R.string.sheet_tab_tools)
+        stringResource(R.string.sheet_tab_tools),
+        stringResource(R.string.sheet_tab_settings)
     )
 
     ModalBottomSheet(
@@ -179,24 +182,7 @@ fun SessionSettingsSheet(
                         .background(NexaraColors.OutlineVariant, CircleShape)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.sheet_title), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                    IconButton(onClick = onDismiss) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(NexaraColors.GlassSurface),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.Close, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
+                Text(stringResource(R.string.sheet_title), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
             }
         }
     ) {
@@ -266,28 +252,16 @@ fun SessionSettingsSheet(
                     )
                     1 -> ThinkingLevelPanel(
                         currentTemperature = (session?.inferenceParams?.temperature ?: 0.7).toFloat(),
-                        currentTimeout = session?.inferenceParams?.streamTimeout ?: 120,
-                        currentSummaryThreshold = (session?.inferenceParams?.autoSummaryThreshold ?: 0.8).toFloat(),
-                        currentActiveWindow = session?.inferenceParams?.activeContextWindow ?: 10,
                         onUpdate = { temp ->
                             val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
                             chatViewModel.updateInferenceParams(params.copy(temperature = temp.toDouble()))
-                        },
-                        onTimeoutUpdate = { timeout ->
-                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                            chatViewModel.updateInferenceParams(params.copy(streamTimeout = timeout))
-                        },
-                        onSummaryThresholdUpdate = { threshold ->
-                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                            chatViewModel.updateInferenceParams(params.copy(autoSummaryThreshold = threshold.toDouble()))
-                        },
-                        onActiveWindowUpdate = { window ->
-                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                            chatViewModel.updateInferenceParams(params.copy(activeContextWindow = window))
                         }
                     )
-                    2 -> StatsPanel(chatViewModel = chatViewModel, settingsViewModel = settingsViewModel)
-                    3 -> ToolsPanel(chatViewModel = chatViewModel, session = session)
+                    2 -> ToolsPanel(chatViewModel = chatViewModel, session = session)
+                    3 -> SettingsPanel(
+                        session = session,
+                        chatViewModel = chatViewModel
+                    )
                 }
             }
         }
@@ -304,7 +278,9 @@ private fun ModelPanel(
     var searchQuery by remember { mutableStateOf("") }
     val allModels by settingsViewModel.providerModels.collectAsState()
     
-    val modelItems = allModels.filter { it.enabled }.map { info ->
+    val modelItems = allModels.filter { 
+        it.enabled && it.type in listOf("chat", "reasoning", "image") 
+    }.map { info ->
         val mappedCaps = mutableSetOf<ModelCapability>()
         when (info.type) {
             "chat" -> mappedCaps.add(ModelCapability.CHAT)
@@ -441,13 +417,7 @@ private fun ModelPanel(
 @Composable
 private fun ThinkingLevelPanel(
     currentTemperature: Float,
-    currentTimeout: Int,
-    currentSummaryThreshold: Float,
-    currentActiveWindow: Int,
-    onUpdate: (Float) -> Unit,
-    onTimeoutUpdate: (Int) -> Unit,
-    onSummaryThresholdUpdate: (Float) -> Unit,
-    onActiveWindowUpdate: (Int) -> Unit
+    onUpdate: (Float) -> Unit
 ) {
     val selectedLevel = when {
         currentTemperature <= 0.3f -> "minimal"
@@ -518,235 +488,7 @@ private fun ThinkingLevelPanel(
                     }
                 }
             }
-        }
-
-        item {
             Spacer(modifier = Modifier.height(32.dp))
-            Text(
-                text = stringResource(R.string.session_settings_stream_timeout),
-                style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
-                    value = currentTimeout.toFloat(),
-                    onValueChange = { onTimeoutUpdate(it.toInt()) },
-                    valueRange = 30f..300f,
-                    steps = 26,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = stringResource(R.string.session_settings_unit_seconds, currentTimeout),
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
-                    modifier = Modifier.width(60.dp)
-                )
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = stringResource(R.string.session_settings_summary_threshold),
-                style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
-                    value = currentSummaryThreshold,
-                    onValueChange = { onSummaryThresholdUpdate(it) },
-                    valueRange = 0.5f..0.95f,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "${(currentSummaryThreshold * 100).toInt()}%",
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
-                    modifier = Modifier.width(60.dp)
-                )
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = stringResource(R.string.session_settings_active_window),
-                style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
-                    value = currentActiveWindow.toFloat(),
-                    onValueChange = { onActiveWindowUpdate(it.toInt()) },
-                    valueRange = 5f..50f,
-                    steps = 8,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "$currentActiveWindow Msg",
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
-                    modifier = Modifier.width(60.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(32.dp))
-        }
-    }
-}
-
-@Composable
-private fun StatsPanel(
-    chatViewModel: ChatViewModel,
-    settingsViewModel: SettingsViewModel
-) {
-    val uiState by chatViewModel.uiState.collectAsState()
-    val tokenIndicator by chatViewModel.tokenIndicatorState.collectAsState()
-    val session = uiState.session
-    
-    val totalTokens = tokenIndicator.used
-    val promptTokens = tokenIndicator.activeTokens
-    val summaryTokens = tokenIndicator.summaryTokens
-    val ragTokens = tokenIndicator.ragTokens
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp)
-            .padding(top = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            val animatedProgress = (totalTokens.toFloat() / tokenIndicator.max.toFloat()).coerceIn(0f, 1f)
-            androidx.compose.material3.CircularProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier.size(100.dp),
-                color = NexaraColors.Primary,
-                strokeWidth = 6.dp,
-                trackColor = NexaraColors.SurfaceHighest,
-                strokeCap = StrokeCap.Round
-            )
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    if (totalTokens > 1000) "${totalTokens/1000}K" else totalTokens.toString(),
-                    style = NexaraTypography.headlineLarge.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold),
-                    color = NexaraColors.OnSurface
-                )
-                Text(stringResource(R.string.token_tokens), style = NexaraTypography.labelMedium.copy(fontSize = 10.sp), color = NexaraColors.OnSurfaceVariant)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            MetricRow(
-                icon = Icons.Rounded.Chat,
-                iconTint = Color(0xFFA78BFA),
-                label = stringResource(R.string.sheet_stats_prompt),
-                value = promptTokens,
-                max = tokenIndicator.max,
-                color = Color(0xFFA78BFA)
-            )
-            MetricRow(
-                icon = Icons.Rounded.AutoFixHigh,
-                iconTint = Color(0xFFFBBF24),
-                label = stringResource(R.string.sheet_tab_thinking), // "Summary"
-                value = summaryTokens,
-                max = tokenIndicator.max,
-                color = Color(0xFFFBBF24)
-            )
-            MetricRow(
-                icon = Icons.Rounded.Storage,
-                iconTint = Color(0xFF10B981),
-                label = stringResource(R.string.sheet_stats_rag),
-                value = ragTokens,
-                max = tokenIndicator.max,
-                color = Color(0xFF10B981)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Surface(
-            onClick = { settingsViewModel.clearTokenStats() },
-            shape = RoundedCornerShape(12.dp),
-            color = NexaraColors.ErrorContainer.copy(alpha = 0.2f),
-            border = androidx.compose.foundation.BorderStroke(0.5.dp, NexaraColors.Error.copy(alpha = 0.3f))
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(stringResource(R.string.sheet_stats_reset), style = NexaraTypography.labelMedium, color = NexaraColors.Error)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MetricRow(
-    icon: ImageVector,
-    iconTint: Color,
-    label: String,
-    value: Int,
-    max: Int,
-    color: Color
-) {
-    val progress = (value.toFloat() / max.toFloat()).coerceIn(0f, 1f)
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = iconTint, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(label, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-            }
-            Text(
-                value.toString(),
-                style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                color = color
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(NexaraColors.SurfaceHighest)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(color)
-            )
         }
     }
 }
@@ -757,12 +499,10 @@ private fun ToolsPanel(
     session: com.promenar.nexara.data.model.Session?
 ) {
     val options = session?.options ?: com.promenar.nexara.data.model.SessionOptions()
-    val ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
     
     var timeInjection by remember(options.enableTimeInjection) { mutableStateOf(options.enableTimeInjection) }
     var toolsEnabled by remember(options.toolsEnabled) { mutableStateOf(options.toolsEnabled) }
     var webSearch by remember(options.webSearch) { mutableStateOf(options.webSearch ?: false) }
-    var rerankEnabled by remember(ragOptions.enableRerank) { mutableStateOf(ragOptions.enableRerank) }
     
     val onToggle: (String, Boolean) -> Unit = { tool, enabled ->
         chatViewModel.toggleTool(tool, enabled)
@@ -789,11 +529,257 @@ private fun ToolsPanel(
             webSearch = it
             onToggle("webSearch", it)
         }
-        
-        ToolToggleRow(stringResource(R.string.sheet_tool_rerank), Icons.Rounded.Sync, rerankEnabled) { 
-            rerankEnabled = it
-            // Need a new toggle function or updateRagOptions
-            chatViewModel.updateRagOptions(ragOptions.copy(enableRerank = it))
+    }
+}
+
+@Composable
+private fun SettingsPanel(
+    session: com.promenar.nexara.data.model.Session?,
+    chatViewModel: ChatViewModel
+) {
+    val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+    val ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
+
+    var currentTimeout by remember(params.streamTimeout) { mutableStateOf(params.streamTimeout ?: 120) }
+    var currentTopP by remember(params.topP) { mutableStateOf((params.topP ?: 1.0).toFloat()) }
+    var currentMaxTokens by remember(params.maxTokens) { mutableStateOf(params.maxTokens ?: 0) }
+    var currentSummaryThreshold by remember(params.autoSummaryThreshold) { mutableStateOf(params.autoSummaryThreshold.toFloat()) }
+    var currentActiveWindow by remember(params.activeContextWindow) { mutableStateOf(params.activeContextWindow) }
+    
+    var rerankEnabled by remember(ragOptions.enableRerank) { mutableStateOf(ragOptions.enableRerank) }
+    var memoryEnabled by remember(ragOptions.enableMemory) { mutableStateOf(ragOptions.enableMemory) }
+    var docsEnabled by remember(ragOptions.enableDocs) { mutableStateOf(ragOptions.enableDocs) }
+    var kgEnabled by remember(ragOptions.enableKnowledgeGraph) { mutableStateOf(ragOptions.enableKnowledgeGraph ?: false) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .padding(top = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // --- Generation Parameters ---
+        item {
+            Text(
+                stringResource(R.string.sheet_settings_section_inference),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = NexaraColors.OnSurface
+            )
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_stream_timeout),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentTimeout.toFloat(),
+                    onValueChange = {
+                        currentTimeout = it.toInt()
+                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                        chatViewModel.updateInferenceParams(p.copy(streamTimeout = currentTimeout))
+                    },
+                    valueRange = 30f..300f,
+                    steps = 26,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = stringResource(R.string.session_settings_unit_seconds, currentTimeout),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_top_p),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentTopP,
+                    onValueChange = {
+                        currentTopP = it
+                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                        chatViewModel.updateInferenceParams(p.copy(topP = it.toDouble()))
+                    },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = String.format("%.2f", currentTopP),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_max_tokens),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentMaxTokens.toFloat(),
+                    onValueChange = {
+                        currentMaxTokens = it.toInt()
+                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                        chatViewModel.updateInferenceParams(p.copy(maxTokens = if (currentMaxTokens == 0) null else currentMaxTokens))
+                    },
+                    valueRange = 0f..8192f,
+                    steps = 64,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = if (currentMaxTokens == 0) stringResource(R.string.sheet_settings_unlimited) else currentMaxTokens.toString(),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        // --- Context Management ---
+        item {
+            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.sheet_settings_section_vectorization),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = NexaraColors.OnSurface
+            )
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_summary_threshold),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentSummaryThreshold,
+                    onValueChange = {
+                        currentSummaryThreshold = it
+                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                        chatViewModel.updateInferenceParams(p.copy(autoSummaryThreshold = it.toDouble()))
+                    },
+                    valueRange = 0.5f..0.95f,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "${(currentSummaryThreshold * 100).toInt()}%",
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_active_window),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Slider(
+                    value = currentActiveWindow.toFloat(),
+                    onValueChange = {
+                        currentActiveWindow = it.toInt()
+                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+                        chatViewModel.updateInferenceParams(p.copy(activeContextWindow = currentActiveWindow))
+                    },
+                    valueRange = 5f..50f,
+                    steps = 8,
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = NexaraColors.Primary,
+                        activeTrackColor = NexaraColors.Primary,
+                        inactiveTrackColor = NexaraColors.SurfaceHighest
+                    )
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = stringResource(R.string.sheet_settings_active_window_unit, currentActiveWindow),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(80.dp)
+                )
+            }
+        }
+
+        // --- Vector Retrieval ---
+        item {
+            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.sheet_settings_section_retrieval),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = NexaraColors.OnSurface
+            )
+        }
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ToolToggleRow(stringResource(R.string.sheet_tool_rerank), Icons.Rounded.Sync, rerankEnabled) { 
+                    rerankEnabled = it
+                    chatViewModel.updateRagOptions(ragOptions.copy(enableRerank = it))
+                }
+                ToolToggleRow(stringResource(R.string.sheet_settings_memory), Icons.Rounded.History, memoryEnabled) { 
+                    memoryEnabled = it
+                    chatViewModel.updateRagOptions(ragOptions.copy(enableMemory = it))
+                }
+                ToolToggleRow(stringResource(R.string.sheet_settings_docs), Icons.Rounded.Description, docsEnabled) { 
+                    docsEnabled = it
+                    chatViewModel.updateRagOptions(ragOptions.copy(enableDocs = it))
+                }
+                ToolToggleRow(stringResource(R.string.sheet_settings_kg), Icons.Rounded.Share, kgEnabled) { 
+                    kgEnabled = it
+                    chatViewModel.updateRagOptions(ragOptions.copy(enableKnowledgeGraph = it))
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

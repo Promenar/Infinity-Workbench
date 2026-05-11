@@ -96,7 +96,7 @@ fun ModelPicker(
         val baseList = if (filterTag == null) models
         else models.filter { item ->
             when (filterTag) {
-                "chat" -> item.capabilities.contains(ModelCapability.CHAT) || item.capabilities.contains(ModelCapability.REASONING)
+                "chat" -> item.capabilities.contains(ModelCapability.CHAT) || item.capabilities.contains(ModelCapability.REASONING) || item.capabilities.contains(ModelCapability.IMAGE)
                 "reasoning" -> item.capabilities.contains(ModelCapability.REASONING)
                 "image" -> item.capabilities.contains(ModelCapability.IMAGE)
                 "embedding" -> item.capabilities.contains(ModelCapability.EMBEDDING)
