@@ -840,9 +840,14 @@ class ChatViewModel(
         val ragTokens = 0 // Will be updated by context builder results
         
         val used = systemTokens + summaryTokens + activeTokens + ragTokens
-        val max = com.promenar.nexara.data.model.findModelSpec(
-            session.modelId ?: ""
-        )?.contextLength ?: 128000
+        
+        // Robust way to get context length: check local settings first, then fallback to model spec
+        val modelId = session.modelId ?: ""
+        val prefs = application.getSharedPreferences("nexara_settings", 0)
+        val savedContext = prefs.getInt("model_info_${modelId}_context", 0)
+        
+        val max = if (savedContext > 0) savedContext 
+                 else com.promenar.nexara.data.model.findModelSpec(modelId)?.contextLength ?: 128000
         
         _tokenIndicatorState.update { 
             it.copy(

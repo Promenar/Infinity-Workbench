@@ -268,6 +268,7 @@ fun MarkdownText(
                                                 code = code,
                                                 language = language,
                                                 style = style,
+                                                modifier = Modifier.fillMaxWidth()
                                             )
                                         }
                                     }
@@ -283,6 +284,7 @@ fun MarkdownText(
                                                 code = code,
                                                 language = language,
                                                 style = style,
+                                                modifier = Modifier.fillMaxWidth()
                                             )
                                         }
                                     }
@@ -319,15 +321,31 @@ fun MarkdownText(
 private fun sanitizeStreamingMarkdown(text: String): String {
     var result = text
 
+    // Handle code block fences
     val fenceCount = Regex("```").findAll(result).count()
     if (fenceCount % 2 != 0) {
         result += "\n```"
     }
 
-    val latexCount = Regex("""\$\$""").findAll(result).count()
-    if (latexCount % 2 != 0) {
+    // Handle incomplete bold/italic (optional, but prevents sudden style shifts)
+    
+    // Handle inline math $...$
+    val inlineMathCount = Regex("""(?<!\$)\$(?!\$)""").findAll(result).count()
+    if (inlineMathCount % 2 != 0) {
+        // Only strip the last $ if it's likely an unclosed one at the very end
+        if (result.endsWith("$")) {
+            result = result.dropLast(1)
+        }
+    }
+
+    // Handle block math $$...$$
+    val blockMathCount = Regex("""\$\$""").findAll(result).count()
+    if (blockMathCount % 2 != 0) {
+        // If block math is open, we can't easily "close" it without knowing where it started
+        // For streaming, we often just want to hide the unclosed block to avoid broken rendering
         val lastIdx = result.lastIndexOf("$$")
         if (lastIdx >= 0) {
+            // Keep the text before the unclosed block math
             result = result.substring(0, lastIdx)
         }
     }

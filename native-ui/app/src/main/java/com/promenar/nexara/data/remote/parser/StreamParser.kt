@@ -63,6 +63,7 @@ class StreamParser {
 
     fun process(chunk: String): ParseResult {
         val outputContent = StringBuilder()
+        val outputReasoning = StringBuilder()
         val outputToolCalls = mutableListOf<ToolCall>()
         var outputPlan: List<PlanStep>? = null
 
@@ -210,6 +211,7 @@ class StreamParser {
 
         return ParseResult(
             content = outputContent.toString(),
+            reasoning = outputReasoning.toString(),
             toolCalls = if (outputToolCalls.isNotEmpty()) outputToolCalls else null,
             plan = outputPlan
         )

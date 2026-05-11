@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- [Stability] **运行时崩溃修复**：彻底解决了 Markdown 渲染过程中由横向滚动条测量无限宽度引起的 `IllegalStateException` 闪退问题。
+- [UI/Chat] **模型选择器补完**：修复了真机环境下模型选择器全为空的 Bug，补全了 `SettingsViewModel` 在获取模型时缺失的 `chat` 能力标签映射。
+- [UI/Chat] **上下文上限动态计算**：优化了 Token 占用指示器的上限获取逻辑，支持通过本地 SharedPrefs 动态匹配不同模型的 Context Length，修复了上限恒定为 128k 的问题。
+- [UI/Chat] **流式渲染优化**：改进了 `sanitizeStreamingMarkdown` 逻辑，解决了流式输出时 Math 与 Code 块渲染闪烁及不显示的问题。
 - [RAG] **统计稳定性增强**：优化了 `VectorStatsService` 的类型匹配逻辑与 `RagViewModel` 的数据观测流，修复了索引完成后统计显示为 0 的潜在竞争问题。
 - [UI/Chat] **交互逻辑重映射**：修复了聊天页 TopBar 按钮功能，设置按钮正确弹出工作区面板（WorkspaceSheet），并实装了三点菜单的下拉操作项（清空历史、重命名、删除会话）。
 - [RAG] **UI 冗余清理**：移除了 RAG 首页底部重复的进度条浮窗，将所有索引状态统一收敛至列表顶部的进度组件中。

@@ -323,6 +323,9 @@ class SettingsViewModel(application: Application) : ViewModel() {
             )
             _providerModels.value = initialModels
             persistModels(initialModels)
+            
+            // Trigger fetch to populate model list after initializing the default
+            refreshModels()
             return
         }
 
@@ -524,10 +527,12 @@ class SettingsViewModel(application: Application) : ViewModel() {
                             contextLength = spec?.contextLength ?: 8192,
                             providerName = _providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
                             capabilities = buildList {
+                                add("chat") // Ensure chat models have chat capability
                                 spec?.capabilities?.let { caps ->
                                     if (caps.vision && type != "vision") add("vision")
                                     if (caps.internet && type != "internet") add("internet")
                                 }
+                                if (type == "reasoning") add("reasoning")
                             }
                         )
                     }
@@ -572,10 +577,12 @@ class SettingsViewModel(application: Application) : ViewModel() {
             contextLength = spec?.contextLength ?: 8192,
             providerName = _providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
             capabilities = buildList {
+                add("chat")
                 spec?.capabilities?.let { caps ->
                     if (caps.vision && type != "vision") add("vision")
                     if (caps.internet && type != "internet") add("internet")
                 }
+                if (type == "reasoning") add("reasoning")
             }
         )
         _providerModels.update { it + newModel }
