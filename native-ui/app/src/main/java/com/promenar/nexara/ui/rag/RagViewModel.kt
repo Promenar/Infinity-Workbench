@@ -64,6 +64,12 @@ class RagViewModel(
     private val _indexingProgress = MutableStateFlow(0f)
     val indexingProgress: StateFlow<Float> = _indexingProgress.asStateFlow()
 
+    private val _indexingStatus = MutableStateFlow<String?>(null)
+    val indexingStatus: StateFlow<String?> = _indexingStatus.asStateFlow()
+
+    private val _indexingSubStatus = MutableStateFlow<String?>(null)
+    val indexingSubStatus: StateFlow<String?> = _indexingSubStatus.asStateFlow()
+
     private val _config = MutableStateFlow(RagConfiguration())
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
 
@@ -72,6 +78,8 @@ class RagViewModel(
 
     private val prefs = app.getSharedPreferences("rag_settings", 0)
     private val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
+
+    private val _folders = MutableStateFlow<List<FolderEntity>>(emptyList())
 
     private val _stats = MutableStateFlow(RagStats())
     val stats: StateFlow<RagStats> = _stats.asStateFlow()
@@ -83,9 +91,7 @@ class RagViewModel(
         loadConfig()
         loadAvailableModels()
         loadStats()
-        loadDocuments()
-        loadVectorStats()
-        loadFolderStats()
+        startDataObservation()
         observeQueue()
     }
 
@@ -93,10 +99,57 @@ class RagViewModel(
         app.vectorizationQueue.setOnStateChange { queue, currentTask ->
             _isIndexing.value = app.vectorizationQueue.getState().isProcessing
             _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
-            if (queue.isEmpty() && currentTask == null) {
-                loadStats()
-                loadDocuments()
+            
+            _indexingStatus.value = currentTask?.let { task ->
+                when (task.status) {
+                    "pending" -> "等待队列中..."
+                    "chunking" -> "正在切块处理..."
+                    "vectorizing" -> "正在发送切块并生成向量..."
+                    "saving" -> "正在保存向量入库..."
+                    "extracting" -> "正在提取知识图谱..."
+                    "failed" -> "处理失败: ${task.error ?: "未知错误"}"
+                    "completed" -> "处理完成"
+                    "warning" -> "处理完成 (存在警告)"
+                    else -> task.status
+                }
             }
+            _indexingSubStatus.value = currentTask?.subStatus
+
+            if (queue.isEmpty() && currentTask == null) {
+                refreshStats()
+            }
+        }
+    }
+
+    private fun startDataObservation() {
+        viewModelScope.launch {
+            documentDao.observeAll().collect { list ->
+                _documents.value = list
+            }
+        }
+        
+        viewModelScope.launch {
+            folderDao.observeAll().collect { list ->
+                _folders.value = list
+                updateFolderStats(list)
+            }
+        }
+    }
+
+    private fun refreshStats() {
+        viewModelScope.launch {
+            loadStats()
+            updateFolderStats(_folders.value)
+        }
+    }
+
+    private fun updateFolderStats(folderList: List<FolderEntity>) {
+        viewModelScope.launch {
+            val stats = mutableMapOf<String, Int>()
+            for (folder in folderList) {
+                stats[folder.id] = documentDao.countByFolderId(folder.id)
+            }
+            _folderStats.value = stats
         }
     }
 
@@ -215,16 +268,6 @@ class RagViewModel(
         }
     }
 
-    private fun loadDocuments() {
-        viewModelScope.launch {
-            try {
-                documentDao.observeAll().collect { list ->
-                    _documents.value = list
-                }
-            } catch (_: Exception) { }
-        }
-    }
-
     private fun loadVectorStats() {
         viewModelScope.launch {
             try {
@@ -249,19 +292,6 @@ class RagViewModel(
         }
     }
 
-    private fun loadFolderStats() {
-        viewModelScope.launch {
-            try {
-                folders.collect { folderList ->
-                    val stats = mutableMapOf<String, Int>()
-                    for (folder in folderList) {
-                        stats[folder.id] = documentDao.countByFolderId(folder.id)
-                    }
-                    _folderStats.value = stats
-                }
-            } catch (_: Exception) { }
-        }
-    }
 
     fun createFolder(name: String) {
         viewModelScope.launch {

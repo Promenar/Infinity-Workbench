@@ -10,11 +10,14 @@ interface ISkillRepository {
     suspend fun insertCustomSkill(skill: CustomSkillEntity)
     suspend fun deleteCustomSkill(skill: CustomSkillEntity)
     suspend fun updateCustomSkillEnabled(id: String, enabled: Boolean)
+    suspend fun getAllEnabledCustomSkills(): List<CustomSkillEntity>
+    suspend fun getEnabledCustomSkillByName(name: String): CustomSkillEntity?
 
     fun getAllMcpServers(): Flow<List<McpServerEntity>>
     suspend fun insertMcpServer(server: McpServerEntity)
     suspend fun deleteMcpServer(server: McpServerEntity)
     suspend fun updateMcpServerEnabled(id: String, enabled: Boolean)
+    suspend fun updateMcpServerDefault(id: String, isDefault: Boolean)
 }
 
 class SkillRepository(private val skillDao: SkillDao) : ISkillRepository {
@@ -22,9 +25,12 @@ class SkillRepository(private val skillDao: SkillDao) : ISkillRepository {
     override suspend fun insertCustomSkill(skill: CustomSkillEntity) = skillDao.insertCustomSkill(skill)
     override suspend fun deleteCustomSkill(skill: CustomSkillEntity) = skillDao.deleteCustomSkill(skill)
     override suspend fun updateCustomSkillEnabled(id: String, enabled: Boolean) = skillDao.updateCustomSkillEnabled(id, enabled)
+    override suspend fun getAllEnabledCustomSkills() = skillDao.getAllEnabledCustomSkills()
+    override suspend fun getEnabledCustomSkillByName(name: String) = skillDao.getEnabledCustomSkillByName(name)
 
     override fun getAllMcpServers() = skillDao.getAllMcpServers()
     override suspend fun insertMcpServer(server: McpServerEntity) = skillDao.insertMcpServer(server)
     override suspend fun deleteMcpServer(server: McpServerEntity) = skillDao.deleteMcpServer(server)
     override suspend fun updateMcpServerEnabled(id: String, enabled: Boolean) = skillDao.updateMcpServerEnabled(id, enabled)
+    override suspend fun updateMcpServerDefault(id: String, isDefault: Boolean) = skillDao.updateMcpServerDefault(id, isDefault)
 }

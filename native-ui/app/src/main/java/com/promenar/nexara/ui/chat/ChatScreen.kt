@@ -18,6 +18,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,8 +62,9 @@ fun ChatScreen(
     val tokenState by chatViewModel.tokenIndicatorState.collectAsState()
 
     val listState = rememberLazyListState()
-    var showSettingsSheet by remember { mutableStateOf(false) }
+    var showWorkspaceSheet by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showModelSettingsSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val sessionTitle = uiState.session?.title ?: stringResource(R.string.chat_title_new)
@@ -102,7 +106,7 @@ fun ChatScreen(
                 title = sessionTitle,
                 subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName,
                 onBack = onNavigateBack,
-                onSettings = { showSettingsSheet = true },
+                onSettings = { showWorkspaceSheet = true },
                 onMenuClick = { showMenu = true }
             )
         }
@@ -162,7 +166,7 @@ fun ChatScreen(
                     ChatInputTopBar(
                         modelName = uiState.session?.modelId ?: "",
                         tokenState = tokenState,
-                        onModelClick = { showSettingsSheet = true },
+                        onModelClick = { showModelSettingsSheet = true },
                         onManualSummary = { chatViewModel.summarizeHistory() }
                     )
 
@@ -197,14 +201,81 @@ fun ChatScreen(
                     Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(20.dp))
                 }
             }
+
+            // TopBar Dropdown Menu
+            Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 56.dp, end = 16.dp)) {
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier.background(NexaraColors.SurfaceContainer)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Clear History", style = NexaraTypography.labelMedium) },
+                        leadingIcon = { Icon(Icons.Rounded.ClearAll, null, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            // TODO: Implement clearHistory() in ChatViewModel
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Rename", style = NexaraTypography.labelMedium) },
+                        leadingIcon = { Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            // TODO: Show rename dialog
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete Session", style = NexaraTypography.labelMedium, color = NexaraColors.Error) },
+                        leadingIcon = { Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp), tint = NexaraColors.Error) },
+                        onClick = {
+                            // TODO: Implement deleteSession() in ChatViewModel
+                            onNavigateBack()
+                            showMenu = false
+                        }
+                    )
+                }
+            }
         }
     }
 
-    SessionSettingsSheet(
-        show = showSettingsSheet,
-        onDismiss = { showSettingsSheet = false },
+    WorkspaceSheet(
+        show = showWorkspaceSheet,
+        onDismiss = { showWorkspaceSheet = false },
         sessionId = sessionId
     )
+
+    SessionSettingsSheet(
+        show = showModelSettingsSheet,
+        onDismiss = { showModelSettingsSheet = false },
+        sessionId = sessionId
+    )
+}
+
+@Composable
+fun ContextCircularIndicator(
+    progress: Float,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawArc(
+                color = color.copy(alpha = 0.2f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = color,
+                startAngle = -90f,
+                sweepAngle = 360f * progress,
+                useCenter = false,
+                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+            )
+        }
+    }
 }
 
 @Composable
@@ -264,11 +335,10 @@ private fun TokenIndicator(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    Icons.Rounded.Token,
-                    null,
-                    tint = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
-                    modifier = Modifier.size(14.dp)
+                ContextCircularIndicator(
+                    progress = (state.used.toFloat() / state.max.toFloat()).coerceIn(0f, 1f),
+                    color = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
+                    modifier = Modifier.size(12.dp)
                 )
                 Text(
                     text = "${state.used / 1000}K / ${state.max / 1000}K",

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+- [RAG] **统计稳定性增强**：优化了 `VectorStatsService` 的类型匹配逻辑与 `RagViewModel` 的数据观测流，修复了索引完成后统计显示为 0 的潜在竞争问题。
+- [UI/Chat] **交互逻辑重映射**：修复了聊天页 TopBar 按钮功能，设置按钮正确弹出工作区面板（WorkspaceSheet），并实装了三点菜单的下拉操作项（清空历史、重命名、删除会话）。
+- [RAG] **UI 冗余清理**：移除了 RAG 首页底部重复的进度条浮窗，将所有索引状态统一收敛至列表顶部的进度组件中。
+
+### Added
+- [RAG] **颗粒化进度指示器**：重构了 `IndexingProgressBar`，支持显示“切块处理”、“发送向量”、“保存入库”、“知识提取”等细分状态及 sub-status 文字描述。
+- [UI/Chat] **动态上下文指示器**：将静态 Context 图标替换为动态圆环占比组件（ContextCircularIndicator），实现 Token 占用百分比的实时可视化。
+
 ### Planning
 - [Inference] **本地模型功能审计**：确认 `LocalModelsScreen` 及全套端侧推理链路为纯占位符，零实际实现。创建完整补完实施方案，选型 llama.cpp + JNI + GGUF，详见 `.agent/plans/20260510-local-model-implementation.md`
 - [Inference] **会话拆分方案**：将实施拆分为 7 个独立会话，每会话附带即复制即用提示词，详见 `.agent/plans/20260510-local-model-sessions.md`

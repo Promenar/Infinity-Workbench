@@ -6,6 +6,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import io.ktor.client.*
 import android.content.Context
+import kotlinx.serialization.json.Json
 
 class WebSearchTavilySkill(
     private val context: Context,
@@ -36,8 +37,12 @@ class WebSearchTavilySkill(
         val query = args["query"]?.toString() ?: return ToolResult(id = "err", content = "Missing query", status = "error")
         val prefs = this.context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
         val key = prefs.getString("tavily_api_key", "") ?: ""
+        val depth = prefs.getString("search_depth", "advanced") ?: "advanced"
+        val maxResults = prefs.getInt("result_count", 5)
+        val includeDomains = parseDomainList(prefs, "include_domains")
+        val excludeDomains = parseDomainList(prefs, "exclude_domains")
         
-        val provider = TavilyProvider(httpClient, key)
+        val provider = TavilyProvider(httpClient, key, depth, maxResults, includeDomains, excludeDomains)
         return try {
             val (results, citations) = provider.search(query)
             ToolResult(
@@ -49,5 +54,10 @@ class WebSearchTavilySkill(
         } catch (e: Exception) {
             ToolResult(id = "err", content = "Tavily Search failed: ${e.message}", status = "error")
         }
+    }
+
+    private fun parseDomainList(prefs: android.content.SharedPreferences, key: String): List<String> {
+        val json = prefs.getString(key, "[]") ?: "[]"
+        return try { Json.decodeFromString(json) } catch (_: Exception) { emptyList() }
     }
 }

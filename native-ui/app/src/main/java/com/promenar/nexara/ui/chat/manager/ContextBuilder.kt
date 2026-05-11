@@ -50,9 +50,12 @@ class ContextBuilder(
     private val kgProvider: KgProvider? = null
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
-        val searchContext = performClientSideSearch(params.content)
+        val searchContext = if (params.session.options?.webSearch == true) {
+            performClientSideSearch(params.content)
+        } else ""
         val ragResult = performRagRetrieval(params)
-        val kgContext = if (kgProvider != null && ragResult.second.isNotEmpty()) {
+        val kgEnabled = params.session.ragOptions?.enableKnowledgeGraph ?: false
+        val kgContext = if (kgProvider != null && ragResult.second.isNotEmpty() && kgEnabled) {
             try {
                 kgProvider.extractContext(params.content, params.sessionId, ragResult.second) ?: ""
             } catch (_: Exception) { "" }
@@ -128,7 +131,11 @@ class ContextBuilder(
             sb.appendLine()
         }
 
-        // 2. Tools Instructions (Placeholder for now as instructions usually come from Agent prompt)
+        // 2. Tools Instructions
+        if (session.options?.toolsEnabled == true) {
+            sb.appendLine("[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]")
+            sb.appendLine()
+        }
         
         // 3. Task Information
         if (session.activeTask != null && session.activeTask?.status == "in-progress") {

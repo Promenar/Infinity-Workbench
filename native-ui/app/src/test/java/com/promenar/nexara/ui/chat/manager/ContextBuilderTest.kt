@@ -168,4 +168,136 @@ class ContextBuilderTest {
 
         assertThat(ragCalled).isFalse()
     }
+
+    @Test
+    fun kgContextSkippedWhenToggleOff() = testScope.runTest {
+        var kgCalled = false
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): String? {
+                kgCalled = true
+                return "KG context"
+            }
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = false)
+        )
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        assertThat(kgCalled).isFalse()
+        assertThat(result.finalSystemPrompt).doesNotContain("Knowledge Graph Relations")
+    }
+
+    @Test
+    fun kgContextInjectedWhenToggleOn() = testScope.runTest {
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): String? {
+                return "entity A -> related_to -> entity B"
+            }
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        assertThat(result.finalSystemPrompt).contains("Knowledge Graph Relations")
+        assertThat(result.finalSystemPrompt).contains("entity A")
+    }
+
+    @Test
+    fun kgContextSkippedWhenRagOptionsNull() = testScope.runTest {
+        var kgCalled = false
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): String? {
+                kgCalled = true
+                return "KG context"
+            }
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = null
+        )
+
+        builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        assertThat(kgCalled).isFalse()
+    }
 }

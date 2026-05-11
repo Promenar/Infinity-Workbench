@@ -20,6 +20,12 @@ interface SkillDao {
     @Query("UPDATE custom_skills SET enabled = :enabled WHERE id = :id")
     suspend fun updateCustomSkillEnabled(id: String, enabled: Boolean)
 
+    @Query("SELECT * FROM custom_skills WHERE enabled = 1 ORDER BY createdAt DESC")
+    suspend fun getAllEnabledCustomSkills(): List<CustomSkillEntity>
+
+    @Query("SELECT * FROM custom_skills WHERE name = :name AND enabled = 1 LIMIT 1")
+    suspend fun getEnabledCustomSkillByName(name: String): CustomSkillEntity?
+
     // MCP Servers
     @Query("SELECT * FROM mcp_servers ORDER BY createdAt DESC")
     fun getAllMcpServers(): Flow<List<McpServerEntity>>
@@ -32,4 +38,7 @@ interface SkillDao {
 
     @Query("UPDATE mcp_servers SET enabled = :enabled WHERE id = :id")
     suspend fun updateMcpServerEnabled(id: String, enabled: Boolean)
+
+    @Query("UPDATE mcp_servers SET isDefault = :isDefault WHERE id = :id")
+    suspend fun updateMcpServerDefault(id: String, isDefault: Boolean)
 }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
@@ -17,10 +16,9 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.SmartToy
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -32,9 +30,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,11 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.CollapsibleSection
 import com.promenar.nexara.ui.common.ColorPickerPanel
@@ -58,6 +57,7 @@ import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.SettingsInput
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -68,13 +68,22 @@ fun SpaSettingsScreen(
     onNavigateToRagConfig: () -> Unit = {},
     onNavigateToAdvancedRetrieval: () -> Unit = {}
 ) {
-    var assistantTitle by remember { mutableStateOf("Nexara Prime") }
-    var selectedIcon by remember { mutableStateOf(Icons.Rounded.SmartToy) }
-    var selectedFabColor by remember { mutableStateOf(Color(0xFF6366F1)) }
-    var rotateAnimation by remember { mutableStateOf(true) }
-    var glowEffect by remember { mutableStateOf(true) }
-    var enableKG by remember { mutableStateOf(true) }
-    var contextWindow by remember { mutableFloatStateOf(0.7f) }
+    val context = LocalContext.current
+    val spaViewModel: SpaViewModel = viewModel()
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(context.applicationContext as android.app.Application)
+    )
+
+    val assistantTitle by spaViewModel.assistantTitle.collectAsState()
+    val fabColorHex by spaViewModel.fabColor.collectAsState()
+    val fabIconIndex by spaViewModel.fabIconIndex.collectAsState()
+    val rotateAnimation by spaViewModel.rotateAnimation.collectAsState()
+    val glowEffect by spaViewModel.glowEffect.collectAsState()
+    val enableKG by spaViewModel.enableKG.collectAsState()
+    val contextWindow by spaViewModel.contextWindow.collectAsState()
+
+    val allModels by settingsViewModel.providerModels.collectAsState()
+
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val fabIcons = remember {
@@ -86,6 +95,12 @@ fun SpaSettingsScreen(
             Icons.Rounded.AutoFixHigh
         )
     }
+
+    val selectedFabColor = remember(fabColorHex) {
+        try { Color(android.graphics.Color.parseColor(fabColorHex)) } catch (_: Exception) { Color(0xFF6366F1) }
+    }
+
+    val selectedIcon = fabIcons.getOrElse(fabIconIndex) { fabIcons[0] }
 
     if (showDeleteDialog) {
         NexaraConfirmDialog(
@@ -125,7 +140,7 @@ fun SpaSettingsScreen(
             item {
                 SettingsInput(
                     value = assistantTitle,
-                    onValueChange = { assistantTitle = it },
+                    onValueChange = { spaViewModel.updateAssistantTitle(it) },
                     label = stringResource(R.string.spa_assistant_title_label),
                     placeholder = stringResource(R.string.spa_assistant_title_placeholder)
                 )
@@ -146,8 +161,8 @@ fun SpaSettingsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                fabIcons.forEach { icon ->
-                                    val isSelected = icon == selectedIcon
+                                fabIcons.forEachIndexed { index, icon ->
+                                    val isSelected = index == fabIconIndex
                                     Box(
                                         modifier = Modifier
                                             .size(44.dp)
@@ -160,7 +175,7 @@ fun SpaSettingsScreen(
                                                 if (isSelected) Modifier.border(1.dp, NexaraColors.Primary, RoundedCornerShape(12.dp))
                                                 else Modifier.border(0.5.dp, NexaraColors.OutlineVariant, RoundedCornerShape(12.dp))
                                             )
-                                            .clickable { selectedIcon = icon },
+                                            .clickable { spaViewModel.updateFabIcon(index) },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(icon, null, tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant, modifier = Modifier.size(22.dp))
@@ -175,15 +190,18 @@ fun SpaSettingsScreen(
                             Spacer(modifier = Modifier.height(12.dp))
                             ColorPickerPanel(
                                 selectedColor = selectedFabColor,
-                                onColorSelected = { selectedFabColor = it }
+                                onColorSelected = { color ->
+                                    val hex = "#" + color.value.toString(16).takeLast(8).uppercase()
+                                    spaViewModel.updateFabColor(hex)
+                                }
                             )
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        SettingsToggle(stringResource(R.string.spa_fab_rotation), checked = rotateAnimation, onCheckedChange = { rotateAnimation = it })
+                        SettingsToggle(stringResource(R.string.spa_fab_rotation), checked = rotateAnimation, onCheckedChange = { spaViewModel.updateRotateAnimation(it) })
                         Spacer(modifier = Modifier.height(8.dp))
-                        SettingsToggle(stringResource(R.string.spa_fab_glow), checked = glowEffect, onCheckedChange = { glowEffect = it })
+                        SettingsToggle(stringResource(R.string.spa_fab_glow), checked = glowEffect, onCheckedChange = { spaViewModel.updateGlowEffect(it) })
                     }
                 }
             }
@@ -197,6 +215,9 @@ fun SpaSettingsScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        val enabledModels = allModels.filter { it.enabled }
+                        val modelName = enabledModels.firstOrNull()?.name ?: "No model configured"
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -211,7 +232,7 @@ fun SpaSettingsScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(stringResource(R.string.spa_default_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
-                                Text("GPT-4o", style = NexaraTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = NexaraColors.OnSurface)
+                                Text(modelName, style = NexaraTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = NexaraColors.OnSurface)
                             }
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, null, tint = NexaraColors.Outline, modifier = Modifier.size(18.dp))
                         }
@@ -230,7 +251,7 @@ fun SpaSettingsScreen(
                     title = stringResource(R.string.spa_kg_enable),
                     description = stringResource(R.string.spa_kg_enable_desc),
                     checked = enableKG,
-                    onCheckedChange = { enableKG = it }
+                    onCheckedChange = { spaViewModel.updateEnableKG(it) }
                 )
 
                 if (enableKG) {
@@ -302,7 +323,7 @@ fun SpaSettingsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Slider(
                             value = contextWindow,
-                            onValueChange = { contextWindow = it },
+                            onValueChange = { spaViewModel.updateContextWindow(it) },
                             colors = SliderDefaults.colors(
                                 thumbColor = NexaraColors.Primary,
                                 activeTrackColor = NexaraColors.Primary,
@@ -321,6 +342,7 @@ fun SpaSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // TODO: Replace with real data from DocRepository.countDocuments(), SessionRepository.countSessions(), VectorDao.count()
                     StatCard("1,204", stringResource(R.string.spa_stat_documents), Icons.Rounded.Description, Modifier.weight(1f))
                     StatCard("8,432", stringResource(R.string.spa_stat_sessions), Icons.Rounded.History, Modifier.weight(1f))
                     StatCard("2.4M", stringResource(R.string.spa_stat_vectors), Icons.Rounded.Cloud, Modifier.weight(1f))
@@ -331,7 +353,9 @@ fun SpaSettingsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedButton(
-                    onClick = { },
+                    onClick = {
+                        android.widget.Toast.makeText(context, "Ghost data cleanup is coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -343,7 +367,9 @@ fun SpaSettingsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedButton(
-                    onClick = { },
+                    onClick = {
+                        android.widget.Toast.makeText(context, "History export is coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {

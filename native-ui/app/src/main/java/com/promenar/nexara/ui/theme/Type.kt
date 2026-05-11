@@ -4,6 +4,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 val Manrope = FontFamily.SansSerif
@@ -14,25 +15,26 @@ val NexaraTypography = Typography(
     headlineLarge = TextStyle(
         fontFamily = Manrope,
         fontSize = 24.sp,
-        lineHeight = 32.sp,
+        lineHeight = 36.sp,
         fontWeight = FontWeight.Bold
     ),
     headlineMedium = TextStyle(
         fontFamily = Manrope,
         fontSize = 20.sp,
-        lineHeight = 28.sp,
+        lineHeight = 32.sp,
         fontWeight = FontWeight.SemiBold
     ),
     bodyLarge = TextStyle(
         fontFamily = Inter,
         fontSize = 17.sp,
-        lineHeight = 26.sp,
+        lineHeight = 28.sp,
         fontWeight = FontWeight.Normal
     ),
     bodyMedium = TextStyle(
         fontFamily = Inter,
         fontSize = 15.sp,
-        lineHeight = 25.sp,
+        lineHeight = 26.sp,
+        letterSpacing = 0.01.em,
         fontWeight = FontWeight.Normal
     ),
     labelMedium = TextStyle(
@@ -45,7 +47,15 @@ val NexaraTypography = Typography(
     bodySmall = TextStyle(
         fontFamily = SpaceGrotesk,
         fontSize = 14.sp,
-        lineHeight = 22.sp,
+        lineHeight = 24.sp,
         fontWeight = FontWeight.Normal
     )
+)
+
+val bodyMediumCJK = TextStyle(
+    fontFamily = FontFamily.SansSerif,
+    fontSize = 15.sp,
+    lineHeight = 26.sp,
+    letterSpacing = 0.01.em,
+    fontWeight = FontWeight.Normal
 )

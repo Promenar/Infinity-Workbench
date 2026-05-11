@@ -9,6 +9,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.ui.chat.manager.WebSearchProvider
 import io.ktor.client.*
+import kotlinx.serialization.json.Json
 
 class WebSearchSkill(
     private val context: Context,
@@ -60,18 +61,26 @@ class WebSearchSkill(
     private fun getActiveProvider(): WebSearchProvider {
         val prefs = context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
         val engine = prefs.getString("search_engine", "duckduckgo") ?: "duckduckgo"
+        val maxResults = prefs.getInt("result_count", 8)
+        val includeDomains = parseDomainList(prefs, "include_domains")
+        val excludeDomains = parseDomainList(prefs, "exclude_domains")
         
         return when (engine) {
-            "duckduckgo" -> DuckDuckGoProvider(httpClient)
             "searxng" -> {
                 val url = prefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be"
-                SearXNGProvider(httpClient, url)
+                SearXNGProvider(httpClient, url, maxResults, includeDomains, excludeDomains)
             }
             "tavily" -> {
                 val key = prefs.getString("tavily_api_key", "") ?: ""
-                TavilyProvider(httpClient, key)
+                val depth = prefs.getString("search_depth", "advanced") ?: "advanced"
+                TavilyProvider(httpClient, key, depth, maxResults, includeDomains, excludeDomains)
             }
-            else -> DuckDuckGoProvider(httpClient)
+            else -> DuckDuckGoProvider(httpClient, maxResults, includeDomains, excludeDomains)
         }
+    }
+
+    private fun parseDomainList(prefs: android.content.SharedPreferences, key: String): List<String> {
+        val json = prefs.getString(key, "[]") ?: "[]"
+        return try { Json.decodeFromString(json) } catch (_: Exception) { emptyList() }
     }
 }

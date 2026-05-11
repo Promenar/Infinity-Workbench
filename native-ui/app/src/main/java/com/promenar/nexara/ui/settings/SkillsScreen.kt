@@ -337,7 +337,8 @@ fun SkillsScreen(
                                 onToggleExpand = { expandedServerId = if (expandedServerId == server.id) null else server.id },
                                 onToggleEnabled = { enabled -> viewModel.toggleMcpServer(server.id, enabled) },
                                 onDelete = { viewModel.deleteMcpServer(server.id) },
-                                onSync = { viewModel.syncMcpServer(server.id) }
+                                onSync = { viewModel.syncMcpServer(server.id) },
+                                onUpdateDefault = { isDefault -> viewModel.updateMcpServerDefault(server.id, isDefault) }
                             )
                         }
                     }
@@ -672,7 +673,8 @@ private fun McpServerCard(
     onToggleExpand: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onDelete: () -> Unit,
-    onSync: () -> Unit
+    onSync: () -> Unit,
+    onUpdateDefault: (Boolean) -> Unit
 ) {
     NexaraGlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -731,7 +733,7 @@ private fun McpServerCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 Switch(
                     checked = server.isDefault,
-                    onCheckedChange = { },
+                    onCheckedChange = onUpdateDefault,
                     colors = SwitchDefaults.colors(checkedTrackColor = NexaraColors.Primary, checkedThumbColor = NexaraColors.OnPrimary)
                 )
                 Text(stringResource(R.string.skills_mcp_default), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurface)

@@ -13,11 +13,13 @@ import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.GraphStore
+import com.promenar.nexara.data.rag.ImageService
 import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.rag.MicroGraphExtractor
 import com.promenar.nexara.data.rag.MicroGraphKgAdapter
 import com.promenar.nexara.data.rag.RagConfiguration
+import com.promenar.nexara.data.rag.RerankClient
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.remote.protocol.ProtocolId
@@ -26,6 +28,8 @@ import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.MessageRepository
 import com.promenar.nexara.data.repository.SessionRepository
+import com.promenar.nexara.ui.chat.manager.WebSearchContextProvider
+import com.promenar.nexara.ui.chat.manager.WebSearchProvider
 import com.promenar.nexara.ui.chat.manager.registry.DefaultSkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.ModularSkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.UserSkillRegistry
@@ -124,6 +128,9 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val llmProvider: LlmProvider get() = _llmProvider.value
     val llmProviderFlow: StateFlow<LlmProvider> get() = _llmProvider
 
+    var hapticEnabled: Boolean = true
+        internal set
+
     override fun newImageLoader(context: Context): ImageLoader {
         return ImageLoader.Builder(context)
             .components {
@@ -151,6 +158,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         })
 
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
+        hapticEnabled = settingsPrefs.getBoolean("haptic_enabled", true)
         if (settingsPrefs.getBoolean("local_models_enabled", false) &&
             settingsPrefs.getBoolean("local_auto_load", false)) {
             val lastModel = prefs.getString("last_local_model", null)
@@ -163,10 +171,29 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val embeddingClient: EmbeddingClient by lazy {
+        val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
         val baseUrl = prefs.getString("embedding_base_url", "") ?: ""
         val apiKey = prefs.getString("embedding_api_key", "") ?: ""
-        val model = prefs.getString("embedding_model", "") ?: ""
+        val presetModel = settingsPrefs.getString("preset_embedding_model", "") ?: ""
+        val model = prefs.getString("embedding_model", "")?.ifBlank { presetModel } ?: presetModel
         EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model)
+    }
+
+    val rerankClient: RerankClient by lazy {
+        val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
+        val baseUrl = prefs.getString("embedding_base_url", "") ?: ""
+        val apiKey = prefs.getString("embedding_api_key", "") ?: ""
+        val presetModel = settingsPrefs.getString("preset_rerank_model", "") ?: ""
+        RerankClient(baseUrl = baseUrl, apiKey = apiKey, modelId = presetModel)
+    }
+
+    val imageService: ImageService by lazy {
+        ImageService(
+            context = this,
+            embeddingClient = embeddingClient,
+            vectorStore = vectorStore,
+            textSplitter = textSplitter
+        )
     }
 
     val vectorStore: VectorStore by lazy {
@@ -214,6 +241,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val kgProvider: KgProvider by lazy {
         MicroGraphKgAdapter(microGraphExtractor)
+    }
+
+    val webSearchContextProvider: WebSearchProvider by lazy {
+        WebSearchContextProvider(this, httpClient)
     }
 
     val graphExtractor: com.promenar.nexara.data.rag.GraphExtractor by lazy {

@@ -5,7 +5,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,28 +17,50 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.mikepenz.markdown.compose.LocalImageTransformer
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
 import com.mikepenz.markdown.compose.elements.MarkdownHighlightedCode
 import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import com.promenar.nexara.ui.renderer.CodeBlockWithHeader
 import com.promenar.nexara.ui.renderer.EChartsBlock
+import com.promenar.nexara.ui.renderer.InlineLatexSpan
+import com.promenar.nexara.ui.renderer.PlantUmlBlock
+import com.promenar.nexara.ui.renderer.ImageLightbox
 import com.promenar.nexara.ui.renderer.LatexBlock
 import com.promenar.nexara.ui.renderer.MermaidBlock
+import com.promenar.nexara.ui.renderer.NexaraTableWidget
 import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
 import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
 import com.promenar.nexara.ui.theme.NexaraColors
+import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.ast.ASTNode
+
+private fun ASTNode.findLinkDestination(): ASTNode? {
+    children.forEach { child ->
+        if (child.type == MarkdownElementTypes.LINK_DESTINATION) return child
+        child.findLinkDestination()?.let { return it }
+    }
+    return null
+}
 
 private sealed class ContentSegment {
     data class Markdown(val content: String) : ContentSegment()
     data class Latex(val content: String) : ContentSegment()
+    data class InlineLatex(val content: String) : ContentSegment()
     data class Mermaid(val content: String) : ContentSegment()
     data class ECharts(val content: String) : ContentSegment()
+    data class PlantUml(val content: String) : ContentSegment()
 }
 
 private class ParseCache {
@@ -48,10 +72,11 @@ private const val RE_PARSE_THRESHOLD = 100
 
 private fun splitRichSegments(text: String): List<ContentSegment> {
     val blockPattern = Regex(
-        """```(mermaid|echarts)\s*\n(.*?)```""",
+        """```(mermaid|echarts|plantuml)\s*\n(.*?)```""",
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
     )
     val latexPattern = Regex("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
+    val inlineLatexPattern = Regex("""(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)""")
 
     data class RichSpan(val start: Int, val end: Int, val segment: ContentSegment)
 
@@ -63,6 +88,7 @@ private fun splitRichSegments(text: String): List<ContentSegment> {
         val seg = when (type) {
             "mermaid" -> ContentSegment.Mermaid(content)
             "echarts" -> ContentSegment.ECharts(content)
+            "plantuml" -> ContentSegment.PlantUml(content)
             else -> continue
         }
         spans.add(RichSpan(m.range.first, m.range.last + 1, seg))
@@ -72,6 +98,13 @@ private fun splitRichSegments(text: String): List<ContentSegment> {
         if (spans.none { it.start <= m.range.first && m.range.last < it.end }) {
             spans.add(RichSpan(m.range.first, m.range.last + 1,
                 ContentSegment.Latex(m.groupValues[1].trim())))
+        }
+    }
+
+    for (m in inlineLatexPattern.findAll(text)) {
+        if (spans.none { it.start <= m.range.first && m.range.last < it.end }) {
+            spans.add(RichSpan(m.range.first, m.range.last + 1,
+                ContentSegment.InlineLatex(m.groupValues[1].trim())))
         }
     }
 
@@ -125,6 +158,7 @@ fun MarkdownText(
         val pendingLatex = mutableListOf<String>()
         val pendingMermaid = mutableListOf<String>()
         val pendingECharts = mutableListOf<String>()
+        val pendingPlantUml = mutableListOf<String>()
 
         fun flushPending() {
             if (pendingLatex.isNotEmpty()) {
@@ -139,6 +173,10 @@ fun MarkdownText(
                 pendingECharts.forEach { result.add(ContentSegment.ECharts(it)) }
                 pendingECharts.clear()
             }
+            if (pendingPlantUml.isNotEmpty()) {
+                pendingPlantUml.forEach { result.add(ContentSegment.PlantUml(it)) }
+                pendingPlantUml.clear()
+            }
         }
 
         for (segment in segments) {
@@ -147,17 +185,25 @@ fun MarkdownText(
                     flushPending()
                     result.add(segment)
                 }
+                is ContentSegment.InlineLatex -> {
+                    flushPending()
+                    result.add(segment)
+                }
                 is ContentSegment.Latex -> {
-                    if (pendingMermaid.isNotEmpty() || pendingECharts.isNotEmpty()) flushPending()
+                    if (pendingMermaid.isNotEmpty() || pendingECharts.isNotEmpty() || pendingPlantUml.isNotEmpty()) flushPending()
                     pendingLatex.add(segment.content)
                 }
                 is ContentSegment.Mermaid -> {
-                    if (pendingLatex.isNotEmpty() || pendingECharts.isNotEmpty()) flushPending()
+                    if (pendingLatex.isNotEmpty() || pendingECharts.isNotEmpty() || pendingPlantUml.isNotEmpty()) flushPending()
                     pendingMermaid.add(segment.content)
                 }
                 is ContentSegment.ECharts -> {
-                    if (pendingLatex.isNotEmpty() || pendingMermaid.isNotEmpty()) flushPending()
+                    if (pendingLatex.isNotEmpty() || pendingMermaid.isNotEmpty() || pendingPlantUml.isNotEmpty()) flushPending()
                     pendingECharts.add(segment.content)
+                }
+                is ContentSegment.PlantUml -> {
+                    if (pendingLatex.isNotEmpty() || pendingMermaid.isNotEmpty() || pendingECharts.isNotEmpty()) flushPending()
+                    pendingPlantUml.add(segment.content)
                 }
             }
         }
@@ -175,6 +221,42 @@ fun MarkdownText(
                             colors = nexaraMarkdownColors(),
                             typography = nexaraMarkdownTypography(),
                             components = markdownComponents(
+                                image = { model ->
+                                    val link = model.node.findLinkDestination()
+                                        ?.getUnescapedTextInNode(model.content)
+
+                                    if (link != null) {
+                                        var showLightbox by remember { mutableStateOf(false) }
+                                        val imageData = LocalImageTransformer.current.transform(link)
+                                        if (imageData != null) {
+                                            Image(
+                                                painter = imageData.painter,
+                                                contentDescription = imageData.contentDescription,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { showLightbox = true },
+                                                alignment = imageData.alignment,
+                                                contentScale = imageData.contentScale,
+                                                alpha = imageData.alpha,
+                                                colorFilter = imageData.colorFilter,
+                                            )
+                                            if (showLightbox) {
+                                                ImageLightbox(
+                                                    imageUrl = link,
+                                                    onDismiss = { showLightbox = false }
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                table = { model ->
+                                    NexaraTableWidget(
+                                        model = model,
+                                        modifier = Modifier
+                                            .padding(vertical = 8.dp)
+                                            .fillMaxWidth()
+                                    )
+                                },
                                 codeFence = { model ->
                                     MarkdownCodeFence(
                                         content = model.content,
@@ -213,11 +295,17 @@ fun MarkdownText(
                 is ContentSegment.Latex -> {
                     LatexBlock(latex = segment.content)
                 }
+                is ContentSegment.InlineLatex -> {
+                    InlineLatexSpan(latex = segment.content)
+                }
                 is ContentSegment.Mermaid -> {
                     MermaidBlock(code = segment.content)
                 }
                 is ContentSegment.ECharts -> {
                     EChartsBlock(optionJson = segment.content)
+                }
+                is ContentSegment.PlantUml -> {
+                    PlantUmlBlock(code = segment.content)
                 }
             }
         }
@@ -266,5 +354,8 @@ private fun StreamingCursor() {
             .height(16.dp)
             .alpha(alpha)
             .background(NexaraColors.Primary, RoundedCornerShape(1.dp))
+            .semantics {
+                contentDescription = "Generating response"
+            }
     )
 }

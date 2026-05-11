@@ -75,7 +75,10 @@ class ChatViewModel(
 
     private val sessionManager = SessionManager(store, sessionRepository)
     private val messageManager = MessageManager(store, messageRepository, sessionRepository, viewModelScope)
+    private val webSearchContextProvider = (application as NexaraApplication).webSearchContextProvider
+
     private val contextBuilder = ContextBuilder(
+        webSearchProvider = webSearchContextProvider,
         ragProvider = memoryManager?.let { MemoryManagerRagAdapter(it) },
         kgProvider = kgProvider
     )
@@ -191,7 +194,9 @@ class ChatViewModel(
         loopCount: Int = 0
     ) {
         val session = store.getSession(sessionId) ?: return
-        if (loopCount >= session.autoLoopLimit) return
+        val prefs = application.getSharedPreferences("nexara_settings", 0)
+        val effectiveLoopLimit = prefs.getInt("loop_limit", 15)
+        if (loopCount >= effectiveLoopLimit) return
 
         val assistantMsgId = existingAssistantMsgId
             ?: session.messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
@@ -419,7 +424,9 @@ class ChatViewModel(
                             // 3. Auto-summary trigger
                             val threshold = finalSession.inferenceParams?.autoSummaryThreshold ?: 0.8
                             val totalTokens = (accumulatedTokens?.total ?: 0)
-                            val maxTokens = 128000 // TODO: Get from model spec
+                            val maxTokens = com.promenar.nexara.data.model.findModelSpec(
+                                finalSession.modelId ?: ""
+                            )?.contextLength ?: 128000
                             
                             if (totalTokens > maxTokens * threshold) {
                                 val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
@@ -833,7 +840,9 @@ class ChatViewModel(
         val ragTokens = 0 // Will be updated by context builder results
         
         val used = systemTokens + summaryTokens + activeTokens + ragTokens
-        val max = 128000 // TODO: Get from model spec
+        val max = com.promenar.nexara.data.model.findModelSpec(
+            session.modelId ?: ""
+        )?.contextLength ?: 128000
         
         _tokenIndicatorState.update { 
             it.copy(

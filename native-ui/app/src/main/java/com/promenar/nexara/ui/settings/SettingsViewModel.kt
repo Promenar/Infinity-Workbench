@@ -430,6 +430,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
     fun setHaptic(enabled: Boolean) {
         _hapticEnabled.value = enabled
         prefs.edit().putBoolean("haptic_enabled", enabled).apply()
+        app.hapticEnabled = enabled
     }
 
     fun deleteProvider(providerId: String) {
@@ -638,6 +639,12 @@ class SettingsViewModel(application: Application) : ViewModel() {
     fun toggleMcpServer(id: String, enabled: Boolean) {
         viewModelScope.launch {
             app.skillRepository.updateMcpServerEnabled(id, enabled)
+        }
+    }
+
+    fun updateMcpServerDefault(id: String, isDefault: Boolean) {
+        viewModelScope.launch {
+            app.skillRepository.updateMcpServerDefault(id, isDefault)
         }
     }
 

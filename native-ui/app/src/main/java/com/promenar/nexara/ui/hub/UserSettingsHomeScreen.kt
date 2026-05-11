@@ -188,6 +188,10 @@ fun UserSettingsHomeScreen(
                             onShowLanguageDialog = { showLanguageDialog = true },
                             onShowModelPicker = { type ->
                                 showModelPickerType = type
+                            },
+                            onAboutClick = {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/promenar/nexara"))
+                                context.startActivity(intent)
                             }
                         )
                     }
@@ -380,7 +384,8 @@ private fun AppSettingsContent(
     onChangeAvatar: () -> Unit,
     onEditName: () -> Unit,
     onShowLanguageDialog: () -> Unit,
-    onShowModelPicker: (String) -> Unit
+    onShowModelPicker: (String) -> Unit,
+    onAboutClick: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -507,7 +512,7 @@ private fun AppSettingsContent(
                 icon = Icons.Rounded.Tune,
                 title = stringResource(R.string.settings_about_nexara),
                 subtitle = stringResource(R.string.settings_version, "1.0.0"),
-                onClick = { }
+                onClick = onAboutClick
             )
         }
 

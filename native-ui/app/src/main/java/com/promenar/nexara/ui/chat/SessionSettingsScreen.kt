@@ -35,6 +35,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -77,6 +79,19 @@ fun SessionSettingsScreen(
     val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(context.applicationContext as android.app.Application))
     val uiState by chatViewModel.uiState.collectAsState()
 
+    val attachedDocs = remember { mutableStateListOf("Q3_Report_Final.pdf", "Revenue_Data.csv") }
+
+    val docPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        uris.forEach { uri ->
+            val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "Document"
+            if (fileName !in attachedDocs) {
+                attachedDocs.add(fileName)
+            }
+        }
+    }
+
     LaunchedEffect(sessionId) {
         chatViewModel.loadSession(sessionId)
     }
@@ -95,7 +110,6 @@ fun SessionSettingsScreen(
     var enableMemory by remember { mutableStateOf(session?.ragOptions?.enableMemory ?: true) }
     var enableKG by remember { mutableStateOf(session?.ragOptions?.enableKnowledgeGraph ?: false) }
     var enableDocs by remember { mutableStateOf(session?.ragOptions?.enableDocs ?: false) }
-    val attachedDocs = remember { mutableStateListOf("Q3_Report_Final.pdf", "Revenue_Data.csv") }
     var showPromptEditor by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -186,8 +200,10 @@ fun SessionSettingsScreen(
                                 }
                             }
                             Row {
-                                IconButton(onClick = { }) {
-                                    Icon(Icons.Rounded.SwapHoriz, null, tint = NexaraColors.Primary)
+                                if (session?.agentId != null) {
+                                    IconButton(onClick = { onNavigateToAgentEdit(session.agentId) }) {
+                                        Icon(Icons.Rounded.SwapHoriz, null, tint = NexaraColors.Primary)
+                                    }
                                 }
                             }
                         }
@@ -201,7 +217,16 @@ fun SessionSettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { }
+                                .clickable {
+                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(
+                                            android.content.Intent.EXTRA_TEXT,
+                                            session?.messages?.joinToString("\n\n") { "${it.role.name}: ${it.content}" } ?: ""
+                                        )
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Export Chat"))
+                                }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -335,7 +360,7 @@ fun SessionSettingsScreen(
                                     }
 
                                     Surface(
-                                        onClick = { },
+                                        onClick = { docPickerLauncher.launch("*/*") },
                                         shape = RoundedCornerShape(50),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, NexaraColors.GlassBorder.copy(alpha = 0.2f)),
                                         color = Color.Transparent

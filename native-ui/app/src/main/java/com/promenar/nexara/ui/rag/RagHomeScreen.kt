@@ -103,6 +103,8 @@ fun RagHomeScreen(
     val folderStats by viewModel.folderStats.collectAsState()
     val isIndexing by viewModel.isIndexing.collectAsState()
     val indexingProgress by viewModel.indexingProgress.collectAsState()
+    val indexingStatus by viewModel.indexingStatus.collectAsState()
+    val indexingSubStatus by viewModel.indexingSubStatus.collectAsState()
     val documents by viewModel.documents.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
 
@@ -302,7 +304,11 @@ fun RagHomeScreen(
 
                 if (isIndexing) {
                     item {
-                        IndexingProgressBar(progress = indexingProgress)
+                        IndexingProgressBar(
+                            progress = indexingProgress,
+                            statusText = indexingStatus,
+                            subStatusText = indexingSubStatus
+                        )
                     }
                 }
 
@@ -454,48 +460,6 @@ fun RagHomeScreen(
                 }
             }
 
-            if (isIndexing) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp, start = 20.dp, end = 20.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(NexaraColors.SurfaceContainer.copy(alpha = 0.9f))
-                        .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                        .fillMaxWidth()
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(NexaraColors.Primary.copy(alpha = 0.1f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.RotateRight, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(16.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(stringResource(R.string.rag_home_vectorizing), style = NexaraTypography.labelMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurface)
-                                Text("${(indexingProgress * 100).toInt()}%", style = NexaraTypography.bodySmall.copy(fontSize = 11.sp), color = NexaraColors.Primary)
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { indexingProgress },
-                                modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-                                color = NexaraColors.Primary,
-                                trackColor = NexaraColors.SurfaceHighest
-                            )
-                        }
-                    }
-                }
-            }
 
             if (selectedIds.isNotEmpty()) {
                 Box(

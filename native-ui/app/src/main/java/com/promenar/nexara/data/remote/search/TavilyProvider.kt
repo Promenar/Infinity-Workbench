@@ -10,7 +10,11 @@ import kotlinx.serialization.json.*
 
 class TavilyProvider(
     private val httpClient: HttpClient,
-    private val apiKey: String
+    private val apiKey: String,
+    private val searchDepth: String = "advanced",
+    private val maxResults: Int = 5,
+    private val includeDomains: List<String> = emptyList(),
+    private val excludeDomains: List<String> = emptyList()
 ) : WebSearchProvider {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -23,8 +27,14 @@ class TavilyProvider(
                 setBody(buildJsonObject {
                     put("api_key", apiKey)
                     put("query", query)
-                    put("search_depth", "advanced")
-                    put("max_results", 5)
+                    put("search_depth", searchDepth)
+                    put("max_results", maxResults)
+                    if (includeDomains.isNotEmpty()) {
+                        put("include_domains", JsonArray(includeDomains.map { JsonPrimitive(it) }))
+                    }
+                    if (excludeDomains.isNotEmpty()) {
+                        put("exclude_domains", JsonArray(excludeDomains.map { JsonPrimitive(it) }))
+                    }
                 }.toString())
             }
             

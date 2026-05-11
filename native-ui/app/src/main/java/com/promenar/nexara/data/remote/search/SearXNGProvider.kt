@@ -9,14 +9,22 @@ import kotlinx.serialization.json.*
 
 class SearXNGProvider(
     private val httpClient: HttpClient,
-    private val baseUrl: String = "https://searx.be"
+    private val baseUrl: String = "https://searx.be",
+    private val maxResults: Int = 8,
+    private val includeDomains: List<String> = emptyList(),
+    private val excludeDomains: List<String> = emptyList()
 ) : WebSearchProvider {
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun search(query: String): Pair<String, List<Citation>> {
         return try {
+            val enhancedQuery = buildString {
+                append(query)
+                includeDomains.forEach { append(" site:$it") }
+            }
+
             val response = httpClient.get(baseUrl.trimEnd('/') + "/search") {
-                parameter("q", query)
+                parameter("q", enhancedQuery)
                 parameter("format", "json")
                 header("User-Agent", "Nexara-Native/1.0")
             }
@@ -28,15 +36,18 @@ class SearXNGProvider(
             val citations = mutableListOf<Citation>()
             val contextBuilder = StringBuilder()
             
-            results.take(8).forEachIndexed { index, element ->
+            results.forEach { element ->
+                if (citations.size >= maxResults) return@forEach
+
                 val obj = element.jsonObject
                 val title = obj["title"]?.jsonPrimitive?.content ?: ""
                 val url = obj["url"]?.jsonPrimitive?.content ?: ""
                 val snippet = obj["content"]?.jsonPrimitive?.content ?: ""
                 
                 if (title.isNotEmpty() && url.isNotEmpty()) {
+                    if (excludeDomains.any { domain -> url.contains(domain, ignoreCase = true) }) return@forEach
                     citations.add(Citation(title = title, url = url, source = "SearXNG"))
-                    contextBuilder.append("[${index + 1}] $title\n$url\n$snippet\n\n")
+                    contextBuilder.append("[${citations.size}] $title\n$url\n$snippet\n\n")
                 }
             }
             

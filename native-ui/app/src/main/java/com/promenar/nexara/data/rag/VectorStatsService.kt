@@ -8,10 +8,11 @@ class VectorStatsService(
     suspend fun getStats(): VectorStats {
         val total = vectorDao.getCount()
         val typeCounts = vectorDao.countByType()
-
         val byType = VectorTypeStats()
+
         for (tc in typeCounts) {
-            when (tc.type) {
+            val type = tc.type?.trim()?.lowercase() ?: ""
+            when (type) {
                 "memory" -> byType.memory = tc.count
                 "summary" -> byType.summary = tc.count
                 "doc" -> byType.doc = tc.count

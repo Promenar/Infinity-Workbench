@@ -6,6 +6,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import io.ktor.client.*
 import android.content.Context
+import kotlinx.serialization.json.Json
 
 class WebSearchSearXNGSkill(
     private val context: Context,
@@ -36,8 +37,11 @@ class WebSearchSearXNGSkill(
         val query = args["query"]?.toString() ?: return ToolResult(id = "err", content = "Missing query", status = "error")
         val prefs = this.context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
         val url = prefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be"
+        val maxResults = prefs.getInt("result_count", 8)
+        val includeDomains = parseDomainList(prefs, "include_domains")
+        val excludeDomains = parseDomainList(prefs, "exclude_domains")
         
-        val provider = SearXNGProvider(httpClient, url)
+        val provider = SearXNGProvider(httpClient, url, maxResults, includeDomains, excludeDomains)
         return try {
             val (results, _) = provider.search(query)
             ToolResult(
@@ -48,5 +52,10 @@ class WebSearchSearXNGSkill(
         } catch (e: Exception) {
             ToolResult(id = "err", content = "SearXNG Search failed: ${e.message}", status = "error")
         }
+    }
+
+    private fun parseDomainList(prefs: android.content.SharedPreferences, key: String): List<String> {
+        val json = prefs.getString(key, "[]") ?: "[]"
+        return try { Json.decodeFromString(json) } catch (_: Exception) { emptyList() }
     }
 }
