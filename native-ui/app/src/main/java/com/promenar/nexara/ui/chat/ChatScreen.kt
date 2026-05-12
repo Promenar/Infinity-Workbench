@@ -236,6 +236,7 @@ fun ChatScreen(
                         ChatBubble(
                             message = message,
                             isGenerating = uiState.isGenerating && message.id == uiState.messages.lastOrNull()?.id,
+                            streamingContent = uiState.streamingContent,
                             onLongClick = { showActionSheet = true },
                             onApprove = { chatViewModel.approveRequest() },
                             onDecline = { chatViewModel.rejectRequest() }
@@ -687,6 +688,7 @@ fun RenameDialog(
 fun ChatBubble(
     message: Message,
     isGenerating: Boolean = false,
+    streamingContent: String = "",
     onApprove: () -> Unit = {},
     onDecline: () -> Unit = {},
     onLongClick: () -> Unit = {}
@@ -737,8 +739,9 @@ fun ChatBubble(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
+                val displayContent = if (isGenerating && streamingContent.isNotEmpty()) streamingContent else message.content
                 MarkdownText(
-                    markdown = message.content,
+                    markdown = displayContent,
                     isStreaming = isGenerating,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
