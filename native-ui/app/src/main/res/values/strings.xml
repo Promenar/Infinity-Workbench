@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- ============ Common Components ============ -->
     <!-- ModelPicker -->
@@ -309,7 +309,6 @@
     <string name="session_settings_prompt_editor_title">Custom Prompt</string>
     <string name="session_settings_prompt_placeholder">Enter custom system prompt…</string>
     <string name="session_settings_delete_title">Delete Session</string>
-    <string name="session_settings_delete_message">Are you sure you want to delete this session? This action cannot be undone.</string>
     <string name="session_settings_configured">Configured</string>
     <string name="session_settings_not_set">Not Set</string>
     <string name="session_settings_docs_attached">%1$d documents attached</string>
@@ -806,4 +805,10 @@
     <string name="chat_dialog_delete_session_msg">This will permanently delete this session and all its content.</string>
     <string name="chat_dialog_rename_title">Rename Session</string>
     <string name="chat_dialog_rename_placeholder">Enter new name...</string>
+    <string name="chat_confirm_delete_session_message">Are you sure you want to delete this session? This action cannot be undone.</string>
+
+    <!-- Session Settings Sheet -->
+    <string name="sheet_settings_ui_title">UI Settings</string>
+    <string name="sheet_settings_font_size">Font Size</string>
+    <string name="sheet_settings_font_size_unit">px</string>
 </resources>

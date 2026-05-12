@@ -50,10 +50,11 @@ import com.promenar.nexara.ui.theme.NexaraColors
 @Composable
 fun MermaidBlock(
     code: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fontSize: Int = 14
 ) {
     val context = LocalContext.current
-    val html = buildMermaidHtml(code)
+    val html = buildMermaidHtml(code, fontSize)
     var showFullScreen by remember { mutableStateOf(false) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
@@ -62,6 +63,7 @@ fun MermaidBlock(
     }) {
         RichContentWebView(
             html = html,
+            fontSize = fontSize,
             minHeight = 100,
             maxHeight = 600,
             onWebViewCreated = { webViewRef = it }
@@ -105,6 +107,7 @@ fun MermaidBlock(
     if (showFullScreen) {
         MermaidFullScreenDialog(
             html = html,
+            fontSize = fontSize,
             onDismiss = { showFullScreen = false }
         )
     }
@@ -113,6 +116,7 @@ fun MermaidBlock(
 @Composable
 private fun MermaidFullScreenDialog(
     html: String,
+    fontSize: Int,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -136,6 +140,7 @@ private fun MermaidFullScreenDialog(
             AndroidView(
                 factory = { webView },
                 update = { wv ->
+                    wv.settings.defaultFontSize = fontSize
                     wv.loadDataWithBaseURL(
                         "file:///android_asset/",
                         html,
@@ -241,7 +246,7 @@ private fun saveBitmapToMediaStore(context: android.content.Context, bitmap: Bit
     bitmap.recycle()
 }
 
-private fun buildMermaidHtml(code: String): String {
+private fun buildMermaidHtml(code: String, fontSize: Int): String {
     val encoded = android.util.Base64.encodeToString(
         code.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -253,7 +258,7 @@ private fun buildMermaidHtml(code: String): String {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="mermaid/mermaid.min.js"></script>
         <style>
-            body { margin: 0; padding: 12px; background: transparent; }
+            body { margin: 0; padding: 12px; background: transparent; font-size: ${fontSize}px; }
             .mermaid { display: flex; justify-content: center; }
             .mermaid svg { max-width: 100%; height: auto; }
             #mermaid-diagram { transition: transform 0.2s; transform-origin: top left; }

@@ -23,16 +23,64 @@ fun nexaraMarkdownColors(): MarkdownColors = markdownColor(
 )
 
 @Composable
-fun nexaraMarkdownTypography(): MarkdownTypography = markdownTypography(
-    h1 = NexaraTypography.headlineLarge,
-    h2 = NexaraTypography.headlineMedium,
-    h3 = NexaraTypography.headlineMedium.copy(fontSize = 18.sp, lineHeight = 26.sp),
-    h4 = NexaraTypography.headlineMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp),
-    h5 = NexaraTypography.headlineMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium, lineHeight = 22.sp),
-    h6 = NexaraTypography.headlineMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp),
-    text = NexaraTypography.bodyMedium.copy(
-        lineHeight = 26.sp,
-        letterSpacing = 0.01.em
-    ),
-    code = NexaraTypography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-)
+fun nexaraMarkdownTypography(baseFontSize: Int = 13): MarkdownTypography {
+    val base = baseFontSize.sp
+    val h1 = (baseFontSize * 1.2).sp
+    val h2 = (baseFontSize * 1.15).sp
+    val h3 = (baseFontSize * 1.1).sp
+    val h4 = (baseFontSize * 1.1).sp
+    val h5 = base
+    val h6 = (baseFontSize * 0.9).sp
+
+    return markdownTypography(
+        h1 = NexaraTypography.headlineLarge.copy(
+            fontSize = h1,
+            lineHeight = (h1.value * 1.4).sp
+        ),
+        h2 = NexaraTypography.headlineMedium.copy(
+            fontSize = h2,
+            lineHeight = (h2.value * 1.4).sp
+        ),
+        h3 = NexaraTypography.headlineMedium.copy(
+            fontSize = h3,
+            lineHeight = (h3.value * 1.4).sp
+        ),
+        h4 = NexaraTypography.headlineMedium.copy(
+            fontSize = h4,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = (h4.value * 1.4).sp
+        ),
+        h5 = NexaraTypography.headlineMedium.copy(
+            fontSize = h5,
+            fontWeight = FontWeight.Medium,
+            lineHeight = (h5.value * 1.4).sp
+        ),
+        h6 = NexaraTypography.headlineMedium.copy(
+            fontSize = h6,
+            fontWeight = FontWeight.Medium,
+            lineHeight = (h6.value * 1.4).sp
+        ),
+        text = NexaraTypography.bodyMedium.copy(
+            fontSize = base,
+            lineHeight = (baseFontSize * 1.6).sp,
+            letterSpacing = 0.01.em
+        ),
+        code = NexaraTypography.bodySmall.copy(
+            fontSize = (baseFontSize - 1).sp,
+            fontFamily = FontFamily.Monospace,
+            lineHeight = (baseFontSize * 1.4).sp
+        ),
+        inlineCode = NexaraTypography.bodySmall.copy(
+            fontSize = base,
+            fontFamily = FontFamily.Monospace,
+            lineHeight = (baseFontSize * 1.3).sp
+        ),
+        paragraph = NexaraTypography.bodyMedium.copy(
+            lineHeight = (baseFontSize * 1.6).sp
+        ),
+        quote = NexaraTypography.bodyMedium.copy(
+            fontSize = base,
+            lineHeight = (baseFontSize * 1.5).sp
+        ),
+    )
+}

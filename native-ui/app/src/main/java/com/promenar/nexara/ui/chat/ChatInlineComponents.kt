@@ -80,7 +80,8 @@ fun SummaryIndicator(
 @Composable
 fun ThinkingBlock(
     reasoning: String,
-    isGenerating: Boolean
+    isGenerating: Boolean,
+    fontSize: Int = 13
 ) {
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -168,7 +169,8 @@ fun ThinkingBlock(
                     MarkdownText(
                         markdown = reasoning,
                         modifier = Modifier.fillMaxWidth(),
-                        isStreaming = isGenerating
+                        isStreaming = isGenerating,
+                        fontSize = fontSize
                     )
                 }
             }

@@ -25,7 +25,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 @Composable
 fun InlineLatexSpan(
     latex: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fontSize: Int = 14
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -85,7 +86,7 @@ fun InlineLatexSpan(
                 }
                 wv.loadDataWithBaseURL(
                     "file:///android_asset/",
-                    buildInlineLatexHtml(latex),
+                    buildInlineLatexHtml(latex, fontSize),
                     "text/html",
                     "UTF-8",
                     null

@@ -59,6 +59,7 @@ enum class GenerationStatus {
 
 data class ChatUiState(
     val session: Session? = null,
+    val agentName: String = "",
     val messages: List<Message> = emptyList(),
     val isGenerating: Boolean = false,
     val status: GenerationStatus = GenerationStatus.IDLE,
@@ -100,6 +101,7 @@ class ChatViewModel(
     val inputText: StateFlow<String> = _inputText
 
     private val _currentSessionId = MutableStateFlow<String?>(null)
+    private val _agentName = MutableStateFlow("")
 
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
@@ -123,6 +125,7 @@ class ChatViewModel(
     val uiState: StateFlow<ChatUiState> = combine(
         store.state,
         _currentSessionId,
+        _agentName,
         _isGenerating,
         _generationStatus,
         _streamingContent,
@@ -130,10 +133,11 @@ class ChatViewModel(
     ) { args: Array<Any?> ->
         val state = args[0] as com.promenar.nexara.ui.chat.ChatState
         val sessionId = args[1] as String?
-        val isGenerating = args[2] as Boolean
-        val status = args[3] as GenerationStatus
-        val streamingContent = args[4] as String
-        val error = args[5] as String?
+        val agentName = args[2] as String
+        val isGenerating = args[3] as Boolean
+        val status = args[4] as GenerationStatus
+        val streamingContent = args[5] as String
+        val error = args[6] as String?
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
@@ -141,6 +145,7 @@ class ChatViewModel(
         }
         ChatUiState(
             session = session,
+            agentName = agentName,
             messages = session?.messages ?: emptyList(),
             isGenerating = isGenerating,
             status = status,
@@ -498,6 +503,7 @@ class ChatViewModel(
         val existing = store.getSession(sessionId)
         if (existing != null) {
             _currentSessionId.update { sessionId }
+            updateAgentName(existing.agentId)
             return
         }
 
@@ -512,6 +518,7 @@ class ChatViewModel(
                         else state.copy(sessions = state.sessions + hydrated)
                     }
                     _currentSessionId.update { sessionId }
+                    updateAgentName(hydrated.agentId)
                 } else {
                     _error.update { "Session not found: $sessionId" }
                 }
@@ -537,6 +544,19 @@ class ChatViewModel(
             )
             sessionManager.addSession(session)
             _currentSessionId.update { sessionId }
+            updateAgentName(agentId)
+        }
+    }
+
+    private fun updateAgentName(agentId: String?) {
+        if (agentId == null) {
+            _agentName.value = ""
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val agentDao = (application as NexaraApplication).database.agentDao()
+            val agent = agentDao.getById(agentId)
+            _agentName.value = agent?.name ?: ""
         }
     }
 
@@ -700,6 +720,23 @@ class ChatViewModel(
         }
     }
 
+    fun updateFontSize(size: Int) {
+        val sessionId = _currentSessionId.value ?: return
+        val session = store.getSession(sessionId) ?: return
+        val options = session.options ?: SessionOptions()
+        viewModelScope.launch {
+            sessionManager.updateSessionOptions(sessionId, options.copy(fontSize = size))
+        }
+    }
+
+    fun updateFontSizeLocally(size: Int) {
+        val sessionId = _currentSessionId.value ?: return
+        store.updateSession(sessionId) { s ->
+            val options = s.options ?: SessionOptions()
+            s.copy(options = options.copy(fontSize = size))
+        }
+    }
+
     fun updateSessionTitle(title: String) {
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
@@ -857,13 +894,15 @@ class ChatViewModel(
         val message = session.messages.find { it.id == messageId } ?: return
         
         viewModelScope.launch {
-            // Delete all messages strictly after this one with backup
             backupAndTruncate(sessionId, message.createdAt + 1)
-            // Update this message content
             messageManager.updateMessageContent(sessionId, messageId, newContent)
-            // Trigger regeneration
             generateMessage(sessionId, "", false)
         }
+    }
+
+    fun updateMessageContentOnly(messageId: String, newContent: String) {
+        val sessionId = _currentSessionId.value ?: return
+        messageManager.updateMessageContent(sessionId, messageId, newContent)
     }
 
     fun regenerateMessage(messageId: String) {

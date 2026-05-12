@@ -26,6 +26,7 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 fun RichContentWebView(
     html: String,
     modifier: Modifier = Modifier,
+    fontSize: Int = 14,
     minHeight: Int = 40,
     maxHeight: Int = 600,
     onWebViewCreated: ((WebView) -> Unit)? = null,
@@ -56,6 +57,7 @@ fun RichContentWebView(
     AndroidView(
         factory = { webView },
         update = { wv ->
+            wv.settings.defaultFontSize = fontSize
             wv.loadDataWithBaseURL(
                 "file:///android_asset/",
                 html,

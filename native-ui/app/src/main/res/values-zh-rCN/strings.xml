@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- ============ Common Components ============ -->
     <!-- ModelPicker -->
@@ -128,6 +128,12 @@
     <string name="agent_edit_delete_title">删除助手</string>
     <string name="agent_edit_delete_message">确定要删除此助手吗？此操作无法撤销。</string>
     <string name="agent_edit_delete_confirm">删除</string>
+    <string name="chat_confirm_delete_session_message">您确定要删除此会话吗？此操作不可撤销。</string>
+
+    <!-- Session Settings Sheet -->
+    <string name="sheet_settings_ui_title">界面设置</string>
+    <string name="sheet_settings_font_size">字体大小</string>
+    <string name="sheet_settings_font_size_unit">像素</string>
 
     <!-- ============ RAG Config ============ -->
     <string name="agent_rag_title">RAG 配置</string>

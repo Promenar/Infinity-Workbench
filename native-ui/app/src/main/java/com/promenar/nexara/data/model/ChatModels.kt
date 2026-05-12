@@ -198,7 +198,8 @@ data class SessionOptions(
     val toolsEnabled: Boolean = true,
     val enableTimeInjection: Boolean = true,
     val webSearch: Boolean? = null,
-    val ragOptions: RagOptions? = null
+    val ragOptions: RagOptions? = null,
+    val fontSize: Int = 13
 )
 
 @Serializable

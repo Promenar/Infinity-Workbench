@@ -90,9 +90,7 @@ fun SessionSettingsScreen(
     }
 
     val session = uiState.session
-    val agentName = session?.agentId?.let { aid ->
-        aid.substringAfter("agent_").replaceFirstChar { it.uppercase() }
-    } ?: "Agent"
+    val agentName = uiState.agentName.ifBlank { "Agent" }
 
     val defaultTitle = stringResource(R.string.chat_title_new)
     var sessionTitle by remember(session?.title) { mutableStateOf(session?.title ?: defaultTitle) }
@@ -121,7 +119,7 @@ fun SessionSettingsScreen(
     if (showDeleteDialog) {
         NexaraConfirmDialog(
             title = stringResource(R.string.session_settings_delete_title),
-            message = stringResource(R.string.session_settings_delete_message),
+            message = stringResource(R.string.chat_confirm_delete_session_message),
             confirmText = stringResource(R.string.shared_btn_delete),
             onConfirm = {
                 showDeleteDialog = false

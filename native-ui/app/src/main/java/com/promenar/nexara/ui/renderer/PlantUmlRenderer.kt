@@ -8,20 +8,22 @@ import androidx.compose.ui.semantics.semantics
 @Composable
 fun PlantUmlBlock(
     code: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fontSize: Int = 13
 ) {
-    val html = buildPlantUmlHtml(code)
+    val html = buildPlantUmlHtml(code, fontSize)
     RichContentWebView(
         html = html,
         modifier = modifier.semantics {
             contentDescription = "PlantUML diagram: ${code.take(60)}"
         },
+        fontSize = fontSize,
         minHeight = 100,
         maxHeight = 600
     )
 }
 
-private fun buildPlantUmlHtml(code: String): String {
+private fun buildPlantUmlHtml(code: String, fontSize: Int = 13): String {
     val encoded = encodeForKroki(code)
     val krokiUrl = "https://kroki.io/plantuml/svg/$encoded"
     val escapedCode = code
@@ -35,12 +37,12 @@ private fun buildPlantUmlHtml(code: String): String {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            body { margin: 0; padding: 12px; background: transparent; display: flex; justify-content: center; }
+            body { margin: 0; padding: 12px; background: transparent; display: flex; justify-content: center; font-size: ${fontSize}px; }
             img { max-width: 100%; height: auto; }
             pre {
                 display: none;
                 background: #1C1B1D; color: #E5E1E4; padding: 12px;
-                border-radius: 8px; font-size: 13px; white-space: pre-wrap;
+                border-radius: 8px; font-size: ${fontSize}px; white-space: pre-wrap;
                 word-break: break-word; max-width: 100%; overflow-x: auto;
             }
         </style>

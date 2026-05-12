@@ -4,6 +4,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
@@ -59,3 +60,24 @@ val bodyMediumCJK = TextStyle(
     letterSpacing = 0.01.em,
     fontWeight = FontWeight.Normal
 )
+
+@Composable
+fun chatTypography(fontSize: Int): Typography {
+    val base = fontSize.sp
+    return NexaraTypography.copy(
+        bodyMedium = NexaraTypography.bodyMedium.copy(
+            fontSize = base,
+            lineHeight = (fontSize * 1.5).sp
+        ),
+        bodySmall = NexaraTypography.bodySmall.copy(
+            fontSize = (fontSize - 1).sp,
+            lineHeight = ((fontSize - 1) * 1.4).sp
+        ),
+        labelSmall = NexaraTypography.labelSmall.copy(
+            fontSize = (fontSize - 2).sp
+        ),
+        labelMedium = NexaraTypography.labelMedium.copy(
+            fontSize = (fontSize - 1).sp
+        ),
+    )
+}

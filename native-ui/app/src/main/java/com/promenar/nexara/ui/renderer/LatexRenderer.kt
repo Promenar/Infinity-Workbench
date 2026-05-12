@@ -8,20 +8,22 @@ import androidx.compose.ui.semantics.semantics
 @Composable
 fun LatexBlock(
     latex: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fontSize: Int = 14
 ) {
-    val html = buildLatexHtml(latex)
+    val html = buildLatexHtml(latex, fontSize)
     RichContentWebView(
         html = html,
         modifier = modifier.semantics {
             contentDescription = "Mathematical formula: $latex"
         },
+        fontSize = fontSize,
         minHeight = 30,
         maxHeight = 400
     )
 }
 
-private fun buildLatexHtml(latex: String): String {
+private fun buildLatexHtml(latex: String, fontSize: Int): String {
     val encoded = android.util.Base64.encodeToString(
         latex.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -40,9 +42,10 @@ private fun buildLatexHtml(latex: String): String {
                 color: #E5E1E4;
                 display: flex; justify-content: center; align-items: center;
                 min-height: 20px;
+                font-size: ${fontSize}px;
             }
             .katex { font-size: 1.1em; }
-            .error { color: #FFB4AB; font-size: 12px; }
+            .error { color: #FFB4AB; font-size: ${fontSize - 2}px; }
         </style>
     </head>
     <body>
@@ -64,7 +67,7 @@ private fun buildLatexHtml(latex: String): String {
     """.trimIndent()
 }
 
-internal fun buildInlineLatexHtml(latex: String): String {
+internal fun buildInlineLatexHtml(latex: String, fontSize: Int): String {
     val encoded = android.util.Base64.encodeToString(
         latex.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -82,9 +85,10 @@ internal fun buildInlineLatexHtml(latex: String): String {
                 background: transparent;
                 color: #E5E1E4;
                 display: inline-block;
+                font-size: ${fontSize}px;
             }
             .katex { font-size: 1em; }
-            .error { color: #FFB4AB; font-size: 12px; }
+            .error { color: #FFB4AB; font-size: ${fontSize - 2}px; }
         </style>
     </head>
     <body>

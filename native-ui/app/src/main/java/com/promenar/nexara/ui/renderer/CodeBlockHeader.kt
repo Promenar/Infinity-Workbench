@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +34,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,10 +48,14 @@ fun CodeBlockWithHeader(
     code: String,
     language: String?,
     modifier: Modifier = Modifier,
+    fontSize: Int = 13,
+    onCodeChange: ((String) -> Unit)? = null,
     codeContent: @Composable () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
+    var isEditing by remember { mutableStateOf(false) }
+    var editedCode by remember(code) { mutableStateOf(code) }
     val lines = remember(code) { code.lines() }
     val lineCount = lines.size
     val gutterWidth = when {
@@ -85,6 +93,24 @@ fun CodeBlockWithHeader(
                 color = NexaraColors.OnSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
+            if (onCodeChange != null) {
+                IconButton(
+                    onClick = {
+                        if (isEditing) {
+                            onCodeChange(editedCode)
+                        }
+                        isEditing = !isEditing
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isEditing) Icons.Rounded.Check else Icons.Rounded.Edit,
+                        contentDescription = if (isEditing) "Save" else "Edit code",
+                        tint = if (isEditing) NexaraColors.StatusSuccess else NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
             IconButton(
                 onClick = {
                     clipboardManager.setText(AnnotatedString(code))
@@ -102,35 +128,63 @@ fun CodeBlockWithHeader(
                 }
             }
         }
-        // 注意：mikepenz 的 MarkdownCodeFence 内部已自带 horizontalScroll，
-        // 此处不能再叠加 horizontalScroll，否则会因嵌套滚动导致无限宽度约束崩溃。
-        // 仅用 fillMaxWidth 即可，MarkdownHighlightedCode 内部会自行处理超长行。
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 16.dp)
-            ) {
-                lines.forEachIndexed { index, _ ->
-                    Text(
-                        text = "${index + 1}",
-                        style = NexaraTypography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.4f),
-                            textAlign = TextAlign.End
-                        ),
-                        modifier = Modifier.widthIn(min = gutterWidth)
-                    )
+        if (isEditing) {
+            OutlinedTextField(
+                value = editedCode,
+                onValueChange = { editedCode = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .heightIn(min = 100.dp),
+                textStyle = NexaraTypography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = fontSize.sp
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NexaraColors.Primary.copy(alpha = 0.5f),
+                    unfocusedBorderColor = NexaraColors.OutlineVariant.copy(alpha = 0.3f),
+                    cursorColor = NexaraColors.Primary,
+                    focusedTextColor = NexaraColors.OnBackground,
+                    unfocusedTextColor = NexaraColors.OnBackground
+                ),
+                shape = NexaraShapes.small
+            )
+        } else {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 16.dp)
+                ) {
+                    lines.forEachIndexed { index, _ ->
+                        Text(
+                            text = "${index + 1}",
+                            style = NexaraTypography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.4f),
+                                textAlign = TextAlign.End
+                            ),
+                            modifier = Modifier.widthIn(min = gutterWidth)
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(vertical = 16.dp)
+                        .width(0.5.dp)
+                        .background(NexaraColors.OutlineVariant)
+                )
+                Box(modifier = Modifier.padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)) {
+                    codeContent()
                 }
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(vertical = 16.dp)
-                    .width(0.5.dp)
-                    .background(NexaraColors.OutlineVariant)
+        }
+        if (!isEditing && isHtmlArtifact(language)) {
+            HtmlArtifactCard(
+                htmlCode = code,
+                language = language,
+                fontSize = fontSize,
+                modifier = Modifier.padding(8.dp)
             )
-            Box(modifier = Modifier.padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)) {
-                codeContent()
-            }
         }
     }
 }

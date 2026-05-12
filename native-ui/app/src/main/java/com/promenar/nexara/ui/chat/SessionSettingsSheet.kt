@@ -748,6 +748,51 @@ private fun SettingsPanel(
             }
         }
 
+        // --- UI Settings ---
+        item {
+            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.sheet_settings_ui_title),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = NexaraColors.OnSurface
+            )
+        }
+
+        item {
+            val options = session?.options ?: com.promenar.nexara.data.model.SessionOptions()
+            var currentFontSize by remember(options.fontSize) { mutableStateOf(options.fontSize) }
+
+            Text(
+                text = stringResource(R.string.sheet_settings_font_size),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSliderInt(
+                    value = currentFontSize,
+                    onValueChange = { 
+                        currentFontSize = it
+                        chatViewModel.updateFontSizeLocally(currentFontSize)
+                    },
+                    onValueChangeFinished = {
+                        chatViewModel.updateFontSize(currentFontSize)
+                    },
+                    valueRange = 10..18,
+                    steps = 8,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "$currentFontSize ${stringResource(R.string.sheet_settings_font_size_unit)}",
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
         item {
             Spacer(modifier = Modifier.height(32.dp))
         }

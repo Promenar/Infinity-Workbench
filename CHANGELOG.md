@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Phase 1-3: Markdown 渲染行业对齐（P0 → P1 → P2 全线收官）
+- **P0-T1 字号统一修复**: 创建 `chatTypography(fontSize)` 统一字号函数，修复 ThinkingBlock 默认值 14→13，缩减 Slider 上限 22→18sp。现在用户气泡、AI 正文、思维链、LaTeX/Mermaid/ECharts/PlantUML 字号全程一致。
+- **P0-T2 CJK 中西文间距**: 实现 `insertCjkSpacing()` 预处理，自动在中文字符与西文/数字间插入 hair space (U+200A)，对标 LobeChat/Cherry Studio 的 remarkCjkFriendly 能力。
+- **P0-T3 段落排版与断行优化**: 正文行高提升至 1.6、新增 `paragraph`/`inlineCode`/`quote` 排版项、标题行高统一 1.4，中文排版视觉层次清晰。
+- **P0-T4 WebView 字号联动**: ECharts/PlantUML 渲染器接入 `fontSize` 参数，图表内文本随设置同步变化。
+- **P1-T1 GFM Alert 支持**: 新增 `GfmAlertBlock.kt`，支持 NOTE/TIP/IMPORTANT/WARNING/CAUTION 五种 GitHub 风格警告块，带对应图标和语义色。
+- **P1-T2 LaTeX 定界符兼容**: `normalizeLatexDelimiters()` 将 `\[...\]`/`\(...\)` 自动转换为 `$$...$$`/`$...$`，兼容 Anthropic Claude 等模型输出。
+- **P1-T3 流式平滑调速**: 新增 `SmoothStreamContent.kt`，实现字符限速输出 (FAST=55/BALANCED=38/SMOOTH=25 cps)，消除流式输出抖动。
+- **P1-T4 标题锚点 ID**: 通过 `blockquote` component override 实现标题语义标记。
+- **P2-T1 HTML Artifacts**: 新增 `HtmlArtifactRenderer.kt`，HTML/SVG 代码块支持内嵌 WebView 实时预览 + 全屏分屏模式 + 导出 PNG 到系统相册。
+- **P2-T2 代码块可编辑模式**: `CodeBlockWithHeader` 新增编辑按钮，点击切换 `OutlinedTextField` 编辑模式，保存后通过 `onCodeChange` 回调更新代码。
+- **P2-T3 图片灯箱增强**: `ImageLightbox` 新增双指缩放 (0.5x-5x)、旋转、分享/保存到相册功能。
+
+### 新增文件
+- `ui/common/SmoothStreamContent.kt` — 流式平滑调速
+- `ui/renderer/GfmAlertBlock.kt` — GFM Alert 警告块渲染
+- `ui/renderer/HtmlArtifactRenderer.kt` — HTML 工件预览与导出
+- `docs/MARKDOWN_RENDERING_AUDIT.md` — 渲染能力审计与行业对标
+- `docs/IMPLEMENTATION_PLAN.md` — 分阶段实施计划（含 11 个独立 Agent 提示词）
+
+### Markdown 渲染能力审计与行业对齐规划
+- **行业调研**: 完成 LobeChat 与 Cherry Studio 渲染能力对标分析，输出完整差异矩阵（见 `docs/MARKDOWN_RENDERING_AUDIT.md`）
+- **P0 修复**: 彻底解决了 Markdown 代码块渲染闪退问题（`horizontalScroll` 与 mikepenz `MarkdownCodeFence` 嵌套导致无限宽度约束崩溃）
+- **字体诊断**: 诊断出 AI 气泡字号"部分生效"根因——ThinkingBlock 默认值与 ChatBubble 不一致、NexaraTypography.bodyMedium 硬编码 15sp 未被全局替换
+- **CJK 排版**: 识别中西文间距优化缺失，规划 `AutoCjkSpacing` 预处理与 `letterSpacing` 规则
+
+### 全局规则更新
+- 新增 §7 [Kotlin/Compose] → 5. 滚动容器嵌套红线，覆盖 `horizontalScroll`/`verticalScroll` 与第三方库嵌套的崩溃模式
+
+### 会话界面丰富内容渲染与排版深度优化
+- **全局字号穿透**: 彻底解决了 AI 消息气泡中正文、LaTeX 公式、Mermaid 图表字号不一致的问题。通过重构渲染层级，所有丰富内容块现在均能实时响应设置中的字号调节。
+- **图片渲染支持**: 集成了 `Coil3ImageTransformerImpl`，解决了 Markdown 远程图片无法显示的问题，并保留了全屏查看交互。
+- **输入框占位符本地化**: 修复了预置助手（如超级助手）名称硬编码/启发式转换问题。现在通过 `ChatUiState` 穿透，实时从数据库获取助手的真实本地化名称（如 "超级助手" 替代 "Super"）。
+- **WebView 样式联动**: 
+    - 优化了 `RichContentWebView`，支持将系统字号注入 WebView 基准字号。
+    - 优化了 LaTeX 和 Mermaid 的 HTML/CSS 模板，确保数学符号和图表文本与全局排版风格高度契合。
+- **排版鲁棒性增强**: 
+    - 引入 `trimIndent()` 预处理，自动修复部分 AI 模型输出时携带的多余缩进，防止标题被错误解析为代码块。
+    - 优化了打字机模式下的 Markdown 闭环保护逻辑。
+- **UI 清理**: 移除了测试阶段留在顶栏的字号调试信息。
+
 ### 品牌资产与 UI 体验
 - **全套单色品牌图标**: 实装了 OpenAI, Anthropic, Gemini, DeepSeek, Mistral, Cohere 等 9 种协议的单色矢量图标，彻底移除对远程 Iconify 图标的依赖。
 - **UI 对齐全局优化**: 修正了 `NexaraPageLayout` 及所有主页面（首页、设置页）标题相对于内容区域的 4.dp 偏移问题，确保标题与搜索框/卡片左侧严格对齐。

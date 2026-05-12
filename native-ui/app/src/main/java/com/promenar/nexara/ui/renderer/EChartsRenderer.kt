@@ -58,13 +58,14 @@ import kotlinx.serialization.json.jsonPrimitive
 @Composable
 fun EChartsBlock(
     optionJson: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fontSize: Int = 13
 ) {
     val context = LocalContext.current
     var showFullScreen by remember { mutableStateOf(false) }
     val webView = remember { RichContentWebViewPool.acquire(context) }
     var webViewHeight by remember { mutableIntStateOf(200) }
-    val html = remember(optionJson) { buildEChartsHtml(optionJson, fullScreen = false) }
+    val html = remember(optionJson, fontSize) { buildEChartsHtml(optionJson, fullScreen = false, fontSize = fontSize) }
 
     LaunchedEffect(webView) {
         webView.webViewClient = object : WebViewClient() {
@@ -87,6 +88,7 @@ fun EChartsBlock(
         AndroidView(
             factory = { webView },
             update = { wv ->
+                wv.settings.defaultFontSize = fontSize
                 wv.loadDataWithBaseURL(
                     "file:///android_asset/",
                     html,
@@ -144,8 +146,9 @@ fun EChartsBlock(
                     .background(Color.Black.copy(alpha = 0.95f))
             ) {
                 RichContentWebView(
-                    html = buildEChartsHtml(optionJson, fullScreen = true),
+                    html = buildEChartsHtml(optionJson, fullScreen = true, fontSize = fontSize),
                     modifier = Modifier.fillMaxSize(),
+                    fontSize = fontSize,
                     minHeight = 40,
                     maxHeight = Int.MAX_VALUE
                 )
@@ -170,7 +173,7 @@ fun EChartsBlock(
     }
 }
 
-private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean): String {
+private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean, fontSize: Int = 13): String {
     val encoded = android.util.Base64.encodeToString(
         optionJson.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -183,7 +186,7 @@ private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean): String {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="echarts/echarts.min.js"></script>
         <style>
-            body { margin: 0; padding: 0; background: transparent; }
+            body { margin: 0; padding: 0; background: transparent; font-size: ${fontSize}px; }
             #chart { width: 100%; height: $height; }
         </style>
     </head>
@@ -194,6 +197,8 @@ private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean): String {
                 var chart = echarts.init(document.getElementById('chart'), 'dark');
                 var option = JSON.parse(atob("$encoded"));
                 option.backgroundColor = 'transparent';
+                option.textStyle = option.textStyle || {};
+                option.textStyle.fontSize = $fontSize;
                 option.toolbox = {
                     show: true,
                     feature: {
@@ -207,7 +212,7 @@ private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean): String {
                 window.addEventListener('resize', function() { chart.resize(); });
             } catch(e) {
                 document.getElementById('chart').innerHTML =
-                    '<p style="color:#FFB4AB;font-size:12px;">ECharts Error: ' + e.message + '</p>';
+                    '<p style="color:#FFB4AB;font-size:${fontSize}px;">ECharts Error: ' + e.message + '</p>';
             }
         </script>
     </body>

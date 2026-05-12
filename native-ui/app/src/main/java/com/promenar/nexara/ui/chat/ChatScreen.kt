@@ -142,9 +142,7 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
 
     val sessionTitle = uiState.session?.title ?: stringResource(R.string.chat_title_new)
-    val agentName = uiState.session?.agentId?.let { aid ->
-        aid.substringAfter("agent_").replaceFirstChar { it.uppercase() }
-    } ?: ""
+    val agentName = uiState.agentName
 
     val isUserScrolledAway by remember {
         derivedStateOf {
@@ -200,9 +198,11 @@ fun ChatScreen(
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         topBar = {
+            val fontSize = uiState.session?.options?.fontSize ?: 13
+            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
             ChatTopBar(
                 title = sessionTitle,
-                subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName,
+                subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName.ifBlank { sessionTitle },
                 onBack = onNavigateBack,
                 onWorkspace = { showWorkspaceSheet = true },
                 onSettings = { showModelSettingsSheet = true },
@@ -237,9 +237,13 @@ fun ChatScreen(
                             message = message,
                             isGenerating = uiState.isGenerating && message.id == uiState.messages.lastOrNull()?.id,
                             streamingContent = uiState.streamingContent,
+                            fontSize = uiState.session?.options?.fontSize ?: 13,
                             onLongClick = { showActionSheet = true },
                             onApprove = { chatViewModel.approveRequest() },
-                            onDecline = { chatViewModel.rejectRequest() }
+                            onDecline = { chatViewModel.rejectRequest() },
+                            onContentChange = { newContent ->
+                                chatViewModel.updateMessageContentOnly(message.id, newContent)
+                            }
                         )
 
                         if (showActionSheet) {
@@ -689,9 +693,11 @@ fun ChatBubble(
     message: Message,
     isGenerating: Boolean = false,
     streamingContent: String = "",
+    fontSize: Int = 13,
     onApprove: () -> Unit = {},
     onDecline: () -> Unit = {},
-    onLongClick: () -> Unit = {}
+    onLongClick: () -> Unit = {},
+    onContentChange: ((String) -> Unit)? = null
 ) {
     val isUser = message.role == MessageRole.USER
     val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
@@ -715,7 +721,10 @@ fun ChatBubble(
                 ) {
                     Text(
                         text = message.content,
-                        style = NexaraTypography.bodyMedium,
+                        style = NexaraTypography.bodyMedium.copy(
+                            fontSize = fontSize.sp,
+                            lineHeight = (fontSize * 1.5).sp
+                        ),
                         color = NexaraColors.OnBackground,
                         modifier = Modifier.padding(16.dp)
                     )
@@ -734,7 +743,8 @@ fun ChatBubble(
                 if (!message.reasoning.isNullOrBlank()) {
                     ThinkingBlock(
                         reasoning = message.reasoning!!,
-                        isGenerating = isGenerating
+                        isGenerating = isGenerating,
+                        fontSize = fontSize
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -743,6 +753,8 @@ fun ChatBubble(
                 MarkdownText(
                     markdown = displayContent,
                     isStreaming = isGenerating,
+                    fontSize = fontSize,
+                    onContentChange = onContentChange,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
 
