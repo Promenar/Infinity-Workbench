@@ -158,7 +158,7 @@ fun AgentRagConfigScreen(
                         step = 50f,
                         displayValue = "${ragConfig.docChunkSize.toInt()}",
                         enabled = true,
-                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(docChunkSize = newVal) } }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(docChunkSize = newVal.toInt()) } }
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_overlap),
@@ -167,7 +167,7 @@ fun AgentRagConfigScreen(
                         step = 10f,
                         displayValue = "${ragConfig.chunkOverlap.toInt()}",
                         enabled = true,
-                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(chunkOverlap = newVal) } }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(chunkOverlap = newVal.toInt()) } }
                     )
                 }
             }
@@ -194,7 +194,7 @@ fun AgentRagConfigScreen(
                         step = 100f,
                         displayValue = "${ragConfig.memoryChunkSize.toInt()}",
                         enabled = true,
-                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(memoryChunkSize = newVal) } }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(memoryChunkSize = newVal.toInt()) } }
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_active_window),

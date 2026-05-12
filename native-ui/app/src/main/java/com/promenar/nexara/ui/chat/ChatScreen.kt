@@ -13,6 +13,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -294,6 +296,14 @@ fun ChatScreen(
                             )
                         }
                     }
+                }
+
+                AnimatedVisibility(
+                    visible = uiState.isLoading && uiState.messages.isEmpty(),
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    ChatSkeleton(modifier = Modifier.weight(1f).fillMaxWidth())
                 }
 
                 if (showTruncateDialog) {
@@ -749,6 +759,24 @@ fun ChatBubble(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
+                if (message.role == MessageRole.ASSISTANT && message.content.isEmpty()) {
+                    // Show RAG progress if enabled and we have progress/references
+                    RagOmniIndicator(
+                        progress = message.ragProgress,
+                        metadata = message.ragMetadata,
+                        references = message.ragReferences,
+                        isLoading = isGenerating && message.content.isEmpty()
+                    )
+                } else if (message.role == MessageRole.ASSISTANT && message.ragReferences != null && message.ragReferences!!.isNotEmpty()) {
+                    // Show references even if content has started
+                    RagOmniIndicator(
+                        progress = message.ragProgress,
+                        metadata = message.ragMetadata,
+                        references = message.ragReferences,
+                        isLoading = false
+                    )
+                }
+
                 val displayContent = if (isGenerating && streamingContent.isNotEmpty()) streamingContent else message.content
                 MarkdownText(
                     markdown = displayContent,
@@ -1081,5 +1109,94 @@ private fun GenerationStatusButton(
                     else Modifier
                 )
         )
+    }
+}
+
+@Composable
+fun ChatSkeleton(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "skeleton")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Column(
+        modifier = modifier.padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        // Mock User Message
+        Column(modifier = Modifier.align(Alignment.End), horizontalAlignment = Alignment.End) {
+            Box(
+                modifier = Modifier
+                    .size(width = 160.dp, height = 48.dp)
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp))
+                    .background(NexaraColors.SurfaceHigh.copy(alpha = alpha))
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                    .size(width = 40.dp, height = 12.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.SurfaceHigh.copy(alpha = alpha * 0.5f))
+            )
+        }
+
+        // Mock AI Message 1
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.7f)
+                    .height(20.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .height(20.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.5f)
+                    .height(20.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+            )
+        }
+
+        // Mock AI Message 2 (Thinking + Content)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .size(width = 100.dp, height = 32.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.Primary.copy(alpha = alpha * 0.2f))
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .height(20.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.4f)
+                    .height(20.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+            )
+        }
     }
 }

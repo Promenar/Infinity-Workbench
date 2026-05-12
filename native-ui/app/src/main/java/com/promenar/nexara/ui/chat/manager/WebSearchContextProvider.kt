@@ -21,7 +21,7 @@ class WebSearchContextProvider(
 
     private fun getActiveProvider(): WebSearchProvider {
         val engine = prefs.getString("search_engine", "duckduckgo") ?: "duckduckgo"
-        val maxResults = prefs.getInt("result_count", 8)
+        val maxResults = prefs.getInt("result_count", 5)
         val includeDomains = parseDomainList("include_domains")
         val excludeDomains = parseDomainList("exclude_domains")
 

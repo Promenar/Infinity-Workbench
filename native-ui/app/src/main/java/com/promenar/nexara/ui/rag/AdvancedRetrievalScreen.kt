@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
@@ -49,22 +50,21 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
 fun AdvancedRetrievalScreen(
     viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(LocalContext.current.applicationContext as Application)),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToRagAdvanced: () -> Unit = {}
 ) {
     val config by viewModel.config.collectAsState()
-    val availableModels by viewModel.availableModels.collectAsState()
-    var showModelPicker by remember { mutableStateOf(false) }
     var queryRewriteStrategy by remember { mutableStateOf("hyde") }
 
     NexaraPageLayout(
         title = stringResource(R.string.retrieval_title),
-        onBack = onNavigateBack
+        onBack = onNavigateBack,
+        scrollable = false
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(
@@ -151,58 +151,59 @@ fun AdvancedRetrievalScreen(
                 }
             }
 
-            // Knowledge Graph Extraction
+            // Knowledge Graph — 配置请前往 RAG 高级设置
             NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToRagAdvanced() },
                 shape = NexaraShapes.large as RoundedCornerShape
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
-                            modifier = Modifier.size(30.dp).background(NexaraColors.SurfaceContainer, CircleShape),
+                            modifier = Modifier
+                                .size(30.dp)
+                                .background(NexaraColors.SurfaceContainer, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(15.dp))
+                            Icon(
+                                Icons.Rounded.AccountTree,
+                                contentDescription = null,
+                                tint = NexaraColors.Primary,
+                                modifier = Modifier.size(15.dp)
+                            )
                         }
-                        Text(stringResource(R.string.rag_advanced_kg_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+                        Column {
+                            Text(
+                                stringResource(R.string.rag_advanced_kg_section),
+                                style = NexaraTypography.headlineMedium,
+                                color = NexaraColors.OnSurface
+                            )
+                            Text(
+                                text = if (config.enableKnowledgeGraph) 
+                                    "已启用 — 点击配置" 
+                                else 
+                                    "已关闭 — 点击配置",
+                                style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
+                                color = if (config.enableKnowledgeGraph) NexaraColors.StatusSuccess else NexaraColors.OnSurfaceVariant
+                            )
+                        }
                     }
-
-                    SettingsToggle(
-                        title = stringResource(R.string.rag_advanced_kg_enable),
-                        description = stringResource(R.string.rag_advanced_kg_desc),
-                        checked = config.enableKnowledgeGraph,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(enableKnowledgeGraph = enabled) } }
+                    Icon(
+                        Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = NexaraColors.Outline,
+                        modifier = Modifier.size(20.dp)
                     )
-
-                    if (config.enableKnowledgeGraph) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
-                            NexaraGlassCard(
-                                modifier = Modifier.fillMaxWidth().clickable { showModelPicker = true },
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    val currentModel = availableModels.find { it.id == config.kgExtractionModel }
-                                    Text(
-                                        text = currentModel?.name ?: stringResource(R.string.rag_advanced_select_model_placeholder),
-                                        style = NexaraTypography.bodyMedium,
-                                        color = if (currentModel != null) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant
-                                    )
-                                    Icon(Icons.Rounded.Memory, null, modifier = Modifier.size(16.dp), tint = NexaraColors.Primary)
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
@@ -367,17 +368,6 @@ fun AdvancedRetrievalScreen(
             Spacer(modifier = Modifier.height(80.dp))
         }
 
-        ModelPicker(
-            show = showModelPicker,
-            onDismiss = { showModelPicker = false },
-            onSelect = { id, _ ->
-                viewModel.updateConfig { it.copy(kgExtractionModel = id) }
-                showModelPicker = false
-            },
-            currentModelId = config.kgExtractionModel ?: "",
-            models = availableModels,
-            filterTag = "chat"
-        )
     }
 }
 

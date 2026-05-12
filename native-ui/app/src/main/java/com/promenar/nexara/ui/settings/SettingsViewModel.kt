@@ -74,14 +74,6 @@ data class SkillInfo(
 // ProviderListItem 已迁移至 data/model/ProviderModels.kt，此处通过 import 引入。
 // 保留此注释以防止 git diff 混乱。
 
-data class SearchSettings(
-    val engine: String,
-    val tavilyKey: String,
-    val searxngUrl: String,
-    val depth: String,
-    val resultCount: Int
-)
-
 class SettingsViewModel(application: Application) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -145,13 +137,6 @@ class SettingsViewModel(application: Application) : ViewModel() {
     val embeddingModelId: StateFlow<String> = pm.embeddingModelId
     val rerankModelId: StateFlow<String> = pm.rerankModelId
 
-    private val _searchSettings = MutableStateFlow(SearchSettings("duckduckgo", "", "https://searx.be", "basic", 5))
-    val searchSettings = _searchSettings.asStateFlow()
-
-
-    private val searchPrefs: SharedPreferences =
-        application.getSharedPreferences("nexara_search", 0)
-
     private val _loopLimit = MutableStateFlow(prefs.getInt("loop_limit", 15))
     val loopLimit: StateFlow<Int> = _loopLimit.asStateFlow()
 
@@ -214,28 +199,6 @@ class SettingsViewModel(application: Application) : ViewModel() {
         _themeMode.value = prefs.getString("theme_mode", "dark") ?: "dark"
         _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
         _loopLimit.value = prefs.getInt("loop_limit", 15)
-        loadSearchSettings()
-    }
-
-    private fun loadSearchSettings() {
-        _searchSettings.value = SearchSettings(
-            engine = searchPrefs.getString("search_engine", "duckduckgo") ?: "duckduckgo",
-            tavilyKey = searchPrefs.getString("tavily_api_key", "") ?: "",
-            searxngUrl = searchPrefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be",
-            depth = searchPrefs.getString("search_depth", "basic") ?: "basic",
-            resultCount = searchPrefs.getInt("search_result_count", 5)
-        )
-    }
-
-    fun updateSearchSettings(settings: SearchSettings) {
-        _searchSettings.value = settings
-        searchPrefs.edit()
-            .putString("search_engine", settings.engine)
-            .putString("tavily_api_key", settings.tavilyKey)
-            .putString("searxng_url", settings.searxngUrl)
-            .putString("search_depth", settings.depth)
-            .putInt("result_count", settings.resultCount)
-            .apply()
     }
 
     fun refreshProviders() {

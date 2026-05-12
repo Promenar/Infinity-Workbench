@@ -37,7 +37,7 @@ class WebSearchSearXNGSkill(
         val query = args["query"]?.toString() ?: return ToolResult(id = "err", content = "Missing query", status = "error")
         val prefs = this.context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
         val url = prefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be"
-        val maxResults = prefs.getInt("result_count", 8)
+        val maxResults = prefs.getInt("result_count", 5)
         val includeDomains = parseDomainList(prefs, "include_domains")
         val excludeDomains = parseDomainList(prefs, "exclude_domains")
         

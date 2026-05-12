@@ -54,6 +54,7 @@ import com.promenar.nexara.ui.common.InferencePresets
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.rag.RagViewModel
 import com.promenar.nexara.ui.common.SettingsInput
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.SettingsToggle
@@ -70,6 +71,8 @@ fun SpaSettingsScreen(
 ) {
     val context = LocalContext.current
     val spaViewModel: SpaViewModel = viewModel()
+    val ragViewModel: RagViewModel = viewModel(factory = RagViewModel.factory(context.applicationContext as android.app.Application))
+    val ragConfig by ragViewModel.config.collectAsState()
     val settingsViewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.factory(context.applicationContext as android.app.Application)
     )
@@ -79,8 +82,7 @@ fun SpaSettingsScreen(
     val fabIconIndex by spaViewModel.fabIconIndex.collectAsState()
     val rotateAnimation by spaViewModel.rotateAnimation.collectAsState()
     val glowEffect by spaViewModel.glowEffect.collectAsState()
-    val enableKG by spaViewModel.enableKG.collectAsState()
-    val contextWindow by spaViewModel.contextWindow.collectAsState()
+    val uiContextRatio by spaViewModel.uiContextRatio.collectAsState()
 
     val allModels by settingsViewModel.providerModels.collectAsState()
 
@@ -250,11 +252,11 @@ fun SpaSettingsScreen(
                 SettingsToggle(
                     title = stringResource(R.string.spa_kg_enable),
                     description = stringResource(R.string.spa_kg_enable_desc),
-                    checked = enableKG,
-                    onCheckedChange = { spaViewModel.updateEnableKG(it) }
+                    checked = ragConfig.enableKnowledgeGraph,
+                    onCheckedChange = { enabled -> ragViewModel.updateConfig { it.copy(enableKnowledgeGraph = enabled) } }
                 )
 
-                if (enableKG) {
+                if (ragConfig.enableKnowledgeGraph) {
                     Spacer(modifier = Modifier.height(8.dp))
                     NexaraGlassCard(
                         modifier = Modifier
@@ -315,15 +317,15 @@ fun SpaSettingsScreen(
                         ) {
                             Text(stringResource(R.string.spa_context_window), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
                             Text(
-                                "${(contextWindow * 100).toInt()}%",
+                                "${(uiContextRatio * 100).toInt()}%",
                                 style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp, fontFamily = FontFamily.Monospace),
                                 color = NexaraColors.Primary
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         NexaraSlider(
-                            value = contextWindow,
-                            onValueChange = { spaViewModel.updateContextWindow(it) }
+                            value = uiContextRatio,
+                            onValueChange = { spaViewModel.updateUiContextRatio(it) }
                         )
                     }
                 }

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### RAG UI 观测能力与全链路打通 (2026-05-13)
+- **P0 检索观测打通**: 重构 `ContextBuilder` 与 `RagProvider` 回调链路，实装从 `MemoryManager` 到底层检索算法的 5 阶段进度上报。
+- **P0 UI 指标展示**: 在 `ChatBubble` 中集成 `RagOmniIndicator` 磨砂玻璃指示器，支持实时显示“正在向量化查询...”、“搜索文档...”等状态和百分比进度条。
+- **P1 设置持久化修复**: 修复 `RagViewModel` 中 `showRetrievalProgress` 与 `showRetrievalDetails` 的持久化逻辑，确保设置项在应用重启后依然生效。
+- **P1 默认配置优化**: 调整 `RagConfiguration` 默认值，默认开启“显示检索进度”与“显示检索详情”，提升新用户开箱即用的观测体验。
+- **P2 稳定性与性能**: 修复 `AdvancedRetrievalScreen` 在开启滚动时与顶栏嵌套滚动的冲突，优化 RAG 状态在 `ChatStore` 中的局部刷新效率。
+
+
+### 设置颗粒度统一修复 (2026-05-13)
+- **P0 搜索配置统一**: 删除 `SettingsViewModel.SearchSettings` 冗余类，统一到 `SearchConfigViewModel`；`result_count` 默认值 8→5（全局统一）
+- **P0 enableKG 双源消除**: `SpaViewModel.enableKG` 删除，改为从 `RagConfiguration.enableKnowledgeGraph` 全局读取
+- **P1 contextWindow 命名歧义**: SPA 层 `contextWindow` → `uiContextRatio`（避免与 RAG 的 `contextWindow: Int` 混淆）
+- **P1 AgentRagConfig 类型统一**: `docChunkSize/chunkOverlap/memoryChunkSize` 从 `Float` 改为 `Int`（对齐 `RagConfiguration`）
+- **P1 KG UI 去重**: `AdvancedRetrievalScreen` 的 KG 面板改为只读状态 + 导航链接，配置入口统一到 `RagAdvancedScreen`
+- **P2 Agent 继承映射补全**: `AgentRetrievalConfig` 新增 11 个可继承字段（enableMemory/docs/KG, rewrite/提取模型, KG prompt/类型/模式, jitMaxChunks）
+
+### 影响文件 (共 13 个)
+- `SpaViewModel.kt`, `SpaSettingsScreen.kt` — P0-2, P1-3
+- `AgentConfigModels.kt`, `AgentEditViewModel.kt`, `AgentRagConfigScreen.kt` — P1-4, P2-6
+- `SettingsViewModel.kt`, `SkillsScreen.kt`, `WebSearchContextProvider.kt`, `WebSearchSkill.kt`, `WebSearchSearXNGSkill.kt` — P0-1
+- `AdvancedRetrievalScreen.kt`, `NavGraph.kt` — P1-5
+
 ### Phase 1-3: Markdown 渲染行业对齐（P0 → P1 → P2 全线收官）
 - **P0-T1 字号统一修复**: 创建 `chatTypography(fontSize)` 统一字号函数，修复 ThinkingBlock 默认值 14→13，缩减 Slider 上限 22→18sp。现在用户气泡、AI 正文、思维链、LaTeX/Mermaid/ECharts/PlantUML 字号全程一致。
 - **P0-T2 CJK 中西文间距**: 实现 `insertCjkSpacing()` 预处理，自动在中文字符与西文/数字间插入 hair space (U+200A)，对标 LobeChat/Cherry Studio 的 remarkCjkFriendly 能力。

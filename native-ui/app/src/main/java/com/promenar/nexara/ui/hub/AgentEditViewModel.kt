@@ -99,9 +99,9 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     private fun getGlobalRagConfig(): com.promenar.nexara.data.agent.AgentRagConfig {
         val prefs = app.getSharedPreferences("rag_settings", 0)
         return com.promenar.nexara.data.agent.AgentRagConfig(
-            docChunkSize = prefs.getInt("doc_chunk_size", 800).toFloat(),
-            chunkOverlap = prefs.getInt("chunk_overlap", 100).toFloat(),
-            memoryChunkSize = prefs.getInt("memory_chunk_size", 1000).toFloat(),
+            docChunkSize = prefs.getInt("doc_chunk_size", 800),
+            chunkOverlap = prefs.getInt("chunk_overlap", 100),
+            memoryChunkSize = prefs.getInt("memory_chunk_size", 1000),
             contextWindow = prefs.getInt("context_window", 20),
             summaryThreshold = prefs.getInt("summary_threshold", 10)
         )
@@ -122,7 +122,18 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
             queryRewriteCount = prefs.getInt("query_rewrite_count", 3),
             enableHybridSearch = prefs.getBoolean("enable_hybrid_search", false),
             hybridAlpha = prefs.getFloat("hybrid_alpha", 0.6f),
-            hybridBM25Boost = prefs.getFloat("hybrid_bm25_boost", 1.0f)
+            hybridBM25Boost = prefs.getFloat("hybrid_bm25_boost", 1.0f),
+            enableMemory = prefs.getBoolean("enable_memory", true),
+            enableDocs = prefs.getBoolean("enable_docs", true),
+            enableKnowledgeGraph = prefs.getBoolean("enable_kg", false),
+            queryRewriteModel = prefs.getString("query_rewrite_model", null),
+            kgExtractionModel = prefs.getString("kg_model", null),
+            kgExtractionPrompt = prefs.getString("kg_prompt", null),
+            kgEntityTypes = emptyList(), // 当前 rag_settings 中未持久化此字段
+            kgFreeMode = prefs.getBoolean("kg_free_mode", false),
+            kgDomainAuto = prefs.getBoolean("kg_domain_auto", false),
+            kgDomainHint = null, // 当前 rag_settings 中未持久化此字段
+            jitMaxChunks = prefs.getInt("jit_max_chunks", 0)
         )
     }
 

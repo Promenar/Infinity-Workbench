@@ -72,6 +72,8 @@ import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.settings.SearchConfigViewModel
+import com.promenar.nexara.ui.settings.SearchConfigState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -528,7 +530,6 @@ fun SkillsScreen(
     if (showSearchConfig != null) {
         SearchConfigBottomSheet(
             skillId = showSearchConfig!!,
-            viewModel = viewModel,
             onDismiss = { showSearchConfig = null }
         )
     }
@@ -768,10 +769,10 @@ private fun McpServerCard(
 @Composable
 private fun SearchConfigBottomSheet(
     skillId: String,
-    viewModel: SettingsViewModel,
     onDismiss: () -> Unit
 ) {
-    val searchSettings by viewModel.searchSettings.collectAsState()
+    val searchViewModel: SearchConfigViewModel = viewModel()
+    val searchState by searchViewModel.uiState.collectAsState()
     
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -812,14 +813,14 @@ private fun SearchConfigBottomSheet(
             if (skillId == "web_search") {
                 Text(stringResource(R.string.search_engine_select), style = NexaraTypography.labelMedium)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EngineOption("duckduckgo", stringResource(R.string.search_engine_duckduckgo), searchSettings.engine == "duckduckgo") {
-                        viewModel.updateSearchSettings(searchSettings.copy(engine = "duckduckgo"))
+                    EngineOption("duckduckgo", stringResource(R.string.search_engine_duckduckgo), searchState.searchEngine == "duckduckgo") {
+                        searchViewModel.updateSearchEngine("duckduckgo")
                     }
-                    EngineOption("tavily", stringResource(R.string.search_engine_tavily), searchSettings.engine == "tavily") {
-                        viewModel.updateSearchSettings(searchSettings.copy(engine = "tavily"))
+                    EngineOption("tavily", stringResource(R.string.search_engine_tavily), searchState.searchEngine == "tavily") {
+                        searchViewModel.updateSearchEngine("tavily")
                     }
-                    EngineOption("searxng", stringResource(R.string.search_engine_searxng), searchSettings.engine == "searxng") {
-                        viewModel.updateSearchSettings(searchSettings.copy(engine = "searxng"))
+                    EngineOption("searxng", stringResource(R.string.search_engine_searxng), searchState.searchEngine == "searxng") {
+                        searchViewModel.updateSearchEngine("searxng")
                     }
                 }
                 
@@ -828,17 +829,17 @@ private fun SearchConfigBottomSheet(
                 // Common settings for generic web_search
                 SettingsSlider(
                     label = stringResource(R.string.search_count_label),
-                    value = searchSettings.resultCount.toFloat(),
+                    value = searchState.resultCount.toFloat(),
                     range = 1f..20f,
-                    onValueChange = { viewModel.updateSearchSettings(searchSettings.copy(resultCount = it.toInt())) }
+                    onValueChange = { searchViewModel.updateResultCount(it.toInt()) }
                 )
             }
 
-            if (skillId == "search_tavily" || (skillId == "web_search" && searchSettings.engine == "tavily")) {
+            if (skillId == "search_tavily" || (skillId == "web_search" && searchState.searchEngine == "tavily")) {
                 Text(stringResource(R.string.search_api_key), style = NexaraTypography.labelMedium)
                 BasicTextField(
-                    value = searchSettings.tavilyKey,
-                    onValueChange = { viewModel.updateSearchSettings(searchSettings.copy(tavilyKey = it)) },
+                    value = searchState.tavilyApiKey,
+                    onValueChange = { searchViewModel.updateTavilyApiKey(it) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
@@ -848,7 +849,7 @@ private fun SearchConfigBottomSheet(
                     textStyle = NexaraTypography.bodyLarge.copy(color = NexaraColors.OnSurface, fontFamily = FontFamily.Monospace),
                     decorationBox = { innerTextField ->
                         Box(contentAlignment = Alignment.CenterStart) {
-                            if (searchSettings.tavilyKey.isEmpty()) Text("Paste API Key here", color = NexaraColors.Outline, style = NexaraTypography.bodyLarge)
+                            if (searchState.tavilyApiKey.isEmpty()) Text("Paste API Key here", color = NexaraColors.Outline, style = NexaraTypography.bodyLarge)
                             innerTextField()
                         }
                     }
@@ -857,21 +858,21 @@ private fun SearchConfigBottomSheet(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.search_depth_label), style = NexaraTypography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DepthChip("basic", stringResource(R.string.search_depth_basic), searchSettings.depth == "basic") {
-                            viewModel.updateSearchSettings(searchSettings.copy(depth = "basic"))
+                        DepthChip("basic", stringResource(R.string.search_depth_basic), searchState.searchDepth == "basic") {
+                            searchViewModel.updateSearchDepth("basic")
                         }
-                        DepthChip("advanced", stringResource(R.string.search_depth_advanced), searchSettings.depth == "advanced") {
-                            viewModel.updateSearchSettings(searchSettings.copy(depth = "advanced"))
+                        DepthChip("advanced", stringResource(R.string.search_depth_advanced), searchState.searchDepth == "advanced") {
+                            searchViewModel.updateSearchDepth("advanced")
                         }
                     }
                 }
             }
 
-            if (skillId == "search_searxng" || (skillId == "web_search" && searchSettings.engine == "searxng")) {
+            if (skillId == "search_searxng" || (skillId == "web_search" && searchState.searchEngine == "searxng")) {
                 Text(stringResource(R.string.search_instance_url), style = NexaraTypography.labelMedium)
                 BasicTextField(
-                    value = searchSettings.searxngUrl,
-                    onValueChange = { viewModel.updateSearchSettings(searchSettings.copy(searxngUrl = it)) },
+                    value = searchState.searXngUrl,
+                    onValueChange = { searchViewModel.updateSearXngUrl(it) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
@@ -881,7 +882,7 @@ private fun SearchConfigBottomSheet(
                     textStyle = NexaraTypography.bodyLarge.copy(color = NexaraColors.OnSurface, fontFamily = FontFamily.Monospace),
                     decorationBox = { innerTextField ->
                         Box(contentAlignment = Alignment.CenterStart) {
-                            if (searchSettings.searxngUrl.isEmpty()) Text("https://...", color = NexaraColors.Outline, style = NexaraTypography.bodyLarge)
+                            if (searchState.searXngUrl.isEmpty()) Text("https://...", color = NexaraColors.Outline, style = NexaraTypography.bodyLarge)
                             innerTextField()
                         }
                     }

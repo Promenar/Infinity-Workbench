@@ -32,7 +32,8 @@ interface RagProvider {
     suspend fun retrieveContext(
         query: String,
         sessionId: String,
-        options: com.promenar.nexara.data.model.RagOptions
+        options: com.promenar.nexara.data.model.RagOptions,
+        onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null
     ): Triple<String, List<RagReference>, RagUsage?>
 }
 
@@ -102,7 +103,7 @@ class ContextBuilder(
 
         return try {
             val (context, references, usage) = ragProvider.retrieveContext(
-                params.content, params.sessionId, finalRagOptions
+                params.content, params.sessionId, finalRagOptions, params.onRagProgress
             )
             Triple(context, references, usage)
         } catch (_: Exception) {

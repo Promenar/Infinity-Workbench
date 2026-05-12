@@ -4,9 +4,9 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AgentRagConfig(
-    val docChunkSize: Float = 800f,
-    val chunkOverlap: Float = 100f,
-    val memoryChunkSize: Float = 1000f,
+    val docChunkSize: Int = 800,
+    val chunkOverlap: Int = 100,
+    val memoryChunkSize: Int = 1000,
     val contextWindow: Int = 20,
     val summaryThreshold: Int = 10,
     val summaryTemplate: String = ""
@@ -26,5 +26,16 @@ data class AgentRetrievalConfig(
     val queryRewriteCount: Int = 3,
     val enableHybridSearch: Boolean = false,
     val hybridAlpha: Float = 0.6f,
-    val hybridBM25Boost: Float = 1.0f
+    val hybridBM25Boost: Float = 1.0f,
+    val enableMemory: Boolean = true,
+    val enableDocs: Boolean = true,
+    val enableKnowledgeGraph: Boolean = false,
+    val queryRewriteModel: String? = null,
+    val kgExtractionModel: String? = null,
+    val kgExtractionPrompt: String? = null,
+    val kgEntityTypes: List<String> = emptyList(),
+    val kgFreeMode: Boolean = false,
+    val kgDomainAuto: Boolean = false,
+    val kgDomainHint: String? = null,
+    val jitMaxChunks: Int = 0
 )

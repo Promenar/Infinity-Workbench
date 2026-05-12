@@ -296,7 +296,8 @@ fun NexaraNavGraph(
 
         composable(NavDestinations.RAG_ADVANCED) {
             AdvancedRetrievalScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToRagAdvanced = { navController.navigate(NavDestinations.RAG_ADVANCED_KG) }
             )
         }
 

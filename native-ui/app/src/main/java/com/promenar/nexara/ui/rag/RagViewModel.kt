@@ -183,6 +183,9 @@ class RagViewModel(
             kgDomainAuto = prefs.getBoolean("kg_domain_auto", false),
             costStrategy = prefs.getString("cost_strategy", "on-demand") ?: "on-demand",
             jitMaxChunks = prefs.getInt("jit_max_chunks", 0),
+            showRetrievalProgress = prefs.getBoolean("show_retrieval_progress", true),
+            showRetrievalDetails = prefs.getBoolean("show_retrieval_details", true),
+            trackRetrievalMetrics = prefs.getBoolean("track_retrieval_metrics", false),
             contextWindow = prefs.getInt("context_window", 20),
             summaryThreshold = prefs.getInt("summary_threshold", 10)
         )
@@ -218,6 +221,9 @@ class RagViewModel(
             .putBoolean("kg_domain_auto", config.kgDomainAuto)
             .putString("cost_strategy", config.costStrategy)
             .putInt("jit_max_chunks", config.jitMaxChunks)
+            .putBoolean("show_retrieval_progress", config.showRetrievalProgress)
+            .putBoolean("show_retrieval_details", config.showRetrievalDetails)
+            .putBoolean("track_retrieval_metrics", config.trackRetrievalMetrics)
             .putInt("context_window", config.contextWindow)
             .putInt("summary_threshold", config.summaryThreshold)
             .apply()

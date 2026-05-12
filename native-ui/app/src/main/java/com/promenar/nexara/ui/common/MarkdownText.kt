@@ -15,7 +15,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,15 +31,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
 import com.mikepenz.markdown.compose.LocalImageTransformer
 import com.mikepenz.markdown.compose.components.MarkdownComponent
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.mikepenz.markdown.compose.components.markdownComponents
+import com.mikepenz.markdown.compose.elements.MarkdownBlockQuote
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
 import com.mikepenz.markdown.compose.elements.MarkdownHighlightedCode
-import com.mikepenz.markdown.compose.elements.MarkdownBlockQuote
 import com.mikepenz.markdown.compose.elements.MarkdownText as MarkdownElementText
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.utils.getUnescapedTextInNode
@@ -47,19 +55,11 @@ import com.promenar.nexara.ui.renderer.LatexBlock
 import com.promenar.nexara.ui.renderer.MermaidBlock
 import com.promenar.nexara.ui.renderer.NexaraTableWidget
 import com.promenar.nexara.ui.renderer.PlantUmlBlock
-import com.promenar.nexara.ui.renderer.parseGfmAlert
 import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
 import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
-import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
+import com.promenar.nexara.ui.renderer.parseGfmAlert
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.runtime.CompositionLocalProvider
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
@@ -105,8 +105,8 @@ private fun stripBlockQuoteMarkers(text: String): String {
 
 private fun splitRichSegments(text: String): List<ContentSegment> {
     val blockPattern = Regex(
-        """```(mermaid|echarts|plantuml)\s*\n(.*?)```""",
-        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        """(?s)```(mermaid|echarts|plantuml)\s*\n(.*?)\n```""",
+        RegexOption.IGNORE_CASE
     )
     val latexPattern = Regex("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
     val inlineLatexPattern = Regex("""(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)""")
@@ -247,16 +247,16 @@ fun MarkdownText(
         for (segment in segments) {
             when (segment) {
                 is ContentSegment.Markdown -> {
-                    flushPending()
-                    result.add(segment)
-                }
-                is ContentSegment.InlineLatex -> {
-                    flushPending()
+                    if (pendingLatex.isNotEmpty() || pendingMermaid.isNotEmpty() || pendingECharts.isNotEmpty() || pendingPlantUml.isNotEmpty()) flushPending()
                     result.add(segment)
                 }
                 is ContentSegment.Latex -> {
                     if (pendingMermaid.isNotEmpty() || pendingECharts.isNotEmpty() || pendingPlantUml.isNotEmpty()) flushPending()
                     pendingLatex.add(segment.content)
+                }
+                is ContentSegment.InlineLatex -> {
+                    if (pendingLatex.isNotEmpty() || pendingMermaid.isNotEmpty() || pendingECharts.isNotEmpty() || pendingPlantUml.isNotEmpty()) flushPending()
+                    result.add(segment)
                 }
                 is ContentSegment.Mermaid -> {
                     if (pendingLatex.isNotEmpty() || pendingECharts.isNotEmpty() || pendingPlantUml.isNotEmpty()) flushPending()
@@ -363,54 +363,72 @@ fun MarkdownText(
                                                     .fillMaxWidth()
                                             )
                                         },
-                        codeFence = { model ->
-                            MarkdownCodeFence(
-                                content = model.content,
-                                node = model.node,
-                                style = model.typography.code,
-                            ) { code, language, style ->
-                                CodeBlockWithHeader(
-                                    code = code,
-                                    language = language,
-                                    fontSize = fontSize,
-                                    onCodeChange = onContentChange?.let { cb ->
-                                        { newCode ->
-                                            cb(replaceCodeInMarkdown(markdown, language, code, newCode))
+                                        codeFence = { model ->
+                                            MarkdownCodeFence(
+                                                content = model.content,
+                                                node = model.node,
+                                                style = model.typography.code,
+                                            ) { code, language, style ->
+                                                CodeBlockWithHeader(
+                                                    code = code,
+                                                    language = language,
+                                                    fontSize = fontSize,
+                                                    onCodeChange = onContentChange?.let { cb ->
+                                                        { newCode ->
+                                                            cb(replaceCodeInMarkdown(markdown, language, code, newCode))
+                                                        }
+                                                    }
+                                                ) {
+                                                    MarkdownHighlightedCode(
+                                                        code = code,
+                                                        language = language,
+                                                        style = style
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        codeBlock = { model ->
+                                            MarkdownCodeBlock(
+                                                content = model.content,
+                                                node = model.node,
+                                                style = model.typography.code,
+                                            ) { code, language, style ->
+                                                CodeBlockWithHeader(
+                                                    code = code,
+                                                    language = language,
+                                                    fontSize = fontSize,
+                                                    onCodeChange = onContentChange?.let { cb ->
+                                                        { newCode ->
+                                                            cb(replaceCodeInMarkdown(markdown, language, code, newCode))
+                                                        }
+                                                    }
+                                                ) {
+                                                    MarkdownHighlightedCode(
+                                                        code = code,
+                                                        language = language,
+                                                        style = style
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        horizontalRule = { _ ->
+                                            HorizontalDivider(
+                                                modifier = Modifier.padding(vertical = 12.dp),
+                                                thickness = 1.dp,
+                                                color = NexaraColors.OutlineVariant.copy(alpha = 0.5f)
+                                            )
+                                        },
+                                        custom = { type, model ->
+                                            when (type) {
+                                                MarkdownElementTypes.HTML_BLOCK -> {
+                                                    MarkdownElementText(
+                                                        content = model.content,
+                                                        node = model.node,
+                                                        style = model.typography.text
+                                                    )
+                                                }
+                                            }
                                         }
-                                    }
-                                ) {
-                                    MarkdownHighlightedCode(
-                                        code = code,
-                                        language = language,
-                                        style = style
-                                    )
-                                }
-                            }
-                        },
-                        codeBlock = { model ->
-                            MarkdownCodeBlock(
-                                content = model.content,
-                                node = model.node,
-                                style = model.typography.code,
-                            ) { code, language, style ->
-                                CodeBlockWithHeader(
-                                    code = code,
-                                    language = language,
-                                    fontSize = fontSize,
-                                    onCodeChange = onContentChange?.let { cb ->
-                                        { newCode ->
-                                            cb(replaceCodeInMarkdown(markdown, language, code, newCode))
-                                        }
-                                    }
-                                ) {
-                                    MarkdownHighlightedCode(
-                                        code = code,
-                                        language = language,
-                                        style = style
-                                    )
-                                }
-                            }
-                        },
                                     ),
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -463,17 +481,15 @@ private fun sanitizeStreamingMarkdown(text: String): String {
     var result = text
 
     // Handle code block fences
-    val fenceCount = Regex("```").findAll(result).count()
+    val fenceCount = Regex("""(?m)^```""").findAll(result).count()
     if (fenceCount % 2 != 0) {
-        result += "\n```"
+        if (!result.endsWith("\n")) result += "\n"
+        result += "```"
     }
 
-    // Handle incomplete bold/italic (optional, but prevents sudden style shifts)
-    
     // Handle inline math $...$
     val inlineMathCount = Regex("""(?<!\$)\$(?!\$)""").findAll(result).count()
     if (inlineMathCount % 2 != 0) {
-        // Only strip the last $ if it's likely an unclosed one at the very end
         if (result.endsWith("$")) {
             result = result.dropLast(1)
         }
@@ -482,11 +498,8 @@ private fun sanitizeStreamingMarkdown(text: String): String {
     // Handle block math $$...$$
     val blockMathCount = Regex("""\$\$""").findAll(result).count()
     if (blockMathCount % 2 != 0) {
-        // If block math is open, we can't easily "close" it without knowing where it started
-        // For streaming, we often just want to hide the unclosed block to avoid broken rendering
         val lastIdx = result.lastIndexOf("$$")
         if (lastIdx >= 0) {
-            // Keep the text before the unclosed block math
             result = result.substring(0, lastIdx)
         }
     }

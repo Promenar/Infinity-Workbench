@@ -16,7 +16,8 @@ graph TD
 ### 关键组件
 - **NexaraApplication**: 全局上下文管理与服务初始化。
 - **NavGraph**: 基于 Compose Navigation 的路由中心。
-- **RagViewModel**: 向量化任务调度与 RAG 状态维护。
+- **ContextBuilder**: 负责多源上下文（RAG/Web/KG/History）的异步调度、打分与 Prompt 合成，支持实时观测回调。
+- **RagOmniIndicator**: 基于磨砂玻璃设计的全能检索指示器，集成在对话流中展示检索深度与进度。
 - **NexaraLogger**: 拦截未捕获异常并持久化崩溃日志。
 
 ### 诊断体系

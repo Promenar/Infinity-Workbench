@@ -61,7 +61,7 @@ class WebSearchSkill(
     private fun getActiveProvider(): WebSearchProvider {
         val prefs = context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
         val engine = prefs.getString("search_engine", "duckduckgo") ?: "duckduckgo"
-        val maxResults = prefs.getInt("result_count", 8)
+        val maxResults = prefs.getInt("result_count", 5)
         val includeDomains = parseDomainList(prefs, "include_domains")
         val excludeDomains = parseDomainList(prefs, "exclude_domains")
         

@@ -41,8 +41,10 @@ class MemoryManager(
     suspend fun retrieveContext(
         query: String,
         sessionId: String,
-        options: RetrieveOptions = RetrieveOptions()
+        options: RetrieveOptions = RetrieveOptions(),
+        onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null
     ): RetrieveResult {
+        onProgress?.invoke("Embedding query", 10, null)
         val startTime = System.currentTimeMillis()
         val effectiveConfig = ragConfig
 
@@ -61,6 +63,7 @@ class MemoryManager(
             return emptyResult(System.currentTimeMillis() - startTime)
         }
 
+        onProgress?.invoke("Searching memory", 30, null)
         val results = mutableListOf<SearchResult>()
 
         if (options.enableMemory) {
@@ -96,6 +99,7 @@ class MemoryManager(
         }
 
         if (canSearchDocs) {
+            onProgress?.invoke("Searching documents", 50, null)
             try {
                 val docResults = vectorStore.search(
                     queryEmbedding = queryEmbedding,
@@ -113,6 +117,7 @@ class MemoryManager(
         }
 
         // Hybrid search (RRF Fusion)
+        onProgress?.invoke("Hybrid fusion", 70, null)
         val finalResults = if (effectiveConfig.enableHybridSearch) {
             val keywordResults = keywordSearcher.search(
                 query = query,
@@ -128,6 +133,7 @@ class MemoryManager(
             results
         }
 
+        onProgress?.invoke("Ranking results", 90, null)
         if (finalResults.isEmpty()) {
             return emptyResult(System.currentTimeMillis() - startTime)
         }

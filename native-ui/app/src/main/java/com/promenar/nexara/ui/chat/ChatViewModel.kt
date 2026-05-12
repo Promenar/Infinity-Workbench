@@ -14,6 +14,7 @@ import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.MemoryManager
@@ -62,6 +63,7 @@ data class ChatUiState(
     val agentName: String = "",
     val messages: List<Message> = emptyList(),
     val isGenerating: Boolean = false,
+    val isLoading: Boolean = false,
     val status: GenerationStatus = GenerationStatus.IDLE,
     val streamingContent: String = "",
     val error: String? = null,
@@ -106,6 +108,7 @@ class ChatViewModel(
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
     private val _isGenerating = MutableStateFlow(false)
+    private val _isLoading = MutableStateFlow(false)
     private val _generationStatus = MutableStateFlow(GenerationStatus.IDLE)
 
     data class TokenIndicatorState(
@@ -127,6 +130,7 @@ class ChatViewModel(
         _currentSessionId,
         _agentName,
         _isGenerating,
+        _isLoading,
         _generationStatus,
         _streamingContent,
         _error
@@ -135,9 +139,10 @@ class ChatViewModel(
         val sessionId = args[1] as String?
         val agentName = args[2] as String
         val isGenerating = args[3] as Boolean
-        val status = args[4] as GenerationStatus
-        val streamingContent = args[5] as String
-        val error = args[6] as String?
+        val isLoading = args[4] as Boolean
+        val status = args[5] as GenerationStatus
+        val streamingContent = args[6] as String
+        val error = args[7] as String?
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
@@ -148,6 +153,7 @@ class ChatViewModel(
             agentName = agentName,
             messages = session?.messages ?: emptyList(),
             isGenerating = isGenerating,
+            isLoading = isLoading,
             status = status,
             streamingContent = streamingContent,
             error = error,
@@ -248,6 +254,12 @@ class ChatViewModel(
             content = effectiveUserContent,
             assistantMsgId = assistantMsgId,
             session = sessionForCtx,
+            onRagProgress = { stage, percentage, subStage ->
+                messageManager.updateMessageProgress(
+                    sessionId, assistantMsgId,
+                    RagProgress(stage = stage, percentage = percentage, subStage = subStage)
+                )
+            },
             agentSystemPrompt = agentPrompt.ifBlank { sessionForCtx.customPrompt }
         )
 
@@ -508,6 +520,7 @@ class ChatViewModel(
         }
 
         viewModelScope.launch {
+            _isLoading.update { true }
             try {
                 val session = sessionRepository.getById(sessionId)
                 if (session != null) {
@@ -524,6 +537,8 @@ class ChatViewModel(
                 }
             } catch (e: Exception) {
                 _error.update { "Failed to load session: ${e.message}" }
+            } finally {
+                _isLoading.update { false }
             }
         }
     }
@@ -913,8 +928,20 @@ class ChatViewModel(
         viewModelScope.launch {
             // Delete all messages strictly after this one with backup
             backupAndTruncate(sessionId, message.createdAt + 1)
+            
+            // Create a new assistant message
+            val assistantMsgId = "msg_${System.currentTimeMillis()}_ai"
+            val assistantMessage = Message(
+                id = assistantMsgId,
+                role = MessageRole.ASSISTANT,
+                content = "",
+                modelId = session.modelId,
+                createdAt = System.currentTimeMillis()
+            )
+            messageManager.addMessage(sessionId, assistantMessage)
+            
             // Trigger regeneration
-            generateMessage(sessionId, "", false)
+            generateMessage(sessionId, "", false, assistantMsgId, messageId, message.content)
         }
     }
 

@@ -11,6 +11,7 @@
 - [UI/Provider] **协议类型选择器**：新增 `ProtocolSelector` 可组合组件，支持 8 种远程协议类型的独立选择
 
 ### Fixed
+- [UI/Common] **Markdown 渲染编译修复**：解决了由于 `multiplatform-markdown-renderer` (0.40.2) 库 API 变更导致的编译错误。修复了 `thematicBreak` (已重命名为 `horizontalRule`)、`htmlBlock` 和 `inlineHtml` 的参数缺失及类型推断问题，并移除了 `MarkdownComponentModel` 中已废弃的 `colors` 属性引用。
 - [Provider] **编辑回填修复**：进入已有提供商编辑页时，名称/BaseURL/API密钥/协议类型现在正确从持久化存储加载并回填
 - [Provider] **页面标题动态化**：提供商编辑页标题现在显示实际提供商名称（替代硬编码的 "Provider"）
 - [Model] **全站模型选择器同步**：修复 ProviderModelsScreen 配置模型后，设置页 4 个预设模型选择器（摘要/图片/嵌入/重排）不同步的问题，引入 `derivedStateOf` + `refreshProviderModels()` 刷新机制

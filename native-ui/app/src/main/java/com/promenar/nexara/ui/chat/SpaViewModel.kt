@@ -36,15 +36,10 @@ class SpaViewModel(application: Application) : AndroidViewModel(application) {
     )
     val glowEffect: StateFlow<Boolean> = _glowEffect.asStateFlow()
 
-    private val _enableKG = MutableStateFlow(
-        prefs.getBoolean("enable_kg_spa", true)
+    private val _uiContextRatio = MutableStateFlow(
+        prefs.getFloat("ui_context_ratio", 0.7f)
     )
-    val enableKG: StateFlow<Boolean> = _enableKG.asStateFlow()
-
-    private val _contextWindow = MutableStateFlow(
-        prefs.getFloat("context_window", 0.7f)
-    )
-    val contextWindow: StateFlow<Float> = _contextWindow.asStateFlow()
+    val uiContextRatio: StateFlow<Float> = _uiContextRatio.asStateFlow()
 
     fun updateAssistantTitle(title: String) {
         _assistantTitle.value = title
@@ -71,14 +66,9 @@ class SpaViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("glow_effect", enabled).apply()
     }
 
-    fun updateEnableKG(enabled: Boolean) {
-        _enableKG.value = enabled
-        prefs.edit().putBoolean("enable_kg_spa", enabled).apply()
-    }
-
-    fun updateContextWindow(value: Float) {
-        _contextWindow.value = value
-        prefs.edit().putFloat("context_window", value).apply()
+    fun updateUiContextRatio(value: Float) {
+        _uiContextRatio.value = value
+        prefs.edit().putFloat("ui_context_ratio", value).apply()
     }
 
 }

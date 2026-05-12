@@ -173,7 +173,11 @@ fun CodeBlockWithHeader(
                         .width(0.5.dp)
                         .background(NexaraColors.OutlineVariant)
                 )
-                Box(modifier = Modifier.padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)
+                ) {
                     codeContent()
                 }
             }

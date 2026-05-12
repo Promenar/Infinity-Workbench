@@ -12,7 +12,8 @@ class MemoryManagerRagAdapter(
     override suspend fun retrieveContext(
         query: String,
         sessionId: String,
-        options: RagOptions
+        options: RagOptions,
+        onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
     ): Triple<String, List<RagReference>, RagUsage?> {
         val retrieveOptions = MemoryManager.RetrieveOptions(
             enableMemory = options.enableMemory,
@@ -22,7 +23,7 @@ class MemoryManagerRagAdapter(
             sessionId = sessionId
         )
 
-        val result = memoryManager.retrieveContext(query, sessionId, retrieveOptions)
+        val result = memoryManager.retrieveContext(query, sessionId, retrieveOptions, onProgress)
 
         val estimatedTokens = if (result.context.isNotEmpty()) {
             (result.context.length / 4).coerceAtLeast(1)
