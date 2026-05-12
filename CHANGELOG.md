@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 品牌资产与 UI 体验
+- **全套单色品牌图标**: 实装了 OpenAI, Anthropic, Gemini, DeepSeek, Mistral, Cohere 等 9 种协议的单色矢量图标，彻底移除对远程 Iconify 图标的依赖。
+- **UI 对齐全局优化**: 修正了 `NexaraPageLayout` 及所有主页面（首页、设置页）标题相对于内容区域的 4.dp 偏移问题，确保标题与搜索框/卡片左侧严格对齐。
+- **提供商配置增强**: 
+    - 为自定义提供商添加了全新的 `ProtocolSelector` 图形化选择器。
+    - 重构了 `ProviderPreset` 预设逻辑，实现了全站提供商图标的统一。
+- **稳定性修复**: 修复了点击 "Custom" 协议选择器时由于嵌套垂直滚动容器导致的 `IllegalStateException` 崩溃。
+
 ### 自动化构建与发布
 - **发行版 APK 编译**: 
     - 成功配置并使用 `promenar.keystore` 签名编译了首个 Android 发行版 APK (`app-release.apk`)。
