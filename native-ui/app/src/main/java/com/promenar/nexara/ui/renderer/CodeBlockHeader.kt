@@ -2,7 +2,6 @@ package com.promenar.nexara.ui.renderer
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -104,11 +102,10 @@ fun CodeBlockWithHeader(
                 }
             }
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-        ) {
+        // 注意：mikepenz 的 MarkdownCodeFence 内部已自带 horizontalScroll，
+        // 此处不能再叠加 horizontalScroll，否则会因嵌套滚动导致无限宽度约束崩溃。
+        // 仅用 fillMaxWidth 即可，MarkdownHighlightedCode 内部会自行处理超长行。
+        Row(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 16.dp)
             ) {
