@@ -103,7 +103,7 @@ fun KnowledgeGraphScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(modifier = Modifier.padding(start = 4.dp)) {
                         Text(
                             stringResource(R.string.kg_title),
                             style = NexaraTypography.headlineLarge,

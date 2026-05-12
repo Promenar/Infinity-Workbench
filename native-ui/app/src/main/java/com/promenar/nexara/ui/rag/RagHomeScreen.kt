@@ -134,10 +134,16 @@ fun RagHomeScreen(
                         Text(
                             stringResource(R.string.rag_home_selected_count, selectedIds.size),
                             style = NexaraTypography.headlineLarge,
-                            color = NexaraColors.OnSurface
+                            color = NexaraColors.OnSurface,
+                            modifier = Modifier.padding(start = 4.dp)
                         )
                     } else {
-                        Text(stringResource(R.string.rag_home_title), style = NexaraTypography.headlineLarge, color = NexaraColors.OnSurface)
+                        Text(
+                            stringResource(R.string.rag_home_title),
+                            style = NexaraTypography.headlineLarge,
+                            color = NexaraColors.OnSurface,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
