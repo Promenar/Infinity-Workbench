@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import android.content.Context
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -37,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,14 +49,19 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
-import com.promenar.nexara.data.remote.protocol.ProtocolId
+import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -63,18 +70,20 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 
 data class ProviderPreset(
     val name: String,
-    val iconUrl: String,
+    val protocolType: ProtocolType,
     val defaultBaseUrl: String,
-    val protocolId: ProtocolId,
-    val fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector
+    val iconRes: Int? = null
 )
 
 val PROVIDER_PRESETS = listOf(
-    ProviderPreset("OpenAI", "https://api.iconify.design/simple-icons:openai.svg?color=%23ffffff", "https://api.openai.com/v1", ProtocolId.OPENAI, Icons.Rounded.AutoAwesome),
-    ProviderPreset("Anthropic", "https://api.iconify.design/simple-icons:anthropic.svg?color=%23ffffff", "https://api.anthropic.com", ProtocolId.ANTHROPIC, Icons.Rounded.Psychology),
-    ProviderPreset("VertexAI", "https://api.iconify.design/simple-icons:googlecloud.svg?color=%23ffffff", "https://generativelanguage.googleapis.com", ProtocolId.VERTEX_AI, Icons.Rounded.Hub),
-    ProviderPreset("Local", "", "", ProtocolId.LOCAL, Icons.Rounded.Memory),
-    ProviderPreset("Custom", "", "", ProtocolId.OPENAI, Icons.Rounded.Extension)
+    ProviderPreset("OpenAI", ProtocolType.OpenAI_ChatCompletions, "https://api.openai.com", R.drawable.ic_provider_openai),
+    ProviderPreset("DeepSeek", ProtocolType.DeepSeek, "https://api.deepseek.com", R.drawable.ic_provider_deepseek),
+    ProviderPreset("Anthropic", ProtocolType.Anthropic_Messages, "https://api.anthropic.com", R.drawable.ic_provider_anthropic),
+    ProviderPreset("Gemini", ProtocolType.Google_VertexAI, "https://generativelanguage.googleapis.com", R.drawable.ic_provider_gemini),
+    ProviderPreset("Mistral", ProtocolType.Mistral_Chat, "https://api.mistral.ai", R.drawable.ic_provider_mistral),
+    ProviderPreset("Cohere", ProtocolType.Cohere_Chat, "https://api.cohere.ai", R.drawable.ic_provider_cohere),
+    ProviderPreset("Local", ProtocolType.Local, "", R.drawable.ic_provider_local),
+    ProviderPreset("Custom", ProtocolType.Generic_OpenAI_Compat, "", R.drawable.ic_provider_custom)
 )
 
 @Composable
@@ -83,19 +92,48 @@ fun ProviderFormScreen(
     onNavigateBack: () -> Unit,
     onNavigateToModels: () -> Unit = {},
     onNavigateToLocalModels: () -> Unit = {},
-    onSave: (protocolId: ProtocolId, baseUrl: String, apiKey: String, model: String, name: String?) -> Unit = { _, _, _, _, _ -> }
+    onSave: (protocolType: ProtocolType, baseUrl: String, apiKey: String, model: String, name: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
+    val context = LocalContext.current
+    val app = context.applicationContext as NexaraApplication
+    val viewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(app)
+    )
+
     var name by remember { mutableStateOf("") }
     var selectedPreset by remember { mutableStateOf(PROVIDER_PRESETS[0]) }
     var baseUrl by remember { mutableStateOf(PROVIDER_PRESETS[0].defaultBaseUrl) }
     var apiKey by remember { mutableStateOf("") }
     var apiKeyVisible by remember { mutableStateOf(false) }
+    var localProto by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
+
+    LaunchedEffect(providerId) {
+        if (providerId != null) {
+            val config = viewModel.getProviderConfig(providerId)
+            if (config != null) {
+                name = config.name ?: ""
+                baseUrl = config.baseUrl
+                apiKey = config.apiKey
+                val matched = PROVIDER_PRESETS.find { 
+                    it.protocolType == config.protocolType && (it.name != "Custom" || config.protocolType == ProtocolType.Generic_OpenAI_Compat)
+                }
+                selectedPreset = matched ?: PROVIDER_PRESETS.last()
+                if (selectedPreset.name == "Custom") {
+                    localProto = config.protocolType
+                }
+            }
+        }
+    }
 
     val isEditing = providerId != null
-    val isLocal = selectedPreset.protocolId == ProtocolId.LOCAL
+    val isLocal = selectedPreset.protocolType == ProtocolType.Local
 
     NexaraPageLayout(
-        title = if (isEditing) stringResource(R.string.provider_form_title_edit) else stringResource(R.string.provider_form_title_add),
+        title = when {
+            isEditing && name.isNotBlank() -> name
+            isEditing -> stringResource(R.string.provider_form_title_edit)
+            else -> stringResource(R.string.provider_form_title_add)
+        },
         onBack = onNavigateBack
     ) {
         Text(
@@ -130,6 +168,16 @@ fun ProviderFormScreen(
             }
         }
 
+        if (selectedPreset.name == "Custom") {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text("协议类型", style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+            Spacer(modifier = Modifier.height(12.dp))
+            com.promenar.nexara.ui.common.ProtocolSelector(
+                selected = localProto,
+                onSelect = { localProto = it }
+            )
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         if (isLocal) {
@@ -155,7 +203,7 @@ fun ProviderFormScreen(
                             .clip(NexaraShapes.medium)
                             .background(NexaraColors.InversePrimary)
                             .clickable {
-                                onSave(ProtocolId.LOCAL, "", "", "", "本地模型")
+                                onSave(ProtocolType.Local, "", "", "", "本地模型")
                                 onNavigateToLocalModels()
                             }
                             .padding(vertical = 14.dp),
@@ -232,7 +280,7 @@ fun ProviderFormScreen(
                     }
                 }
 
-                if (selectedPreset.protocolId == ProtocolId.VERTEX_AI) {
+                if (selectedPreset.protocolType == ProtocolType.Google_VertexAI) {
                     LabeledField(label = stringResource(R.string.provider_form_label_sa)) {
                         GlassInputField(
                             value = "",
@@ -325,7 +373,8 @@ fun ProviderFormScreen(
                     .clip(NexaraShapes.medium)
                     .background(NexaraColors.InversePrimary)
                     .clickable {
-                        onSave(selectedPreset.protocolId, baseUrl, apiKey, "", name.ifBlank { null })
+                        onSave(if (selectedPreset.name == "Custom") localProto else selectedPreset.protocolType, baseUrl, apiKey, "", name.ifBlank { null })
+                        viewModel.refreshProviders()
                         if (providerId != null) {
                             onNavigateToModels()
                         } else {
@@ -400,35 +449,19 @@ private fun PresetItem(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (preset.iconUrl.isNotEmpty()) {
-                    coil3.compose.AsyncImage(
-                        model = preset.iconUrl,
-                        contentDescription = preset.name,
-                        modifier = Modifier.size(22.dp).clip(RoundedCornerShape(4.dp)),
-                        error = androidx.compose.ui.graphics.painter.ColorPainter(Color.Transparent),
-                        fallback = androidx.compose.ui.graphics.painter.ColorPainter(Color.Transparent)
-                    )
-                    // If AsyncImage fails or is loading, the fallback icon below will show through or be shown instead
-                    // However, AsyncImage doesn't easily tell us it failed without state.
-                    // We'll use a simpler approach: always show fallback icon if it's Local/Custom, 
-                    // and use Icon for fallback if URL is empty.
-                }
-                
-                if (preset.iconUrl.isEmpty()) {
+                preset.iconRes?.let { iconId ->
                     Icon(
-                        imageVector = preset.fallbackIcon,
+                        painter = painterResource(id = iconId),
+                        contentDescription = null,
+                        tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                } ?: run {
+                    Icon(
+                        imageVector = Icons.Rounded.Psychology,
                         contentDescription = null,
                         tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
                         modifier = Modifier.size(20.dp)
-                    )
-                } else {
-                    // Overlay icon as fallback if URL fails (crude but effective if we don't want complex state)
-                    // Better: use a dedicated fallback Icon component
-                    Icon(
-                        imageVector = preset.fallbackIcon,
-                        contentDescription = null,
-                        tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
-                        modifier = Modifier.size(20.dp).alpha(0.5f)
                     )
                 }
             }

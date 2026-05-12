@@ -78,73 +78,75 @@ fun AgentSessionsScreen(
             }
         }
     ) { paddingValues ->
-        if (sessions.isEmpty() && searchQuery.isEmpty()) {
-            EmptySessionsState(
-                onCreateSession = {
-                    viewModel.createSession(agentId) { sessionId ->
-                        onNavigateToChat(sessionId)
-                    }
-                },
-                modifier = Modifier.padding(paddingValues)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            AgentSessionHeader(
+                agentName = agentName,
+                sessionCount = sessions.size,
+                onBack = onNavigateBack,
+                onSettings = onNavigateToAgentEdit,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
             )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentPadding = PaddingValues(
-                    start = 20.dp, end = 20.dp,
-                    top = 8.dp, bottom = 120.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    AgentSessionHeader(
-                        agentName = agentName,
-                        sessionCount = sessions.size,
-                        onBack = onNavigateBack,
-                        onSettings = onNavigateToAgentEdit
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
 
-                stickyHeader {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(NexaraColors.CanvasBackground.copy(alpha = 0.9f))
-                            .padding(bottom = 12.dp)
-                    ) {
-                        NexaraSearchBar(
-                            value = searchQuery,
-                            onValueChange = {
-                                searchQuery = it
-                                viewModel.searchSessions(it)
-                            },
-                            placeholder = stringResource(R.string.sessions_search_placeholder)
-                        )
+            if (sessions.isEmpty() && searchQuery.isEmpty()) {
+                EmptySessionsState(
+                    onCreateSession = {
+                        viewModel.createSession(agentId) { sessionId ->
+                            onNavigateToChat(sessionId)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 20.dp, end = 20.dp,
+                        top = 0.dp, bottom = 120.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    stickyHeader {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(NexaraColors.CanvasBackground.copy(alpha = 0.9f))
+                                .padding(bottom = 12.dp)
+                        ) {
+                            NexaraSearchBar(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    viewModel.searchSessions(it)
+                                },
+                                placeholder = stringResource(R.string.sessions_search_placeholder)
+                            )
+                        }
                     }
-                }
 
-                itemsIndexed(sessions, key = { _, s -> s.id }) { _, session ->
-                    val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-                    val timeString = formatter.format(Date(session.updatedAt))
+                    itemsIndexed(sessions, key = { _, s -> s.id }) { _, session ->
+                        val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+                        val timeString = formatter.format(Date(session.updatedAt))
 
-                    SwipeableItem(
-                        onPin = { viewModel.pinSession(session.id) },
-                        onDelete = { viewModel.deleteSession(session.id) },
-                        isPinned = session.isPinned
-                    ) {
-                        SessionCard(
-                            title = session.title,
-                            time = timeString,
-                            preview = session.lastMessage,
-                            isPinned = session.isPinned,
-                            onClick = {
-                                viewModel.selectSession(session.id)
-                                onNavigateToChat(session.id)
-                            }
-                        )
+                        SwipeableItem(
+                            onPin = { viewModel.pinSession(session.id) },
+                            onDelete = { viewModel.deleteSession(session.id) },
+                            isPinned = session.isPinned
+                        ) {
+                            SessionCard(
+                                title = session.title,
+                                time = timeString,
+                                preview = session.lastMessage,
+                                isPinned = session.isPinned,
+                                onClick = {
+                                    viewModel.selectSession(session.id)
+                                    onNavigateToChat(session.id)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -157,10 +159,11 @@ private fun AgentSessionHeader(
     agentName: String,
     sessionCount: Int,
     onBack: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(

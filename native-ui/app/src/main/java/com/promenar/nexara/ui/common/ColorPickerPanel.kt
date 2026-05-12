@@ -144,16 +144,12 @@ fun ColorPickerPanel(
                         color = NexaraColors.OnSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Slider(
+                    NexaraSlider(
                         value = hue,
                         onValueChange = {
                             hue = it
                             onColorSelected(hueToColor(it))
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = NexaraColors.Primary,
-                            activeTrackColor = NexaraColors.Primary
-                        )
+                        }
                     )
                 }
 

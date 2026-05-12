@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -38,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.SettingsSectionHeader
@@ -106,7 +104,7 @@ fun RagDebugScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            "${"%,d".format(stats.total)}",
+                            "%,d".format(stats.total),
                             style = NexaraTypography.headlineLarge.copy(fontWeight = FontWeight.Black),
                             color = NexaraColors.Primary
                         )
@@ -311,7 +309,7 @@ private fun DistributionRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(label, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-            Text("${"%,d".format(count)}", style = NexaraTypography.bodySmall, color = color)
+            Text("%,d".format(count), style = NexaraTypography.bodySmall, color = color)
         }
         LinearProgressIndicator(
             progress = { fraction },

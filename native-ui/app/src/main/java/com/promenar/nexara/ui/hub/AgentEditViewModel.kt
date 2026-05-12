@@ -34,6 +34,9 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     private val _temperature = MutableStateFlow(0.7f)
     private val _topP = MutableStateFlow(0.9f)
     private val _isPinned = MutableStateFlow(false)
+    private val _useInheritedConfig = MutableStateFlow(true)
+    private val _ragConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRagConfig())
+    private val _retrievalConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRetrievalConfig())
 
     val name: StateFlow<String> = _name.asStateFlow()
     val description: StateFlow<String> = _description.asStateFlow()
@@ -45,16 +48,21 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     val temperature: StateFlow<Float> = _temperature.asStateFlow()
     val topP: StateFlow<Float> = _topP.asStateFlow()
     val isPinned: StateFlow<Boolean> = _isPinned.asStateFlow()
+    val useInheritedConfig: StateFlow<Boolean> = _useInheritedConfig.asStateFlow()
+    val ragConfig: StateFlow<com.promenar.nexara.data.agent.AgentRagConfig> = _ragConfig.asStateFlow()
+    val retrievalConfig: StateFlow<com.promenar.nexara.data.agent.AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
 
     val hasChanges: StateFlow<Boolean> = combine(
         combine(_initialAgent, _name, _description) { initial, n, d -> Triple(initial, n, d) },
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
-        combine(_temperature, _topP) { temp, tp -> Pair(temp, tp) }
-    ) { (initial, name, desc), (prompt, model, color), (icon, path, pin), _ ->
+        combine(_temperature, _topP) { temp, tp -> Pair(temp, tp) },
+        combine(_useInheritedConfig, _ragConfig, _retrievalConfig) { u, r, ret -> Triple(u, r, ret) }
+    ) { (initial, name, desc), (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr) ->
         initial == null || initial.name != name || initial.description != desc ||
         initial.systemPrompt != prompt || initial.model != model ||
-        initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin
+        initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
+        initial.useInheritedConfig != useIn || initial.ragConfig != rag || initial.retrievalConfig != retr
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private var saveJob: Job? = null
@@ -75,8 +83,47 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
                 _isPinned.value = agent.isPinned
                 _temperature.value = agent.temperature?.toFloat() ?: 0.7f
                 _topP.value = agent.topP?.toFloat() ?: 0.9f
+                _useInheritedConfig.value = agent.useInheritedConfig
+                
+                if (agent.useInheritedConfig) {
+                    _ragConfig.value = getGlobalRagConfig()
+                    _retrievalConfig.value = getGlobalRetrievalConfig()
+                } else {
+                    _ragConfig.value = agent.ragConfig ?: getGlobalRagConfig()
+                    _retrievalConfig.value = agent.retrievalConfig ?: getGlobalRetrievalConfig()
+                }
             }
         }
+    }
+
+    private fun getGlobalRagConfig(): com.promenar.nexara.data.agent.AgentRagConfig {
+        val prefs = app.getSharedPreferences("rag_settings", 0)
+        return com.promenar.nexara.data.agent.AgentRagConfig(
+            docChunkSize = prefs.getInt("doc_chunk_size", 800).toFloat(),
+            chunkOverlap = prefs.getInt("chunk_overlap", 100).toFloat(),
+            memoryChunkSize = prefs.getInt("memory_chunk_size", 1000).toFloat(),
+            contextWindow = prefs.getInt("context_window", 20),
+            summaryThreshold = prefs.getInt("summary_threshold", 10)
+        )
+    }
+
+    private fun getGlobalRetrievalConfig(): com.promenar.nexara.data.agent.AgentRetrievalConfig {
+        val prefs = app.getSharedPreferences("rag_settings", 0)
+        return com.promenar.nexara.data.agent.AgentRetrievalConfig(
+            memoryLimit = prefs.getInt("memory_limit", 5),
+            memoryThreshold = prefs.getFloat("memory_threshold", 0.7f),
+            docLimit = prefs.getInt("doc_limit", 8),
+            docThreshold = prefs.getFloat("doc_threshold", 0.45f),
+            enableRerank = prefs.getBoolean("enable_rerank", false),
+            rerankTopK = prefs.getInt("rerank_top_k", 30),
+            rerankFinalK = prefs.getInt("rerank_final_k", 5),
+            enableQueryRewrite = prefs.getBoolean("enable_query_rewrite", false),
+            queryRewriteStrategy = prefs.getString("query_rewrite_strategy", "multi-query") ?: "multi-query",
+            queryRewriteCount = prefs.getInt("query_rewrite_count", 3),
+            enableHybridSearch = prefs.getBoolean("enable_hybrid_search", false),
+            hybridAlpha = prefs.getFloat("hybrid_alpha", 0.6f),
+            hybridBM25Boost = prefs.getFloat("hybrid_bm25_boost", 1.0f)
+        )
     }
 
     fun setName(value: String) {
@@ -130,6 +177,34 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
         scheduleSave()
     }
 
+    fun setUseInheritedConfig(value: Boolean) {
+        _useInheritedConfig.value = value
+        if (value) {
+            _ragConfig.value = getGlobalRagConfig()
+            _retrievalConfig.value = getGlobalRetrievalConfig()
+        }
+        scheduleSave()
+    }
+
+    fun updateRagConfig(transform: (com.promenar.nexara.data.agent.AgentRagConfig) -> com.promenar.nexara.data.agent.AgentRagConfig) {
+        _ragConfig.update(transform)
+        _useInheritedConfig.value = false
+        scheduleSave()
+    }
+
+    fun updateRetrievalConfig(transform: (com.promenar.nexara.data.agent.AgentRetrievalConfig) -> com.promenar.nexara.data.agent.AgentRetrievalConfig) {
+        _retrievalConfig.update(transform)
+        _useInheritedConfig.value = false
+        scheduleSave()
+    }
+
+    fun resetToGlobal() {
+        _useInheritedConfig.value = true
+        _ragConfig.value = getGlobalRagConfig()
+        _retrievalConfig.value = getGlobalRetrievalConfig()
+        scheduleSave()
+    }
+
     fun deleteAgent(agentId: String, onDeleted: () -> Unit) {
         viewModelScope.launch {
             agentDao.deleteById(agentId)
@@ -152,7 +227,10 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
                 createdAt = _initialAgent.value?.createdAt ?: System.currentTimeMillis(),
                 temperature = _temperature.value.toDouble(),
                 top_p = _topP.value.toDouble(),
-                max_tokens = 4096 // Default for now
+                max_tokens = 4096, // Default for now
+                ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
+                retrievalConfig = if (_useInheritedConfig.value) null else _retrievalConfig.value,
+                useInheritedConfig = _useInheritedConfig.value
             )
             agentDao.insert(entity)
             _initialAgent.value = entity.toAgent()
@@ -193,6 +271,9 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
             temperature = temperature,
             topP = top_p,
             maxTokens = max_tokens,
+            ragConfig = ragConfig,
+            retrievalConfig = retrievalConfig,
+            useInheritedConfig = useInheritedConfig,
             createdAt = createdAt
         )
     }

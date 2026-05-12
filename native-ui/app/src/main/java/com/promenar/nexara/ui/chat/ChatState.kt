@@ -57,4 +57,8 @@ class ChatStore {
             )
         }
     }
+
+    fun clear() {
+        _state.value = ChatState()
+    }
 }

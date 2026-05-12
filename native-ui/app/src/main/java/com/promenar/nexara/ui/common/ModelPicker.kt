@@ -50,7 +50,8 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
 
 enum class ModelCapability {
-    REASONING, VISION, WEB, RERANK, EMBEDDING, CHAT, IMAGE
+    REASONING, VISION, WEB, RERANK, EMBEDDING, CHAT, IMAGE,
+    AUDIOINPUT, AUDIOOUTPUT, VIDEOUNDERSTANDING, STRUCTUREDOUTPUT, PROMPTCACHING, COMPUTERUSE
 }
 
 data class ModelItem(
@@ -68,7 +69,13 @@ private val capabilityColors: Map<ModelCapability, Pair<Color, Color>> = mapOf(
     ModelCapability.RERANK to (Color(0xFFFB923C) to Color(0xFF431407)),
     ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344)),
     ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22)),
-    ModelCapability.IMAGE to (Color(0xFFFCD34D) to Color(0xFF451A03))
+    ModelCapability.IMAGE to (Color(0xFFFCD34D) to Color(0xFF451A03)),
+    ModelCapability.AUDIOINPUT to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
+    ModelCapability.AUDIOOUTPUT to (Color(0xFF818CF8) to Color(0xFF1E1B4B)),
+    ModelCapability.VIDEOUNDERSTANDING to (Color(0xFFFB7185) to Color(0xFF4A0514)),
+    ModelCapability.STRUCTUREDOUTPUT to (Color(0xFF34D399) to Color(0xFF022C22)),
+    ModelCapability.PROMPTCACHING to (Color(0xFFA3E635) to Color(0xFF1A2E05)),
+    ModelCapability.COMPUTERUSE to (Color(0xFFFBBF24) to Color(0xFF451A03))
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -101,6 +108,8 @@ fun ModelPicker(
                 "image" -> item.capabilities.contains(ModelCapability.IMAGE)
                 "embedding" -> item.capabilities.contains(ModelCapability.EMBEDDING)
                 "rerank" -> item.capabilities.contains(ModelCapability.RERANK)
+                "audio" -> item.capabilities.contains(ModelCapability.AUDIOINPUT) || item.capabilities.contains(ModelCapability.AUDIOOUTPUT)
+                "video" -> item.capabilities.contains(ModelCapability.VIDEOUNDERSTANDING)
                 else -> true
             }
         }

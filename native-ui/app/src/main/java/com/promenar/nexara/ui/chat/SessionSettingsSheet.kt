@@ -82,12 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.ExecutionMode
-import com.promenar.nexara.ui.common.ExecutionModeSelector
-import com.promenar.nexara.ui.common.ModelCapability
-import com.promenar.nexara.ui.common.ModelItem
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.NexaraSearchBar
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -575,7 +570,7 @@ private fun SettingsPanel(
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
+                NexaraSlider(
                     value = currentTimeout.toFloat(),
                     onValueChange = {
                         currentTimeout = it.toInt()
@@ -584,12 +579,7 @@ private fun SettingsPanel(
                     },
                     valueRange = 30f..300f,
                     steps = 26,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
+                    modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
@@ -609,7 +599,7 @@ private fun SettingsPanel(
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
+                NexaraSlider(
                     value = currentTopP,
                     onValueChange = {
                         currentTopP = it
@@ -617,12 +607,7 @@ private fun SettingsPanel(
                         chatViewModel.updateInferenceParams(p.copy(topP = it.toDouble()))
                     },
                     valueRange = 0f..1f,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
+                    modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
@@ -642,7 +627,7 @@ private fun SettingsPanel(
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
+                NexaraSlider(
                     value = currentMaxTokens.toFloat(),
                     onValueChange = {
                         currentMaxTokens = it.toInt()
@@ -651,12 +636,7 @@ private fun SettingsPanel(
                     },
                     valueRange = 0f..8192f,
                     steps = 64,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
+                    modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
@@ -687,7 +667,7 @@ private fun SettingsPanel(
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
+                NexaraSlider(
                     value = currentSummaryThreshold,
                     onValueChange = {
                         currentSummaryThreshold = it
@@ -695,12 +675,7 @@ private fun SettingsPanel(
                         chatViewModel.updateInferenceParams(p.copy(autoSummaryThreshold = it.toDouble()))
                     },
                     valueRange = 0.5f..0.95f,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
+                    modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
@@ -720,21 +695,16 @@ private fun SettingsPanel(
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Slider(
-                    value = currentActiveWindow.toFloat(),
+                NexaraSliderInt(
+                    value = currentActiveWindow,
                     onValueChange = {
-                        currentActiveWindow = it.toInt()
+                        currentActiveWindow = it
                         val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
                         chatViewModel.updateInferenceParams(p.copy(activeContextWindow = currentActiveWindow))
                     },
-                    valueRange = 5f..50f,
+                    valueRange = 5..50,
                     steps = 8,
-                    modifier = Modifier.weight(1f),
-                    colors = androidx.compose.material3.SliderDefaults.colors(
-                        thumbColor = NexaraColors.Primary,
-                        activeTrackColor = NexaraColors.Primary,
-                        inactiveTrackColor = NexaraColors.SurfaceHighest
-                    )
+                    modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(

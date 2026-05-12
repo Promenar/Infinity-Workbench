@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
@@ -69,19 +70,23 @@ fun NexaraTableWidget(
             .clip(NexaraShapes.medium)
             .background(NexaraColors.SurfaceLow)
     ) {
-        val scrollable = maxWidth <= totalWidth
+        val columnWidth = 120.dp
+        val columnCount = table.headerCells.size
+        val totalWidth = columnWidth * columnCount
+        val scrollable = maxWidth < totalWidth
+
         Column(
             modifier = if (scrollable) {
                 Modifier
                     .horizontalScroll(rememberScrollState())
-                    .widthIn(min = totalWidth)
+                    .width(totalWidth)
             } else {
                 Modifier.fillMaxWidth()
             }
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .then(if (scrollable) Modifier.width(totalWidth) else Modifier.fillMaxWidth())
                     .background(NexaraColors.SurfaceContainer)
                     .height(IntrinsicSize.Max),
                 verticalAlignment = Alignment.CenterVertically,
@@ -90,8 +95,8 @@ fun NexaraTableWidget(
                     TableCell(
                         text = cellText,
                         isHeader = true,
-                        minColumnWidth = minColumnWidth,
-                        maxColumnWidth = maxColumnWidth,
+                        columnWidth = if (scrollable) columnWidth else 0.dp,
+                        weight = if (scrollable) 0f else 1f
                     )
                 }
             }
@@ -99,7 +104,7 @@ fun NexaraTableWidget(
             table.rows.forEachIndexed { rowIndex, row ->
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .then(if (scrollable) Modifier.width(totalWidth) else Modifier.fillMaxWidth())
                         .background(
                             if (rowIndex % 2 == 0) NexaraColors.SurfaceLowest
                             else NexaraColors.SurfaceLow
@@ -111,8 +116,8 @@ fun NexaraTableWidget(
                         TableCell(
                             text = cellText,
                             isHeader = false,
-                            minColumnWidth = minColumnWidth,
-                            maxColumnWidth = maxColumnWidth,
+                            columnWidth = if (scrollable) columnWidth else 0.dp,
+                            weight = if (scrollable) 0f else 1f
                         )
                     }
                 }
@@ -125,8 +130,8 @@ fun NexaraTableWidget(
 private fun RowScope.TableCell(
     text: String,
     isHeader: Boolean,
-    minColumnWidth: Dp,
-    maxColumnWidth: Dp,
+    columnWidth: Dp,
+    weight: Float
 ) {
     Text(
         text = text,
@@ -141,8 +146,10 @@ private fun RowScope.TableCell(
             )
         },
         modifier = Modifier
-            .weight(1f)
-            .widthIn(min = minColumnWidth, max = maxColumnWidth)
+            .then(
+                if (weight > 0f) Modifier.weight(weight)
+                else Modifier.width(columnWidth)
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
     )
 }

@@ -39,17 +39,23 @@ class BackupRepository(private val context: Context) {
         prettyPrint = false
     }
 
-    suspend fun prepareBackupPackage(state: BackupUiState): ByteArray {
+    suspend fun prepareBackupPackage(state: BackupUiState, onProgress: (Float, String) -> Unit = { _, _ -> }): ByteArray {
+        onProgress(0.1f, "Fetching Agents...")
         val agents = if (state.settingsChecked) app.database.agentDao().getAll() else emptyList()
+        
+        onProgress(0.3f, "Fetching Sessions...")
         val sessions = if (state.sessionsChecked) app.database.sessionDao().getAll() else emptyList()
         
+        onProgress(0.5f, "Fetching Messages...")
         val messages = if (state.sessionsChecked) {
             sessions.flatMap { app.database.messageDao().getBySession(it.id) }
         } else emptyList()
 
+        onProgress(0.7f, "Fetching Skills & MCP...")
         val skills = if (state.keysChecked) app.database.skillDao().getAllCustomSkills().first() else emptyList()
         val mcpServers = if (state.keysChecked) app.database.skillDao().getAllMcpServers().first() else emptyList()
         
+        onProgress(0.8f, "Fetching Library Documents...")
         val documents = if (state.libraryChecked) app.database.documentDao().observeAll().first() else emptyList()
 
         val pkg = BackupDataPackage(
@@ -61,13 +67,15 @@ class BackupRepository(private val context: Context) {
             documents = documents
         )
 
+        onProgress(0.9f, "Compressing Data...")
         val jsonString = json.encodeToString(pkg)
         return compress(jsonString)
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    suspend fun uploadToWebDav(state: BackupUiState): Boolean {
-        val data = prepareBackupPackage(state)
+    suspend fun uploadToWebDav(state: BackupUiState, onProgress: (Float, String) -> Unit = { _, _ -> }): Boolean {
+        val data = prepareBackupPackage(state, onProgress)
+        onProgress(0.95f, "Uploading to WebDAV...")
         val fileName = "nexara_backup_${System.currentTimeMillis()}.nexara"
         val url = if (state.webdavUrl.endsWith("/")) "${state.webdavUrl}$fileName" else "${state.webdavUrl}/$fileName"
         
@@ -85,16 +93,17 @@ class BackupRepository(private val context: Context) {
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    suspend fun restoreFromWebDav(state: BackupUiState, remoteFileName: String): Boolean {
+    suspend fun restoreFromWebDav(state: BackupUiState, remoteFileName: String, onProgress: (Float, String) -> Unit = { _, _ -> }): Boolean {
         val url = if (state.webdavUrl.endsWith("/")) "${state.webdavUrl}$remoteFileName" else "${state.webdavUrl}/$remoteFileName"
         val auth = Base64.encode("${state.webdavUser}:${state.webdavPass}".toByteArray())
 
         return try {
+            onProgress(0.1f, "Downloading from WebDAV...")
             val response: HttpResponse = app.httpClient.get(url) {
                 header(HttpHeaders.Authorization, "Basic $auth")
             }
             if (response.status.isSuccess()) {
-                restoreFromPackage(response.bodyAsText().byteInputStream())
+                restoreFromPackage(response.bodyAsText().byteInputStream(), onProgress)
                 true
             } else false
         } catch (e: Exception) {
@@ -102,17 +111,28 @@ class BackupRepository(private val context: Context) {
         }
     }
 
-    suspend fun restoreFromPackage(inputStream: InputStream) {
+    suspend fun restoreFromPackage(inputStream: InputStream, onProgress: (Float, String) -> Unit = { _, _ -> }) {
+        onProgress(0.2f, "Reading Package...")
         val compressedData = inputStream.readBytes()
+        onProgress(0.3f, "Decompressing...")
         val jsonString = decompress(compressedData)
+        onProgress(0.4f, "Parsing JSON...")
         val pkg = json.decodeFromString<BackupDataPackage>(jsonString)
 
+        onProgress(0.5f, "Restoring Agents...")
         pkg.agents.forEach { app.database.agentDao().insert(it) }
+        
+        onProgress(0.6f, "Restoring Sessions...")
         pkg.sessions.forEach { app.database.sessionDao().insert(it) }
+        
+        onProgress(0.8f, "Restoring Messages (${pkg.messages.size})...")
         pkg.messages.forEach { app.database.messageDao().insert(it) }
+        
+        onProgress(0.9f, "Restoring Skills & Documents...")
         pkg.skills.forEach { app.database.skillDao().insertCustomSkill(it) }
         pkg.mcpServers.forEach { app.database.skillDao().insertMcpServer(it) }
         pkg.documents.forEach { app.database.documentDao().insert(it) }
+        onProgress(1.0f, "Restore Complete")
     }
 
     private fun compress(data: String): ByteArray {

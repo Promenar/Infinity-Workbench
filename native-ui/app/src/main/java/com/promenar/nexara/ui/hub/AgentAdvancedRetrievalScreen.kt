@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.hub
 
+import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,10 +11,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -24,35 +27,36 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 fun AgentAdvancedRetrievalScreen(
     agentId: String,
     scopeLabel: String,
+    viewModel: AgentEditViewModel = viewModel(factory = AgentEditViewModel.factory(LocalContext.current.applicationContext as Application)),
     onNavigateBack: () -> Unit
 ) {
-    var useInherited by remember { mutableStateOf(true) }
+    LaunchedEffect(agentId) {
+        viewModel.loadAgent(agentId)
+    }
+
+    val useInherited by viewModel.useInheritedConfig.collectAsState()
+    val retrievalConfig by viewModel.retrievalConfig.collectAsState()
     var showResetConfirm by remember { mutableStateOf(false) }
 
-    var memoryLimit by remember { mutableFloatStateOf(5f) }
-    var memoryThreshold by remember { mutableFloatStateOf(0.7f) }
-    var docLimit by remember { mutableFloatStateOf(8f) }
-    var docThreshold by remember { mutableFloatStateOf(0.45f) }
-    var enableRerank by remember { mutableStateOf(false) }
-    var rerankTopK by remember { mutableFloatStateOf(30f) }
-    var rerankFinalK by remember { mutableFloatStateOf(5f) }
-    var enableQueryRewrite by remember { mutableStateOf(false) }
-    var queryRewriteStrategy by remember { mutableStateOf("multi-query") }
-    var queryRewriteCount by remember { mutableFloatStateOf(3f) }
-    var enableHybridSearch by remember { mutableStateOf(false) }
-    var hybridAlpha by remember { mutableFloatStateOf(0.6f) }
-    var hybridBM25Boost by remember { mutableFloatStateOf(1.0f) }
+    val memoryLimit = retrievalConfig.memoryLimit
+    val memoryThreshold = retrievalConfig.memoryThreshold
+    val docLimit = retrievalConfig.docLimit
+    val docThreshold = retrievalConfig.docThreshold
+    val enableRerank = retrievalConfig.enableRerank
+    val rerankTopK = retrievalConfig.rerankTopK
+    val rerankFinalK = retrievalConfig.rerankFinalK
+    val enableQueryRewrite = retrievalConfig.enableQueryRewrite
+    val queryRewriteStrategy = retrievalConfig.queryRewriteStrategy
+    val queryRewriteCount = retrievalConfig.queryRewriteCount
+    val enableHybridSearch = retrievalConfig.enableHybridSearch
+    val hybridAlpha = retrievalConfig.hybridAlpha
+    val hybridBM25Boost = retrievalConfig.hybridBM25Boost
 
     ConfirmDialog(
         show = showResetConfirm,
         onDismiss = { showResetConfirm = false },
         onConfirm = {
-            useInherited = true
-            memoryLimit = 5f; memoryThreshold = 0.7f
-            docLimit = 8f; docThreshold = 0.45f
-            enableRerank = false; rerankTopK = 30f; rerankFinalK = 5f
-            enableQueryRewrite = false; queryRewriteStrategy = "multi-query"; queryRewriteCount = 3f
-            enableHybridSearch = false; hybridAlpha = 0.6f; hybridBM25Boost = 1.0f
+            viewModel.resetToGlobal()
             showResetConfirm = false
         },
         title = stringResource(R.string.agent_rag_reset_title),
@@ -152,11 +156,11 @@ fun AgentAdvancedRetrievalScreen(
                     )
                     RetrievalParamSlider(
                         label = stringResource(R.string.agent_retrieval_memory_limit),
-                        value = memoryLimit,
+                        value = memoryLimit.toFloat(),
                         valueRange = 3f..10f,
                         step = 1f,
-                        displayValue = "${memoryLimit.toInt()}",
-                        onValueChange = { memoryLimit = it; useInherited = false }
+                        displayValue = "${memoryLimit}",
+                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(memoryLimit = newVal.toInt()) } }
                     )
                     RetrievalParamSlider(
                         label = stringResource(R.string.agent_retrieval_memory_threshold),
@@ -164,7 +168,7 @@ fun AgentAdvancedRetrievalScreen(
                         valueRange = 0.5f..0.95f,
                         step = 0.05f,
                         displayValue = "${(memoryThreshold * 100).toInt()}%",
-                        onValueChange = { memoryThreshold = it; useInherited = false }
+                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(memoryThreshold = newVal) } }
                     )
                 }
             }
@@ -189,11 +193,11 @@ fun AgentAdvancedRetrievalScreen(
                     )
                     RetrievalParamSlider(
                         label = stringResource(R.string.agent_retrieval_doc_limit),
-                        value = docLimit,
+                        value = docLimit.toFloat(),
                         valueRange = 5f..15f,
                         step = 1f,
-                        displayValue = "${docLimit.toInt()}",
-                        onValueChange = { docLimit = it; useInherited = false }
+                        displayValue = "${docLimit}",
+                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(docLimit = newVal.toInt()) } }
                     )
                     RetrievalParamSlider(
                         label = stringResource(R.string.agent_retrieval_doc_threshold),
@@ -201,7 +205,7 @@ fun AgentAdvancedRetrievalScreen(
                         valueRange = 0.3f..0.8f,
                         step = 0.05f,
                         displayValue = "${(docThreshold * 100).toInt()}%",
-                        onValueChange = { docThreshold = it; useInherited = false }
+                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(docThreshold = newVal) } }
                     )
                 }
             }
@@ -228,9 +232,8 @@ fun AgentAdvancedRetrievalScreen(
                         )
                         Switch(
                             checked = enableRerank,
-                            onCheckedChange = {
-                                enableRerank = it
-                                useInherited = false
+                            onCheckedChange = { checked ->
+                                viewModel.updateRetrievalConfig { it.copy(enableRerank = checked) }
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = NexaraColors.OnPrimary,
@@ -246,19 +249,19 @@ fun AgentAdvancedRetrievalScreen(
                         )
                         RetrievalParamSlider(
                             label = stringResource(R.string.agent_retrieval_recall_count),
-                            value = rerankTopK,
+                            value = rerankTopK.toFloat(),
                             valueRange = 10f..100f,
                             step = 5f,
-                            displayValue = "${rerankTopK.toInt()}",
-                            onValueChange = { rerankTopK = it; useInherited = false }
+                            displayValue = "${rerankTopK}",
+                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(rerankTopK = newVal.toInt()) } }
                         )
                         RetrievalParamSlider(
                             label = stringResource(R.string.agent_retrieval_final_count),
-                            value = rerankFinalK,
+                            value = rerankFinalK.toFloat(),
                             valueRange = 3f..20f,
                             step = 1f,
-                            displayValue = "${rerankFinalK.toInt()}",
-                            onValueChange = { rerankFinalK = it; useInherited = false }
+                            displayValue = "${rerankFinalK}",
+                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(rerankFinalK = newVal.toInt()) } }
                         )
                     }
                 }
@@ -283,12 +286,11 @@ fun AgentAdvancedRetrievalScreen(
                             text = stringResource(R.string.agent_retrieval_section_rewrite),
                             style = NexaraTypography.headlineMedium,
                             color = NexaraColors.OnSurface
-                        )
+                    )
                         Switch(
                             checked = enableQueryRewrite,
-                            onCheckedChange = {
-                                enableQueryRewrite = it
-                                useInherited = false
+                            onCheckedChange = { checked ->
+                                viewModel.updateRetrievalConfig { it.copy(enableQueryRewrite = checked) }
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = NexaraColors.OnPrimary,
@@ -320,8 +322,7 @@ fun AgentAdvancedRetrievalScreen(
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = {
-                                        queryRewriteStrategy = id
-                                        useInherited = false
+                                        viewModel.updateRetrievalConfig { it.copy(queryRewriteStrategy = id) }
                                     },
                                     label = {
                                         Text(
@@ -339,11 +340,11 @@ fun AgentAdvancedRetrievalScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         RetrievalParamSlider(
                             label = stringResource(R.string.agent_retrieval_variant_count),
-                            value = queryRewriteCount,
+                            value = queryRewriteCount.toFloat(),
                             valueRange = 2f..5f,
                             step = 1f,
-                            displayValue = "${queryRewriteCount.toInt()}",
-                            onValueChange = { queryRewriteCount = it; useInherited = false }
+                            displayValue = "${queryRewriteCount}",
+                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(queryRewriteCount = newVal.toInt()) } }
                         )
                     }
                 }
@@ -371,9 +372,8 @@ fun AgentAdvancedRetrievalScreen(
                         )
                         Switch(
                             checked = enableHybridSearch,
-                            onCheckedChange = {
-                                enableHybridSearch = it
-                                useInherited = false
+                            onCheckedChange = { checked ->
+                                viewModel.updateRetrievalConfig { it.copy(enableHybridSearch = checked) }
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = NexaraColors.OnPrimary,
@@ -393,7 +393,7 @@ fun AgentAdvancedRetrievalScreen(
                             valueRange = 0f..1f,
                             step = 0.05f,
                             displayValue = "${(hybridAlpha * 100).toInt()}%",
-                            onValueChange = { hybridAlpha = it; useInherited = false }
+                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(hybridAlpha = newVal) } }
                         )
                         RetrievalParamSlider(
                             label = stringResource(R.string.agent_retrieval_bm25_boost),
@@ -401,7 +401,7 @@ fun AgentAdvancedRetrievalScreen(
                             valueRange = 0.5f..2.0f,
                             step = 0.1f,
                             displayValue = String.format("%.1fx", hybridBM25Boost),
-                            onValueChange = { hybridBM25Boost = it; useInherited = false }
+                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(hybridBM25Boost = newVal) } }
                         )
                     }
                 }
@@ -437,16 +437,11 @@ private fun RetrievalParamSlider(
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Slider(
+        NexaraSlider(
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange,
-            steps = ((valueRange.endInclusive - valueRange.start) / step).toInt() - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = NexaraColors.Primary,
-                activeTrackColor = NexaraColors.Primary,
-                inactiveTrackColor = NexaraColors.SurfaceHighest
-            )
+            steps = ((valueRange.endInclusive - valueRange.start) / step).toInt() - 1
         )
     }
 }

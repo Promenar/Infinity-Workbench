@@ -180,12 +180,18 @@ fun ProviderModelsScreen(
                     isTesting = testingModel == model.id,
                     testResult = if (testingModel == model.id) testResult else null,
                     onUpdate = { viewModel.updateModel(it) },
-                    onToggle = { viewModel.toggleModel(model.id) },
+                    onToggle = { 
+                        viewModel.toggleModel(model.id)
+                        viewModel.refreshProviderModels()
+                    },
                     onTest = {
                         testingModel = model.id
                         testResult = null
                     },
-                    onDelete = { viewModel.deleteModel(model.id) }
+                    onDelete = { 
+                        viewModel.deleteModel(model.id)
+                        viewModel.refreshProviderModels()
+                    }
                 )
             }
         }
@@ -199,6 +205,7 @@ fun ProviderModelsScreen(
             isDestructive = true,
             onConfirm = {
                 viewModel.deleteAllModels()
+                viewModel.refreshProviderModels()
                 showDeleteAllDialog = false
             },
             onCancel = { showDeleteAllDialog = false }
@@ -249,6 +256,7 @@ fun ProviderModelsScreen(
                 onClick = {
                     if (newModelId.isNotBlank()) {
                         viewModel.addCustomModel(newModelId, newModelName)
+                        viewModel.refreshProviderModels()
                         newModelId = ""
                         newModelName = ""
                         showAddDialog = false

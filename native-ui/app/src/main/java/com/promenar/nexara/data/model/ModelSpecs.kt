@@ -10,7 +10,13 @@ data class ModelCapabilities(
     val reasoning: Boolean = false,
     val image: Boolean = false,
     val embedding: Boolean = false,
-    val rerank: Boolean = false
+    val rerank: Boolean = false,
+    val audioInput: Boolean = false,
+    val audioOutput: Boolean = false,
+    val videoUnderstanding: Boolean = false,
+    val structuredOutput: Boolean = false,
+    val promptCaching: Boolean = false,
+    val computerUse: Boolean = false
 )
 
 sealed class ModelPattern {
@@ -35,12 +41,44 @@ data class ModelSpec(
 
 val MODEL_SPECS: List<ModelSpec> = listOf(
 
-    // ==================== OpenAI ====================
+    // ==================== OpenAI (2025-2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-4.1"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true, promptCaching = true),
+        icon = "openai",
+        note = "GPT-4.1 (1M context)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-4.1-mini"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true),
+        icon = "openai",
+        note = "GPT-4.1 Mini"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-4.1-nano"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(structuredOutput = true),
+        icon = "openai",
+        note = "GPT-4.1 Nano"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-4o-mini"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true),
+        icon = "openai",
+        note = "GPT-4o Mini"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("gpt-4o"),
         contextLength = 128000,
         type = ModelType.CHAT,
-        capabilities = ModelCapabilities(vision = true),
+        capabilities = ModelCapabilities(vision = true, audioInput = true, audioOutput = true, structuredOutput = true),
         icon = "openai",
         note = "GPT-4o series"
     ),
@@ -72,7 +110,45 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "OpenAI Generic"
     ),
 
+    // ==================== OpenAI (2025-2026) ====================
+    // O3/O4 series (reasoning models)
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("o4-mini"),
+        contextLength = 200000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true, vision = true, structuredOutput = true),
+        forcedReasoning = true,
+        icon = "openai",
+        note = "O4 Mini (2025)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("o3"),
+        contextLength = 200000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true, vision = true, structuredOutput = true),
+        forcedReasoning = true,
+        icon = "openai",
+        note = "O3 (2025)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("o3-mini"),
+        contextLength = 200000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true),
+        forcedReasoning = true,
+        icon = "openai",
+        note = "O3 Mini"
+    ),
     // O1 series (reasoning models, cannot disable reasoning)
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("o1-pro"),
+        contextLength = 200000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true),
+        forcedReasoning = true,
+        icon = "openai",
+        note = "O1 Pro"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("o1-preview"),
         contextLength = 128000,
@@ -101,7 +177,39 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "O1"
     ),
 
-    // ==================== Anthropic ====================
+    // ==================== Anthropic (2025-2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-4-opus"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, computerUse = true, promptCaching = true, structuredOutput = true),
+        icon = "claude",
+        note = "Claude 4 Opus (2025)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-4-sonnet"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, computerUse = true, promptCaching = true, structuredOutput = true),
+        icon = "claude",
+        note = "Claude 4 Sonnet (2025)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-3.7-sonnet"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, promptCaching = true, computerUse = true),
+        icon = "claude",
+        note = "Claude 3.7 Sonnet"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-3.5-haiku"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, promptCaching = true),
+        icon = "claude",
+        note = "Claude 3.5 Haiku"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("claude-3-5-sonnet"),
         contextLength = 200000,
@@ -133,7 +241,31 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "Anthropic Generic"
     ),
 
-    // ==================== Google Gemini ====================
+    // ==================== Google Gemini (2025) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-2.5-pro"),
+        contextLength = 2000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, structuredOutput = true, audioInput = true, videoUnderstanding = true),
+        icon = "gemini",
+        note = "Gemini 2.5 Pro (2M context)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-2.5-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true),
+        icon = "gemini",
+        note = "Gemini 2.5 Flash"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-2.5"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "gemini",
+        note = "Gemini 2.5"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("gemini-2.0-flash-thinking"),
         contextLength = 1000000,
@@ -203,7 +335,24 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "Google Generic"
     ),
 
-    // ==================== DeepSeek ====================
+    // ==================== DeepSeek (2025) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("deepseek-r2"),
+        contextLength = 128000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        forcedReasoning = true,
+        icon = "deepseek",
+        note = "DeepSeek R2 (2025)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("deepseek-v3.1"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "deepseek",
+        note = "DeepSeek V3.1 (2025)"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("deepseek-reasoner"),
         contextLength = 64000,
@@ -275,7 +424,60 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "CogView (Image Generation)"
     ),
 
-    // ==================== Alibaba (Qwen) ====================
+    // ==================== Alibaba (Qwen) (2025) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3-235b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "qwen",
+        note = "Qwen3 235B (MoE)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3-72b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "qwen",
+        note = "Qwen3 72B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3-32b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "qwen",
+        note = "Qwen3 32B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3-14b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        type = ModelType.CHAT,
+        icon = "qwen",
+        note = "Qwen3 14B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3-8b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        type = ModelType.CHAT,
+        icon = "qwen",
+        note = "Qwen3 8B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3-vl""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, videoUnderstanding = true),
+        icon = "qwen",
+        note = "Qwen3 VL"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3-coder""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        type = ModelType.CHAT,
+        icon = "qwen",
+        note = "Qwen3 Coder"
+    ),
     ModelSpec(
         pattern = ModelPattern.RegexPattern(Regex("""qwen-?2\.5-?math""", RegexOption.IGNORE_CASE)),
         contextLength = 32768,
@@ -290,6 +492,30 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         type = ModelType.CHAT,
         icon = "qwen",
         note = "Qwen 2.5 Coder"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-72b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        icon = "qwen",
+        note = "Qwen2.5 72B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-32b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        icon = "qwen",
+        note = "Qwen2.5 32B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-14b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        icon = "qwen",
+        note = "Qwen2.5 14B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-7b""", RegexOption.IGNORE_CASE)),
+        contextLength = 131072,
+        icon = "qwen",
+        note = "Qwen2.5 7B"
     ),
     ModelSpec(
         pattern = ModelPattern.RegexPattern(Regex("""qwen-?2\.5""", RegexOption.IGNORE_CASE)),
@@ -313,7 +539,38 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         icon = "qwen"
     ),
 
-    // ==================== Meta (Llama) ====================
+    // ==================== Meta (Llama) (2025) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""llama-?4-maverick""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "meta",
+        note = "Llama 4 Maverick (1M)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""llama-?4-scout""", RegexOption.IGNORE_CASE)),
+        contextLength = 10000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true),
+        icon = "meta",
+        note = "Llama 4 Scout (10M context)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""llama-?4-behemoth""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "meta",
+        note = "Llama 4 Behemoth"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""llama-?4""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        icon = "meta",
+        note = "Llama 4 Series"
+    ),
     ModelSpec(
         pattern = ModelPattern.RegexPattern(Regex("""llama-?3\.2-?vision""", RegexOption.IGNORE_CASE)),
         contextLength = 128000,
@@ -343,7 +600,22 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         icon = "meta"
     ),
 
-    // ==================== Mistral AI ====================
+    // ==================== Mistral AI (2025) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("mistral-large-2"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true),
+        icon = "mistral",
+        note = "Mistral Large 2"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("codestral"),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        icon = "mistral",
+        note = "Codestral (256K, code-focused)"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("pixtral"),
         contextLength = 128000,
@@ -464,7 +736,15 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         icon = "sensetime"
     ),
 
-    // ==================== Grok ====================
+    // ==================== xAI (Grok) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("grok-3"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true, internet = true),
+        icon = "xai",
+        note = "Grok 3 (1M context)"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("grok-2"),
         contextLength = 128000,
@@ -476,6 +756,65 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         contextLength = 128000,
         type = ModelType.CHAT,
         icon = "xai"
+    ),
+
+    // ==================== Cohere ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""command-r-plus""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(rerank = true, internet = true),
+        icon = "cohere",
+        note = "Command R+ (128K)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""command-r""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "cohere",
+        note = "Command R"
+    ),
+
+    // ==================== Microsoft (Phi) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""phi-4-multimodal""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, audioInput = true, reasoning = true),
+        icon = "microsoft",
+        note = "Phi-4 Multimodal (2025)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""phi-4""", RegexOption.IGNORE_CASE)),
+        contextLength = 16384,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "microsoft",
+        note = "Phi-4"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""phi-3""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "microsoft",
+        note = "Phi-3 Series"
+    ),
+
+    // ==================== IBM (Granite) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""granite-3\.2""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "ibm",
+        note = "Granite 3.2"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""granite""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        icon = "ibm",
+        note = "Granite Series"
     ),
 
     // ==================== Local / Other ====================
@@ -561,30 +900,6 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         contextLength = 8000,
         icon = "qwen",
         note = "Qwen Turbo"
-    ),
-    ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-72b""", RegexOption.IGNORE_CASE)),
-        contextLength = 131072,
-        icon = "qwen",
-        note = "Qwen2.5 72B"
-    ),
-    ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-32b""", RegexOption.IGNORE_CASE)),
-        contextLength = 131072,
-        icon = "qwen",
-        note = "Qwen2.5 32B"
-    ),
-    ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-14b""", RegexOption.IGNORE_CASE)),
-        contextLength = 131072,
-        icon = "qwen",
-        note = "Qwen2.5 14B"
-    ),
-    ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""qwen2\.5-7b""", RegexOption.IGNORE_CASE)),
-        contextLength = 131072,
-        icon = "qwen",
-        note = "Qwen2.5 7B"
     ),
     ModelSpec(
         pattern = ModelPattern.RegexPattern(Regex("""qwen2-72b""", RegexOption.IGNORE_CASE)),

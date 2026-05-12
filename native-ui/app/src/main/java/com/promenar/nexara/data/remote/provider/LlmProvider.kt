@@ -7,14 +7,16 @@ import com.promenar.nexara.data.remote.protocol.LocalProtocol
 import com.promenar.nexara.data.remote.protocol.OpenAIProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
-import com.promenar.nexara.data.remote.protocol.ProtocolId
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.protocol.VertexAIProtocol
 import kotlinx.coroutines.flow.Flow
 
 class LlmProvider(internal val protocol: LlmProtocol) {
 
-    val protocolId: ProtocolId get() = protocol.id
+    /** @deprecated 使用 protocolType 代替，保留此属性用于向后兼容 */
+    val protocolId: ProtocolType get() = protocol.protocolType
+    val protocolType: ProtocolType get() = protocol.protocolType
 
     suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> =
         protocol.sendPrompt(request)
@@ -27,7 +29,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
     fun cancel() = protocol.cancel()
 
     class Builder {
-        private var protocolId: ProtocolId = ProtocolId.OPENAI
+        private var protocolType: ProtocolType = ProtocolType.OpenAI_ChatCompletions
         private var baseUrl: String = ""
         private var apiKey: String = ""
         private var model: String = ""
@@ -35,7 +37,8 @@ class LlmProvider(internal val protocol: LlmProtocol) {
         private var projectId: String = ""
         private var location: String = "us-central1"
 
-        fun protocolId(id: ProtocolId) = apply { this.protocolId = id }
+        fun protocolId(id: ProtocolType) = apply { this.protocolType = id }
+        fun protocolType(type: ProtocolType) = apply { this.protocolType = type }
         fun baseUrl(url: String) = apply { this.baseUrl = url }
         fun apiKey(key: String) = apply { this.apiKey = key }
         fun model(model: String) = apply { this.model = model }
@@ -45,7 +48,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
 
         fun build(): LlmProvider {
             val protocol = createProtocol(
-                protocolId, baseUrl, apiKey, model,
+                protocolType, baseUrl, apiKey, model,
                 serviceAccountKeyPath, projectId, location
             )
             return LlmProvider(protocol)
@@ -56,23 +59,28 @@ class LlmProvider(internal val protocol: LlmProtocol) {
         fun builder(): Builder = Builder()
 
         private fun createProtocol(
-            id: ProtocolId,
+            type: ProtocolType,
             baseUrl: String,
             apiKey: String,
             model: String,
             serviceAccountKeyPath: String = "",
             projectId: String = "",
             location: String = "us-central1"
-        ): LlmProtocol = when (id) {
-            ProtocolId.OPENAI -> OpenAIProtocol(baseUrl, apiKey, model)
-            ProtocolId.ANTHROPIC -> AnthropicProtocol(baseUrl, apiKey, model)
-            ProtocolId.VERTEX_AI -> VertexAIProtocol(
+        ): LlmProtocol = when (type) {
+            is ProtocolType.OpenAI_ChatCompletions -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.OpenAI_Responses -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Anthropic_Messages -> AnthropicProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Google_VertexAI -> VertexAIProtocol(
                 serviceAccountKeyPath = serviceAccountKeyPath,
                 projectId = projectId,
                 location = location,
                 model = model
             )
-            ProtocolId.LOCAL -> throw IllegalStateException(
+            is ProtocolType.Cohere_Chat -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Mistral_Chat -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.DeepSeek -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Generic_OpenAI_Compat -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Local -> throw IllegalStateException(
                 "Use LlmProvider.local(engine) factory for local models"
             )
         }

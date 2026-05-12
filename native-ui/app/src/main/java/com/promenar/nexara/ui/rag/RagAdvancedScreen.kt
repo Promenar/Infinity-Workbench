@@ -51,10 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.NexaraPageLayout
-import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -466,15 +463,10 @@ private fun ConfigSlider(
             Text("${value.toInt()}", style = NexaraTypography.bodySmall, color = NexaraColors.Primary)
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Slider(
+        NexaraSlider(
             value = value,
             onValueChange = onValueChange,
-            valueRange = valueRange,
-            colors = SliderDefaults.colors(
-                thumbColor = NexaraColors.Primary,
-                activeTrackColor = NexaraColors.Primary,
-                inactiveTrackColor = NexaraColors.SurfaceHighest
-            )
+            valueRange = valueRange
         )
     }
 }

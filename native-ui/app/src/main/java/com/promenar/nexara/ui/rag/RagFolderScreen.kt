@@ -80,6 +80,7 @@ fun RagFolderScreen(
     NexaraPageLayout(
         title = folderName,
         onBack = onNavigateBack,
+        scrollable = false, // 内容包含 LazyColumn，禁用外层滚动避免冲突
         actions = {
             IconButton(onClick = {
                 if (selectedIds.size == documents.size) {

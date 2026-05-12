@@ -9,8 +9,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
+import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.MODEL_SPECS
-import com.promenar.nexara.data.remote.protocol.ProtocolId
+import com.promenar.nexara.data.model.ProviderConfig
+import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
@@ -20,6 +23,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 
 data class ModelInfo(
     val name: String,
@@ -66,13 +71,8 @@ data class SkillInfo(
     val enabled: Boolean
 )
 
-data class ProviderListItem(
-    val id: String = "",
-    val name: String = "",
-    val typeName: String = "",
-    val baseUrl: String = "",
-    val model: String = ""
-)
+// ProviderListItem 已迁移至 data/model/ProviderModels.kt，此处通过 import 引入。
+// 保留此注释以防止 git diff 混乱。
 
 data class SearchSettings(
     val engine: String,
@@ -88,8 +88,10 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private val prefs: SharedPreferences =
         application.getSharedPreferences("nexara_settings", 0)
 
-    private val _providerModels = MutableStateFlow<List<ModelInfo>>(emptyList())
-    val providerModels: StateFlow<List<ModelInfo>> = _providerModels.asStateFlow()
+    /** 统一单例数据源 — 所有提供商/模型操作均通过 ProviderManager */
+    private val pm: ProviderManager = ProviderManager.getInstance()
+
+    val providerModels: StateFlow<List<ModelInfo>> = pm.providerModels
 
     private val _tokenStats = MutableStateFlow<List<ProviderStats>>(emptyList())
     val tokenStats: StateFlow<List<ProviderStats>> = _tokenStats.asStateFlow()
@@ -118,8 +120,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private val _hapticEnabled = MutableStateFlow(true)
     val hapticEnabled: StateFlow<Boolean> = _hapticEnabled.asStateFlow()
 
-    private val _providers = MutableStateFlow<List<ProviderListItem>>(emptyList())
-    val providers: StateFlow<List<ProviderListItem>> = _providers.asStateFlow()
+    val providers: StateFlow<List<ProviderListItem>> = pm.providers
 
     private val _selectedSettingsTab = MutableStateFlow(0) // 0: App, 1: Provider
     val selectedSettingsTab: StateFlow<Int> = _selectedSettingsTab.asStateFlow()
@@ -128,8 +129,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
         _selectedSettingsTab.value = index
     }
 
-    private val _currentModelSummary = MutableStateFlow("")
-    val currentModelSummary: StateFlow<String> = _currentModelSummary.asStateFlow()
+    val currentModelSummary: StateFlow<String> = pm.currentModelSummary
 
     private val _activeSourcesCount = MutableStateFlow(0)
     val activeSourcesCount: StateFlow<Int> = _activeSourcesCount.asStateFlow()
@@ -140,17 +140,10 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private val _isFetchingModels = MutableStateFlow(false)
     val isFetchingModels: StateFlow<Boolean> = _isFetchingModels.asStateFlow()
 
-    private val _summaryModelId = MutableStateFlow("")
-    val summaryModelId = _summaryModelId.asStateFlow()
-
-    private val _imageModelId = MutableStateFlow("")
-    val imageModelId = _imageModelId.asStateFlow()
-
-    private val _embeddingModelId = MutableStateFlow("")
-    val embeddingModelId = _embeddingModelId.asStateFlow()
-
-    private val _rerankModelId = MutableStateFlow("")
-    val rerankModelId = _rerankModelId.asStateFlow()
+    val summaryModelId: StateFlow<String> = pm.summaryModelId
+    val imageModelId: StateFlow<String> = pm.imageModelId
+    val embeddingModelId: StateFlow<String> = pm.embeddingModelId
+    val rerankModelId: StateFlow<String> = pm.rerankModelId
 
     private val _searchSettings = MutableStateFlow(SearchSettings("duckduckgo", "", "https://searx.be", "basic", 5))
     val searchSettings = _searchSettings.asStateFlow()
@@ -175,12 +168,11 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private fun loadAll() {
         loadUserProfile()
         loadPreferences()
-        loadProviders()
-        loadModels()
         loadTokenStats()
         loadKnowledgeStats()
         loadSkills()
         observeSkills()
+        // 提供商和模型已由 ProviderManager 在 init 时加载
     }
 
     private fun observeSkills() {
@@ -221,14 +213,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
         _language.value = prefs.getString("language", "zh") ?: "zh"
         _themeMode.value = prefs.getString("theme_mode", "dark") ?: "dark"
         _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
-
         _loopLimit.value = prefs.getInt("loop_limit", 15)
-
-        _summaryModelId.value = prefs.getString("preset_summary_model", "") ?: ""
-        _imageModelId.value = prefs.getString("preset_image_model", "") ?: ""
-        _embeddingModelId.value = prefs.getString("preset_embedding_model", "") ?: ""
-        _rerankModelId.value = prefs.getString("preset_rerank_model", "") ?: ""
-
         loadSearchSettings()
     }
 
@@ -254,97 +239,22 @@ class SettingsViewModel(application: Application) : ViewModel() {
     }
 
     fun refreshProviders() {
-        loadProviders()
+        pm.refreshAll()
     }
 
-    private fun loadProviders() {
-        val savedConfig = app.getSavedProviderConfig()
-        val items = mutableListOf<ProviderListItem>()
-        if (savedConfig != null && savedConfig.apiKey.isNotBlank()) {
-            val typeName = when (savedConfig.protocolId) {
-                ProtocolId.OPENAI -> "OpenAI"
-                ProtocolId.ANTHROPIC -> "Anthropic"
-                ProtocolId.VERTEX_AI -> "Vertex AI"
-                ProtocolId.LOCAL -> "本地模型"
-            }
-            items.add(
-                ProviderListItem(
-                    id = "default",
-                    name = savedConfig.name ?: typeName,
-                    typeName = typeName,
-                    baseUrl = savedConfig.baseUrl,
-                    model = savedConfig.model
-                )
-            )
-            _currentModelSummary.value = savedConfig.model
-        }
-        val count = prefs.getInt("extra_providers_count", 0)
-        for (i in 0 until count) {
-            val prefix = "extra_provider_$i"
-            val name = prefs.getString("${prefix}_name", null) ?: continue
-            items.add(
-                ProviderListItem(
-                    id = "extra_$i",
-                    name = name,
-                    typeName = prefs.getString("${prefix}_type", "") ?: "",
-                    baseUrl = prefs.getString("${prefix}_base_url", "") ?: "",
-                    model = prefs.getString("${prefix}_model", "") ?: ""
-                )
-            )
-        }
-        _providers.value = items
+    /** 刷新模型列表（触发 ProviderManager 重新加载 + 远程获取） */
+    fun refreshProviderModels() {
+        pm.loadModels()
+        refreshModels()
     }
 
-    private fun loadModels() {
-        val allIds = prefs.getStringSet("all_models", null)
-        val enabledSet = prefs.getStringSet("enabled_models", null)
-        
-        if (allIds == null) {
-            // Initial load or first time
-            val savedConfig = app.getSavedProviderConfig()
-            val currentModel = savedConfig?.model
-            
-            if (currentModel == null) {
-                _providerModels.value = emptyList()
-                persistModels(emptyList())
-                return
-            }
-
-            val spec = com.promenar.nexara.data.model.findModelSpec(currentModel)
-            val initialModels = listOf(
-                ModelInfo(
-                    name = spec?.note ?: currentModel,
-                    id = currentModel,
-                    description = spec?.note ?: "Initial model",
-                    enabled = true,
-                    type = spec?.type?.name?.lowercase() ?: "chat",
-                    contextLength = spec?.contextLength ?: 8192
-                )
-            )
-            _providerModels.value = initialModels
-            persistModels(initialModels)
-            
-            // Trigger fetch to populate model list after initializing the default
-            refreshModels()
-            return
-        }
-
-        val models = allIds.map { id ->
-            val prefix = "model_info_$id"
-            val caps = prefs.getStringSet("${prefix}_caps", emptySet()) ?: emptySet()
-            ModelInfo(
-                name = prefs.getString("${prefix}_name", id) ?: id,
-                id = id,
-                description = "", 
-                enabled = enabledSet?.contains(id) ?: false,
-                type = prefs.getString("${prefix}_type", "chat") ?: "chat",
-                contextLength = prefs.getInt("${prefix}_context", 8192),
-                capabilities = caps.toList(),
-                providerName = prefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
-            )
-        }.sortedByDescending { it.enabled }
-        
-        _providerModels.value = models
+    /**
+     * 根据 providerId 获取完整提供商配置（用于编辑回填）。
+     * - "default" → 主提供商
+     * - "extra_N" → 额外提供商
+     */
+    fun getProviderConfig(providerId: String): ProviderConfig? {
+        return pm.getProviderConfig(providerId)
     }
 
     private fun loadTokenStats() {
@@ -352,10 +262,10 @@ class SettingsViewModel(application: Application) : ViewModel() {
             try {
                 val vectorDao = app.database.vectorDao()
                 val totalCount = vectorDao.getAll().size
-                val savedConfig = app.getSavedProviderConfig()
+                val config = pm.getMainProviderConfig()
                 _tokenStats.value = listOf(
                     ProviderStats(
-                        savedConfig?.name ?: "Provider",
+                        config?.name ?: "Provider",
                         (totalCount * 500L),
                         totalCount * 0.02,
                         listOf(
@@ -405,19 +315,40 @@ class SettingsViewModel(application: Application) : ViewModel() {
     }
 
     fun updateUserAvatar(uriStr: String?) {
-        if (uriStr != null) {
-            val uri = Uri.parse(uriStr)
-            try {
-                app.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (e: Exception) {
-                // Not a persistable URI, ignore
+        if (uriStr == null) {
+            _userAvatar.value = null
+            prefs.edit().remove("user_avatar").apply()
+            return
+        }
+
+        viewModelScope.launch {
+            val localPath = saveAvatarToInternalStorage(Uri.parse(uriStr))
+            if (localPath != null) {
+                _userAvatar.value = localPath
+                prefs.edit().putString("user_avatar", localPath).apply()
             }
         }
-        _userAvatar.value = uriStr
-        prefs.edit().putString("user_avatar", uriStr).apply()
+    }
+
+    private fun saveAvatarToInternalStorage(uri: Uri): String? {
+        return try {
+            val avatarDir = File(app.filesDir, "avatars")
+            if (!avatarDir.exists()) avatarDir.mkdirs()
+            
+            val outFile = File(avatarDir, "user_avatar_${System.currentTimeMillis()}.jpg")
+            
+            // 清理旧头像
+            avatarDir.listFiles()?.forEach { it.delete() }
+
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(outFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            outFile.absolutePath
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun setLanguage(lang: String) {
@@ -436,75 +367,16 @@ class SettingsViewModel(application: Application) : ViewModel() {
         app.hapticEnabled = enabled
     }
 
-    fun deleteProvider(providerId: String) {
-        _providers.update { list ->
-            list.filter { it.id != providerId }
-        }
-        persistProviders(_providers.value)
-    }
+    fun deleteProvider(providerId: String) = pm.deleteProvider(providerId)
 
     fun addProvider(item: ProviderListItem) {
-        _providers.update { list ->
-            list + item
-        }
-        persistProviders(_providers.value)
+        pm.addProvider(item)
+        refreshModels()
     }
 
-    private fun persistProviders(providers: List<ProviderListItem>) {
-        val extraProviders = providers.filter { it.id != "default" }
-        val editor = prefs.edit()
-        editor.putInt("extra_providers_count", extraProviders.size)
-        extraProviders.forEachIndexed { index, item ->
-            val prefix = "extra_provider_$index"
-            editor.putString("${prefix}_name", item.name)
-            editor.putString("${prefix}_type", item.typeName)
-            editor.putString("${prefix}_base_url", item.baseUrl)
-            editor.putString("${prefix}_model", item.model)
-        }
-        editor.apply()
-    }
+    fun updateModel(updatedModel: ModelInfo) = pm.updateModel(updatedModel)
 
-    fun updateModel(updatedModel: ModelInfo) {
-        _providerModels.update { models ->
-            val updated = models.map {
-                if (it.id == updatedModel.id) updatedModel else it
-            }
-            saveEnabledModels(updated)
-            updated
-        }
-    }
-
-    fun toggleModel(id: String) {
-        _providerModels.update { models ->
-            val updated = models.map {
-                if (it.id == id) it.copy(enabled = !it.enabled) else it
-            }
-            saveEnabledModels(updated)
-            updated
-        }
-    }
-
-    private fun saveEnabledModels(models: List<ModelInfo>) {
-        val enabled = models.filter { it.enabled }.map { it.id }.toSet()
-        prefs.edit().putStringSet("enabled_models", enabled).apply()
-        persistModels(models)
-    }
-
-    private fun persistModels(models: List<ModelInfo>) {
-        val allIds = models.map { it.id }.toSet()
-        val editor = prefs.edit()
-        editor.putStringSet("all_models", allIds)
-        
-        models.forEach { model ->
-            val prefix = "model_info_${model.id}"
-            editor.putString("${prefix}_name", model.name)
-            editor.putString("${prefix}_type", model.type)
-            editor.putInt("${prefix}_context", model.contextLength)
-            editor.putStringSet("${prefix}_caps", model.capabilities.toSet())
-            editor.putString("${prefix}_provider", model.providerName)
-        }
-        editor.apply()
-    }
+    fun toggleModel(id: String) = pm.toggleModel(id)
 
     fun refreshModels() {
         viewModelScope.launch {
@@ -512,81 +384,58 @@ class SettingsViewModel(application: Application) : ViewModel() {
             try {
                 val fetchedIds = app.llmProvider.listModels()
                 if (fetchedIds.isNotEmpty()) {
-                    val currentModels = _providerModels.value.toMutableList()
+                    val currentModels = pm.providerModels.value.toMutableList()
                     val existingIds = currentModels.map { it.id }.toSet()
-                    
                     val newModels = fetchedIds.filter { it !in existingIds }.map { id ->
                         val spec = com.promenar.nexara.data.model.findModelSpec(id)
                         val type = spec?.type?.name?.lowercase() ?: "chat"
                         ModelInfo(
-                            name = id,
-                            id = id,
+                            name = id, id = id,
                             description = spec?.note ?: "Fetched model",
-                            enabled = false,
-                            type = type,
+                            enabled = false, type = type,
                             contextLength = spec?.contextLength ?: 8192,
-                            providerName = _providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
+                            providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
                             capabilities = buildList {
-                                add("chat") // Ensure chat models have chat capability
+                                add("chat")
                                 spec?.capabilities?.let { caps ->
-                                    if (caps.vision && type != "vision") add("vision")
-                                    if (caps.internet && type != "internet") add("internet")
+                                    if (caps.vision) add("vision")
+                                    if (caps.internet) add("internet")
                                 }
                                 if (type == "reasoning") add("reasoning")
                             }
                         )
                     }
-                    
-                    val updated = currentModels + newModels
-                    _providerModels.value = updated
-                    persistModels(updated)
+                    newModels.forEach { pm.addModel(it) }
                 }
-            } catch (_: Exception) {
-            } finally {
+            } catch (_: Exception) { } finally {
                 _isFetchingModels.value = false
             }
         }
     }
 
-    fun disableAllModels() {
-        _providerModels.update { models ->
-            val updated = models.map { it.copy(enabled = false) }
-            saveEnabledModels(updated)
-            updated
-        }
-    }
+    fun disableAllModels() = pm.disableAllModels()
 
-    fun deleteAllModels() {
-        _providerModels.value = emptyList()
-        prefs.edit()
-            .remove("enabled_models")
-            .remove("all_models")
-            .apply()
-        // Also remove individual model info (simplified here)
-    }
+    fun deleteAllModels() = pm.deleteAllModels()
 
     fun addCustomModel(id: String, name: String) {
         val spec = com.promenar.nexara.data.model.findModelSpec(id)
         val type = spec?.type?.name?.lowercase() ?: "chat"
         val newModel = ModelInfo(
-            name = name.ifEmpty { id },
-            id = id,
+            name = name.ifEmpty { id }, id = id,
             description = spec?.note ?: "Custom model",
-            enabled = true,
-            type = type,
+            enabled = true, type = type,
             contextLength = spec?.contextLength ?: 8192,
-            providerName = _providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
+            providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
             capabilities = buildList {
                 add("chat")
                 spec?.capabilities?.let { caps ->
-                    if (caps.vision && type != "vision") add("vision")
-                    if (caps.internet && type != "internet") add("internet")
+                    if (caps.vision) add("vision")
+                    if (caps.internet) add("internet")
                 }
                 if (type == "reasoning") add("reasoning")
             }
         )
-        _providerModels.update { it + newModel }
-        saveEnabledModels(_providerModels.value)
+        pm.addModel(newModel)
     }
 
     fun toggleSkill(id: String) {
@@ -711,33 +560,9 @@ class SettingsViewModel(application: Application) : ViewModel() {
         loadAll()
     }
 
-    fun deleteModel(id: String) {
-        val current = _providerModels.value.filter { it.id != id }
-        _providerModels.value = current
-        persistModels(current)
-    }
+    fun deleteModel(id: String) = pm.deleteModel(id)
 
-    fun setPresetModel(type: String, modelId: String) {
-        when (type) {
-            "summary" -> {
-                _summaryModelId.value = modelId
-                prefs.edit().putString("preset_summary_model", modelId).apply()
-                _currentModelSummary.value = modelId
-            }
-            "image" -> {
-                _imageModelId.value = modelId
-                prefs.edit().putString("preset_image_model", modelId).apply()
-            }
-            "embedding" -> {
-                _embeddingModelId.value = modelId
-                prefs.edit().putString("preset_embedding_model", modelId).apply()
-            }
-            "rerank" -> {
-                _rerankModelId.value = modelId
-                prefs.edit().putString("preset_rerank_model", modelId).apply()
-            }
-        }
-    }
+    fun setPresetModel(type: String, modelId: String) = pm.setPresetModel(type, modelId)
 
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =

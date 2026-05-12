@@ -73,7 +73,7 @@
     <string name="shared_btn_regenerate">重新生成</string>
 
     <!-- ============ Hub ============ -->
-    <string name="hub_title">智能助手</string>
+    <string name="hub_title">Nexara</string>
     <string name="hub_subtitle">你的智能助手团队</string>
     <string name="hub_search_placeholder">搜索助手…</string>
     <string name="hub_btn_add_agent">添加助手</string>
@@ -230,6 +230,7 @@
     <string name="settings_btn_save">保存</string>
     <string name="settings_btn_cancel">取消</string>
     <string name="settings_btn_delete">删除</string>
+    <string name="settings_edit_avatar">编辑头像</string>
 
     <!-- ============ Chat ============ -->
     <!-- ChatScreen -->

@@ -14,6 +14,7 @@ import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.rag.MemoryManagerRagAdapter
@@ -158,7 +159,7 @@ class ChatViewModel(
                 val session = store.getSession(sessionId) ?: return@setCallbacks
                 val msg = session.messages.find { it.id == targetMessageId } ?: return@setCallbacks
                 if (msg.toolCalls != null) {
-                    toolExecutor.executeTools(sessionId, msg.toolCalls!!, targetMessageId)
+                    toolExecutor.executeTools(sessionId, msg.toolCalls, targetMessageId)
                 }
             }
         )
@@ -232,7 +233,9 @@ class ChatViewModel(
         _streamingContent.update { "" }
 
         val agentDao = (application as NexaraApplication).database.agentDao()
-        val agentEntity = agentDao.getById(sessionForCtx.agentId)
+        val agentEntity = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            agentDao.getById(sessionForCtx.agentId)
+        }
         val agentPrompt = agentEntity?.systemPrompt ?: ""
 
         val contextParams = ContextBuilderParams(
@@ -265,7 +268,7 @@ class ChatViewModel(
             ?: agentEntity?.model 
             ?: ""
         
-        val effectiveParams = sessionForCtx.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams(
+        val effectiveParams = sessionForCtx.inferenceParams ?: InferenceParams(
             temperature = agentEntity?.temperature ?: 0.7,
             topP = agentEntity?.top_p ?: 0.9,
             maxTokens = agentEntity?.max_tokens ?: 4096
@@ -462,7 +465,7 @@ class ChatViewModel(
                             
                             // 3. Auto-summary trigger
                             val threshold = finalSession.inferenceParams?.autoSummaryThreshold ?: 0.8
-                            val totalTokens = (accumulatedTokens?.total ?: 0)
+                            val totalTokens = accumulatedTokens.total
                             val maxTokens = com.promenar.nexara.data.model.findModelSpec(
                                 finalSession.modelId ?: ""
                             )?.contextLength ?: 128000
@@ -920,8 +923,8 @@ class ChatViewModel(
     }
 
     private fun updateTokenIndicator(session: Session) {
-        val agentDao = (application as NexaraApplication).database.agentDao()
         viewModelScope.launch(Dispatchers.IO) {
+            val agentDao = (application as NexaraApplication).database.agentDao()
             val agent = session.agentId.let { agentDao.getById(it) }
             
             // Reconstruct system prompt parts for accurate estimation (matching ContextBuilder)
@@ -936,7 +939,7 @@ class ChatViewModel(
             if (session.options?.toolsEnabled == true) {
                 metadataText += "[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]\n\n"
             }
-            if (session.activeTask != null && session.activeTask?.status == "in-progress") {
+            if (session.activeTask != null && session.activeTask.status == "in-progress") {
                 metadataText += "## Active Task\n- **Current Task**: \"Title\"\n- **Immediate Goal**: Goal\n\n"
             }
 
@@ -967,7 +970,7 @@ class ChatViewModel(
             val savedContext = prefs.getInt("model_info_${modelId}_context", 0)
             
             val max = if (savedContext > 0) savedContext 
-                     else com.promenar.nexara.data.model.findModelSpec(modelId)?.contextLength ?: 128000
+                     else findModelSpec(modelId)?.contextLength ?: 128000
             
             _tokenIndicatorState.update { 
                 it.copy(

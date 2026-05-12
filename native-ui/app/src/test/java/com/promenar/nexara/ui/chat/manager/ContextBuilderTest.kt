@@ -97,7 +97,11 @@ class ContextBuilderTest {
         }
 
         val builder = ContextBuilder(webSearchProvider = webSearchProvider)
-        val session = Session(id = "s1", agentId = "a1")
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            options = com.promenar.nexara.data.model.SessionOptions(webSearch = true)
+        )
 
         val result = builder.buildContext(ContextBuilderParams(
             sessionId = "s1",

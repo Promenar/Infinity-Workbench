@@ -5,7 +5,9 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -38,6 +41,7 @@ import kotlin.math.roundToInt
 fun SwipeableItem(
     onPin: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
     isPinned: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -83,29 +87,51 @@ fun SwipeableItem(
             }
         }
 
-        if (onPin != null && offsetX.value > 0) {
-            Box(
+        if (offsetX.value > 0) {
+            Row(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .padding(start = 8.dp)
                     .graphicsLayer {
                         alpha = (kotlin.math.abs(offsetX.value) / threshold).coerceIn(0f, 1f)
                     },
-                contentAlignment = Alignment.Center
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 80.dp, height = 48.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isPinned) NexaraColors.Tertiary else NexaraColors.Primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PushPin,
-                        contentDescription = if (isPinned) "Unpin" else stringResource(R.string.common_cd_pin),
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
+                // Pin Action
+                if (onPin != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 80.dp, height = 48.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isPinned) NexaraColors.Tertiary else NexaraColors.Primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PushPin,
+                            contentDescription = if (isPinned) "Unpin" else stringResource(R.string.common_cd_pin),
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                
+                // Edit Action
+                if (onEdit != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 80.dp, height = 48.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NexaraColors.Secondary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = "Edit",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -128,8 +154,12 @@ fun SwipeableItem(
                                         )
                                     }
 
-                                    offsetX.value > threshold && onPin != null -> {
-                                        onPin()
+                                    offsetX.value > threshold -> {
+                                        if (offsetX.value > threshold + actionWidth && onEdit != null) {
+                                            onEdit()
+                                        } else if (onPin != null) {
+                                            onPin()
+                                        }
                                         offsetX.animateTo(
                                             0f,
                                             spring(stiffness = Spring.StiffnessMedium)

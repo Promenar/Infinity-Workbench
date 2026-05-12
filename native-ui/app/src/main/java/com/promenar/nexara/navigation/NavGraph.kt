@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -32,9 +34,11 @@ import com.promenar.nexara.ui.rag.RagDebugScreen
 import com.promenar.nexara.ui.rag.RagFolderScreen
 import com.promenar.nexara.ui.rag.AdvancedRetrievalScreen
 import com.promenar.nexara.ui.settings.BackupSettingsScreen
+import com.promenar.nexara.ui.settings.DeveloperScreen
 import com.promenar.nexara.ui.settings.LocalModelsScreen
 import com.promenar.nexara.ui.settings.ProviderFormScreen
 import com.promenar.nexara.ui.settings.ProviderModelsScreen
+import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.settings.SearchConfigScreen
 import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
@@ -70,6 +74,7 @@ object NavDestinations {
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
     const val LOCAL_MODELS = "local_models"
+    const val DEVELOPER_PANEL = "developer_panel"
 
     fun sessionList(agentId: String) = "session_list/$agentId"
     fun chatHero(sessionId: String) = "chat_hero/$sessionId"
@@ -358,8 +363,8 @@ fun NexaraNavGraph(
                         popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
                     }
                 },
-                onSave = { protocolId, baseUrl, apiKey, model, name ->
-                    app.updateProvider(protocolId, baseUrl, apiKey, model, name)
+                onSave = { protocolType, baseUrl, apiKey, model, name ->
+                    app.updateProvider(protocolType, baseUrl, apiKey, model, name)
                 }
             )
         }
@@ -369,6 +374,13 @@ fun NexaraNavGraph(
             arguments = listOf(navArgument("providerId") { type = NavType.StringType })
         ) { backStackEntry ->
             val providerId = backStackEntry.arguments?.getString("providerId") ?: ""
+            val context = LocalContext.current
+            val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
+            
+            LaunchedEffect(providerId) {
+                viewModel.refreshProviderModels()
+            }
+            
             ProviderModelsScreen(
                 providerId = providerId,
                 onNavigateBack = { navController.popBackStack() }
@@ -407,6 +419,12 @@ fun NexaraNavGraph(
 
         composable(NavDestinations.LOCAL_MODELS) {
             LocalModelsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(NavDestinations.DEVELOPER_PANEL) {
+            DeveloperScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

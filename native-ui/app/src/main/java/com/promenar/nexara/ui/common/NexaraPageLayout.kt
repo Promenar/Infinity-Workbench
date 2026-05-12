@@ -55,13 +55,15 @@ fun NexaraPageLayout(
     ) {
         TopAppBar(
             title = {
-                Text(
-                    text = title,
-                    style = NexaraTypography.headlineLarge,
-                    color = NexaraColors.OnSurface,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
+                Box(modifier = Modifier.padding(start = if (onBack != null) 0.dp else 4.dp)) {
+                    Text(
+                        text = title,
+                        style = NexaraTypography.headlineLarge,
+                        color = NexaraColors.OnSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
             },
             navigationIcon = {
                 if (onBack != null) {

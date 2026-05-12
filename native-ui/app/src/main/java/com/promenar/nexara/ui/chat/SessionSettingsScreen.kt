@@ -56,14 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.FloatingTextEditor
-import com.promenar.nexara.ui.common.InferencePreset
-import com.promenar.nexara.ui.common.InferencePresets
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.SettingsInput
-import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -485,16 +478,11 @@ private fun InferenceSlider(
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
-        Slider(
+        NexaraSlider(
             value = value,
             onValueChange = onChange,
             valueRange = min..max,
-            steps = ((max - min) / step).toInt() - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = NexaraColors.Primary,
-                activeTrackColor = NexaraColors.Primary,
-                inactiveTrackColor = NexaraColors.SurfaceHighest
-            )
+            steps = ((max - min) / step).toInt() - 1
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -535,16 +523,11 @@ private fun InferenceSliderInt(
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onChange(it.toInt()) },
-            valueRange = min.toFloat()..max.toFloat(),
-            steps = ((max - min) / step) - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = NexaraColors.Primary,
-                activeTrackColor = NexaraColors.Primary,
-                inactiveTrackColor = NexaraColors.SurfaceHighest
-            )
+        NexaraSliderInt(
+            value = value,
+            onValueChange = onChange,
+            valueRange = min..max,
+            steps = ((max - min) / step) - 1
         )
         Row(
             modifier = Modifier.fillMaxWidth(),

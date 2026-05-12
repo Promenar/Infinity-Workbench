@@ -22,7 +22,9 @@ import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.RerankClient
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
-import com.promenar.nexara.data.remote.protocol.ProtocolId
+import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.model.ProviderConfig
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -62,9 +64,15 @@ import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
 
 class NexaraApplication : Application(), SingletonImageLoader.Factory {
+    companion object {
+        lateinit var instance: NexaraApplication
+            private set
+    }
+
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
             .addMigrations(NexaraDatabase.MIGRATION_4_5)
+            .fallbackToDestructiveMigration()
             .build()
     }
 
@@ -146,6 +154,12 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
+        com.promenar.nexara.utils.NexaraLogger.init(this)
+
+        // 初始化统一数据源（必须在 buildProviderFromPrefs 之前）
+        ProviderManager.init(this)
+
         _llmProvider = MutableStateFlow(buildProviderFromPrefs())
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -167,6 +181,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     localInferenceEngine.loadModel(SlotType.MAIN, lastModel)
                 }
             }
+        }
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            vectorizationQueue.resumeInterruptedTasks()
         }
     }
 
@@ -283,25 +301,19 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     fun updateProvider(
-        protocolId: ProtocolId,
+        protocolType: ProtocolType,
         baseUrl: String,
         apiKey: String,
         model: String,
         name: String? = null
     ) {
-        prefs.edit()
-            .putString("protocol_id", protocolId.name)
-            .putString("base_url", baseUrl)
-            .putString("api_key", apiKey)
-            .putString("model", model)
-            .apply()
-        if (name != null) {
-            prefs.edit().putString("provider_name", name).apply()
-        }
-        _llmProvider.value = when (protocolId) {
-            ProtocolId.LOCAL -> LlmProvider.local(localInferenceEngine, model)
+        // 委托 ProviderManager 持久化
+        ProviderManager.getInstance().updateMainProvider(protocolType, baseUrl, apiKey, model, name)
+        // 重建 LlmProvider
+        _llmProvider.value = when (protocolType) {
+            is ProtocolType.Local -> LlmProvider.local(localInferenceEngine, model)
             else -> LlmProvider.builder()
-                .protocolId(protocolId)
+                .protocolType(protocolType)
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .model(model)
@@ -314,23 +326,17 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     fun getSavedProviderConfig(): ProviderConfig? {
-        val protocolName = prefs.getString("protocol_id", null) ?: return null
-        return ProviderConfig(
-            protocolId = try { ProtocolId.valueOf(protocolName) } catch (_: Exception) { ProtocolId.OPENAI },
-            baseUrl = prefs.getString("base_url", "") ?: "",
-            apiKey = prefs.getString("api_key", "") ?: "",
-            model = prefs.getString("model", "") ?: "",
-            name = prefs.getString("provider_name", null)
-        )
+        return ProviderManager.getInstance().getMainProviderConfig()
     }
 
     private fun buildProviderFromPrefs(): LlmProvider {
         val config = getSavedProviderConfig()
-        return if (config != null) {
-            when (config.protocolId) {
-                ProtocolId.LOCAL -> LlmProvider.local(localInferenceEngine, config.model)
-                else -> LlmProvider.builder()
-                    .protocolId(config.protocolId)
+        return if (config != null && config.apiKey.isNotBlank()) {
+            if (config.protocolType is ProtocolType.Local) {
+                LlmProvider.local(localInferenceEngine, config.model)
+            } else {
+                LlmProvider.builder()
+                    .protocolType(config.protocolType)
                     .baseUrl(config.baseUrl)
                     .apiKey(config.apiKey)
                     .model(config.model)
@@ -338,7 +344,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             }
         } else {
             LlmProvider.builder()
-                .protocolId(ProtocolId.OPENAI)
+                .protocolType(ProtocolType.OpenAI_ChatCompletions)
                 .baseUrl("")
                 .apiKey("")
                 .model("")
@@ -360,11 +366,5 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         }
     }
 
-    data class ProviderConfig(
-        val protocolId: ProtocolId,
-        val baseUrl: String,
-        val apiKey: String,
-        val model: String,
-        val name: String?
-    )
+    // ProviderConfig 已迁移至 data/model/ProviderModels.kt
 }

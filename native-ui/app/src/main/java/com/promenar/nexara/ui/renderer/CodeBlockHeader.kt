@@ -107,7 +107,6 @@ fun CodeBlockWithHeader(
         }
         Row(
             modifier = Modifier
-                .fillMaxWidth()
                 .height(IntrinsicSize.Min)
                 .horizontalScroll(rememberScrollState())
         ) {

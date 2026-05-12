@@ -25,7 +25,7 @@ class OpenAIProtocol(
     httpClient: HttpClient? = null
 ) : LlmProtocol {
 
-    override val id: ProtocolId = ProtocolId.OPENAI
+    override val protocolType: ProtocolType = ProtocolType.OpenAI_ChatCompletions
 
     private val httpClient: HttpClient = httpClient ?: HttpClient(OkHttp) {
         install(HttpTimeout) {
@@ -193,7 +193,36 @@ class OpenAIProtocol(
             put("messages", JsonArray(request.messages.map { msg ->
                 buildJsonObject {
                     put("role", msg.role)
-                    put("content", msg.content.ifEmpty { "" })
+                    
+                    val hasMultimodal = msg.imageUrls?.isNotEmpty() == true || msg.audioData?.isNotEmpty() == true
+                    if (!hasMultimodal) {
+                        put("content", msg.content.ifEmpty { "" })
+                    } else {
+                        val contentParts = buildJsonArray {
+                            add(buildJsonObject {
+                                put("type", "text")
+                                put("text", msg.content)
+                            })
+                            msg.imageUrls?.forEach { img ->
+                                add(buildJsonObject {
+                                    put("type", "image_url")
+                                    put("image_url", buildJsonObject {
+                                        put("url", img.url ?: "data:${img.mimeType};base64,${img.base64}")
+                                    })
+                                })
+                            }
+                            msg.audioData?.forEach { aud ->
+                                add(buildJsonObject {
+                                    put("type", "input_audio")
+                                    put("input_audio", buildJsonObject {
+                                        put("data", aud.base64)
+                                        put("format", if (aud.mimeType.contains("wav")) "wav" else "mp3")
+                                    })
+                                })
+                            }
+                        }
+                        put("content", contentParts)
+                    }
 
                     msg.name?.let { put("name", it) }
 
@@ -216,6 +245,16 @@ class OpenAIProtocol(
                     }
                 }
             }))
+
+            val hasImages = request.messages.any { it.imageUrls?.isNotEmpty() == true }
+            val hasAudio = request.messages.any { it.audioData?.isNotEmpty() == true }
+            if (hasImages || hasAudio) {
+                put("modalities", buildJsonArray {
+                    add(JsonPrimitive("text"))
+                    if (hasImages) add(JsonPrimitive("image"))
+                    if (hasAudio) add(JsonPrimitive("audio"))
+                })
+            }
 
             request.temperature?.let { put("temperature", it) }
             request.topP?.let { if (it < 1.0) put("top_p", it) }

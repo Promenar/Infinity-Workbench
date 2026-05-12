@@ -22,11 +22,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -60,6 +62,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,6 +73,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,16 +87,21 @@ import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.SettingsToggle
-import com.promenar.nexara.ui.settings.ProviderListItem
+import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.SpaceGrotesk
 import com.promenar.nexara.ui.theme.Manrope
+import com.yalantis.ucrop.UCrop
+import android.net.Uri
+import androidx.compose.ui.res.painterResource
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.promenar.nexara.data.remote.protocol.ProtocolType
+import java.io.File
 
 private enum class SettingsTab(val labelRes: Int) {
     APP(R.string.settings_tab_app),
@@ -122,11 +131,40 @@ fun UserSettingsHomeScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showModelPickerType by remember { mutableStateOf<String?>(null) }
 
+    val cropLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val resultUri = UCrop.getOutput(result.data!!)
+            if (resultUri != null) {
+                viewModel.updateUserAvatar(resultUri.toString())
+            }
+        }
+    }
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            viewModel.updateUserAvatar(uri.toString())
+            // 启动 UCrop 裁切
+            val destinationUri = Uri.fromFile(File(context.cacheDir, "temp_crop_${System.currentTimeMillis()}.jpg"))
+            val options = UCrop.Options().apply {
+                setCircleDimmedLayer(true) // 显示圆形遮罩
+                setShowCropFrame(false)
+                setShowCropGrid(false)
+                setToolbarColor(android.graphics.Color.BLACK)
+                setStatusBarColor(android.graphics.Color.BLACK)
+                setActiveControlsWidgetColor(android.graphics.Color.parseColor("#888DFF")) // Primary color
+                setToolbarTitle(context.getString(R.string.settings_edit_avatar))
+            }
+            
+            val intent = UCrop.of(uri, destinationUri)
+                .withAspectRatio(1f, 1f)
+                .withMaxResultSize(512, 512)
+                .withOptions(options)
+                .getIntent(context)
+            
+            cropLauncher.launch(intent)
         }
     }
 
@@ -138,10 +176,14 @@ fun UserSettingsHomeScreen(
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title), style = NexaraTypography.headlineLarge) },
+                title = {
+                    Box(modifier = Modifier.padding(start = 4.dp)) {
+                        Text(stringResource(R.string.settings_title), style = NexaraTypography.headlineLarge)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f),
                     titleContentColor = NexaraColors.OnSurface
@@ -187,11 +229,11 @@ fun UserSettingsHomeScreen(
                             },
                             onShowLanguageDialog = { showLanguageDialog = true },
                             onShowModelPicker = { type ->
+                                viewModel.refreshProviderModels()
                                 showModelPickerType = type
                             },
                             onAboutClick = {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/promenar/nexara"))
-                                context.startActivity(intent)
+                                onNavigateToSecondary("developer_panel")
                             }
                         )
                     }
@@ -208,44 +250,25 @@ fun UserSettingsHomeScreen(
     }
 
     val allModels by viewModel.providerModels.collectAsState()
-    val modelItems = remember(allModels) {
-        allModels.map { model ->
-            val mappedCaps = mutableSetOf<ModelCapability>()
-            
-            // 1. Map from model type (Primary capability)
-            when (model.type) {
-                "chat" -> mappedCaps.add(ModelCapability.CHAT)
-                "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
-                "image" -> mappedCaps.add(ModelCapability.IMAGE)
-                "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
-                "rerank" -> mappedCaps.add(ModelCapability.RERANK)
-            }
-            
-            // 2. Map from additional capabilities list
-            model.capabilities.forEach { cap ->
-                when (cap.lowercase()) {
-                    "vision" -> mappedCaps.add(ModelCapability.VISION)
-                    "internet", "web" -> mappedCaps.add(ModelCapability.WEB)
-                    "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
-                    "image" -> mappedCaps.add(ModelCapability.IMAGE)
-                    "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
-                    "rerank" -> mappedCaps.add(ModelCapability.RERANK)
-                    "chat" -> mappedCaps.add(ModelCapability.CHAT)
+    val modelItems by remember {
+        derivedStateOf {
+            allModels
+                .filter { it.enabled }
+                .map { model ->
+                    ModelItem(
+                        id = model.id,
+                        name = model.name.ifEmpty { model.id },
+                        providerName = model.providerName,
+                        capabilities = model.capabilities.mapNotNull { cap ->
+                            try {
+                                ModelCapability.valueOf(cap.uppercase())
+                            } catch (_: Exception) {
+                                null
+                            }
+                        },
+                        contextLength = model.contextLength
+                    )
                 }
-            }
-            
-            // 3. Fallback to CHAT ONLY IF it's not any of the special types
-            if (mappedCaps.isEmpty()) {
-                mappedCaps.add(ModelCapability.CHAT)
-            }
-
-            ModelItem(
-                id = model.id,
-                name = model.name,
-                providerName = model.providerName,
-                capabilities = mappedCaps.toList(),
-                contextLength = model.contextLength
-            )
         }
     }
 
@@ -518,8 +541,14 @@ private fun AppSettingsContent(
 
         item { Spacer(modifier = Modifier.height(16.dp)) }
         item {
+            val context = LocalContext.current
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/promenar/nexara"))
+                        context.startActivity(intent)
+                    },
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -616,6 +645,8 @@ private fun UserProfileHeader(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(avatarUri)
                             .crossfade(true)
+                            .diskCacheKey(avatarUri)
+                            .memoryCacheKey(avatarUri)
                             .build(),
                         contentDescription = "Avatar",
                         modifier = Modifier.fillMaxSize(),
@@ -708,28 +739,79 @@ private fun ProviderCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val providerIcon = remember(provider.typeName) {
+                ProtocolType.entries.find { it.displayName == provider.typeName }?.iconRes
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(NexaraColors.Primary.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (providerIcon != null) {
+                    Icon(
+                        painter = painterResource(id = providerIcon),
+                        contentDescription = null,
+                        tint = NexaraColors.Primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Psychology,
+                        contentDescription = null,
+                        tint = NexaraColors.Primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = provider.name,
-                    style = NexaraTypography.headlineSmall,
+                    style = NexaraTypography.headlineMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
                     color = NexaraColors.OnSurface
                 )
-                Text(
-                    text = provider.typeName,
-                    style = NexaraTypography.bodySmall,
-                    color = NexaraColors.OnSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = provider.baseUrl,
-                    style = NexaraTypography.bodySmall.copy(fontFamily = SpaceGrotesk),
-                    color = NexaraColors.Outline,
-                    maxLines = 1
-                )
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = provider.typeName,
+                        style = NexaraTypography.labelMedium,
+                        color = NexaraColors.OnSurfaceVariant
+                    )
+                    
+                    // 分隔小点
+                    Box(
+                        modifier = Modifier
+                            .size(3.dp)
+                            .clip(CircleShape)
+                            .background(NexaraColors.Outline.copy(alpha = 0.5f))
+                    )
+                    
+                    Text(
+                        text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
+                        style = NexaraTypography.labelMedium.copy(fontFamily = SpaceGrotesk, fontSize = 11.sp),
+                        color = NexaraColors.Outline,
+                        maxLines = 1
+                    )
+                }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClick) {
+            // 操作区 - 增加间距和对齐
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                IconButton(
+                    onClick = onClick,
+                    modifier = Modifier.size(36.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.Tune,
                         contentDescription = stringResource(R.string.settings_manage_models),
@@ -737,7 +819,10 @@ private fun ProviderCard(
                         modifier = Modifier.size(18.dp)
                     )
                 }
-                IconButton(onClick = onEdit) {
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(36.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.Edit,
                         contentDescription = null,
@@ -745,7 +830,10 @@ private fun ProviderCard(
                         modifier = Modifier.size(18.dp)
                     )
                 }
-                IconButton(onClick = onDelete) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(36.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.Delete,
                         contentDescription = null,

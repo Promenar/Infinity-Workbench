@@ -74,6 +74,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.DocumentEntity
 import com.promenar.nexara.data.local.db.entity.FolderEntity
 import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.rag.components.FolderItem
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.rag.components.RagDocItem
@@ -89,7 +90,7 @@ import androidx.compose.material3.TextButton
 
 private enum class PortalView { DOCUMENTS, MEMORY, GRAPH }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun RagHomeScreen(
     viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(LocalContext.current.applicationContext as android.app.Application)),
@@ -162,52 +163,22 @@ fun RagHomeScreen(
                     start = 20.dp, end = 20.dp,
                     top = 8.dp, bottom = 160.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
-                    Text(
-                        text = stringResource(R.string.rag_home_subtitle),
-                        style = NexaraTypography.bodyLarge,
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                }
-
-                item {
-                    Row(
+                stickyHeader {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(NexaraColors.SurfaceContainer)
-                            .border(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            .background(NexaraColors.CanvasBackground.copy(alpha = 0.9f))
+                            .padding(bottom = 12.dp)
                     ) {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = null,
-                            tint = NexaraColors.OnSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        BasicTextField(
+                        NexaraSearchBar(
                             value = searchQuery,
                             onValueChange = {
                                 searchQuery = it
                                 viewModel.search(it)
                             },
-                            textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            decorationBox = { innerTextField ->
-                                if (searchQuery.isEmpty()) {
-                                    Text(
-                                        stringResource(R.string.rag_home_search),
-                                        style = NexaraTypography.bodyMedium,
-                                        color = NexaraColors.OnSurfaceVariant
-                                    )
-                                }
-                                innerTextField()
-                            }
+                            placeholder = stringResource(R.string.rag_home_search)
                         )
                     }
                 }

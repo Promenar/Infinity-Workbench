@@ -32,12 +32,19 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePropertiesFile = file("K:/Nexara/secure_env/secure.properties")
+            // 兼容 macOS 与 Windows 路径
+            val secureEnvPath = if (System.getProperty("os.name").lowercase().contains("mac")) {
+                "/Users/promenar/Codex/Nexara/secure_env"
+            } else {
+                "K:/Nexara/secure_env"
+            }
+            
+            val keystorePropertiesFile = file("$secureEnvPath/secure.properties")
             if (keystorePropertiesFile.exists()) {
                 val keystoreProperties = Properties()
                 keystoreProperties.load(FileInputStream(keystorePropertiesFile))
                 
-                storeFile = file("K:/Nexara/secure_env/promenar.keystore")
+                storeFile = file("$secureEnvPath/promenar.keystore")
                 storePassword = keystoreProperties["KEYSTORE_PASSWORD"] as String
                 keyAlias = keystoreProperties["KEY_ALIAS"] as String
                 keyPassword = keystoreProperties["KEY_PASSWORD"] as String
@@ -127,6 +134,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // ─── 图片 (Multiplatform-Ready) ───
+    implementation("io.coil-kt.coil3:coil:3.0.0")
     implementation("io.coil-kt.coil3:coil-compose:3.0.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.0")
     implementation("io.coil-kt.coil3:coil-video:3.0.0")
@@ -146,6 +154,9 @@ dependencies {
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-code:$markdownRendererVersion")
+
+    // ─── 图片裁剪 (UCrop) ───
+    implementation("com.github.yalantis:ucrop:2.2.8")
 
     // ─── HTML 解析 ───
     implementation("org.jsoup:jsoup:1.17.2")

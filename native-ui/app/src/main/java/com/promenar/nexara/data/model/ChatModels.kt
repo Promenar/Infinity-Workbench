@@ -16,6 +16,9 @@ data class Agent(
     val temperature: Double? = 0.7,
     val topP: Double? = 0.9,
     val maxTokens: Int? = 4096,
+    val ragConfig: com.promenar.nexara.data.agent.AgentRagConfig? = null,
+    val retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig? = null,
+    val useInheritedConfig: Boolean = true,
     val createdAt: Long = 0L
 )
 

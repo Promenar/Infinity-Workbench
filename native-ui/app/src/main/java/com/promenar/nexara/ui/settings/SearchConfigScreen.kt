@@ -41,8 +41,7 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -249,16 +248,11 @@ fun SearchConfigScreen(
             )
         }
 
-        Slider(
+        NexaraSlider(
             value = uiState.resultCount.toFloat(),
             onValueChange = { viewModel.updateResultCount(it.toInt()) },
             valueRange = 1f..20f,
-            steps = 18,
-            colors = SliderDefaults.colors(
-                thumbColor = NexaraColors.Primary,
-                activeTrackColor = NexaraColors.Primary,
-                inactiveTrackColor = NexaraColors.OutlineVariant
-            )
+            steps = 18
         )
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -8,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -95,7 +94,7 @@ fun AgentEditScreen(
 
     val parsedColor = try {
         Color(android.graphics.Color.parseColor(selectedColor))
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         NexaraColors.Primary
     }
 
@@ -373,7 +372,7 @@ fun AgentEditScreen(
                             }
                         )
 
-                        Divider(color = NexaraColors.GlassBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+                        HorizontalDivider(color = NexaraColors.GlassBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
 
                         SettingsToggle(
                             title = "固定在侧边栏",

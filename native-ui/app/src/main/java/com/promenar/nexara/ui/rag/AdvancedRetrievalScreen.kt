@@ -46,10 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.NexaraPageLayout
-import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.common.ModelPicker
@@ -424,18 +421,11 @@ private fun AdaptiveSlider(
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
-        Slider(
+        NexaraSlider(
             value = value,
             onValueChange = if (enabled) onValueChange else { {} },
             valueRange = valueRange,
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = if (enabled) NexaraColors.Primary else NexaraColors.SurfaceHighest,
-                activeTrackColor = if (enabled) NexaraColors.Primary else NexaraColors.SurfaceHighest,
-                inactiveTrackColor = NexaraColors.SurfaceHighest,
-                disabledThumbColor = NexaraColors.SurfaceHighest,
-                disabledActiveTrackColor = NexaraColors.SurfaceHighest
-            )
+            enabled = enabled
         )
     }
 }

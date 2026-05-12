@@ -62,7 +62,7 @@ import com.promenar.nexara.data.local.db.entity.McpServerEntity
         CustomSkillEntity::class,
         McpServerEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

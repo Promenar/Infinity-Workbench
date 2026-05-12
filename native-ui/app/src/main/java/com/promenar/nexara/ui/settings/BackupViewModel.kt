@@ -30,6 +30,8 @@ data class BackupUiState(
     val lastBackupTime: Long = 0,
     val isExporting: Boolean = false,
     val isImporting: Boolean = false,
+    val progress: Float = 0f,
+    val statusMessage: String? = null,
     val error: String? = null
 )
 
@@ -94,13 +96,15 @@ class BackupViewModel(application: Application) : ViewModel() {
     fun performExport(outputStream: OutputStream) {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isExporting = true, error = null) }
-                val data = repository.prepareBackupPackage(_uiState.value)
+                _uiState.update { it.copy(isExporting = true, error = null, progress = 0f, statusMessage = "Starting Export...") }
+                val data = repository.prepareBackupPackage(_uiState.value) { p, m ->
+                    _uiState.update { it.copy(progress = p, statusMessage = m) }
+                }
                 outputStream.use { it.write(data) }
-                _uiState.update { it.copy(isExporting = false, lastBackupTime = System.currentTimeMillis()) }
+                _uiState.update { it.copy(isExporting = false, lastBackupTime = System.currentTimeMillis(), statusMessage = "Export Success") }
                 prefs.edit().putLong("last_backup_time", System.currentTimeMillis()).apply()
             } catch (e: Exception) {
-                _uiState.update { it.copy(isExporting = false, error = e.message) }
+                _uiState.update { it.copy(isExporting = false, error = e.message, statusMessage = "Export Failed") }
             }
         }
     }
@@ -108,11 +112,13 @@ class BackupViewModel(application: Application) : ViewModel() {
     fun performImport(inputStream: InputStream) {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isImporting = true, error = null) }
-                repository.restoreFromPackage(inputStream)
-                _uiState.update { it.copy(isImporting = false) }
+                _uiState.update { it.copy(isImporting = true, error = null, progress = 0f, statusMessage = "Starting Import...") }
+                repository.restoreFromPackage(inputStream) { p, m ->
+                    _uiState.update { it.copy(progress = p, statusMessage = m) }
+                }
+                _uiState.update { it.copy(isImporting = false, statusMessage = "Import Success") }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isImporting = false, error = e.message) }
+                _uiState.update { it.copy(isImporting = false, error = e.message, statusMessage = "Import Failed") }
             }
         }
     }
@@ -120,16 +126,18 @@ class BackupViewModel(application: Application) : ViewModel() {
     fun uploadToCloud() {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isExporting = true, error = null) }
-                val success = repository.uploadToWebDav(_uiState.value)
+                _uiState.update { it.copy(isExporting = true, error = null, progress = 0f, statusMessage = "Preparing Upload...") }
+                val success = repository.uploadToWebDav(_uiState.value) { p, m ->
+                    _uiState.update { it.copy(progress = p, statusMessage = m) }
+                }
                 if (success) {
-                    _uiState.update { it.copy(isExporting = false, lastBackupTime = System.currentTimeMillis()) }
+                    _uiState.update { it.copy(isExporting = false, lastBackupTime = System.currentTimeMillis(), statusMessage = "Cloud Upload Success") }
                     prefs.edit().putLong("last_backup_time", System.currentTimeMillis()).apply()
                 } else {
-                    _uiState.update { it.copy(isExporting = false, error = "WebDAV Upload Failed") }
+                    _uiState.update { it.copy(isExporting = false, error = "WebDAV Upload Failed", statusMessage = null) }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isExporting = false, error = e.message) }
+                _uiState.update { it.copy(isExporting = false, error = e.message, statusMessage = null) }
             }
         }
     }
@@ -137,15 +145,17 @@ class BackupViewModel(application: Application) : ViewModel() {
     fun downloadFromCloud(remoteFileName: String) {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isImporting = true, error = null) }
-                val success = repository.restoreFromWebDav(_uiState.value, remoteFileName)
+                _uiState.update { it.copy(isImporting = true, error = null, progress = 0f, statusMessage = "Connecting to Cloud...") }
+                val success = repository.restoreFromWebDav(_uiState.value, remoteFileName) { p, m ->
+                    _uiState.update { it.copy(progress = p, statusMessage = m) }
+                }
                 if (success) {
-                    _uiState.update { it.copy(isImporting = false) }
+                    _uiState.update { it.copy(isImporting = false, statusMessage = "Cloud Restore Success") }
                 } else {
-                    _uiState.update { it.copy(isImporting = false, error = "WebDAV Restore Failed") }
+                    _uiState.update { it.copy(isImporting = false, error = "WebDAV Restore Failed", statusMessage = null) }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isImporting = false, error = e.message) }
+                _uiState.update { it.copy(isImporting = false, error = e.message, statusMessage = null) }
             }
         }
     }

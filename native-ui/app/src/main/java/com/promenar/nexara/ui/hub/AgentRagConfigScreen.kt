@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.hub
 
+import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,10 +12,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -25,27 +28,27 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 fun AgentRagConfigScreen(
     agentId: String,
     scopeLabel: String,
+    viewModel: AgentEditViewModel = viewModel(factory = AgentEditViewModel.factory(LocalContext.current.applicationContext as Application)),
     onNavigateBack: () -> Unit
 ) {
-    var docChunkSize by remember { mutableFloatStateOf(800f) }
-    var chunkOverlap by remember { mutableFloatStateOf(100f) }
-    var memoryChunkSize by remember { mutableFloatStateOf(1000f) }
-    var contextWindow by remember { mutableFloatStateOf(20f) }
-    var summaryThreshold by remember { mutableFloatStateOf(10f) }
-    var summaryTemplate by remember { mutableStateOf("") }
-    var useInherited by remember { mutableStateOf(true) }
+    LaunchedEffect(agentId) {
+        viewModel.loadAgent(agentId)
+    }
+
+    val useInherited by viewModel.useInheritedConfig.collectAsState()
+    val ragConfig by viewModel.ragConfig.collectAsState()
     var showResetConfirm by remember { mutableStateOf(false) }
     var showTemplateEditor by remember { mutableStateOf(false) }
 
     FloatingTextEditor(
         show = showTemplateEditor,
         onDismiss = { showTemplateEditor = false },
-        onSave = {
-            summaryTemplate = it
+        onSave = { newTemplate ->
+            viewModel.updateRagConfig { it.copy(summaryTemplate = newTemplate) }
             showTemplateEditor = false
         },
         title = stringResource(R.string.agent_rag_section_summary),
-        initialText = summaryTemplate,
+        initialText = ragConfig.summaryTemplate,
         placeholder = stringResource(R.string.agent_rag_summary_placeholder)
     )
 
@@ -53,13 +56,7 @@ fun AgentRagConfigScreen(
         show = showResetConfirm,
         onDismiss = { showResetConfirm = false },
         onConfirm = {
-            useInherited = true
-            docChunkSize = 800f
-            chunkOverlap = 100f
-            memoryChunkSize = 1000f
-            contextWindow = 20f
-            summaryThreshold = 10f
-            summaryTemplate = ""
+            viewModel.resetToGlobal()
             showResetConfirm = false
         },
         title = stringResource(R.string.agent_rag_reset_title),
@@ -156,27 +153,21 @@ fun AgentRagConfigScreen(
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_chunk_size),
-                        value = docChunkSize,
-                        valueRange = 200f..2000f,
-                        step = 100f,
-                        displayValue = "${docChunkSize.toInt()} ${stringResource(R.string.agent_rag_unit_char)}",
+                        value = ragConfig.docChunkSize.toFloat(),
+                        valueRange = 100f..2000f,
+                        step = 50f,
+                        displayValue = "${ragConfig.docChunkSize.toInt()}",
                         enabled = true,
-                        onValueChange = {
-                            docChunkSize = it
-                            useInherited = false
-                        }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(docChunkSize = newVal) } }
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_overlap),
-                        value = chunkOverlap,
+                        value = ragConfig.chunkOverlap.toFloat(),
                         valueRange = 0f..500f,
-                        step = 50f,
-                        displayValue = "${chunkOverlap.toInt()} ${stringResource(R.string.agent_rag_unit_char)}",
+                        step = 10f,
+                        displayValue = "${ragConfig.chunkOverlap.toInt()}",
                         enabled = true,
-                        onValueChange = {
-                            chunkOverlap = it
-                            useInherited = false
-                        }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(chunkOverlap = newVal) } }
                     )
                 }
             }
@@ -198,39 +189,30 @@ fun AgentRagConfigScreen(
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_memory_chunk),
-                        value = memoryChunkSize,
-                        valueRange = 500f..2000f,
+                        value = ragConfig.memoryChunkSize.toFloat(),
+                        valueRange = 500f..3000f,
                         step = 100f,
-                        displayValue = "${memoryChunkSize.toInt()} ${stringResource(R.string.agent_rag_unit_char)}",
+                        displayValue = "${ragConfig.memoryChunkSize.toInt()}",
                         enabled = true,
-                        onValueChange = {
-                            memoryChunkSize = it
-                            useInherited = false
-                        }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(memoryChunkSize = newVal) } }
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_active_window),
-                        value = contextWindow,
+                        value = ragConfig.contextWindow.toFloat(),
                         valueRange = 10f..50f,
-                        step = 5f,
-                        displayValue = "${contextWindow.toInt()} ${stringResource(R.string.agent_rag_unit_messages)}",
+                        step = 1f,
+                        displayValue = "${ragConfig.contextWindow}",
                         enabled = true,
-                        onValueChange = {
-                            contextWindow = it
-                            useInherited = false
-                        }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(contextWindow = newVal.toInt()) } }
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_summary_threshold),
-                        value = summaryThreshold,
-                        valueRange = 5f..30f,
-                        step = 5f,
-                        displayValue = "${summaryThreshold.toInt()} ${stringResource(R.string.agent_rag_unit_messages)}",
+                        value = ragConfig.summaryThreshold.toFloat(),
+                        valueRange = 0f..30f,
+                        step = 1f,
+                        displayValue = "${ragConfig.summaryThreshold}",
                         enabled = true,
-                        onValueChange = {
-                            summaryThreshold = it
-                            useInherited = false
-                        }
+                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(summaryThreshold = newVal.toInt()) } }
                     )
                 }
             }
@@ -239,11 +221,7 @@ fun AgentRagConfigScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        if (!useInherited) showTemplateEditor = true
-                        else {
-                            useInherited = false
-                            showTemplateEditor = true
-                        }
+                        showTemplateEditor = true
                     },
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -266,23 +244,23 @@ fun AgentRagConfigScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
                                 .background(
-                                    if (summaryTemplate.isNotBlank()) NexaraColors.Primary.copy(alpha = 0.15f)
-                                    else NexaraColors.GlassSurface
+                                    if (ragConfig.summaryTemplate.isNotBlank()) NexaraColors.Primary.copy(alpha = 0.15f)
+                                    else NexaraColors.OnSurfaceVariant.copy(alpha = 0.1f)
                                 )
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = if (summaryTemplate.isNotBlank()) stringResource(R.string.agent_rag_summary_configured) else stringResource(R.string.agent_rag_summary_default),
+                                text = if (ragConfig.summaryTemplate.isNotBlank()) stringResource(R.string.agent_rag_summary_configured) else stringResource(R.string.agent_rag_summary_default),
                                 style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = if (summaryTemplate.isNotBlank()) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                                color = if (ragConfig.summaryTemplate.isNotBlank()) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
                             )
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = summaryTemplate.ifBlank { stringResource(R.string.agent_rag_summary_hint) },
+                        text = ragConfig.summaryTemplate.ifBlank { stringResource(R.string.agent_rag_summary_hint) },
                         style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                        color = if (summaryTemplate.isNotBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                        color = if (ragConfig.summaryTemplate.isNotBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
                         maxLines = 2
                     )
                 }
@@ -319,19 +297,12 @@ private fun RagConfigSlider(
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Slider(
+        NexaraSlider(
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange,
             steps = ((valueRange.endInclusive - valueRange.start) / step).toInt() - 1,
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = NexaraColors.Primary,
-                activeTrackColor = NexaraColors.Primary,
-                inactiveTrackColor = NexaraColors.SurfaceHighest,
-                disabledThumbColor = NexaraColors.Outline,
-                disabledActiveTrackColor = NexaraColors.OutlineVariant
-            )
+            enabled = enabled
         )
     }
 }

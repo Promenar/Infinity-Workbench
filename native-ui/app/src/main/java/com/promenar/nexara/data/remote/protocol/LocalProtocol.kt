@@ -10,17 +10,26 @@ class LocalProtocol(
     private val modelName: String = ""
 ) : LlmProtocol {
 
-    override val id: ProtocolId = ProtocolId.LOCAL
+    override val protocolType: ProtocolType = ProtocolType.Local
 
     private val promptTemplate: PromptTemplate by lazy {
         detectTemplate(modelName)
     }
 
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = flow {
-        val formattedPrompt = promptTemplate.format(
-            messages = request.messages,
-            tools = request.tools
-        )
+        val formattedPrompt = buildString {
+            append(promptTemplate.format(
+                messages = request.messages,
+                tools = request.tools
+            ))
+            
+            // Append image markers from all messages if any
+            request.messages.forEach { msg ->
+                msg.imageUrls?.forEach { img ->
+                    append("\n[Image: ${img.mimeType}]")
+                }
+            }
+        }
 
         val genConfig = GenerateConfig(
             maxTokens = request.maxTokens ?: 512,
@@ -36,10 +45,19 @@ class LocalProtocol(
     }
 
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
-        val formattedPrompt = promptTemplate.format(
-            messages = request.messages,
-            tools = request.tools
-        )
+        val formattedPrompt = buildString {
+            append(promptTemplate.format(
+                messages = request.messages,
+                tools = request.tools
+            ))
+            
+            // Append image markers
+            request.messages.forEach { msg ->
+                msg.imageUrls?.forEach { img ->
+                    append("\n[Image: ${img.mimeType}]")
+                }
+            }
+        }
 
         val genConfig = GenerateConfig(maxTokens = request.maxTokens ?: 512)
         val result = StringBuilder()

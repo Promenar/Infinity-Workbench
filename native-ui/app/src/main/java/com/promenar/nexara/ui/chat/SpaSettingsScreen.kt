@@ -52,7 +52,7 @@ import com.promenar.nexara.ui.common.CollapsibleSection
 import com.promenar.nexara.ui.common.ColorPickerPanel
 import com.promenar.nexara.ui.common.InferencePresets
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.SettingsInput
 import com.promenar.nexara.ui.common.SettingsSectionHeader
@@ -321,14 +321,9 @@ fun SpaSettingsScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
-                        Slider(
+                        NexaraSlider(
                             value = contextWindow,
-                            onValueChange = { spaViewModel.updateContextWindow(it) },
-                            colors = SliderDefaults.colors(
-                                thumbColor = NexaraColors.Primary,
-                                activeTrackColor = NexaraColors.Primary,
-                                inactiveTrackColor = NexaraColors.SurfaceHighest
-                            )
+                            onValueChange = { spaViewModel.updateContextWindow(it) }
                         )
                     }
                 }

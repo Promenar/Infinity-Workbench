@@ -103,13 +103,13 @@ class RagViewModel(
             _indexingStatus.value = currentTask?.let { task ->
                 when (task.status) {
                     "pending" -> "等待队列中..."
-                    "chunking" -> "正在切块处理..."
-                    "vectorizing" -> "正在发送切块并生成向量..."
-                    "saving" -> "正在保存向量入库..."
-                    "extracting" -> "正在提取知识图谱..."
-                    "failed" -> "处理失败: ${task.error ?: "未知错误"}"
-                    "completed" -> "处理完成"
-                    "warning" -> "处理完成 (存在警告)"
+                    "chunking" -> "正在对文档进行语义切块..."
+                    "vectorizing" -> "正在发送切块至模型处理..."
+                    "saving" -> "正在接受并持久化向量数据..."
+                    "extracting" -> "正在构建知识图谱节点..."
+                    "failed" -> "失败: ${task.error?.take(15) ?: "未知错误"}"
+                    "completed" -> "任务已完成"
+                    "warning" -> "完成 (存在部分提取警告)"
                     else -> task.status
                 }
             }

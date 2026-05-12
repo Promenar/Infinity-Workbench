@@ -68,8 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraPageLayout
-import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -934,15 +933,10 @@ private fun SettingsSlider(label: String, value: Float, range: ClosedFloatingPoi
             Text(label, style = NexaraTypography.labelMedium)
             Text("${value.toInt()}", style = NexaraTypography.labelMedium, color = NexaraColors.Primary)
         }
-        androidx.compose.material3.Slider(
+        NexaraSlider(
             value = value,
             onValueChange = onValueChange,
-            valueRange = range,
-            colors = androidx.compose.material3.SliderDefaults.colors(
-                thumbColor = NexaraColors.Primary,
-                activeTrackColor = NexaraColors.Primary,
-                inactiveTrackColor = NexaraColors.SurfaceVariant
-            )
+            valueRange = range
         )
     }
 }

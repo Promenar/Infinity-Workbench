@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -203,6 +204,7 @@ fun ChatScreen(
                 title = sessionTitle,
                 subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName,
                 onBack = onNavigateBack,
+                onWorkspace = { showWorkspaceSheet = true },
                 onSettings = { showModelSettingsSheet = true },
                 onClearHistory = { showClearDialog = true },
                 onRename = { showRenameDialog = true },
@@ -220,7 +222,7 @@ fun ChatScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
             Column(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = listState,
@@ -556,6 +558,7 @@ fun ChatTopBar(
     title: String,
     subtitle: String,
     onBack: () -> Unit,
+    onWorkspace: () -> Unit,
     onSettings: () -> Unit,
     onClearHistory: () -> Unit,
     onRename: () -> Unit,
@@ -578,7 +581,7 @@ fun ChatTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onSettings) {
+            IconButton(onClick = onWorkspace) {
                 Icon(Icons.Rounded.Tune, null, tint = NexaraColors.OnSurface)
             }
             Box {
@@ -591,11 +594,11 @@ fun ChatTopBar(
                     modifier = Modifier.background(NexaraColors.SurfaceContainer)
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_menu_clear_history), style = NexaraTypography.labelMedium) },
-                        leadingIcon = { Icon(Icons.Rounded.History, null, modifier = Modifier.size(18.dp)) },
+                        text = { Text(stringResource(R.string.chat_menu_session_settings), style = NexaraTypography.labelMedium) },
+                        leadingIcon = { Icon(Icons.Rounded.Tune, null, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             showMenu = false
-                            onClearHistory()
+                            onSettings()
                         }
                     )
                     DropdownMenuItem(

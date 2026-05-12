@@ -24,7 +24,7 @@ class AnthropicProtocol(
     httpClient: HttpClient? = null
 ) : LlmProtocol {
 
-    override val id: ProtocolId = ProtocolId.ANTHROPIC
+    override val protocolType: ProtocolType = ProtocolType.Anthropic_Messages
 
     private val httpClient: HttpClient = httpClient ?: HttpClient(OkHttp) {
         install(HttpTimeout) {
@@ -188,15 +188,45 @@ class AnthropicProtocol(
             put("messages", JsonArray(nonSystemMessages.map { msg ->
                 buildJsonObject {
                     put("role", msg.role)
+                    
+                    val contentParts = mutableListOf<JsonObject>()
+                    
+                    // 1. Handle Text Content
                     if (msg.content.isNotEmpty()) {
-                        put("content", msg.content)
-                    } else {
-                        put("content", "")
+                        contentParts.add(buildJsonObject {
+                            put("type", "text")
+                            put("text", msg.content)
+                        })
+                    }
+                    
+                    // 2. Handle Images
+                    msg.imageUrls?.forEach { img ->
+                        contentParts.add(buildJsonObject {
+                            put("type", "image")
+                            put("source", buildJsonObject {
+                                put("type", "base64")
+                                put("media_type", img.mimeType)
+                                put("data", img.base64 ?: "")
+                            })
+                        })
+                    }
+                    
+                    // 3. Handle Documents
+                    msg.documentData?.forEach { doc ->
+                        contentParts.add(buildJsonObject {
+                            put("type", "document")
+                            put("source", buildJsonObject {
+                                put("type", "base64")
+                                put("media_type", doc.mimeType)
+                                put("data", doc.base64 ?: "")
+                            })
+                        })
                     }
 
-                    if (msg.role == "assistant" && msg.toolCalls != null && msg.toolCalls.isNotEmpty()) {
-                        put("content", JsonArray(msg.toolCalls.map { tc ->
-                            buildJsonObject {
+                    // 4. Handle Assistant Tool Calls
+                    if (msg.role == "assistant" && !msg.toolCalls.isNullOrEmpty()) {
+                        msg.toolCalls.forEach { tc ->
+                            contentParts.add(buildJsonObject {
                                 put("type", "tool_use")
                                 put("id", tc.id)
                                 put("name", tc.name)
@@ -205,13 +235,23 @@ class AnthropicProtocol(
                                 } catch (_: Exception) {
                                     buildJsonObject {}
                                 })
-                            }
-                        }))
+                            })
+                        }
                     }
 
+                    // 5. Finalize Content Field
+                    if (contentParts.size == 1 && contentParts[0]["type"]?.jsonPrimitive?.content == "text" && msg.role != "tool") {
+                        // Optimization: plain text string if only one text part (and not a tool result which might prefer blocks)
+                        put("content", msg.content)
+                    } else if (contentParts.isNotEmpty()) {
+                        put("content", JsonArray(contentParts))
+                    } else {
+                        put("content", "")
+                    }
+
+                    // 6. Handle Tool Result metadata
                     if (msg.role == "tool") {
                         msg.toolCallId?.let { put("tool_use_id", it) }
-                        put("content", msg.content.ifEmpty { "" })
                     }
                 }
             }))

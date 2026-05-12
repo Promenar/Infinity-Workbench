@@ -30,7 +30,7 @@ class VertexAIProtocol(
     httpClient: HttpClient? = null
 ) : LlmProtocol {
 
-    override val id: ProtocolId = ProtocolId.VERTEX_AI
+    override val protocolType: ProtocolType = ProtocolType.Google_VertexAI
 
     private val httpClient: HttpClient = httpClient ?: HttpClient(OkHttp) {
         install(HttpTimeout) {
@@ -482,6 +482,42 @@ class VertexAIProtocol(
             else -> {
                 if (msg.content.isNotEmpty()) {
                     parts.add(buildJsonObject { put("text", msg.content) })
+                }
+                
+                msg.imageUrls?.forEach { img ->
+                    parts.add(buildJsonObject {
+                        put("inlineData", buildJsonObject {
+                            put("mimeType", img.mimeType)
+                            put("data", img.base64 ?: "")
+                        })
+                    })
+                }
+                
+                msg.audioData?.forEach { aud ->
+                    parts.add(buildJsonObject {
+                        put("inlineData", buildJsonObject {
+                            put("mimeType", aud.mimeType)
+                            put("data", aud.base64)
+                        })
+                    })
+                }
+                
+                msg.documentData?.forEach { doc ->
+                    if (doc.url != null) {
+                        parts.add(buildJsonObject {
+                            put("fileData", buildJsonObject {
+                                put("mimeType", doc.mimeType)
+                                put("fileUri", doc.url)
+                            })
+                        })
+                    } else {
+                        parts.add(buildJsonObject {
+                            put("inlineData", buildJsonObject {
+                                put("mimeType", doc.mimeType)
+                                put("data", doc.base64 ?: "")
+                            })
+                        })
+                    }
                 }
             }
         }

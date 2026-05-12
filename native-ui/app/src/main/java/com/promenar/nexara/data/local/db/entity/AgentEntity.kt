@@ -26,4 +26,10 @@ data class AgentEntity(
     val temperature: Double? = null,
     val top_p: Double? = null,
     val max_tokens: Int? = null,
+    @ColumnInfo(name = "rag_config")
+    val ragConfig: com.promenar.nexara.data.agent.AgentRagConfig? = null,
+    @ColumnInfo(name = "retrieval_config")
+    val retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig? = null,
+    @ColumnInfo(name = "use_inherited_config")
+    val useInheritedConfig: Boolean = true,
 )

@@ -2,7 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+- [Provider] **协议类型体系升级**：将 `ProtocolId` 枚举重构为 `ProtocolType` sealed class，支持 9 种协议类型（OpenAI Chat/Responses、Anthropic Messages、Google VertexAI、Cohere Chat、Mistral Chat、DeepSeek、通用 OpenAI 兼容、本地推理），包含独立 `ProtocolSelector` UI 组件
+- [Provider] **ProviderManager 统一数据源**：引入全站单一数据源单例，统一管理提供商 CRUD、模型状态、预设模型选择，取代散落在 SettingsViewModel 和 NexaraApplication 中的冗余逻辑
+- [Provider] **多模态协议支持**：在 `PromptRequest` 和 `ProtocolMessage` 中新增 `images`/`audio`/`documents` 字段，OpenAI/Anthropic/VertexAI/Local 协议实现均已支持多模态内容块构建
+- [Provider] **GenericOpenAICompatProtocol**：新增通用 OpenAI 兼容协议实现，支持 Ollama/vLLM/LiteLLM/LocalAI 等任意兼容端点
+- [Model DB] **内置模型数据库全面刷新**：`ModelCapabilities` 维度从 6 扩展至 12（含 audio_input/output、video_understanding、structured_output 等），新增 50+ 2025-2026 年主流模型条目
+- [UI/Provider] **协议类型选择器**：新增 `ProtocolSelector` 可组合组件，支持 8 种远程协议类型的独立选择
+
 ### Fixed
+- [Provider] **编辑回填修复**：进入已有提供商编辑页时，名称/BaseURL/API密钥/协议类型现在正确从持久化存储加载并回填
+- [Provider] **页面标题动态化**：提供商编辑页标题现在显示实际提供商名称（替代硬编码的 "Provider"）
+- [Model] **全站模型选择器同步**：修复 ProviderModelsScreen 配置模型后，设置页 4 个预设模型选择器（摘要/图片/嵌入/重排）不同步的问题，引入 `derivedStateOf` + `refreshProviderModels()` 刷新机制
+
+### Changed
+- [Architecture] **ProviderListItem 提取为共享数据模型**：从 `SettingsViewModel` 迁移至独立的 `data/model/ProviderModels.kt`，新增 `protocolType` 和 `apiKey` 字段
+- [Architecture] **ProviderConfig 统一**：从 `NexaraApplication` 内联类迁移至 `ProviderModels.kt`，作为 ProviderManager 的标准返回类型
+- [Stability] **解决多处编译错误与测试失败**：修复了 `ChatScreen.kt` 和 `NavGraph.kt` 中缺失的引用；修正了 `ModelSpecs.kt` 的匹配优先级顺序；修复了 `ContextBuilderTest` 和 `ModelSpecsTest` 中的逻辑断言错误。
 - [Stability] **运行时崩溃修复**：彻底解决了 Markdown 渲染过程中由横向滚动条测量无限宽度引起的 `IllegalStateException` 闪退问题。
 - [UI/Chat] **模型选择器补完**：修复了真机环境下模型选择器全为空的 Bug，补全了 `SettingsViewModel` 在获取模型时缺失的 `chat` 能力标签映射。
 - [UI/Chat] **上下文上限动态计算**：优化了 Token 占用指示器的上限获取逻辑，支持通过本地 SharedPrefs 动态匹配不同模型的 Context Length，修复了上限恒定为 128k 的问题。

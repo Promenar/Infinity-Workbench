@@ -73,7 +73,7 @@
     <string name="shared_btn_regenerate">Regenerate</string>
 
     <!-- ============ Hub ============ -->
-    <string name="hub_title">Agents</string>
+    <string name="hub_title">Nexara</string>
     <string name="hub_subtitle">Your AI Assistant Team</string>
     <string name="hub_search_placeholder">Search agents…</string>
     <string name="hub_btn_add_agent">Add Agent</string>
@@ -230,6 +230,7 @@
     <string name="settings_btn_save">Save</string>
     <string name="settings_btn_cancel">Cancel</string>
     <string name="settings_btn_delete">Delete</string>
+    <string name="settings_edit_avatar">Edit Avatar</string>
 
     <!-- ============ Chat ============ -->
     <!-- ChatScreen -->

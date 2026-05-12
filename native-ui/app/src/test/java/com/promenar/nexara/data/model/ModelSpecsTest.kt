@@ -249,7 +249,7 @@ class ModelSpecsTest {
         @Test
         @DisplayName("Spec count matches TS source")
         fun specCount() {
-            assertThat(MODEL_SPECS).hasSize(80)
+            assertThat(MODEL_SPECS).hasSize(120)
         }
 
         @Test
