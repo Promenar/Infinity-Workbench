@@ -358,19 +358,12 @@ class SettingsViewModel(
                         val spec = com.promenar.nexara.data.model.findModelSpec(id)
                         val type = spec?.type?.name?.lowercase() ?: "chat"
                         ModelInfo(
-                            name = id, id = id,
+                            name = spec?.note ?: id, id = id,
                             description = spec?.note ?: "Fetched model",
                             enabled = false, type = type,
                             contextLength = spec?.contextLength ?: 8192,
                             providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
-                            capabilities = buildList {
-                                add("chat")
-                                spec?.capabilities?.let { caps ->
-                                    if (caps.vision) add("vision")
-                                    if (caps.internet) add("internet")
-                                }
-                                if (type == "reasoning") add("reasoning")
-                            }
+                            capabilities = pm.buildModelCapabilities(type, spec)
                         )
                     }
                     newModels.forEach { pm.addModel(it) }
@@ -389,19 +382,12 @@ class SettingsViewModel(
         val spec = com.promenar.nexara.data.model.findModelSpec(id)
         val type = spec?.type?.name?.lowercase() ?: "chat"
         val newModel = ModelInfo(
-            name = name.ifEmpty { id }, id = id,
+            name = name.ifEmpty { spec?.note ?: id }, id = id,
             description = spec?.note ?: "Custom model",
             enabled = true, type = type,
             contextLength = spec?.contextLength ?: 8192,
             providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
-            capabilities = buildList {
-                add("chat")
-                spec?.capabilities?.let { caps ->
-                    if (caps.vision) add("vision")
-                    if (caps.internet) add("internet")
-                }
-                if (type == "reasoning") add("reasoning")
-            }
+            capabilities = pm.buildModelCapabilities(type, spec)
         )
         pm.addModel(newModel)
     }

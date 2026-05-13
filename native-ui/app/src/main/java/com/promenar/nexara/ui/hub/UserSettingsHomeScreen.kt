@@ -410,6 +410,24 @@ private fun AppSettingsContent(
     onShowModelPicker: (String) -> Unit,
     onAboutClick: () -> Unit
 ) {
+    // 收集模型列表用于解析模型 ID → 友好名称
+    val allModels by viewModel.providerModels.collectAsState()
+
+    /**
+     * 将模型 ID 解析为友好的显示名称。
+     * 优先级：已加载模型的 name → ModelSpec.note → 原始 ID
+     */
+    fun resolveModelName(id: String): String {
+        if (id.isEmpty()) return ""
+        val loaded = allModels.find { it.id == id }
+        if (loaded != null && loaded.name.isNotEmpty() && loaded.name != id) {
+            return loaded.name
+        }
+        // 回退：从静态模型规格表查找友好名称
+        val spec = com.promenar.nexara.data.model.findModelSpec(id)
+        return spec?.note ?: id
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp),
@@ -445,7 +463,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Psychology,
                 title = stringResource(R.string.settings_model_summary),
-                subtitle = summaryId.ifEmpty { stringResource(R.string.settings_not_set) },
+                subtitle = resolveModelName(summaryId).ifEmpty { stringResource(R.string.settings_not_set) },
                 onClick = { onShowModelPicker("summary") }
             )
         }
@@ -454,7 +472,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Image,
                 title = stringResource(R.string.settings_model_image),
-                subtitle = imageId.ifEmpty { stringResource(R.string.settings_not_set) },
+                subtitle = resolveModelName(imageId).ifEmpty { stringResource(R.string.settings_not_set) },
                 onClick = { onShowModelPicker("image") }
             )
         }
@@ -463,7 +481,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Link,
                 title = stringResource(R.string.settings_model_embedding),
-                subtitle = embeddingId.ifEmpty { stringResource(R.string.settings_not_set) },
+                subtitle = resolveModelName(embeddingId).ifEmpty { stringResource(R.string.settings_not_set) },
                 onClick = { onShowModelPicker("embedding") }
             )
         }
@@ -472,7 +490,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Route,
                 title = stringResource(R.string.settings_model_rerank),
-                subtitle = rerankId.ifEmpty { stringResource(R.string.settings_not_set) },
+                subtitle = resolveModelName(rerankId).ifEmpty { stringResource(R.string.settings_not_set) },
                 onClick = { onShowModelPicker("rerank") }
             )
         }

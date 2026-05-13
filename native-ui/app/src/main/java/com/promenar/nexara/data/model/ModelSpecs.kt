@@ -1117,6 +1117,7 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         pattern = ModelPattern.RegexPattern(Regex("""bge-reranker""", RegexOption.IGNORE_CASE)),
         contextLength = 4096,
         type = ModelType.RERANK,
+        capabilities = ModelCapabilities(rerank = true),
         icon = "rerank",
         note = "BGE Reranker"
     ),
@@ -1124,6 +1125,7 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         pattern = ModelPattern.RegexPattern(Regex("""jina-reranker""", RegexOption.IGNORE_CASE)),
         contextLength = 8192,
         type = ModelType.RERANK,
+        capabilities = ModelCapabilities(rerank = true),
         icon = "rerank",
         note = "Jina Reranker"
     ),
@@ -1131,6 +1133,7 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         pattern = ModelPattern.RegexPattern(Regex("""cohere-rerank""", RegexOption.IGNORE_CASE)),
         contextLength = 4096,
         type = ModelType.RERANK,
+        capabilities = ModelCapabilities(rerank = true),
         icon = "rerank",
         note = "Cohere Rerank"
     ),

@@ -199,21 +199,101 @@ class ProviderManager private constructor(private val app: Application) {
             return
         }
         val enabledSet = settingsPrefs.getStringSet("enabled_models", emptySet()) ?: emptySet()
+        var migrated = false
         val models = allIds.map { id ->
             val prefix = "model_info_$id"
-            val caps = settingsPrefs.getStringSet("${prefix}_caps", emptySet()) ?: emptySet()
-            ModelInfo(
-                name = settingsPrefs.getString("${prefix}_name", id) ?: id,
+            val storedName = settingsPrefs.getString("${prefix}_name", id) ?: id
+            val storedCaps = settingsPrefs.getStringSet("${prefix}_caps", emptySet()) ?: emptySet()
+            val type = settingsPrefs.getString("${prefix}_type", "chat") ?: "chat"
+            val contextLength = settingsPrefs.getInt("${prefix}_context", 8192)
+            val providerName = settingsPrefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
+            val enabled = enabledSet.contains(id)
+
+            val model = ModelInfo(
+                name = storedName,
                 id = id,
                 description = "",
-                enabled = enabledSet.contains(id),
-                type = settingsPrefs.getString("${prefix}_type", "chat") ?: "chat",
-                contextLength = settingsPrefs.getInt("${prefix}_context", 8192),
-                capabilities = caps.toList(),
-                providerName = settingsPrefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
+                enabled = enabled,
+                type = type,
+                contextLength = contextLength,
+                capabilities = storedCaps.toList(),
+                providerName = providerName
             )
+
+            // 迁移逻辑：自动修复名称和能力
+            val migratedModel = migrateModelIfNeeded(model)
+            if (migratedModel !== model) {
+                migrated = true
+            }
+            migratedModel
         }.sortedByDescending { it.enabled }
+
         _providerModels.value = models
+
+        // 如果发生了迁移，自动保存以持久化修正后的数据
+        if (migrated) {
+            persistModels()
+        }
+    }
+
+    /**
+     * 检测并修复模型的元数据（名称和能力）。
+     * 针对旧版本中 name = id 或 capabilities 构建不全的问题。
+     */
+    private fun migrateModelIfNeeded(model: ModelInfo): ModelInfo {
+        val spec = com.promenar.nexara.data.model.findModelSpec(model.id) ?: return model
+        var changed = false
+
+        // 1. 修复名称：如果是原始 ID 且 Spec 中有更好的名字，则替换
+        val newName = if (model.name == model.id && spec.note?.isNotEmpty() == true) {
+            changed = true
+            spec.note!!
+        } else model.name
+
+        // 2. 修复能力：如果存储的能力集不完整（如 Rerank 模型没有 rerank 标签）
+        val currentCaps = model.capabilities.toSet()
+        val correctCaps = buildModelCapabilities(model.type, spec)
+        val newCaps = if (currentCaps != correctCaps.toSet()) {
+            changed = true
+            correctCaps
+        } else model.capabilities
+
+        return if (changed) {
+            model.copy(name = newName, capabilities = newCaps)
+        } else model
+    }
+
+    /**
+     * 根据 ModelType 和 ModelSpec 构建完整的 capability 列表。
+     */
+    fun buildModelCapabilities(
+        type: String,
+        spec: com.promenar.nexara.data.model.ModelSpec?
+    ): List<String> = buildList {
+        // 根据 ModelType 推导基础 capability
+        when (type) {
+            "chat" -> add("chat")
+            "reasoning" -> { add("chat"); add("reasoning") }
+            "image" -> add("image")
+            "embedding" -> add("embedding")
+            "rerank" -> add("rerank")
+            else -> add("chat")
+        }
+        // 从 ModelSpec.capabilities 补充细粒度能力
+        spec?.capabilities?.let { caps ->
+            if (caps.vision && "vision" !in this) add("vision")
+            if (caps.internet && "web" !in this) add("web")
+            if (caps.reasoning && "reasoning" !in this) add("reasoning")
+            if (caps.image && "image" !in this) add("image")
+            if (caps.embedding && "embedding" !in this) add("embedding")
+            if (caps.rerank && "rerank" !in this) add("rerank")
+            if (caps.audioInput) add("audioinput")
+            if (caps.audioOutput) add("audiooutput")
+            if (caps.videoUnderstanding) add("videounderstanding")
+            if (caps.structuredOutput) add("structuredoutput")
+            if (caps.promptCaching) add("promptcaching")
+            if (caps.computerUse) add("computeruse")
+        }
     }
 
     fun toggleModel(id: String) {

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 通用设置默认模型选择器修复 (2026-05-13)
+- **P0 capabilities 构建缺陷**: 修复 `SettingsViewModel.refreshModels()` 和 `addCustomModel()` 中 capabilities 构建逻辑仅处理 chat/vision/internet/reasoning 四种能力，完全遗漏 image/embedding/rerank 及其他 9 种能力标签的严重缺陷。抽取统一的 `buildModelCapabilities()` 方法，根据 ModelType 自动推导基础 capability，并从 ModelSpec.capabilities 补充全部 12 种细粒度能力。
+- **P0 自动迁移逻辑**: 在 `ProviderManager.loadModels()` 中实装自动迁移机制。应用启动加载模型时，若检测到模型的 `name` 等于 `id` 或 `capabilities` 不完整，将依据 `ModelSpecs` 静态规格表自动修复并静默持久化到 `SharedPreferences`。这解决了老用户升级后无需重新获取列表即可修复显示名称和功能过滤的问题。
+- **P0 subtitle 显示名称**: 修复四个预设模型设置项（摘要/图像/嵌入/重排）的 subtitle 直接显示原始模型 ID 的问题，新增 `resolveModelName()` 辅助函数，优先从已加载模型列表查找友好名称，回退到 ModelSpec.note 静态规格表。
+- **P1 ModelSpecs 数据补全**: 为 bge-reranker、jina-reranker、cohere-rerank 三个 Rerank 模型补全缺失的 `capabilities = ModelCapabilities(rerank = true)` 定义。
+- **P1 internet→web 命名对齐**: 将 capabilities 中的 `internet` 映射修正为 `web`，与 `ModelCapability.WEB` 枚举一致。
+- **P1 模型名称优化**: `refreshModels()` 和 `addCustomModel()` 中模型的 `name` 字段从原始 ID 改为优先使用 `ModelSpec.note`（如 "DALL-E Series"、"BGE Reranker"）。
+
+
 ### 领域层与仓库层架构迁移 (Phase 2a/2c) (2026-05-13)
 - **核心架构演进**: 建立了纯净的 Domain 层（模型、接口、枚举），完全消除业务逻辑对 Android 框架的依赖。
 - **Repository 全量实装**: 实现了 Agent、Document、Vector、KnowledgeGraph、Provider 等核心仓储，Repository 覆盖率提升至 100%。
