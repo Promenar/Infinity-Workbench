@@ -175,7 +175,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             app.skillRepository.getAllCustomSkills().collectLatest { all ->
                 // Filter out any skills that might have IDs matching preset skills to avoid duplication in UI
-                val presetIds = setOf("web_search", "calculator", "current_time", "weather_lookup", "create_tool")
+                val presetIds = setOf("web_search", "calculator", "current_time", "create_tool")
                 _userSkills.value = all.filter { it.id !in presetIds }
             }
         }
@@ -273,7 +273,7 @@ class SettingsViewModel(
 
     private fun loadSkills() {
         val enabledSet = prefs.getStringSet("enabled_skills", setOf(
-            "web_search", "calculator", "current_time", "weather_lookup", "create_tool"
+            "web_search", "calculator", "current_time", "create_tool"
         ))
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
@@ -281,7 +281,6 @@ class SettingsViewModel(
             SkillInfo("search_searxng", app.getString(R.string.skill_searxng), app.getString(R.string.skill_searxng_desc), enabledSet?.contains("search_searxng") ?: true),
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
             SkillInfo("current_time", app.getString(R.string.skill_current_time), app.getString(R.string.skill_current_time_desc), enabledSet?.contains("current_time") ?: true),
-            SkillInfo("weather_lookup", app.getString(R.string.skill_weather), app.getString(R.string.skill_weather_desc), enabledSet?.contains("weather_lookup") ?: true),
             SkillInfo("create_tool", app.getString(R.string.skill_create_tool), app.getString(R.string.skill_create_tool_desc), enabledSet?.contains("create_tool") ?: true)
         )
     }

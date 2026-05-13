@@ -14,12 +14,13 @@ class VectorizationQueue(
     private val documentDao: DocumentDao,
     private val vectorDao: VectorDao,
     private val vectorizationTaskDao: VectorizationTaskDao,
-    private val ragConfig: RagConfiguration = RagConfiguration()
+    private val ragConfig: RagConfiguration = RagConfiguration(),
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
     private val queue = mutableListOf<VectorizationTask>()
     private var isProcessing = false
     private val retryCountMap = mutableMapOf<String, Int>()
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val scope = CoroutineScope(dispatcher + SupervisorJob())
 
     private var onStateChange: ((List<VectorizationTask>, VectorizationTask?) -> Unit)? = null
 
@@ -114,6 +115,7 @@ class VectorizationQueue(
             }
             retryCountMap.remove(task.id)
             task.progress = 100.0
+            notifyStateChange()  // 通知"已完成"状态（必须在移除队列前）
             removeTaskFromDb(task.id)
         } catch (error: Exception) {
             val msg = error.message?.lowercase() ?: ""
@@ -140,6 +142,9 @@ class VectorizationQueue(
                 task.status = "failed"
                 task.error = getFriendlyErrorMessage(error)
                 saveTaskToDb(task)
+
+                // 通知"失败"状态（必须在移除队列前）
+                notifyStateChange()
 
                 if (task.type == "document" && task.docId != null && !task.skipVectorization) {
                     documentDao.updateVectorized(task.docId, -1)

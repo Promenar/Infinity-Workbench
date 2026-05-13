@@ -237,14 +237,16 @@ fun createAgent(...) {
 | FTS5 全文检索 | ✅ VectorFtsEntity | 🟢 |
 | 余弦相似度检索 | ✅ VectorStore | 🟢 |
 | 混合检索（向量 + FTS） | 🟡 结构就绪，未集成 | 🟡 |
+| Embedding 配置回退 | ✅ 空键回退到主 LLM Provider (2026-05-14) | 🟢 |
 | Embedding 本地降级 | ❌ 未实现 | 🔴 |
 | 查询重写 | 🟡 Config 字段存在，逻辑待实现 | 🟡 |
-| Rerank 重排序 | 🟡 Config 字段存在，逻辑待实现 | 🟡 |
+| Rerank 重排序 | ✅ MemoryManager 已集成 rerankClient (2026-05-14) | 🟢 |
 | ContextBuilder（多源调度） | ✅ 核心调度器已实现 | 🟢 |
 | RAG 进度指示器 | ✅ RagOmniIndicator | 🟢 |
 | 会话记忆向量化 | ✅ 已实现 | 🟢 |
+| 图像生成工具 | ✅ ImageGenerationSkill (2026-05-14) | 🟢 |
 
-**评级**: 🟡 **核心管线就绪，降级方案和高级检索待完善（~70%）**
+**评级**: 🟢 **核心管线完整，降级方案和查询重写待完善（~85%）**
 
 ### 2.5 知识图谱
 
@@ -265,14 +267,14 @@ fun createAgent(...) {
 | 功能 | 实现状态 | 评级 |
 |------|---------|------|
 | Function Calling | ✅ 三协议支持 | 🟢 |
-| 审批循环（Semi-Automatic） | ✅ ApprovalManager | 🟢 |
-| 工具注册表 | 🟡 基础工具（搜索、代码执行） | 🟡 |
-| 执行时间轴 | 🟡 基础 Timeline 实现 | 🟡 |
+| 审批循环（Semi-Automatic） | ✅ ApprovalManager + ApprovalCard UI | 🟢 |
+| 工具注册表 | 🟡 基础工具（搜索、计算器、时间、天气、CreateTool） | 🟡 |
+| 执行时间轴 | ✅ 完整 UI 接入（ToolExecutionTimeline + TOOL 卡片 + 流式指示器） | 🟢 |
 | MCP 协议 | 🟡 McpServerEntity 存在，客户端未实现 | 🟡 |
 | HTML Artifacts | 🟡 ArtifactEntity 存在，编辑器未实现 | 🟡 |
 | 网络搜索 | 🟡 Gemini/VertexAI 原生搜索可用 | 🟡 |
 
-**评级**: 🟡 **基础管线就绪，工具生态待丰富（~30%）**
+**评级**: 🟡 **基础管线就绪，工具生态待丰富（~35%）**
 
 ---
 
@@ -284,7 +286,7 @@ fun createAgent(...) {
 对话引擎 (Chat)          ████████░░  80%   Markdown 渲染优化
 RAG 知识引擎             ███████░░░  70%   本地降级/混合检索/PDF导入
 知识图谱 (KG)            ██████░░░░  60%   可视化 / 多维视图
-Agent 引擎               ███░░░░░░░  30%   MCP/工具丰富/执行时间轴
+Agent 引擎               ████░░░░░░  35%   MCP/工具多模态接入
 Provider 管理            █████████░  90%   本地推理集成
 Token 统计               ██████░░░░  60%   仪表盘 UI 待完善
 数据备份与恢复           ████░░░░░░  40%   WebDAV / 完整恢复
@@ -294,7 +296,7 @@ Welcome 引导             ██████████ 100%   已完成
 本地推理                 ██████░░░░  60%   llama.cpp 集成待调通
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-总体进度                  ██████░░░░  62%
+总体进度                  ██████░░░░  63%
 ```
 
 ### 3.1 已完成（✅）
@@ -307,7 +309,7 @@ Welcome 引导             ██████████ 100%   已完成
 | Agent 基础 | AgentHubScreen、AgentEditScreen（含自动保存）、AgentRagConfig、AgentAdvancedRetrieval |
 | 对话核心流 | ChatScreen + ChatViewModel、流式对话、消息气泡、会话创建/删除 |
 | RAG 存储 | VectorStore、EmbeddingClient（远程 API）、DocumentImporter（TXT/MD）、FTS5 |
-| 知识图谱存储 | KgNodeEntity/KgEdgeEntity、GraphExtractor（LLM 抽取）、JIT 缓存 |
+| 知识图谱存储 | KgNodeEntity/KgEdgeEntity、GraphExtractor（LLM 抽取）、MicroGraphExtractor（JIT）、知识库长按菜单手动触发 |
 | 上下文构建 | ContextBuilder 多源调度、RagOmniIndicator 检索指示器 |
 | 本地推理引擎 | llama.cpp JNI 绑定、GGUF 解析、GPU 检测、模型下载管理 |
 | 通用组件 | NexaraGlassCard、ModelPicker、Markdown 渲染（mikepenz 定制） |

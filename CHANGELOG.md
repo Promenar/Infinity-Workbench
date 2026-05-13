@@ -3,6 +3,39 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### 图像生成工具 (2026-05-14)
+- **新增 `ImageGenerationSkill`**: LLM 可调用 `generate_image` 工具，传递提示词和参数（size/quality/style），调用默认图像模型生成图片，结果内联展示在对话气泡中
+- **新增 `ImageGenClient`**: OpenAI-compatible 图像生成 API 客户端（`POST /v1/images/generations`），支持 url/b64_json 响应，自动下载到本地存储
+- **新增 `GeneratedImageData`**: 图片本地存储元信息序列化类，存入 `Message.images` 字段
+- **ChatBubble 图片渲染**: `AsyncImage` 内联展示生成图片，附带模型改写后的提示词
+- **ToolExecutor 增强**: `images = result.data` 传递工具生成的图片数据到 Message
+- **架构**: 支持 LLM 聊天与图像生成使用不同端点（通过 ProviderManager 独立读取 `preset_image_model`）
+
+### RAG 嵌入管线修复 (2026-05-14)
+- **🔴 P0 致命 Bug**: `embedding_base_url` / `embedding_api_key` 永为空——ProviderManager 写入 `base_url`/`api_key` 键，但 EmbeddingClient 读取 `embedding_base_url`/`embedding_api_key` 键，导致嵌入模型从未收到配置 → 修复为键名缺失时回退到主 LLM 提供商配置
+- **🔴 P0 致命 Bug**: `RagHomeScreen` 第 407 行 `shownDocs.isEmpty()` 逻辑反转 → 文档列表永不为空时反而不渲染 → 修复为 `isNotEmpty()`
+- **🟡 次要 Bug**: `VectorizationQueue.notifyStateChange()` 在完成/失败后缺失调用，外部观察者收不到终态 → 补充调用
+- **🟡 次要 Bug**: `RagViewModel` 向量化失败后 `isIndexing=false` 导致错误提示随进度条消失 → 新增 `lastQueueError` 持久化状态
+
+### RAG 重排管线修复 (2026-05-14)
+- **🔴 P0 致命 Bug**: `RerankClient.rerank()` 从未被调用——`MemoryManager` 构造函数不包含 `rerankClient` 参数，`retrieveContext()` 缺失重排步骤 → 注入 `rerankClient` 并在去重后、类型过滤前插入 rerank 调用
+- **🟡 防护**: `RerankClient.rerank()` 新增空配置前置检查（同 EmbeddingClient），避免静默吞错
+
+### AGP 构建警告消除 (2026-05-14)
+- `jniLibs.srcDirs()` → 删除整个 `sourceSets` 块（`src/main/jniLibs` 是 AGP 默认目录）
+- `disallowKotlinSourceSets=false` → 保留（KSP Room compiler 必需），注释说明原因
+
+### 单元测试 (2026-05-14)
+- **新增 `EmbeddingClientTest.kt`** — 21 个测试：构造/URL构建/响应解析/大请求分片/本地引擎回退/空配置检测
+- **新增 `VectorizationQueueTest.kt`** — 23 个测试：入队/进度状态机/重试逻辑/失败处理/增量哈希/预处理/中断恢复
+- **扩展 `RagViewModelTest.kt`** — 6 个测试：`lastQueueError` 错误持久化/队列状态观测
+- **测试结果**: 101 tests, 98% 通过率 (2 预存失败)
+
+### 聊天界面体验优化 (2026-05-14)
+- **优化聊天流式输出体验**: 加入 MessageManager 节流（100ms）减少 UI 重绘，改进 SmoothStreamContent 动画衔接防止瞬间跳变。
+- **增强自动滚动稳定性**: 优化 ChatScreen 滚动监听逻辑，采用 50ms 批处理与锚点定位，解决高频输出下的滚动卡顿。
+- **修复 AI 生成开始时的视图对齐问题**: 确保新气泡自动置顶。
+- **引入 `bottom_spacer` 锚点**: 提升长会话末尾滚动定位精度，确保长消息生成的末尾始终能被准确推入视口。
 
 ### Phase 5 — UseCase 层抽取方案 (2026-05-13)
 - **实施计划**: `.agent/plans/20260513-phase5-usecase-extraction.md`

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- ============ Common Components ============ -->
     <!-- ModelPicker -->
@@ -275,6 +275,9 @@
     <string name="chat_tool_pipeline_running">正在运行顺序任务</string>
     <string name="chat_tool_running">运行中</string>
     <string name="chat_tool_completed">已完成</string>
+    <string name="chat_tool_pipeline_completed">所有工具执行完成</string>
+    <string name="chat_tool_result">工具结果</string>
+    <string name="chat_tool_selecting">正在选择工具…</string>
     <string name="chat_approval_required">需要审批</string>
     <string name="chat_approval_executed">已执行</string>
     <string name="chat_approval_desc_tool">Agent 请求执行工具权限，这可能会改变系统状态或产生外部影响。</string>
@@ -500,7 +503,7 @@
     <string name="search_config_depth_advanced">高级</string>
 
     <!-- SkillsScreen -->
-    <string name="skills_title">Agent 工具</string>
+    <string name="skills_title">工具管理</string>
     <string name="skills_desc">配置 AI 助手的能力与外部工具连接。</string>
     <string name="skills_loop_limit">执行循环限制</string>
     <string name="skills_loop_limit_desc">每次请求的最大工具调用迭代次数</string>
@@ -529,8 +532,6 @@
     <string name="skill_calculator_desc">执行数学计算</string>
     <string name="skill_current_time">当前时间</string>
     <string name="skill_current_time_desc">获取当前的日期与时间</string>
-    <string name="skill_weather">天气查询</string>
-    <string name="skill_weather_desc">获取指定地点的实时天气状况</string>
     <string name="skill_create_tool">创建工具</string>
     <string name="skill_create_tool_desc">通过元工具创建新的自定义技能</string>
     <string name="skills_configure">配置</string>
@@ -602,6 +603,9 @@
     <string name="rag_home_move">移动</string>
     <string name="rag_home_reindex">重新向量化</string>
     <string name="rag_home_move_to_folder">移动到文件夹</string>
+    <string name="rag_home_extract_kg">抽取知识图谱</string>
+    <string name="rag_home_extract_kg_full">全量抽取（所有分块）</string>
+    <string name="rag_home_extract_kg_summary">摘要优先（采样抽取）</string>
     <string name="rag_home_delete_confirm_title">删除 %1$d 项？</string>
     <string name="rag_home_docs_count">%1$d 文档</string>
 

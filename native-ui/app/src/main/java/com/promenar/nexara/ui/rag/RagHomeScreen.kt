@@ -6,6 +6,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +44,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -106,6 +110,7 @@ fun RagHomeScreen(
     val indexingProgress by viewModel.indexingProgress.collectAsState()
     val indexingStatus by viewModel.indexingStatus.collectAsState()
     val indexingSubStatus by viewModel.indexingSubStatus.collectAsState()
+    val lastQueueError by viewModel.lastQueueError.collectAsState()
     val documents by viewModel.documents.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
 
@@ -289,6 +294,16 @@ fun RagHomeScreen(
                     }
                 }
 
+                if (lastQueueError != null && !isIndexing) {
+                    item {
+                        IndexingProgressBar(
+                            progress = 0f,
+                            statusText = lastQueueError,
+                            subStatusText = "请检查 Embedding 模型配置后重新导入"
+                        )
+                    }
+                }
+
                 when (currentView) {
                     PortalView.DOCUMENTS -> {
                         item {
@@ -393,7 +408,8 @@ fun RagHomeScreen(
                             items(searchResults, key = { it.id }) { doc ->
                                 DocListItem(doc = doc, isSelected = selectedIds.contains(doc.id), onSelect = { checked ->
                                     if (checked) selectedIds.add(doc.id) else selectedIds.remove(doc.id)
-                                }, showCheckbox = selectedIds.isNotEmpty(), onClick = { onNavigateToDocEditor(doc.id) })
+                                }, showCheckbox = selectedIds.isNotEmpty(), onClick = { onNavigateToDocEditor(doc.id) },
+                                    onExtractKG = { strategy -> viewModel.extractKnowledgeGraph(doc.id, strategy) })
                             }
                         } else {
                             item {
@@ -404,11 +420,12 @@ fun RagHomeScreen(
                                 )
                             }
                             val shownDocs = if (searchQuery.isBlank()) documents.take(10) else emptyList()
-                            if (shownDocs.isEmpty() && searchQuery.isBlank()) {
-                                items(documents.take(10), key = { it.id }) { doc ->
+                            if (shownDocs.isNotEmpty()) {
+                                items(shownDocs, key = { it.id }) { doc ->
                                     DocListItem(doc = doc, isSelected = selectedIds.contains(doc.id), onSelect = { checked ->
                                         if (checked) selectedIds.add(doc.id) else selectedIds.remove(doc.id)
-                                    }, showCheckbox = selectedIds.isNotEmpty(), onClick = { onNavigateToDocEditor(doc.id) })
+                                    }, showCheckbox = selectedIds.isNotEmpty(), onClick = { onNavigateToDocEditor(doc.id) },
+                                        onExtractKG = { strategy -> viewModel.extractKnowledgeGraph(doc.id, strategy) })
                                 }
                             }
                         }
@@ -632,32 +649,154 @@ fun RagHomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DocListItem(
     doc: Document,
     isSelected: Boolean,
     onSelect: (Boolean) -> Unit,
     showCheckbox: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onExtractKG: ((String) -> Unit)? = null
 ) {
     val status = when (doc.vectorized) {
         1 -> RagStatus.READY
         -1 -> RagStatus.ERROR
         else -> RagStatus.PENDING
     }
-    RagDocItem(
-        title = doc.title.ifBlank { "Untitled" },
-        status = status,
-        isSelected = isSelected,
-        showCheckbox = showCheckbox,
-        onCheckedChange = onSelect,
-        fileSize = doc.fileSize?.let { formatFileSize(it) },
-        date = doc.updatedAt?.let { java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(it)) },
-        onClick = {
-            if (showCheckbox) onSelect(!isSelected)
-            else onClick()
+    var showContextMenu by remember { mutableStateOf(false) }
+
+    Box {
+        NexaraGlassCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (onExtractKG != null) {
+                        Modifier.combinedClickable(
+                            onClick = {
+                                if (showCheckbox) onSelect(!isSelected)
+                                else onClick()
+                            },
+                            onLongClick = { showContextMenu = true }
+                        )
+                    } else {
+                        Modifier
+                    }
+                ),
+            shape = RoundedCornerShape(12.dp),
+            onClick = if (onExtractKG == null) {
+                {
+                    if (showCheckbox) onSelect(!isSelected)
+                    else onClick()
+                }
+            } else null
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (showCheckbox) {
+                    androidx.compose.material3.Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = onSelect,
+                        colors = androidx.compose.material3.CheckboxDefaults.colors(
+                            checkedColor = NexaraColors.Primary,
+                            uncheckedColor = NexaraColors.Outline
+                        )
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(NexaraColors.SurfaceContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Description,
+                        contentDescription = null,
+                        tint = NexaraColors.Primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = doc.title.ifBlank { "Untitled" },
+                        style = NexaraTypography.labelMedium,
+                        color = NexaraColors.OnSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        doc.fileSize?.let { fs ->
+                            Text(formatFileSize(fs), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+                        }
+                        doc.updatedAt?.let { ua ->
+                            Text(
+                                java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(ua)),
+                                style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                com.promenar.nexara.ui.rag.components.RagStatusChip(status = status)
+            }
         }
-    )
+
+        DropdownMenu(
+            expanded = showContextMenu,
+            onDismissRequest = { showContextMenu = false },
+            modifier = Modifier.background(NexaraColors.SurfaceContainer)
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.AccountTree, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
+                        Text(stringResource(R.string.rag_home_extract_kg), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                    }
+                },
+                onClick = { /* 标题不可点击 */ },
+                enabled = false
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(R.string.rag_home_extract_kg_full),
+                        style = NexaraTypography.bodyMedium,
+                        color = NexaraColors.OnSurface,
+                        modifier = Modifier.padding(start = 26.dp)
+                    )
+                },
+                onClick = {
+                    showContextMenu = false
+                    onExtractKG?.invoke("full")
+                }
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(R.string.rag_home_extract_kg_summary),
+                        style = NexaraTypography.bodyMedium,
+                        color = NexaraColors.OnSurface,
+                        modifier = Modifier.padding(start = 26.dp)
+                    )
+                },
+                onClick = {
+                    showContextMenu = false
+                    onExtractKG?.invoke("summary-first")
+                }
+            )
+        }
+    }
 }
 
 @Composable

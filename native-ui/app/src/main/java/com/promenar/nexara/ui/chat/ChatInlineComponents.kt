@@ -326,7 +326,8 @@ fun RagOmniIndicator(
 
 @Composable
 fun ToolExecutionTimeline(
-    steps: List<ExecutionStep>
+    steps: List<ExecutionStep>,
+    isExecuting: Boolean = false
 ) {
     if (steps.isEmpty()) return
 
@@ -364,7 +365,7 @@ fun ToolExecutionTimeline(
                         color = NexaraColors.OnSurface
                     )
                     Text(
-                        text = stringResource(R.string.chat_tool_pipeline_running),
+                        text = if (isExecuting) stringResource(R.string.chat_tool_pipeline_running) else stringResource(R.string.chat_tool_pipeline_completed),
                         style = NexaraTypography.labelSmall,
                         color = NexaraColors.OnSurfaceVariant
                     )
@@ -378,7 +379,7 @@ fun ToolExecutionTimeline(
                     TimelineStep(
                         step = step,
                         isLast = index == steps.size - 1,
-                        isActive = index == steps.size - 1
+                        isActive = isExecuting && (index == steps.size - 1)
                     )
                 }
             }

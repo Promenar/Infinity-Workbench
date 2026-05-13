@@ -270,6 +270,9 @@
     <string name="chat_tool_pipeline_running">Running sequential tasks</string>
     <string name="chat_tool_running">Running</string>
     <string name="chat_tool_completed">Completed</string>
+    <string name="chat_tool_pipeline_completed">All tools completed</string>
+    <string name="chat_tool_result">Tool Result</string>
+    <string name="chat_tool_selecting">Selecting tools…</string>
     <string name="chat_approval_required">Approval Required</string>
     <string name="chat_approval_executed">Executed</string>
     <string name="chat_approval_desc_tool">The agent is requesting permission to execute a tool, which may affect system state or incur external costs.</string>
@@ -499,7 +502,7 @@
     <string name="search_config_depth_advanced">Advanced</string>
 
     <!-- SkillsScreen -->
-    <string name="skills_title">Agent Tools</string>
+    <string name="skills_title">Tool Management</string>
     <string name="skills_desc">Configure capabilities and external tool connections for your AI agents.</string>
     <string name="skills_loop_limit">Execution Loop Limit</string>
     <string name="skills_loop_limit_desc">Maximum tool-calling iterations per request</string>
@@ -528,8 +531,6 @@
     <string name="skill_calculator_desc">Perform mathematical calculations</string>
     <string name="skill_current_time">Current Time</string>
     <string name="skill_current_time_desc">Get current date and time</string>
-    <string name="skill_weather">Weather Lookup</string>
-    <string name="skill_weather_desc">Get current weather for a location</string>
     <string name="skill_create_tool">Create Tool</string>
     <string name="skill_create_tool_desc">Create new custom tools via meta-tool</string>
     <string name="skills_configure">Configure</string>
@@ -602,6 +603,9 @@
     <string name="rag_home_move">Move</string>
     <string name="rag_home_reindex">Re-index</string>
     <string name="rag_home_move_to_folder">Move to Folder</string>
+    <string name="rag_home_extract_kg">Extract Knowledge Graph</string>
+    <string name="rag_home_extract_kg_full">Full Extraction (all chunks)</string>
+    <string name="rag_home_extract_kg_summary">Summary-first (sampled)</string>
     <string name="rag_home_delete_confirm_title">Delete %1$d items?</string>
     <string name="rag_home_docs_count">%1$d docs</string>
 

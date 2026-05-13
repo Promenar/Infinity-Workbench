@@ -90,7 +90,6 @@ fun SkillsScreen(
             "search_searxng" to Icons.Rounded.Search,
             "calculator" to Icons.Rounded.Build,
             "current_time" to Icons.Rounded.Info,
-            "weather_lookup" to Icons.Rounded.Info,
             "create_tool" to Icons.Rounded.Build
         )
     }
@@ -181,11 +180,10 @@ fun SkillsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            ScrollableTabRow(
+            TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color.Transparent,
                 contentColor = NexaraColors.OnSurface,
-                edgePadding = 24.dp,
                 divider = {
                     HorizontalDivider(
                         thickness = 0.5.dp,
@@ -198,7 +196,7 @@ fun SkillsScreen(
                         Box(
                             Modifier
                                 .tabIndicatorOffset(pos)
-                                .padding(horizontal = 32.dp)
+                                .padding(horizontal = 48.dp)
                                 .height(3.dp)
                                 .clip(RoundedCornerShape(3.dp))
                                 .background(NexaraColors.Primary)

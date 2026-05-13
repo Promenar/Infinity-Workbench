@@ -495,7 +495,6 @@ private fun ToolsPanel(
     
     var timeInjection by remember(options.enableTimeInjection) { mutableStateOf(options.enableTimeInjection) }
     var toolsEnabled by remember(options.toolsEnabled) { mutableStateOf(options.toolsEnabled) }
-    var webSearch by remember(options.webSearch) { mutableStateOf(options.webSearch ?: false) }
     
     val onToggle: (String, Boolean) -> Unit = { tool, enabled ->
         chatViewModel.toggleTool(tool, enabled)
@@ -517,10 +516,6 @@ private fun ToolsPanel(
         ToolToggleRow(stringResource(R.string.sheet_tool_search_retrieval), Icons.Rounded.Storage, toolsEnabled) { 
             toolsEnabled = it
             onToggle("toolsEnabled", it)
-        }
-        ToolToggleRow(stringResource(R.string.sheet_tool_web_search), Icons.Rounded.Memory, webSearch) { 
-            webSearch = it
-            onToggle("webSearch", it)
         }
     }
 }

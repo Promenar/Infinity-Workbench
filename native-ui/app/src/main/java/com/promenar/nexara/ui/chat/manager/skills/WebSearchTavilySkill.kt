@@ -13,7 +13,7 @@ class WebSearchTavilySkill(
     private val httpClient: HttpClient
 ) : SkillDefinition {
     override val id = "search_tavily"
-    override val name = "Tavily Search"
+    override val name = "search_tavily"
     override val description = "Deep search using Tavily AI. Best for research and complex questions."
     override val mcpServerId: String? = null
     

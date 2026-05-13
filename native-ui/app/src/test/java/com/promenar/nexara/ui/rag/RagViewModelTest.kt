@@ -243,4 +243,149 @@ class RagViewModelTest {
         assertThat(vm.folders.value).hasSize(2)
         assertThat(vm.folders.value[0].id).isEqualTo("f1")
     }
+
+    // ── 错误状态持久化（Bug 2 修复验证） ──────────────────────────
+
+    @Test
+    fun `lastQueueError is initially null`() = runTest {
+        val vm = createViewModel()
+
+        assertThat(vm.lastQueueError.value).isNull()
+    }
+
+    @Test
+    fun `lastQueueError captures error when task fails`() = runTest {
+        // 拦截 vectorizationQueue 的 setOnStateChange 回调
+        var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+            capturedCallback = firstArg()
+        }
+
+        // 重新创建 ViewModel 以触发 observeQueue
+        val vm2 = createViewModel()
+
+        // 模拟向量化失败
+        val failedTask = com.promenar.nexara.data.rag.VectorizationTask(
+            id = "task-err",
+            type = "document",
+            docId = "doc-1",
+            docTitle = "Test",
+            status = "failed",
+            progress = 0.0,
+            error = "API key invalid"
+        )
+
+        capturedCallback?.invoke(listOf(failedTask), failedTask)
+
+        assertThat(vm2.lastQueueError.value).isNotNull()
+        assertThat(vm2.lastQueueError.value).contains("API key")
+    }
+
+    @Test
+    fun `lastQueueError is cleared when new non-failed task starts`() = runTest {
+        var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+            capturedCallback = firstArg()
+        }
+
+        val vm2 = createViewModel()
+
+        // 先模拟失败
+        val failedTask = com.promenar.nexara.data.rag.VectorizationTask(
+            id = "task-err",
+            type = "document",
+            docId = "doc-1",
+            docTitle = "Test",
+            status = "failed",
+            progress = 0.0,
+            error = "API key invalid"
+        )
+        capturedCallback?.invoke(listOf(failedTask), failedTask)
+        assertThat(vm2.lastQueueError.value).isNotNull()
+
+        // 然后模拟新任务开始
+        val newTask = com.promenar.nexara.data.rag.VectorizationTask(
+            id = "task-new",
+            type = "document",
+            docId = "doc-2",
+            docTitle = "New",
+            status = "chunking",
+            progress = 10.0
+        )
+        capturedCallback?.invoke(listOf(newTask), newTask)
+
+        assertThat(vm2.lastQueueError.value).isNull()
+    }
+
+    @Test
+    fun `isIndexing stays true when task fails with error`() = runTest {
+        var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+            capturedCallback = firstArg()
+        }
+
+        val vm = createViewModel()
+
+        val failedTask = com.promenar.nexara.data.rag.VectorizationTask(
+            id = "task-err",
+            type = "document",
+            docId = "doc-1",
+            docTitle = "Test",
+            status = "failed",
+            progress = 0.0,
+            error = "Network error"
+        )
+        capturedCallback?.invoke(listOf(failedTask), failedTask)
+
+        assertThat(vm.isIndexing.value).isTrue()
+    }
+
+    // ── 队列状态观测 ──────────────────────────────────────────────
+
+    @Test
+    fun `indexingStatus reflects current task chunking state`() = runTest {
+        var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+            capturedCallback = firstArg()
+        }
+        every { app.vectorizationQueue.getState() } returns mockk(relaxed = true)
+
+        val vm = createViewModel()
+
+        val chunkingTask = com.promenar.nexara.data.rag.VectorizationTask(
+            id = "task-1",
+            type = "document",
+            docId = "doc-1",
+            docTitle = "Test",
+            status = "chunking",
+            progress = 10.0
+        )
+        capturedCallback?.invoke(listOf(chunkingTask), chunkingTask)
+
+        assertThat(vm.indexingStatus.value).contains("切块")
+    }
+
+    @Test
+    fun `indexingSubStatus mirrors task subStatus`() = runTest {
+        var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+            capturedCallback = firstArg()
+        }
+        every { app.vectorizationQueue.getState() } returns mockk(relaxed = true)
+
+        val vm = createViewModel()
+
+        val task = com.promenar.nexara.data.rag.VectorizationTask(
+            id = "task-1",
+            type = "document",
+            docId = "doc-1",
+            docTitle = "Test",
+            status = "vectorizing",
+            progress = 30.0,
+            subStatus = "Vectorizing 5/20 chunks"
+        )
+        capturedCallback?.invoke(listOf(task), task)
+
+        assertThat(vm.indexingSubStatus.value).isEqualTo("Vectorizing 5/20 chunks")
+    }
 }

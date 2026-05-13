@@ -9,6 +9,7 @@ class MemoryManager(
     private val keywordSearcher: KeywordSearcher,
     private val graphStore: GraphStore,
     private val embeddingClient: EmbeddingClient,
+    private val rerankClient: RerankClient? = null,
     private val ragConfig: RagConfiguration = RagConfiguration()
 ) {
     data class RetrieveOptions(
@@ -142,10 +143,25 @@ class MemoryManager(
             .sortedByDescending { it.similarity }
             .distinctBy { it.id }
 
-        val topMemories = uniqueResults
+        // Rerank: 使用重排模型对候选文档重新评分
+        var actualRerankTimeMs = 0L
+        val rerankedResults = if (effectiveConfig.enableRerank && rerankClient != null && uniqueResults.isNotEmpty()) {
+            val rerankStart = System.currentTimeMillis()
+            try {
+                rerankClient.rerank(query, uniqueResults, effectiveConfig.rerankTopK)
+            } catch (e: Exception) {
+                uniqueResults
+            }.also {
+                actualRerankTimeMs = System.currentTimeMillis() - rerankStart
+            }
+        } else {
+            uniqueResults
+        }
+
+        val topMemories = rerankedResults
             .filter { parseTypeFromMetadata(it.metadata) == "memory" }
             .take(effectiveConfig.memoryLimit)
-        val topDocs = uniqueResults
+        val topDocs = rerankedResults
             .filter { parseTypeFromMetadata(it.metadata) == "doc" }
             .take(effectiveConfig.docLimit)
         val combinedResults = (topMemories + topDocs).sortedByDescending { it.similarity }
@@ -171,6 +187,7 @@ class MemoryManager(
             references = references,
             metadata = RetrieveMetadata(
                 searchTimeMs = endTime - startTime,
+                rerankTimeMs = actualRerankTimeMs,
                 recallCount = uniqueResults.size,
                 finalCount = combinedResults.size,
                 sourceDistribution = SourceDistribution(

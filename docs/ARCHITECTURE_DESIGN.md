@@ -328,6 +328,29 @@ sealed class ContextBuildProgress {
 }
 ```
 
+### 2.4.1 KG 抽取的双模式策略
+
+知识图谱抽取分为两种模式，服务不同场景，不混用：
+
+| 模式 | 触发者 | 输入 | 存储标记 | 生命周期 | 用途 |
+|------|--------|------|---------|---------|------|
+| **会话 JIT 微图** | ContextBuilder 自动 | RAG topK + 用户查询 | `sourceType="jit"` | JIT 缓存 1h → 后台归并到持久层 | 为当前对话提供关系上下文 |
+| **文档全量抽取** | 用户手动（知识库文档长按菜单） | 整篇文档（分块→GraphExtractor） | `sourceType="full"` | GraphStore 持久 | 构建用户的知识模型 |
+
+**设计原则**：
+- 全量 KG 抽取成本高（LLM 调用 × 分块数），噪声大，**不应作为文档导入的副作用自动触发**
+- 用户的知识图谱是显式知识建模，由用户控制何时对哪些文档建图
+- `GraphStore.resolveSourceType()` 有优先级设计（`full > summary > jit`），保证持久抽取不被即时缓存覆盖
+- 支持两种抽取策略：**全量抽取**（遍历所有分块）和 **摘要优先**（采样首/中/尾三块），用户可根据文档大小选择
+
+```kotlin
+// 触发入口：RagHomeScreen 文档长按 → DropdownMenu → 选择抽取策略
+// RagViewModel.extractKnowledgeGraph(docId, kgStrategy)
+//   → VectorizationQueue.enqueueDocument(docId, ..., kgStrategy, skipVectorization=true)
+//     → GraphExtractor.extractAndSave(chunk, docId) per chunk
+//       → GraphStore.upsertNode() / createEdge() with sourceType="full"
+```
+
 ### 2.5 Agent 引擎架构
 
 ```

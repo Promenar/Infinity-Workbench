@@ -444,18 +444,7 @@ private fun AppSettingsContent(
                 onClick = { onShowLanguageDialog() }
             )
         }
-        item {
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Tune,
-                title = stringResource(R.string.settings_appearance),
-                subtitle = when (themeMode) {
-                    "light" -> stringResource(R.string.settings_theme_light)
-                    "system" -> stringResource(R.string.settings_theme_system)
-                    else -> stringResource(R.string.settings_theme_dark)
-                },
-                onClick = { onNavigateToSecondary("theme_config") }
-            )
-        }
+
         // Haptic feedback is now enabled by default and removed from UI
 
         item {

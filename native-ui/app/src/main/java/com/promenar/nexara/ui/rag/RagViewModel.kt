@@ -77,6 +77,9 @@ class RagViewModel(
     private val _indexingSubStatus = MutableStateFlow<String?>(null)
     val indexingSubStatus: StateFlow<String?> = _indexingSubStatus.asStateFlow()
 
+    private val _lastQueueError = MutableStateFlow<String?>(null)
+    val lastQueueError: StateFlow<String?> = _lastQueueError.asStateFlow()
+
     private val _config = MutableStateFlow(RagConfiguration())
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
 
@@ -104,10 +107,11 @@ class RagViewModel(
 
     private fun observeQueue() {
         app.vectorizationQueue.setOnStateChange { queue, currentTask ->
-            _isIndexing.value = app.vectorizationQueue.getState().isProcessing
+            val isProcessing = app.vectorizationQueue.getState().isProcessing
+            _isIndexing.value = isProcessing
             _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
-            
-            _indexingStatus.value = currentTask?.let { task ->
+
+            val statusText = currentTask?.let { task ->
                 when (task.status) {
                     "pending" -> "等待队列中..."
                     "chunking" -> "正在对文档进行语义切块..."
@@ -120,10 +124,25 @@ class RagViewModel(
                     else -> task.status
                 }
             }
+            _indexingStatus.value = statusText
             _indexingSubStatus.value = currentTask?.subStatus
+
+            // 任务失败时持久化错误信息，防止进度条消失后用户看不到失败原因
+            if (currentTask?.status == "failed") {
+                _lastQueueError.value = currentTask.error ?: "向量化失败，请检查 Embedding 模型配置"
+                _isIndexing.value = true  // 保持可见
+            }
+            // 新任务开始或完成时清除错误
+            if (currentTask != null && currentTask.status != "failed" && currentTask.status != "warning") {
+                _lastQueueError.value = null
+            }
 
             if (queue.isEmpty() && currentTask == null) {
                 refreshStats()
+                // 延迟关闭进度条，让用户有时间看到最后的状态
+                if (_lastQueueError.value == null) {
+                    _isIndexing.value = false
+                }
             }
         }
     }
@@ -356,6 +375,29 @@ class RagViewModel(
     fun importDocuments(uris: List<android.net.Uri>, folderId: String? = null) {
         viewModelScope.launch {
             app.documentImporter.importFromUris(uris, folderId)
+        }
+    }
+
+    /**
+     * 手动触发文档的知识图谱抽取。
+     * 复用 VectorizationQueue 的 KG 抽取管线（分块→GraphExtractor→GraphStore）。
+     * @param kgStrategy "full" 全量抽取 / "summary-first" 摘要优先（仅采样首中尾三块）
+     */
+    fun extractKnowledgeGraph(docId: String, kgStrategy: String) {
+        viewModelScope.launch {
+            try {
+                val doc = documentRepository.getById(docId) ?: return@launch
+                val content = doc.content ?: return@launch
+                app.vectorizationQueue.enqueueDocument(
+                    docId = docId,
+                    docTitle = doc.title,
+                    content = content,
+                    kgStrategy = kgStrategy,
+                    skipVectorization = true  // 向量已存在，仅做 KG 抽取
+                )
+            } catch (e: Exception) {
+                _indexingSubStatus.value = "KG extraction failed: ${e.message?.take(60)}"
+            }
         }
     }
 

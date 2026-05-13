@@ -51,7 +51,7 @@ class ContextBuilder(
     private val kgProvider: KgProvider? = null
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
-        val searchContext = if (params.session.options?.webSearch == true) {
+        val searchContext = if (params.session.options.webSearch) {
             performClientSideSearch(params.content)
         } else ""
         val ragResult = performRagRetrieval(params)
@@ -122,7 +122,7 @@ class ContextBuilder(
         val session = params.session
 
         // 1. System Time
-        val enableTimeInjection = session.options?.enableTimeInjection ?: true
+        val enableTimeInjection = session.options.enableTimeInjection
         if (enableTimeInjection) {
             val now = java.text.SimpleDateFormat(
                 "yyyy-MM-dd HH:mm:ss EEEE",
@@ -133,7 +133,7 @@ class ContextBuilder(
         }
 
         // 2. Tools Instructions
-        if (session.options?.toolsEnabled == true) {
+        if (session.options.toolsEnabled) {
             sb.appendLine("[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]")
             sb.appendLine()
         }

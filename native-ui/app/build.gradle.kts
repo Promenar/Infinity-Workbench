@@ -1,5 +1,5 @@
-import java.util.Properties
 import java.io.FileInputStream
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -21,9 +21,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-    androidResources {
-        localeFilters += listOf("en", "zh-rCN")
-    }
+        androidResources {
+            localeFilters += listOf("en", "zh-rCN")
+        }
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -85,11 +85,7 @@ android {
         }
     }
 
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
-    }
+    // jniLibs 默认目录即 src/main/jniLibs，无需显式配置
 
     packaging {
         resources {
@@ -170,7 +166,6 @@ dependencies {
     testImplementation("com.google.truth:truth:1.2.0")
     testImplementation("io.mockk:mockk:1.13.12")
     testImplementation("app.cash.turbine:turbine:1.1.0")
-    testImplementation("androidx.room:room-testing:2.6.1")
     testImplementation("org.robolectric:robolectric:4.11.1")
     testImplementation("androidx.test.ext:junit:1.1.5")
     testImplementation("androidx.test:core:1.5.0")

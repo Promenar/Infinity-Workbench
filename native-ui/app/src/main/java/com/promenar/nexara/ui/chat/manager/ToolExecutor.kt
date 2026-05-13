@@ -32,7 +32,7 @@ class ToolExecutor(
 
         val targetMsg = session.messages.find { it.id == targetMsgId } ?: return
 
-        if (session.options?.toolsEnabled == false) {
+        if (!session.options.toolsEnabled) {
             for (tc in toolCalls) {
                 val syntheticContent = "[SYSTEM WARNING]: Tool usage is currently DISABLED by the user configuration.\nYou CANNOT use tools in this turn.\nPlease STOP trying to use tools and answer the user's request directly using your internal knowledge."
 
@@ -88,6 +88,7 @@ class ToolExecutor(
                 toolCallId = tc.id,
                 content = finalContent,
                 name = tc.name,
+                images = result.data,      // 传递工具生成的图片数据（如 generate_image）
                 thoughtSignature = targetMsg.thoughtSignature,
                 createdAt = System.currentTimeMillis()
             )

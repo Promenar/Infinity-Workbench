@@ -13,7 +13,7 @@ class WebSearchSearXNGSkill(
     private val httpClient: HttpClient
 ) : SkillDefinition {
     override val id = "search_searxng"
-    override val name = "SearXNG Search"
+    override val name = "search_searxng"
     override val description = "Privacy-focused meta-search using SearXNG instance."
     override val mcpServerId: String? = null
     
@@ -43,10 +43,12 @@ class WebSearchSearXNGSkill(
         
         val provider = SearXNGProvider(httpClient, url, maxResults, includeDomains, excludeDomains)
         return try {
-            val (results, _) = provider.search(query)
+            val (results, citations) = provider.search(query)
+            val citationData = citations.joinToString("\n") { "${it.title}: ${it.url}" }
             ToolResult(
                 id = "search_searxng_${System.currentTimeMillis()}",
                 content = results,
+                data = citationData.ifEmpty { null },
                 status = "success"
             )
         } catch (e: Exception) {

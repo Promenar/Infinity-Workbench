@@ -136,7 +136,6 @@ class MessageManager(
 
         if (!throttleJobs.containsKey(key)) {
             throttleJobs[key] = scope.launch {
-
                 flushUpdate(sessionId, messageId)
             }
         }

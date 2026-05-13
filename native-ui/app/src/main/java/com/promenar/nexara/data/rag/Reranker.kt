@@ -29,6 +29,7 @@ class RerankClient(
         topK: Int
     ): List<SearchResult> {
         if (documents.isEmpty()) return documents
+        if (baseUrl.isBlank() || apiKey.isBlank()) return documents
 
         return try {
             val cleanBase = baseUrl.trimEnd('/')

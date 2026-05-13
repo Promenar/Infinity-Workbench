@@ -18,6 +18,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,11 +54,14 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -98,6 +102,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,7 +118,10 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraCustomShapes
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.promenar.nexara.ui.chat.manager.skills.GeneratedImageData
+import kotlinx.serialization.json.Json
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -147,9 +155,22 @@ fun ChatScreen(
 
     val isUserScrolledAway by remember {
         derivedStateOf {
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val total = listState.layoutInfo.totalItemsCount
-            total > 0 && lastVisible < total - 1
+            val layoutInfo = listState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) return@derivedStateOf false
+            
+            val lastVisibleItem = visibleItems.last()
+            val totalItemsCount = layoutInfo.totalItemsCount
+            
+            // If the last item (including the spacer anchor) is not visible at all
+            if (lastVisibleItem.index < totalItemsCount - 1) return@derivedStateOf true
+            
+            // If the last item is visible, check if its bottom is within the viewport (with some margin)
+            val viewportBottom = layoutInfo.viewportEndOffset
+            val lastItemBottom = lastVisibleItem.offset + lastVisibleItem.size
+            
+            // 100px tolerance to allow for small offsets
+            lastItemBottom > viewportBottom + 100
         }
     }
 
@@ -166,9 +187,21 @@ fun ChatScreen(
         chatViewModel.loadSession(sessionId)
     }
 
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty() && !isUserScrolledAway) {
-            listState.animateScrollToItem(uiState.messages.size - 1)
+    // 1. Initial scroll when generation starts: scroll to top of the new assistant message
+    LaunchedEffect(uiState.isGenerating) {
+        if (uiState.isGenerating && uiState.streamingContent.isEmpty()) {
+            val assistantIdx = uiState.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
+            if (assistantIdx >= 0) {
+                listState.animateScrollToItem(assistantIdx)
+            }
+        }
+    }
+
+    // 2. Continuous scroll during streaming: keep bottom in view
+    LaunchedEffect(uiState.streamingContent) {
+        if (uiState.isGenerating && !isUserScrolledAway) {
+            val lastIndex = uiState.messages.size // This includes the bottom_spacer
+            listState.scrollToItem(lastIndex)
         }
     }
 
@@ -294,6 +327,10 @@ fun ChatScreen(
                                 }
                             )
                         }
+                    }
+
+                    item(key = "bottom_spacer") {
+                        Spacer(modifier = Modifier.height(1.dp))
                     }
                 }
 
@@ -749,6 +786,7 @@ fun ChatBubble(
             }
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
+                // ── 思维链 / 推理展示 ──
                 if (!message.reasoning.isNullOrBlank()) {
                     ThinkingBlock(
                         reasoning = message.reasoning!!,
@@ -758,8 +796,32 @@ fun ChatBubble(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
+                // ── 工具执行流水线时间线 ──
+                if (!message.executionSteps.isNullOrEmpty()) {
+                    ToolExecutionTimeline(
+                        steps = message.executionSteps!!,
+                        isExecuting = isGenerating
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // ── 审批卡片 ──
+                if (!message.pendingApprovalToolIds.isNullOrEmpty()) {
+                    val pendingId = message.pendingApprovalToolIds!!.firstOrNull()
+                    val pendingToolName = if (pendingId != null) {
+                        message.toolCalls?.find { it.id == pendingId }?.name ?: pendingId
+                    } else "unknown"
+                    ApprovalCard(
+                        toolName = pendingToolName,
+                        description = stringResource(R.string.chat_approval_desc_tool),
+                        onApprove = onApprove,
+                        onDecline = onDecline
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // ── RAG 检索指示器 ──
                 if (message.role == MessageRole.ASSISTANT && message.content.isEmpty()) {
-                    // Show RAG progress if enabled and we have progress/references
                     RagOmniIndicator(
                         progress = message.ragProgress,
                         metadata = message.ragMetadata,
@@ -767,7 +829,6 @@ fun ChatBubble(
                         isLoading = isGenerating && message.content.isEmpty()
                     )
                 } else if (message.role == MessageRole.ASSISTANT && message.ragReferences != null && message.ragReferences!!.isNotEmpty()) {
-                    // Show references even if content has started
                     RagOmniIndicator(
                         progress = message.ragProgress,
                         metadata = message.ragMetadata,
@@ -776,15 +837,115 @@ fun ChatBubble(
                     )
                 }
 
-                val displayContent = if (isGenerating && streamingContent.isNotEmpty()) streamingContent else message.content
-                MarkdownText(
-                    markdown = displayContent,
-                    isStreaming = isGenerating,
-                    fontSize = fontSize,
-                    onContentChange = onContentChange,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
+                // ── 流式工具调用选择指示器 ──
+                if (isGenerating && !message.toolCalls.isNullOrEmpty()) {
+                    val toolNames = message.toolCalls!!.joinToString(", ") { it.name }
+                    SummaryIndicator(
+                        text = "${stringResource(R.string.chat_tool_selecting)} $toolNames"
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
+                // ── 消息内容：区分 TOOL 结果与普通消息 ──
+                if (message.role == MessageRole.TOOL) {
+                    var toolExpanded by remember { mutableStateOf(true) }
+                    NexaraGlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { toolExpanded = !toolExpanded },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Terminal,
+                                    null,
+                                    tint = NexaraColors.Tertiary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "${stringResource(R.string.chat_tool_result)}: ${message.name ?: "unknown"}",
+                                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = NexaraColors.Tertiary
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                Icon(
+                                    if (toolExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                    null,
+                                    tint = NexaraColors.OnSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            AnimatedVisibility(
+                                visible = toolExpanded,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                MarkdownText(
+                                    markdown = message.content,
+                                    isStreaming = false,
+                                    fontSize = fontSize,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    val displayContent = if (isGenerating && streamingContent.isNotEmpty()) streamingContent else message.content
+                    MarkdownText(
+                        markdown = displayContent,
+                        isStreaming = isGenerating,
+                        fontSize = fontSize,
+                        onContentChange = onContentChange,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+
+                // ── 生成图片展示 ──
+                val generatedImages = remember(message.images) {
+                    parseGeneratedImages(message.images)
+                }
+                if (generatedImages.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        generatedImages.forEach { imageData ->
+                            if (imageData.localPath != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(NexaraColors.SurfaceContainer)
+                                ) {
+                                    coil3.compose.AsyncImage(
+                                        model = imageData.localPath,
+                                        contentDescription = imageData.revisedPrompt ?: "Generated image",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                    )
+                                }
+                                if (!imageData.revisedPrompt.isNullOrBlank()) {
+                                    Text(
+                                        text = imageData.revisedPrompt!!,
+                                        style = NexaraTypography.bodySmall.copy(
+                                            fontSize = 11.sp,
+                                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.7f)
+                                        ),
+                                        modifier = Modifier.padding(top = 2.dp, start = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── 元信息行 ──
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = 2.dp)
@@ -806,6 +967,7 @@ fun ChatBubble(
                     )
                 }
 
+                // ── 错误信息 ──
                 if (message.isError && message.errorMessage != null) {
                     Text(
                         text = message.errorMessage!!,
@@ -816,6 +978,20 @@ fun ChatBubble(
                 }
             }
         }
+    }
+}
+
+/**
+ * 解析 Message.images JSON 字段为 GeneratedImageData 列表。
+ * 用于在 ChatBubble 中渲染生成的图片。
+ */
+private fun parseGeneratedImages(imagesJson: String?): List<GeneratedImageData> {
+    if (imagesJson.isNullOrBlank()) return emptyList()
+    return try {
+        val json = Json { ignoreUnknownKeys = true }
+        json.decodeFromString<List<GeneratedImageData>>(imagesJson)
+    } catch (_: Exception) {
+        emptyList()
     }
 }
 

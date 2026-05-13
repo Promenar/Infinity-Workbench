@@ -156,7 +156,7 @@ class SessionManager(
                 "inferenceParams" -> result.copy(inferenceParams = value as? InferenceParams)
                 "activeTask" -> result.copy(activeTask = value as? com.promenar.nexara.data.model.TaskState)
                 "stats" -> result.copy(stats = value as? com.promenar.nexara.data.model.SessionStats)
-                "options" -> result.copy(options = value as? SessionOptions)
+                "options" -> result.copy(options = (value as? SessionOptions) ?: result.options)
                 "ragOptions" -> result.copy(ragOptions = value as? RagOptions)
                 "activeMcpServerIds" -> result.copy(activeMcpServerIds = value as? List<String> ?: result.activeMcpServerIds)
                 "activeSkillIds" -> result.copy(activeSkillIds = value as? List<String> ?: result.activeSkillIds)

@@ -46,8 +46,8 @@ import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSearXNGSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchTavilySkill
-import com.promenar.nexara.ui.chat.manager.skills.WeatherSkill
 import com.promenar.nexara.ui.chat.manager.skills.CreateToolSkill
+import com.promenar.nexara.ui.chat.manager.skills.ImageGenerationSkill
 import com.promenar.nexara.data.repository.SkillRepository
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.repository.TokenStatsRepository
@@ -139,8 +139,8 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(WebSearchSkill(this@NexaraApplication, httpClient))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient))
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
-            register(WeatherSkill(httpClient))
             register(CreateToolSkill(database.skillDao()))
+            register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
         }
     }
 
@@ -220,8 +220,13 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val embeddingClient: EmbeddingClient by lazy {
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        val baseUrl = prefs.getString("embedding_base_url", "") ?: ""
-        val apiKey = prefs.getString("embedding_api_key", "") ?: ""
+        // 优先读取专用的 embedding_* 键，为空时回退到主 LLM 提供商的 base_url/api_key
+        val baseUrl = prefs.getString("embedding_base_url", "")?.ifBlank {
+            prefs.getString("base_url", "") ?: ""
+        } ?: ""
+        val apiKey = prefs.getString("embedding_api_key", "")?.ifBlank {
+            prefs.getString("api_key", "") ?: ""
+        } ?: ""
         val presetModel = settingsPrefs.getString("preset_embedding_model", "") ?: ""
         val model = prefs.getString("embedding_model", "")?.ifBlank { presetModel } ?: presetModel
         EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model)
@@ -229,8 +234,13 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val rerankClient: RerankClient by lazy {
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        val baseUrl = prefs.getString("embedding_base_url", "") ?: ""
-        val apiKey = prefs.getString("embedding_api_key", "") ?: ""
+        // 与 embeddingClient 同策略：先读专用键，为空回退主 LLM 提供商
+        val baseUrl = prefs.getString("embedding_base_url", "")?.ifBlank {
+            prefs.getString("base_url", "") ?: ""
+        } ?: ""
+        val apiKey = prefs.getString("embedding_api_key", "")?.ifBlank {
+            prefs.getString("api_key", "") ?: ""
+        } ?: ""
         val presetModel = settingsPrefs.getString("preset_rerank_model", "") ?: ""
         RerankClient(baseUrl = baseUrl, apiKey = apiKey, modelId = presetModel)
     }
@@ -270,6 +280,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             keywordSearcher = keywordSearcher,
             graphStore = graphStore,
             embeddingClient = embeddingClient,
+            rerankClient = rerankClient,
             ragConfig = RagConfiguration()
         )
     }

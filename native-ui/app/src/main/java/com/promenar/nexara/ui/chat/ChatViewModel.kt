@@ -316,7 +316,7 @@ class ChatViewModel(
             frequencyPenalty = effectiveParams.frequencyPenalty,
             presencePenalty = effectiveParams.presencePenalty,
             tools = activeTools.ifEmpty { null },
-            webSearch = sessionForCtx.options?.webSearch,
+            webSearch = sessionForCtx.options.webSearch,
             stream = true,
             streamTimeout = (effectiveParams.streamTimeout ?: 120).toLong() * 1000
         )
@@ -742,7 +742,6 @@ class ChatViewModel(
         val nextOptions = when (toolName) {
             "timeInjection" -> options.copy(enableTimeInjection = enabled)
             "toolsEnabled" -> options.copy(toolsEnabled = enabled)
-            "webSearch" -> options.copy(webSearch = enabled)
             else -> options
         }
         viewModelScope.launch {
@@ -797,22 +796,16 @@ class ChatViewModel(
     }
 
     private fun buildToolList(session: Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> {
-        val options = session.options ?: return emptyList()
-        if (!options.toolsEnabled) return emptyList()
+        if (!session.options.toolsEnabled) return emptyList()
         
         val prefs = application.getSharedPreferences("nexara_settings", 0)
         val enabledSkills = prefs.getStringSet("enabled_skills", null)
         
         if (enabledSkills.isNullOrEmpty()) return emptyList()
         
+        // Tool availability is controlled entirely by the skill-level toggle in Settings.
+        // No session-level web search switch — avoid dual-control confusion.
         val allowedIds = enabledSkills.toMutableList()
-        
-        if (options.webSearch == true && "web_search" !in allowedIds) {
-            allowedIds.add("web_search")
-        }
-        if (options.webSearch != true) {
-            allowedIds.removeAll { it == "web_search" || it.startsWith("search_") }
-        }
         
         return skillRegistry?.getAllTools(allowedIds) ?: emptyList()
     }
@@ -1027,10 +1020,10 @@ class ChatViewModel(
             
             // Metadata overhead (Time, Tools instructions, Active Task)
             var metadataText = ""
-            if (session.options?.enableTimeInjection != false) {
+            if (session.options.enableTimeInjection) {
                 metadataText += "[System Time: 2024-01-01 12:00:00 Monday]\n\n"
             }
-            if (session.options?.toolsEnabled == true) {
+            if (session.options.toolsEnabled) {
                 metadataText += "[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]\n\n"
             }
             if (session.activeTask != null && session.activeTask.status == "in-progress") {

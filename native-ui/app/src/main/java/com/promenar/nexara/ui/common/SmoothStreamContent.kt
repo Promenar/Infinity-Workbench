@@ -23,21 +23,25 @@ fun rememberSmoothStreamContent(
     var displayed by remember { mutableStateOf("") }
 
     LaunchedEffect(content, isStreaming, cps) {
-        if (!isStreaming) {
-            displayed = content
-            return@LaunchedEffect
-        }
-
         val target = content
         var pos = displayed.length
 
+        // If not streaming and we're starting from scratch (historical message), show immediately
+        if (!isStreaming && (pos == 0 || pos >= target.length)) {
+            displayed = target
+            return@LaunchedEffect
+        }
+
+        // If content changed significantly (new message), reset
         if (pos > target.length) {
             pos = 0
             displayed = ""
         }
 
-        val frameDelay = 1000L / 30
-        val charsPerFrame = (cps / 30).coerceIn(1, 3)
+        val frameDelay = 1000L / 60 // Boost to 60fps for smoother ultra-fast streaming
+        // If still streaming, use defined CPS. If finished but catching up, go 5x faster for extreme snappiness.
+        val effectiveCps = if (isStreaming) cps else cps * 5
+        val charsPerFrame = (effectiveCps / 60).coerceAtLeast(1)
 
         while (pos < target.length) {
             val end = (pos + charsPerFrame).coerceAtMost(target.length)
@@ -46,7 +50,7 @@ fun rememberSmoothStreamContent(
             delay(frameDelay)
         }
 
-        displayed = content
+        displayed = target
     }
 
     return displayed

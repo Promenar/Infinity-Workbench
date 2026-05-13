@@ -76,6 +76,9 @@ class EmbeddingClient(
     }
 
     private suspend fun embedBatch(texts: List<String>): EmbeddingResult {
+        if (baseUrl.isBlank()) throw IllegalStateException("Embedding base URL not configured")
+        if (apiKey.isBlank()) throw IllegalStateException("Embedding API key not configured")
+
         val cleanBase = baseUrl.trimEnd('/')
         val endpoint = if (cleanBase.endsWith("/v1")) {
             "$cleanBase/embeddings"
