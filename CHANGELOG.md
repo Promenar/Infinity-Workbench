@@ -4,11 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Domain + Repository 层系统性实施方案 (2026-05-13)
-- **实施计划文档**: `.agent/plans/20260513-domain-repository-implementation.md`，依据 `ARCHITECTURE_DESIGN.md` 自上而下设计
-- **4 个并行会话**: Session A (Domain 基础，13 文件) → B (Agent+Document Repos) || C (Vector+KG Repos) || D (Provider+对齐)
-- **Domain 层**: 4 个聚合根模型 (Agent/Session/Message/Document) + 值对象/枚举 + 7 个 Repository 接口，零 Android 依赖
-- **Data 层**: 5 个新 Repository 实现 + 4 个 Entity↔Domain Mapper + 现有 Session/Message Repository 接口对齐
+### Phase 2c — 剩余 ViewModel 迁移完成 (2026-05-13)
+- **3 个 ViewModel 全部迁移**: ChatViewModel / SettingsViewModel / RagViewModel — 消除最后 3 个 VM 的 DAO 依赖
+- **架构债 AD-4 消除**: 8/8 ViewModel 全部使用 Repository，零直接 DAO 操作
+- **ChatViewModel 5 个历史失败测试修复**: 迁移 agentDao → AgentRepository 时一并解决
+- **IAgentRepository 新增 getById**，**IDocumentRepository/IVectorRepository 新增计数方法**
+- **测试**: 458 tests, 仅剩 1 个预存失败 (ModelSpecs)
+- **RagViewModel 残留**: folderDao 标记 TODO 等待 FolderRepository，VectorStatsService 待 Phase 4 重构
+- **Session H**: ChatViewModel（~1100 行，3 处 agentDao → AgentRepository）+ IAgentRepository.getById
+- **Session I**: SettingsViewModel（vectorDao/documentDao → Repository）+ 计数方法
+- **Session J**: RagViewModel（5 DAO → 3 Repository，folderDao 标记 TODO 待 FolderRepository）
+- 全部含单元测试要求，零文件冲突可完全并行
+
+### ViewModel 迁移至 Repository + 单元测试完成 (2026-05-13)
+- **5 个 ViewModel 迁移完毕**: AgentHub / AgentEdit / SessionList / DocEditor / KnowledgeGraph — 全部消除直接 DAO 依赖
+- **11 个新增测试文件，0 失败**: AgentMapperTest / DocumentMapperTest / KgMapperTest / AgentRepositoryTest / DocumentRepositoryTest / KnowledgeGraphRepositoryTest / AgentHubViewModelTest / AgentEditViewModelTest / SessionListViewModelTest / DocEditorViewModelTest / KnowledgeGraphViewModelTest
+- **MockK 1.13.12 + Turbine 1.1.0** 测试依赖已添加
+- **IDocumentRepository 补全 getById** 方法，DocEditorViewModel 彻底消除 DocumentDao 依赖
+- 测试统计: 445 tests, 6 预存失败 (ChatViewModel × 5 + ModelSpecs × 1), 13 skipped
+
+### ViewModel 迁移至 Repository + 单元测试方案 (2026-05-13)
+- **实施计划**: `.agent/plans/20260513-viewmodel-migration-tests.md`，3 个并行会话
+- **测试基础设施**: 新增 MockK 1.13.12 + Turbine 1.1.0 依赖
+- **Session E**: Agent VM 迁移 (AgentHub/AgentEdit/SessionList) + 6 个测试文件
+- **Session F**: Document VM 迁移 (DocEditor) + 3 个测试文件
+- **Session G**: KG VM 迁移 (KnowledgeGraph) + 3 个测试文件
+- **核心约束**: 所有新增/修改的业务逻辑代码必须编写单元测试并通过
+
+### Domain + Repository 层实施完成 (2026-05-13)
+- **28 个文件交付**: 13 domain (4 模型 + 值对象/枚举 + 7 接口) + 11 repository (5 新 + 6 现有) + 4 mapper
+- **编译通过**: `./gradlew :app:compileDebugKotlin` BUILD SUCCESSFUL
+- **架构债消除**:
+  - AD-1 (Domain 层缺失): `domain/model/` + `domain/repository/` 包建立，零 Android 依赖
+  - AD-2 (Repository 覆盖率 37.5%→100%): 7 个聚合根全部有 Repository 接口 + 实现
+  - AD-3 (ProviderManager 单例): 收编为 ProviderRepository，实现 IProviderRepository
+- **4 个并行会话**: Session A (Domain 基础) → B (Agent+Document) || C (Vector+KG) || D (Provider+对齐)
+- **关键实现**: VectorRepository 含余弦相似度/FloatArray BLOB 转换/维度不匹配防御；ProviderRepository 含 ProtocolType Domain↔Data 双向转换
 
 ### 文档体系治理与统一 (2026-05-13)
 - **文档大清理**: 删除根 `.agent/docs/`（57 文件，含已过时 PRD v1.2.1、6 个失效 repowiki 指针存根）、`.agent/memory/`（4 文件，RN 时代项目记忆）、`.qoder/repowiki/`（145+ 文件，RN 时代自动生成架构文档）、`.roo/skills/`

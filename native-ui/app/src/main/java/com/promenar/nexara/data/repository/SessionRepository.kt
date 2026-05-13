@@ -14,14 +14,21 @@ import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.data.model.toDomain
 import com.promenar.nexara.data.model.toEntity
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.serializer
+import java.util.UUID
 
 open class SessionRepository(
     private val sessionDao: SessionDao,
     private val messageDao: MessageDao
-) : ISessionRepository {
+) : ISessionRepository,
+    com.promenar.nexara.domain.repository.ISessionRepository {
+
     private inline fun <reified T> encode(value: T): String =
         json.encodeToString(serializer<T>(), value)
+
+    // ── Data-layer ISessionRepository (existing) ────────────────────────
 
     override suspend fun create(session: Session) {
         sessionDao.insert(session.toEntity())
@@ -86,4 +93,64 @@ open class SessionRepository(
         }
         return result
     }
+
+    // ── Domain-layer ISessionRepository ─────────────────────────────────
+
+    override fun observeByAgent(agentId: String): Flow<List<com.promenar.nexara.domain.model.Session>> {
+        return sessionDao.observeAll().map { entities ->
+            entities
+                .filter { it.agentId == agentId }
+                .map { it.toDomainSession() }
+        }
+    }
+
+    override fun observeById(id: String): Flow<com.promenar.nexara.domain.model.Session?> {
+        return sessionDao.observeById(id).map { it?.toDomainSession() }
+    }
+
+    override suspend fun create(
+        agentId: String,
+        modelId: String
+    ): com.promenar.nexara.domain.model.Session {
+        val id = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val dataSession = Session(
+            id = id,
+            agentId = agentId,
+            modelId = modelId,
+            createdAt = now,
+            updatedAt = now
+        )
+        sessionDao.insert(dataSession.toEntity())
+        return dataSession.toDomainSession()
+    }
+
+    override suspend fun updateTitle(id: String, title: String) {
+        sessionDao.updateTitle(id, title, System.currentTimeMillis())
+    }
+
+    // ── Mappers ─────────────────────────────────────────────────────────
+
+    private fun SessionEntity.toDomainSession(): com.promenar.nexara.domain.model.Session =
+        com.promenar.nexara.domain.model.Session(
+            id = id,
+            agentId = agentId,
+            title = title,
+            modelId = modelId ?: "",
+            isPinned = isPinned == 1,
+            createdAt = createdAt,
+            updatedAt = updatedAt
+        )
+
+    private fun Session.toDomainSession(): com.promenar.nexara.domain.model.Session =
+        com.promenar.nexara.domain.model.Session(
+            id = id,
+            agentId = agentId,
+            title = title,
+            modelId = modelId ?: "",
+            isPinned = isPinned,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            messageCount = messages.size
+        )
 }

@@ -5,6 +5,7 @@ import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.model.Citation
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
@@ -15,13 +16,20 @@ import com.promenar.nexara.data.model.ToolResultArtifact
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.data.model.toDomain
 import com.promenar.nexara.data.model.toEntity
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.serializer
+import java.util.UUID
 
 open class MessageRepository(
     private val messageDao: MessageDao
-) : IMessageRepository {
+) : IMessageRepository,
+    com.promenar.nexara.domain.repository.IMessageRepository {
+
     private inline fun <reified T> encode(value: T): String =
         json.encodeToString(serializer<T>(), value)
+
+    // ── Data-layer IMessageRepository (existing) ────────────────────────
 
     override suspend fun insert(message: Message, sessionId: String) {
         messageDao.insert(message.toEntity(sessionId))
@@ -93,4 +101,75 @@ open class MessageRepository(
         }
         return result
     }
+
+    // ── Domain-layer IMessageRepository ─────────────────────────────────
+
+    override fun observeBySession(sessionId: String): Flow<List<com.promenar.nexara.domain.model.Message>> {
+        return messageDao.observeBySession(sessionId).map { entities ->
+            entities.map { it.toDomainMessage() }
+        }
+    }
+
+    override suspend fun send(
+        sessionId: String,
+        content: String,
+        role: com.promenar.nexara.domain.model.MessageRole
+    ): com.promenar.nexara.domain.model.Message {
+        val id = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val dataMessage = Message(
+            id = id,
+            role = MessageRole.valueOf(role.name),
+            content = content,
+            createdAt = now
+        )
+        messageDao.insert(dataMessage.toEntity(sessionId))
+        return dataMessage.toDomainMessage(sessionId)
+    }
+
+    override suspend fun appendContent(messageId: String, chunk: String) {
+        val existing = messageDao.getById(messageId) ?: return
+        messageDao.update(existing.copy(content = existing.content + chunk))
+    }
+
+    // ── Mappers ─────────────────────────────────────────────────────────
+
+    private fun MessageEntity.toDomainMessage(): com.promenar.nexara.domain.model.Message =
+        toDomain().toDomainMessage(sessionId)
+
+    private fun Message.toDomainMessage(sessionId: String): com.promenar.nexara.domain.model.Message =
+        com.promenar.nexara.domain.model.Message(
+            id = id,
+            sessionId = sessionId,
+            role = com.promenar.nexara.domain.model.MessageRole.valueOf(role.name),
+            content = content,
+            thinking = reasoning,
+            toolCalls = toolCalls?.map { it.toDomainToolCall() },
+            ragReferences = ragReferences?.map { it.toDomainRagReference() },
+            tokenUsage = tokens?.toDomainTokenUsage(),
+            timestamp = createdAt
+        )
+
+    private fun ToolCall.toDomainToolCall(): com.promenar.nexara.domain.model.ToolCall =
+        com.promenar.nexara.domain.model.ToolCall(
+            id = id,
+            name = name,
+            arguments = arguments,
+            result = null,
+            status = com.promenar.nexara.domain.model.ToolCallStatus.COMPLETED
+        )
+
+    private fun RagReference.toDomainRagReference(): com.promenar.nexara.domain.model.RagReference =
+        com.promenar.nexara.domain.model.RagReference(
+            chunkId = id,
+            documentTitle = source,
+            snippet = content,
+            score = score.toDouble()
+        )
+
+    private fun TokenUsage.toDomainTokenUsage(): com.promenar.nexara.domain.model.TokenUsage =
+        com.promenar.nexara.domain.model.TokenUsage(
+            input = input,
+            output = output
+        )
 }

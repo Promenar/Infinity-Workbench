@@ -71,7 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.data.local.db.entity.DocumentEntity
+import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.data.local.db.entity.FolderEntity
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
@@ -634,7 +634,7 @@ fun RagHomeScreen(
 
 @Composable
 private fun DocListItem(
-    doc: DocumentEntity,
+    doc: Document,
     isSelected: Boolean,
     onSelect: (Boolean) -> Unit,
     showCheckbox: Boolean,
@@ -646,7 +646,7 @@ private fun DocListItem(
         else -> RagStatus.PENDING
     }
     RagDocItem(
-        title = doc.title ?: "Untitled",
+        title = doc.title.ifBlank { "Untitled" },
         status = status,
         isSelected = isSelected,
         showCheckbox = showCheckbox,

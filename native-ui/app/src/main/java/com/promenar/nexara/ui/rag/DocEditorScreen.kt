@@ -70,9 +70,13 @@ fun DocEditorScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val app = context.applicationContext as com.promenar.nexara.NexaraApplication
     val viewModel: DocEditorViewModel = viewModel(
-        factory = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(
-            context.applicationContext as android.app.Application
+        factory = DocEditorViewModel.Factory(
+            documentRepository = com.promenar.nexara.data.repository.DocumentRepository(
+                app.database.documentDao(),
+                app.database.folderDao()
+            )
         )
     )
 
@@ -137,7 +141,7 @@ fun DocEditorScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                formatFileSize(document?.fileSize ?: 0),
+                                formatFileSize((document?.content?.length ?: 0).toLong()),
                                 style = NexaraTypography.labelMedium,
                                 color = NexaraColors.OnSurfaceVariant
                             )
@@ -147,7 +151,7 @@ fun DocEditorScreen(
                                     .background(NexaraColors.OutlineVariant, CircleShape)
                             )
                             Text(
-                                document?.type?.uppercase() ?: "TEXT",
+                                "DOCUMENT",
                                 style = NexaraTypography.labelMedium,
                                 color = NexaraColors.Primary
                             )
@@ -277,7 +281,7 @@ fun DocEditorScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        stringResource(R.string.doc_editor_large_file_desc, formatFileSize(document?.fileSize ?: 0)),
+                        stringResource(R.string.doc_editor_large_file_desc, formatFileSize((document?.content?.length ?: 0).toLong())),
                         style = NexaraTypography.bodyMedium,
                         color = NexaraColors.OnSurface,
                         modifier = Modifier.weight(1f)

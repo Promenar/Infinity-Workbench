@@ -1,12 +1,13 @@
 package com.promenar.nexara.ui.hub
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.content.SharedPreferences
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.entity.AgentEntity
-import com.promenar.nexara.data.model.Agent
+import com.promenar.nexara.data.repository.AgentRepository
+import com.promenar.nexara.domain.model.Agent
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,14 +15,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class AgentEditViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val app = application as NexaraApplication
-    private val agentDao = app.database.agentDao()
+class AgentEditViewModel(
+    private val agentRepository: AgentRepository,
+    private val prefs: SharedPreferences
+) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
     private val _name = MutableStateFlow("")
@@ -60,7 +62,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
         combine(_useInheritedConfig, _ragConfig, _retrievalConfig) { u, r, ret -> Triple(u, r, ret) }
     ) { (initial, name, desc), (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr) ->
         initial == null || initial.name != name || initial.description != desc ||
-        initial.systemPrompt != prompt || initial.model != model ||
+        initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
         initial.useInheritedConfig != useIn || initial.ragConfig != rag || initial.retrievalConfig != retr
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -69,14 +71,13 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun loadAgent(agentId: String) {
         viewModelScope.launch {
-            val entity = agentDao.getById(agentId)
-            if (entity != null) {
-                val agent = entity.toAgent()
+            val agent = agentRepository.observeById(agentId).first()
+            if (agent != null) {
                 _initialAgent.value = agent
                 _name.value = agent.name
                 _description.value = agent.description
                 _systemPrompt.value = agent.systemPrompt
-                _selectedModel.value = agent.model
+                _selectedModel.value = agent.modelId
                 _selectedColor.value = agent.color
                 _selectedIcon.value = agent.icon
                 _avatarPath.value = agent.avatarPath
@@ -84,7 +85,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
                 _temperature.value = agent.temperature?.toFloat() ?: 0.7f
                 _topP.value = agent.topP?.toFloat() ?: 0.9f
                 _useInheritedConfig.value = agent.useInheritedConfig
-                
+
                 if (agent.useInheritedConfig) {
                     _ragConfig.value = getGlobalRagConfig()
                     _retrievalConfig.value = getGlobalRetrievalConfig()
@@ -97,7 +98,6 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun getGlobalRagConfig(): com.promenar.nexara.data.agent.AgentRagConfig {
-        val prefs = app.getSharedPreferences("rag_settings", 0)
         return com.promenar.nexara.data.agent.AgentRagConfig(
             docChunkSize = prefs.getInt("doc_chunk_size", 800),
             chunkOverlap = prefs.getInt("chunk_overlap", 100),
@@ -108,7 +108,6 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun getGlobalRetrievalConfig(): com.promenar.nexara.data.agent.AgentRetrievalConfig {
-        val prefs = app.getSharedPreferences("rag_settings", 0)
         return com.promenar.nexara.data.agent.AgentRetrievalConfig(
             memoryLimit = prefs.getInt("memory_limit", 5),
             memoryThreshold = prefs.getFloat("memory_threshold", 0.7f),
@@ -129,10 +128,10 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
             queryRewriteModel = prefs.getString("query_rewrite_model", null),
             kgExtractionModel = prefs.getString("kg_model", null),
             kgExtractionPrompt = prefs.getString("kg_prompt", null),
-            kgEntityTypes = emptyList(), // 当前 rag_settings 中未持久化此字段
+            kgEntityTypes = emptyList(),
             kgFreeMode = prefs.getBoolean("kg_free_mode", false),
             kgDomainAuto = prefs.getBoolean("kg_domain_auto", false),
-            kgDomainHint = null, // 当前 rag_settings 中未持久化此字段
+            kgDomainHint = null,
             jitMaxChunks = prefs.getInt("jit_max_chunks", 0)
         )
     }
@@ -164,7 +163,7 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setIcon(value: String) {
         _selectedIcon.value = value
-        _avatarPath.value = null // Clear custom image if preset icon selected
+        _avatarPath.value = null
         scheduleSave()
     }
 
@@ -218,33 +217,35 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun deleteAgent(agentId: String, onDeleted: () -> Unit) {
         viewModelScope.launch {
-            agentDao.deleteById(agentId)
+            agentRepository.delete(agentId)
             onDeleted()
         }
     }
 
     fun saveAgent(agentId: String) {
         viewModelScope.launch {
-            val entity = AgentEntity(
+            val agent = Agent(
                 id = agentId,
                 name = _name.value,
                 description = _description.value,
                 systemPrompt = _systemPrompt.value,
-                model = _selectedModel.value,
+                modelId = _selectedModel.value,
                 icon = _selectedIcon.value,
                 color = _selectedColor.value,
                 avatarPath = _avatarPath.value,
-                isPinned = if (_isPinned.value) 1 else 0,
-                createdAt = _initialAgent.value?.createdAt ?: System.currentTimeMillis(),
+                isPinned = _isPinned.value,
                 temperature = _temperature.value.toDouble(),
-                top_p = _topP.value.toDouble(),
-                max_tokens = 4096, // Default for now
+                topP = _topP.value.toDouble(),
+                maxTokens = 4096,
                 ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
                 retrievalConfig = if (_useInheritedConfig.value) null else _retrievalConfig.value,
-                useInheritedConfig = _useInheritedConfig.value
+                useInheritedConfig = _useInheritedConfig.value,
+                executionMode = _initialAgent.value?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
+                skills = _initialAgent.value?.skills ?: emptyList(),
+                createdAt = _initialAgent.value?.createdAt ?: System.currentTimeMillis()
             )
-            agentDao.insert(entity)
-            _initialAgent.value = entity.toAgent()
+            agentRepository.update(agent)
+            _initialAgent.value = agent
         }
     }
 
@@ -264,28 +265,13 @@ class AgentEditViewModel(application: Application) : AndroidViewModel(applicatio
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                    return AgentEditViewModel(application) as T
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    val app = application as NexaraApplication
+                    return AgentEditViewModel(
+                        agentRepository = app.agentRepository,
+                        prefs = app.getSharedPreferences("rag_settings", 0)
+                    ) as T
                 }
             }
-
-        private fun AgentEntity.toAgent() = Agent(
-            id = id,
-            name = name,
-            description = description,
-            systemPrompt = systemPrompt,
-            model = model,
-            icon = icon,
-            color = color,
-            avatarPath = avatarPath,
-            isPinned = isPinned != 0,
-            temperature = temperature,
-            topP = top_p,
-            maxTokens = max_tokens,
-            ragConfig = ragConfig,
-            retrievalConfig = retrievalConfig,
-            useInheritedConfig = useInheritedConfig,
-            createdAt = createdAt
-        )
     }
 }

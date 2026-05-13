@@ -26,10 +26,12 @@ import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.provider.LlmProvider
+import com.promenar.nexara.data.repository.DocumentRepository
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.MessageRepository
 import com.promenar.nexara.data.repository.SessionRepository
+import com.promenar.nexara.data.repository.VectorRepository
 import com.promenar.nexara.ui.chat.manager.WebSearchContextProvider
 import com.promenar.nexara.ui.chat.manager.WebSearchProvider
 import com.promenar.nexara.ui.chat.manager.registry.DefaultSkillRegistry
@@ -80,6 +82,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         LocalInferenceEngine(this)
     }
 
+    val agentRepository: com.promenar.nexara.data.repository.AgentRepository by lazy {
+        com.promenar.nexara.data.repository.AgentRepository(database.agentDao())
+    }
+
     val sessionRepository: ISessionRepository by lazy {
         SessionRepository(database.sessionDao(), database.messageDao())
     }
@@ -90,6 +96,14 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val chatStore: ChatStore by lazy { ChatStore() }
     
+    val documentRepository: com.promenar.nexara.domain.repository.IDocumentRepository by lazy {
+        DocumentRepository(database.documentDao(), database.folderDao())
+    }
+
+    val vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository by lazy {
+        VectorRepository(database.vectorDao(), embeddingClient)
+    }
+
     val skillRepository: ISkillRepository by lazy {
         com.promenar.nexara.data.repository.SkillRepository(database.skillDao())
     }
@@ -292,11 +306,11 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         )
     }
 
-    val defaultAgents: List<com.promenar.nexara.data.model.Agent> by lazy {
+    val defaultAgents: List<com.promenar.nexara.domain.model.Agent> by lazy {
         listOf(
-            com.promenar.nexara.data.model.Agent("super", "Nexara 超级助手", "原生加速版，支持实时流式响应", "", "", "✨", "#C0C1FF", null, true),
-            com.promenar.nexara.data.model.Agent("coder", "编程专家", "精通全栈开发与架构设计", "", "", "💻", "#6366F1", null, false),
-            com.promenar.nexara.data.model.Agent("writer", "创意写作", "文学创作、翻译与润色", "", "", "📝", "#10B981", null, false)
+            com.promenar.nexara.domain.model.Agent(id = "super", name = "Nexara 超级助手", description = "原生加速版，支持实时流式响应", icon = "✨", color = "#C0C1FF", isPinned = true),
+            com.promenar.nexara.domain.model.Agent(id = "coder", name = "编程专家", description = "精通全栈开发与架构设计", icon = "💻", color = "#6366F1"),
+            com.promenar.nexara.domain.model.Agent(id = "writer", name = "创意写作", description = "文学创作、翻译与润色", icon = "📝", color = "#10B981")
         )
     }
 

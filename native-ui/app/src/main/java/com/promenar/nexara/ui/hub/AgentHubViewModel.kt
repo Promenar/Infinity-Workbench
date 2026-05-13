@@ -5,19 +5,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.dao.AgentDao
-import com.promenar.nexara.data.local.db.entity.AgentEntity
-import com.promenar.nexara.data.model.Agent
+import com.promenar.nexara.data.repository.AgentRepository
+import com.promenar.nexara.domain.model.Agent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class AgentHubViewModel(
-    private val agentDao: AgentDao,
+    private val agentRepository: AgentRepository,
     private val defaultAgents: List<Agent>
 ) : ViewModel() {
 
@@ -41,12 +41,12 @@ class AgentHubViewModel(
 
     init {
         viewModelScope.launch {
-            val saved = agentDao.getAll()
+            val saved = agentRepository.observeAll().first()
             if (saved.isNotEmpty()) {
-                _dbAgents.value = saved.map { it.toAgent() }
+                _dbAgents.value = saved
             } else {
                 for (agent in defaultAgents) {
-                    agentDao.insert(agent.toEntity())
+                    agentRepository.create(agent)
                 }
                 _dbAgents.value = defaultAgents
             }
@@ -56,19 +56,22 @@ class AgentHubViewModel(
     fun createAgent(name: String, description: String, model: String, systemPrompt: String) {
         viewModelScope.launch {
             val id = "agent_${System.currentTimeMillis()}"
-            val entity = AgentEntity(
-                id = id, name = name, description = description,
-                model = model, systemPrompt = systemPrompt,
+            val agent = Agent(
+                id = id,
+                name = name,
+                description = description,
+                modelId = model,
+                systemPrompt = systemPrompt,
                 createdAt = System.currentTimeMillis()
             )
-            agentDao.insert(entity)
-            _dbAgents.update { it + entity.toAgent() }
+            agentRepository.create(agent)
+            _dbAgents.update { it + agent }
         }
     }
 
     fun deleteAgent(agentId: String) {
         viewModelScope.launch {
-            agentDao.deleteById(agentId)
+            agentRepository.delete(agentId)
             _dbAgents.update { it.filter { a -> a.id != agentId } }
         }
     }
@@ -76,10 +79,10 @@ class AgentHubViewModel(
     fun togglePin(agentId: String) {
         viewModelScope.launch {
             val current = _dbAgents.value.find { it.id == agentId } ?: return@launch
-            val newPinned = !current.isPinned
-            agentDao.insert(current.toEntity().copy(isPinned = if (newPinned) 1 else 0))
+            val updated = current.copy(isPinned = !current.isPinned)
+            agentRepository.update(updated)
             _dbAgents.update { list ->
-                list.map { a -> if (a.id == agentId) a.copy(isPinned = newPinned) else a }
+                list.map { a -> if (a.id == agentId) updated else a }
             }
         }
     }
@@ -91,23 +94,10 @@ class AgentHubViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
                     return AgentHubViewModel(
-                        agentDao = app.database.agentDao(),
+                        agentRepository = app.agentRepository,
                         defaultAgents = app.defaultAgents
                     ) as T
                 }
             }
     }
 }
-
-private fun AgentEntity.toAgent() = Agent(
-    id = id, name = name, description = description,
-    systemPrompt = systemPrompt, model = model, icon = icon, color = color,
-    isPinned = isPinned != 0, createdAt = createdAt
-)
-
-private fun Agent.toEntity() = AgentEntity(
-    id = id, name = name, description = description,
-    systemPrompt = systemPrompt, model = model, icon = icon, color = color,
-    isPinned = if (isPinned) 1 else 0,
-    createdAt = if (createdAt == 0L) System.currentTimeMillis() else createdAt
-)

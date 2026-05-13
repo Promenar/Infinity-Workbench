@@ -5,11 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.entity.DocumentEntity
 import com.promenar.nexara.data.local.db.entity.FolderEntity
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.data.rag.VectorStatsService
+import com.promenar.nexara.domain.model.Document
+import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
+import com.promenar.nexara.domain.repository.IVectorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,18 +36,19 @@ data class QueueState(
 )
 
 class RagViewModel(
-    application: Application
+    application: Application,
+    private val documentRepository: IDocumentRepository,
+    private val vectorRepository: IVectorRepository,
+    private val kgRepository: IKnowledgeGraphRepository
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
-    private val database = app.database
-    private val folderDao = database.folderDao()
-    private val documentDao = database.documentDao()
-    private val vectorDao = database.vectorDao()
-    private val kgNodeDao = database.kgNodeDao()
-    private val kgEdgeDao = database.kgEdgeDao()
 
-    private val vectorStatsService = VectorStatsService(vectorDao)
+    // TODO: migrate to FolderRepository
+    @Suppress("LeakingThis")
+    private val folderDao = app.database.folderDao()
+
+    private val vectorStatsService = VectorStatsService(app.database.vectorDao())
 
     val folders: StateFlow<List<FolderEntity>> = folderDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -52,11 +56,11 @@ class RagViewModel(
     private val _folderStats = MutableStateFlow<Map<String, Int>>(emptyMap())
     val folderStats: StateFlow<Map<String, Int>> = _folderStats.asStateFlow()
 
-    private val _documents = MutableStateFlow<List<DocumentEntity>>(emptyList())
-    val documents: StateFlow<List<DocumentEntity>> = _documents.asStateFlow()
+    private val _documents = MutableStateFlow<List<Document>>(emptyList())
+    val documents: StateFlow<List<Document>> = _documents.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<List<DocumentEntity>>(emptyList())
-    val searchResults: StateFlow<List<DocumentEntity>> = _searchResults.asStateFlow()
+    private val _searchResults = MutableStateFlow<List<Document>>(emptyList())
+    val searchResults: StateFlow<List<Document>> = _searchResults.asStateFlow()
 
     private val _isIndexing = MutableStateFlow(false)
     val isIndexing: StateFlow<Boolean> = _isIndexing.asStateFlow()
@@ -123,7 +127,7 @@ class RagViewModel(
 
     private fun startDataObservation() {
         viewModelScope.launch {
-            documentDao.observeAll().collect { list ->
+            documentRepository.observeAll().collect { list ->
                 _documents.value = list
             }
         }
@@ -147,7 +151,7 @@ class RagViewModel(
         viewModelScope.launch {
             val stats = mutableMapOf<String, Int>()
             for (folder in folderList) {
-                stats[folder.id] = documentDao.countByFolderId(folder.id)
+                stats[folder.id] = documentRepository.countByFolderId(folder.id)
             }
             _folderStats.value = stats
         }
@@ -244,7 +248,6 @@ class RagViewModel(
                 providerName = provider,
                 contextLength = contextLength,
                 capabilities = buildList {
-                    // Map type to capability
                     when (type) {
                         "chat" -> add(ModelCapability.CHAT)
                         "reasoning" -> add(ModelCapability.REASONING)
@@ -254,11 +257,9 @@ class RagViewModel(
                         "rerank" -> add(ModelCapability.RERANK)
                         "image" -> add(ModelCapability.IMAGE)
                     }
-                    // Add extra caps
                     caps.forEach { capStr ->
                         try { add(ModelCapability.valueOf(capStr.uppercase())) } catch (_: Exception) {}
                     }
-                    // Ensure consistency
                     if (contains(ModelCapability.REASONING) && !contains(ModelCapability.CHAT)) {
                         add(ModelCapability.CHAT)
                     }
@@ -285,8 +286,8 @@ class RagViewModel(
     private fun loadStats() {
         viewModelScope.launch {
             try {
-                val docCount = documentDao.getCount()
-                val nodeCount = kgNodeDao.getCount()
+                val docCount = documentRepository.getCount()
+                val nodeCount = kgRepository.getNodeCount()
                 val vStats = vectorStatsService.getStats()
                 _vectorStats.value = vStats
                 _stats.value = RagStats(
@@ -315,7 +316,7 @@ class RagViewModel(
     fun loadDocumentsForFolder(folderId: String) {
         viewModelScope.launch {
             try {
-                _documents.value = documentDao.getByFolderId(folderId)
+                _documents.value = documentRepository.getByFolderId(folderId)
             } catch (_: Exception) { }
         }
     }
@@ -334,8 +335,8 @@ class RagViewModel(
         viewModelScope.launch {
             try {
                 for (docId in ids) {
-                    documentDao.deleteById(docId)
-                    vectorDao.deleteByDocId(docId)
+                    documentRepository.delete(docId)
+                    vectorRepository.deleteByDocument(docId)
                 }
                 loadStats()
             } catch (_: Exception) { }
@@ -357,7 +358,7 @@ class RagViewModel(
             try {
                 val allDocs = _documents.value
                 _searchResults.value = allDocs.filter {
-                    it.title?.contains(query, ignoreCase = true) == true
+                    it.title.contains(query, ignoreCase = true)
                 }
             } catch (_: Exception) { }
         }
@@ -407,7 +408,24 @@ class RagViewModel(
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return RagViewModel(application) as T
+                    val app = application as NexaraApplication
+                    return RagViewModel(
+                        application = application,
+                        documentRepository = com.promenar.nexara.data.repository.DocumentRepository(
+                            documentDao = app.database.documentDao(),
+                            folderDao = app.database.folderDao()
+                        ),
+                        vectorRepository = com.promenar.nexara.data.repository.VectorRepository(
+                            vectorDao = app.database.vectorDao(),
+                            embeddingClient = app.embeddingClient
+                        ),
+                        kgRepository = com.promenar.nexara.data.repository.KnowledgeGraphRepository(
+                            kgNodeDao = app.database.kgNodeDao(),
+                            kgEdgeDao = app.database.kgEdgeDao(),
+                            graphExtractor = app.graphExtractor,
+                            documentDao = app.database.documentDao()
+                        )
+                    ) as T
                 }
             }
     }

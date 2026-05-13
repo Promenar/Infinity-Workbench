@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.dao.AgentDao
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.SessionManager
@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 class SessionListViewModel(
     private val store: ChatStore,
     private val sessionRepository: ISessionRepository,
-    private val agentDao: AgentDao
+    private val agentRepository: AgentRepository
 ) : ViewModel() {
 
     private val sessionManager = SessionManager(store, sessionRepository)
@@ -66,7 +66,7 @@ class SessionListViewModel(
         _currentAgentId.value = agentId
         viewModelScope.launch {
             try {
-                val agent = agentDao.getById(agentId)
+                val agent = agentRepository.observeById(agentId).first()
                 _agentName.value = agent?.name ?: "Agent"
                 _agentColor.value = agent?.color ?: "#C0C1FF"
             } catch (_: Exception) {}
@@ -82,17 +82,17 @@ class SessionListViewModel(
 
     fun createSession(agentId: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
-            val agent = try { agentDao.getById(agentId) } catch (_: Exception) { null }
+            val agent = try { agentRepository.observeById(agentId).first() } catch (_: Exception) { null }
             val sessionId = "session_${System.currentTimeMillis()}"
             val session = Session(
                 id = sessionId,
                 agentId = agentId,
-                modelId = agent?.model,
+                modelId = agent?.modelId,
                 inferenceParams = if (agent != null) {
                     com.promenar.nexara.data.model.InferenceParams(
                         temperature = agent.temperature,
-                        topP = agent.top_p,
-                        maxTokens = agent.max_tokens
+                        topP = agent.topP,
+                        maxTokens = agent.maxTokens
                     )
                 } else null,
                 createdAt = System.currentTimeMillis(),
@@ -134,7 +134,7 @@ class SessionListViewModel(
                     return SessionListViewModel(
                         store = app.chatStore,
                         sessionRepository = app.sessionRepository,
-                        agentDao = app.database.agentDao()
+                        agentRepository = app.agentRepository
                     ) as T
                 }
             }

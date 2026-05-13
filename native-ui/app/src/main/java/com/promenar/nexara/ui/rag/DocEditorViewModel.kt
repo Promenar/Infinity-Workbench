@@ -1,22 +1,20 @@
 package com.promenar.nexara.ui.rag
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.entity.DocumentEntity
+import com.promenar.nexara.domain.repository.IDocumentRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class DocEditorViewModel(application: Application) : AndroidViewModel(application) {
+class DocEditorViewModel(
+    private val documentRepository: IDocumentRepository
+) : ViewModel() {
 
-    private val app = application as NexaraApplication
-    private val documentDao = app.database.documentDao()
-
-    private val _document = MutableStateFlow<DocumentEntity?>(null)
-    val document: StateFlow<DocumentEntity?> = _document.asStateFlow()
+    private val _document = MutableStateFlow<com.promenar.nexara.domain.model.Document?>(null)
+    val document: StateFlow<com.promenar.nexara.domain.model.Document?> = _document.asStateFlow()
 
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content.asStateFlow()
@@ -38,12 +36,12 @@ class DocEditorViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadDocument(docId: String) {
         viewModelScope.launch {
             try {
-                val doc = documentDao.getById(docId)
+                val doc = documentRepository.getById(docId)
                 _document.value = doc
                 if (doc != null) {
-                    val sizeMb = (doc.fileSize ?: 0) / (1024.0 * 1024.0)
+                    val sizeMb = (doc.content.length.toDouble()) / (1024.0 * 1024.0)
                     _isLargeFile.value = sizeMb > 10.0
-                    val mockContent = generateMockContent(doc.title ?: "Untitled")
+                    val mockContent = generateMockContent(doc.title.ifBlank { "Untitled" })
                     _content.value = mockContent
                     originalContent = mockContent
                 }
@@ -54,10 +52,20 @@ class DocEditorViewModel(application: Application) : AndroidViewModel(applicatio
     fun saveDocument() {
         viewModelScope.launch {
             try {
+                val doc = _document.value ?: return@launch
+                documentRepository.update(doc.id, _content.value)
                 _isDirty.value = false
                 originalContent = _content.value
             } catch (_: Exception) {}
         }
+    }
+
+    class Factory(
+        private val documentRepository: IDocumentRepository
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            DocEditorViewModel(documentRepository) as T
     }
 
     fun onContentChanged(newContent: String) {

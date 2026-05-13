@@ -7,6 +7,8 @@ import com.promenar.nexara.data.remote.protocol.*
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.domain.model.Agent
+import com.promenar.nexara.domain.repository.IAgentRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -93,6 +95,28 @@ class ChatViewModelTest {
         override suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Boolean?) {}
     }
 
+    private val stubAgentRepo = object : IAgentRepository {
+        private val agents = mutableListOf<Agent>()
+        var lastGetByIdId: String? = null
+
+        fun seed(agent: Agent) {
+            agents.add(agent)
+        }
+
+        override fun observeAll() = kotlinx.coroutines.flow.flowOf(agents.toList())
+        override fun observeById(id: String) = kotlinx.coroutines.flow.flowOf(agents.find { it.id == id })
+        override suspend fun create(agent: Agent) { agents.add(agent) }
+        override suspend fun update(agent: Agent) {
+            agents.removeAll { it.id == agent.id }
+            agents.add(agent)
+        }
+        override suspend fun delete(id: String) { agents.removeAll { it.id == id } }
+        override suspend fun getById(id: String): Agent? {
+            lastGetByIdId = id
+            return agents.find { it.id == id }
+        }
+    }
+
     private var fakeStreamChunks: List<StreamChunk> = emptyList()
 
     private val fakeProtocol = object : LlmProtocol {
@@ -124,10 +148,19 @@ class ChatViewModelTest {
         savedMessages.clear()
         deletedMessages.clear()
         fakeStreamChunks = emptyList()
+
+        stubAgentRepo.seed(Agent(
+            id = "a1",
+            name = "Test Agent",
+            systemPrompt = "test prompt",
+            modelId = "gpt-4o"
+        ))
+
         viewModel = ChatViewModel(
             application = app,
             sessionRepository = stubSessionRepo,
             messageRepository = stubMessageRepo,
+            agentRepository = stubAgentRepo,
             llmProvider = fakeLlmProvider
         )
     }
@@ -270,17 +303,24 @@ class ChatViewModelTest {
     @Test
     fun sendMessage_withError_updatesErrorState() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
-        seedSession()
+        seedSession(); advanceUntilIdle()
         
         fakeStreamChunks = listOf(
             StreamChunk.Error("Something went wrong")
         )
 
         viewModel.sendMessage("hello")
-        
-
+        advanceUntilIdle()
 
         assertThat(viewModel.uiState.value.error).isEqualTo("Something went wrong")
+        
+    }
 
+    @Test
+    fun loadSession_fetchesAgentNameFromRepository() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(); advanceUntilIdle()
+
+        assertThat(stubAgentRepo.lastGetByIdId).isEqualTo("a1")
     }
 }

@@ -10,9 +10,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.promenar.nexara.data.repository.KnowledgeGraphRepository
+import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
-import com.promenar.nexara.data.local.db.entity.KgNodeEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,11 +35,9 @@ data class GraphEdge(
     val relation: String = ""
 )
 
-class KnowledgeGraphViewModel(application: Application) : ViewModel() {
-    private val app = application as NexaraApplication
-    private val database = app.database
-    private val kgNodeDao = database.kgNodeDao()
-    private val kgEdgeDao = database.kgEdgeDao()
+class KnowledgeGraphViewModel(
+    private val repo: IKnowledgeGraphRepository
+) : ViewModel() {
 
     private val _nodes = MutableStateFlow<List<GraphNode>>(emptyList())
     val nodes: StateFlow<List<GraphNode>> = _nodes.asStateFlow()
@@ -58,18 +56,18 @@ class KnowledgeGraphViewModel(application: Application) : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val nodeEntities = kgNodeDao.getAll()
-                val edgeEntities = kgEdgeDao.getAll()
+                val domainNodes = repo.getAllNodes()
+                val domainEdges = repo.getAllEdges()
 
                 val rng = Random(42)
-                val mappedNodes = nodeEntities.map { entity ->
+                val mappedNodes = domainNodes.map { node ->
                     GraphNode(
-                        id = entity.id,
-                        label = entity.name,
-                        type = entity.type,
+                        id = node.id,
+                        label = node.label,
+                        type = node.type,
                         x = rng.nextFloat() * 1200f - 600f,
                         y = rng.nextFloat() * 800f - 400f,
-                        icon = when (entity.type) {
+                        icon = when (node.type) {
                             "concept" -> Icons.Rounded.Psychology
                             "document" -> Icons.Rounded.Description
                             "person" -> Icons.Rounded.Person
@@ -78,11 +76,11 @@ class KnowledgeGraphViewModel(application: Application) : ViewModel() {
                     )
                 }
 
-                val mappedEdges = edgeEntities.map { entity ->
+                val mappedEdges = domainEdges.map { edge ->
                     GraphEdge(
-                        sourceId = entity.sourceId,
-                        targetId = entity.targetId,
-                        relation = entity.relation
+                        sourceId = edge.sourceId,
+                        targetId = edge.targetId,
+                        relation = edge.relation
                     )
                 }
 
@@ -101,49 +99,45 @@ class KnowledgeGraphViewModel(application: Application) : ViewModel() {
             _isLoading.value = true
             try {
                 val rng = Random(System.currentTimeMillis())
-                val mockNodes = mutableListOf<KgNodeEntity>()
-                val mockEdges = mutableListOf<KgEdgeEntity>()
+                val mockNodeIds = mutableListOf<String>()
 
-                // Create some nodes
-                for (i in 0..15) {
+                val mockNodes = (0..15).map {
                     val id = UUID.randomUUID().toString()
+                    mockNodeIds.add(id)
                     val type = when (rng.nextInt(3)) {
                         0 -> "concept"
                         1 -> "document"
                         else -> "person"
                     }
-                    mockNodes.add(
-                        KgNodeEntity(
-                            id = id,
-                            name = "${type.replaceFirstChar { it.uppercase() }} ${('A' + rng.nextInt(26))}${rng.nextInt(100)}",
-                            type = type,
-                            createdAt = System.currentTimeMillis()
-                        )
+                    GraphNode(
+                        id = id,
+                        label = "${type.replaceFirstChar { it.uppercase() }} ${('A' + rng.nextInt(26))}${rng.nextInt(100)}",
+                        type = type,
+                        x = rng.nextFloat() * 1200f - 600f,
+                        y = rng.nextFloat() * 800f - 400f,
+                        icon = when (type) {
+                            "concept" -> Icons.Rounded.Psychology
+                            "document" -> Icons.Rounded.Description
+                            "person" -> Icons.Rounded.Person
+                            else -> Icons.Rounded.Hub
+                        }
                     )
                 }
 
-                // Random Edges
-                for (i in 1..25) {
-                    val src = mockNodes[rng.nextInt(mockNodes.size)]
-                    val tgt = mockNodes[rng.nextInt(mockNodes.size)]
-                    if (src.id != tgt.id) {
-                        mockEdges.add(
-                            KgEdgeEntity(
-                                id = UUID.randomUUID().toString(),
-                                sourceId = src.id,
-                                targetId = tgt.id,
-                                relation = listOf("contains", "references", "depends_on", "authored").random(rng),
-                                createdAt = System.currentTimeMillis()
-                            )
+                val mockEdges = (1..25).mapNotNull {
+                    val srcIdx = rng.nextInt(mockNodes.size)
+                    val tgtIdx = rng.nextInt(mockNodes.size)
+                    if (srcIdx != tgtIdx) {
+                        GraphEdge(
+                            sourceId = mockNodes[srcIdx].id,
+                            targetId = mockNodes[tgtIdx].id,
+                            relation = listOf("contains", "references", "depends_on", "authored").random(rng)
                         )
-                    }
+                    } else null
                 }
 
-                // Save to DB
-                mockNodes.forEach { kgNodeDao.insert(it) }
-                mockEdges.forEach { kgEdgeDao.insert(it) }
-
-                loadGraph()
+                _nodes.value = mockNodes
+                _edges.value = mockEdges
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -156,8 +150,7 @@ class KnowledgeGraphViewModel(application: Application) : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                kgEdgeDao.clearAll()
-                kgNodeDao.clearAll()
+                repo.clear()
                 loadGraph()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -172,7 +165,14 @@ class KnowledgeGraphViewModel(application: Application) : ViewModel() {
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return KnowledgeGraphViewModel(application) as T
+                    val app = application as NexaraApplication
+                    val repo = KnowledgeGraphRepository(
+                        kgNodeDao = app.database.kgNodeDao(),
+                        kgEdgeDao = app.database.kgEdgeDao(),
+                        graphExtractor = app.graphExtractor,
+                        documentDao = app.database.documentDao()
+                    )
+                    return KnowledgeGraphViewModel(repo) as T
                 }
             }
     }

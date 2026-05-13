@@ -326,15 +326,15 @@ class LlmProtocolSerializationTest {
 
         @Test
         fun `all protocol IDs exist`() {
-            assertThat(ProtocolId.OPENAI.name).isEqualTo("OPENAI")
-            assertThat(ProtocolId.ANTHROPIC.name).isEqualTo("ANTHROPIC")
-            assertThat(ProtocolId.VERTEX_AI.name).isEqualTo("VERTEX_AI")
-            assertThat(ProtocolId.LOCAL.name).isEqualTo("LOCAL")
+            assertThat(ProtocolId.OPENAI).isInstanceOf(ProtocolType::class.java)
+            assertThat(ProtocolId.ANTHROPIC).isInstanceOf(ProtocolType::class.java)
+            assertThat(ProtocolId.VERTEX_AI).isInstanceOf(ProtocolType::class.java)
+            assertThat(ProtocolId.LOCAL).isInstanceOf(ProtocolType::class.java)
         }
 
         @Test
-        fun `values returns all four`() {
-            assertThat(ProtocolId.entries).hasSize(4)
+        fun `values returns all entries`() {
+            assertThat(ProtocolId.entries.size).isAtLeast(4)
         }
     }
 

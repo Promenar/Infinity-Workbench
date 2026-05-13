@@ -142,7 +142,7 @@ fun RagFolderScreen(
                         val isSelected = selectedIds.contains(doc.id)
 
                         RagDocItem(
-                            title = doc.title ?: "Untitled",
+                            title = doc.title.ifBlank { "Untitled" },
                             status = status,
                             isSelected = isSelected,
                             showCheckbox = selectedIds.isNotEmpty() || isSelected,

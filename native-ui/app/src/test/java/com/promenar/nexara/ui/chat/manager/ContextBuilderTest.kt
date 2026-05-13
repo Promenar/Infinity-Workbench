@@ -120,7 +120,8 @@ class ContextBuilderTest {
             override suspend fun retrieveContext(
                 query: String,
                 sessionId: String,
-                options: RagOptions
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
             ): Triple<String, List<RagReference>, RagUsage?> {
                 return Triple(
                     "RAG context",
@@ -153,7 +154,8 @@ class ContextBuilderTest {
             override suspend fun retrieveContext(
                 query: String,
                 sessionId: String,
-                options: RagOptions
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
             ): Triple<String, List<RagReference>, RagUsage?> {
                 ragCalled = true
                 return Triple("", emptyList(), null)
@@ -190,7 +192,8 @@ class ContextBuilderTest {
             override suspend fun retrieveContext(
                 query: String,
                 sessionId: String,
-                options: RagOptions
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
             ): Triple<String, List<RagReference>, RagUsage?> {
                 return Triple(
                     "RAG context",
@@ -233,7 +236,8 @@ class ContextBuilderTest {
             override suspend fun retrieveContext(
                 query: String,
                 sessionId: String,
-                options: RagOptions
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
             ): Triple<String, List<RagReference>, RagUsage?> {
                 return Triple(
                     "RAG context",
@@ -278,7 +282,8 @@ class ContextBuilderTest {
             override suspend fun retrieveContext(
                 query: String,
                 sessionId: String,
-                options: RagOptions
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
             ): Triple<String, List<RagReference>, RagUsage?> {
                 return Triple(
                     "RAG context",

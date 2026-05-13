@@ -28,6 +28,7 @@ import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.ui.chat.manager.ApprovalManager
 import com.promenar.nexara.ui.chat.manager.ContextBuilder
 import com.promenar.nexara.ui.chat.manager.ContextBuilderParams
@@ -37,7 +38,6 @@ import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +75,7 @@ class ChatViewModel(
     private val application: Application,
     private val sessionRepository: ISessionRepository,
     private val messageRepository: IMessageRepository,
+    private val agentRepository: IAgentRepository,
     private val llmProvider: LlmProvider,
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
@@ -244,11 +245,8 @@ class ChatViewModel(
         _generationStatus.update { GenerationStatus.UPLOADING }
         _streamingContent.update { "" }
 
-        val agentDao = (application as NexaraApplication).database.agentDao()
-        val agentEntity = kotlinx.coroutines.withContext(Dispatchers.IO) {
-            agentDao.getById(sessionForCtx.agentId)
-        }
-        val agentPrompt = agentEntity?.systemPrompt ?: ""
+        val agent = agentRepository.getById(sessionForCtx.agentId)
+        val agentPrompt = agent?.systemPrompt ?: ""
 
         val contextParams = ContextBuilderParams(
             sessionId = sessionId,
@@ -297,13 +295,13 @@ class ChatViewModel(
 
         // Fallback logic: if session lacks settings, use agent's defaults
         val effectiveModel = sessionForCtx.modelId 
-            ?: agentEntity?.model 
+            ?: agent?.modelId
             ?: ""
         
         val effectiveParams = sessionForCtx.inferenceParams ?: InferenceParams(
-            temperature = agentEntity?.temperature ?: 0.7,
-            topP = agentEntity?.top_p ?: 0.9,
-            maxTokens = agentEntity?.max_tokens ?: 4096
+            temperature = agent?.temperature ?: 0.7,
+            topP = agent?.topP ?: 0.9,
+            maxTokens = agent?.maxTokens ?: 4096
         )
 
         val request = PromptRequest(
@@ -583,9 +581,8 @@ class ChatViewModel(
             _agentName.value = ""
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            val agentDao = (application as NexaraApplication).database.agentDao()
-            val agent = agentDao.getById(agentId)
+        viewModelScope.launch {
+            val agent = agentRepository.getById(agentId)
             _agentName.value = agent?.name ?: ""
         }
     }
@@ -991,6 +988,7 @@ class ChatViewModel(
                         application = application,
                         sessionRepository = app.sessionRepository,
                         messageRepository = app.messageRepository,
+                        agentRepository = app.agentRepository,
                         llmProvider = app.llmProvider,
                         embeddingClient = app.embeddingClient,
                         vectorStore = app.vectorStore,
@@ -1004,9 +1002,8 @@ class ChatViewModel(
     }
 
     private fun updateTokenIndicator(session: Session) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val agentDao = (application as NexaraApplication).database.agentDao()
-            val agent = session.agentId.let { agentDao.getById(it) }
+        viewModelScope.launch {
+            val agent = session.agentId?.let { agentRepository.getById(it) }
             
             // Reconstruct system prompt parts for accurate estimation (matching ContextBuilder)
             val agentPrompt = agent?.systemPrompt ?: ""

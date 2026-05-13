@@ -17,6 +17,8 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
+import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.domain.repository.IVectorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,7 +76,11 @@ data class SkillInfo(
 // ProviderListItem 已迁移至 data/model/ProviderModels.kt，此处通过 import 引入。
 // 保留此注释以防止 git diff 混乱。
 
-class SettingsViewModel(application: Application) : ViewModel() {
+class SettingsViewModel(
+    application: Application,
+    private val vectorRepository: IVectorRepository,
+    private val documentRepository: IDocumentRepository
+) : ViewModel() {
 
     private val app = application as NexaraApplication
     private val prefs: SharedPreferences =
@@ -223,8 +229,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private fun loadTokenStats() {
         viewModelScope.launch {
             try {
-                val vectorDao = app.database.vectorDao()
-                val totalCount = vectorDao.getAll().size
+                val totalCount = vectorRepository.getCount()
                 val config = pm.getMainProviderConfig()
                 _tokenStats.value = listOf(
                     ProviderStats(
@@ -266,7 +271,7 @@ class SettingsViewModel(application: Application) : ViewModel() {
     private fun loadKnowledgeStats() {
         viewModelScope.launch {
             try {
-                val docCount = app.database.documentDao().getGlobalDocuments().size
+                val docCount = documentRepository.getCount()
                 _activeSourcesCount.value = docCount
             } catch (_: Exception) { }
         }
@@ -532,7 +537,8 @@ class SettingsViewModel(application: Application) : ViewModel() {
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return SettingsViewModel(application) as T
+                    val app = application as NexaraApplication
+                    return SettingsViewModel(application, app.vectorRepository, app.documentRepository) as T
                 }
             }
     }
