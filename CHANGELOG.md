@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 领域层与仓库层架构迁移 (Phase 2a/2c) (2026-05-13)
+- **核心架构演进**: 建立了纯净的 Domain 层（模型、接口、枚举），完全消除业务逻辑对 Android 框架的依赖。
+- **Repository 全量实装**: 实现了 Agent、Document、Vector、KnowledgeGraph、Provider 等核心仓储，Repository 覆盖率提升至 100%。
+- **ViewModel 深度重构**: 全量迁移了 Chat、Settings、Rag、AgentHub、SessionList 等 8 个 ViewModel，消除了所有直接的 DAO 依赖。
+- **测试工程化**: 新增 90+ 个文件，包含完备的单元测试（MockK + Turbine），测试覆盖了从 Mapper 到 ViewModel 的全链路逻辑。
+- **Git 环境纯净化**: 彻底清理了 RN 时代残余文件，将 `native-kotlin-refactor` 分支正式确立为仓库默认主分支。
+
 ### Phase 2c — 剩余 ViewModel 迁移完成 (2026-05-13)
 - **3 个 ViewModel 全部迁移**: ChatViewModel / SettingsViewModel / RagViewModel — 消除最后 3 个 VM 的 DAO 依赖
 - **架构债 AD-4 消除**: 8/8 ViewModel 全部使用 Repository，零直接 DAO 操作
