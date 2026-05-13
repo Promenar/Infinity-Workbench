@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+- [RAG] **P0-1 引用写入修复**：`ChatViewModel.generateMessage()` 中 `contextBuilder.buildContext()` 返回的 `ragReferences` 现在正确写入 `Message` 模型，`RagOmniIndicator` 可在 AI 回复上方正确显示检索引用来源
+- [RAG] **P0-2 Embedding 本地降级**：`EmbeddingClient.embedQuery()` / `embedDocuments()` 现支持 API 失败时自动降级到 `LocalInferenceEngine` 本地推理引擎，防止 RAG 静默失效
+- [RAG] **P0-3 向量维度告警**：`VectorStore.search()` 新增 `onWarning` 回调，维度不匹配时输出 `Log.w` 警告并回调通知调用方，帮助用户在更换 Embedding 模型时感知旧向量失效
+- [UI/Markdown] **P1-1 流式缓存边界检测**：增量追加时检测 ` ``` ` / `$$` 跨边界，自动重新分段解析，解决代码块和 LaTeX 在流式输出中被碎片化的问题
+- [UI/Markdown] **P1-2 缩进代码块保护**：新增 `safeTrimIndent()` 辅助函数，在 `trimIndent()` 前检测 4 空格缩进代码块并跳过 trim，防止 GFM 缩进代码块被破坏
+- [UI/Markdown] **P1-3 CJK 间距保护**：`insertCjkSpacing()` 现保护行内代码（\`...\`）和链接（[...](...)）不被注入 hair space (U+200A)
+- [UI/Markdown] **P2-2 崩溃降级回退**：新增 `MarkdownSafe` composable，Markdown 渲染崩溃时自动降级为 `Text` 纯文本显示，防止整个聊天页白屏
+- [RAG] **P1-4 多格式文档导入**：`DocumentImporter` 现支持 PDF / Word / HTML 格式识别与分发，PDF 使用 Android `PdfRenderer`，HTML 自动剥离标签
+- [RAG] **P1-5 阈值滑块**：`GlobalRagConfigScreen` 新增 `memoryThreshold`（对话记忆阈值）和 `docThreshold`（文档检索阈值）滑块
+- [RAG] **P1-6 进度条状态优化**：`RagOmniIndicator` 进度条仅在做检索过程中显示，已完成/消息重载后自动隐藏，避免旧检索进度条残留
+
 ### Added
 - [Provider] **协议类型体系升级**：将 `ProtocolId` 枚举重构为 `ProtocolType` sealed class，支持 9 种协议类型（OpenAI Chat/Responses、Anthropic Messages、Google VertexAI、Cohere Chat、Mistral Chat、DeepSeek、通用 OpenAI 兼容、本地推理），包含独立 `ProtocolSelector` UI 组件
 - [Provider] **ProviderManager 统一数据源**：引入全站单一数据源单例，统一管理提供商 CRUD、模型状态、预设模型选择，取代散落在 SettingsViewModel 和 NexaraApplication 中的冗余逻辑

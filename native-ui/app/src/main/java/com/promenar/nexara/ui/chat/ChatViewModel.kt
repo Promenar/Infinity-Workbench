@@ -14,6 +14,7 @@ import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.rag.EmbeddingClient
@@ -274,6 +275,20 @@ class ChatViewModel(
                 _generationStatus.update { GenerationStatus.IDLE }
             }
             return
+        }
+
+        if (contextResult.ragReferences.isNotEmpty()) {
+            messageManager.updateMessageContent(
+                sessionId, assistantMsgId, "",
+                UpdateMessageOptions(
+                    ragReferences = contextResult.ragReferences,
+                    ragMetadata = RagMetadata(
+                        chunkCount = contextResult.ragReferences.size,
+                        totalTokens = contextResult.ragUsage?.ragSystem ?: 0,
+                        retrievalTimeMs = 0
+                    )
+                )
+            )
         }
 
         val protocolMessages = buildProtocolMessages(sessionForCtx, contextResult.finalSystemPrompt)

@@ -727,6 +727,11 @@
     <string name="rag_config_overlap">Overlap</string>
     <string name="rag_config_context_window">Context Window</string>
     <string name="rag_config_summary_threshold">Summary Threshold</string>
+    <string name="rag_config_threshold_section">Retrieval Thresholds</string>
+    <string name="rag_config_memory_threshold">Memory Threshold</string>
+    <string name="rag_config_memory_threshold_hint">Higher = more precise, lower = more recall</string>
+    <string name="rag_config_doc_threshold">Document Threshold</string>
+    <string name="rag_config_doc_threshold_hint">Similarity threshold for document retrieval</string>
     <string name="rag_config_section_template">Summary Template</string>
     <string name="rag_config_template_hint">RAG prompt template</string>
     <string name="rag_config_vector_status">Vector Index Status</string>

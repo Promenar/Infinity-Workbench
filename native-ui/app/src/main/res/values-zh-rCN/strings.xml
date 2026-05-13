@@ -728,6 +728,11 @@
     <string name="rag_config_overlap">重叠</string>
     <string name="rag_config_context_window">上下文窗口</string>
     <string name="rag_config_summary_threshold">摘要阈值</string>
+    <string name="rag_config_threshold_section">检索阈值</string>
+    <string name="rag_config_memory_threshold">对话记忆阈值</string>
+    <string name="rag_config_memory_threshold_hint">越高越精准，越低召回越多</string>
+    <string name="rag_config_doc_threshold">文档检索阈值</string>
+    <string name="rag_config_doc_threshold_hint">文档检索的相似度门槛</string>
     <string name="rag_config_section_template">摘要模板</string>
     <string name="rag_config_template_hint">RAG 提示词模板</string>
     <string name="rag_config_vector_status">向量索引状态</string>

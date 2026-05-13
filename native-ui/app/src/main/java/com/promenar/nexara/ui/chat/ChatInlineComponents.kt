@@ -185,7 +185,14 @@ fun RagOmniIndicator(
     references: List<RagReference>?,
     isLoading: Boolean
 ) {
-    if (progress == null && !isLoading && (references == null || references.isEmpty())) return
+    val showProgress = when {
+        isLoading -> true
+        progress == null -> false
+        (progress.percentage ?: 0) < 100 -> true
+        else -> false
+    }
+
+    if (!showProgress && (references == null || references.isEmpty())) return
 
     NexaraGlassCard(
         modifier = Modifier
@@ -207,7 +214,7 @@ fun RagOmniIndicator(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        Icons.Rounded.CloudSync, // More active retrieval icon
+                        Icons.Rounded.CloudSync,
                         null,
                         tint = NexaraColors.Primary,
                         modifier = Modifier.size(18.dp)
@@ -219,7 +226,7 @@ fun RagOmniIndicator(
                     )
                 }
 
-                if (isLoading || (progress?.percentage ?: 0) < 100) {
+                if (showProgress) {
                     Surface(
                         color = NexaraColors.Primary.copy(alpha = 0.1f),
                         shape = RoundedCornerShape(4.dp),
@@ -235,46 +242,47 @@ fun RagOmniIndicator(
                 }
             }
 
-            // Progress Bar
-            val percentage = progress?.percentage ?: if (isLoading) 30 else 0
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = progress?.stage ?: stringResource(R.string.chat_rag_scanning),
-                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                    Text(
-                        text = "$percentage%",
-                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                        color = NexaraColors.Primary
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(CircleShape)
-                        .background(NexaraColors.SurfaceHigh)
-                ) {
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = percentage / 100f,
-                        animationSpec = tween(500),
-                        label = "rag_progress"
-                    )
+            if (showProgress) {
+                val percentage = progress?.percentage ?: if (isLoading) 30 else 0
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = progress?.stage ?: stringResource(R.string.chat_rag_scanning),
+                            style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                            color = NexaraColors.OnSurfaceVariant
+                        )
+                        Text(
+                            text = "$percentage%",
+                            style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                            color = NexaraColors.Primary
+                        )
+                    }
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(animatedProgress)
-                            .fillMaxHeight()
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(NexaraColors.Primary, NexaraColors.Tertiary)
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(CircleShape)
+                            .background(NexaraColors.SurfaceHigh)
+                    ) {
+                        val animatedProgress by animateFloatAsState(
+                            targetValue = percentage / 100f,
+                            animationSpec = tween(500),
+                            label = "rag_progress"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(animatedProgress)
+                                .fillMaxHeight()
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(NexaraColors.Primary, NexaraColors.Tertiary)
+                                    )
                                 )
-                            )
-                    )
+                        )
+                    }
                 }
             }
 

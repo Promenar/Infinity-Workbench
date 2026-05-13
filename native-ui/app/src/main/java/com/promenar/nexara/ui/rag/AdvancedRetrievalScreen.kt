@@ -67,13 +67,7 @@ fun AdvancedRetrievalScreen(
         scrollable = false
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Rounded.Tune, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-                Text(stringResource(R.string.retrieval_title_full), style = NexaraTypography.headlineLarge, color = NexaraColors.Primary)
-            }
+
             Text(
                 stringResource(R.string.retrieval_desc),
                 style = NexaraTypography.bodyMedium,

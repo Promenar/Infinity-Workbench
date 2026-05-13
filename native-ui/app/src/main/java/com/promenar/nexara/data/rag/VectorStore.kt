@@ -5,6 +5,7 @@ import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.entity.VectorEntity
+import android.util.Log
 import java.nio.ByteBuffer
 import java.util.UUID
 
@@ -86,7 +87,8 @@ class VectorStore(
         queryEmbedding: FloatArray,
         limit: Int = 5,
         threshold: Float = 0.7f,
-        filter: SearchFilter = SearchFilter()
+        filter: SearchFilter = SearchFilter(),
+        onWarning: ((String) -> Unit)? = null
     ): List<SearchResult> {
         val rows = when {
             filter.docIds != null && filter.docIds.isNotEmpty() -> {
@@ -103,14 +105,15 @@ class VectorStore(
             else -> vectorDao.getAll()
         }
 
-        return searchInMemory(queryEmbedding, rows, threshold, limit)
+        return searchInMemory(queryEmbedding, rows, threshold, limit, onWarning)
     }
 
     private fun searchInMemory(
         queryEmbedding: FloatArray,
         rows: List<VectorEntity>,
         threshold: Float,
-        limit: Int
+        limit: Int,
+        onWarning: ((String) -> Unit)? = null
     ): List<SearchResult> {
         val candidates = mutableListOf<SearchResult>()
         val queryMag = magnitude(queryEmbedding)
@@ -139,6 +142,15 @@ class VectorStore(
                     )
                 )
             }
+        }
+
+        if (dimensionMismatchCount > 0) {
+            val storedDim = rows.firstOrNull()?.embedding?.let { fromBlob(it).size }
+            val msg = "Dimension mismatch: $dimensionMismatchCount/${rows.size} vectors " +
+                "have dimension $storedDim but query has dimension ${queryEmbedding.size}. " +
+                "This may indicate a model change. Consider re-vectorizing documents."
+            Log.w("VectorStore", msg)
+            onWarning?.invoke(msg)
         }
 
         candidates.sortByDescending { it.similarity }

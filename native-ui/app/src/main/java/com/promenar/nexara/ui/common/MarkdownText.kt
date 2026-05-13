@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.common
 
+import android.util.Log
+
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -193,7 +196,8 @@ fun MarkdownText(
     val processed = remember(markdown, isStreaming) {
         val normalized = normalizeLatexDelimiters(markdown)
         val raw = if (isStreaming) sanitizeStreamingMarkdown(normalized) else normalized
-        insertCjkSpacing(raw.trimIndent())
+        val safeTrimmed = safeTrimIndent(raw)
+        insertCjkSpacing(safeTrimmed)
     }
 
     val smoothed = rememberSmoothStreamContent(
@@ -209,7 +213,15 @@ fun MarkdownText(
             && smoothed.length - cache.text.length < RE_PARSE_THRESHOLD
         ) {
             val newPart = smoothed.substring(cache.text.length)
-            cache.segments + ContentSegment.Markdown(newPart)
+            val hasBoundaryCross = newPart.contains("```") || newPart.contains("$$")
+            if (hasBoundaryCross) {
+                val result = splitRichSegments(smoothed)
+                cache.text = smoothed
+                cache.segments = result
+                result
+            } else {
+                cache.segments + ContentSegment.Markdown(newPart)
+            }
         } else {
             val result = splitRichSegments(smoothed)
             cache.text = smoothed
@@ -298,139 +310,11 @@ fun MarkdownText(
                     when (segment) {
                         is ContentSegment.Markdown -> {
                             if (segment.content.isNotBlank()) {
-                                Markdown(
+                                MarkdownSafe(
                                     content = segment.content,
-                                    colors = nexaraMarkdownColors(),
-                                    typography = nexaraMarkdownTypography(fontSize),
-                                    components = markdownComponents(
-                                        heading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.ATX_CONTENT),
-                                        heading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.ATX_CONTENT),
-                                        heading3 = anchoredHeading({ it.typography.h3 }, MarkdownTokenTypes.ATX_CONTENT),
-                                        heading4 = anchoredHeading({ it.typography.h4 }, MarkdownTokenTypes.ATX_CONTENT),
-                                        heading5 = anchoredHeading({ it.typography.h5 }, MarkdownTokenTypes.ATX_CONTENT),
-                                        heading6 = anchoredHeading({ it.typography.h6 }, MarkdownTokenTypes.ATX_CONTENT),
-                                        setextHeading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.SETEXT_CONTENT),
-                                        setextHeading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.SETEXT_CONTENT),
-                                        blockQuote = { model ->
-                                            val rawText = model.node.getUnescapedTextInNode(model.content)
-                                            val stripped = stripBlockQuoteMarkers(rawText)
-                                            if (parseGfmAlert(stripped) != null) {
-                                                GfmAlertBlock(
-                                                    quoteContent = stripped,
-                                                    fontSize = fontSize
-                                                )
-                                            } else {
-                                                MarkdownBlockQuote(
-                                                    content = model.content,
-                                                    node = model.node,
-                                                    style = model.typography.quote,
-                                                )
-                                            }
-                                        },
-                                        image = { model ->
-                                            val link = model.node.findLinkDestination()
-                                                ?.getUnescapedTextInNode(model.content)
-
-                                            if (link != null) {
-                                                var showLightbox by remember { mutableStateOf(false) }
-                                                val imageData = LocalImageTransformer.current.transform(link)
-                                                if (imageData != null) {
-                                                    Image(
-                                                        painter = imageData.painter,
-                                                        contentDescription = imageData.contentDescription,
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clickable { showLightbox = true },
-                                                        alignment = imageData.alignment,
-                                                        contentScale = imageData.contentScale,
-                                                        alpha = imageData.alpha,
-                                                        colorFilter = imageData.colorFilter,
-                                                    )
-                                                    if (showLightbox) {
-                                                        ImageLightbox(
-                                                            imageUrl = link,
-                                                            onDismiss = { showLightbox = false }
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        table = { model ->
-                                            NexaraTableWidget(
-                                                model = model,
-                                                modifier = Modifier
-                                                    .padding(vertical = 8.dp)
-                                                    .fillMaxWidth()
-                                            )
-                                        },
-                                        codeFence = { model ->
-                                            MarkdownCodeFence(
-                                                content = model.content,
-                                                node = model.node,
-                                                style = model.typography.code,
-                                            ) { code, language, style ->
-                                                CodeBlockWithHeader(
-                                                    code = code,
-                                                    language = language,
-                                                    fontSize = fontSize,
-                                                    onCodeChange = onContentChange?.let { cb ->
-                                                        { newCode ->
-                                                            cb(replaceCodeInMarkdown(markdown, language, code, newCode))
-                                                        }
-                                                    }
-                                                ) {
-                                                    MarkdownHighlightedCode(
-                                                        code = code,
-                                                        language = language,
-                                                        style = style
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        codeBlock = { model ->
-                                            MarkdownCodeBlock(
-                                                content = model.content,
-                                                node = model.node,
-                                                style = model.typography.code,
-                                            ) { code, language, style ->
-                                                CodeBlockWithHeader(
-                                                    code = code,
-                                                    language = language,
-                                                    fontSize = fontSize,
-                                                    onCodeChange = onContentChange?.let { cb ->
-                                                        { newCode ->
-                                                            cb(replaceCodeInMarkdown(markdown, language, code, newCode))
-                                                        }
-                                                    }
-                                                ) {
-                                                    MarkdownHighlightedCode(
-                                                        code = code,
-                                                        language = language,
-                                                        style = style
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        horizontalRule = { _ ->
-                                            HorizontalDivider(
-                                                modifier = Modifier.padding(vertical = 12.dp),
-                                                thickness = 1.dp,
-                                                color = NexaraColors.OutlineVariant.copy(alpha = 0.5f)
-                                            )
-                                        },
-                                        custom = { type, model ->
-                                            when (type) {
-                                                MarkdownElementTypes.HTML_BLOCK -> {
-                                                    MarkdownElementText(
-                                                        content = model.content,
-                                                        node = model.node,
-                                                        style = model.typography.text
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    ),
-                                    modifier = Modifier.fillMaxWidth()
+                                    fontSize = fontSize,
+                                    markdown = markdown,
+                                    onContentChange = onContentChange
                                 )
                             }
                         }
@@ -460,11 +344,197 @@ fun MarkdownText(
     }
 }
 
+private fun safeTrimIndent(text: String): String {
+    if (text.lines().any { it.startsWith("    ") && it.trimStart().isNotEmpty() }) {
+        return text
+    }
+    return text.trimIndent()
+}
+
+@Composable
+private fun MarkdownSafe(
+    content: String,
+    fontSize: Int,
+    markdown: String,
+    onContentChange: ((String) -> Unit)?,
+) {
+    var renderError by remember(content) { mutableStateOf(false) }
+
+    if (renderError) {
+        Text(
+            text = content,
+            modifier = Modifier.fillMaxWidth(),
+            style = LocalTextStyle.current
+        )
+        return
+    }
+
+    val components = remember(fontSize, markdown, onContentChange) {
+        markdownComponents(
+            heading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.ATX_CONTENT),
+            heading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.ATX_CONTENT),
+            heading3 = anchoredHeading({ it.typography.h3 }, MarkdownTokenTypes.ATX_CONTENT),
+            heading4 = anchoredHeading({ it.typography.h4 }, MarkdownTokenTypes.ATX_CONTENT),
+            heading5 = anchoredHeading({ it.typography.h5 }, MarkdownTokenTypes.ATX_CONTENT),
+            heading6 = anchoredHeading({ it.typography.h6 }, MarkdownTokenTypes.ATX_CONTENT),
+            setextHeading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.SETEXT_CONTENT),
+            setextHeading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.SETEXT_CONTENT),
+            blockQuote = { model ->
+                val rawText = model.node.getUnescapedTextInNode(model.content)
+                val stripped = stripBlockQuoteMarkers(rawText)
+                if (parseGfmAlert(stripped) != null) {
+                    GfmAlertBlock(
+                        quoteContent = stripped,
+                        fontSize = fontSize
+                    )
+                } else {
+                    MarkdownBlockQuote(
+                        content = model.content,
+                        node = model.node,
+                        style = model.typography.quote,
+                    )
+                }
+            },
+            image = { model ->
+                val link = model.node.findLinkDestination()
+                    ?.getUnescapedTextInNode(model.content)
+
+                if (link != null) {
+                    var showLightbox by mutableStateOf(false)
+                    val imageData = LocalImageTransformer.current.transform(link)
+                    if (imageData != null) {
+                        Image(
+                            painter = imageData.painter,
+                            contentDescription = imageData.contentDescription,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showLightbox = true },
+                            alignment = imageData.alignment,
+                            contentScale = imageData.contentScale,
+                            alpha = imageData.alpha,
+                            colorFilter = imageData.colorFilter,
+                        )
+                        if (showLightbox) {
+                            ImageLightbox(
+                                imageUrl = link,
+                                onDismiss = { showLightbox = false }
+                            )
+                        }
+                    }
+                }
+            },
+            table = { model ->
+                NexaraTableWidget(
+                    model = model,
+                    modifier = Modifier
+                        .padding(vertical = 8.dp)
+                        .fillMaxWidth()
+                )
+            },
+            codeFence = { model ->
+                MarkdownCodeFence(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.code,
+                ) { code, language, style ->
+                    CodeBlockWithHeader(
+                        code = code,
+                        language = language,
+                        fontSize = fontSize,
+                        onCodeChange = onContentChange?.let { cb ->
+                            { newCode ->
+                                cb(replaceCodeInMarkdown(markdown, language, code, newCode))
+                            }
+                        }
+                    ) {
+                        MarkdownHighlightedCode(
+                            code = code,
+                            language = language,
+                            style = style
+                        )
+                    }
+                }
+            },
+            codeBlock = { model ->
+                MarkdownCodeBlock(
+                    content = model.content,
+                    node = model.node,
+                    style = model.typography.code,
+                ) { code, language, style ->
+                    CodeBlockWithHeader(
+                        code = code,
+                        language = language,
+                        fontSize = fontSize,
+                        onCodeChange = onContentChange?.let { cb ->
+                            { newCode ->
+                                cb(replaceCodeInMarkdown(markdown, language, code, newCode))
+                            }
+                        }
+                    ) {
+                        MarkdownHighlightedCode(
+                            code = code,
+                            language = language,
+                            style = style
+                        )
+                    }
+                }
+            },
+            horizontalRule = { _ ->
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    thickness = 1.dp,
+                    color = NexaraColors.OutlineVariant.copy(alpha = 0.5f)
+                )
+            },
+            custom = { type, model ->
+                when (type) {
+                    MarkdownElementTypes.HTML_BLOCK -> {
+                        MarkdownElementText(
+                            content = model.content,
+                            node = model.node,
+                            style = model.typography.text
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    Markdown(
+        content = content,
+        colors = nexaraMarkdownColors(),
+        typography = nexaraMarkdownTypography(fontSize),
+        components = components,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
 private fun insertCjkSpacing(text: String): String {
+    val protectedMap = mutableMapOf<String, String>()
+    var counter = 0
+
+    var processed = text.replace(Regex("`[^`]+`")) { match ->
+        val key = "\u0000IC${counter++}\u0000"
+        protectedMap[key] = match.value
+        key
+    }
+
+    processed = processed.replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)")) { match ->
+        val key = "\u0000LK${counter++}\u0000"
+        protectedMap[key] = match.value
+        key
+    }
+
     val cjk = "\\u4e00-\\u9fff\\u3400-\\u4dbf\\uf900-\\ufaff\\u3000-\\u303f"
-    return text
+    processed = processed
         .replace(Regex("([$cjk])([a-zA-Z0-9])")) { "${it.groupValues[1]}\u200A${it.groupValues[2]}" }
         .replace(Regex("([a-zA-Z0-9])([$cjk])")) { "${it.groupValues[1]}\u200A${it.groupValues[2]}" }
+
+    for ((key, value) in protectedMap) {
+        processed = processed.replace(key, value)
+    }
+
+    return processed
 }
 
 private fun normalizeLatexDelimiters(text: String): String {

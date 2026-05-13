@@ -27,7 +27,21 @@ class EmbeddingClient(
 
     suspend fun embedDocuments(texts: List<String>): EmbeddingResult {
         if (texts.isEmpty()) throw IllegalArgumentException("No texts provided for embedding")
+        return try {
+            embedViaRemote(texts)
+        } catch (e: Exception) {
+            if (localEngine != null) {
+                localEngine.embedBatch(texts).fold(
+                    onSuccess = { EmbeddingResult(embeddings = it, usage = null) },
+                    onFailure = { throw e }
+                )
+            } else {
+                throw e
+            }
+        }
+    }
 
+    private suspend fun embedViaRemote(texts: List<String>): EmbeddingResult {
         val batchSize = 50
         val allEmbeddings = mutableListOf<FloatArray>()
         var totalTokens = 0
@@ -46,8 +60,19 @@ class EmbeddingClient(
     }
 
     suspend fun embedQuery(text: String): Pair<FloatArray, EmbeddingUsage?> {
-        val result = embedDocuments(listOf(text))
-        return Pair(result.embeddings.first(), result.usage)
+        return try {
+            val result = embedDocuments(listOf(text))
+            Pair(result.embeddings.first(), result.usage)
+        } catch (e: Exception) {
+            if (localEngine != null) {
+                localEngine.embed(text).fold(
+                    onSuccess = { Pair(it, null) },
+                    onFailure = { throw e }
+                )
+            } else {
+                throw e
+            }
+        }
     }
 
     private suspend fun embedBatch(texts: List<String>): EmbeddingResult {

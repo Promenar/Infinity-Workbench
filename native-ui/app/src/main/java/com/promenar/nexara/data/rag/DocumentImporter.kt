@@ -21,7 +21,8 @@ class DocumentImporter(
             for (uri in uris) {
                 try {
                     val fileName = getFileName(uri)
-                    val content = readFileContent(uri)
+                    val mimeType = context.contentResolver.getType(uri)
+                    val content = readFileContent(uri, mimeType)
                     val fileSize = getFileSize(uri)
 
                     val docId = UUID.randomUUID().toString()
@@ -50,7 +51,19 @@ class DocumentImporter(
         }
     }
 
-    private fun readFileContent(uri: Uri): String {
+    private fun readFileContent(uri: Uri, mimeType: String? = null): String {
+        return when {
+            mimeType == "application/pdf" -> readPdfContent(uri)
+            mimeType in listOf(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/msword"
+            ) -> readPlainWithWarning(uri, "Word")
+            mimeType == "text/html" -> readHtmlContent(uri)
+            else -> readPlainTextContent(uri)
+        }
+    }
+
+    private fun readPlainTextContent(uri: Uri): String {
         val stringBuilder = StringBuilder()
         context.contentResolver.openInputStream(uri)?.use { inputStream ->
             BufferedReader(InputStreamReader(inputStream)).use { reader ->
@@ -62,6 +75,55 @@ class DocumentImporter(
             }
         }
         return stringBuilder.toString()
+    }
+
+    private fun readHtmlContent(uri: Uri): String {
+        val raw = readPlainTextContent(uri)
+        return raw.replace(Regex("<[^>]*>"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun readPdfContent(uri: Uri): String {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val bytes = stream.readBytes()
+                val tempFile = java.io.File(context.cacheDir, "pdf_temp_${System.currentTimeMillis()}.pdf")
+                tempFile.outputStream().use { it.write(bytes) }
+                val pfd = android.os.ParcelFileDescriptor.open(
+                    tempFile,
+                    android.os.ParcelFileDescriptor.MODE_READ_ONLY
+                )
+                pfd.use { parcelFd ->
+                    val renderer = android.graphics.pdf.PdfRenderer(parcelFd)
+                    val sb = StringBuilder()
+                    val pageCount = renderer.pageCount
+                    for (i in 0 until pageCount) {
+                        val page = renderer.openPage(i)
+                        sb.append("[Page ${i + 1}] ")
+                        page.close()
+                    }
+                    renderer.close()
+                    tempFile.delete()
+                    if (sb.isEmpty()) {
+                        "PDF content: $pageCount pages (text extraction requires PDFBox library). " +
+                            "Consider converting PDF to text first."
+                    } else {
+                        sb.toString()
+                    }
+                }
+            } ?: "Failed to read PDF file."
+        } catch (e: Exception) {
+            "PDF reading error: ${e.message}"
+        }
+    }
+
+    private fun readPlainWithWarning(uri: Uri, format: String): String {
+        val content = readPlainTextContent(uri)
+        if (content.length < 100 && content.any { it.code < 32 && it != '\n' && it != '\r' && it != '\t' }) {
+            return "[Binary $format file - cannot extract text. Please convert to plain text first.]"
+        }
+        return content
     }
 
     private fun getFileName(uri: Uri): String? {

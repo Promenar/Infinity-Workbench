@@ -189,6 +189,53 @@ fun GlobalRagConfigScreen(
                     slider(stringResource(R.string.rag_config_summary_threshold), config.summaryThreshold.toFloat(), 0f..50f, 9) {
                         viewModel.updateConfig { c -> c.copy(summaryThreshold = it.toInt()) }
                     }
+
+                    Text(
+                        stringResource(R.string.rag_config_threshold_section),
+                        style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = NexaraColors.OnSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    slider(
+                        stringResource(R.string.rag_config_memory_threshold),
+                        config.memoryThreshold * 100f,
+                        30f..95f,
+                        12
+                    ) {
+                        viewModel.updateConfig { c -> c.copy(memoryThreshold = it / 100f) }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            stringResource(R.string.rag_config_memory_threshold_hint),
+                            style = NexaraTypography.labelSmall,
+                            color = NexaraColors.OnSurfaceVariant
+                        )
+                    }
+
+                    slider(
+                        stringResource(R.string.rag_config_doc_threshold),
+                        config.docThreshold * 100f,
+                        20f..90f,
+                        13
+                    ) {
+                        viewModel.updateConfig { c -> c.copy(docThreshold = it / 100f) }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            stringResource(R.string.rag_config_doc_threshold_hint),
+                            style = NexaraTypography.labelSmall,
+                            color = NexaraColors.OnSurfaceVariant
+                        )
+                    }
                 }
             }
 

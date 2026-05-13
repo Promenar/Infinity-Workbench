@@ -96,6 +96,17 @@ graph TD
 - **公式/图表**: KaTeX, Mermaid.js, ECharts (通过 WebView 渲染)
 - **网络**: Ktor (用于 LLM API 通信)
 
+## RAG 检索引用链路 (2026-05-13 完成)
+- **ContextBuilder → ChatViewModel → Message**: `buildContext()` 返回的 `ragReferences` 现写入 `Message` 模型，`RagOmniIndicator` 可正确显示检索来源
+- **Embedding 降级链**: `EmbeddingClient` → (失败) → `LocalInferenceEngine`，确保 API 故障时 RAG 不静默失效
+- **向量维度检测**: `VectorStore.search()` 携带 `onWarning` 回调，维度不匹配时输出警告日志并通知调用方
+
+## Markdown 渲染安全层 (2026-05-13 完成)
+- **safeTrimIndent()**: 在 `trimIndent()` 前检测缩进代码块，保护 GFM 语法
+- **CJK 间距保护**: `insertCjkSpacing()` 跳过行内代码与链接，使用占位符替换/恢复模式
+- **流式边界检测**: 增量追加时检测 ` ``` ` / `$$` 跨边界，自动重新解析
+- **崩溃降级**: `MarkdownSafe` composable 包裹 `Markdown()` 调用，渲染崩溃时自动回退纯文本 `Text`
+
 ## 远期设计目标 (Roadmap)
 
 ### 1. 多分支会话系统 (Multi-branching System)

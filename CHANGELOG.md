@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - **P1 设置持久化修复**: 修复 `RagViewModel` 中 `showRetrievalProgress` 与 `showRetrievalDetails` 的持久化逻辑，确保设置项在应用重启后依然生效。
 - **P1 默认配置优化**: 调整 `RagConfiguration` 默认值，默认开启“显示检索进度”与“显示检索详情”，提升新用户开箱即用的观测体验。
 - **P2 稳定性与性能**: 修复 `AdvancedRetrievalScreen` 在开启滚动时与顶栏嵌套滚动的冲突，优化 RAG 状态在 `ChatStore` 中的局部刷新效率。
+- **P2 UI 细节清理**: 移除 `AdvancedRetrievalScreen` 中重复的“高级检索”大标题，确保页面视觉焦点集中在配置项上。
 
 
 ### 设置颗粒度统一修复 (2026-05-13)
