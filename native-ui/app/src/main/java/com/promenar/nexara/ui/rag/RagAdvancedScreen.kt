@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -49,9 +50,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
+import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -64,7 +67,12 @@ fun RagAdvancedScreen(
     onNavigateToGraph: () -> Unit = {}
 ) {
     val config by viewModel.config.collectAsState()
-    val extractionModels by viewModel.availableModels.collectAsState()
+    val settingsViewModel: SettingsViewModel = viewModel(
+        modelClass = SettingsViewModel::class.java,
+        factory = SettingsViewModel.factory(LocalContext.current.applicationContext as android.app.Application)
+    )
+    val allModels by settingsViewModel.providerModels.collectAsState()
+    
     var showPromptEditor by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
 
@@ -115,7 +123,7 @@ fun RagAdvancedScreen(
                             ) {
                                 Column {
                                     Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                                    val selectedModelName = extractionModels.find { it.id == config.kgExtractionModel }?.name
+                                    val selectedModelName = allModels.find { it.id == config.kgExtractionModel }?.name
                                     Text(
                                         selectedModelName ?: stringResource(R.string.rag_advanced_select_model_placeholder),
                                         style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
@@ -350,48 +358,31 @@ fun RagAdvancedScreen(
         }
     }
 
-    if (showModelPicker) {
-        ModalBottomSheet(
-            onDismissRequest = { showModelPicker = false },
-            containerColor = NexaraColors.SurfaceLow,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.7f)
-                    .padding(24.dp)
-                    .padding(bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                extractionModels.forEach { (name, id) ->
-                    val isSelected = config.kgExtractionModel == id
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (isSelected) NexaraColors.Primary.copy(alpha = 0.1f)
-                                else NexaraColors.SurfaceContainer
-                            )
-                            .clickable {
-                                viewModel.updateConfig { it.copy(kgExtractionModel = id) }
-                                showModelPicker = false
-                            }
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        if (isSelected) {
-                            Icon(Icons.Rounded.Check, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
+    val modelItems = remember(allModels) {
+        allModels.map { info ->
+            ModelItem(
+                id = info.id,
+                name = info.name,
+                providerName = info.providerName,
+                capabilities = info.capabilities.mapNotNull { capStr ->
+                    try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
+                },
+                contextLength = info.contextLength
+            )
         }
     }
+
+    ModelPicker(
+        show = showModelPicker,
+        onDismiss = { showModelPicker = false },
+        filterTag = "chat",
+        models = modelItems,
+        currentModelId = config.kgExtractionModel ?: "",
+        onSelect = { id, _ ->
+            viewModel.updateConfig { it.copy(kgExtractionModel = id) }
+            showModelPicker = false
+        }
+    )
 
     if (showPromptEditor) {
         ModalBottomSheet(

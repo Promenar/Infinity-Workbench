@@ -274,15 +274,13 @@ private fun ModelPanel(
     val allModels by settingsViewModel.providerModels.collectAsState()
     
     val modelItems = allModels.filter { 
-        it.enabled && it.type in listOf("chat", "reasoning", "image") 
+        it.enabled && (it.type in listOf("chat", "reasoning", "image") || it.capabilities.any { cap -> cap.lowercase() in listOf("chat", "reasoning", "vision") })
     }.map { info ->
         val mappedCaps = mutableSetOf<ModelCapability>()
         when (info.type) {
             "chat" -> mappedCaps.add(ModelCapability.CHAT)
             "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
             "image" -> mappedCaps.add(ModelCapability.IMAGE)
-            "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
-            "rerank" -> mappedCaps.add(ModelCapability.RERANK)
         }
         info.capabilities.forEach { capStr ->
             when (capStr.lowercase()) {

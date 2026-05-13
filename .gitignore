@@ -1,66 +1,32 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# === IDE ===
+.idea/
+*.iml
+.vscode/
 
-# dependencies
-node_modules/
-
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
-
-# Native
+# === Kotlin / Gradle (native-ui) ===
 .kotlin/
 *.orig.*
+
+# === Android ===
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
 
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
+# === macOS ===
 .DS_Store
 *.pem
 
-# local env files
+# === Environment ===
 .env*.local
 
-# typescript
-*.tsbuildinfo
-
-# log files
+# === Logs ===
 *.log
 
-# generated native folders
-/ios
-/android
-
-# Secure Environment
+# === Secure Environment ( signing keys ) ===
 secure_env/
 
-# Worktrees
+# === Git Worktrees ===
 worktrees/
 worktree/
-
-# Dev tool configs (now included in git)
-# .agent/
-# .lingma/
-# .codebuddy/
-# .idea/
-# .vscode/
-
-# Debug/test files at root
-test-deepseek-fmt.js
-test-deepseek-fmt.ts
-test-markdown-fix.js
-debug-markdown.js
-cache_debug_plan.txt
-dev-proxy.sh

@@ -41,6 +41,11 @@ class SpaViewModel(application: Application) : AndroidViewModel(application) {
     )
     val uiContextRatio: StateFlow<Float> = _uiContextRatio.asStateFlow()
 
+    private val _defaultModelId = MutableStateFlow(
+        prefs.getString("default_model_id", "") ?: ""
+    )
+    val defaultModelId: StateFlow<String> = _defaultModelId.asStateFlow()
+
     fun updateAssistantTitle(title: String) {
         _assistantTitle.value = title
         prefs.edit().putString("assistant_title", title).apply()
@@ -69,6 +74,11 @@ class SpaViewModel(application: Application) : AndroidViewModel(application) {
     fun updateUiContextRatio(value: Float) {
         _uiContextRatio.value = value
         prefs.edit().putFloat("ui_context_ratio", value).apply()
+    }
+
+    fun updateDefaultModel(modelId: String) {
+        _defaultModelId.value = modelId
+        prefs.edit().putString("default_model_id", modelId).apply()
     }
 
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Delete
@@ -83,10 +84,12 @@ fun SpaSettingsScreen(
     val rotateAnimation by spaViewModel.rotateAnimation.collectAsState()
     val glowEffect by spaViewModel.glowEffect.collectAsState()
     val uiContextRatio by spaViewModel.uiContextRatio.collectAsState()
+    val defaultModelId by spaViewModel.defaultModelId.collectAsState()
 
     val allModels by settingsViewModel.providerModels.collectAsState()
 
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
 
     val fabIcons = remember {
         listOf(
@@ -114,6 +117,32 @@ fun SpaSettingsScreen(
             isDestructive = true
         )
     }
+
+    val modelItems = remember(allModels) {
+        allModels.map { info ->
+            ModelItem(
+                id = info.id,
+                name = info.name,
+                providerName = info.providerName,
+                capabilities = info.capabilities.mapNotNull { capStr ->
+                    try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
+                },
+                contextLength = info.contextLength
+            )
+        }
+    }
+
+    ModelPicker(
+        show = showModelPicker,
+        onDismiss = { showModelPicker = false },
+        filterTag = "multimodal",
+        models = modelItems,
+        currentModelId = defaultModelId,
+        onSelect = { id, _ ->
+            spaViewModel.updateDefaultModel(id)
+            showModelPicker = false
+        }
+    )
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
@@ -217,8 +246,7 @@ fun SpaSettingsScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        val enabledModels = allModels.filter { it.enabled }
-                        val modelName = enabledModels.firstOrNull()?.name ?: "No model configured"
+                        val selectedModelName = allModels.find { it.id == defaultModelId }?.name ?: (allModels.filter { it.enabled }.firstOrNull()?.name ?: "No model configured")
 
                         Row(
                             modifier = Modifier
@@ -226,7 +254,7 @@ fun SpaSettingsScreen(
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(NexaraColors.SurfaceLow)
                                 .border(0.5.dp, NexaraColors.OutlineVariant, RoundedCornerShape(12.dp))
-                                .clickable { }
+                                .clickable { showModelPicker = true }
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -234,9 +262,9 @@ fun SpaSettingsScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(stringResource(R.string.spa_default_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
-                                Text(modelName, style = NexaraTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = NexaraColors.OnSurface)
+                                Text(selectedModelName, style = NexaraTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = NexaraColors.OnSurface)
                             }
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, null, tint = NexaraColors.Outline, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.ChevronRight, null, tint = NexaraColors.Outline, modifier = Modifier.size(18.dp))
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))

@@ -138,6 +138,7 @@ fun AgentEditScreen(
     ModelPicker(
         show = showModelPicker,
         onDismiss = { showModelPicker = false },
+        filterTag = "chat",
         models = modelItems,
         onSelect = { modelId, modelName ->
             viewModel.setModel(modelId)

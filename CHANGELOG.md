@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 文档体系治理与统一 (2026-05-13)
+- **文档大清理**: 删除根 `.agent/docs/`（57 文件，含已过时 PRD v1.2.1、6 个失效 repowiki 指针存根）、`.agent/memory/`（4 文件，RN 时代项目记忆）、`.qoder/repowiki/`（145+ 文件，RN 时代自动生成架构文档）、`.roo/skills/`
+- **双 .agent/ 合并**: 将 `native-ui/.agent/plans/`（17 个活跃计划）迁移至根 `.agent/plans/`，删除 `native-ui/.agent/` 消除重复
+- **废弃 Qoder repowiki 系统**: RN 时代的 145+ 自动生成文档体系不再适用。Kotlin/Compose + IDE 导航能力已足够，DIA 机制 + 手工维护是正确策略
+- **废弃 Worktree 发行分支模式**: 原生 Kotlin + Android Studio Build Variant 一键切换 Debug/Release，无环境污染，无需独立 `worktrees/release`
+- **新文档结构**: `docs/`（公共 8 份文档）+ `.agent/`（handover + registry + plans）+ `native-ui/AGENTS.md`（项目规则）
+- **新增**: `docs/DOCUMENT_GOVERNANCE.md`（文档治理方案）
+
+### 项目目录清理与分支纯净化 (2026-05-13)
+- **RN 时代残余清理**: 删除 25 个 RN 目录/文件（`app/`、`src/`、`android/`（Expo prebuild）、`web-client/`、`scripts/`、`plugins/`、`assets/`、`package.json` 等），`native-kotlin-refactor` 分支变为纯粹 Kotlin 原生项目
+- **README.md 重写**: 更新为 Kotlin/Jetpack Compose 技术栈描述，中英双语
+- **.gitignore 精简**: 移除 `node_modules/`、`.expo/`、`metro`、`npm/yarn`、`TypeScript` 等 RN 时代忽略规则
+- **清理方案文档**: `docs/CLEANUP_PLAN.md`
+
+### ContextBuilder 架构修正 (2026-05-13)
+- **补充工具调用回传数据层**: `ContextPayload` 中 `webResults: List<WebSearchResult>` 改为 `toolResults: List<ToolCallResult>`，明确网络搜索是工具调用的一种而非独立数据源
+- **新增 `ToolCallResult` 数据类**: 统一抽象工具回传（网络搜索/代码执行/文件读写等），含 `toolName`、`summary`、`rawData`、`references`
+- **RAG Pipeline 图更新**: 补充工具回传数据源和 ContextBuilder 6 步组装流程
+- **进度观测重命名**: `RagProgress` → `ContextBuildProgress`，新增 `InjectingTools`、`LoadingHistory` 阶段
+- **PRD 同步更新**: 数据流图中明确"被动检索"与"主动工具回传"两个数据源层级
+
+### 原生版全局审计与架构文档体系建设 (2026-05-13)
+- **PRD v2.0 发布**: 基于项目定位与设计初衷，重新撰写 Kotlin 原生时代的完整产品需求文档（`docs/PRD.md`），明确能力边界与开发路线图
+- **全局架构设计文档**: 输出理想架构设计方案（`docs/ARCHITECTURE_DESIGN.md`），包含分层架构、Repository 体系、LLM 抽象层、RAG/KG/Agent 引擎、CMP 渐进式迁移路线
+- **当前实现分析与开发进度**: 输出深度审计文档（`docs/IMPLEMENTATION_ANALYSIS.md`），全站对照 PRD/架构分析实现差距（总体进度 ~62%）
+- **ADR-001 超级助手取舍决策**: 分析 RN 时代到原生时代的 Super Assistant 架构演变，决定**去繁就简**，取消 Super Assistant 特殊概念，统一 Agent 模型（详见 `IMPLEMENTATION_ANALYSIS.md §8`）
+- **架构债识别**: 发现 Domain 层缺失（业务逻辑散落）、Repository 覆盖率仅 37.5%（3/8）、ProviderManager 非标准单例模式等关键架构债
+- **DIA 更新**: 更新 `ARCHITECTURE.md`、`registry.md`、`handover.md`、`README.md`、`.gitignore`
+
+### 模型选择标准化与功能修复 (2026-05-13)
+- **P0 SPA 修复**: 修复超能助手（SPA）设置界面模型选择点击无效的 Bug，补齐了 `SpaViewModel` 模型 ID 持久化逻辑，并接入多模态过滤逻辑。
+- **P0 RAG 标准化**: 全量重构 `RagAdvancedScreen`，移除手动实现的模型列表，统一接入 `ModelPicker` 筛选协议并强制应用 `chat` 标签。
+- **P1 会话面板对齐**: 优化主会话设置面板（SessionSettingsSheet）的 `ModelPanel` 过滤逻辑，支持 `multimodal`（含视觉）模型展示。
+- **P1 过滤器扩展**: `ModelPicker` 新增 `multimodal` 标签，精细化管理对话、推理与视觉能力的复合筛选。
+- **P1 通用设置过滤**: 修正摘要、图像、嵌入、重排四类默认模型的筛选逻辑，确保全局一致。
+
+
 ### RAG UI 观测能力与全链路打通 (2026-05-13)
 - **P0 检索观测打通**: 重构 `ContextBuilder` 与 `RagProvider` 回调链路，实装从 `MemoryManager` 到底层检索算法的 5 阶段进度上报。
 - **P0 UI 指标展示**: 在 `ChatBubble` 中集成 `RagOmniIndicator` 磨砂玻璃指示器，支持实时显示“正在向量化查询...”、“搜索文档...”等状态和百分比进度条。
