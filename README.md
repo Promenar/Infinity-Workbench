@@ -51,13 +51,6 @@ cd native-ui
 # APK output: native-ui/app/build/outputs/apk/debug/
 ```
 
-### Documentation
-
-- [PRD (Product Requirements)](./docs/PRD.md) — Project vision, user profiles, feature roadmap
-- [Architecture Design](./docs/ARCHITECTURE_DESIGN.md) — Ideal architecture with layered design, Repository pattern, CMP migration path
-- [Implementation Analysis](./docs/IMPLEMENTATION_ANALYSIS.md) — Codebase audit, progress tracking, architecture debt identification
-- [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md) — Phased execution plan with parallel Agent tasks
-
 ---
 
 ## 中文
@@ -101,13 +94,6 @@ cd native-ui
 ./gradlew :app:assembleDebug
 # APK 输出路径: native-ui/app/build/outputs/apk/debug/
 ```
-
-### 项目文档
-
-- [PRD（产品需求文档）](./docs/PRD.md) — 项目愿景、用户画像、功能路线图
-- [架构设计文档](./docs/ARCHITECTURE_DESIGN.md) — 理想架构设计、Repository 模式、CMP 跨端路线
-- [实现分析与开发进度](./docs/IMPLEMENTATION_ANALYSIS.md) — 代码审计、进度跟踪、架构债识别
-- [实施计划](./docs/IMPLEMENTATION_PLAN.md) — 分阶段方案，含并行 Agent 任务
 
 ---
 
