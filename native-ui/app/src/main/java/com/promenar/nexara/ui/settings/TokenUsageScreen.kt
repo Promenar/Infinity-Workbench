@@ -43,7 +43,7 @@ fun TokenUsageScreen(
     val providers by viewModel.tokenStats.collectAsState()
 
     val totalTokens = providers.sumOf { it.totalTokens }
-    val totalCost = providers.sumOf { it.cost }
+    val hasEstimated = providers.any { it.estimated }
 
     NexaraPageLayout(
         title = stringResource(R.string.token_title),
@@ -87,14 +87,24 @@ fun TokenUsageScreen(
                         color = NexaraColors.OnSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = formatTokenCount(totalTokens),
-                        style = NexaraTypography.headlineLarge.copy(
-                            fontSize = 36.sp,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = NexaraColors.Primary
-                    )
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = if (hasEstimated) "\u2248 " else "",
+                            style = NexaraTypography.headlineLarge.copy(
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = NexaraColors.Primary.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = formatTokenCount(totalTokens),
+                            style = NexaraTypography.headlineLarge.copy(
+                                fontSize = 36.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = NexaraColors.Primary
+                        )
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = stringResource(R.string.token_tokens),
@@ -102,14 +112,30 @@ fun TokenUsageScreen(
                         color = NexaraColors.OnSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    val totalInput = providers.sumOf { p -> p.models.sumOf { it.inputTokens } }
+                    val totalOutput = providers.sumOf { p -> p.models.sumOf { it.outputTokens } }
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
                             .background(NexaraColors.Primary.copy(alpha = 0.15f))
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "$${String.format("%.2f", totalCost)}",
+                            text = "In: ${formatTokenCount(totalInput)}",
+                            style = NexaraTypography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = NexaraColors.Primary
+                        )
+                        Text(
+                            text = "\u00B7",
+                            style = NexaraTypography.labelMedium,
+                            color = NexaraColors.Primary.copy(alpha = 0.5f)
+                        )
+                        Text(
+                            text = "Out: ${formatTokenCount(totalOutput)}",
                             style = NexaraTypography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold
                             ),
@@ -123,9 +149,16 @@ fun TokenUsageScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         providers.forEach { provider ->
+            val providerLabel = buildString {
+                append(provider.name)
+                append(" \u2014 ")
+                if (provider.estimated) append("\u2248 ")
+                append(formatTokenCount(provider.totalTokens))
+                append(" tokens")
+            }
             NexaraCollapsibleSection(
-                title = "${provider.name} — ${formatTokenCount(provider.totalTokens)} tokens · $${String.format("%.2f", provider.cost)}",
-                initiallyExpanded = false
+                title = providerLabel,
+                initiallyExpanded = provider.models.size <= 3
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     provider.models.forEach { model ->
@@ -134,6 +167,20 @@ fun TokenUsageScreen(
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        if (providers.isEmpty()) {
+            NexaraGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.medium as RoundedCornerShape
+            ) {
+                Text(
+                    text = stringResource(R.string.token_no_data),
+                    style = NexaraTypography.bodyMedium,
+                    color = NexaraColors.OnSurfaceVariant,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -171,11 +218,20 @@ private fun ModelUsageRow(model: ModelStat) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = model.name,
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.OnSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = model.name,
+                        style = NexaraTypography.labelMedium,
+                        color = NexaraColors.OnSurface
+                    )
+                    if (model.estimated) {
+                        Text(
+                            text = " \u2248",
+                            style = NexaraTypography.labelMedium,
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = stringResource(R.string.token_in_out, formatTokenCount(model.inputTokens), formatTokenCount(model.outputTokens)),
@@ -184,9 +240,9 @@ private fun ModelUsageRow(model: ModelStat) {
                 )
             }
             Text(
-                text = "$${String.format("%.2f", model.cost)}",
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant
+                text = formatTokenCount(model.inputTokens + model.outputTokens),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                color = NexaraColors.Primary
             )
         }
     }

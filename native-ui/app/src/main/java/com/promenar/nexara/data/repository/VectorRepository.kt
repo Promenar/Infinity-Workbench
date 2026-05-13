@@ -9,6 +9,8 @@ import com.promenar.nexara.domain.model.SearchResult
 import com.promenar.nexara.domain.model.SearchSource
 import com.promenar.nexara.domain.model.VectorChunk
 import com.promenar.nexara.domain.repository.IVectorRepository
+import com.promenar.nexara.domain.repository.VectorSessionCount
+import com.promenar.nexara.domain.repository.VectorTypeCount
 import java.nio.ByteBuffer
 import java.util.UUID
 import kotlin.math.sqrt
@@ -80,6 +82,12 @@ class VectorRepository(
 
     override suspend fun getCount(): Int =
         vectorDao.getCount()
+
+    override suspend fun countByType(): List<VectorTypeCount> =
+        vectorDao.countByType().map { VectorTypeCount(it.type, it.count) }
+
+    override suspend fun countBySession(limit: Int): List<VectorSessionCount> =
+        vectorDao.countBySession(limit).map { VectorSessionCount(it.session_id, it.count) }
 
     private fun toBlob(embedding: FloatArray): ByteArray {
         val buffer = ByteBuffer.allocate(embedding.size * 4)

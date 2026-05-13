@@ -32,8 +32,8 @@ class DocumentImporter(
                         title = fileName,
                         content = content,
                         fileSize = fileSize,
-                        type = context.contentResolver.getType(uri) ?: "text/plain",
-                        vectorized = 1, // Pending
+                        type = mimeType ?: "text/plain",
+                        vectorized = 1,
                         createdAt = System.currentTimeMillis(),
                         updatedAt = System.currentTimeMillis()
                     )
@@ -51,79 +51,50 @@ class DocumentImporter(
         }
     }
 
-    private fun readFileContent(uri: Uri, mimeType: String? = null): String {
+    internal fun readFileContent(uri: Uri, mimeType: String? = null): String {
         return when {
             mimeType == "application/pdf" -> readPdfContent(uri)
-            mimeType in listOf(
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "application/msword"
-            ) -> readPlainWithWarning(uri, "Word")
+            mimeType in WORD_MIME_TYPES -> readWordContent(uri)
             mimeType == "text/html" -> readHtmlContent(uri)
             else -> readPlainTextContent(uri)
         }
     }
 
     private fun readPlainTextContent(uri: Uri): String {
-        val stringBuilder = StringBuilder()
+        val sb = StringBuilder()
         context.contentResolver.openInputStream(uri)?.use { inputStream ->
             BufferedReader(InputStreamReader(inputStream)).use { reader ->
                 var line: String? = reader.readLine()
                 while (line != null) {
-                    stringBuilder.append(line).append("\n")
+                    sb.append(line).append("\n")
                     line = reader.readLine()
                 }
             }
         }
-        return stringBuilder.toString()
+        return sb.toString()
     }
 
     private fun readHtmlContent(uri: Uri): String {
         val raw = readPlainTextContent(uri)
-        return raw.replace(Regex("<[^>]*>"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+        return HtmlExtractor.extractTextWithStructure(raw)
     }
 
     private fun readPdfContent(uri: Uri): String {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                val bytes = stream.readBytes()
-                val tempFile = java.io.File(context.cacheDir, "pdf_temp_${System.currentTimeMillis()}.pdf")
-                tempFile.outputStream().use { it.write(bytes) }
-                val pfd = android.os.ParcelFileDescriptor.open(
-                    tempFile,
-                    android.os.ParcelFileDescriptor.MODE_READ_ONLY
-                )
-                pfd.use { parcelFd ->
-                    val renderer = android.graphics.pdf.PdfRenderer(parcelFd)
-                    val sb = StringBuilder()
-                    val pageCount = renderer.pageCount
-                    for (i in 0 until pageCount) {
-                        val page = renderer.openPage(i)
-                        sb.append("[Page ${i + 1}] ")
-                        page.close()
-                    }
-                    renderer.close()
-                    tempFile.delete()
-                    if (sb.isEmpty()) {
-                        "PDF content: $pageCount pages (text extraction requires PDFBox library). " +
-                            "Consider converting PDF to text first."
-                    } else {
-                        sb.toString()
-                    }
-                }
-            } ?: "Failed to read PDF file."
-        } catch (e: Exception) {
-            "PDF reading error: ${e.message}"
-        }
+        val result = PdfExtractor.extract(context, uri)
+        return result.getOrElse { e ->
+            PdfExtractor.PdfResult(pageCount = 0, text = "PDF import error: ${e.message}")
+        }.text
     }
 
-    private fun readPlainWithWarning(uri: Uri, format: String): String {
-        val content = readPlainTextContent(uri)
-        if (content.length < 100 && content.any { it.code < 32 && it != '\n' && it != '\r' && it != '\t' }) {
-            return "[Binary $format file - cannot extract text. Please convert to plain text first.]"
+    private fun readWordContent(uri: Uri): String {
+        val raw = readPlainTextContent(uri)
+        val hasBinaryContent = raw.length < 200 &&
+            raw.any { it.code < 32 && it.code !in setOf(9, 10, 13) }
+        if (hasBinaryContent) {
+            return "[Word document — text extraction requires Apache POI integration. " +
+                "Please convert to .txt or .md first.]"
         }
-        return content
+        return raw
     }
 
     private fun getFileName(uri: Uri): String? {
@@ -152,5 +123,12 @@ class DocumentImporter(
             }
         }
         return size
+    }
+
+    companion object {
+        private val WORD_MIME_TYPES = setOf(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword"
+        )
     }
 }

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
+import com.promenar.nexara.domain.usecase.CreateAgentUseCase
+import com.promenar.nexara.domain.usecase.IdGenerator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,7 @@ import kotlinx.coroutines.launch
 
 class AgentHubViewModel(
     private val agentRepository: AgentRepository,
+    private val createAgentUseCase: CreateAgentUseCase,
     private val defaultAgents: List<Agent>
 ) : ViewModel() {
 
@@ -55,16 +58,7 @@ class AgentHubViewModel(
 
     fun createAgent(name: String, description: String, model: String, systemPrompt: String) {
         viewModelScope.launch {
-            val id = "agent_${System.currentTimeMillis()}"
-            val agent = Agent(
-                id = id,
-                name = name,
-                description = description,
-                modelId = model,
-                systemPrompt = systemPrompt,
-                createdAt = System.currentTimeMillis()
-            )
-            agentRepository.create(agent)
+            val agent = createAgentUseCase(name, description, model, systemPrompt)
             _dbAgents.update { it + agent }
         }
     }
@@ -95,6 +89,7 @@ class AgentHubViewModel(
                     val app = application as NexaraApplication
                     return AgentHubViewModel(
                         agentRepository = app.agentRepository,
+                        createAgentUseCase = app.createAgentUseCase,
                         defaultAgents = app.defaultAgents
                     ) as T
                 }

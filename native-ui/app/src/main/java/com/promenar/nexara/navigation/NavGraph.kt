@@ -21,7 +21,6 @@ import androidx.navigation.navArgument
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ui.chat.ChatScreen
 import com.promenar.nexara.ui.chat.SessionSettingsScreen
-import com.promenar.nexara.ui.chat.SpaSettingsScreen
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
 import com.promenar.nexara.ui.hub.AgentEditScreen
 import com.promenar.nexara.ui.hub.AgentRagConfigScreen
@@ -58,7 +57,6 @@ object NavDestinations {
     const val AGENT_EDIT = "agent_edit/{agentId}"
     const val AGENT_RAG_CONFIG = "agent_rag_config/{agentId}"
     const val AGENT_ADVANCED_RETRIEVAL = "agent_advanced_retrieval/{agentId}"
-    const val SPA_SETTINGS = "spa_settings"
     const val SESSION_SETTINGS_SHEET = "session_settings_sheet/{sessionId}"
     const val WORKSPACE_SHEET = "workspace_sheet/{sessionId}"
     const val DOC_EDITOR = "doc_editor/{docId}"
@@ -200,9 +198,6 @@ fun NexaraNavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToSettings = {
                     navController.navigate(NavDestinations.sessionSettings(sessionId))
-                },
-                onNavigateToSpaSettings = {
-                    navController.navigate(NavDestinations.SPA_SETTINGS)
                 }
             )
         }
@@ -252,14 +247,6 @@ fun NexaraNavGraph(
                 agentId = agentId,
                 scopeLabel = "Agent",
                 onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(NavDestinations.SPA_SETTINGS) {
-            SpaSettingsScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToRagConfig = { navController.navigate(NavDestinations.RAG_GLOBAL_CONFIG) },
-                onNavigateToAdvancedRetrieval = { navController.navigate(NavDestinations.RAG_ADVANCED) }
             )
         }
 

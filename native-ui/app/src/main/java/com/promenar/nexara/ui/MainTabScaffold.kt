@@ -68,10 +68,7 @@ fun MainTabScaffold(
             when (selectedTab) {
                 AppTab.CHAT -> com.promenar.nexara.ui.hub.AgentHubScreen(
                     onNavigateToSessionList = onNavigateToSessionList,
-                    onNavigateToAgentEdit = onNavigateToAgentEdit,
-                    onNavigateToSuperChat = {
-                        onNavigateToSessionList("super")
-                    }
+                    onNavigateToAgentEdit = onNavigateToAgentEdit
                 )
                 AppTab.LIBRARY -> com.promenar.nexara.ui.rag.RagHomeScreen(
                     onNavigateToFolder = { folderId, folderName ->

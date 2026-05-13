@@ -33,8 +33,7 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 @Composable
 fun AgentHubScreen(
     onNavigateToSessionList: (String) -> Unit,
-    onNavigateToAgentEdit: (String) -> Unit,
-    @Suppress("UNUSED_PARAMETER") onNavigateToSuperChat: () -> Unit
+    onNavigateToAgentEdit: (String) -> Unit
 ) {
     val context = LocalContext.current
     val viewModel: AgentHubViewModel = viewModel(factory = AgentHubViewModel.factory(context.applicationContext as android.app.Application))

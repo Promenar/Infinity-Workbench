@@ -1,17 +1,17 @@
 package com.promenar.nexara.data.rag
 
-import com.promenar.nexara.data.local.db.dao.VectorDao
+import com.promenar.nexara.domain.repository.IVectorRepository
 
 class VectorStatsService(
-    private val vectorDao: VectorDao
+    private val vectorRepository: IVectorRepository
 ) {
     suspend fun getStats(): VectorStats {
-        val total = vectorDao.getCount()
-        val typeCounts = vectorDao.countByType()
+        val total = vectorRepository.getCount()
+        val typeCounts = vectorRepository.countByType()
         val byType = VectorTypeStats()
 
         for (tc in typeCounts) {
-            val type = tc.type?.trim()?.lowercase() ?: ""
+            val type = tc.type.trim().lowercase()
             when (type) {
                 "memory" -> byType.memory = tc.count
                 "summary" -> byType.summary = tc.count
@@ -19,9 +19,9 @@ class VectorStatsService(
             }
         }
 
-        val sessionCounts = vectorDao.countBySession(10)
+        val sessionCounts = vectorRepository.countBySession(10)
         val bySession = sessionCounts.map { sc ->
-            SessionVectorCount(sessionId = sc.session_id, count = sc.count)
+            SessionVectorCount(sessionId = sc.sessionId, count = sc.count)
         }
 
         val storageSizeMb = (total.toFloat() * 2) / 1024

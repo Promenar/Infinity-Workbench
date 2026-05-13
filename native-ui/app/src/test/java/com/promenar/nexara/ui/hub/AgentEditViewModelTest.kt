@@ -7,6 +7,7 @@ import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionMode
+import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -71,7 +72,7 @@ class AgentEditViewModelTest {
         )
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("a1")
 
         assertThat(vm.name.value).isEqualTo("Test Agent")
@@ -92,7 +93,7 @@ class AgentEditViewModelTest {
         every { repo.observeById("a1") } returns flowOf(agent)
         every { prefs.getInt("doc_chunk_size", 800) } returns 500
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("a1")
 
         assertThat(vm.ragConfig.value.docChunkSize).isEqualTo(500)
@@ -104,7 +105,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "a1", name = "n", useInheritedConfig = false, ragConfig = ragConfig)
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("a1")
 
         assertThat(vm.ragConfig.value.docChunkSize).isEqualTo(123)
@@ -119,7 +120,7 @@ class AgentEditViewModelTest {
         )
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("a1")
 
         vm.setName("Updated")
@@ -142,7 +143,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "a1", name = "Original", executionMode = ExecutionMode.SEMI)
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("a1")
         vm.setName("Updated")
         vm.saveAgent("a1")
@@ -155,7 +156,7 @@ class AgentEditViewModelTest {
         every { repo.observeById(any()) } returns flowOf(null)
         var deleted = false
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.deleteAgent("a1") { deleted = true }
 
         coVerify { repo.delete("a1") }
@@ -165,7 +166,7 @@ class AgentEditViewModelTest {
     @Test
     fun `setName updates state`() = runTest {
         every { repo.observeById(any()) } returns flowOf(null)
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.setName("New Name")
         assertThat(vm.name.value).isEqualTo("New Name")
     }
@@ -173,7 +174,7 @@ class AgentEditViewModelTest {
     @Test
     fun `setModel updates state`() = runTest {
         every { repo.observeById(any()) } returns flowOf(null)
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.setModel("gpt-4o")
         assertThat(vm.selectedModel.value).isEqualTo("gpt-4o")
     }
@@ -181,7 +182,7 @@ class AgentEditViewModelTest {
     @Test
     fun `setIcon clears avatar path`() = runTest {
         every { repo.observeById(any()) } returns flowOf(null)
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.setAvatarPath("/some/path.png")
         vm.setIcon("🧪")
         assertThat(vm.selectedIcon.value).isEqualTo("🧪")
@@ -198,7 +199,7 @@ class AgentEditViewModelTest {
         )
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("a1")
 
         vm.hasChanges.test {
@@ -211,7 +212,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "a1", name = "Name", executionMode = ExecutionMode.SEMI)
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, prefs)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("a1")
         vm.setName("Changed")
 

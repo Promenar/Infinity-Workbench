@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionMode
+import com.promenar.nexara.domain.usecase.CreateAgentUseCase
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -43,7 +44,7 @@ class AgentHubViewModelTest {
         )
         every { repo.observeAll() } returns flowOf(agents)
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
 
         vm.agents.test {
             val result = awaitItem()
@@ -60,7 +61,7 @@ class AgentHubViewModelTest {
         val defaults = listOf(
             Agent(id = "d1", name = "Default", executionMode = ExecutionMode.SEMI)
         )
-        AgentHubViewModel(repo, defaults)
+        AgentHubViewModel(repo, CreateAgentUseCase(repo), defaults)
 
         coVerify { repo.create(defaults[0]) }
     }
@@ -70,7 +71,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(emptyList())
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.createAgent("Test", "desc", "gpt-4", "prompt")
 
         coVerify { repo.create(match { it.name == "Test" && it.modelId == "gpt-4" && it.description == "desc" && it.systemPrompt == "prompt" }) }
@@ -81,7 +82,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(emptyList())
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.createAgent("Test", "desc", "gpt-4", "prompt")
 
         vm.agents.test {
@@ -95,7 +96,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(emptyList())
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.deleteAgent("delete-me")
 
         coVerify { repo.delete("delete-me") }
@@ -107,7 +108,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(listOf(agent))
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.deleteAgent("a1")
 
         vm.agents.test {
@@ -121,7 +122,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(listOf(agent))
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.togglePin("a1")
 
         coVerify { repo.update(match { it.isPinned && it.id == "a1" }) }
@@ -133,7 +134,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(listOf(agent))
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.togglePin("a1")
 
         coVerify { repo.update(match { !it.isPinned && it.id == "a1" }) }
@@ -144,7 +145,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(emptyList())
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.updateSearchQuery("test query")
 
         assertThat(vm.searchQuery.value).isEqualTo("test query")
@@ -159,7 +160,7 @@ class AgentHubViewModelTest {
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(agents)
 
-        val vm = AgentHubViewModel(repo, emptyList())
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
         vm.updateSearchQuery("alpha")
 
         vm.agents.test {

@@ -8,6 +8,7 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,7 +84,7 @@ class SessionListViewModel(
     fun createSession(agentId: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
             val agent = try { agentRepository.observeById(agentId).first() } catch (_: Exception) { null }
-            val sessionId = "session_${System.currentTimeMillis()}"
+            val sessionId = IdGenerator.session()
             val session = Session(
                 id = sessionId,
                 agentId = agentId,

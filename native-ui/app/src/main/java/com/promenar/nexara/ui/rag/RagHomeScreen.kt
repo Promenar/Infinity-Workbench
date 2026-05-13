@@ -72,7 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.model.Document
-import com.promenar.nexara.data.local.db.entity.FolderEntity
+import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.rag.components.FolderItem

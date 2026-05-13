@@ -2,10 +2,13 @@ package com.promenar.nexara.ui.rag
 
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.local.db.NexaraDatabase
-import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.domain.repository.IFolderRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
+import com.promenar.nexara.domain.repository.VectorTypeCount
+import com.promenar.nexara.domain.usecase.DeleteDocumentUseCase
+import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -30,21 +33,18 @@ class RagViewModelTest {
     private val documentRepository: IDocumentRepository = mockk(relaxed = true)
     private val vectorRepository: IVectorRepository = mockk(relaxed = true)
     private val kgRepository: IKnowledgeGraphRepository = mockk(relaxed = true)
+    private val folderRepository: IFolderRepository = mockk(relaxed = true)
 
     private lateinit var app: NexaraApplication
-    private lateinit var vectorDao: VectorDao
 
     @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
 
-        vectorDao = mockk(relaxed = true)
         val database = mockk<NexaraDatabase>(relaxed = true)
         app = mockk<NexaraApplication>(relaxed = true)
 
         every { app.database } returns database
-        every { database.folderDao() } returns mockk(relaxed = true)
-        every { database.vectorDao() } returns vectorDao
         every { app.getSharedPreferences(any(), any()) } returns mockk(relaxed = true)
         every { app.vectorizationQueue } returns mockk(relaxed = true)
         every { app.documentImporter } returns mockk(relaxed = true)
@@ -52,9 +52,10 @@ class RagViewModelTest {
         coEvery { documentRepository.getCount() } returns 0
         coEvery { kgRepository.getNodeCount() } returns 0
         every { documentRepository.observeAll() } returns flowOf(emptyList())
-        coEvery { vectorDao.getCount() } returns 0
-        coEvery { vectorDao.countByType() } returns emptyList()
-        coEvery { vectorDao.countBySession(any()) } returns emptyList()
+        every { folderRepository.observeAll() } returns flowOf(emptyList())
+        coEvery { vectorRepository.getCount() } returns 0
+        coEvery { vectorRepository.countByType() } returns emptyList()
+        coEvery { vectorRepository.countBySession(any()) } returns emptyList()
     }
 
     @AfterEach
@@ -62,8 +63,15 @@ class RagViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel(): RagViewModel =
-        RagViewModel(app, documentRepository, vectorRepository, kgRepository)
+    private fun createViewModel(): RagViewModel {
+        val ragPrefs = mockk<android.content.SharedPreferences>(relaxed = true)
+        val ragConfigPersistence = RagConfigPersistence(ragPrefs)
+        return RagViewModel(
+            app, documentRepository, vectorRepository, kgRepository, folderRepository,
+            DeleteDocumentUseCase(documentRepository, vectorRepository),
+            ragConfigPersistence
+        )
+    }
 
     @Test
     fun `init loadStats delegates to documentRepository getCount`() = runTest {
@@ -177,5 +185,62 @@ class RagViewModelTest {
         vm.search("  ")
 
         assertThat(vm.searchResults.value).isEmpty()
+    }
+
+    @Test
+    fun `createFolder delegates to folderRepository`() = runTest {
+        val vm = createViewModel()
+        vm.createFolder("New Folder")
+
+        coVerify { folderRepository.create(match { it.name == "New Folder" }) }
+    }
+
+    @Test
+    fun `deleteCollection delegates to folderRepository`() = runTest {
+        val folder = com.promenar.nexara.domain.model.Folder(
+            id = "f1", name = "ToDelete", createdAt = 1000L
+        )
+        coEvery { folderRepository.getById("f1") } returns folder
+
+        val vm = createViewModel()
+        vm.deleteCollection("f1")
+
+        coVerify { folderRepository.delete(folder) }
+    }
+
+    @Test
+    fun `deleteCollection does nothing when folder not found`() = runTest {
+        coEvery { folderRepository.getById("missing") } returns null
+
+        val vm = createViewModel()
+        vm.deleteCollection("missing")
+
+        coVerify(exactly = 0) { folderRepository.delete(any()) }
+    }
+
+    @Test
+    fun `init loadStats uses vectorRepository for memory count`() = runTest {
+        coEvery { vectorRepository.countByType() } returns listOf(
+            VectorTypeCount(type = "memory", count = 15),
+            VectorTypeCount(type = "doc", count = 8)
+        )
+
+        val vm = createViewModel()
+
+        assertThat(vm.stats.value.memoryCount).isEqualTo(15)
+    }
+
+    @Test
+    fun `folders comes from folderRepository observeAll`() = runTest {
+        val folders = listOf(
+            com.promenar.nexara.domain.model.Folder(id = "f1", name = "Folder 1", createdAt = 100L),
+            com.promenar.nexara.domain.model.Folder(id = "f2", name = "Folder 2", createdAt = 200L)
+        )
+        every { folderRepository.observeAll() } returns flowOf(folders)
+
+        val vm = createViewModel()
+
+        assertThat(vm.folders.value).hasSize(2)
+        assertThat(vm.folders.value[0].id).isEqualTo("f1")
     }
 }

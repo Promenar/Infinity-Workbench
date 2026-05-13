@@ -9,6 +9,7 @@ import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IAgentRepository
+import com.promenar.nexara.domain.usecase.AgentConfigResolver
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -156,12 +157,17 @@ class ChatViewModelTest {
             modelId = "gpt-4o"
         ))
 
+        val configResolver = AgentConfigResolver(
+            app.getSharedPreferences("nexara_settings", 0)
+        )
+
         viewModel = ChatViewModel(
             application = app,
             sessionRepository = stubSessionRepo,
             messageRepository = stubMessageRepo,
             agentRepository = stubAgentRepo,
-            llmProvider = fakeLlmProvider
+            llmProvider = fakeLlmProvider,
+            configResolver = configResolver
         )
     }
 

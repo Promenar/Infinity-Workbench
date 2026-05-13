@@ -78,3 +78,10 @@ data class KgEdge(
 data class KgTriple(val subject: String, val predicate: String, val `object`: String)
 
 data class ExtractionResult(val nodes: List<KgNode>, val edges: List<KgEdge>)
+
+data class Folder(
+    val id: String,
+    val name: String,
+    val parentId: String? = null,
+    val createdAt: Long = 0L
+)

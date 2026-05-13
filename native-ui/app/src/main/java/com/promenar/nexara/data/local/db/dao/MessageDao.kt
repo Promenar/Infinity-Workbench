@@ -71,4 +71,13 @@ interface MessageDao {
         isError: Int?,
         errorMessage: String?
     )
+
+    @Query("SELECT * FROM messages WHERE tokens IS NOT NULL")
+    suspend fun getMessagesWithTokens(): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE tokens IS NOT NULL AND session_id = :sessionId")
+    suspend fun getMessagesWithTokensBySession(sessionId: String): List<MessageEntity>
+
+    @Query("UPDATE messages SET tokens = NULL")
+    suspend fun clearAllTokenData()
 }

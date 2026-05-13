@@ -50,6 +50,8 @@ import com.promenar.nexara.ui.chat.manager.skills.WeatherSkill
 import com.promenar.nexara.ui.chat.manager.skills.CreateToolSkill
 import com.promenar.nexara.data.repository.SkillRepository
 import com.promenar.nexara.data.repository.ISkillRepository
+import com.promenar.nexara.data.repository.TokenStatsRepository
+import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.util.LocaleHelper
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -86,6 +88,16 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         com.promenar.nexara.data.repository.AgentRepository(database.agentDao())
     }
 
+    val configResolver: com.promenar.nexara.domain.usecase.AgentConfigResolver by lazy {
+        com.promenar.nexara.domain.usecase.AgentConfigResolver(
+            getSharedPreferences("nexara_settings", MODE_PRIVATE)
+        )
+    }
+
+    val createAgentUseCase: com.promenar.nexara.domain.usecase.CreateAgentUseCase by lazy {
+        com.promenar.nexara.domain.usecase.CreateAgentUseCase(agentRepository)
+    }
+
     val sessionRepository: ISessionRepository by lazy {
         SessionRepository(database.sessionDao(), database.messageDao())
     }
@@ -106,6 +118,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val skillRepository: ISkillRepository by lazy {
         com.promenar.nexara.data.repository.SkillRepository(database.skillDao())
+    }
+
+    val tokenStatsRepository: ITokenStatsRepository by lazy {
+        TokenStatsRepository(database.messageDao())
     }
 
     val httpClient: HttpClient by lazy {
@@ -308,7 +324,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val defaultAgents: List<com.promenar.nexara.domain.model.Agent> by lazy {
         listOf(
-            com.promenar.nexara.domain.model.Agent(id = "super", name = "Nexara 超级助手", description = "原生加速版，支持实时流式响应", icon = "✨", color = "#C0C1FF", isPinned = true),
+            com.promenar.nexara.domain.model.Agent(id = "default", name = "Nexara 助手", description = "通用 AI 助手，支持流式对话与知识检索", icon = "✨", color = "#C0C1FF", isPinned = true),
             com.promenar.nexara.domain.model.Agent(id = "coder", name = "编程专家", description = "精通全栈开发与架构设计", icon = "💻", color = "#6366F1"),
             com.promenar.nexara.domain.model.Agent(id = "writer", name = "创意写作", description = "文学创作、翻译与润色", icon = "📝", color = "#10B981")
         )

@@ -78,6 +78,18 @@ private val CapabilityTags = listOf(
     CapabilityTag("internet", "Internet", "public", NexaraColors.StatusInfo)
 )
 
+/** type → 基础能力推导表。当用户在 UI 中切换 type 时联动刷新 capabilities。 */
+private val TypeToBaseCaps = mapOf(
+    "chat"      to setOf("chat"),
+    "reasoning" to setOf("chat", "reasoning"),
+    "image"     to setOf("image"),
+    "embedding" to setOf("embedding"),
+    "rerank"    to setOf("rerank")
+)
+
+/** 所有由 type 决定的基础能力键（用于剥离旧基础能力） */
+private val AllBaseCapKeys = TypeToBaseCaps.values.flatten().toSet()
+
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ProviderModelsScreen(
@@ -182,7 +194,6 @@ fun ProviderModelsScreen(
                     onUpdate = { viewModel.updateModel(it) },
                     onToggle = { 
                         viewModel.toggleModel(model.id)
-                        viewModel.refreshProviderModels()
                     },
                     onTest = {
                         testingModel = model.id
@@ -190,7 +201,6 @@ fun ProviderModelsScreen(
                     },
                     onDelete = { 
                         viewModel.deleteModel(model.id)
-                        viewModel.refreshProviderModels()
                     }
                 )
             }
@@ -205,7 +215,6 @@ fun ProviderModelsScreen(
             isDestructive = true,
             onConfirm = {
                 viewModel.deleteAllModels()
-                viewModel.refreshProviderModels()
                 showDeleteAllDialog = false
             },
             onCancel = { showDeleteAllDialog = false }
@@ -256,7 +265,6 @@ fun ProviderModelsScreen(
                 onClick = {
                     if (newModelId.isNotBlank()) {
                         viewModel.addCustomModel(newModelId, newModelName)
-                        viewModel.refreshProviderModels()
                         newModelId = ""
                         newModelName = ""
                         showAddDialog = false
@@ -343,6 +351,16 @@ private fun EnhancedModelCard(
     var editId by remember { mutableStateOf(model.id) }
     var editContext by remember { mutableStateOf(model.contextLength.toString()) }
     var activeCaps by remember { mutableStateOf(model.capabilities.toSet()) }
+
+    // type 变更时联动刷新基础能力（chat/reasoning/image/embedding/rerank），
+    // 同时保留用户手动选择的修饰能力（vision, internet）
+    LaunchedEffect(selectedType) {
+        val oldBase = TypeToBaseCaps[model.type] ?: setOf("chat")
+        val newBase = TypeToBaseCaps[selectedType] ?: setOf("chat")
+        if (oldBase != newBase) {
+            activeCaps = (activeCaps - AllBaseCapKeys) + newBase
+        }
+    }
 
     LaunchedEffect(selectedType, editName, editContext, activeCaps) {
         val updated = model.copy(

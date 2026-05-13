@@ -77,7 +77,6 @@
     <string name="hub_subtitle">你的智能助手团队</string>
     <string name="hub_search_placeholder">搜索助手…</string>
     <string name="hub_btn_add_agent">添加助手</string>
-    <string name="hub_fab_super">超级助手</string>
     <string name="hub_empty_title">还没有助手</string>
     <string name="hub_empty_subtitle">点击 + 创建你的第一个 AI 助手</string>
     <string name="hub_dialog_add_title">创建新助手</string>
@@ -248,7 +247,6 @@
     <string name="chat_action_resend">重发</string>
     <string name="chat_action_regenerate">重新生成</string>
     <string name="chat_menu_token_stats">Token 统计</string>
-    <string name="chat_menu_super_assistant">超级助手</string>
     <string name="chat_menu_export">导出对话</string>
     <string name="chat_input_placeholder">发消息给%1$s…</string>
     <string name="chat_input_placeholder_default">发消息…</string>
@@ -287,6 +285,11 @@
     <string name="session_settings_title">设置</string>
     <string name="session_settings_active_agent">当前助手</string>
     <string name="session_settings_export">导出会话</string>
+    <string name="session_settings_export_format_title">导出格式</string>
+    <string name="session_settings_export_as_txt">纯文本 (.txt)</string>
+    <string name="session_settings_export_as_md">Markdown (.md)</string>
+    <string name="session_settings_export_success">导出成功</string>
+    <string name="session_settings_export_failed">导出失败</string>
     <string name="session_settings_section_info">会话信息</string>
     <string name="session_settings_title_label">会话标题</string>
     <string name="session_settings_title_placeholder">输入会话标题…</string>
@@ -367,40 +370,6 @@
     <string name="sheet_settings_docs">知识库检索</string>
     <string name="sheet_settings_kg">知识图谱</string>
     <string name="sheet_settings_unlimited">无限制</string>
-
-    <!-- SpaSettingsScreen -->
-    <string name="spa_title">超级助手设置</string>
-    <string name="spa_section_fab">FAB 外观</string>
-    <string name="spa_fab_rotation">旋转动画</string>
-    <string name="spa_fab_glow">发光效果</string>
-    <string name="spa_section_model">模型配置</string>
-    <string name="spa_section_kg">知识图谱</string>
-    <string name="spa_kg_enable">启用知识图谱</string>
-    <string name="spa_kg_enable_desc">提取并存储实体关系</string>
-    <string name="spa_kg_view">查看完整图谱</string>
-    <string name="spa_kg_browse">浏览节点和边</string>
-    <string name="spa_section_knowledge">知识管理</string>
-    <string name="spa_section_context">上下文</string>
-    <string name="spa_context_window">活跃上下文窗口</string>
-    <string name="spa_section_stats">全局知识</string>
-    <string name="spa_stat_documents">文档</string>
-    <string name="spa_stat_sessions">会话</string>
-    <string name="spa_stat_vectors">向量</string>
-    <string name="spa_clean_ghost">清理幽灵数据</string>
-    <string name="spa_export_history">导出历史</string>
-    <string name="spa_section_danger">危险区</string>
-    <string name="spa_delete_btn">删除超级助手</string>
-    <string name="spa_delete_title">删除超级助手</string>
-    <string name="spa_delete_message">确定要删除吗？这将清除所有超级助手数据。</string>
-    <string name="spa_assistant_title_label">助手标题</string>
-    <string name="spa_assistant_title_placeholder">输入助手名称…</string>
-    <string name="spa_icon_style">图标样式</string>
-    <string name="spa_color_label">颜色</string>
-    <string name="spa_default_model">默认模型</string>
-    <string name="spa_rag_config">RAG 配置</string>
-    <string name="spa_rag_config_desc">配置检索设置</string>
-    <string name="spa_advanced_retrieval">高级检索</string>
-    <string name="spa_retrieval_desc">微调搜索参数</string>
 
     <!-- WorkspaceSheet -->
     <string name="workspace_title">工作区</string>
@@ -599,6 +568,8 @@
     <string name="token_clear_history">清除所有历史</string>
     <string name="token_in_out">输入: %1$s · 输出: %2$s</string>
     <string name="token_active_model">活跃模型</string>
+    <string name="token_no_data">暂无 Token 使用数据。开始对话后将显示统计。</string>
+    <string name="common_cancel">取消</string>
 
     <!-- SettingsViewModel defaults -->
     <string name="settings_default_user_name">Nexara 用户</string>

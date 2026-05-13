@@ -6,7 +6,9 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
+import com.promenar.nexara.domain.repository.TokenUsageAggregate
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -30,6 +32,7 @@ class SettingsViewModelTest {
 
     private lateinit var vectorRepo: IVectorRepository
     private lateinit var docRepo: IDocumentRepository
+    private lateinit var tokenStatsRepo: ITokenStatsRepository
     private lateinit var mockApp: NexaraApplication
     private lateinit var prefs: SharedPreferences
     private lateinit var skillRepo: ISkillRepository
@@ -40,6 +43,7 @@ class SettingsViewModelTest {
 
         vectorRepo = mockk()
         docRepo = mockk()
+        tokenStatsRepo = mockk()
         mockApp = mockk(relaxed = true)
         prefs = mockk {
             every { getString(any(), any()) } answers { secondArg() }
@@ -53,6 +57,8 @@ class SettingsViewModelTest {
         every { mockApp.skillRepository } returns skillRepo
         every { skillRepo.getAllCustomSkills() } returns emptyFlow()
         every { skillRepo.getAllMcpServers() } returns emptyFlow()
+        coEvery { tokenStatsRepo.getTotalUsage() } returns com.promenar.nexara.domain.repository.TokenUsageAggregate()
+        coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
 
         val initApp = mockk<Application>(relaxed = true)
         every { initApp.applicationContext } returns initApp
@@ -65,33 +71,38 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `loadTokenStats uses vectorRepository count`() = runTest {
-        coEvery { vectorRepo.getCount() } returns 42
+    fun `loadTokenStats uses tokenStatsRepository`() = runTest {
+        coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate(inputTokens = 100, outputTokens = 50)
+        coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
         coEvery { docRepo.getCount() } returns 10
 
-        SettingsViewModel(mockApp, vectorRepo, docRepo)
+        SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
 
-        coVerify { vectorRepo.getCount() }
+        coVerify { tokenStatsRepo.getTotalUsage() }
     }
 
     @Test
-    fun `loadTokenStats populates stats from repository count`() = runTest {
-        coEvery { vectorRepo.getCount() } returns 5
+    fun `loadTokenStats populates stats from repository`() = runTest {
+        val usage = TokenUsageAggregate(inputTokens = 300, outputTokens = 200)
+        coEvery { tokenStatsRepo.getTotalUsage() } returns usage
+        coEvery { tokenStatsRepo.getUsageByModel() } returns listOf(
+            com.promenar.nexara.domain.repository.ModelTokenStats("gpt-4", usage)
+        )
         coEvery { docRepo.getCount() } returns 0
 
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
 
         assertThat(vm.tokenStats.value).hasSize(1)
-        assertThat(vm.tokenStats.value[0].totalTokens).isEqualTo(5 * 500L)
-        assertThat(vm.tokenCostThisMonth.value).isEqualTo("$0.10")
+        assertThat(vm.tokenStats.value[0].totalTokens).isEqualTo(500)
     }
 
     @Test
     fun `loadKnowledgeStats uses documentRepository count`() = runTest {
-        coEvery { vectorRepo.getCount() } returns 0
+        coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate()
+        coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
         coEvery { docRepo.getCount() } returns 7
 
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
 
         coVerify { docRepo.getCount() }
         assertThat(vm.activeSourcesCount.value).isEqualTo(7)
@@ -99,10 +110,11 @@ class SettingsViewModelTest {
 
     @Test
     fun `loadKnowledgeStats sets zero when repository returns zero`() = runTest {
-        coEvery { vectorRepo.getCount() } returns 0
+        coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate()
+        coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
         coEvery { docRepo.getCount() } returns 0
 
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
 
         assertThat(vm.activeSourcesCount.value).isEqualTo(0)
     }

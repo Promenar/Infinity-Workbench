@@ -108,34 +108,5 @@ class PostProcessorTest {
         assertThat(updatedSession.title).isEqualTo("What is the wea...")
     }
 
-    @Test
-    fun updateStatsSkipsTitleForSuperAssistant() = testScope.runTest {
-        val store = ChatStore()
-        val sessionManager = SessionManager(store, stubSessionRepo)
-        val messageManager = MessageManager(store, stubMessageRepo, stubSessionRepo, testScope)
-        val postProcessor = PostProcessor(store, sessionManager, messageManager)
 
-        val agent = Agent(id = "a1", name = "Test Agent")
-        val session = Session(id = "super_assistant", agentId = "a1", title = "New Chat")
-        sessionManager.addSession(session)
-        testScope.advanceUntilIdle()
-
-        val params = PostProcessorParams(
-            sessionId = "super_assistant",
-            assistantMsgId = "m2",
-            userMsgId = "m1",
-            userContent = "What is the weather?",
-            assistantContent = "The weather is sunny.",
-            agent = agent,
-            session = store.getSession("super_assistant")!!,
-            ragEnabled = false,
-            modelId = "gpt-4o"
-        )
-
-        postProcessor.updateStats(params)
-        testScope.advanceUntilIdle()
-
-        val updatedSession = store.getSession("super_assistant")!!
-        assertThat(updatedSession.title).isEqualTo("New Chat")
-    }
 }

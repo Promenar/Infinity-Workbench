@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.UUID
+import com.promenar.nexara.domain.usecase.IdGenerator
 import kotlin.random.Random
 
 data class GraphNode(
@@ -102,7 +102,7 @@ class KnowledgeGraphViewModel(
                 val mockNodeIds = mutableListOf<String>()
 
                 val mockNodes = (0..15).map {
-                    val id = UUID.randomUUID().toString()
+                    val id = IdGenerator.uuid()
                     mockNodeIds.add(id)
                     val type = when (rng.nextInt(3)) {
                         0 -> "concept"

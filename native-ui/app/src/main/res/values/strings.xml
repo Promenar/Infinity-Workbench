@@ -77,7 +77,6 @@
     <string name="hub_subtitle">Your AI Assistant Team</string>
     <string name="hub_search_placeholder">Search agents…</string>
     <string name="hub_btn_add_agent">Add Agent</string>
-    <string name="hub_fab_super">Super Assistant</string>
     <string name="hub_empty_title">No Agents Yet</string>
     <string name="hub_empty_subtitle">Tap + to create your first AI agent</string>
     <string name="hub_dialog_add_title">Add New Agent</string>
@@ -242,7 +241,6 @@
     <string name="chat_action_resend">Resend</string>
     <string name="chat_action_regenerate">Regenerate</string>
     <string name="chat_menu_token_stats">Token Stats</string>
-    <string name="chat_menu_super_assistant">Super Assistant</string>
     <string name="chat_menu_export">Export Chat</string>
     <string name="chat_input_placeholder">Message %1$s…</string>
     <string name="chat_input_placeholder_default">Message…</string>
@@ -282,6 +280,11 @@
     <string name="session_settings_title">Settings</string>
     <string name="session_settings_active_agent">Active Agent</string>
     <string name="session_settings_export">Export Session</string>
+    <string name="session_settings_export_format_title">Export Format</string>
+    <string name="session_settings_export_as_txt">Plain Text (.txt)</string>
+    <string name="session_settings_export_as_md">Markdown (.md)</string>
+    <string name="session_settings_export_success">Exported successfully</string>
+    <string name="session_settings_export_failed">Export failed</string>
     <string name="session_settings_section_info">Session Info</string>
     <string name="session_settings_title_label">Session Title</string>
     <string name="session_settings_title_placeholder">Enter session title…</string>
@@ -364,40 +367,6 @@
     <string name="sheet_settings_docs">Document Retrieval</string>
     <string name="sheet_settings_kg">Knowledge Graph</string>
     <string name="sheet_settings_unlimited">Unlimited</string>
-
-    <!-- SpaSettingsScreen -->
-    <string name="spa_title">Super Assistant Settings</string>
-    <string name="spa_section_fab">FAB Appearance</string>
-    <string name="spa_fab_rotation">Rotation Animation</string>
-    <string name="spa_fab_glow">Glow Effect</string>
-    <string name="spa_section_model">Model Configuration</string>
-    <string name="spa_section_kg">Knowledge Graph</string>
-    <string name="spa_kg_enable">Enable Knowledge Graph</string>
-    <string name="spa_kg_enable_desc">Extract and store entity relationships</string>
-    <string name="spa_kg_view">View Full Graph</string>
-    <string name="spa_kg_browse">Browse nodes and edges</string>
-    <string name="spa_section_knowledge">Knowledge Management</string>
-    <string name="spa_section_context">Context</string>
-    <string name="spa_context_window">Active Context Window</string>
-    <string name="spa_section_stats">Global Knowledge</string>
-    <string name="spa_stat_documents">Documents</string>
-    <string name="spa_stat_sessions">Sessions</string>
-    <string name="spa_stat_vectors">Vectors</string>
-    <string name="spa_clean_ghost">Clean Ghost Data</string>
-    <string name="spa_export_history">Export History</string>
-    <string name="spa_section_danger">Danger Zone</string>
-    <string name="spa_delete_btn">Delete Super Assistant</string>
-    <string name="spa_delete_title">Delete Super Assistant</string>
-    <string name="spa_delete_message">Are you sure? This will clear all Super Assistant data.</string>
-    <string name="spa_assistant_title_label">Assistant Title</string>
-    <string name="spa_assistant_title_placeholder">Enter assistant name…</string>
-    <string name="spa_icon_style">Icon Style</string>
-    <string name="spa_color_label">Color</string>
-    <string name="spa_default_model">Default Model</string>
-    <string name="spa_rag_config">RAG Configuration</string>
-    <string name="spa_rag_config_desc">Configure retrieval settings</string>
-    <string name="spa_advanced_retrieval">Advanced Retrieval</string>
-    <string name="spa_retrieval_desc">Fine-tune search parameters</string>
 
     <!-- WorkspaceSheet -->
     <string name="workspace_title">Workspace</string>
@@ -596,6 +565,8 @@
     <string name="token_clear_history">Clear All History</string>
     <string name="token_in_out">In: %1$s · Out: %2$s</string>
     <string name="token_active_model">Active Model</string>
+    <string name="token_no_data">No token usage data yet. Start a conversation to see stats.</string>
+    <string name="common_cancel">Cancel</string>
 
     <!-- SettingsViewModel defaults -->
     <string name="settings_default_user_name">Nexara User</string>

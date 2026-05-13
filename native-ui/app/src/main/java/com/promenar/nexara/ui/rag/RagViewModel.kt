@@ -5,12 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.entity.FolderEntity
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.data.rag.VectorStatsService
 import com.promenar.nexara.domain.model.Document
+import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.domain.repository.IFolderRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.promenar.nexara.domain.usecase.DeleteDocumentUseCase
+import com.promenar.nexara.domain.usecase.IdGenerator
+import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.ui.common.ModelItem
 import com.promenar.nexara.ui.common.ModelCapability
 
@@ -39,18 +43,17 @@ class RagViewModel(
     application: Application,
     private val documentRepository: IDocumentRepository,
     private val vectorRepository: IVectorRepository,
-    private val kgRepository: IKnowledgeGraphRepository
+    private val kgRepository: IKnowledgeGraphRepository,
+    private val folderRepository: IFolderRepository,
+    private val deleteDocumentUseCase: DeleteDocumentUseCase,
+    private val ragConfigPersistence: RagConfigPersistence
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
 
-    // TODO: migrate to FolderRepository
-    @Suppress("LeakingThis")
-    private val folderDao = app.database.folderDao()
+    private val vectorStatsService = VectorStatsService(vectorRepository)
 
-    private val vectorStatsService = VectorStatsService(app.database.vectorDao())
-
-    val folders: StateFlow<List<FolderEntity>> = folderDao.observeAll()
+    val folders: StateFlow<List<Folder>> = folderRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _folderStats = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -83,7 +86,7 @@ class RagViewModel(
     private val prefs = app.getSharedPreferences("rag_settings", 0)
     private val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
 
-    private val _folders = MutableStateFlow<List<FolderEntity>>(emptyList())
+    private val _folders = MutableStateFlow<List<Folder>>(emptyList())
 
     private val _stats = MutableStateFlow(RagStats())
     val stats: StateFlow<RagStats> = _stats.asStateFlow()
@@ -133,7 +136,7 @@ class RagViewModel(
         }
         
         viewModelScope.launch {
-            folderDao.observeAll().collect { list ->
+            folderRepository.observeAll().collect { list ->
                 _folders.value = list
                 updateFolderStats(list)
             }
@@ -147,7 +150,7 @@ class RagViewModel(
         }
     }
 
-    private fun updateFolderStats(folderList: List<FolderEntity>) {
+    private fun updateFolderStats(folderList: List<Folder>) {
         viewModelScope.launch {
             val stats = mutableMapOf<String, Int>()
             for (folder in folderList) {
@@ -158,78 +161,88 @@ class RagViewModel(
     }
 
     private fun loadConfig() {
+        val rag = ragConfigPersistence.loadRagConfig()
+        val retrieval = ragConfigPersistence.loadRetrievalConfig()
         _config.value = RagConfiguration(
-            enableMemory = prefs.getBoolean("enable_memory", true),
-            enableDocs = prefs.getBoolean("enable_docs", true),
-            enableKnowledgeGraph = prefs.getBoolean("enable_kg", false),
-            enableQueryRewrite = prefs.getBoolean("enable_query_rewrite", false),
-            enableHybridSearch = prefs.getBoolean("enable_hybrid_search", false),
-            enableRerank = prefs.getBoolean("enable_rerank", false),
-            enableIncrementalHash = prefs.getBoolean("enable_incremental_hash", true),
-            enableLocalPreprocess = prefs.getBoolean("enable_local_preprocess", false),
-            queryRewriteStrategy = prefs.getString("query_rewrite_strategy", "multi-query") ?: "multi-query",
-            queryRewriteModel = prefs.getString("query_rewrite_model", null),
-            queryRewriteCount = prefs.getInt("query_rewrite_count", 3),
-            memoryLimit = prefs.getInt("memory_limit", 5),
-            memoryThreshold = prefs.getFloat("memory_threshold", 0.7f),
-            docLimit = prefs.getInt("doc_limit", 8),
-            docThreshold = prefs.getFloat("doc_threshold", 0.45f),
-            docChunkSize = prefs.getInt("doc_chunk_size", 800),
-            chunkOverlap = prefs.getInt("chunk_overlap", 100),
-            memoryChunkSize = prefs.getInt("memory_chunk_size", 1000),
-            rerankTopK = prefs.getInt("rerank_top_k", 30),
-            rerankFinalK = prefs.getInt("rerank_final_k", 5),
-            hybridAlpha = prefs.getFloat("hybrid_alpha", 0.6f),
-            hybridBM25Boost = prefs.getFloat("hybrid_bm25_boost", 1.0f),
-            kgExtractionModel = prefs.getString("kg_model", null),
-            kgExtractionPrompt = prefs.getString("kg_prompt", null),
-            kgFreeMode = prefs.getBoolean("kg_free_mode", false),
-            kgDomainAuto = prefs.getBoolean("kg_domain_auto", false),
-            costStrategy = prefs.getString("cost_strategy", "on-demand") ?: "on-demand",
-            jitMaxChunks = prefs.getInt("jit_max_chunks", 0),
-            showRetrievalProgress = prefs.getBoolean("show_retrieval_progress", true),
-            showRetrievalDetails = prefs.getBoolean("show_retrieval_details", true),
-            trackRetrievalMetrics = prefs.getBoolean("track_retrieval_metrics", false),
-            contextWindow = prefs.getInt("context_window", 20),
-            summaryThreshold = prefs.getInt("summary_threshold", 10)
+            enableMemory = retrieval.enableMemory,
+            enableDocs = retrieval.enableDocs,
+            enableKnowledgeGraph = retrieval.enableKnowledgeGraph,
+            enableQueryRewrite = retrieval.enableQueryRewrite,
+            enableHybridSearch = retrieval.enableHybridSearch,
+            enableRerank = retrieval.enableRerank,
+            enableIncrementalHash = prefs.getBoolean(RagConfigPersistence.KEY_ENABLE_INCREMENTAL_HASH, true),
+            enableLocalPreprocess = prefs.getBoolean(RagConfigPersistence.KEY_ENABLE_LOCAL_PREPROCESS, false),
+            queryRewriteStrategy = retrieval.queryRewriteStrategy,
+            queryRewriteModel = retrieval.queryRewriteModel,
+            queryRewriteCount = retrieval.queryRewriteCount,
+            memoryLimit = retrieval.memoryLimit,
+            memoryThreshold = retrieval.memoryThreshold,
+            docLimit = retrieval.docLimit,
+            docThreshold = retrieval.docThreshold,
+            docChunkSize = rag.docChunkSize,
+            chunkOverlap = rag.chunkOverlap,
+            memoryChunkSize = rag.memoryChunkSize,
+            rerankTopK = retrieval.rerankTopK,
+            rerankFinalK = retrieval.rerankFinalK,
+            hybridAlpha = retrieval.hybridAlpha,
+            hybridBM25Boost = retrieval.hybridBM25Boost,
+            kgExtractionModel = retrieval.kgExtractionModel,
+            kgExtractionPrompt = retrieval.kgExtractionPrompt,
+            kgFreeMode = retrieval.kgFreeMode,
+            kgDomainAuto = retrieval.kgDomainAuto,
+            costStrategy = prefs.getString(RagConfigPersistence.KEY_COST_STRATEGY, "on-demand") ?: "on-demand",
+            jitMaxChunks = retrieval.jitMaxChunks,
+            showRetrievalProgress = prefs.getBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_PROGRESS, true),
+            showRetrievalDetails = prefs.getBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_DETAILS, true),
+            trackRetrievalMetrics = prefs.getBoolean(RagConfigPersistence.KEY_TRACK_RETRIEVAL_METRICS, false),
+            contextWindow = rag.contextWindow,
+            summaryThreshold = rag.summaryThreshold
         )
     }
 
     private fun saveConfig(config: RagConfiguration) {
+        ragConfigPersistence.saveRagConfig(
+            com.promenar.nexara.data.agent.AgentRagConfig(
+                docChunkSize = config.docChunkSize,
+                chunkOverlap = config.chunkOverlap,
+                memoryChunkSize = config.memoryChunkSize,
+                contextWindow = config.contextWindow,
+                summaryThreshold = config.summaryThreshold
+            )
+        )
+        ragConfigPersistence.saveRetrievalConfig(
+            com.promenar.nexara.data.agent.AgentRetrievalConfig(
+                memoryLimit = config.memoryLimit,
+                memoryThreshold = config.memoryThreshold,
+                docLimit = config.docLimit,
+                docThreshold = config.docThreshold,
+                enableRerank = config.enableRerank,
+                rerankTopK = config.rerankTopK,
+                rerankFinalK = config.rerankFinalK,
+                enableQueryRewrite = config.enableQueryRewrite,
+                queryRewriteStrategy = config.queryRewriteStrategy,
+                queryRewriteCount = config.queryRewriteCount,
+                enableHybridSearch = config.enableHybridSearch,
+                hybridAlpha = config.hybridAlpha,
+                hybridBM25Boost = config.hybridBM25Boost,
+                enableMemory = config.enableMemory,
+                enableDocs = config.enableDocs,
+                enableKnowledgeGraph = config.enableKnowledgeGraph,
+                queryRewriteModel = config.queryRewriteModel,
+                kgExtractionModel = config.kgExtractionModel,
+                kgExtractionPrompt = config.kgExtractionPrompt,
+                kgFreeMode = config.kgFreeMode,
+                kgDomainAuto = config.kgDomainAuto,
+                jitMaxChunks = config.jitMaxChunks
+            )
+        )
         prefs.edit()
-            .putBoolean("enable_memory", config.enableMemory)
-            .putBoolean("enable_docs", config.enableDocs)
-            .putBoolean("enable_kg", config.enableKnowledgeGraph)
-            .putBoolean("enable_query_rewrite", config.enableQueryRewrite)
-            .putBoolean("enable_hybrid_search", config.enableHybridSearch)
-            .putBoolean("enable_rerank", config.enableRerank)
-            .putBoolean("enable_incremental_hash", config.enableIncrementalHash)
-            .putBoolean("enable_local_preprocess", config.enableLocalPreprocess)
-            .putString("query_rewrite_strategy", config.queryRewriteStrategy)
-            .putString("query_rewrite_model", config.queryRewriteModel)
-            .putInt("query_rewrite_count", config.queryRewriteCount)
-            .putInt("memory_limit", config.memoryLimit)
-            .putFloat("memory_threshold", config.memoryThreshold)
-            .putInt("doc_limit", config.docLimit)
-            .putFloat("doc_threshold", config.docThreshold)
-            .putInt("doc_chunk_size", config.docChunkSize)
-            .putInt("chunk_overlap", config.chunkOverlap)
-            .putInt("memory_chunk_size", config.memoryChunkSize)
-            .putInt("rerank_top_k", config.rerankTopK)
-            .putInt("rerank_final_k", config.rerankFinalK)
-            .putFloat("hybrid_alpha", config.hybridAlpha)
-            .putFloat("hybrid_bm25_boost", config.hybridBM25Boost)
-            .putString("kg_model", config.kgExtractionModel)
-            .putString("kg_prompt", config.kgExtractionPrompt)
-            .putBoolean("kg_free_mode", config.kgFreeMode)
-            .putBoolean("kg_domain_auto", config.kgDomainAuto)
-            .putString("cost_strategy", config.costStrategy)
-            .putInt("jit_max_chunks", config.jitMaxChunks)
-            .putBoolean("show_retrieval_progress", config.showRetrievalProgress)
-            .putBoolean("show_retrieval_details", config.showRetrievalDetails)
-            .putBoolean("track_retrieval_metrics", config.trackRetrievalMetrics)
-            .putInt("context_window", config.contextWindow)
-            .putInt("summary_threshold", config.summaryThreshold)
+            .putBoolean(RagConfigPersistence.KEY_ENABLE_INCREMENTAL_HASH, config.enableIncrementalHash)
+            .putBoolean(RagConfigPersistence.KEY_ENABLE_LOCAL_PREPROCESS, config.enableLocalPreprocess)
+            .putString(RagConfigPersistence.KEY_COST_STRATEGY, config.costStrategy)
+            .putBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_PROGRESS, config.showRetrievalProgress)
+            .putBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_DETAILS, config.showRetrievalDetails)
+            .putBoolean(RagConfigPersistence.KEY_TRACK_RETRIEVAL_METRICS, config.trackRetrievalMetrics)
             .apply()
     }
 
@@ -303,12 +316,12 @@ class RagViewModel(
     fun createFolder(name: String) {
         viewModelScope.launch {
             try {
-                val folder = FolderEntity(
-                    id = java.util.UUID.randomUUID().toString(),
+                val folder = Folder(
+                    id = IdGenerator.uuid(),
                     name = name,
                     createdAt = System.currentTimeMillis()
                 )
-                folderDao.insert(folder)
+                folderRepository.create(folder)
             } catch (_: Exception) { }
         }
     }
@@ -324,8 +337,8 @@ class RagViewModel(
     fun deleteCollection(id: String) {
         viewModelScope.launch {
             try {
-                val folder = folderDao.getById(id) ?: return@launch
-                folderDao.delete(folder)
+                val folder = folderRepository.getById(id) ?: return@launch
+                folderRepository.delete(folder)
                 loadStats()
             } catch (_: Exception) { }
         }
@@ -334,10 +347,7 @@ class RagViewModel(
     fun deleteDocuments(ids: List<String>) {
         viewModelScope.launch {
             try {
-                for (docId in ids) {
-                    documentRepository.delete(docId)
-                    vectorRepository.deleteByDocument(docId)
-                }
+                deleteDocumentUseCase(ids)
                 loadStats()
             } catch (_: Exception) { }
         }
@@ -409,22 +419,30 @@ class RagViewModel(
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
+                    val documentRepo = com.promenar.nexara.data.repository.DocumentRepository(
+                        documentDao = app.database.documentDao(),
+                        folderDao = app.database.folderDao()
+                    )
+                    val vectorRepo = com.promenar.nexara.data.repository.VectorRepository(
+                        vectorDao = app.database.vectorDao(),
+                        embeddingClient = app.embeddingClient
+                    )
+                    val ragPrefs = app.getSharedPreferences("rag_settings", 0)
                     return RagViewModel(
                         application = application,
-                        documentRepository = com.promenar.nexara.data.repository.DocumentRepository(
-                            documentDao = app.database.documentDao(),
-                            folderDao = app.database.folderDao()
-                        ),
-                        vectorRepository = com.promenar.nexara.data.repository.VectorRepository(
-                            vectorDao = app.database.vectorDao(),
-                            embeddingClient = app.embeddingClient
-                        ),
+                        documentRepository = documentRepo,
+                        vectorRepository = vectorRepo,
                         kgRepository = com.promenar.nexara.data.repository.KnowledgeGraphRepository(
                             kgNodeDao = app.database.kgNodeDao(),
                             kgEdgeDao = app.database.kgEdgeDao(),
                             graphExtractor = app.graphExtractor,
                             documentDao = app.database.documentDao()
-                        )
+                        ),
+                        folderRepository = com.promenar.nexara.data.repository.FolderRepository(
+                            folderDao = app.database.folderDao()
+                        ),
+                        deleteDocumentUseCase = DeleteDocumentUseCase(documentRepo, vectorRepo),
+                        ragConfigPersistence = RagConfigPersistence(ragPrefs)
                     ) as T
                 }
             }

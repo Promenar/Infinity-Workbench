@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,8 +60,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.domain.usecase.ExportSessionUseCase
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
+import kotlinx.coroutines.launch
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -103,6 +109,25 @@ fun SessionSettingsScreen(
     var enableDocs by remember { mutableStateOf(session?.ragOptions?.enableDocs ?: false) }
     var showPromptEditor by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showExportFormatDialog by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    var exportPending by remember { mutableStateOf<kotlin.Pair<String, String>?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val pending = exportPending
+        pending ?: return@rememberLauncherForActivityResult
+        exportPending = null
+        try {
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(pending.first.toByteArray(Charsets.UTF_8))
+            }
+        } catch (_: Exception) { }
+    }
 
     FloatingTextEditor(
         show = showPromptEditor,
@@ -127,6 +152,57 @@ fun SessionSettingsScreen(
             },
             onCancel = { showDeleteDialog = false },
             isDestructive = true
+        )
+    }
+
+    if (showExportFormatDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportFormatDialog = false },
+            title = { Text(stringResource(R.string.session_settings_export_format_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            showExportFormatDialog = false
+                            coroutineScope.launch {
+                                try {
+                                    val result = chatViewModel.exportSession(sessionId, ExportSessionUseCase.Format.TXT)
+                                    exportPending = result.content to result.mimeType
+                                    exportLauncher.launch(result.fileName)
+                                } catch (_: Exception) { }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.Description, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.session_settings_export_as_txt))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            showExportFormatDialog = false
+                            coroutineScope.launch {
+                                try {
+                                    val result = chatViewModel.exportSession(sessionId, ExportSessionUseCase.Format.MARKDOWN)
+                                    exportPending = result.content to result.mimeType
+                                    exportLauncher.launch(result.fileName)
+                                } catch (_: Exception) { }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.session_settings_export_as_md))
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showExportFormatDialog = false }) {
+                    Text(stringResource(R.string.common_btn_cancel))
+                }
+            }
         )
     }
 
@@ -208,16 +284,7 @@ fun SessionSettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(
-                                            android.content.Intent.EXTRA_TEXT,
-                                            session?.messages?.joinToString("\n\n") { "${it.role.name}: ${it.content}" } ?: ""
-                                        )
-                                    }
-                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Export Chat"))
-                                }
+                                .clickable { showExportFormatDialog = true }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

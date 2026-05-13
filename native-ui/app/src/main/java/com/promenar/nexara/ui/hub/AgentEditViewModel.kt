@@ -1,13 +1,13 @@
 package com.promenar.nexara.ui.hub
 
 import android.app.Application
-import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
+import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 
 class AgentEditViewModel(
     private val agentRepository: AgentRepository,
-    private val prefs: SharedPreferences
+    private val ragConfigPersistence: RagConfigPersistence
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
@@ -98,42 +98,11 @@ class AgentEditViewModel(
     }
 
     private fun getGlobalRagConfig(): com.promenar.nexara.data.agent.AgentRagConfig {
-        return com.promenar.nexara.data.agent.AgentRagConfig(
-            docChunkSize = prefs.getInt("doc_chunk_size", 800),
-            chunkOverlap = prefs.getInt("chunk_overlap", 100),
-            memoryChunkSize = prefs.getInt("memory_chunk_size", 1000),
-            contextWindow = prefs.getInt("context_window", 20),
-            summaryThreshold = prefs.getInt("summary_threshold", 10)
-        )
+        return ragConfigPersistence.loadRagConfig()
     }
 
     private fun getGlobalRetrievalConfig(): com.promenar.nexara.data.agent.AgentRetrievalConfig {
-        return com.promenar.nexara.data.agent.AgentRetrievalConfig(
-            memoryLimit = prefs.getInt("memory_limit", 5),
-            memoryThreshold = prefs.getFloat("memory_threshold", 0.7f),
-            docLimit = prefs.getInt("doc_limit", 8),
-            docThreshold = prefs.getFloat("doc_threshold", 0.45f),
-            enableRerank = prefs.getBoolean("enable_rerank", false),
-            rerankTopK = prefs.getInt("rerank_top_k", 30),
-            rerankFinalK = prefs.getInt("rerank_final_k", 5),
-            enableQueryRewrite = prefs.getBoolean("enable_query_rewrite", false),
-            queryRewriteStrategy = prefs.getString("query_rewrite_strategy", "multi-query") ?: "multi-query",
-            queryRewriteCount = prefs.getInt("query_rewrite_count", 3),
-            enableHybridSearch = prefs.getBoolean("enable_hybrid_search", false),
-            hybridAlpha = prefs.getFloat("hybrid_alpha", 0.6f),
-            hybridBM25Boost = prefs.getFloat("hybrid_bm25_boost", 1.0f),
-            enableMemory = prefs.getBoolean("enable_memory", true),
-            enableDocs = prefs.getBoolean("enable_docs", true),
-            enableKnowledgeGraph = prefs.getBoolean("enable_kg", false),
-            queryRewriteModel = prefs.getString("query_rewrite_model", null),
-            kgExtractionModel = prefs.getString("kg_model", null),
-            kgExtractionPrompt = prefs.getString("kg_prompt", null),
-            kgEntityTypes = emptyList(),
-            kgFreeMode = prefs.getBoolean("kg_free_mode", false),
-            kgDomainAuto = prefs.getBoolean("kg_domain_auto", false),
-            kgDomainHint = null,
-            jitMaxChunks = prefs.getInt("jit_max_chunks", 0)
-        )
+        return ragConfigPersistence.loadRetrievalConfig()
     }
 
     fun setName(value: String) {
@@ -269,7 +238,9 @@ class AgentEditViewModel(
                     val app = application as NexaraApplication
                     return AgentEditViewModel(
                         agentRepository = app.agentRepository,
-                        prefs = app.getSharedPreferences("rag_settings", 0)
+                        ragConfigPersistence = RagConfigPersistence(
+                            app.getSharedPreferences("rag_settings", 0)
+                        )
                     ) as T
                 }
             }

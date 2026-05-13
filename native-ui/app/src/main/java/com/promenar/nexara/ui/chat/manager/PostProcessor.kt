@@ -66,16 +66,13 @@ class PostProcessor(
             mapOf("stats" to SessionStats(totalTokens = billingUsage.total, billing = billingUsage))
         )
 
-        val isSuperAssistant = params.sessionId == "super_assistant" ||
-                params.session.agentId == "super_assistant"
-
         val isDefaultTitle = params.session.title == params.agent.name ||
                 params.session.title == "New Conversation" ||
                 params.session.title == "New Chat" ||
                 params.session.title.startsWith("New Conversation") ||
                 params.session.title.startsWith("New Chat")
 
-        if (!isSuperAssistant && (params.session.messages.size <= 2 || isDefaultTitle)) {
+        if (params.session.messages.size <= 2 || isDefaultTitle) {
             val titleGenerator = onGenerateTitle
             if (titleGenerator != null) {
                 try {

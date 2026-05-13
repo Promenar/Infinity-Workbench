@@ -13,11 +13,13 @@ import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.MODEL_SPECS
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,14 +46,16 @@ data class ProviderStats(
     val name: String,
     val totalTokens: Long,
     val cost: Double,
-    val models: List<ModelStat>
+    val models: List<ModelStat>,
+    val estimated: Boolean = false
 )
 
 data class ModelStat(
     val name: String,
     val inputTokens: Long,
     val outputTokens: Long,
-    val cost: Double
+    val cost: Double,
+    val estimated: Boolean = false
 )
 
 data class McpServerUiModel(
@@ -79,7 +83,8 @@ data class SkillInfo(
 class SettingsViewModel(
     application: Application,
     private val vectorRepository: IVectorRepository,
-    private val documentRepository: IDocumentRepository
+    private val documentRepository: IDocumentRepository,
+    private val tokenStatsRepository: ITokenStatsRepository
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -229,24 +234,37 @@ class SettingsViewModel(
     private fun loadTokenStats() {
         viewModelScope.launch {
             try {
-                val totalCount = vectorRepository.getCount()
+                val totalUsage = tokenStatsRepository.getTotalUsage()
+                val byModel = tokenStatsRepository.getUsageByModel()
                 val config = pm.getMainProviderConfig()
-                _tokenStats.value = listOf(
-                    ProviderStats(
-                        config?.name ?: "Provider",
-                        (totalCount * 500L),
-                        totalCount * 0.02,
-                        listOf(
-                            ModelStat(
-                                app.getString(R.string.token_active_model),
-                                (totalCount * 300L),
-                                (totalCount * 200L),
-                                totalCount * 0.02
-                            )
+                val providerName = config?.name ?: "Provider"
+
+                val modelStats = byModel.map { stats ->
+                    val spec = com.promenar.nexara.data.model.findModelSpec(stats.modelId)
+                    val name = spec?.note ?: stats.modelId
+                    ModelStat(
+                        name = name,
+                        inputTokens = stats.usage.inputTokens,
+                        outputTokens = stats.usage.outputTokens,
+                        cost = 0.0,
+                        estimated = stats.usage.estimated
+                    )
+                }
+
+                _tokenStats.value = if (modelStats.isEmpty()) {
+                    emptyList()
+                } else {
+                    listOf(
+                        ProviderStats(
+                            name = providerName,
+                            totalTokens = totalUsage.totalTokens,
+                            cost = 0.0,
+                            models = modelStats,
+                            estimated = totalUsage.estimated
                         )
                     )
-                )
-                _tokenCostThisMonth.value = "$%.2f".format(if (totalCount > 0) totalCount * 0.02 else 0.0)
+                }
+                _tokenCostThisMonth.value = "$%.2f".format(0.0)
             } catch (_: Exception) {
                 _tokenStats.value = emptyList()
             }
@@ -420,7 +438,7 @@ class SettingsViewModel(
     fun addMcpServer(name: String, url: String, type: String) {
         viewModelScope.launch {
             val server = McpServerEntity(
-                id = "mcp_${System.currentTimeMillis()}",
+                id = "mcp_${IdGenerator.uuid()}",
                 name = name,
                 url = url,
                 type = type
@@ -462,7 +480,7 @@ class SettingsViewModel(
     fun addCustomSkill(name: String, description: String, schema: String, code: String, id: String? = null) {
         viewModelScope.launch {
             val skill = CustomSkillEntity(
-                id = id ?: "user_${System.currentTimeMillis()}",
+                id = id ?: IdGenerator.uuid(),
                 name = name,
                 description = description,
                 parametersSchema = schema,
@@ -506,7 +524,14 @@ class SettingsViewModel(
     }
 
     fun clearTokenStats() {
-        _tokenStats.value = emptyList()
+        viewModelScope.launch {
+            try {
+                tokenStatsRepository.resetStats()
+                _tokenStats.value = emptyList()
+            } catch (_: Exception) {
+                _tokenStats.value = emptyList()
+            }
+        }
     }
 
 
@@ -524,7 +549,7 @@ class SettingsViewModel(
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
-                    return SettingsViewModel(application, app.vectorRepository, app.documentRepository) as T
+                    return SettingsViewModel(application, app.vectorRepository, app.documentRepository, app.tokenStatsRepository) as T
                 }
             }
     }

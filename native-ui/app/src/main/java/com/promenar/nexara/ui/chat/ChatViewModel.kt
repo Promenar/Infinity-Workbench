@@ -17,6 +17,9 @@ import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.findModelSpec
+import com.promenar.nexara.domain.usecase.AgentConfigResolver
+import com.promenar.nexara.domain.usecase.ExportSessionUseCase
+import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.rag.MemoryManagerRagAdapter
@@ -77,12 +80,14 @@ class ChatViewModel(
     private val messageRepository: IMessageRepository,
     private val agentRepository: IAgentRepository,
     private val llmProvider: LlmProvider,
+    private val configResolver: AgentConfigResolver,
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
     private val textSplitter: RecursiveCharacterTextSplitter? = null,
     private val memoryManager: MemoryManager? = null,
     private val kgProvider: KgProvider? = null,
-    private val skillRegistry: com.promenar.nexara.ui.chat.manager.registry.SkillRegistry? = null
+    private val skillRegistry: com.promenar.nexara.ui.chat.manager.registry.SkillRegistry? = null,
+    private val exportSessionUseCase: ExportSessionUseCase? = null
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -187,8 +192,8 @@ class ChatViewModel(
         if (sessionId == null || text.isBlank()) return
 
         val session = store.getSession(sessionId) ?: return
-        val userMsgId = "msg_${System.currentTimeMillis()}_user"
-        val assistantMsgId = "msg_${System.currentTimeMillis()}_ai"
+        val userMsgId = IdGenerator.message("user")
+        val assistantMsgId = IdGenerator.message("ai")
 
         _inputText.update { "" }
         _error.update { null }
@@ -246,7 +251,7 @@ class ChatViewModel(
         _streamingContent.update { "" }
 
         val agent = agentRepository.getById(sessionForCtx.agentId)
-        val agentPrompt = agent?.systemPrompt ?: ""
+        val agentConfig = configResolver.resolve(agent)
 
         val contextParams = ContextBuilderParams(
             sessionId = sessionId,
@@ -259,7 +264,7 @@ class ChatViewModel(
                     RagProgress(stage = stage, percentage = percentage, subStage = subStage)
                 )
             },
-            agentSystemPrompt = agentPrompt.ifBlank { sessionForCtx.customPrompt }
+            agentSystemPrompt = agentConfig.systemPrompt.ifBlank { sessionForCtx.customPrompt }
         )
 
         val contextResult = try {
@@ -293,15 +298,13 @@ class ChatViewModel(
 
         val activeTools = buildToolList(sessionForCtx)
 
-        // Fallback logic: if session lacks settings, use agent's defaults
-        val effectiveModel = sessionForCtx.modelId 
-            ?: agent?.modelId
-            ?: ""
-        
+        val effectiveModel = sessionForCtx.modelId
+            ?: agentConfig.modelId
+
         val effectiveParams = sessionForCtx.inferenceParams ?: InferenceParams(
-            temperature = agent?.temperature ?: 0.7,
-            topP = agent?.topP ?: 0.9,
-            maxTokens = agent?.maxTokens ?: 4096
+            temperature = agentConfig.temperature,
+            topP = agentConfig.topP,
+            maxTokens = agentConfig.maxTokens
         )
 
         val request = PromptRequest(
@@ -425,7 +428,7 @@ class ChatViewModel(
 
             _isGenerating.update { false }
             if (currentCoroutineContext().isActive) {
-                val newAssistantMsgId = "msg_${System.currentTimeMillis()}_ai"
+                val newAssistantMsgId = IdGenerator.message("ai")
                 val newAssistantMsg = Message(
                     id = newAssistantMsgId,
                     role = MessageRole.ASSISTANT,
@@ -558,7 +561,7 @@ class ChatViewModel(
 
     fun createNewSession(agentId: String) {
         viewModelScope.launch {
-            val sessionId = "session_${System.currentTimeMillis()}"
+            val sessionId = IdGenerator.session()
             val workspacePath = File((application as NexaraApplication).filesDir, "workspaces/$sessionId").apply {
                 if (!exists()) mkdirs()
             }.absolutePath
@@ -583,7 +586,7 @@ class ChatViewModel(
         }
         viewModelScope.launch {
             val agent = agentRepository.getById(agentId)
-            _agentName.value = agent?.name ?: ""
+            _agentName.value = configResolver.resolveName(agent)
         }
     }
 
@@ -656,7 +659,7 @@ class ChatViewModel(
             _inputText.update { "" }
             _error.update { null }
 
-            val assistantMsgId = "msg_${System.currentTimeMillis()}_ai"
+            val assistantMsgId = IdGenerator.message("ai")
             val updatedSession = store.getSession(sessionId) ?: return@launch
             val assistantMessage = Message(
                 id = assistantMsgId,
@@ -942,7 +945,7 @@ class ChatViewModel(
             backupAndTruncate(sessionId, message.createdAt + 1)
             
             // Create a new assistant message
-            val assistantMsgId = "msg_${System.currentTimeMillis()}_ai"
+            val assistantMsgId = IdGenerator.message("ai")
             val assistantMessage = Message(
                 id = assistantMsgId,
                 role = MessageRole.ASSISTANT,
@@ -978,6 +981,14 @@ class ChatViewModel(
         }
     }
 
+    suspend fun exportSession(
+        sessionId: String,
+        format: ExportSessionUseCase.Format
+    ): ExportSessionUseCase.ExportResult {
+        val useCase = exportSessionUseCase ?: throw IllegalStateException("ExportSessionUseCase not available")
+        return useCase.export(sessionId, format)
+    }
+
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
@@ -990,12 +1001,17 @@ class ChatViewModel(
                         messageRepository = app.messageRepository,
                         agentRepository = app.agentRepository,
                         llmProvider = app.llmProvider,
+                        configResolver = app.configResolver,
                         embeddingClient = app.embeddingClient,
                         vectorStore = app.vectorStore,
                         textSplitter = app.textSplitter,
                         memoryManager = app.memoryManager,
                         kgProvider = app.kgProvider,
-                        skillRegistry = app.skillRegistry
+                        skillRegistry = app.skillRegistry,
+                        exportSessionUseCase = ExportSessionUseCase(
+                            app.messageRepository as com.promenar.nexara.domain.repository.IMessageRepository,
+                            app.sessionRepository as com.promenar.nexara.domain.repository.ISessionRepository
+                        )
                     ) as T
                 }
             }

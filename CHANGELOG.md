@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Phase 5 — UseCase 层抽取方案 (2026-05-13)
+- **实施计划**: `.agent/plans/20260513-phase5-usecase-extraction.md`
+- **Session P** (先执行): IdGenerator — 统一 7 个 VM 的 ID 生成
+- **Session Q+R** (并行): AgentConfigResolver + CreateAgentUseCase + DeleteDocumentUseCase + RagConfigPersistence
+
+### Phase 4 — 核心引擎增强方案 (2026-05-13)
+- **实施计划**: `.agent/plans/20260513-phase4-engine-enhancement.md`，2 个并行会话（FolderRepository + 文档导入）
+- **不做**: 本地 Embedding 降级
+
+### 模型管理 BugFix: type↔capabilities 联动 + 删除自动复现 (2026-05-13)
+- **P0 Bug#1**: 修复在 ProviderModelsScreen 中将模型 type 切换为 embedding/rerank/image 后，capabilities 未同步刷新导致默认模型选择器无法筛选到的问题。新增 `TypeToBaseCaps` 映射表 + `LaunchedEffect(selectedType)` 联动机制（ProviderModelsScreen.kt +15 行）
+- **P0 Bug#2**: 移除 deleteModel/toggleModel/deleteAllModels/addCustomModel 回调中多余的 `refreshProviderModels()` 调用，删除/切换操作不再自动触发远端 API 拉取，远端同步仅由手动"Fetch"按钮执行（ProviderModelsScreen.kt -4 行）
+
+### Phase 3 — Super Assistant 清理完成 (2026-05-13)
+- **ADR-001 落地**: 删除 SpaViewModel + SpaSettingsScreen（2 文件），移除 PostProcessor.isSuperAssistant 检查
+- **11 个文件修改/删除**: "super" agent id → "default"，删除 70 个 spa_* 字符串，清理所有导航回调
+- **编译+测试通过**: 457 tests, 1 预存失败；代码库中零 Super Assistant 残留引用
+
 ### 通用设置默认模型选择器修复 (2026-05-13)
 - **P0 capabilities 构建缺陷**: 修复 `SettingsViewModel.refreshModels()` 和 `addCustomModel()` 中 capabilities 构建逻辑仅处理 chat/vision/internet/reasoning 四种能力，完全遗漏 image/embedding/rerank 及其他 9 种能力标签的严重缺陷。抽取统一的 `buildModelCapabilities()` 方法，根据 ModelType 自动推导基础 capability，并从 ModelSpec.capabilities 补充全部 12 种细粒度能力。
 - **P0 自动迁移逻辑**: 在 `ProviderManager.loadModels()` 中实装自动迁移机制。应用启动加载模型时，若检测到模型的 `name` 等于 `id` 或 `capabilities` 不完整，将依据 `ModelSpecs` 静态规格表自动修复并静默持久化到 `SharedPreferences`。这解决了老用户升级后无需重新获取列表即可修复显示名称和功能过滤的问题。

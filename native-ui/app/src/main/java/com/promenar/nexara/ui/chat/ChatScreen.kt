@@ -120,8 +120,7 @@ import kotlinx.coroutines.launch
 fun ChatScreen(
     sessionId: String,
     onNavigateBack: () -> Unit = {},
-    onNavigateToSettings: () -> Unit = {},
-    onNavigateToSpaSettings: () -> Unit = {}
+    onNavigateToSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(context.applicationContext as android.app.Application))
