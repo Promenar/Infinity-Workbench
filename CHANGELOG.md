@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Domain + Repository 层系统性实施方案 (2026-05-13)
+- **实施计划文档**: `.agent/plans/20260513-domain-repository-implementation.md`，依据 `ARCHITECTURE_DESIGN.md` 自上而下设计
+- **4 个并行会话**: Session A (Domain 基础，13 文件) → B (Agent+Document Repos) || C (Vector+KG Repos) || D (Provider+对齐)
+- **Domain 层**: 4 个聚合根模型 (Agent/Session/Message/Document) + 值对象/枚举 + 7 个 Repository 接口，零 Android 依赖
+- **Data 层**: 5 个新 Repository 实现 + 4 个 Entity↔Domain Mapper + 现有 Session/Message Repository 接口对齐
+
 ### 文档体系治理与统一 (2026-05-13)
 - **文档大清理**: 删除根 `.agent/docs/`（57 文件，含已过时 PRD v1.2.1、6 个失效 repowiki 指针存根）、`.agent/memory/`（4 文件，RN 时代项目记忆）、`.qoder/repowiki/`（145+ 文件，RN 时代自动生成架构文档）、`.roo/skills/`
 - **双 .agent/ 合并**: 将 `native-ui/.agent/plans/`（17 个活跃计划）迁移至根 `.agent/plans/`，删除 `native-ui/.agent/` 消除重复
