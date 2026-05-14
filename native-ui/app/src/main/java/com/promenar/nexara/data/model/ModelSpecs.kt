@@ -1230,3 +1230,46 @@ fun findModelSpec(modelId: String): ModelSpec? {
     }
     return null
 }
+
+data class ModelPricing(
+    val inputPerMillion: Double,
+    val outputPerMillion: Double
+)
+
+private val MODEL_PRICING: List<Pair<ModelPattern, ModelPricing>> = listOf(
+    ModelPattern.StringPattern("gpt-4.1") to ModelPricing(2.0, 8.0),
+    ModelPattern.StringPattern("gpt-4.1-mini") to ModelPricing(0.40, 1.60),
+    ModelPattern.StringPattern("gpt-4.1-nano") to ModelPricing(0.10, 0.40),
+    ModelPattern.StringPattern("gpt-4o") to ModelPricing(2.50, 10.0),
+    ModelPattern.StringPattern("gpt-4o-mini") to ModelPricing(0.15, 0.60),
+    ModelPattern.StringPattern("o3") to ModelPricing(2.0, 8.0),
+    ModelPattern.StringPattern("o4-mini") to ModelPricing(1.10, 4.40),
+    ModelPattern.StringPattern("o1") to ModelPricing(15.0, 60.0),
+    ModelPattern.StringPattern("o1-mini") to ModelPricing(3.0, 12.0),
+    ModelPattern.StringPattern("claude-sonnet") to ModelPricing(3.0, 15.0),
+    ModelPattern.StringPattern("claude-opus") to ModelPricing(15.0, 75.0),
+    ModelPattern.StringPattern("claude-haiku") to ModelPricing(0.80, 4.0),
+    ModelPattern.StringPattern("claude-3.5-sonnet") to ModelPricing(3.0, 15.0),
+    ModelPattern.StringPattern("claude-3.5-haiku") to ModelPricing(0.80, 4.0),
+    ModelPattern.StringPattern("deepseek-chat") to ModelPricing(0.27, 1.10),
+    ModelPattern.StringPattern("deepseek-reasoner") to ModelPricing(0.55, 2.19),
+    ModelPattern.RegexPattern(Regex("""deepseek-r1""", RegexOption.IGNORE_CASE)) to ModelPricing(0.55, 2.19),
+    ModelPattern.StringPattern("gemini-2.5-pro") to ModelPricing(1.25, 10.0),
+    ModelPattern.StringPattern("gemini-2.5-flash") to ModelPricing(0.15, 0.60),
+    ModelPattern.StringPattern("gemini-2.0-flash") to ModelPricing(0.10, 0.40),
+    ModelPattern.StringPattern("gemini-1.5-pro") to ModelPricing(1.25, 5.0),
+    ModelPattern.StringPattern("gemini-1.5-flash") to ModelPricing(0.075, 0.30),
+    ModelPattern.StringPattern("glm-4") to ModelPricing(1.50, 5.0),
+    ModelPattern.StringPattern("moonshot") to ModelPricing(0.50, 2.0),
+    ModelPattern.StringPattern("minimax") to ModelPricing(0.40, 1.60),
+    ModelPattern.StringPattern("qwen") to ModelPricing(0.30, 0.90),
+)
+
+fun findModelPricing(modelId: String): ModelPricing? {
+    for ((pattern, pricing) in MODEL_PRICING) {
+        if (pattern.matches(modelId)) {
+            return pricing
+        }
+    }
+    return null
+}

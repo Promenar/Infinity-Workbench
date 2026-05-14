@@ -6,6 +6,8 @@ import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.ModelTokenStats
 import com.promenar.nexara.domain.repository.TokenUsageAggregate
+import com.promenar.nexara.domain.repository.SessionTokenUsage
+import com.promenar.nexara.domain.repository.DailyTokenStats
 import kotlinx.serialization.serializer
 
 class TokenStatsRepository(
@@ -64,6 +66,44 @@ class TokenStatsRepository(
     override suspend fun getUsageBySession(sessionId: String): TokenUsageAggregate {
         val entities = messageDao.getMessagesWithTokensBySession(sessionId)
         return aggregateFromEntities(entities)
+    }
+
+    override suspend fun getTopSessions(limit: Int): List<SessionTokenUsage> {
+        val entities = messageDao.getMessagesWithTokens()
+        val grouped = mutableMapOf<String, Pair<Long, Long>>()
+        for (entity in entities) {
+            val usage = parseTokens(entity.tokens) ?: continue
+            val existing = grouped.getOrPut(entity.sessionId) { Pair(0L, 0L) }
+            grouped[entity.sessionId] = Pair(existing.first + usage.input, existing.second + usage.output)
+        }
+        val sessionTitles = mutableMapOf<String, String?>()
+        return grouped
+            .map { (sessionId, pair) ->
+                SessionTokenUsage(
+                    sessionId = sessionId,
+                    title = sessionTitles[sessionId],
+                    inputTokens = pair.first,
+                    outputTokens = pair.second
+                )
+            }
+            .sortedByDescending { it.totalTokens }
+            .take(limit)
+    }
+
+    override suspend fun getDailyTrend(days: Int): List<DailyTokenStats> {
+        val sinceTimestamp = System.currentTimeMillis() - (days.toLong() * 24 * 60 * 60 * 1000)
+        val entities = messageDao.getMessagesWithTokens()
+        val grouped = mutableMapOf<String, Pair<Long, Long>>()
+        for (entity in entities) {
+            if (entity.createdAt < sinceTimestamp) continue
+            val usage = parseTokens(entity.tokens) ?: continue
+            val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(entity.createdAt)
+            val existing = grouped.getOrPut(day) { Pair(0L, 0L) }
+            grouped[day] = Pair(existing.first + usage.input, existing.second + usage.output)
+        }
+        return grouped.map { (day, pair) ->
+            DailyTokenStats(day = day, inputTokens = pair.first, outputTokens = pair.second)
+        }.sortedBy { it.day }
     }
 
     override suspend fun resetStats() {

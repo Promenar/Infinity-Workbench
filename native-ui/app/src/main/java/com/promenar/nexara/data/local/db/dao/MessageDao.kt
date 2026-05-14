@@ -80,4 +80,40 @@ interface MessageDao {
 
     @Query("UPDATE messages SET tokens = NULL")
     suspend fun clearAllTokenData()
+
+    @Query("""
+        SELECT m.session_id, s.title, SUM(CAST(json_extract(m.tokens, '$.input') AS INTEGER)) as total_input,
+               SUM(CAST(json_extract(m.tokens, '$.output') AS INTEGER)) as total_output
+        FROM messages m
+        LEFT JOIN sessions s ON m.id = s.id OR m.session_id = s.id
+        WHERE m.tokens IS NOT NULL
+        GROUP BY m.session_id
+        ORDER BY total_input + total_output DESC
+        LIMIT :limit
+    """)
+    suspend fun getSessionTokenRanking(limit: Int): List<SessionTokenRow>
+
+    @Query("""
+        SELECT date(m.created_at / 1000, 'unixepoch') as day,
+               SUM(CAST(json_extract(m.tokens, '$.input') AS INTEGER)) as total_input,
+               SUM(CAST(json_extract(m.tokens, '$.output') AS INTEGER)) as total_output
+        FROM messages m
+        WHERE m.tokens IS NOT NULL AND m.created_at >= :sinceTimestamp
+        GROUP BY day
+        ORDER BY day ASC
+    """)
+    suspend fun getDailyTokenTrend(sinceTimestamp: Long): List<DailyTokenRow>
 }
+
+data class SessionTokenRow(
+    val session_id: String,
+    val title: String?,
+    val total_input: Long,
+    val total_output: Long
+)
+
+data class DailyTokenRow(
+    val day: String?,
+    val total_input: Long,
+    val total_output: Long
+)

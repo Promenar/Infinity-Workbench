@@ -5,6 +5,10 @@ import android.content.SharedPreferences
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.repository.ISkillRepository
+import com.promenar.nexara.data.local.db.entity.McpServerEntity
+import com.promenar.nexara.data.remote.mcp.McpClient
+import com.promenar.nexara.data.remote.mcp.McpTool
+import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
 import com.promenar.nexara.domain.repository.IDocumentRepository
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
@@ -14,10 +18,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkConstructor
+import io.mockk.unmockkConstructor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -117,5 +124,57 @@ class SettingsViewModelTest {
         val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
 
         assertThat(vm.activeSourcesCount.value).isEqualTo(0)
+    }
+
+    @Test
+    fun `skills list excludes deprecated current_time`() = runTest {
+        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val skills = vm.skills.value
+        assertThat(skills.find { it.id == "current_time" }).isNull()
+    }
+
+    @Test
+    fun `skills list includes image_generation`() = runTest {
+        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val skills = vm.skills.value
+        val imgSkill = skills.find { it.id == "image_generation" }
+        assertThat(imgSkill).isNotNull()
+        assertThat(imgSkill!!.id).isEqualTo("image_generation")
+    }
+
+    @Test
+    fun `skills list includes file tools`() = runTest {
+        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val skills = vm.skills.value
+        val toolIds = skills.map { it.id }
+        assertThat(toolIds).containsAtLeast("file_read", "file_list", "file_search", "exec_js")
+    }
+
+    @Test
+    fun `mcp server sync calls updateMcpTools`() = runTest {
+        val testServer = McpServerEntity(
+            id = "srv1", name = "TestServer", url = "http://localhost:3000"
+        )
+        every { skillRepo.getAllMcpServers() } returns kotlinx.coroutines.flow.flowOf(listOf(testServer))
+        coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate()
+        coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
+        coEvery { docRepo.getCount() } returns 0
+
+        val mockMcpRegistry = mockk<McpSkillRegistry>(relaxed = true)
+        every { mockApp.httpClient } returns mockk(relaxed = true)
+
+        mockkConstructor(McpClient::class)
+        coEvery { anyConstructed<McpClient>().listTools() } returns listOf(
+            McpTool("test_tool", "A test tool", """{"type":"object"}""")
+        )
+
+        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo, mockMcpRegistry)
+        advanceUntilIdle()
+
+        vm.syncMcpServer("srv1")
+        advanceUntilIdle()
+
+        coVerify { mockMcpRegistry.updateMcpTools("TestServer", any(), "http://localhost:3000") }
+        unmockkConstructor(McpClient::class)
     }
 }

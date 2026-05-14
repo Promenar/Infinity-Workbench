@@ -243,6 +243,7 @@ data class Message(
     val thoughtSignature: String? = null,
     val images: String? = null,
     val files: String? = null,
+    val userImages: List<String>? = null,
     val tokens: TokenUsage? = null,
     val citations: List<Citation>? = null,
     val ragReferences: List<RagReference>? = null,

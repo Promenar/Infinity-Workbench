@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -76,6 +77,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -105,6 +107,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -172,6 +177,10 @@ fun ChatScreen(
     var pendingTruncateAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showModelHint by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var selectedImageUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris -> selectedImageUris = uris }
 
     LaunchedEffect(showModelHint) {
         if (showModelHint) {
@@ -437,20 +446,49 @@ fun ChatScreen(
                             onManualSummary = { chatViewModel.summarizeHistory() }
                         )
 
+                        if (selectedImageUris.isNotEmpty()) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(selectedImageUris.size) { index ->
+                                    val uri = selectedImageUris[index]
+                                    Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp))) {
+                                        coil3.compose.AsyncImage(
+                                            model = uri,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        IconButton(
+                                            onClick = { selectedImageUris = selectedImageUris.toMutableList().apply { removeAt(index) } },
+                                            modifier = Modifier.align(Alignment.TopEnd).size(20.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Box(modifier = Modifier.fillMaxWidth()) {
                             ChatInputBar(
                                 text = inputText,
                                 placeholder = if (agentName.isNotBlank()) stringResource(R.string.chat_input_placeholder, agentName) else stringResource(R.string.chat_input_placeholder_default),
                                 onTextChange = { chatViewModel.updateInputText(it) },
                                 onSend = {
-                                    if (inputText.isNotBlank()) {
-                                        chatViewModel.sendMessage(inputText)
+                                    if (inputText.isNotBlank() || selectedImageUris.isNotEmpty()) {
+                                        val textToSend = inputText.ifBlank { "Describe this image" }
+                                        chatViewModel.sendMessage(textToSend, selectedImageUris)
+                                        selectedImageUris = emptyList()
                                     }
                                 },
                                 status = uiState.status,
                                 onStop = { chatViewModel.stopGeneration() },
                                 isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
-                                onModelHint = { showModelHint = true }
+                                onModelHint = { showModelHint = true },
+                                onPickImage = { imagePickerLauncher.launch("image/*") },
+                                hasImages = selectedImageUris.isNotEmpty()
                             )
     
                             // ── 模型未选择提示气泡 ──
@@ -894,15 +932,35 @@ fun ChatBubble(
                     border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
                     modifier = Modifier.widthIn(max = 280.dp)
                 ) {
-                    Text(
-                        text = message.content,
-                        style = NexaraTypography.bodyMedium.copy(
-                            fontSize = fontSize.sp,
-                            lineHeight = (fontSize * 1.5).sp
-                        ),
-                        color = NexaraColors.OnBackground,
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Column {
+                        if (!message.userImages.isNullOrEmpty()) {
+                            Column(
+                                modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                message.userImages!!.forEach { dataUrl ->
+                                    coil3.compose.AsyncImage(
+                                        model = dataUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 200.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.FillWidth
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = message.content,
+                            style = NexaraTypography.bodyMedium.copy(
+                                fontSize = fontSize.sp,
+                                lineHeight = (fontSize * 1.5).sp
+                            ),
+                            color = NexaraColors.OnBackground,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
                 }
                 Text(
                     text = timestamp,
@@ -1154,7 +1212,9 @@ fun ChatInputBar(
     status: GenerationStatus = GenerationStatus.IDLE,
     onStop: () -> Unit = {},
     isModelSelected: Boolean = true,
-    onModelHint: () -> Unit = {}
+    onModelHint: () -> Unit = {},
+    onPickImage: () -> Unit = {},
+    hasImages: Boolean = false
 ) {
     val isGenerating = status != GenerationStatus.IDLE
     NexaraGlassCard(
@@ -1164,9 +1224,22 @@ fun ChatInputBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), // 拓宽本体：start 20 -> 12
+                .padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = onPickImage,
+                modifier = Modifier.size(36.dp),
+                enabled = !isGenerating
+            ) {
+                Icon(
+                    Icons.Rounded.AddPhotoAlternate,
+                    null,
+                    tint = if (hasImages) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
             BasicTextField(
                 value = text,
                 onValueChange = onTextChange,
@@ -1194,7 +1267,7 @@ fun ChatInputBar(
                     if (isModelSelected) onSend() else onModelHint()
                 },
                 onStop = onStop,
-                enabled = text.isNotBlank(),
+                enabled = text.isNotBlank() || hasImages,
                 isModelSelected = isModelSelected
             )
         }

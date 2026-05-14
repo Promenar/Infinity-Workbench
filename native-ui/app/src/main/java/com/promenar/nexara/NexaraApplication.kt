@@ -47,6 +47,11 @@ import com.promenar.nexara.ui.chat.manager.skills.WebSearchSearXNGSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchTavilySkill
 import com.promenar.nexara.ui.chat.manager.skills.CreateToolSkill
 import com.promenar.nexara.ui.chat.manager.skills.ImageGenerationSkill
+import com.promenar.nexara.ui.chat.manager.skills.FileReadSkill
+import com.promenar.nexara.ui.chat.manager.skills.FileWriteSkill
+import com.promenar.nexara.ui.chat.manager.skills.FileListSkill
+import com.promenar.nexara.ui.chat.manager.skills.FileSearchSkill
+import com.promenar.nexara.ui.chat.manager.skills.ExecJsSkill
 import com.promenar.nexara.data.repository.SkillRepository
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.repository.TokenStatsRepository
@@ -74,7 +79,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
-            .addMigrations(NexaraDatabase.MIGRATION_4_5)
+            .addMigrations(NexaraDatabase.MIGRATION_4_5, NexaraDatabase.MIGRATION_6_7)
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -139,6 +144,11 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
             register(CreateToolSkill(database.skillDao()))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
+            register(FileReadSkill())
+            register(FileWriteSkill())
+            register(FileListSkill())
+            register(FileSearchSkill())
+            register(ExecJsSkill(this@NexaraApplication))
         }
     }
 

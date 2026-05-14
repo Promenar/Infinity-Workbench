@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -592,15 +593,37 @@ fun UserMessageBubble(
             border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
             modifier = Modifier.widthIn(max = 280.dp)
         ) {
-            Text(
-                text = message.content,
-                style = NexaraTypography.bodyMedium.copy(
-                    fontSize = fontSize.sp,
-                    lineHeight = (fontSize * 1.5).sp
-                ),
-                color = NexaraColors.OnBackground,
-                modifier = Modifier.padding(16.dp)
-            )
+            Column {
+                if (!message.userImages.isNullOrEmpty()) {
+                    Column(
+                        modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        message.userImages!!.forEach { dataUrl ->
+                            coil3.compose.AsyncImage(
+                                model = dataUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.FillWidth
+                            )
+                        }
+                    }
+                }
+                if (message.content.isNotBlank()) {
+                    Text(
+                        text = message.content,
+                        style = NexaraTypography.bodyMedium.copy(
+                            fontSize = fontSize.sp,
+                            lineHeight = (fontSize * 1.5).sp
+                        ),
+                        color = NexaraColors.OnBackground,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
         }
         Text(
             text = timestamp,

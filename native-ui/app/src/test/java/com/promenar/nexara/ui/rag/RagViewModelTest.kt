@@ -7,13 +7,18 @@ import com.promenar.nexara.domain.repository.IFolderRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import com.promenar.nexara.domain.repository.VectorTypeCount
+import com.promenar.nexara.data.rag.KeywordSearcher
+import com.promenar.nexara.domain.model.Document
+import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.usecase.DeleteDocumentUseCase
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.Runs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -34,6 +39,7 @@ class RagViewModelTest {
     private val vectorRepository: IVectorRepository = mockk(relaxed = true)
     private val kgRepository: IKnowledgeGraphRepository = mockk(relaxed = true)
     private val folderRepository: IFolderRepository = mockk(relaxed = true)
+    private val keywordSearcher: KeywordSearcher = mockk(relaxed = true)
 
     private lateinit var app: NexaraApplication
 
@@ -69,7 +75,8 @@ class RagViewModelTest {
         return RagViewModel(
             app, documentRepository, vectorRepository, kgRepository, folderRepository,
             DeleteDocumentUseCase(documentRepository, vectorRepository),
-            ragConfigPersistence
+            ragConfigPersistence,
+            keywordSearcher
         )
     }
 
@@ -176,7 +183,7 @@ class RagViewModelTest {
         vm.search("kotlin")
 
         assertThat(vm.searchResults.value).hasSize(2)
-        assertThat(vm.searchResults.value.map { it.id }).containsExactly("d1", "d3")
+        assertThat(vm.searchResults.value.map { it.document.id }).containsExactly("d1", "d3")
     }
 
     @Test
@@ -387,5 +394,62 @@ class RagViewModelTest {
         capturedCallback?.invoke(listOf(task), task)
 
         assertThat(vm.indexingSubStatus.value).isEqualTo("Vectorizing 5/20 chunks")
+    }
+
+    @Test
+    fun `deleteCollection cascade deletes documents and vectors`() = runTest {
+        val folder = Folder(id = "f1", name = "Test")
+        val docs = listOf(
+            Document(id = "d1", folderId = "f1", title = "Doc1", content = "a"),
+            Document(id = "d2", folderId = "f1", title = "Doc2", content = "b")
+        )
+        coEvery { documentRepository.getByFolderId("f1") } returns docs
+        coEvery { folderRepository.getById("f1") } returns folder
+
+        val vm = createViewModel()
+        vm.deleteCollection("f1")
+
+        coVerify { vectorRepository.deleteByDocument("d1") }
+        coVerify { vectorRepository.deleteByDocument("d2") }
+        coVerify { documentRepository.delete("d1") }
+        coVerify { documentRepository.delete("d2") }
+        coVerify { folderRepository.delete(folder) }
+    }
+
+    @Test
+    fun `renameFolder updates folder name`() = runTest {
+        val folder = Folder(id = "f1", name = "Old")
+        coEvery { folderRepository.getById("f1") } returns folder
+        coEvery { folderRepository.update(any()) } just Runs
+
+        val vm = createViewModel()
+        vm.renameFolder("f1", "New")
+
+        coVerify { folderRepository.update(match { it.name == "New" }) }
+    }
+
+    @Test
+    fun `renameFolder does nothing when folder not found`() = runTest {
+        coEvery { folderRepository.getById("missing") } returns null
+
+        val vm = createViewModel()
+        vm.renameFolder("missing", "New")
+
+        coVerify(exactly = 0) { folderRepository.update(any()) }
+    }
+
+    @Test
+    fun `deleteFolder delegates to deleteCollection`() = runTest {
+        val folder = Folder(id = "f1", name = "Test")
+        val docs = listOf(Document(id = "d1", folderId = "f1", title = "Doc1", content = "a"))
+        coEvery { documentRepository.getByFolderId("f1") } returns docs
+        coEvery { folderRepository.getById("f1") } returns folder
+
+        val vm = createViewModel()
+        vm.deleteFolder("f1")
+
+        coVerify { vectorRepository.deleteByDocument("d1") }
+        coVerify { documentRepository.delete("d1") }
+        coVerify { folderRepository.delete(folder) }
     }
 }

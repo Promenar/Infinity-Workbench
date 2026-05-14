@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Phase 9 — 发布冲刺 + 测试补全 (2026-05-15)
+- **多模态图片/VLM**: ChatInputBar 图片选择 + 缩略图预览 + base64 编码发送 + OpenAI Vision/Anthropic 协议适配 + ChatBubble 渲染
+- **Token 统计仪表盘**: TokenUsageScreen（全局统计/会话排行/Canvas 趋势图/模型明细/费用估算）
+- **HTML Artifacts**: HtmlArtifactCard WebView 实时预览 + HtmlArtifactsPopup 全屏分屏 + PNG 导出
+- **测试补全**: 新增 10 个测试文件（4 文件 Skill + RerankClient + ExecJsSkill + 3 ViewModel 补全），合计 22 个新用例
+- **测试覆盖率**: 52 个测试文件，覆盖 Skills/ViewModels/Repositories/RAG 全链路
+
+### Phase 8 — Agent 工具系统重构与增强 (2026-05-15)
+- **工具分类体系**: 被动注入（时间）与主动调用分离，CurrentTimeSkill 退役为 ContextBuilder 注入
+- **ImageGenerationSkill 暴露**: 设置界面新增生图工具开关，默认启用
+- **MCP 同步链路修复**: McpSkillRegistry.updateMcpTools() 接入 SettingsViewModel.syncMcpServer()，MCP Server 工具可被 LLM 调用
+- **文件系统工具（4 个）**: file_read / file_write / file_list / file_search，全部限定工作区路径，禁止逃逸
+- **JS 沙箱解释器**: exec_js 基于 WebView.evaluateJavascript() 实现，5 秒超时 + 代码长度限制
+- **工具安全审批增强**: ToolExecutor 跳过等待审批的工具；ApprovalManager 审批通过后执行待审批工具
+- **默认启用的工具**: web_search / calculator / create_tool / file_read / file_list / file_search / exec_js
 
 ### Phase 7 — 知识库系统全面修复与增强 (2026-05-14)
 - **PDF 导入**: PdfExtractor 接入 Apache PDFBox，真实提取 PDF 文本层

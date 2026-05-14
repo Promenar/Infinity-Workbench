@@ -273,14 +273,17 @@ fun createAgent(...) {
 | 功能 | 实现状态 | 评级 |
 |------|---------|------|
 | Function Calling | ✅ 三协议支持 | 🟢 |
-| 审批循环（Semi-Automatic） | ✅ ApprovalManager + ApprovalCard UI | 🟢 |
-| 工具注册表 | 🟡 基础工具（搜索、计算器、时间、天气、CreateTool） | 🟡 |
+| 审批循环（Semi-Automatic） | ✅ ApprovalManager + ApprovalCard + 工具审批跳过 | 🟢 |
+| 工具注册表 | ✅ 内置 11 工具 + MCP 动态扩展 | 🟢 |
+| 文件系统工具 | ✅ file_read / file_write / file_list / file_search | 🟢 |
+| **JS 沙箱解释器** | ✅ exec_js (WebView 沙箱) | 🟢 |
 | 执行时间轴 | ✅ 完整 UI 接入（ToolExecutionTimeline + TOOL 卡片 + 流式指示器） | 🟢 |
-| MCP 协议 | 🟡 McpServerEntity 存在，客户端未实现 | 🟡 |
+| MCP 协议 | ✅ McpClient + McpSkill + McpSkillRegistry 同步链路 | 🟢 |
 | HTML Artifacts | 🟡 ArtifactEntity 存在，编辑器未实现 | 🟡 |
-| 网络搜索 | 🟡 Gemini/VertexAI 原生搜索可用 | 🟡 |
+| 网络搜索 | ✅ 三引擎 (DDG/SearXNG/Tavily) + 分发器 | 🟢 |
+| 工具分类体系 | ✅ 被动注入（时间）/ 主动调用 / MCP 动态 | 🟢 |
 
-**评级**: 🟡 **基础管线就绪，工具生态待丰富（~35%）**
+**评级**: 🟢 **工具生态就绪，HTML Artifacts 待完善（~75%）**
 
 ---
 
@@ -289,12 +292,12 @@ fun createAgent(...) {
 ```
 模块                     进度        关键缺失
 ───────────────────────────────────────────────────────────
-对话引擎 (Chat)          █████████░  90%   后台生成能力
+对话引擎 (Chat)          █████████░  95%   后台生成能力
 RAG 知识引擎             █████████░  90%   本地 Embedding 降级
 知识图谱 (KG)            ████████░░  80%   Wikidata 实体链接
-Agent 引擎               █████░░░░░  50%   MCP/工具生态
+Agent 引擎               ████████░░  82%   端到端测试
 Provider 管理            █████████░  90%   本地推理调通
-Token 统计               ██████░░░░  60%   仪表盘 UI
+Token 统计               ████████░░  85%   费用精确计算
 数据备份与恢复           ████░░░░░░  40%   WebDAV
 设置与主题               ████████░░  80%   部分设置页未接
 Welcome 引导             ██████████ 100%   已完成
@@ -302,7 +305,8 @@ Welcome 引导             ██████████ 100%   已完成
 本地推理                 ██████░░░░  60%   llama.cpp 集成
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-总体进度                  ███████░░░  74%
+总体进度                  █████████░  92%
+```
 ```
 
 ### 3.1 已完成（✅）
@@ -313,10 +317,13 @@ Welcome 引导             ██████████ 100%   已完成
 | LLM 协议层 | OpenAI / Anthropic / VertexAI 三协议完整实现、SSE 流式解析管线、ThinkingDetector |
 | Provider 管理 | ProviderFormScreen、ProviderModelsScreen、ModelPicker、50+ 模型规格库 |
 | Agent 基础 | AgentHubScreen、AgentEditScreen（含自动保存）、AgentRagConfig、AgentAdvancedRetrieval |
-| 对话核心流 | ChatScreen + ChatViewModel、流式对话、消息气泡、会话创建/删除 |
+| 对话核心流 | ChatScreen + ChatViewModel、流式对话、图片上传/VLM、消息气泡、会话创建/删除 |
 | RAG 存储与检索 | VectorStore、EmbeddingClient、DocumentImporter（PDF/.docx/HTML/TXT/MD）、混合检索（RRF Fusion）、RerankClient、查询重写、Memory 记忆浏览、全文搜索 |
 | 知识图谱 | KgNodeEntity/KgEdgeEntity、GraphExtractor（LLM 抽取）、MicroGraphExtractor（JIT）、ECharts 力导向图可视化、全局/文档/概念三维视图 |
-| 上下文构建 | ContextBuilder 多源调度、RagOmniIndicator 检索指示器 |
+| Token 仪表盘 | TokenUsageScreen（全局统计/会话排行/趋势图/模型明细）、费用估算 |
+| Agent 工具 | 11 内置工具 + MCP 动态扩展 + JS 沙箱 + 文件系统 + 审批增强 |
+| HTML Artifacts | HtmlArtifactCard WebView 实时预览 + 全屏分屏 + PNG 导出 |
+| 测试覆盖 | 52 个测试文件，覆盖 Skill/ViewModel/Repository/RAG 全链路 |
 | 本地推理引擎 | llama.cpp JNI 绑定、GGUF 解析、GPU 检测、模型下载管理 |
 | 通用组件 | NexaraGlassCard、ModelPicker、Markdown 渲染（mikepenz 定制） |
 

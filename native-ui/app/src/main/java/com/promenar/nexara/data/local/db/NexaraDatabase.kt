@@ -62,7 +62,7 @@ import com.promenar.nexara.data.local.db.entity.McpServerEntity
         CustomSkillEntity::class,
         McpServerEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -86,6 +86,12 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun skillDao(): SkillDao
 
     companion object {
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN user_images TEXT DEFAULT NULL")
+            }
+        }
+
         val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("""

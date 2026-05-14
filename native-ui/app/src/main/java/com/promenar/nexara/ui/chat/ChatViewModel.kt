@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.chat
 
 import android.app.Application
+import android.net.Uri
+import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -27,6 +29,7 @@ import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.data.remote.protocol.ImageInput
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
@@ -195,9 +198,10 @@ class ChatViewModel(
         _inputText.update { text }
     }
 
-    fun sendMessage(text: String) {
+    fun sendMessage(text: String, imageUris: List<Uri> = emptyList()) {
         val sessionId = _currentSessionId.value
-        if (sessionId == null || text.isBlank()) return
+        if (sessionId == null) return
+        if (text.isBlank() && imageUris.isEmpty()) return
 
         val session = store.getSession(sessionId) ?: return
         val userMsgId = IdGenerator.message("user")
@@ -205,8 +209,15 @@ class ChatViewModel(
 
         _inputText.update { "" }
         _error.update { null }
-        // 清空 DB 中的草稿
         viewModelScope.launch { sessionManager.updateSessionDraft(sessionId, null) }
+
+        val imageDataUrls = imageUris.mapNotNull { uri ->
+            try {
+                val bytes = application.contentResolver.openInputStream(uri)?.readBytes()
+                val mimeType = application.contentResolver.getType(uri) ?: "image/jpeg"
+                bytes?.let { "data:$mimeType;base64,${Base64.encodeToString(it, Base64.NO_WRAP)}" }
+            } catch (_: Exception) { null }
+        }
 
         cancelActiveGeneration()
         generationJob = viewModelScope.launch {
@@ -214,6 +225,7 @@ class ChatViewModel(
                 id = userMsgId,
                 role = MessageRole.USER,
                 content = text,
+                userImages = imageDataUrls.ifEmpty { null },
                 createdAt = System.currentTimeMillis()
             )
 
@@ -462,20 +474,46 @@ class ChatViewModel(
         }
 
         if (accumulatedToolCalls.isNotEmpty() && currentCoroutineContext().isActive) {
-            toolExecutor.executeTools(sessionId, accumulatedToolCalls.toList(), assistantMsgId)
+            val executionMode = sessionForCtx.executionMode.ifEmpty { "semi" }
+            val pendingIds = determinePendingToolIds(accumulatedToolCalls, executionMode)
 
-            _isGenerating.update { false }
-            if (currentCoroutineContext().isActive) {
-                val newAssistantMsgId = IdGenerator.message("ai")
-                val newAssistantMsg = Message(
-                    id = newAssistantMsgId,
-                    role = MessageRole.ASSISTANT,
-                    content = "",
-                    modelId = sessionForCtx.modelId,
-                    createdAt = System.currentTimeMillis()
+            if (pendingIds.isNotEmpty()) {
+                messageManager.updateMessageContent(
+                    sessionId, assistantMsgId, accumulatedContent,
+                    UpdateMessageOptions(pendingApprovalToolIds = pendingIds)
                 )
-                messageManager.addMessage(sessionId, newAssistantMsg)
-                generateMessage(sessionId, "", true, newAssistantMsgId, loopCount = loopCount + 1)
+
+                val firstPendingTc = accumulatedToolCalls.find { it.id in pendingIds }
+                approvalManager.setApprovalRequest(sessionId, ApprovalRequest(
+                    toolName = firstPendingTc?.name,
+                    args = firstPendingTc?.arguments,
+                    reason = "Execution mode: $executionMode",
+                    type = "tool_approval"
+                ))
+                approvalManager.setLoopStatus(sessionId, com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL)
+
+                val safeToolCalls = accumulatedToolCalls.filter { it.id !in pendingIds }
+                if (safeToolCalls.isNotEmpty()) {
+                    toolExecutor.executeTools(sessionId, safeToolCalls, assistantMsgId)
+                }
+
+                _isGenerating.update { false }
+            } else {
+                toolExecutor.executeTools(sessionId, accumulatedToolCalls.toList(), assistantMsgId)
+
+                _isGenerating.update { false }
+                if (currentCoroutineContext().isActive) {
+                    val newAssistantMsgId = IdGenerator.message("ai")
+                    val newAssistantMsg = Message(
+                        id = newAssistantMsgId,
+                        role = MessageRole.ASSISTANT,
+                        content = "",
+                        modelId = sessionForCtx.modelId,
+                        createdAt = System.currentTimeMillis()
+                    )
+                    messageManager.addMessage(sessionId, newAssistantMsg)
+                    generateMessage(sessionId, "", true, newAssistantMsgId, loopCount = loopCount + 1)
+                }
             }
         } else {
             _isGenerating.update { false }
@@ -877,7 +915,17 @@ class ChatViewModel(
 
         for (msg in activeMessages) {
             val protocolMsg = when (msg.role) {
-                MessageRole.USER -> ProtocolMessage(role = "user", content = msg.content)
+                MessageRole.USER -> {
+                    val imageInputs = msg.userImages?.map { dataUrl ->
+                        val base64Prefix = "base64,"
+                        val base64Idx = dataUrl.indexOf(base64Prefix)
+                        val mimeEnd = dataUrl.indexOf(";")
+                        val mime = if (mimeEnd > 5) dataUrl.substring(5, mimeEnd) else "image/jpeg"
+                        val base64Data = if (base64Idx >= 0) dataUrl.substring(base64Idx + base64Prefix.length) else ""
+                        ImageInput(url = dataUrl, base64 = base64Data, mimeType = mime)
+                    }
+                    ProtocolMessage(role = "user", content = msg.content, imageUrls = imageInputs)
+                }
                 MessageRole.ASSISTANT -> ProtocolMessage(
                     role = "assistant",
                     content = msg.content,
@@ -1146,7 +1194,7 @@ class ChatViewModel(
      *
      * 支持的格式：
      *   1. ```json { "name": "search_searxng", "arguments": {...} } ```
-     *   2. ```{ "function": { "name": "...", "arguments": "..." } } ```（OpenAI 风格）
+     *   2. ```{ "function": { "name": "...", "arguments": "..." } } ```
      *   3. 裸 JSON 对象含 tool_name/tool/function 字段
      */
     private fun extractToolCallsFromText(content: String): List<ToolCall> {
@@ -1254,5 +1302,22 @@ class ChatViewModel(
         // 清理多余空行
         result = result.replace(Regex("\n{3,}"), "\n\n").trim()
         return result
+    }
+
+    private val highRiskToolNames = setOf(
+        "write_file", "exec_js", "generate_image", "create_tool"
+    )
+
+    private fun determinePendingToolIds(
+        toolCalls: List<ToolCall>,
+        executionMode: String
+    ): List<String> {
+        return when (executionMode) {
+            "auto" -> emptyList()
+            "manual" -> toolCalls.map { it.id }
+            else -> toolCalls
+                .filter { it.name in highRiskToolNames }
+                .map { it.id }
+        }
     }
 }

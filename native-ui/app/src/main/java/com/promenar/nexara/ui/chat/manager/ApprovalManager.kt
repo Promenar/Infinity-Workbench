@@ -90,12 +90,12 @@ class ApprovalManager(
                 }
             } ?: emptyList()
 
-            if (toolsToExecute.isNotEmpty()) {
-                onExecuteTools?.invoke(sessionId, targetMsg.id)
-            }
-
             store.updateMessageInSession(sessionId, targetMsg.id) { m ->
                 m.copy(pendingApprovalToolIds = null)
+            }
+
+            if (toolsToExecute.isNotEmpty()) {
+                onExecuteTools?.invoke(sessionId, targetMsg.id)
             }
         }
 

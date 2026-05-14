@@ -517,6 +517,34 @@ private fun ToolsPanel(
             toolsEnabled = it
             onToggle("toolsEnabled", it)
         }
+
+        val executionMode = session?.executionMode?.ifEmpty { "semi" } ?: "semi"
+        val modeDesc = when (executionMode) {
+            "auto" -> stringResource(R.string.sheet_execution_mode_auto)
+            "manual" -> stringResource(R.string.sheet_execution_mode_manual)
+            else -> stringResource(R.string.sheet_execution_mode_semi)
+        }
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(10.dp)),
+            shape = RoundedCornerShape(10.dp),
+            color = NexaraColors.SurfaceLow
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    stringResource(R.string.sheet_tool_execution_mode),
+                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = NexaraColors.OnSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    modeDesc,
+                    style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
+                    color = NexaraColors.OnSurfaceVariant
+                )
+            }
+        }
     }
 }
 

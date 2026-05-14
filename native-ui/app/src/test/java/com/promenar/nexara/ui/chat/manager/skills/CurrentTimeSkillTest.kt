@@ -48,7 +48,7 @@ class CurrentTimeSkillTest {
     fun `content contains timezone offset`() = runTest {
         val result = skill.execute(emptyMap(), ctx)
         // ISO_OFFSET_DATE_TIME 应包含时区偏移（如 +08:00 或 Z）
-        assertThat(result.content).containsMatch(Regex("\\+\\d{2}:\\d{2}|\\-\\d{2}:\\d{2}|Z"))
+        assertThat(result.content).containsMatch("\\+\\d{2}:\\d{2}|\\-\\d{2}:\\d{2}|Z")
     }
 
     @Test

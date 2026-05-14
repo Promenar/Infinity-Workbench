@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.rag
 
 import app.cash.turbine.test
+import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.rag.GraphStore
 import com.promenar.nexara.domain.model.KgEdge
 import com.promenar.nexara.domain.model.KgNode
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
@@ -23,6 +25,8 @@ class KnowledgeGraphViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private val repo: IKnowledgeGraphRepository = mockk()
+    private val graphStore: GraphStore = mockk(relaxed = true)
+    private val app: NexaraApplication = mockk(relaxed = true)
 
     @BeforeEach
     fun setup() {
@@ -54,7 +58,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { repo.getAllNodes() } returns nodes
         coEvery { repo.getAllEdges() } returns edges
 
-        val vm = KnowledgeGraphViewModel(repo)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
         vm.nodes.test {
             val result = awaitItem()
@@ -81,7 +85,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { repo.getAllNodes() } returns nodes
         coEvery { repo.getAllEdges() } returns emptyList()
 
-        val vm = KnowledgeGraphViewModel(repo)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
         vm.nodes.test {
             val result = awaitItem()
@@ -95,7 +99,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { repo.getAllEdges() } returns emptyList()
         coEvery { repo.clear() } returns Unit
 
-        val vm = KnowledgeGraphViewModel(repo)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.clearGraph()
 
         coVerify { repo.clear() }
@@ -109,7 +113,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { repo.getAllEdges() } returns emptyList()
         coEvery { repo.clear() } returns Unit
 
-        val vm = KnowledgeGraphViewModel(repo)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.clearGraph()
 
         vm.nodes.test {
@@ -125,7 +129,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { repo.getAllNodes() } returns emptyList()
         coEvery { repo.getAllEdges() } returns emptyList()
 
-        val vm = KnowledgeGraphViewModel(repo)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.injectMockData()
 
         vm.nodes.test {
@@ -153,7 +157,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { repo.getAllNodes() } returns emptyList()
         coEvery { repo.getAllEdges() } returns emptyList()
 
-        val vm = KnowledgeGraphViewModel(repo)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
         vm.isLoading.test {
             assertThat(awaitItem()).isFalse()
@@ -165,7 +169,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { repo.getAllNodes() } throws RuntimeException("db error")
         coEvery { repo.getAllEdges() } returns emptyList()
 
-        val vm = KnowledgeGraphViewModel(repo)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
         vm.nodes.test {
             assertThat(awaitItem()).isEmpty()

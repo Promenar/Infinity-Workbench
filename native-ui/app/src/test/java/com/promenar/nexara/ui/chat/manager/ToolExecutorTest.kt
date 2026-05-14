@@ -189,4 +189,52 @@ class ToolExecutorTest {
         assertThat(toolMessages).hasSize(1)
         assertThat(toolMessages[0].content).contains("Something went wrong")
     }
+
+    @Test
+    fun executeToolsSkipsPendingApproval() = testScope.runTest {
+        seedSessionWithAssistant(toolsEnabled = true)
+
+        val msgWithPending = store.getSession("s1")!!.messages
+            .first { it.role == MessageRole.ASSISTANT }
+            .copy(pendingApprovalToolIds = listOf("tc1"))
+        store.updateSession("s1") { s ->
+            s.copy(messages = s.messages.map { if (it.id == "m1") msgWithPending else it })
+        }
+
+        var readFileExecuted = false
+        val customRegistry = object : SkillRegistry {
+            override fun getSkill(name: String): SkillDefinition? {
+                if (name == "file_read") {
+                    return object : SkillDefinition {
+                        override val id = "file_read"
+                        override val name = "file_read"
+                        override val description = "Read"
+                        override val mcpServerId: String? = null
+                        override val parametersSchema = "{}"
+                        override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
+                            readFileExecuted = true
+                            return ToolResult(id = "tc2", content = "file data", status = "success")
+                        }
+                    }
+                }
+                return null
+            }
+            override fun getAllSkills() = emptyList<SkillDefinition>()
+            override fun getAllTools(allowedIds: List<String>?) = emptyList<ProtocolTool>()
+        }
+
+        val executorWithRegistry = ToolExecutor(store, messageManager, customRegistry)
+        val toolCalls = listOf(
+            ToolCall(id = "tc1", name = "file_write", arguments = """{"path":"/tmp"}"""),
+            ToolCall(id = "tc2", name = "file_read", arguments = """{"path":"/tmp"}""")
+        )
+        executorWithRegistry.executeTools("s1", toolCalls)
+        advanceUntilIdle()
+
+        assertThat(readFileExecuted).isTrue()
+        val session = store.getSession("s1")!!
+        val toolMessages = session.messages.filter { it.role == MessageRole.TOOL }
+        assertThat(toolMessages).hasSize(1)
+        assertThat(toolMessages[0].toolCallId).isEqualTo("tc2")
+    }
 }

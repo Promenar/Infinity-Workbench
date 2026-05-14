@@ -275,7 +275,8 @@ class SettingsViewModel(
 
     private fun loadSkills() {
         val enabledSet = prefs.getStringSet("enabled_skills", setOf(
-            "web_search", "calculator", "create_tool"
+            "web_search", "calculator", "create_tool",
+            "file_read", "file_list", "file_search", "exec_js"
         ))
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
@@ -283,7 +284,12 @@ class SettingsViewModel(
             SkillInfo("search_searxng", app.getString(R.string.skill_searxng), app.getString(R.string.skill_searxng_desc), enabledSet?.contains("search_searxng") ?: true),
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
             SkillInfo("create_tool", app.getString(R.string.skill_create_tool), app.getString(R.string.skill_create_tool_desc), enabledSet?.contains("create_tool") ?: true),
-            SkillInfo("image_generation", app.getString(R.string.skill_image_generation), app.getString(R.string.skill_image_generation_desc), enabledSet?.contains("image_generation") ?: true)
+            SkillInfo("image_generation", app.getString(R.string.skill_image_generation), app.getString(R.string.skill_image_generation_desc), enabledSet?.contains("image_generation") ?: true),
+            SkillInfo("file_read", "File Read", "Read file contents from workspace", enabledSet?.contains("file_read") ?: true),
+            SkillInfo("file_write", "File Write", "Write/create files in workspace", enabledSet?.contains("file_write") ?: true),
+            SkillInfo("file_list", "List Directory", "List workspace directory contents", enabledSet?.contains("file_list") ?: true),
+            SkillInfo("file_search", "Search Files", "Search files by name pattern", enabledSet?.contains("file_search") ?: true),
+            SkillInfo("exec_js", "JS Sandbox", "Execute JavaScript in a sandbox for calculations and data processing", enabledSet?.contains("exec_js") ?: true)
         )
     }
 

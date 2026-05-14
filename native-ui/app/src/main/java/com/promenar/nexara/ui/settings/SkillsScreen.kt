@@ -36,6 +36,9 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -91,7 +94,12 @@ fun SkillsScreen(
             "search_searxng" to Icons.Rounded.Search,
             "calculator" to Icons.Rounded.Build,
             "create_tool" to Icons.Rounded.Build,
-            "image_generation" to Icons.Rounded.Image
+            "image_generation" to Icons.Rounded.Image,
+            "file_read" to Icons.Rounded.Description,
+            "file_write" to Icons.Rounded.Edit,
+            "file_list" to Icons.Rounded.Folder,
+            "file_search" to Icons.Rounded.Search,
+            "exec_js" to Icons.Rounded.Code
         )
     }
     val presetSkills by viewModel.skills.collectAsState()

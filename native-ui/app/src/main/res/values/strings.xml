@@ -351,6 +351,9 @@
     <string name="sheet_tool_mcp_servers">MCP Servers</string>
     <string name="sheet_tool_user_skills">User Skills</string>
     <string name="sheet_tool_execution_mode">Execution Mode</string>
+    <string name="sheet_execution_mode_auto">Auto: All tools run automatically</string>
+    <string name="sheet_execution_mode_semi">Semi: File writes and high-risk tools need approval</string>
+    <string name="sheet_execution_mode_manual">Manual: All tools need approval</string>
     <string name="sheet_tool_search_retrieval">Search &amp; Retrieval</string>
     <string name="sheet_tool_code_analysis">Code Analysis</string>
     <string name="sheet_tool_web_search">Web Search</string>

@@ -50,8 +50,17 @@ class ToolExecutor(
             return
         }
 
+        val approvalToolIds = targetMsg.pendingApprovalToolIds ?: emptyList()
+
+        val pendingIds = targetMsg.pendingApprovalToolIds ?: emptyList()
+
         for (tc in toolCalls) {
             if (tc.name.isEmpty()) continue
+            if (tc.id in pendingIds) continue
+
+            if (tc.id in approvalToolIds) {
+                continue
+            }
 
             val stepId = "step_${System.currentTimeMillis()}_${tc.id}"
 
