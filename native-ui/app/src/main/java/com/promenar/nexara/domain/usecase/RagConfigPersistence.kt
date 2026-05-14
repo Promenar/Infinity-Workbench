@@ -38,11 +38,11 @@ class RagConfigPersistence(
             enableRerank = prefs.getBoolean(KEY_ENABLE_RERANK, false),
             rerankTopK = prefs.getInt(KEY_RERANK_TOP_K, DEFAULT_RERANK_TOP_K),
             rerankFinalK = prefs.getInt(KEY_RERANK_FINAL_K, DEFAULT_RERANK_FINAL_K),
-            enableQueryRewrite = prefs.getBoolean(KEY_ENABLE_QUERY_REWRITE, false),
+            enableQueryRewrite = prefs.getBoolean(KEY_ENABLE_QUERY_REWRITE, true),
             queryRewriteStrategy = prefs.getString(KEY_QUERY_REWRITE_STRATEGY, DEFAULT_QUERY_REWRITE_STRATEGY)
                 ?: DEFAULT_QUERY_REWRITE_STRATEGY,
             queryRewriteCount = prefs.getInt(KEY_QUERY_REWRITE_COUNT, DEFAULT_QUERY_REWRITE_COUNT),
-            enableHybridSearch = prefs.getBoolean(KEY_ENABLE_HYBRID_SEARCH, false),
+            enableHybridSearch = prefs.getBoolean(KEY_ENABLE_HYBRID_SEARCH, true),
             hybridAlpha = prefs.getFloat(KEY_HYBRID_ALPHA, DEFAULT_HYBRID_ALPHA),
             hybridBM25Boost = prefs.getFloat(KEY_HYBRID_BM25_BOOST, DEFAULT_HYBRID_BM25_BOOST),
             enableMemory = prefs.getBoolean(KEY_ENABLE_MEMORY, true),

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Phase 7 — 知识库系统全面修复与增强 (2026-05-14)
+- **PDF 导入**: PdfExtractor 接入 Apache PDFBox，真实提取 PDF 文本层
+- **Word 导入**: DocumentImporter 接入 Apache POI，解析 .docx 段落+表格
+- **文档编辑修复**: 移除 Mock 假内容，标题重命名持久化到 DB
+- **文件夹级联删除**: 删文件夹前先删文档及向量
+- **混合检索默认开启**: RRF 向量+关键词融合
+- **Rerank 重排序**: RerankClient 双路径（API + LLM 回退）
+- **查询重写默认开启**
+- **Memory 记忆视图 + KG 可视化 + 全文搜索 UI**
+
 ### 思考容器文本颜色修复 (2026-05-14)
 - **颜色管线修复**: `nexaraMarkdownColors()` 的 `text` 参数从硬编码 `OnBackground` 改为接收 `textColor` 参数（默认 `OnBackground`），通过 `MarkdownText` → `MarkdownSafe` → `nexaraMarkdownColors()` 层层透传 `effectiveColor`，解决了思考容器文字始终以白色渲染、无法弱化的问题
 - **根因**: 第三方库 `mikepenz:multiplatform-markdown-renderer-m3` 不读取 `CompositionLocalProvider(LocalContentColor/LocalTextStyle)`，只使用直接传入的 `colors` 参数，之前的多次修复均在 CompositionLocal 层发力，颜色被硬编码覆盖

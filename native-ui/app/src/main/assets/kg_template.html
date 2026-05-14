@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <script src="file:///android_asset/echarts/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; }
+        html, body, #chart { width: 100%; height: 100%; background: transparent; }
+    </style>
+</head>
+<body>
+<div id="chart"></div>
+<script>
+    var graphData = __GRAPH_DATA__;
+
+    var colorMap = {
+        'concept': '#C0C1FF',
+        'document': '#4ADE80',
+        'person': '#60A5FA',
+        'organization': '#FBBF24',
+        'location': '#F472B6',
+        'event': '#A78BFA',
+        'other': '#9E9EA0'
+    };
+
+    var nodeIdToName = {};
+    graphData.nodes.forEach(function(n) { nodeIdToName[n.id] = n.name; });
+
+    var nodes = graphData.nodes.map(function(n) {
+        return {
+            name: n.name,
+            symbolSize: 18,
+            itemStyle: { color: colorMap[n.type] || colorMap.other },
+            label: { show: true, color: '#E5E1E4', fontSize: 10 },
+            category: n.type
+        };
+    });
+
+    var links = graphData.edges.map(function(e) {
+        return {
+            source: nodeIdToName[e.sourceId] || e.sourceId,
+            target: nodeIdToName[e.targetId] || e.targetId,
+            label: { show: true, formatter: e.relation, fontSize: 8, color: '#999' },
+            lineStyle: { color: 'rgba(255,255,255,0.12)', curveness: 0.1 }
+        };
+    });
+
+    var categories = Object.keys(colorMap).map(function(k) {
+        return { name: k };
+    });
+
+    var chart = echarts.init(document.getElementById('chart'), 'dark');
+    var option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            formatter: function(params) {
+                if (params.dataType === 'node') {
+                    return '<b>' + params.name + '</b><br/>Type: ' + (params.data.category || 'unknown');
+                }
+                if (params.dataType === 'edge') {
+                    return params.data.label.formatter;
+                }
+                return '';
+            }
+        },
+        legend: {
+            data: categories.map(function(c) { return c.name; }),
+            textStyle: { color: '#999', fontSize: 10 },
+            bottom: 10,
+            type: 'scroll'
+        },
+        series: [{
+            type: 'graph',
+            layout: 'force',
+            roam: true,
+            draggable: true,
+            force: {
+                repulsion: 250,
+                edgeLength: [80, 250],
+                gravity: 0.08
+            },
+            data: nodes,
+            links: links,
+            categories: categories,
+            emphasis: {
+                focus: 'adjacency',
+                lineStyle: { width: 3 }
+            },
+            label: {
+                show: true,
+                position: 'bottom',
+                fontSize: 10,
+                color: '#E5E1E4'
+            },
+            autoCurveness: true
+        }]
+    };
+    chart.setOption(option);
+    window.addEventListener('resize', function() { chart.resize(); });
+</script>
+</body>
+</html>

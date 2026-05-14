@@ -21,7 +21,8 @@ data class ContextBuilderParams(
     val session: Session,
     val ragOptions: com.promenar.nexara.data.model.RagOptions? = null,
     val onRagProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null,
-    val agentSystemPrompt: String? = null
+    val agentSystemPrompt: String? = null,
+    val sessionCustomPrompt: String? = null
 )
 
 interface WebSearchProvider {
@@ -157,9 +158,13 @@ class ContextBuilder(
         }
 
         // 5. Session Custom Prompt
-        if (session.customPrompt != null) {
-            sb.appendLine()
-            sb.appendLine(session.customPrompt)
+        params.sessionCustomPrompt?.let { prompt ->
+            if (prompt.isNotBlank()) {
+                sb.appendLine()
+                sb.appendLine("## Session Instructions")
+                sb.appendLine(prompt)
+                sb.appendLine()
+            }
         }
 
         // 6. RAG Context (Memory & Docs)

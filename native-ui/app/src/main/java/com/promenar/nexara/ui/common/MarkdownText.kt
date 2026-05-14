@@ -306,7 +306,9 @@ fun MarkdownText(
     }
 
     val currentStyle = LocalTextStyle.current
-    val effectiveColor = overrideColor ?: currentStyle.color
+    val effectiveColor = overrideColor
+        ?: currentStyle.color.takeUnless { it == Color.Unspecified }
+        ?: NexaraColors.OnBackground
     val m3Typography = MaterialTheme.typography.copy(
         bodyMedium = nexaraMarkdownTypography(fontSize).text.copy(color = effectiveColor),
         headlineLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor),

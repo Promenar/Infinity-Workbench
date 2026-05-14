@@ -234,7 +234,6 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val rerankClient: RerankClient by lazy {
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        // 与 embeddingClient 同策略：先读专用键，为空回退主 LLM 提供商
         val baseUrl = prefs.getString("embedding_base_url", "")?.ifBlank {
             prefs.getString("base_url", "") ?: ""
         } ?: ""
@@ -242,7 +241,16 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             prefs.getString("api_key", "") ?: ""
         } ?: ""
         val presetModel = settingsPrefs.getString("preset_rerank_model", "") ?: ""
-        RerankClient(baseUrl = baseUrl, apiKey = apiKey, modelId = presetModel)
+        val savedConfig = getSavedProviderConfig()
+        RerankClient(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            modelId = presetModel,
+            llmProtocol = savedConfig?.let {
+                try { llmProvider.protocol } catch (_: Exception) { null }
+            },
+            llmModelId = savedConfig?.model
+        )
     }
 
     val imageService: ImageService by lazy {

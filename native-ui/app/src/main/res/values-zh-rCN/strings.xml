@@ -597,6 +597,16 @@
     <string name="rag_home_recent_docs">最近文档</string>
     <string name="rag_home_memory_section">记忆</string>
     <string name="rag_home_memory_empty">来自会话的记忆摘要将显示在此处。</string>
+    <string name="rag_home_memory_stats">记忆统计</string>
+    <string name="rag_home_memory_total_count">总计: %1$d</string>
+    <string name="rag_home_memory_est_tokens">约 %1$d tokens</string>
+    <string name="rag_home_memory_delete_confirm_title">删除此记忆？</string>
+    <string name="rag_home_memory_delete_confirm_msg">此记忆向量将被永久删除。</string>
+    <string name="rag_home_search_content_match">内容匹配</string>
+    <string name="kg_view_global">全局</string>
+    <string name="kg_view_session">会话</string>
+    <string name="kg_view_document">文档</string>
+    <string name="kg_empty_graph">暂无图谱数据。从文档中抽取知识图谱以开始。</string>
     <string name="rag_home_vectorizing">正在向量化…</string>
     <string name="rag_home_selected_count">已选择 %1$d 项</string>
     <string name="rag_home_clear_all">清除全部</string>
@@ -749,7 +759,9 @@
     <string name="retrieval_rerank_desc">使用交叉编码器对检索分块重新排序</string>
     <string name="retrieval_rerank_top_n">重排序 Top-N</string>
     <string name="retrieval_rerank_final">最终结果数</string>
-    <string name="retrieval_rewrite_section">查询改写策略</string>
+    <string name="retrieval_rewrite_section">查询改写</string>
+    <string name="retrieval_rewrite_enable">启用查询改写</string>
+    <string name="retrieval_rewrite_desc">改写用户查询以提升检索准确性</string>
     <string name="retrieval_section_observability">可观测性</string>
     <string name="retrieval_show_progress">显示检索进度</string>
     <string name="retrieval_show_progress_desc">在检索过程中显示进度指示器</string>

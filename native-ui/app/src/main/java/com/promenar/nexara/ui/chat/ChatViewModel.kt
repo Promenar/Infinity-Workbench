@@ -276,7 +276,8 @@ class ChatViewModel(
                     RagProgress(stage = stage, percentage = percentage, subStage = subStage)
                 )
             },
-            agentSystemPrompt = agentConfig.systemPrompt.ifBlank { sessionForCtx.customPrompt }
+            agentSystemPrompt = agentConfig.systemPrompt,
+            sessionCustomPrompt = sessionForCtx.customPrompt
         )
 
         val contextResult = try {

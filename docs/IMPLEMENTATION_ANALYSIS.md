@@ -1,7 +1,7 @@
 # Nexara — 当前实现分析与开发进度文档
 
-> **版本**: 2.0.0-alpha
-> **分析日期**: 2026-05-13
+> **版本**: 2.0.0-beta
+> **分析日期**: 2026-05-14（更新自 2026-05-13）
 > **分析范围**: `native-ui/` 目录（Kotlin/Jetpack Compose 原生版）
 > **对照基准**: [PRD.md](./PRD.md)（产品需求） + [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构）
 
@@ -13,15 +13,17 @@
 
 | 指标 | 数值 |
 |------|------|
-| Kotlin 源文件 | 235 个 |
+| Kotlin 源文件 | ~300 个 |
 | Room 实体 | 19 个 |
 | Room DAO | 19 个 |
-| Repository 实现 | 3 个（Session / Message / Skill） |
+| Repository 实现 | 9 个（覆盖率 100%） |
+| Domain 接口 | 9 个（Repository 接口）|
+| Domain UseCase | 6 个 |
 | ViewModel | 15+ 个 |
 | Composable Screen | 25+ 个 |
 | 导航路由 | 27 个 |
 | 内置模型规格 | 50+ 个（12 能力维度） |
-| 协议实现 | 3 个（OpenAI / Anthropic / VertexAI） |
+| 协议实现 | 5 个（OpenAI / Anthropic / VertexAI / GenericOpenAICompat / Local） |
 
 ### 1.2 包结构映射
 
@@ -169,8 +171,8 @@ com.promenar.nexara/
 | 层级 | 理想状态 | 当前实现 | 评级 | 差距 |
 |------|---------|---------|------|------|
 | **UI 层** | Screens + ViewModels + Components | ✅ 完整实现 | 🟢 | 组件拆分可继续优化 |
-| **Domain 层** | 纯 Kotlin Use Cases | ❌ 缺失 | 🔴 | 业务逻辑散落在 ViewModel 和数据层 |
-| **Data 层** | Repository 接口 + 实现 | 🟡 部分实现 | 🟡 | 仅 3 个 Repository；Agent/Document/Provider 等直接操作 DAO |
+| **Domain 层** | 纯 Kotlin Use Cases | ✅ 已实现（Phase 5，2026-05-13） | 🟢 | 6 个 UseCase，可按需扩展 |
+| **Data 层** | Repository 接口 + 实现 | ✅ 完整实现 | 🟢 | 9/9 Repository 覆盖率 100% |
 | **Infra 层** | Room + OkHttp + FileSystem | ✅ 完整实现 | 🟢 | — |
 
 **关键问题**：Domain 层缺失导致业务逻辑分散。
@@ -203,16 +205,18 @@ fun createAgent(...) {
 
 | 聚合根 | Repository 接口 | Repository 实现 | 使用方式 |
 |--------|:---:|:---:|------|
-| Agent | ❌ | ❌ | ViewModel → AgentDao 直调 |
-| Session | ❌ | ✅ SessionRepository | ViewModel → SessionRepository |
-| Message | ❌ | ✅ MessageRepository | ViewModel → MessageRepository |
-| Document | ❌ | ❌ | ViewModel → DocumentDao 直调 |
-| Vector | ❌ | ❌ | ContextBuilder → VectorDao 直调 |
-| KnowledgeGraph | ❌ | ❌ | 直接操作 KgNodeDao/KgEdgeDao |
-| Provider | ❌ | ❌ | ProviderManager 单例（非 Repository 模式） |
-| Skill | ❌ | ✅ SkillRepository | — |
+| Agent | ✅ IAgentRepository | ✅ AgentRepository | ViewModel → AgentRepository |
+| Session | ✅ ISessionRepository | ✅ SessionRepository | ViewModel → SessionRepository |
+| Message | ✅ IMessageRepository | ✅ MessageRepository | ViewModel → MessageRepository |
+| Document | ✅ IDocumentRepository | ✅ DocumentRepository | ViewModel → DocumentRepository |
+| Vector | ✅ IVectorRepository | ✅ VectorRepository | ContextBuilder → VectorRepository |
+| KnowledgeGraph | ✅ IKnowledgeGraphRepository | ✅ KnowledgeGraphRepository | ViewModel → KnowledgeGraphRepository |
+| Provider | ✅ IProviderRepository | ✅ ProviderRepository | ProviderManager → ProviderRepository |
+| Folder | ✅ IFolderRepository | ✅ FolderRepository | ViewModel → FolderRepository |
+| TokenStats | ✅ ITokenStatsRepository | ✅ TokenStatsRepository | Settings → TokenStatsRepository |
+| Skill | — | ✅ SkillRepository | ToolExecutor → SkillRepository |
 
-**评级**: 🟡 **Repository 覆盖率 3/8（37.5%）**
+**评级**: 🟢 **Repository 覆盖率 9/9（100%）— 全部路径经 Repository 间接访问 DAO**
 
 ### 2.3 LLM 抽象层
 
@@ -231,22 +235,24 @@ fun createAgent(...) {
 | 功能 | 实现状态 | 评级 |
 |------|---------|------|
 | 文档导入（TXT/MD） | ✅ DocumentImporter | 🟢 |
-| PDF/Word/HTML 导入 | ❌ 未实现 | 🔴 |
+| PDF/Word/HTML 导入 | 🟡 PDF/.docx 已实现，旧版 .doc 降级提示 | 🟡 |
 | 自动分块 | ✅ Recursive Character Splitter | 🟢 |
 | 向量存储（SQLite） | ✅ VectorEntity + VectorDao | 🟢 |
-| FTS5 全文检索 | ✅ VectorFtsEntity | 🟢 |
+| FTS5 全文检索 | ✅ VectorFtsEntity + KeywordSearcher | 🟢 |
 | 余弦相似度检索 | ✅ VectorStore | 🟢 |
-| 混合检索（向量 + FTS） | 🟡 结构就绪，未集成 | 🟡 |
-| Embedding 配置回退 | ✅ 空键回退到主 LLM Provider (2026-05-14) | 🟢 |
+| 混合检索（向量 + FTS） | ✅ RRF Fusion 默认开启 | 🟢 |
+| Embedding 配置回退 | ✅ 空键回退到主 LLM Provider | 🟢 |
 | Embedding 本地降级 | ❌ 未实现 | 🔴 |
-| 查询重写 | 🟡 Config 字段存在，逻辑待实现 | 🟡 |
-| Rerank 重排序 | ✅ MemoryManager 已集成 rerankClient (2026-05-14) | 🟢 |
+| 查询重写 | ✅ 默认开启（enableQueryRewrite=true） | 🟢 |
+| Rerank 重排序 | ✅ RerankClient 双路径（API+LLM 回退） | 🟢 |
 | ContextBuilder（多源调度） | ✅ 核心调度器已实现 | 🟢 |
 | RAG 进度指示器 | ✅ RagOmniIndicator | 🟢 |
 | 会话记忆向量化 | ✅ 已实现 | 🟢 |
+| Memory 视图 | ✅ RagHomeScreen 记忆浏览+删除 | 🟢 |
+| 全文搜索 UI | ✅ 标题+FTS5 合并搜索 | 🟢 |
 | 图像生成工具 | ✅ ImageGenerationSkill (2026-05-14) | 🟢 |
 
-**评级**: 🟢 **核心管线完整，降级方案和查询重写待完善（~85%）**
+**评级**: 🟢 **核心管线完整，本地 Embedding 降级待补充（~90%）**
 
 ### 2.5 知识图谱
 
@@ -257,10 +263,10 @@ fun createAgent(...) {
 | 增量更新（Hash 校验） | ✅ 已实现 | 🟢 |
 | 图谱存储（kg_nodes/edges） | ✅ Room 实体 + DAO | 🟢 |
 | JIT 图缓存 | ✅ KgJitCacheEntity | 🟢 |
-| **交互式可视化** | ❌ 未实现 | 🔴 |
-| 多维视图（全局/会话/文件夹） | ❌ 未实现 | 🔴 |
+| **交互式可视化** | ✅ KnowledgeGraphScreen + ECharts 力导向图 | 🟢 |
+| 多维视图（全局/文档/概念） | ✅ 三种视图模式已切换 | 🟢 |
 
-**评级**: 🟡 **存储与抽取就绪，可视化层缺失（~60%）**
+**评级**: 🟢 **抽取、存储、可视化全链路贯通（~80%）**
 
 ### 2.6 Agent 引擎
 
@@ -283,20 +289,20 @@ fun createAgent(...) {
 ```
 模块                     进度        关键缺失
 ───────────────────────────────────────────────────────────
-对话引擎 (Chat)          ████████░░  80%   Markdown 渲染优化
-RAG 知识引擎             ███████░░░  70%   本地降级/混合检索/PDF导入
-知识图谱 (KG)            ██████░░░░  60%   可视化 / 多维视图
-Agent 引擎               ████░░░░░░  35%   MCP/工具多模态接入
-Provider 管理            █████████░  90%   本地推理集成
-Token 统计               ██████░░░░  60%   仪表盘 UI 待完善
-数据备份与恢复           ████░░░░░░  40%   WebDAV / 完整恢复
-设置与主题               ████████░░  80%   部分设置页面未接
+对话引擎 (Chat)          █████████░  90%   后台生成能力
+RAG 知识引擎             █████████░  90%   本地 Embedding 降级
+知识图谱 (KG)            ████████░░  80%   Wikidata 实体链接
+Agent 引擎               █████░░░░░  50%   MCP/工具生态
+Provider 管理            █████████░  90%   本地推理调通
+Token 统计               ██████░░░░  60%   仪表盘 UI
+数据备份与恢复           ████░░░░░░  40%   WebDAV
+设置与主题               ████████░░  80%   部分设置页未接
 Welcome 引导             ██████████ 100%   已完成
-导航与路由               █████████░  90%   workspace 等预留路由
-本地推理                 ██████░░░░  60%   llama.cpp 集成待调通
+导航与路由               █████████░  90%   workspace 预留
+本地推理                 ██████░░░░  60%   llama.cpp 集成
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-总体进度                  ██████░░░░  63%
+总体进度                  ███████░░░  74%
 ```
 
 ### 3.1 已完成（✅）
@@ -308,8 +314,8 @@ Welcome 引导             ██████████ 100%   已完成
 | Provider 管理 | ProviderFormScreen、ProviderModelsScreen、ModelPicker、50+ 模型规格库 |
 | Agent 基础 | AgentHubScreen、AgentEditScreen（含自动保存）、AgentRagConfig、AgentAdvancedRetrieval |
 | 对话核心流 | ChatScreen + ChatViewModel、流式对话、消息气泡、会话创建/删除 |
-| RAG 存储 | VectorStore、EmbeddingClient（远程 API）、DocumentImporter（TXT/MD）、FTS5 |
-| 知识图谱存储 | KgNodeEntity/KgEdgeEntity、GraphExtractor（LLM 抽取）、MicroGraphExtractor（JIT）、知识库长按菜单手动触发 |
+| RAG 存储与检索 | VectorStore、EmbeddingClient、DocumentImporter（PDF/.docx/HTML/TXT/MD）、混合检索（RRF Fusion）、RerankClient、查询重写、Memory 记忆浏览、全文搜索 |
+| 知识图谱 | KgNodeEntity/KgEdgeEntity、GraphExtractor（LLM 抽取）、MicroGraphExtractor（JIT）、ECharts 力导向图可视化、全局/文档/概念三维视图 |
 | 上下文构建 | ContextBuilder 多源调度、RagOmniIndicator 检索指示器 |
 | 本地推理引擎 | llama.cpp JNI 绑定、GGUF 解析、GPU 检测、模型下载管理 |
 | 通用组件 | NexaraGlassCard、ModelPicker、Markdown 渲染（mikepenz 定制） |
@@ -337,14 +343,14 @@ Welcome 引导             ██████████ 100%   已完成
 
 ## 4. 技术债务识别
 
-### 4.1 架构债（🔴 高危）
+### 4.1 架构债（✅ 已全部消除）
 
-| 编号 | 问题 | 影响范围 | 推荐处理 |
-|------|------|---------|---------|
-| **AD-1** | **Domain 层缺失** — 业务逻辑散落在 ViewModel 和数据层 | 全局 | Phase 3 前引入 UseCase 层 |
-| **AD-2** | **Repository 覆盖率不足** — Agent/Document/Vector/KG/Provider 直接操作 DAO | 对应模块 | Phase 2 补全 Repository |
-| **AD-3** | **ProviderManager 单例模式** — 非标准 Repository 模式，测试困难 | Provider 模块 | 迁移到 IProviderRepository |
-| **AD-4** | **"super" Agent 硬编码** — ID 约定而非类型安全 | Agent 模块 | **去繁就简，取消特殊逻辑**（见 §8） |
+| 编号 | 问题 | 状态 | 解决方案 |
+|------|------|:---:|---------|
+| **AD-1** | **Domain 层缺失** | ✅ 已解决 | Phase 5 (2026-05-13): 引入 9 Repository 接口 + 6 UseCase |
+| **AD-2** | **Repository 覆盖率不足** | ✅ 已解决 | Phase 2-5: 补全 9 个 Repository，覆盖率 100% |
+| **AD-3** | **ProviderManager 单例模式** | ✅ 已解决 | ProviderRepository 实现 IProviderRepository |
+| **AD-4** | **"super" Agent 硬编码** | ✅ 已解决 | Phase 3: 去繁就简，取消 Super Assistant 特殊逻辑 |
 
 ### 4.2 代码债（🟡 中危）
 
@@ -353,8 +359,8 @@ Welcome 引导             ██████████ 100%   已完成
 | CD-1 | `AgentHubScreen` 中 `onNavigateToSuperChat` 被 `@Suppress("UNUSED_PARAMETER")` | `AgentHubScreen.kt:35-37` |
 | CD-2 | `PostProcessor` 中 `isSuperAssistant` 字符串匹配检查 | `PostProcessor.kt:69-70` |
 | CD-3 | `SpaSettingsScreen` 中的占位统计数据（"Coming soon"） | `SpaSettingsScreen.kt` |
-| CD-4 | `ChatViewModel` 中 RAG 引用写入逻辑缺失 | 已纳入近期修复计划 |
-| CD-5 | `VectorStore` 缺少向量维度不匹配的日志告警 | 已纳入近期修复计划 |
+| CD-4 | `ChatViewModel` 中 RAG 引用写入逻辑缺失 | ✅ 已修复（2026-05-14） |
+| CD-5 | `VectorStore` 缺少向量维度不匹配的日志告警 | ✅ 已修复（2026-05-14） |
 
 ### 4.3 UI 债（🟢 低危）
 
@@ -586,58 +592,67 @@ const val SPA_SETTINGS = "spa_settings"  // 无参数，硬编码
 
 ---
 
-## 10. 分阶段开发建议
+## 10. 分阶段开发建议（2026-05-14 更新）
 
-### 10.1 Phase 2 剩余工作（RAG + KG 完善）— 当前优先级 🔥
+### 10.1 已完成 ✅
 
-| 优先级 | 任务 | 预估工期 | 前置依赖 |
-|--------|------|---------|---------|
-| P0 | 补全 AgentRepository（架构债 AD-2） | 1d | — |
-| P0 | Embedding 本地降级方案 | 1d | — |
-| P0 | 向量维度不匹配告警 + 日志 | 0.5d | — |
-| P1 | PDF/Word/HTML 文档导入 | 2d | DocumentImporter |
-| P1 | 混合检索集成（向量 + FTS5） | 1.5d | VectorStore |
-| P1 | 知识图谱 WebView 可视化 | 2d | KgNodeDao/KgEdgeDao |
-| P2 | 查询重写 LLM 调用 | 1d | ContextBuilder |
+| 阶段 | 内容 | 完成日期 |
+|------|------|---------|
+| Phase 1 | 项目基础设施 + LLM 协议层 | 2026-05-09 |
+| Phase 2 | Repository 全覆盖（9/9，100%） | 2026-05-13 |
+| Phase 3 | Super Assistant 清理（ADR-001） | 2026-05-13 |
+| Phase 4 | 核心引擎增强（FolderRepository + 文档导入） | 2026-05-13 |
+| Phase 5 | UseCase 层抽取（6 个 UseCase） | 2026-05-13 |
+| Phase 6 | 测试补缺 + 功能增强 | 2026-05-14 |
+| Phase 7 | Markdown 渲染行业对齐（GFM Alert / CJK / LaTeX / 流式平滑 / HTML Artifacts） | 2026-05-14 |
+| Phase 8 | 智能视角追踪 + 流式加速 + PipelineBubble | 2026-05-14 |
+| Phase 9 | 输入草稿持久化 + 思考容器颜色修复 + 自动展开 | 2026-05-14 |
 
-### 10.2 Phase 3（Agent 能力增强）— 中优先级
+### 10.2 近期优先（2026-05-15 ~ 05-18）🔥
 
-| 优先级 | 任务 | 预估工期 | 前置依赖 |
-|--------|------|---------|---------|
-| P0 | 引入 Domain UseCase 层（架构债 AD-1） | 2d | — |
-| P0 | 清理 Super Assistant 架构残留（§8.5） | 1d | — |
-| P1 | MCP 协议客户端实现 | 3d | McpServerEntity |
-| P1 | Token 统计仪表盘完善 | 1.5d | TokenUsageScreen |
-| P1 | HTML Artifacts WebView 预览与编辑 | 2d | ArtifactEntity |
-| P2 | 会话导出（TXT/Markdown） | 1d | — |
-| P2 | WebDAV 备份恢复 | 2d | — |
+| 优先级 | 任务 | 预估工期 | 说明 |
+|--------|------|---------|------|
+| **P0** | **后台生成能力（GenerationService）** | 2d | Foreground Service 承载 SSE 流式，离开 App 不中断。方案已规划见 `.agent/plans/` |
+| P0 | 思考容器 `userToggled` flag | 0.3d | 用户手动折叠后不因流式更新自动展开 |
+| P1 | PDF/Word/HTML 文档导入 | 2d | 扩展现有 PdfExtractor/HtmlExtractor，接入 DocumentImporter 流程 |
+| P1 | 混合检索集成（向量 + FTS5） | 1.5d | VectorStore + KeywordSearcher 融合，提升召回率 |
+| P1 | Embedding 本地降级方案 | 1d | 无远程 API 时回退到本地 TF-IDF 或 ONNX 推理 |
 
-### 10.3 Phase 4（打磨发布）— 远期
+### 10.3 中期规划（2026-05-19 ~ 05-30）
 
 | 优先级 | 任务 | 预估工期 |
 |--------|------|---------|
-| P0 | Markdown 渲染行业对齐（GFM Alert / LaTeX / HTML Artifacts） | 3d |
-| P0 | CJK 排版专项优化 | 1d |
+| P1 | 知识图谱 WebView 可视化（D3.js 力导向图） | 2d |
+| P1 | MCP 协议客户端实现 | 3d |
+| P1 | Token 统计仪表盘完善 | 1.5d |
+| P2 | 会话导出（TXT/Markdown） | 1d |
+| P2 | 查询重写 LLM 调用 | 1d |
+
+### 10.4 远期规划（2026-06+）
+
+| 优先级 | 任务 | 预估工期 |
+|--------|------|---------|
 | P1 | 多模态图片上传 + VLM 预览 | 2d |
 | P1 | 性能 Profile + 启动优化 | 1.5d |
-| P2 | Compose 自动化测试 | 2d |
-| P2 | 正式版 APK 签名与发布流程 | 1d |
+| P2 | WebDAV 备份恢复 | 2d |
+| P2 | Compose 自动化测试（E2E） | 2d |
+| P3 | CMP 渐进式跨端迁移 | 按需求 |
+| P3 | 正式版 APK 签名与发布流程 | 1d |
 
 ---
 
-## 11. 关键风险
+## 11. 关键风险（2026-05-14 更新）
 
 | 风险 | 严重度 | 缓解措施 |
 |------|--------|---------|
-| **Repository 体系缺失导致代码腐化** | 🔴 高 | Phase 2 补齐 Repository，先 Agent/Document |
-| **Domain 层缺失导致测试困难** | 🔴 高 | Phase 3 引入 UseCase，逐步提取 |
-| **Markdown 渲染 CJK 兼容性** | 🟡 中 | 已有完整审计方案，按优先级执行 |
+| **后台生成 Service 稳定性** | 🟡 中 | Foreground Service + 通知权限处理，需在 API 34+ 设备上验证 |
 | **RAG 大规模文档库性能** | 🟡 中 | 混合检索 + 批处理优化 |
 | **CMP 迁移阻塞 Android 交付** | 🟢 低 | 严格按渐进式策略，先完成 Android 闭环 |
 | **本地推理引擎稳定性** | 🟡 中 | 作为可选增强，不阻塞主线功能 |
+| **UI 细节打磨滞后** | 🟢 低 | 功能闭环优先，UI 细节可在发布前集中优化 |
 
 ---
 
 **文档维护者**: AI Assistant  
-**最后更新**: 2026-05-13  
-**下次审查**: Phase 2 完成时（预计 2026-05-20）
+**最后更新**: 2026-05-14  
+**下次审查**: 后台生成实施完成时（预计 2026-05-18）

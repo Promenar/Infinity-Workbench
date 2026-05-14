@@ -162,6 +162,7 @@ fun ChatScreen(
     var showWorkspaceSheet by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showModelSettingsSheet by remember { mutableStateOf(false) }
+    var showSessionPromptEditor by remember { mutableStateOf(false) }
     var showTruncateDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -314,6 +315,7 @@ fun ChatScreen(
                 onBack = onNavigateBack,
                 onWorkspace = { showWorkspaceSheet = true },
                 onSettings = { showModelSettingsSheet = true },
+                onSessionPrompt = { showSessionPromptEditor = true },
                 onClearHistory = { showClearDialog = true },
                 onRename = { showRenameDialog = true },
                 onDeleteSession = { showDeleteDialog = true }
@@ -553,6 +555,16 @@ fun ChatScreen(
         onDismiss = { showModelSettingsSheet = false },
         sessionId = sessionId
     )
+
+    UnifiedPromptEditor(
+        show = showSessionPromptEditor,
+        onDismiss = { showSessionPromptEditor = false },
+        onSave = { text -> chatViewModel.updateCustomPrompt(text); showSessionPromptEditor = false },
+        initialText = uiState.session?.customPrompt ?: "",
+        title = "Session Prompt",
+        placeholder = "Add session-specific instructions...",
+        mode = EditorMode.DIALOG
+    )
 }
 
 @Composable
@@ -713,6 +725,7 @@ fun ChatTopBar(
     onBack: () -> Unit,
     onWorkspace: () -> Unit,
     onSettings: () -> Unit,
+    onSessionPrompt: () -> Unit = {},
     onClearHistory: () -> Unit,
     onRename: () -> Unit,
     onDeleteSession: () -> Unit
@@ -753,6 +766,18 @@ fun ChatTopBar(
                             showMenu = false
                             onSettings()
                         }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Session Prompt", style = NexaraTypography.labelMedium) },
+                        leadingIcon = { Icon(Icons.Rounded.Description, null, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            showMenu = false
+                            onSessionPrompt()
+                        }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = NexaraColors.OutlineVariant.copy(alpha = 0.3f)
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_menu_rename), style = NexaraTypography.labelMedium) },

@@ -52,4 +52,7 @@ interface DocumentDao {
 
     @Query("SELECT COUNT(*) FROM documents")
     suspend fun getCount(): Int
+
+    @Query("UPDATE documents SET title = :title, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateTitle(id: String, title: String, updatedAt: Long = System.currentTimeMillis())
 }

@@ -14,4 +14,5 @@ interface IDocumentRepository {
     suspend fun update(id: String, content: String)
     suspend fun delete(id: String)
     suspend fun markVectorized(id: String)
+    suspend fun updateTitle(id: String, title: String)
 }

@@ -157,6 +157,10 @@ dependencies {
     // ─── HTML 解析 ───
     implementation("org.jsoup:jsoup:1.17.2")
 
+    // ─── 文档解析 ───
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("org.apache.poi:poi-ooxml:5.2.5")
+
     // ─── 测试 ───
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation("org.junit.vintage:junit-vintage-engine:5.10.1")

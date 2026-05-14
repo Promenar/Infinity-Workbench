@@ -597,6 +597,16 @@
     <string name="rag_home_recent_docs">Recent Documents</string>
     <string name="rag_home_memory_section">Memory</string>
     <string name="rag_home_memory_empty">Memory summaries from sessions will appear here.</string>
+    <string name="rag_home_memory_stats">Memory Stats</string>
+    <string name="rag_home_memory_total_count">Total: %1$d</string>
+    <string name="rag_home_memory_est_tokens">~%1$d tokens</string>
+    <string name="rag_home_memory_delete_confirm_title">Delete this memory?</string>
+    <string name="rag_home_memory_delete_confirm_msg">This memory vector will be permanently removed.</string>
+    <string name="rag_home_search_content_match">Content match</string>
+    <string name="kg_view_global">Global</string>
+    <string name="kg_view_session">Session</string>
+    <string name="kg_view_document">Document</string>
+    <string name="kg_empty_graph">No graph data yet. Extract knowledge graph from documents to get started.</string>
     <string name="rag_home_vectorizing">Vectorizing…</string>
     <string name="rag_home_selected_count">%1$d items selected</string>
     <string name="rag_home_clear_all">Clear all</string>
@@ -749,7 +759,9 @@
     <string name="retrieval_rerank_desc">Re-order retrieved chunks using cross-encoder</string>
     <string name="retrieval_rerank_top_n">Rerank Top-N</string>
     <string name="retrieval_rerank_final">Final Results</string>
-    <string name="retrieval_rewrite_section">Query Rewrite Strategy</string>
+    <string name="retrieval_rewrite_section">Query Rewrite</string>
+    <string name="retrieval_rewrite_enable">Enable Query Rewrite</string>
+    <string name="retrieval_rewrite_desc">Rewrite user queries for better retrieval accuracy</string>
     <string name="retrieval_section_observability">Observability</string>
     <string name="retrieval_show_progress">Show Retrieval Progress</string>
     <string name="retrieval_show_progress_desc">Display progress indicators during retrieval</string>

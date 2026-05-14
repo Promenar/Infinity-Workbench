@@ -21,6 +21,10 @@ class FolderRepository(
         folderDao.insert(FolderMapper.toEntity(folder))
     }
 
+    override suspend fun update(folder: Folder) {
+        folderDao.update(FolderMapper.toEntity(folder))
+    }
+
     override suspend fun delete(folder: Folder) {
         folderDao.delete(FolderMapper.toEntity(folder))
     }

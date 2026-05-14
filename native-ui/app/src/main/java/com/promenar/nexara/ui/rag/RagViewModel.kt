@@ -8,12 +8,14 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.data.rag.VectorStatsService
+import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.IDocumentRepository
 import com.promenar.nexara.domain.repository.IFolderRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
+import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +41,11 @@ data class QueueState(
     val progress: Float = 0f
 )
 
+data class RagSearchResult(
+    val document: Document,
+    val snippet: String? = null
+)
+
 class RagViewModel(
     application: Application,
     private val documentRepository: IDocumentRepository,
@@ -46,7 +53,8 @@ class RagViewModel(
     private val kgRepository: IKnowledgeGraphRepository,
     private val folderRepository: IFolderRepository,
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
-    private val ragConfigPersistence: RagConfigPersistence
+    private val ragConfigPersistence: RagConfigPersistence,
+    private val keywordSearcher: KeywordSearcher
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -62,8 +70,11 @@ class RagViewModel(
     private val _documents = MutableStateFlow<List<Document>>(emptyList())
     val documents: StateFlow<List<Document>> = _documents.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<List<Document>>(emptyList())
-    val searchResults: StateFlow<List<Document>> = _searchResults.asStateFlow()
+    private val _searchResults = MutableStateFlow<List<RagSearchResult>>(emptyList())
+    val searchResults: StateFlow<List<RagSearchResult>> = _searchResults.asStateFlow()
+
+    private val _memoryVectors = MutableStateFlow<List<MemoryVectorRecord>>(emptyList())
+    val memoryVectors: StateFlow<List<MemoryVectorRecord>> = _memoryVectors.asStateFlow()
 
     private val _isIndexing = MutableStateFlow(false)
     val isIndexing: StateFlow<Boolean> = _isIndexing.asStateFlow()
@@ -356,12 +367,27 @@ class RagViewModel(
     fun deleteCollection(id: String) {
         viewModelScope.launch {
             try {
-                val folder = folderRepository.getById(id) ?: return@launch
-                folderRepository.delete(folder)
+                val docs = documentRepository.getByFolderId(id)
+                if (docs.isNotEmpty()) {
+                    deleteDocumentUseCase(docs.map { it.id })
+                }
+                val folder = folderRepository.getById(id)
+                if (folder != null) folderRepository.delete(folder)
                 loadStats()
             } catch (_: Exception) { }
         }
     }
+
+    fun renameFolder(id: String, newName: String) {
+        viewModelScope.launch {
+            try {
+                val folder = folderRepository.getById(id) ?: return@launch
+                folderRepository.update(folder.copy(name = newName))
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun deleteFolder(id: String) = deleteCollection(id)
 
     fun deleteDocuments(ids: List<String>) {
         viewModelScope.launch {
@@ -408,10 +434,40 @@ class RagViewModel(
                 return@launch
             }
             try {
-                val allDocs = _documents.value
-                _searchResults.value = allDocs.filter {
+                val titleMatches = _documents.value.filter {
                     it.title.contains(query, ignoreCase = true)
                 }
+                val ftsResults = keywordSearcher.search(query, limit = 20)
+                val ftsDocIds = ftsResults.mapNotNull { it.docId }.toSet()
+                val ftsDocs = _documents.value.filter { it.id in ftsDocIds }
+                val titleMatchIds = titleMatches.map { it.id }.toSet()
+                val ftsOnlyDocs = ftsDocs.filter { it.id !in titleMatchIds }
+                val snippets = ftsResults.associate { it.docId to it.content.take(100) }
+                val merged = titleMatches.map { RagSearchResult(it, null) } +
+                    ftsOnlyDocs.map { RagSearchResult(it, snippets[it.id]) }
+                _searchResults.value = merged.distinctBy { it.document.id }
+            } catch (_: Exception) {
+                _searchResults.value = _documents.value.filter {
+                    it.title.contains(query, ignoreCase = true)
+                }.map { RagSearchResult(it, null) }
+            }
+        }
+    }
+
+    fun loadMemoryVectors() {
+        viewModelScope.launch {
+            try {
+                _memoryVectors.value = vectorRepository.getMemoryVectors()
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun deleteMemoryVector(id: String) {
+        viewModelScope.launch {
+            try {
+                vectorRepository.deleteVector(id)
+                _memoryVectors.value = _memoryVectors.value.filter { it.id != id }
+                loadStats()
             } catch (_: Exception) { }
         }
     }
@@ -484,7 +540,8 @@ class RagViewModel(
                             folderDao = app.database.folderDao()
                         ),
                         deleteDocumentUseCase = DeleteDocumentUseCase(documentRepo, vectorRepo),
-                        ragConfigPersistence = RagConfigPersistence(ragPrefs)
+                        ragConfigPersistence = RagConfigPersistence(ragPrefs),
+                        keywordSearcher = app.keywordSearcher
                     ) as T
                 }
             }

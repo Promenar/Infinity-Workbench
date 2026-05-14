@@ -286,6 +286,13 @@ fun AdvancedRetrievalScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     SettingsSectionHeader(stringResource(R.string.retrieval_rewrite_section))
+                    SettingsToggle(
+                        title = stringResource(R.string.retrieval_rewrite_enable),
+                        description = stringResource(R.string.retrieval_rewrite_desc),
+                        checked = config.enableQueryRewrite,
+                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableQueryRewrite = enabled) } }
+                    )
+                    if (config.enableQueryRewrite) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -322,6 +329,7 @@ fun AdvancedRetrievalScreen(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }

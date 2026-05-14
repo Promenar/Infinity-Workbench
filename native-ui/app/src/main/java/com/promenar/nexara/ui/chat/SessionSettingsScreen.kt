@@ -129,7 +129,7 @@ fun SessionSettingsScreen(
         } catch (_: Exception) { }
     }
 
-    FloatingTextEditor(
+    UnifiedPromptEditor(
         show = showPromptEditor,
         onDismiss = { showPromptEditor = false },
         onSave = {
@@ -138,7 +138,8 @@ fun SessionSettingsScreen(
         },
         title = stringResource(R.string.session_settings_prompt_editor_title),
         initialText = customPrompt,
-        placeholder = stringResource(R.string.session_settings_prompt_placeholder)
+        placeholder = stringResource(R.string.session_settings_prompt_placeholder),
+        mode = EditorMode.DIALOG
     )
 
     if (showDeleteDialog) {

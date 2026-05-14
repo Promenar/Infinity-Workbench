@@ -87,14 +87,30 @@ class DocumentImporter(
     }
 
     private fun readWordContent(uri: Uri): String {
-        val raw = readPlainTextContent(uri)
-        val hasBinaryContent = raw.length < 200 &&
-            raw.any { it.code < 32 && it.code !in setOf(9, 10, 13) }
-        if (hasBinaryContent) {
-            return "[Word document — text extraction requires Apache POI integration. " +
-                "Please convert to .txt or .md first.]"
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                val document = org.apache.poi.xwpf.usermodel.XWPFDocument(inputStream)
+                val sb = StringBuilder()
+                for (paragraph in document.paragraphs) {
+                    val text = paragraph.text
+                    if (text.isNotBlank()) sb.appendLine(text)
+                }
+                for (table in document.tables) {
+                    for (row in table.rows) {
+                        for (cell in row.tableCells) {
+                            val cellText = cell.text.trim()
+                            if (cellText.isNotBlank()) sb.append(cellText).append("\t")
+                        }
+                        sb.appendLine()
+                    }
+                }
+                document.close()
+                sb.toString().ifBlank { "[Word 文档已导入，但未包含可读文本]" }
+            } ?: "[无法打开 Word 文档]"
+        } catch (e: Exception) {
+            "[Word 文档解析失败: ${e.message?.take(80)}。" +
+                "可能是旧版 .doc 格式，请转换为 .txt 或 .md 后重新导入]"
         }
-        return raw
     }
 
     private fun getFileName(uri: Uri): String? {

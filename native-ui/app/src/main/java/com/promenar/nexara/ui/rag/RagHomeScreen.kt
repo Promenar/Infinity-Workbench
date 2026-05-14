@@ -60,6 +60,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,6 +78,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
+import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.rag.components.FolderItem
@@ -113,6 +115,7 @@ fun RagHomeScreen(
     val lastQueueError by viewModel.lastQueueError.collectAsState()
     val documents by viewModel.documents.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
+    val memoryVectors by viewModel.memoryVectors.collectAsState()
 
     var currentView by remember { mutableStateOf(PortalView.DOCUMENTS) }
     var searchQuery by remember { mutableStateOf("") }
@@ -120,6 +123,14 @@ fun RagHomeScreen(
     var showMoveSheet by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
+    var memoryDeleteTarget by remember { mutableStateOf<MemoryVectorRecord?>(null) }
+    var expandedMemoryId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(currentView) {
+        if (currentView == PortalView.MEMORY) {
+            viewModel.loadMemoryVectors()
+        }
+    }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -405,11 +416,18 @@ fun RagHomeScreen(
                                     color = NexaraColors.OnSurface
                                 )
                             }
-                            items(searchResults, key = { it.id }) { doc ->
-                                DocListItem(doc = doc, isSelected = selectedIds.contains(doc.id), onSelect = { checked ->
-                                    if (checked) selectedIds.add(doc.id) else selectedIds.remove(doc.id)
-                                }, showCheckbox = selectedIds.isNotEmpty(), onClick = { onNavigateToDocEditor(doc.id) },
-                                    onExtractKG = { strategy -> viewModel.extractKnowledgeGraph(doc.id, strategy) })
+                            items(searchResults, key = { it.document.id }) { result ->
+                                DocListItem(
+                                    doc = result.document,
+                                    isSelected = selectedIds.contains(result.document.id),
+                                    onSelect = { checked ->
+                                        if (checked) selectedIds.add(result.document.id) else selectedIds.remove(result.document.id)
+                                    },
+                                    showCheckbox = selectedIds.isNotEmpty(),
+                                    onClick = { onNavigateToDocEditor(result.document.id) },
+                                    onExtractKG = { strategy -> viewModel.extractKnowledgeGraph(result.document.id, strategy) },
+                                    snippet = result.snippet
+                                )
                             }
                         } else {
                             item {
@@ -435,17 +453,91 @@ fun RagHomeScreen(
                             Text(stringResource(R.string.rag_home_memory_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
                         }
                         item {
-                            NexaraGlassCard(
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = NexaraShapes.large as RoundedCornerShape
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                NexaraGlassCard(
+                                    modifier = Modifier.weight(1f),
+                                    shape = NexaraShapes.large as RoundedCornerShape
                                 ) {
-                                    Icon(Icons.Rounded.Psychology, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(40.dp))
-                                    Text(stringResource(R.string.rag_home_memory_empty), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            stringResource(R.string.rag_home_memory_total_count, memoryVectors.size),
+                                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = NexaraColors.OnSurface
+                                        )
+                                        val estTokens = memoryVectors.sumOf { it.content.length / 3 }
+                                        Text(
+                                            stringResource(R.string.rag_home_memory_est_tokens, estTokens),
+                                            style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+                                            color = NexaraColors.OnSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (memoryVectors.isEmpty()) {
+                            item {
+                                NexaraGlassCard(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = NexaraShapes.large as RoundedCornerShape
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Psychology, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(40.dp))
+                                        Text(stringResource(R.string.rag_home_memory_empty), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                                    }
+                                }
+                            }
+                        } else {
+                            items(memoryVectors, key = { it.id }) { memory ->
+                                val isExpanded = expandedMemoryId == memory.id
+                                NexaraGlassCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .combinedClickable(
+                                            onClick = {
+                                                expandedMemoryId = if (isExpanded) null else memory.id
+                                            },
+                                            onLongClick = { memoryDeleteTarget = memory }
+                                        ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isExpanded) memory.content else memory.content.take(120) + if (memory.content.length > 120) "…" else "",
+                                            style = NexaraTypography.bodyMedium,
+                                            color = NexaraColors.OnSurface,
+                                            maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            memory.sessionId?.let { sid ->
+                                                Text(
+                                                    "Session: ${sid.take(8)}…",
+                                                    style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+                                                    color = NexaraColors.Primary.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                            Text(
+                                                java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(memory.createdAt)),
+                                                style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
+                                                color = NexaraColors.OnSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -647,6 +739,33 @@ fun RagHomeScreen(
             }
         }
     }
+
+    if (memoryDeleteTarget != null) {
+        AlertDialog(
+            onDismissRequest = { memoryDeleteTarget = null },
+            title = { Text(stringResource(R.string.rag_home_memory_delete_confirm_title), style = NexaraTypography.headlineSmall) },
+            text = { Text(stringResource(R.string.rag_home_memory_delete_confirm_msg), style = NexaraTypography.bodyMedium) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        memoryDeleteTarget?.let { viewModel.deleteMemoryVector(it.id) }
+                        memoryDeleteTarget = null
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = NexaraColors.Error)
+                ) {
+                    Text(stringResource(R.string.shared_btn_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { memoryDeleteTarget = null }) {
+                    Text(stringResource(R.string.common_btn_cancel))
+                }
+            },
+            containerColor = NexaraColors.SurfaceDim,
+            titleContentColor = NexaraColors.OnSurface,
+            textContentColor = NexaraColors.OnSurfaceVariant
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -657,7 +776,8 @@ private fun DocListItem(
     onSelect: (Boolean) -> Unit,
     showCheckbox: Boolean,
     onClick: () -> Unit,
-    onExtractKG: ((String) -> Unit)? = null
+    onExtractKG: ((String) -> Unit)? = null,
+    snippet: String? = null
 ) {
     val status = when (doc.vectorized) {
         1 -> RagStatus.READY
@@ -745,6 +865,16 @@ private fun DocListItem(
                                 style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant
                             )
                         }
+                    }
+                    if (snippet != null) {
+                        Text(
+                            text = snippet,
+                            style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
+                            color = NexaraColors.OnSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
                     }
                 }
 

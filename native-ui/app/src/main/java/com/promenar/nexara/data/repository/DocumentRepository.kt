@@ -82,4 +82,8 @@ class DocumentRepository(
     override suspend fun markVectorized(id: String) {
         documentDao.updateVectorized(id, 1)
     }
+
+    override suspend fun updateTitle(id: String, title: String) {
+        documentDao.updateTitle(id, title)
+    }
 }

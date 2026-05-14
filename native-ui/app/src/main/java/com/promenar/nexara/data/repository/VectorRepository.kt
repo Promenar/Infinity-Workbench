@@ -9,6 +9,7 @@ import com.promenar.nexara.domain.model.SearchResult
 import com.promenar.nexara.domain.model.SearchSource
 import com.promenar.nexara.domain.model.VectorChunk
 import com.promenar.nexara.domain.repository.IVectorRepository
+import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.domain.repository.VectorSessionCount
 import com.promenar.nexara.domain.repository.VectorTypeCount
 import java.nio.ByteBuffer
@@ -80,6 +81,10 @@ class VectorRepository(
         vectorDao.deleteByDocId(documentId)
     }
 
+    override suspend fun deleteVector(id: String) {
+        vectorDao.deleteById(id)
+    }
+
     override suspend fun getCount(): Int =
         vectorDao.getCount()
 
@@ -88,6 +93,13 @@ class VectorRepository(
 
     override suspend fun countBySession(limit: Int): List<VectorSessionCount> =
         vectorDao.countBySession(limit).map { VectorSessionCount(it.session_id, it.count) }
+
+    override suspend fun getMemoryVectors(limit: Int): List<MemoryVectorRecord> {
+        return vectorDao.getByType("memory")
+            .sortedByDescending { it.createdAt }
+            .take(limit)
+            .map { MemoryVectorRecord(it.id, it.content, it.sessionId, it.createdAt) }
+    }
 
     private fun toBlob(embedding: FloatArray): ByteArray {
         val buffer = ByteBuffer.allocate(embedding.size * 4)

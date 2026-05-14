@@ -39,11 +39,11 @@ class DocEditorViewModel(
                 val doc = documentRepository.getById(docId)
                 _document.value = doc
                 if (doc != null) {
-                    val sizeMb = (doc.content.length.toDouble()) / (1024.0 * 1024.0)
+                    val realContent = doc.content
+                    val sizeMb = (realContent.length.toDouble()) / (1024.0 * 1024.0)
                     _isLargeFile.value = sizeMb > 10.0
-                    val mockContent = generateMockContent(doc.title.ifBlank { "Untitled" })
-                    _content.value = mockContent
-                    originalContent = mockContent
+                    _content.value = realContent
+                    originalContent = realContent
                 }
             } catch (_: Exception) {}
         }
@@ -82,43 +82,13 @@ class DocEditorViewModel(
     }
 
     fun updateTitle(newTitle: String) {
-        _document.value = _document.value?.copy(title = newTitle)
+        val doc = _document.value ?: return
+        _document.value = doc.copy(title = newTitle)
         _isDirty.value = true
-    }
-
-    private fun generateMockContent(title: String): String {
-        return """# $title
-
-## Overview
-This document provides a comprehensive overview of the system architecture and design decisions.
-
-## Components
-- **Ingestion Layer**: Handles high-throughput data streams with automatic scaling.
-- **Processing Matrix**: GPU-accelerated node clusters for real-time computation.
-- **Storage Substrate**: Immutable ledger for state preservation and audit trails.
-
-## Configuration
-```json
-{
-  "version": "3.0.0",
-  "clusters": 4,
-  "replication_factor": 3,
-  "max_connections": 10000
-}
-```
-
-## API Endpoints
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/v1/status | System health check |
-| POST | /api/v1/query | Submit a processing query |
-| GET | /api/v1/results/:id | Retrieve results |
-
-## Deployment
-The system is deployed across multiple regions with automatic failover. Each region maintains a complete replica of the state ledger with eventual consistency guarantees.
-
-## Security
-All communications are encrypted using TLS 1.3. Authentication is handled through OAuth 2.0 with JWT tokens. Role-based access control (RBAC) governs resource permissions.
-""".trimIndent()
+        viewModelScope.launch {
+            try {
+                documentRepository.updateTitle(doc.id, newTitle)
+            } catch (_: Exception) {}
+        }
     }
 }

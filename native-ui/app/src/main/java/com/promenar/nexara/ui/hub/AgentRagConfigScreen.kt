@@ -40,7 +40,7 @@ fun AgentRagConfigScreen(
     var showResetConfirm by remember { mutableStateOf(false) }
     var showTemplateEditor by remember { mutableStateOf(false) }
 
-    FloatingTextEditor(
+    UnifiedPromptEditor(
         show = showTemplateEditor,
         onDismiss = { showTemplateEditor = false },
         onSave = { newTemplate ->
@@ -49,7 +49,8 @@ fun AgentRagConfigScreen(
         },
         title = stringResource(R.string.agent_rag_section_summary),
         initialText = ragConfig.summaryTemplate,
-        placeholder = stringResource(R.string.agent_rag_summary_placeholder)
+        placeholder = stringResource(R.string.agent_rag_summary_placeholder),
+        mode = EditorMode.DIALOG
     )
 
     ConfirmDialog(
