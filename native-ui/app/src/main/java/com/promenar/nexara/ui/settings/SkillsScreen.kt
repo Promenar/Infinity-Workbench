@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
@@ -89,8 +90,8 @@ fun SkillsScreen(
             "search_tavily" to Icons.Rounded.Search,
             "search_searxng" to Icons.Rounded.Search,
             "calculator" to Icons.Rounded.Build,
-            "current_time" to Icons.Rounded.Info,
-            "create_tool" to Icons.Rounded.Build
+            "create_tool" to Icons.Rounded.Build,
+            "image_generation" to Icons.Rounded.Image
         )
     }
     val presetSkills by viewModel.skills.collectAsState()

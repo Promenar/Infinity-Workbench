@@ -14,8 +14,8 @@ The current default is 'true'.
 > Task :app:kspDebugKotlin
 
 > Task :app:compileDebugKotlin
-w: file:///K:/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt:748:36 'val Icons.Rounded.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ArrowBack.
+w: file:///K:/Nexara/native-ui/app/src/main/java/com/promenar/nexara/NexaraApplication.kt:78:14 'fun fallbackToDestructiveMigration(): RoomDatabase.Builder<NexaraDatabase>' is deprecated. Replace by overloaded version with parameter to indicate if all tables should be dropped or not.
 
-BUILD SUCCESSFUL in 3s
+BUILD SUCCESSFUL in 4s
 8 actionable tasks: 2 executed, 6 up-to-date
 Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.4.1/userguide/configuration_cache_enabling.html

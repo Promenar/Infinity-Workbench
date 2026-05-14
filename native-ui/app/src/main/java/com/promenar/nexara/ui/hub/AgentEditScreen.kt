@@ -2,13 +2,14 @@ package com.promenar.nexara.ui.hub
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -31,6 +34,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 data class AgentIconOption(
@@ -77,7 +81,6 @@ fun AgentEditScreen(
     var showSystemPromptEditor by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var showColorSheet by remember { mutableStateOf(false) }
 
     val currentPresetId by remember(temperature, topP) {
         derivedStateOf {
@@ -160,26 +163,6 @@ fun AgentEditScreen(
         destructive = true
     )
 
-    if (showColorSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showColorSheet = false },
-            containerColor = NexaraColors.SurfaceContainer
-        ) {
-            ColorPickerPanel(
-                selectedColor = parsedColor,
-                onColorSelected = { color ->
-                    val hex = String.format(
-                        "#%02X%02X%02X",
-                        (color.red * 255).toInt(),
-                        (color.green * 255).toInt(),
-                        (color.blue * 255).toInt()
-                    )
-                    viewModel.setColor(hex)
-                }
-            )
-        }
-    }
-
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         contentWindowInsets = WindowInsets.systemBars,
@@ -211,16 +194,15 @@ fun AgentEditScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // === Section: Basic Info ===
             item {
                 SettingsSectionHeader(stringResource(R.string.agent_edit_section_basic))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             item {
-                Card(
+                NexaraGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = NexaraColors.SurfaceHighest)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -246,138 +228,166 @@ fun AgentEditScreen(
                 }
             }
 
-            // === Section: Appearance ===
             item {
-                HorizontalDivider(color = NexaraColors.OutlineVariant)
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 SettingsSectionHeader(stringResource(R.string.agent_edit_section_appearance))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             item {
-                Card(
+                NexaraGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = NexaraColors.SurfaceHighest)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
+                    var isExpanded by remember { mutableStateOf(false) }
                     val avatarPath by viewModel.avatarPath.collectAsState()
-
+                    
                     val imagePickerLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
                         uri?.let { viewModel.setAvatarPath(it.toString()) }
                     }
 
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Box(contentAlignment = Alignment.BottomEnd) {
-                            AgentAvatar(
-                                icon = if (avatarPath == null) currentIconVector else null,
-                                customImageUri = avatarPath,
-                                backgroundColor = parsedColor,
-                                size = 48.dp,
-                                onClick = { imagePickerLauncher.launch("image/*") }
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(NexaraColors.Primary)
-                                    .border(1.5.dp, NexaraColors.SurfaceContainer, CircleShape)
-                                    .clickable { imagePickerLauncher.launch("image/*") },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.AddAPhoto,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(10.dp)
+                        // Avatar Preview & Main Action
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Box(contentAlignment = Alignment.BottomEnd) {
+                                AgentAvatar(
+                                    icon = if (avatarPath == null) currentIconVector else null,
+                                    customImageUri = avatarPath,
+                                    backgroundColor = parsedColor,
+                                    size = 100.dp,
+                                    onClick = { imagePickerLauncher.launch("image/*") }
                                 )
-                            }
-                        }
-
-                        Spacer(Modifier.width(16.dp))
-
-                        Column(Modifier.weight(1f)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.agent_edit_label_icon),
-                                    style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = NexaraColors.OnSurface
-                                )
-                                Row(
+                                Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { showColorSheet = true }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(NexaraColors.Primary)
+                                        .border(2.dp, NexaraColors.SurfaceContainer, CircleShape)
+                                        .clickable { imagePickerLauncher.launch("image/*") },
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(14.dp)
-                                            .clip(CircleShape)
-                                            .background(parsedColor)
-                                            .border(1.dp, NexaraColors.OutlineVariant, CircleShape)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
                                     Icon(
-                                        imageVector = Icons.Rounded.Palette,
+                                        imageVector = Icons.Rounded.AddAPhoto,
                                         contentDescription = null,
-                                        tint = NexaraColors.OnSurfaceVariant,
+                                        tint = Color.White,
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }
                             }
+                        }
 
-                            Spacer(Modifier.height(8.dp))
-
+                        // Icon Selection Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.agent_edit_label_icon),
+                                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = NexaraColors.OnSurface
+                            )
+                            
                             Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                modifier = Modifier.clickable { isExpanded = !isExpanded },
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                presetIcons.forEach { option ->
-                                    FilterChip(
-                                        selected = selectedIcon == option.id && avatarPath == null,
-                                        onClick = { viewModel.setIcon(option.id) },
-                                        label = {
-                                            Icon(
-                                                option.icon,
-                                                contentDescription = option.label,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = NexaraColors.Primary.copy(alpha = 0.15f),
-                                            selectedLabelColor = NexaraColors.Primary,
-                                            containerColor = NexaraColors.SurfaceContainer
+                                Text(
+                                    text = if (isExpanded) "收起" else "查看全部",
+                                    style = NexaraTypography.labelMedium.copy(color = NexaraColors.Primary, fontSize = 12.sp)
+                                )
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                    contentDescription = null,
+                                    tint = NexaraColors.Primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Dynamic Folding Grid/Row
+                        AnimatedContent(
+                            targetState = isExpanded,
+                            transitionSpec = {
+                                fadeIn() togetherWith fadeOut()
+                            },
+                            label = "IconSelection"
+                        ) { expanded ->
+                            if (expanded) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    presetIcons.chunked(4).forEach { rowIcons ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            rowIcons.forEach { option ->
+                                                IconSelectionItem(
+                                                    option = option,
+                                                    isSelected = selectedIcon == option.id && avatarPath == null,
+                                                    activeColor = parsedColor,
+                                                    onClick = { viewModel.setIcon(option.id) }
+                                                )
+                                            }
+                                            repeat(4 - rowIcons.size) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    presetIcons.take(4).forEach { option ->
+                                        IconSelectionItem(
+                                            option = option,
+                                            isSelected = selectedIcon == option.id && avatarPath == null,
+                                            activeColor = parsedColor,
+                                            onClick = { viewModel.setIcon(option.id) }
                                         )
-                                    )
+                                    }
                                 }
                             }
                         }
+
+                        ColorPickerPanel(
+                            selectedColor = parsedColor,
+                            onColorSelected = { color ->
+                                val hex = String.format("#%02X%02X%02X", (color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt())
+                                viewModel.setColor(hex)
+                            }
+                        )
+
                     }
                 }
             }
 
-            // === Section: Personality ===
             item {
-                HorizontalDivider(color = NexaraColors.OutlineVariant)
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 SettingsSectionHeader(stringResource(R.string.agent_edit_section_personality))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = NexaraColors.SurfaceHighest)
+                NexaraGlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showSystemPromptEditor = true },
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -389,34 +399,24 @@ fun AgentEditScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = stringResource(R.string.agent_edit_prompt_label),
-                                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = NexaraColors.OnSurface
+                        Text(
+                            text = stringResource(R.string.agent_edit_prompt_label),
+                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = NexaraColors.OnSurface
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    if (systemPrompt.isNotBlank()) NexaraColors.Primary.copy(alpha = 0.15f)
+                                    else NexaraColors.GlassSurface
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(
-                                            if (systemPrompt.isNotBlank()) NexaraColors.Primary.copy(alpha = 0.15f)
-                                            else NexaraColors.SurfaceContainer
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "${systemPrompt.length} chars",
-                                        style = NexaraTypography.labelSmall,
-                                        color = if (systemPrompt.isNotBlank()) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
-                                    )
-                                }
-                            }
-                            TextButton(onClick = { showSystemPromptEditor = true }) {
-                                Text(
-                                    text = stringResource(R.string.shared_btn_edit),
-                                    style = NexaraTypography.labelMedium,
-                                    color = NexaraColors.Primary
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (systemPrompt.isNotBlank()) stringResource(R.string.agent_edit_prompt_configured) else stringResource(R.string.agent_edit_prompt_not_set),
+                                    style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                                    color = if (systemPrompt.isNotBlank()) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
                                 )
                             }
                         }
@@ -425,25 +425,24 @@ fun AgentEditScreen(
                             text = systemPrompt.ifBlank { stringResource(R.string.agent_edit_prompt_hint) },
                             style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
                             color = if (systemPrompt.isNotBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                            maxLines = 5
+                            maxLines = 2
                         )
                     }
                 }
             }
 
-            // === Section: Model ===
             item {
-                HorizontalDivider(color = NexaraColors.OutlineVariant)
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 SettingsSectionHeader(stringResource(R.string.agent_edit_section_model))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             item {
-                Card(
-                    onClick = { showModelPicker = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = NexaraColors.SurfaceHighest)
+                NexaraGlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showModelPicker = true },
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
                         modifier = Modifier
@@ -453,11 +452,11 @@ fun AgentEditScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.agent_edit_current_model),
-                                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = NexaraColors.OnSurface
-                            )
+                        Text(
+                            text = stringResource(R.string.agent_edit_current_model),
+                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = NexaraColors.OnSurface
+                        )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = selectedModel,
@@ -474,52 +473,27 @@ fun AgentEditScreen(
                 }
             }
 
-            // Inference Presets as FilterChips
             item {
-                val presets = remember {
-                    listOf(
-                        InferencePreset("precise", R.string.common_preset_precise, Icons.Rounded.Code, Color(0xFFA78BFA), 0.2f, 0.8f),
-                        InferencePreset("balanced", R.string.common_preset_balanced, Icons.Rounded.AutoFixHigh, Color(0xFF22D3EE), 0.7f, 0.9f),
-                        InferencePreset("creative", R.string.common_preset_creative, Icons.AutoMirrored.Rounded.MenuBook, Color(0xFFFBBF24), 1.0f, 0.95f)
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    presets.forEach { preset ->
-                        FilterChip(
-                            selected = currentPresetId == preset.id,
-                            onClick = {
-                                viewModel.setTemperature(preset.temperature)
-                                viewModel.setTopP(preset.topP)
-                            },
-                            label = {
-                                Text(
-                                    text = stringResource(preset.labelRes),
-                                    style = NexaraTypography.labelSmall
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    preset.icon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = preset.iconTint
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = NexaraColors.Primary.copy(alpha = 0.15f),
-                                selectedLabelColor = NexaraColors.Primary,
-                                containerColor = NexaraColors.SurfaceContainer
-                            )
-                        )
+                Text(
+                    text = stringResource(R.string.agent_edit_label_presets),
+                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = NexaraColors.OnSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                InferencePresets(
+                    selected = currentPresetId,
+                    onSelect = { preset ->
+                        viewModel.setTemperature(preset.temperature)
+                        viewModel.setTopP(preset.topP)
                     }
-                }
+                )
             }
 
-            // === Section: Knowledge ===
             item {
-                HorizontalDivider(color = NexaraColors.OutlineVariant)
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 SettingsSectionHeader(stringResource(R.string.agent_edit_section_knowledge))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             item {
@@ -540,27 +514,64 @@ fun AgentEditScreen(
                 )
             }
 
-            // Delete
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                TextButton(
-                    onClick = { showDeleteConfirm = true },
-                    modifier = Modifier.fillMaxWidth()
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(0.5.dp, NexaraColors.Error.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .background(NexaraColors.Error.copy(alpha = 0.05f))
+                        .clickable { showDeleteConfirm = true }
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = null,
-                        tint = NexaraColors.Error,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.agent_edit_delete_btn),
-                        style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = NexaraColors.Error
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = NexaraColors.Error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.agent_edit_delete_btn),
+                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = NexaraColors.Error
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RowScope.IconSelectionItem(
+    option: AgentIconOption,
+    isSelected: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(NexaraColors.GlassSurface)
+            .then(
+                if (isSelected) Modifier.border(2.dp, activeColor, RoundedCornerShape(12.dp))
+                else Modifier.border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
+            )
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = option.icon,
+            contentDescription = option.label,
+            tint = if (isSelected) activeColor else NexaraColors.OnSurfaceVariant,
+            modifier = Modifier.size(28.dp)
+        )
     }
 }

@@ -533,6 +533,8 @@
     <string name="skill_current_time_desc">Get current date and time</string>
     <string name="skill_create_tool">Create Tool</string>
     <string name="skill_create_tool_desc">Create new custom tools via meta-tool</string>
+    <string name="skill_image_generation">Image Generation</string>
+    <string name="skill_image_generation_desc">Generate AI images from text descriptions</string>
     <string name="skills_configure">Configure</string>
     <string name="skills_edit_skill">Edit Skill Config</string>
     <string name="skills_user_empty">No custom skills yet.\nTap the button below to create your first tool.</string>

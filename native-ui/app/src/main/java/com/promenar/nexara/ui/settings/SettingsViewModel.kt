@@ -19,6 +19,7 @@ import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -84,7 +85,8 @@ class SettingsViewModel(
     application: Application,
     private val vectorRepository: IVectorRepository,
     private val documentRepository: IDocumentRepository,
-    private val tokenStatsRepository: ITokenStatsRepository
+    private val tokenStatsRepository: ITokenStatsRepository,
+    private val mcpSkillRegistry: McpSkillRegistry? = null
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -175,7 +177,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             app.skillRepository.getAllCustomSkills().collectLatest { all ->
                 // Filter out any skills that might have IDs matching preset skills to avoid duplication in UI
-                val presetIds = setOf("web_search", "calculator", "current_time", "create_tool")
+                val presetIds = setOf("web_search", "calculator", "create_tool", "image_generation")
                 _userSkills.value = all.filter { it.id !in presetIds }
             }
         }
@@ -273,15 +275,15 @@ class SettingsViewModel(
 
     private fun loadSkills() {
         val enabledSet = prefs.getStringSet("enabled_skills", setOf(
-            "web_search", "calculator", "current_time", "create_tool"
+            "web_search", "calculator", "create_tool"
         ))
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
             SkillInfo("search_tavily", app.getString(R.string.skill_tavily), app.getString(R.string.skill_tavily_desc), enabledSet?.contains("search_tavily") ?: true),
             SkillInfo("search_searxng", app.getString(R.string.skill_searxng), app.getString(R.string.skill_searxng_desc), enabledSet?.contains("search_searxng") ?: true),
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
-            SkillInfo("current_time", app.getString(R.string.skill_current_time), app.getString(R.string.skill_current_time_desc), enabledSet?.contains("current_time") ?: true),
-            SkillInfo("create_tool", app.getString(R.string.skill_create_tool), app.getString(R.string.skill_create_tool_desc), enabledSet?.contains("create_tool") ?: true)
+            SkillInfo("create_tool", app.getString(R.string.skill_create_tool), app.getString(R.string.skill_create_tool_desc), enabledSet?.contains("create_tool") ?: true),
+            SkillInfo("image_generation", app.getString(R.string.skill_image_generation), app.getString(R.string.skill_image_generation_desc), enabledSet?.contains("image_generation") ?: true)
         )
     }
 
@@ -511,6 +513,7 @@ class SettingsViewModel(
                         else it
                     }
                 }
+                mcpSkillRegistry?.updateMcpTools(server.name, tools, server.url)
             } catch (e: Exception) {
                 _mcpServers.update { list ->
                     list.map { 
@@ -548,7 +551,7 @@ class SettingsViewModel(
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
-                    return SettingsViewModel(application, app.vectorRepository, app.documentRepository, app.tokenStatsRepository) as T
+                    return SettingsViewModel(application, app.vectorRepository, app.documentRepository, app.tokenStatsRepository, app.mcpSkillRegistry) as T
                 }
             }
     }

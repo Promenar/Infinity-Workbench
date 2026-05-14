@@ -40,7 +40,6 @@ import com.promenar.nexara.ui.chat.manager.registry.UserSkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.ui.chat.manager.skills.CalculatorSkill
-import com.promenar.nexara.ui.chat.manager.skills.CurrentTimeSkill
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSkill
@@ -134,7 +133,6 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val presetSkillRegistry: DefaultSkillRegistry by lazy {
         DefaultSkillRegistry().apply {
-            register(CurrentTimeSkill())
             register(CalculatorSkill())
             register(WebSearchSkill(this@NexaraApplication, httpClient))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient))
