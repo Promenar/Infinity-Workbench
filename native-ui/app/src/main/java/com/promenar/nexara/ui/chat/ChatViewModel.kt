@@ -205,6 +205,8 @@ class ChatViewModel(
 
         _inputText.update { "" }
         _error.update { null }
+        // 清空 DB 中的草稿
+        viewModelScope.launch { sessionManager.updateSessionDraft(sessionId, null) }
 
         cancelActiveGeneration()
         generationJob = viewModelScope.launch {
@@ -567,6 +569,10 @@ class ChatViewModel(
         if (existing != null) {
             _currentSessionId.update { sessionId }
             updateAgentName(existing.agentId)
+            // 恢复未发送的草稿
+            if (!existing.draft.isNullOrBlank()) {
+                _inputText.update { existing.draft!! }
+            }
             return
         }
 
@@ -583,6 +589,10 @@ class ChatViewModel(
                     }
                     _currentSessionId.update { sessionId }
                     updateAgentName(hydrated.agentId)
+                    // 从 DB 恢复未发送的草稿
+                    if (!session.draft.isNullOrBlank()) {
+                        _inputText.update { session.draft!! }
+                    }
                 } else {
                     _error.update { "Session not found: $sessionId" }
                 }
@@ -931,6 +941,14 @@ class ChatViewModel(
             lastDeletedMessages.clear()
             toDelete.forEach { lastDeletedMessages.add(sessionId to it) }
             messageManager.deleteMessagesAfter(sessionId, timestamp) { stopGeneration() }
+        }
+    }
+
+    fun saveCurrentDraft() {
+        val sessionId = _currentSessionId.value ?: return
+        val text = _inputText.value
+        viewModelScope.launch {
+            sessionManager.updateSessionDraft(sessionId, text.ifBlank { null })
         }
     }
 

@@ -4,11 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### 智能视角追踪 + 流式加速 (2026-05-14)
-- **智能视角追踪**: Pin-to-Bottom→新消息滚底+20Hz 自动跟随→用户手势切断→FAB 恢复；contentPadding bottom=150dp 统一底部定义
-- **流式加速**: `BALANCED=6000` CPS（100 字符/帧），消除 38 CPS 积压-爆发-结束问题
-- **思考容器**: `LaunchedEffect(isGenerating)` 同步展开
-- **FAB/底部判定**: 密度感知阈值 `60.dp.toPx()` + spacer 精确索引匹配
+### 思考容器文本颜色修复 (2026-05-14)
+- **颜色管线修复**: `nexaraMarkdownColors()` 的 `text` 参数从硬编码 `OnBackground` 改为接收 `textColor` 参数（默认 `OnBackground`），通过 `MarkdownText` → `MarkdownSafe` → `nexaraMarkdownColors()` 层层透传 `effectiveColor`，解决了思考容器文字始终以白色渲染、无法弱化的问题
+- **根因**: 第三方库 `mikepenz:multiplatform-markdown-renderer-m3` 不读取 `CompositionLocalProvider(LocalContentColor/LocalTextStyle)`，只使用直接传入的 `colors` 参数，之前的多次修复均在 CompositionLocal 层发力，颜色被硬编码覆盖
+- **影响文件**: `NexaraMarkdownTheme.kt` (+textColor 参数), `MarkdownText.kt` (MarkdownSafe 透传)
+- 同步修复 `InlineThinkingRow` (PipelineBubble) 和 `ThinkingBlock` (ChatInlineComponents) 两处思考内容颜色
+
+### 输入栏草稿持久化 (2026-05-14)
+- **进入会话恢复草稿**: `loadSession()` 从 `Session.draft` 恢复未发送文字到输入框，覆盖缓存路径 + DB 加载路径
+- **离开会话保存草稿**: `ChatScreen` 新增 `DisposableEffect`，`onDispose` 时调用 `saveCurrentDraft()` 将 `_inputText` 写入 DB
+- **发送后清空草稿**: `sendMessage()` 异步调用 `sessionManager.updateSessionDraft(sessionId, null)` 清除 DB 草稿
+- **影响文件**: `ChatViewModel.kt` (+saveCurrentDraft), `ChatScreen.kt` (+DisposableEffect)
+
+### 思考容器自动展开修复 (2026-05-14)
+- **时序竞态修复**: `InlineThinkingRow` 的 `isThinkingStreaming` 判定从 `status == THINKING` 改为 `streamingContent.isEmpty()`，消除思考步骤首次渲染时机晚于 THINKING 窗口导致的永不展开问题
+- **副作用控制**: 正文开始输出后 `streamingContent` 非空，自动折叠显示"思考完成"，不会持续显示"正在思考"
 
 ### 流式传输死锁修复 (2026-05-14) 🔴 P0
 - **Agent 循环死锁**: `Mutex.withLock` 包裹含递归路径的 `generateMessage()` 导致永久挂起——Kotlin `Mutex` 不可重入，`cancelActiveGeneration()` 已足够防并发。**教训**: 互斥锁绝不可包裹递归函数

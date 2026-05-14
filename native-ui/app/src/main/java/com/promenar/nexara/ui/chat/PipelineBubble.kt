@@ -120,7 +120,8 @@ fun PipelineBubble(
                     is PipelineStep.Thinking -> {
                         // 仅在当前确实处于思考状态且是最后一步思考时，才开启流式平滑渲染
                         val isLastThinking = allSteps.filterIsInstance<PipelineStep.Thinking>().lastOrNull() == step
-                        val isThinkingStreaming = isGenerating && isLastThinking && status == GenerationStatus.THINKING
+                        // 推理活跃判定：整体生成中 + 最后一步思考 + 正文尚未开始（streamingContent 只累积 content，不含 reasoning）
+                        val isThinkingStreaming = isGenerating && isLastThinking && streamingContent.isEmpty()
                         
                         InlineThinkingRow(
                             reasoning = step.reasoning,

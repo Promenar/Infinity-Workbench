@@ -14,8 +14,10 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
-fun nexaraMarkdownColors(): MarkdownColors = markdownColor(
-    text = NexaraColors.OnBackground,
+fun nexaraMarkdownColors(
+    textColor: Color = NexaraColors.OnBackground
+): MarkdownColors = markdownColor(
+    text = textColor,
     codeBackground = Color.Transparent,
     inlineCodeBackground = NexaraColors.SurfaceHigh,
     dividerColor = NexaraColors.OutlineVariant,

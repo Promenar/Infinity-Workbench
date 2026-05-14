@@ -81,6 +81,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -95,6 +96,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -120,11 +122,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraGlassCard
@@ -201,6 +205,12 @@ fun ChatScreen(
     }
 
     val activity = LocalContext.current as? Activity
+
+    // 离开会话界面时持久化未发送的输入文字
+    DisposableEffect(sessionId) {
+        onDispose { chatViewModel.saveCurrentDraft() }
+    }
+
     LaunchedEffect(uiState.isGenerating) {
         if (uiState.isGenerating) {
             activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -399,7 +409,7 @@ fun ChatScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 4.dp) // 极窄外边距，显著加宽
-                        .padding(bottom = 20.dp)
+                        .padding(bottom = 8.dp)
                         .fillMaxWidth(),
                     color = NexaraColors.SurfaceLow, // 调整颜色为更深的 SurfaceLow，契合 Header
                     shape = RoundedCornerShape(24.dp), // 略微减小圆角，配合加宽效果
@@ -411,8 +421,13 @@ fun ChatScreen(
                             .padding(horizontal = 8.dp, vertical = 10.dp), // 降低水平间距从 18dp -> 8dp，拓宽本体
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        val modelDisplayName = remember(uiState.session?.modelId) {
+                            uiState.session?.modelId?.let { id ->
+                                findModelSpec(id)?.note ?: id
+                            } ?: ""
+                        }
                         ChatInputTopBar(
-                            modelName = uiState.session?.modelId ?: "",
+                            modelName = modelDisplayName,
                             tokenState = tokenState,
                             onModelClick = { showModelSettingsSheet = true },
                             onManualSummary = { chatViewModel.summarizeHistory() }
@@ -637,30 +652,41 @@ private fun TokenIndicator(
         }
 
         if (showTooltip) {
-            DropdownMenu(
-                expanded = showTooltip,
-                onDismissRequest = { showTooltip = false },
-                modifier = Modifier.background(NexaraColors.SurfaceContainer).width(200.dp)
+            MaterialTheme(
+                shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(24.dp))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(stringResource(R.string.chat_context_usage_title), style = NexaraTypography.titleSmall, color = NexaraColors.Primary)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
-                    TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
-                    TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
-                    TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
-                    
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = NexaraColors.OutlineVariant)
-                    
-                    Button(
-                        onClick = {
-                            onManualSummary()
-                            showTooltip = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Primary)
+                DropdownMenu(
+                    expanded = showTooltip,
+                    onDismissRequest = { showTooltip = false },
+                    offset = DpOffset(x = (-60).dp, y = (-8).dp),
+                    modifier = Modifier.background(Color.Transparent).width(220.dp)
+                ) {
+                    NexaraGlassCard(
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(stringResource(R.string.chat_context_btn_compress), style = NexaraTypography.labelMedium)
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(stringResource(R.string.chat_context_usage_title), style = NexaraTypography.titleSmall, color = NexaraColors.Primary)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
+                            TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
+                            TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
+                            TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
+                            
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = NexaraColors.OutlineVariant.copy(alpha = 0.3f))
+                            
+                            Button(
+                                onClick = {
+                                    onManualSummary()
+                                    showTooltip = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Primary),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Text(stringResource(R.string.chat_context_btn_compress), style = NexaraTypography.labelMedium)
+                            }
+                        }
                     }
                 }
             }
@@ -1047,8 +1073,11 @@ fun ChatBubble(
                         fontSize = 11.sp
                     )
                     if (!message.modelId.isNullOrBlank()) {
+                        val friendlyModelName = remember(message.modelId) {
+                            findModelSpec(message.modelId!!)?.note ?: message.modelId!!
+                        }
                         Text(
-                            text = message.modelId!!,
+                            text = friendlyModelName,
                             style = metaStyle,
                             modifier = Modifier.padding(end = 8.dp)
                         )

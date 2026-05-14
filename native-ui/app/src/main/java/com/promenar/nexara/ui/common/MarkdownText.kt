@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -336,7 +337,8 @@ fun MarkdownText(
                                     content = segment.content,
                                     fontSize = fontSize,
                                     markdown = markdown,
-                                    onContentChange = onContentChange
+                                    onContentChange = onContentChange,
+                                    textColor = effectiveColor
                                 )
                             }
                         }
@@ -379,6 +381,7 @@ private fun MarkdownSafe(
     fontSize: Int,
     markdown: String,
     onContentChange: ((String) -> Unit)?,
+    textColor: Color = NexaraColors.OnBackground,
 ) {
     var renderError by remember(content) { mutableStateOf(false) }
     // 使用 rememberUpdatedState 避免回调变化导致 components 重建
@@ -531,7 +534,7 @@ private fun MarkdownSafe(
 
     Markdown(
         content = content,
-        colors = nexaraMarkdownColors(),
+        colors = nexaraMarkdownColors(textColor = textColor),
         typography = nexaraMarkdownTypography(fontSize),
         components = components,
         modifier = Modifier.fillMaxWidth()

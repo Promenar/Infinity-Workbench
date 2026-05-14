@@ -128,11 +128,25 @@
 
 | 能力 | 状态 | 文件 |
 |------|------|------|
-| Markdown 配色 | ✅ nexaraMarkdownColors() | NexaraMarkdownTheme.kt |
+| Markdown 配色 | ✅ nexaraMarkdownColors(textColor=) 参数化 | NexaraMarkdownTheme.kt |
 | Markdown 字体 | ✅ nexaraMarkdownTypography(fontSize) | NexaraMarkdownTheme.kt |
 | 字号全局控制 | ⚠️ 链路完整但有BUG (见§4) | ChatScreen.kt → MarkdownText.kt |
 | 暗色/亮色主题 | ✅ 继承 MaterialTheme | NexaraColors |
 | 图片灯箱 | ✅ ImageLightbox | ImageLightbox.kt |
+| **思考内容独立弱化色** | ✅ 2026-05-14 修复 | PipelineBubble.kt → MarkdownText → MarkdownSafe → nexaraMarkdownColors() |
+
+### 🔧 2026-05-14 颜色管线修复说明
+
+**问题**: `nexaraMarkdownColors()` 的 `text` 硬编码 `NexaraColors.OnBackground`，导致思考容器（`InlineThinkingRow` / `ThinkingBlock`）通过 `CompositionLocalProvider` 和 `overrideColor` 设置的弱化颜色被覆盖，文字始终为白色，与正文字体无异。
+
+**根因**: 第三方库 `mikepenz:multiplatform-markdown-renderer-m3` 不读取 `LocalContentColor` / `LocalTextStyle`，直接使用传入的 `colors` 参数。
+
+**修复**: 
+1. `nexaraMarkdownColors(textColor: Color = OnBackground)` — 添加 color 参数
+2. `MarkdownSafe(textColor: Color)` — 接收并透传颜色
+3. `MarkdownText` — 将已正确计算的 `effectiveColor` 传递给 `MarkdownSafe`
+
+**影响**: 思考内容文字现在正确显示为弱化色（`NexaraColors.Outline, alpha=0.7f`），与正文形成清晰视觉层级区分。
 
 #### CJK 排版优化
 
