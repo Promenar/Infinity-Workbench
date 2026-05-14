@@ -41,95 +41,84 @@ class AnthropicProtocol(
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
 
-        val response: HttpResponse
         try {
-            response = httpClient.post(buildUrl()) {
+            httpClient.preparePost(buildUrl()) {
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)
                 header("anthropic-version", anthropicVersion)
                 header("Accept", "text/event-stream")
+                header("Accept-Encoding", "identity") // 强制禁用压缩，防止 Gzip 导致流式输出攒块
+                header("Cache-Control", "no-cache")
+                header("Connection", "keep-alive")
                 setBody(buildRequestBody(request, stream = true))
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            send(normalizeError(e))
-            return@channelFlow
-        }
-
-        if (!response.status.isSuccess()) {
-            val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
-            val normalized = ErrorNormalizer.normalize(
-                HttpStatusException(response.status.value, errorBody)
-            )
-            send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
-            return@channelFlow
-        }
-
-        response.contentType()?.let { ct ->
-            if (ct.match(ContentType.Text.Html)) {
-                send(StreamChunk.Error(
-                    "Received HTML response instead of JSON stream. " +
-                        "Check your Base URL settings."
-                ))
-                return@channelFlow
-            }
-        }
-
-        val channel = response.body<ByteReadChannel>()
-        activeChannel = channel
-
-        try {
-            val sb = StringBuilder()
-            var currentEvent = ""
-            var currentData = ""
-
-            while (!channel.isClosedForRead) {
-                sb.clear()
-                if (!channel.readUTF8LineTo(sb, 1_048_576)) break
-
-                val line = sb.toString()
-                if (line.isEmpty()) {
-                    if (currentData.isNotEmpty()) {
-                        processSseEvent(currentEvent, currentData)
-                        currentEvent = ""
-                        currentData = ""
-                    }
-                    continue
+            }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+                    val normalized = ErrorNormalizer.normalize(
+                        HttpStatusException(response.status.value, errorBody)
+                    )
+                    send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+                    return@execute
                 }
 
-                if (line.trimStart().startsWith('<')) {
-                    send(StreamChunk.Error(
-                        "Received HTML response instead of JSON stream. " +
-                            "Check your Base URL settings."
-                    ))
-                    return@channelFlow
+                response.contentType()?.let { ct ->
+                    if (ct.match(ContentType.Text.Html)) {
+                        send(StreamChunk.Error(
+                            "Received HTML response instead of JSON stream. Check your Base URL settings."
+                        ))
+                        return@execute
+                    }
                 }
 
-                when {
-                    line.startsWith("event: ") -> {
-                        currentEvent = line.substring(7).trim()
-                    }
-                    line.startsWith("data: ") -> {
-                        currentData = line.substring(6).trim()
-                        if (currentEvent.isEmpty()) {
-                            currentEvent = "message"
+                val channel = response.body<ByteReadChannel>()
+                activeChannel = channel
+                val sb = StringBuilder()
+                var currentEvent = ""
+                var currentData = ""
+
+                while (!channel.isClosedForRead) {
+                    sb.clear()
+                    if (!channel.readUTF8LineTo(sb, 1_048_576)) break
+
+                    val line = sb.toString()
+                    if (line.isEmpty()) {
+                        if (currentData.isNotEmpty()) {
+                            processSseEvent(currentEvent, currentData)
+                            currentEvent = ""
+                            currentData = ""
                         }
+                        continue
                     }
-                    line.startsWith("data:") -> {
-                        currentData = line.substring(5).trim()
-                        if (currentEvent.isEmpty()) {
-                            currentEvent = "message"
+
+                    if (line.trimStart().startsWith('<')) {
+                        send(StreamChunk.Error("Received HTML response instead of JSON stream."))
+                        break
+                    }
+
+                    when {
+                        line.startsWith("event: ") -> {
+                            currentEvent = line.substring(7).trim()
+                        }
+                        line.startsWith("data: ") -> {
+                            currentData = line.substring(6).trim()
+                            if (currentEvent.isEmpty()) {
+                                currentEvent = "message"
+                            }
+                        }
+                        line.startsWith("data:") -> {
+                            currentData = line.substring(5).trim()
+                            if (currentEvent.isEmpty()) {
+                                currentEvent = "message"
+                            }
                         }
                     }
                 }
-            }
 
-            if (currentData.isNotEmpty()) {
-                processSseEvent(currentEvent, currentData)
+                if (currentData.isNotEmpty()) {
+                    processSseEvent(currentEvent, currentData)
+                }
+                send(StreamChunk.Done)
             }
-
-            send(StreamChunk.Done)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

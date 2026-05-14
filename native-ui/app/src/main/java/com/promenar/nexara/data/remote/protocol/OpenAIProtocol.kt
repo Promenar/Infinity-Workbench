@@ -44,82 +44,70 @@ class OpenAIProtocol(
         val thinkingDetector = ThinkingDetector()
         val toolCallAccumulator = mutableMapOf<Int, AccumulatedToolCall>()
 
-        val response: HttpResponse
         try {
-            response = httpClient.post(buildUrl()) {
+            httpClient.preparePost(buildUrl()) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $apiKey")
                 header("Accept", "text/event-stream")
+                header("Accept-Encoding", "identity") // 强制禁用压缩，防止 Gzip 导致流式输出攒块
+                header("Cache-Control", "no-cache")
+                header("Connection", "keep-alive")
                 setBody(buildRequestBody(request, stream = true))
+            }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+                    val normalized = ErrorNormalizer.normalize(
+                        HttpStatusException(response.status.value, errorBody)
+                    )
+                    send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+                    return@execute
+                }
+
+                response.contentType()?.let { ct ->
+                    if (ct.match(ContentType.Text.Html)) {
+                        send(StreamChunk.Error(
+                            "Received HTML response instead of JSON stream. Check your Base URL settings."
+                        ))
+                        return@execute
+                    }
+                }
+
+                val channel = response.body<ByteReadChannel>()
+                activeChannel = channel
+                val sb = StringBuilder()
+
+                while (!channel.isClosedForRead) {
+                    sb.clear()
+                    val timeoutMs = request.streamTimeout ?: 120000L
+                    val readSuccess = withTimeoutOrNull(timeoutMs) {
+                        channel.readUTF8LineTo(sb, 1_048_576)
+                    }
+
+                    if (readSuccess == null) {
+                        send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                        break
+                    }
+                    if (!readSuccess) break
+
+                    val line = sb.toString().trim()
+                    if (line.isEmpty()) continue
+
+                    if (line.trimStart().startsWith('<')) {
+                        send(StreamChunk.Error("Received HTML response instead of JSON stream."))
+                        break
+                    }
+
+                    val data = extractSseData(line) ?: continue
+                    if (data == "[DONE]") break
+
+                    try {
+                        val chunkJson = json.parseToJsonElement(data).jsonObject
+                        processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
+                    } catch (_: Exception) {
+                    }
+                }
+                flushRemaining(thinkingDetector, toolCallAccumulator)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            send(normalizeError(e))
-            return@channelFlow
-        }
-
-        if (!response.status.isSuccess()) {
-            val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
-            val normalized = ErrorNormalizer.normalize(
-                HttpStatusException(response.status.value, errorBody)
-            )
-            send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
-            return@channelFlow
-        }
-
-        response.contentType()?.let { ct ->
-            if (ct.match(ContentType.Text.Html)) {
-                send(StreamChunk.Error(
-                    "Received HTML response instead of JSON stream. " +
-                        "Check your Base URL settings."
-                ))
-                return@channelFlow
-            }
-        }
-
-        val channel = response.body<ByteReadChannel>()
-        activeChannel = channel
-
-        try {
-            val sb = StringBuilder()
-            while (!channel.isClosedForRead) {
-                sb.clear()
-                val timeoutMs = request.streamTimeout ?: 120000L
-                val readSuccess = withTimeoutOrNull(timeoutMs) {
-                    channel.readUTF8LineTo(sb, 1_048_576)
-                }
-                
-                if (readSuccess == null) {
-                    // Timeout occurred
-                    send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
-                    break
-                }
-                
-                if (!readSuccess) break
-
-                val line = sb.toString().trim()
-                if (line.isEmpty()) continue
-
-                if (line.trimStart().startsWith('<')) {
-                    send(StreamChunk.Error(
-                        "Received HTML response instead of JSON stream. " +
-                            "Check your Base URL settings."
-                    ))
-                    return@channelFlow
-                }
-
-                val data = extractSseData(line) ?: continue
-                if (data == "[DONE]") break
-
-                try {
-                    val chunkJson = json.parseToJsonElement(data).jsonObject
-                    processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
-                } catch (_: Exception) {
-                }
-            }
-
-            flushRemaining(thinkingDetector, toolCallAccumulator)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -329,9 +317,10 @@ class OpenAIProtocol(
             }
         }
 
-        if (content.isNotEmpty() || reasoning.isNotEmpty()) {
-            send(StreamChunk.TextDelta(content, reasoning.ifEmpty { null }))
-        }
+        // 无条件发送 TextDelta：即使 content/reasoning 为空（ThinkingDetector 可能临时扣留内容），
+        // 也必须让消费者感知到流中有数据到来，否则 UI 会陷入"长时间静止→全量弹出"的假死状态。
+        // 空 TextDelta 仅触发轻量 recomposition，性能影响可忽略。
+        send(StreamChunk.TextDelta(content, reasoning.ifEmpty { null }))
 
         val usageRaw = chunk["usage"]?.jsonObject
         if (usageRaw != null) {

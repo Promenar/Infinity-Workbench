@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -101,6 +102,12 @@ fun NexaraTableWidget(
                 }
             }
 
+            // 表头与正文之间的分隔线
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = NexaraColors.OutlineVariant.copy(alpha = 0.4f)
+            )
+
             table.rows.forEachIndexed { rowIndex, row ->
                 Row(
                     modifier = Modifier
@@ -120,6 +127,13 @@ fun NexaraTableWidget(
                             weight = if (scrollable) 0f else 1f
                         )
                     }
+                }
+                // 行间细分割线（最后一行除外）
+                if (rowIndex < table.rows.lastIndex) {
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = NexaraColors.OutlineVariant.copy(alpha = 0.2f)
+                    )
                 }
             }
         }

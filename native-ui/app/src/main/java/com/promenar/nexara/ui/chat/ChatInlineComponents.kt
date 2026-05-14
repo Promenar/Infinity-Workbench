@@ -99,7 +99,7 @@ fun ThinkingBlock(
     ) {
         NexaraGlassCard(
             modifier = Modifier
-                .wrapContentWidth()
+                .fillMaxWidth(0.85f)
                 .clickable { isExpanded = !isExpanded },
             shape = RoundedCornerShape(20.dp)
         ) {
@@ -158,20 +158,29 @@ fun ThinkingBlock(
             exit = shrinkVertically() + fadeOut()
         ) {
             Surface(
-                color = NexaraColors.SurfaceLow.copy(alpha = 0.3f),
+                color = NexaraColors.SurfaceLow.copy(alpha = 0.2f),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .padding(top = 8.dp)
-                    .fillMaxWidth(),
-                border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.2f))
+                    .fillMaxWidth(0.95f),
+                border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.15f))
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    MarkdownText(
-                        markdown = reasoning,
-                        modifier = Modifier.fillMaxWidth(),
-                        isStreaming = isGenerating,
-                        fontSize = fontSize
-                    )
+                Column(modifier = Modifier.padding(10.dp)) {
+                    CompositionLocalProvider(
+                        LocalTextStyle provides NexaraTypography.bodySmall.copy(
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f),
+                            fontSize = (fontSize - 1).coerceAtLeast(11).sp,
+                            lineHeight = (fontSize + 4).sp
+                        )
+                    ) {
+                        MarkdownText(
+                            markdown = reasoning,
+                            modifier = Modifier.fillMaxWidth(),
+                            isStreaming = isGenerating,
+                            fontSize = (fontSize - 1).coerceAtLeast(11),
+                            showCursor = false // Hide cursor in thinking block to avoid double cursors
+                        )
+                    }
                 }
             }
         }
@@ -333,7 +342,7 @@ fun ToolExecutionTimeline(
 
     NexaraGlassCard(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxWidth(0.85f)
             .padding(vertical = 4.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
@@ -427,9 +436,9 @@ private fun TimelineStep(
             if (!isLast) {
                 Box(
                     modifier = Modifier
-                        .width(1.dp)
+                        .width(1.5.dp)
                         .weight(1f)
-                        .background(NexaraColors.OutlineVariant.copy(alpha = 0.3f))
+                        .background(NexaraColors.OutlineVariant.copy(alpha = 0.6f))
                 )
             }
         }

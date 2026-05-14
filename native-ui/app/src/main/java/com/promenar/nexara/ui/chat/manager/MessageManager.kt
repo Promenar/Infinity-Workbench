@@ -136,6 +136,7 @@ class MessageManager(
 
         if (!throttleJobs.containsKey(key)) {
             throttleJobs[key] = scope.launch {
+                delay(UI_THROTTLE_MS)
                 flushUpdate(sessionId, messageId)
             }
         }

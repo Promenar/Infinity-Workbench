@@ -189,8 +189,10 @@ fun MarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
     isStreaming: Boolean = false,
+    showCursor: Boolean = true,
     fontSize: Int = 13,
     smoothingCps: Int = StreamSpeed.BALANCED.cps,
+    overrideColor: androidx.compose.ui.graphics.Color? = null,
     onContentChange: ((String) -> Unit)? = null
 ) {
     val processed = remember(markdown, isStreaming) {
@@ -288,21 +290,27 @@ fun MarkdownText(
         result
     }
 
+    val currentStyle = LocalTextStyle.current
+    val effectiveColor = overrideColor ?: currentStyle.color
     val m3Typography = MaterialTheme.typography.copy(
-        bodyMedium = nexaraMarkdownTypography(fontSize).text,
-        headlineLarge = nexaraMarkdownTypography(fontSize).h1,
-        headlineMedium = nexaraMarkdownTypography(fontSize).h2,
-        headlineSmall = nexaraMarkdownTypography(fontSize).h3,
-        titleLarge = nexaraMarkdownTypography(fontSize).h1,
-        titleMedium = nexaraMarkdownTypography(fontSize).h2,
-        titleSmall = nexaraMarkdownTypography(fontSize).h3,
-        bodySmall = nexaraMarkdownTypography(fontSize).code,
-        labelSmall = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 2).coerceAtLeast(9).sp)
+        bodyMedium = nexaraMarkdownTypography(fontSize).text.copy(color = effectiveColor),
+        headlineLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor),
+        headlineMedium = nexaraMarkdownTypography(fontSize).h2.copy(color = effectiveColor),
+        headlineSmall = nexaraMarkdownTypography(fontSize).h3.copy(color = effectiveColor),
+        titleLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor),
+        titleMedium = nexaraMarkdownTypography(fontSize).h2.copy(color = effectiveColor),
+        titleSmall = nexaraMarkdownTypography(fontSize).h3.copy(color = effectiveColor),
+        bodySmall = nexaraMarkdownTypography(fontSize).code.copy(color = effectiveColor),
+        labelSmall = NexaraTypography.labelSmall.copy(
+            fontSize = (fontSize - 2).coerceAtLeast(9).sp,
+            color = effectiveColor.copy(alpha = 0.7f)
+        )
     )
 
     MaterialTheme(typography = m3Typography) {
         CompositionLocalProvider(
             LocalTextStyle provides m3Typography.bodyMedium,
+            androidx.compose.material3.LocalContentColor provides effectiveColor,
             LocalImageTransformer provides Coil3ImageTransformerImpl
         ) {
             Column(modifier = modifier.fillMaxWidth()) {
@@ -336,7 +344,7 @@ fun MarkdownText(
                     }
                 }
 
-                if (isStreaming) {
+                if (isStreaming && showCursor) {
                     StreamingCursor()
                 }
             }

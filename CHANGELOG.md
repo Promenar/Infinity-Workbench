@@ -3,6 +3,38 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+### 流式传输死锁修复 (2026-05-14) 🔴 P0
+- **Agent 循环死锁**: `Mutex.withLock` 包裹含递归路径的 `generateMessage()` 导致永久挂起——Kotlin `Mutex` 不可重入，`cancelActiveGeneration()` 已足够防并发。**教训**: 互斥锁绝不可包裹递归函数
+- **流式假死**: `OpenAIProtocol` 空内容守卫 + `ThinkingDetector` 末端 `<` 扣留 → 移除守卫 + `tryFastPath()` 直通
+- **TTFT 光标缺失**: `PipelineBubble` 补充 `StreamingCursor()` + `heightIn(min=32.dp)`
+
+### 交互优化 (2026-05-14)
+- **Smart Follow**: `autoFollowEnabled` 状态机——用户手势锁定视口，FAB/新消息恢复；Agent 追踪仅目标不可见时滚动
+- **双光标**: `PipelineBubble` 光标仅在 TTFT 期渲染，有 Content 时 `MarkdownText` 内部光标接管
+- **发送按钮误报**: `_error` 残留 → `generateMessage()` 起始清除
+- **思考层级**: 思考字号 `fontSize-3`(min 10sp) + alpha 0.55，显著弱于正文
+- **锚定修复**: `LaunchedEffect(latestUserMsgId)` 替代 `isGenerating + streamingContent.isEmpty()` 竞态
+
+### 聊天交互优化 (2026-05-14)
+- **PipelineBubble 气泡合并**: 新增 `PipelineBubble.kt` — Agent 多步响应合并为单一线性视觉气泡，思考/工具/正文以连接线串联，彻底消除多条消息被 `SpacedBy(16dp)` 隔开的分裂感
+- **思考/工具容器重构**: `InlineThinkingRow` / `InlineToolRow` 替代旧版 `ThinkingBlock` / `ToolExecutionTimeline`，默认折叠（仅进行中状态展开），以颜色和图标区分类型（Primary=思考，Tertiary=工具），体积缩小约60%
+- **滚动锚定重构**: 改用 `latestUserMsgId` 作为 `LaunchedEffect` 触发键替代 `isGenerating + streamingContent.isEmpty()` 竞态条件，使用分组索引而非消息索引
+- **Agent 视角追踪**: `executionSteps.size` 变化时自动滚动到对应分组，保留工具时间轴可见性
+- **IME 键盘联动**: `WindowInsets.isImeVisible` 检测 + 分组索引滚动
+- **流式速度提升**: `StreamSpeed.BALANCED` 从 38 CPS → 120 CPS，FAST 模式 800 CPS
+- **表格深色模式**: `NexaraTableWidget` 新增行间分隔线，解决低对比度问题
+
+### Agent Fallback 解析器 (2026-05-14)
+- **新增文本 JSON 工具指令兜底解析**: `ChatViewModel.extractToolCallsFromText()` — 部分模型（如 MiniMax-M2.7）不在 `ToolCallDelta` 层下发工具指令，而是以 Markdown 代码块输出 JSON 字符串。新增后置正则提取器，支持 `name/function/tool/tool_name` 等多种字段命名约定，自动将文本形式工具指令转为 `ToolCall` 对象
+- **JSON 剥离增强**: `stripToolCallJsonBlocks()` 双重匹配——Markdown 代码块 + 裸 JSON 对象行，清除后整理空行
+- **防止 Agent 循环中断**: 兜底解析后正确填充 `accumulatedToolCalls`，确保 `ToolExecutor.executeTools()` 被触发，`executionSteps` 正确回写以激活 UI 时间轴组件
+
+### 流式传输根本修复 (2026-05-14) 🔴 P0
+- **根因定位**: `OpenAIProtocol.processStreamChunk()` 中的空内容守卫 `if (content.isNotEmpty() || reasoning.isNotEmpty())` 配合 `ThinkingDetector` 的缓冲区扣留机制，在特定 chunk 边界上形成"双重静默丢弃"——当 ThinkingDetector 因末尾 `<` 字符临时扣留 content 且模型不使用 `reasoning_content` 字段时，整个 SSE chunk 被静默丢弃，消费者收不到任何信号，流式传输完全中断
+- **修复**: 移除 `OpenAIProtocol` 和 `GenericOpenAICompatProtocol` 中的空内容守卫，无条件发送 `TextDelta`；`ThinkingDetector` 新增 `tryFastPath()` 直通模式——缓冲区空 + 状态 OUTSIDE + chunk 不含 `<` 时零开销直接返回，覆盖 95%+ 的正常文本流
+- **TTFT 光标修复**: `PipelineBubble` 补充缺失的 `if (isGenerating) { StreamingCursor() }`，确保首字生成前的等待期内光标可见
+
 ### 图像生成工具 (2026-05-14)
 - **新增 `ImageGenerationSkill`**: LLM 可调用 `generate_image` 工具，传递提示词和参数（size/quality/style），调用默认图像模型生成图片，结果内联展示在对话气泡中
 - **新增 `ImageGenClient`**: OpenAI-compatible 图像生成 API 客户端（`POST /v1/images/generations`），支持 url/b64_json 响应，自动下载到本地存储

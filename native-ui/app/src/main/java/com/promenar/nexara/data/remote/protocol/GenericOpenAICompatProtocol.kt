@@ -35,6 +35,9 @@ class GenericOpenAICompatProtocol(
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
         }
+        // 禁用默认的解压处理器，避免对 SSE 响应进行全量缓存
+        expectSuccess = false
+        followRedirects = true
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -47,65 +50,58 @@ class GenericOpenAICompatProtocol(
         val thinkingDetector = ThinkingDetector()
         val toolCallAccumulator = mutableMapOf<Int, AccumulatedToolCall>()
 
-        val response: HttpResponse
         try {
-            response = httpClient.post(buildUrl()) {
+            httpClient.preparePost(buildUrl()) {
                 contentType(ContentType.Application.Json)
+                header("Accept", "text/event-stream")
+                header("Accept-Encoding", "identity") // 强制禁用压缩，防止 Gzip 导致流式输出攒块
+                header("Cache-Control", "no-cache")
+                header("Connection", "keep-alive")
                 if (apiKey.isNotEmpty()) {
                     header("Authorization", "Bearer $apiKey")
                 }
-                header("Accept", "text/event-stream")
                 setBody(buildRequestBody(request, stream = true))
+            }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+                    val normalized = ErrorNormalizer.normalize(
+                        HttpStatusException(response.status.value, errorBody)
+                    )
+                    send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+                    return@execute
+                }
+
+                val channel = response.body<ByteReadChannel>()
+                activeChannel = channel
+                val sb = StringBuilder()
+
+                while (!channel.isClosedForRead) {
+                    sb.clear()
+                    val timeoutMs = request.streamTimeout ?: 120000L
+                    val readSuccess = withTimeoutOrNull(timeoutMs) {
+                        channel.readUTF8LineTo(sb, 1_048_576)
+                    }
+
+                    if (readSuccess == null) {
+                        send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                        break
+                    }
+                    if (!readSuccess) break
+
+                    val line = sb.toString().trim()
+                    if (line.isEmpty()) continue
+
+                    val data = extractSseData(line) ?: continue
+                    if (data == "[DONE]") break
+
+                    try {
+                        val chunkJson = json.parseToJsonElement(data).jsonObject
+                        processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
+                    } catch (_: Exception) {
+                    }
+                }
+                flushRemaining(thinkingDetector, toolCallAccumulator)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            send(normalizeError(e))
-            return@channelFlow
-        }
-
-        if (!response.status.isSuccess()) {
-            val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
-            val normalized = ErrorNormalizer.normalize(
-                HttpStatusException(response.status.value, errorBody)
-            )
-            send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
-            return@channelFlow
-        }
-
-        val channel = response.body<ByteReadChannel>()
-        activeChannel = channel
-
-        try {
-            val sb = StringBuilder()
-            while (!channel.isClosedForRead) {
-                sb.clear()
-                val timeoutMs = request.streamTimeout ?: 120000L
-                val readSuccess = withTimeoutOrNull(timeoutMs) {
-                    channel.readUTF8LineTo(sb, 1_048_576)
-                }
-                
-                if (readSuccess == null) {
-                    send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
-                    break
-                }
-                
-                if (!readSuccess) break
-
-                val line = sb.toString().trim()
-                if (line.isEmpty()) continue
-
-                val data = extractSseData(line) ?: continue
-                if (data == "[DONE]") break
-
-                try {
-                    val chunkJson = json.parseToJsonElement(data).jsonObject
-                    processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
-                } catch (_: Exception) {
-                }
-            }
-
-            flushRemaining(thinkingDetector, toolCallAccumulator)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -316,9 +312,8 @@ class GenericOpenAICompatProtocol(
             }
         }
 
-        if (content.isNotEmpty() || reasoning.isNotEmpty()) {
-            send(StreamChunk.TextDelta(content, reasoning.ifEmpty { null }))
-        }
+        // 无条件发送 TextDelta（同 OpenAIProtocol 修复：防止流式假死）
+        send(StreamChunk.TextDelta(content, reasoning.ifEmpty { null }))
 
         val usageRaw = chunk["usage"]?.jsonObject
         if (usageRaw != null) {

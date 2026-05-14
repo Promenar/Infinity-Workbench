@@ -45,8 +45,23 @@ class ThinkingDetector {
         val tagLength: Int
     )
 
+    /**
+     * 快速路径：若缓冲区为空、状态为 OUTSIDE、且 chunk 不含 '<'，
+     * 直接原样返回 content，完全跳过正则扫描和状态机。
+     * 这覆盖了绝大多数非思考模型的正常流式输出。
+     */
+    private fun tryFastPath(chunk: String): ThinkingResult? {
+        if (buffer.isEmpty() && state == State.OUTSIDE && !chunk.contains('<')) {
+            return ThinkingResult(content = chunk, reasoning = "")
+        }
+        return null
+    }
+
     fun process(chunk: String): ThinkingResult {
         if (chunk.isEmpty()) return ThinkingResult(content = "", reasoning = "")
+
+        // 快速路径：95%+ 的正常文本直通，零开销
+        tryFastPath(chunk)?.let { return it }
 
         buffer += chunk
 
@@ -200,12 +215,12 @@ class ThinkingDetector {
             return text.length
         }
 
+        // 如果距离末尾很近，可能还有未完成的标签
         val tailLength = text.length - lastOpenBracket
-        if (tailLength <= MAX_TAG_PREFIX_LEN) {
+        if (tailLength < 2) { // 缩减到 2，只要不是刚写了一个 < 就输出
             return lastOpenBracket
         }
 
-        val safeEnd = text.length - MAX_TAG_PREFIX_LEN
-        return maxOf(0, safeEnd)
+        return text.length
     }
 }

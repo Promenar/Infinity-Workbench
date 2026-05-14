@@ -41,7 +41,9 @@ import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -51,6 +53,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 enum class GenerationStatus {
@@ -198,6 +206,7 @@ class ChatViewModel(
         _inputText.update { "" }
         _error.update { null }
 
+        cancelActiveGeneration()
         generationJob = viewModelScope.launch {
             val userMessage = Message(
                 id = userMsgId,
@@ -249,6 +258,7 @@ class ChatViewModel(
         _isGenerating.update { true }
         _generationStatus.update { GenerationStatus.UPLOADING }
         _streamingContent.update { "" }
+        _error.update { null } // 每轮新生成强制清除上一轮的残留错误
 
         val agent = agentRepository.getById(sessionForCtx.agentId)
         val agentConfig = configResolver.resolve(agent)
@@ -400,6 +410,10 @@ class ChatViewModel(
                                 errorMessage = chunk.message
                             )
                         )
+                        // 发现错误立即停止当前流收集，防止并发冲突和后续乱序输出
+                        currentCoroutineContext().cancel(
+                            kotlinx.coroutines.CancellationException("Stream error received: ${chunk.message}")
+                        )
                     }
                     is StreamChunk.Done -> {}
                 }
@@ -420,8 +434,29 @@ class ChatViewModel(
             }
         }
 
+        // 流式错误或协程取消后，禁止继续执行正常完成路径（避免 ERROR 被 COMPLETED 覆盖）
+        if (!currentCoroutineContext().isActive) return
+
         messageManager.flushMessageUpdates(sessionId, assistantMsgId)
         _streamingContent.update { "" }
+
+        // ── Fallback 解析器：模型可能在 TextDelta 中以 Markdown 代码块形式输出工具调用 JSON ──
+        // 部分模型（如 MiniMax-M2.7）不会通过标准 ToolCallDelta 协议下发工具指令，
+        // 而是将工具调用以 JSON 代码块形式嵌入普通文本流。此处做后置正则提取兜底。
+        if (accumulatedToolCalls.isEmpty() && accumulatedContent.isNotBlank()) {
+            val fallbackCalls = extractToolCallsFromText(accumulatedContent)
+            if (fallbackCalls.isNotEmpty()) {
+                // 将提取到的工具调用追加到累积列表
+                accumulatedToolCalls.addAll(fallbackCalls)
+                // 从显示内容中移除 JSON 代码块，避免用户在气泡中看到原始 JSON
+                accumulatedContent = stripToolCallJsonBlocks(accumulatedContent)
+                // 刷新 UI：用清洗后的内容更新消息
+                messageManager.updateMessageContent(
+                    sessionId, assistantMsgId, accumulatedContent,
+                    UpdateMessageOptions(toolCalls = accumulatedToolCalls.toList())
+                )
+            }
+        }
 
         if (accumulatedToolCalls.isNotEmpty() && currentCoroutineContext().isActive) {
             toolExecutor.executeTools(sessionId, accumulatedToolCalls.toList(), assistantMsgId)
@@ -591,16 +626,19 @@ class ChatViewModel(
     }
 
     fun stopGeneration() {
+        cancelActiveGeneration()
+        val sessionId = _currentSessionId.value
+        if (sessionId != null) {
+            approvalManager.setLoopStatus(sessionId, com.promenar.nexara.data.model.LoopStatus.PAUSED)
+        }
+    }
+
+    private fun cancelActiveGeneration() {
         generationJob?.cancel()
         generationJob = null
         llmProvider.cancel()
         _isGenerating.update { false }
         _streamingContent.update { "" }
-
-        val sessionId = _currentSessionId.value
-        if (sessionId != null) {
-            approvalManager.setLoopStatus(sessionId, com.promenar.nexara.data.model.LoopStatus.PAUSED)
-        }
     }
 
     fun retryLastMessage() {
@@ -623,6 +661,7 @@ class ChatViewModel(
 
     fun approveRequest(intervention: String? = null) {
         val sessionId = _currentSessionId.value ?: return
+        cancelActiveGeneration()
         generationJob = viewModelScope.launch {
             approvalManager.resumeGeneration(sessionId, approved = true, intervention = intervention)
         }
@@ -650,6 +689,7 @@ class ChatViewModel(
         val msgIndex = session.messages.indexOfFirst { it.id == messageId }
         if (msgIndex < 0) return
 
+        cancelActiveGeneration()
         generationJob = viewModelScope.launch {
             messageManager.updateMessageContent(sessionId, messageId, newContent, UpdateMessageOptions())
 
@@ -727,7 +767,8 @@ class ChatViewModel(
                 regenerateMessage(userMsg.id)
             } else {
                 // Just regenerate from current state
-                viewModelScope.launch {
+                cancelActiveGeneration()
+                generationJob = viewModelScope.launch {
                     messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
                     generateMessage(sessionId, "", false)
                 }
@@ -916,7 +957,8 @@ class ChatViewModel(
         val session = store.getSession(sessionId) ?: return
         val message = session.messages.find { it.id == messageId } ?: return
         
-        viewModelScope.launch {
+        cancelActiveGeneration()
+        generationJob = viewModelScope.launch {
             backupAndTruncate(sessionId, message.createdAt + 1)
             messageManager.updateMessageContent(sessionId, messageId, newContent)
             generateMessage(sessionId, "", false)
@@ -933,7 +975,8 @@ class ChatViewModel(
         val session = store.getSession(sessionId) ?: return
         val message = session.messages.find { it.id == messageId } ?: return
         
-        viewModelScope.launch {
+        cancelActiveGeneration()
+        generationJob = viewModelScope.launch {
             // Delete all messages strictly after this one with backup
             backupAndTruncate(sessionId, message.createdAt + 1)
             
@@ -1070,5 +1113,127 @@ class ChatViewModel(
                 )
             }
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  Fallback 解析器：从文本中提取工具调用 JSON
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * 从 LLM 输出的纯文本中提取内嵌的工具调用 JSON。
+     *
+     * 部分模型（如 MiniMax-M2.7）不会通过标准 ToolCallDelta 协议下发工具指令，
+     * 而是在 TextDelta 中以 Markdown 代码块形式输出 JSON。本方法做后置正则兜底。
+     *
+     * 支持的格式：
+     *   1. ```json { "name": "search_searxng", "arguments": {...} } ```
+     *   2. ```{ "function": { "name": "...", "arguments": "..." } } ```（OpenAI 风格）
+     *   3. 裸 JSON 对象含 tool_name/tool/function 字段
+     */
+    private fun extractToolCallsFromText(content: String): List<ToolCall> {
+        val results = mutableListOf<ToolCall>()
+
+        // 匹配 Markdown 代码块中的 JSON（```json ... ``` 或 ``` ... ```）
+        val codeBlockRegex = Regex(
+            """```(?:json)?\s*\n(.*?)\n\s*```""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+
+        // 匹配裸 JSON 对象（含 tool/function/name 字段）
+        val bareJsonRegex = Regex(
+            """\{\s*"(?:name|function|tool|tool_name)"\s*:\s*"[^"]+"[^}]*\}"""
+        )
+
+        val candidates = mutableListOf<String>()
+        codeBlockRegex.findAll(content).forEach { candidates.add(it.groupValues[1]) }
+
+        // 如果代码块中没找到，尝试直接从整个 content 中提取裸 JSON
+        if (candidates.isEmpty()) {
+            bareJsonRegex.findAll(content).forEach { candidates.add(it.value) }
+        }
+
+        for (candidate in candidates) {
+            val trimmed = candidate.trim()
+            try {
+                val element = Json.parseToJsonElement(trimmed)
+                val toolCall = parseToolCallFromJson(element, results.size)
+                if (toolCall != null) {
+                    results.add(toolCall)
+                }
+            } catch (_: Exception) {
+                // 单行 JSON 未命中，尝试在代码块内再做裸 JSON 提取
+                bareJsonRegex.findAll(trimmed).forEach { m ->
+                    try {
+                        val inner = Json.parseToJsonElement(m.value)
+                        val tc = parseToolCallFromJson(inner, results.size)
+                        if (tc != null && results.none { it.name == tc.name }) {
+                            results.add(tc)
+                        }
+                    } catch (_: Exception) { /* 静默跳过 */ }
+                }
+            }
+        }
+
+        return results
+    }
+
+    /**
+     * 从 JsonElement 解析为 ToolCall，支持多种字段命名约定：
+     *  - name / function.name / tool / tool_name
+     *  - arguments / parameters / input / function.arguments
+     */
+    private fun parseToolCallFromJson(element: JsonElement, index: Int): ToolCall? {
+        if (element !is JsonObject) return null
+
+        // ── 提取工具名称 ──
+        val name: String = element["name"]?.jsonPrimitive?.content
+            ?: element["tool"]?.jsonPrimitive?.content
+            ?: element["tool_name"]?.jsonPrimitive?.content
+            ?: element["function"]?.jsonObject?.get("name")?.jsonPrimitive?.content
+            ?: return null
+
+        // ── 提取参数 ──
+        val rawArgs: Any? = element["arguments"]
+            ?: element["parameters"]
+            ?: element["input"]
+            ?: element["args"]
+            ?: element["function"]?.jsonObject?.get("arguments")
+
+        val arguments: String = when (rawArgs) {
+            is JsonObject -> rawArgs.toString()
+            is JsonPrimitive -> rawArgs.content
+            is String -> rawArgs
+            else -> "{}"
+        }
+
+        val id = "fallback_${System.currentTimeMillis()}_${name.hashCode()}_$index"
+        return ToolCall(id = id, name = name, arguments = arguments)
+    }
+
+    /**
+     * 从内容中移除 JSON 工具调用代码块，避免用户看到原始 JSON 指令。
+     * 处理两种场景：
+     *   1. Markdown 代码块包裹的 JSON（```json ... ```）
+     *   2. 裸 JSON 对象（以 { 开头含 tool/name/function 字段的行）
+     */
+    private fun stripToolCallJsonBlocks(content: String): String {
+        // 模式 1: 代码块包裹的 JSON（含任何工具调用字段）
+        var result = content.replace(
+            Regex(
+                """```(?:json)?\s*\n(?:[\s\S]*?"(?:name|function|tool|tool_name)"[\s\S]*?)\n\s*```""",
+                setOf(RegexOption.MULTILINE)
+            )
+        ) { "" }
+
+        // 模式 2: 独立的裸 JSON 对象行（不是代码块的一部分）
+        val bareJsonLineRegex = Regex(
+            """^\s*\{\s*"(?:name|function|tool|tool_name)"\s*:\s*"[^"]+"[^}]*\}\s*$""",
+            setOf(RegexOption.MULTILINE)
+        )
+        result = result.replace(bareJsonLineRegex) { "" }
+
+        // 清理多余空行
+        result = result.replace(Regex("\n{3,}"), "\n\n").trim()
+        return result
     }
 }
