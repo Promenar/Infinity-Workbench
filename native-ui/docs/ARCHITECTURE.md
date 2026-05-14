@@ -106,6 +106,13 @@ graph TD
 - **CJK 间距保护**: `insertCjkSpacing()` 跳过行内代码与链接，使用占位符替换/恢复模式
 - **流式边界检测**: 增量追加时检测 ` ``` ` / `$$` 跨边界，自动重新解析
 - **崩溃降级**: `MarkdownSafe` composable 包裹 `Markdown()` 调用，渲染崩溃时自动回退纯文本 `Text`
+- **模型未选拦截**: `ChatInputBar` 集成模型有效性校验，未选模型时通过 `GenerationStatusButton` 置灰拦截发送，并触发 `ModelHint` 浮动提示。
+- **Pipeline 指示器优化**: `PipelineBubble` 采用紧凑型指示器设计（70% 宽度），将点击涟漪限制在内容区域内，并实现思考块样式的视觉降级。
+
+## 流式渲染性能优化 (2026-05-14 完成)
+- **无感追赶 (Smooth Catch-up)**：`rememberSmoothStreamContent` 不再随内容更新重启 Effect，而是通过内部循环平滑步进，在高频更新下仍能保持丝滑。
+- **分段合并 (Segment Merging)**：在流式解析 Markdown 时，系统会动态合并连续的纯文本段落，避免 Jetpack Compose 渲染树过度膨胀，大幅降低 UI 线程压力。
+- **布局平滑器 (Layout Smoother)**：利用 `animateContentSize()` 缓冲 Markdown 重排（如代码块闭合）带来的尺寸跳变。
 
 ## 远期设计目标 (Roadmap)
 

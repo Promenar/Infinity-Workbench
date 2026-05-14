@@ -13,6 +13,7 @@
 - [RAG] **P1-4 多格式文档导入**：`DocumentImporter` 现支持 PDF / Word / HTML 格式识别与分发，PDF 使用 Android `PdfRenderer`，HTML 自动剥离标签
 - [RAG] **P1-5 阈值滑块**：`GlobalRagConfigScreen` 新增 `memoryThreshold`（对话记忆阈值）和 `docThreshold`（文档检索阈值）滑块
 - [RAG] **P1-6 进度条状态优化**：`RagOmniIndicator` 进度条仅在做检索过程中显示，已完成/消息重载后自动隐藏，避免旧检索进度条残留
+- [UI/Hub] **P1-7 删除二次确认**：在助手列表和二级会话列表中实装了删除确认对话框，防止用户因误触导致数据丢失
 
 ### Added
 - [Provider] **协议类型体系升级**：将 `ProtocolId` 枚举重构为 `ProtocolType` sealed class，支持 9 种协议类型（OpenAI Chat/Responses、Anthropic Messages、Google VertexAI、Cohere Chat、Mistral Chat、DeepSeek、通用 OpenAI 兼容、本地推理），包含独立 `ProtocolSelector` UI 组件
@@ -95,3 +96,25 @@
 - [Chat] **修复模型选择器闪退**：修复了 `SessionSettingsSheet` 因缺少 `IMAGE` 能力颜色映射导致的崩溃问题。
 - [UI] **优化模型管理操作按钮**：增加了模型管理页面顶部操作按钮（自动获取、添加等）的高度，使其视觉上更协调。
 - [UI] **修复提供商图标显示**：为预设提供商增加了 Material Icon 兜底展示，解决了 OpenAI、Anthropic 等图标加载失败的问题，并优化了 Local 和 Custom 的图标。
+### [2026-05-14] 优化思考块渲染与流式性能
+
+- **思考块渲染优化**：
+    - 修复了思考内容在超高速模型输出时由于高频状态更新导致 `LaunchedEffect` 频繁重启而造成的渲染滞后（Freeze）问题。
+    - 引入了基于 `rememberUpdatedState` 的非阻塞流式 catch-up 机制。
+    - 为思考块容器增加了 `animateContentSize()`，实现重排（Markdown Layout）时的平滑视觉过渡。
+- **Markdown 渲染引擎优化**：
+    - 实现了流式分段合并逻辑，避免由于 Token 增量更新导致产生大量微小 `Markdown` 组件。
+    - 优化了 `MarkdownSafe` 的组件缓存机制，移除了不必要的 Key 依赖。
+- **交互精准度**：
+    - 细化了思考块的流式状态判定逻辑，仅在实际 `THINKING` 阶段开启平滑动画，生成正文时即刻同步。
+
+### [2026-05-14] UI 交互与稳定性修复
+
+- **模型选择拦截**：在 `ChatScreen` 实现了发送按钮拦截器。若未选择主模型，点击发送会弹出提示气泡。
+- **Pipeline 指标优化**：
+    - 调整思考 (Thinking) 与工具 (Tool) 容器宽度至屏幕 70%。
+    - 弱化思考过程的视觉存在感（字号减小 4sp，颜色变灰透明）。
+    - 修复了点击产生的 MD3 涟漪动画溢出至全屏的布局缺陷。
+- **流式渲染修正**：
+    - 解决了生成态光标位置偏右的问题，确保其与气泡左侧对齐。
+    - 修复了 `AnimatedVisibility` 在特定 Compose 作用域下的编译冲突。

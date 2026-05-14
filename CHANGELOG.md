@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 智能视角追踪 + 流式加速 (2026-05-14)
+- **智能视角追踪**: Pin-to-Bottom→新消息滚底+20Hz 自动跟随→用户手势切断→FAB 恢复；contentPadding bottom=150dp 统一底部定义
+- **流式加速**: `BALANCED=6000` CPS（100 字符/帧），消除 38 CPS 积压-爆发-结束问题
+- **思考容器**: `LaunchedEffect(isGenerating)` 同步展开
+- **FAB/底部判定**: 密度感知阈值 `60.dp.toPx()` + spacer 精确索引匹配
+
 ### 流式传输死锁修复 (2026-05-14) 🔴 P0
 - **Agent 循环死锁**: `Mutex.withLock` 包裹含递归路径的 `generateMessage()` 导致永久挂起——Kotlin `Mutex` 不可重入，`cancelActiveGeneration()` 已足够防并发。**教训**: 互斥锁绝不可包裹递归函数
 - **流式假死**: `OpenAIProtocol` 空内容守卫 + `ThinkingDetector` 末端 `<` 扣留 → 移除守卫 + `tryFastPath()` 直通

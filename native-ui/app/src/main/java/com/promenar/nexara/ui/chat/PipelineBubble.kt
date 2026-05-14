@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,6 +83,7 @@ fun buildPipelineGroups(messages: List<Message>): List<PipelineGroup> {
 fun PipelineBubble(
     group: PipelineGroup,
     isGenerating: Boolean,
+    status: GenerationStatus = GenerationStatus.IDLE,
     streamingContent: String,
     fontSize: Int,
     onContentChange: ((String) -> Unit)? = null,
@@ -111,17 +114,17 @@ fun PipelineBubble(
         ) {
             allSteps.forEachIndexed { index, step ->
                 val isLastInGroup = index == allSteps.lastIndex
-                val isLastContentStep = step is PipelineStep.Content && isLastInGroup
-
+                
                 // ── 步骤渲染 ──
                 when (step) {
                     is PipelineStep.Thinking -> {
-                        // 最后一个 Thinking 步骤且 group 正在生成时，展开展示思考过程
+                        // 仅在当前确实处于思考状态且是最后一步思考时，才开启流式平滑渲染
                         val isLastThinking = allSteps.filterIsInstance<PipelineStep.Thinking>().lastOrNull() == step
-                        val isThinkingActive = isGenerating && isLastThinking
+                        val isThinkingStreaming = isGenerating && isLastThinking && status == GenerationStatus.THINKING
+                        
                         InlineThinkingRow(
                             reasoning = step.reasoning,
-                            isGenerating = isThinkingActive,
+                            isGenerating = isThinkingStreaming,
                             fontSize = fontSize
                         )
                     }
@@ -263,25 +266,26 @@ private fun InlineThinkingRow(
     fontSize: Int
 ) {
     var isExpanded by remember { mutableStateOf(isGenerating) }
+    // remember 只记初始值，生成态变化时需要同步展开
+    LaunchedEffect(isGenerating) {
+        if (isGenerating) isExpanded = true
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // ── 折叠行 ──
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { isExpanded = !isExpanded }
                 .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-
             Row(
                 modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .background(
-                        NexaraColors.Primary.copy(alpha = 0.08f),
-                        RoundedCornerShape(8.dp)
-                    )
+                    .fillMaxWidth(0.7f) // 进一步缩减指示器宽度
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(NexaraColors.Primary.copy(alpha = 0.08f))
                     .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .clickable { isExpanded = !isExpanded } // 移到此处修复涟漪超出容器 Bug
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -334,22 +338,24 @@ private fun InlineThinkingRow(
                     shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.15f)),
                     modifier = Modifier
-                        .fillMaxWidth(0.85f)
+                        .fillMaxWidth() // 展开内容与正文等宽
                         .padding(bottom = 4.dp)
+                        .animateContentSize() // 增加平滑动画，解决重排时的视觉跳变
                 ) {
+                    val dimmedColor = NexaraColors.Outline.copy(alpha = 0.7f) // 弱化颜色
                     CompositionLocalProvider(
-                        androidx.compose.material3.LocalContentColor provides NexaraColors.OnSurfaceVariant.copy(alpha = 0.55f),
+                        androidx.compose.material3.LocalContentColor provides dimmedColor,
                         androidx.compose.material3.LocalTextStyle provides NexaraTypography.bodySmall.copy(
-                            fontSize = (fontSize - 3).coerceAtLeast(10).sp,
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.55f)
+                            fontSize = (fontSize - 4).coerceAtLeast(10).sp, // 字号更小
+                            color = dimmedColor
                         )
                     ) {
                         MarkdownText(
                             markdown = reasoning,
                             isStreaming = isGenerating,
-                            fontSize = (fontSize - 3).coerceAtLeast(10),
-                            showCursor = false, // 思考区不需要光标
-                            overrideColor = NexaraColors.OnSurfaceVariant.copy(alpha = 0.55f),
+                            fontSize = (fontSize - 4).coerceAtLeast(10),
+                            showCursor = false,
+                            overrideColor = dimmedColor,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
@@ -381,19 +387,16 @@ private fun InlineToolRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { isExpanded = !isExpanded }
                 .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-
             Row(
                 modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .background(
-                        NexaraColors.Tertiary.copy(alpha = 0.08f),
-                        RoundedCornerShape(8.dp)
-                    )
+                    .fillMaxWidth(0.7f) // 进一步缩减指示器宽度
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(NexaraColors.Tertiary.copy(alpha = 0.08f))
                     .border(0.5.dp, NexaraColors.Tertiary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .clickable { isExpanded = !isExpanded } // 移到此处修复涟漪超出容器 Bug
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -488,7 +491,7 @@ private fun InlineToolRow(
                                 color = NexaraColors.SurfaceLow.copy(alpha = 0.4f),
                                 shape = RoundedCornerShape(6.dp),
                                 modifier = Modifier
-                                    .weight(1f)
+                                    .fillMaxWidth() // 展开内容与正文等宽
                                     .padding(bottom = 2.dp)
                             ) {
                                 Text(
@@ -628,8 +631,7 @@ private fun StreamingCursor() {
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        PipelineConnector(isLast = true, withLine = false) // 使用短线或圆点指示起始
-        Spacer(modifier = Modifier.width(8.dp))
+        // 移除 PipelineConnector 以修复光标偏右 Bug，使其与正文左对齐
         Box(
             modifier = Modifier
                 .width(10.dp)

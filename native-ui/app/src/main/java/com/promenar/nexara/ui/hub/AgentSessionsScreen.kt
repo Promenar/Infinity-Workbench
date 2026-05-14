@@ -27,6 +27,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.SwipeableItem
+import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -47,6 +48,7 @@ fun AgentSessionsScreen(
     val sessions by viewModel.sessions.collectAsState()
     val agentName by viewModel.agentName.collectAsState()
     val agentColor by viewModel.agentColor.collectAsState()
+    var sessionToDelete by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
     LaunchedEffect(agentId) {
@@ -78,6 +80,19 @@ fun AgentSessionsScreen(
             }
         }
     ) { paddingValues ->
+        ConfirmDialog(
+            show = sessionToDelete != null,
+            onDismiss = { sessionToDelete = null },
+            onConfirm = {
+                sessionToDelete?.let { viewModel.deleteSession(it) }
+                sessionToDelete = null
+            },
+            title = stringResource(R.string.session_settings_delete_title),
+            description = stringResource(R.string.session_settings_delete_message),
+            confirmLabel = stringResource(R.string.shared_btn_delete),
+            destructive = true
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -133,7 +148,7 @@ fun AgentSessionsScreen(
 
                         SwipeableItem(
                             onPin = { viewModel.pinSession(session.id) },
-                            onDelete = { viewModel.deleteSession(session.id) },
+                            onDelete = { sessionToDelete = session.id },
                             isPinned = session.isPinned
                         ) {
                             SessionCard(

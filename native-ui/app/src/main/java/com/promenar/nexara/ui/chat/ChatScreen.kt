@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat
 
 import android.app.Activity
 import android.view.WindowManager
+import kotlinx.coroutines.delay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -20,6 +21,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,6 +114,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,6 +134,7 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import com.promenar.nexara.ui.chat.manager.skills.GeneratedImageData
 import kotlinx.serialization.json.Json
 
@@ -155,29 +163,40 @@ fun ChatScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var pendingTruncateAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showModelHint by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(showModelHint) {
+        if (showModelHint) {
+            delay(2500)
+            showModelHint = false
+        }
+    }
 
     val sessionTitle = uiState.session?.title ?: stringResource(R.string.chat_title_new)
     val agentName = uiState.agentName
 
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
 
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val isUserScrolledAway by remember(pipelineGroups.size) {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
             val visibleItems = layoutInfo.visibleItemsInfo
             if (visibleItems.isEmpty()) return@derivedStateOf false
-            
-            val lastVisibleItem = visibleItems.last()
+
             val totalItemsCount = layoutInfo.totalItemsCount
-            
-            // 最后一项（含 bottom_spacer）不可见 → 用户已向上滚动
-            if (lastVisibleItem.index < totalItemsCount - 1) return@derivedStateOf true
-            
+
+            // 最后一项（bottom_spacer）不可见 → 用户已离开底部
+            if (visibleItems.none { it.index == totalItemsCount - 1 }) return@derivedStateOf true
+
+            // 底部判定：spacer 底部超出视口底部即代表用户已滚离底部
+            val spacerItem = visibleItems.first { it.index == totalItemsCount - 1 }
+            val spacerBottom = spacerItem.offset + spacerItem.size
             val viewportBottom = layoutInfo.viewportEndOffset
-            val lastItemBottom = lastVisibleItem.offset + lastVisibleItem.size
-            
-            lastItemBottom > viewportBottom + 100
+            // 阈值 = contentPadding bottom(48dp) + 12dp 缓冲区
+            val threshold = with(density) { 60.dp.toPx() }
+            spacerBottom > viewportBottom + threshold
         }
     }
 
@@ -194,67 +213,54 @@ fun ChatScreen(
         chatViewModel.loadSession(sessionId)
     }
 
-    // ── Smart Follow 滚动策略：手势优先 + 用户消息锚定 + Agent 追踪 ──
-    //   autoFollow = true  → 系统可自动滚动（生成起始、工具步骤新增、键盘弹出）
-    //   autoFollow = false → 用户手势介入后锁定视口，仅 FAB 点击或新消息发送可恢复
+    // ═══════════════════════════════════════════════════════════
+    //  智能视角追踪 — Pin to Bottom
+    //  新消息发送 → 滚到底部开启追踪 → 流式输出时跟随最新行 →
+    //  用户触摸介入 → 切断追踪 → FAB 点击恢复追踪
+    // ═══════════════════════════════════════════════════════════
 
     var autoFollowEnabled by remember { mutableStateOf(true) }
-    // 追踪执行步数（Agent 模式视角追踪）
-    val execMsg = uiState.messages.lastOrNull {
-        it.role == MessageRole.ASSISTANT && it.executionSteps != null && it.executionSteps!!.isNotEmpty()
-    }
-    val currentExecStepsSize = execMsg?.executionSteps?.size ?: 0
-    val prevExecStepsSize = remember { mutableStateOf(0) }
 
-    // 用户手势介入检测：一旦用户向上滚动离开底部，立即锁定 autoFollow = false
+    // 用户手势介入 → 切断追踪
     LaunchedEffect(isUserScrolledAway) {
-        if (isUserScrolledAway && uiState.isGenerating) {
-            autoFollowEnabled = false
-        }
+        if (isUserScrolledAway) autoFollowEnabled = false
     }
 
-    // 1. 新用户消息发送 → 强制恢复 autoFollow + 锚定 User Message 到顶部
+    // 新用户消息 → 恢复追踪 + 滚到底部
     val latestUserMsgId = uiState.messages.filter { it.role == MessageRole.USER }.lastOrNull()?.id ?: ""
     LaunchedEffect(latestUserMsgId) {
         if (latestUserMsgId.isNotEmpty()) {
             autoFollowEnabled = true
-            if (uiState.isGenerating) {
-                val groups = buildPipelineGroups(uiState.messages)
-                val groupIdx = groups.indexOfFirst { g -> g.messages.any { it.id == latestUserMsgId } }
-                if (groupIdx >= 0) {
-                    listState.animateScrollToItem(groupIdx, scrollOffset = 0)
-                }
-            }
-        }
-    }
-
-    // 2. Agent 模式视角追踪：仅 autoFollow 开启且工具时间轴不在视口内时触发，
-    //    避免无意义拽拉。scrollToItem 不加 offset，让 Compose 自然定位到可见区域。
-    LaunchedEffect(currentExecStepsSize) {
-        if (uiState.isGenerating && autoFollowEnabled && currentExecStepsSize > 0
-            && currentExecStepsSize > prevExecStepsSize.value
-        ) {
-            prevExecStepsSize.value = currentExecStepsSize
             val groups = buildPipelineGroups(uiState.messages)
-            val stepGroupIdx = groups.indexOfLast { g ->
-                g.messages.any { it.executionSteps != null && it.executionSteps!!.isNotEmpty() }
-            }
-            if (stepGroupIdx >= 0) {
-                val isVisible = listState.layoutInfo.visibleItemsInfo.any { it.index == stepGroupIdx }
-                if (!isVisible) {
-                    listState.animateScrollToItem(stepGroupIdx)
-                }
-            }
-        }
-        if (!uiState.isGenerating) {
-            prevExecStepsSize.value = 0
+            listState.animateScrollToItem(groups.size) // 滚到最底部
         }
     }
 
-    // 3. IME 键盘避让：键盘弹出时仅在 autoFollow 开启时滚动
+    // 生成中自动跟随：周期检查（~5Hz），仅用户还在底部时才轻推
+    LaunchedEffect(uiState.isGenerating, autoFollowEnabled) {
+        if (uiState.isGenerating && autoFollowEnabled) {
+            while (isActive) {
+                val layoutInfo = listState.layoutInfo
+                val totalItems = layoutInfo.totalItemsCount
+                if (totalItems > 0) {
+                    val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()
+                    // 仅当：用户可以继续向下滚动 + 最后一项不完全在视口内 时才推
+                    val canScroll = listState.canScrollForward
+                    val lastItemInView = lastVisible != null &&
+                        (lastVisible.offset + lastVisible.size) < layoutInfo.viewportEndOffset
+                    if (canScroll && !lastItemInView) {
+                        listState.scrollToItem(totalItems - 1)
+                    }
+                }
+                kotlinx.coroutines.delay(50)
+            }
+        }
+    }
+
+    // IME 键盘避让
     val isImeVisible = WindowInsets.isImeVisible
     LaunchedEffect(isImeVisible) {
-        if (isImeVisible && autoFollowEnabled && uiState.messages.isNotEmpty()) {
+        if (isImeVisible && uiState.messages.isNotEmpty()) {
             val groups = buildPipelineGroups(uiState.messages)
             val lastIdx = groups.size - 1
             if (lastIdx >= 0) {
@@ -315,13 +321,12 @@ fun ChatScreen(
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 120.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 150.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                     // pipelineGroups 已在外部通过 remember 计算，此处直接引用
                     items(pipelineGroups.size, key = { pipelineGroups[it].messages.first().id }) { idx ->
                         val group = pipelineGroups[idx]
@@ -342,6 +347,7 @@ fun ChatScreen(
                             PipelineBubble(
                                 group = group,
                                 isGenerating = isGeneratingGroup,
+                                status = uiState.status,
                                 streamingContent = uiState.streamingContent,
                                 fontSize = uiState.session?.options?.fontSize ?: 13,
                                 onContentChange = { newContent ->
@@ -356,88 +362,128 @@ fun ChatScreen(
                     item(key = "bottom_spacer") {
                         Spacer(modifier = Modifier.height(16.dp))
                     }
-                }
+            }
 
-                AnimatedVisibility(
-                    visible = uiState.isLoading && uiState.messages.isEmpty(),
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    ChatSkeleton(modifier = Modifier.weight(1f).fillMaxWidth())
-                }
+            // ── Skeleton 与其他 Overlay 需在 LazyColumn 之上但独立于输入框 ──
+            AnimatedVisibility(
+                visible = uiState.isLoading && uiState.messages.isEmpty(),
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize().padding(bottom = 160.dp)
+            ) {
+                ChatSkeleton(modifier = Modifier.fillMaxSize())
+            }
 
-                if (showTruncateDialog) {
-                    Dialog(onDismissRequest = { showTruncateDialog = false }) {
-                        NexaraConfirmDialog(
-                            title = stringResource(R.string.chat_confirm_truncate_title),
-                            message = stringResource(R.string.chat_confirm_truncate_message),
-                            confirmText = stringResource(R.string.common_btn_confirm),
-                            onConfirm = {
-                                pendingTruncateAction?.invoke()
-                                showTruncateDialog = false
-                                pendingTruncateAction = null
-                            },
-                            onCancel = {
-                                showTruncateDialog = false
-                                pendingTruncateAction = null
-                            },
-                            isDestructive = true
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ChatInputTopBar(
-                        modelName = uiState.session?.modelId ?: "",
-                        tokenState = tokenState,
-                        onModelClick = { showModelSettingsSheet = true },
-                        onManualSummary = { chatViewModel.summarizeHistory() }
-                    )
-
-                    ChatInputBar(
-                        text = inputText,
-                        placeholder = if (agentName.isNotBlank()) stringResource(R.string.chat_input_placeholder, agentName) else stringResource(R.string.chat_input_placeholder_default),
-                        onTextChange = { chatViewModel.updateInputText(it) },
-                        onSend = {
-                            if (inputText.isNotBlank()) {
-                                chatViewModel.sendMessage(inputText)
-                            }
+            if (showTruncateDialog) {
+                Dialog(onDismissRequest = { showTruncateDialog = false }) {
+                    NexaraConfirmDialog(
+                        title = stringResource(R.string.chat_confirm_truncate_title),
+                        message = stringResource(R.string.chat_confirm_truncate_message),
+                        confirmText = stringResource(R.string.common_btn_confirm),
+                        onConfirm = {
+                            pendingTruncateAction?.invoke()
+                            showTruncateDialog = false
+                            pendingTruncateAction = null
                         },
-                        status = uiState.status,
-                        onStop = { chatViewModel.stopGeneration() }
+                        onCancel = {
+                            showTruncateDialog = false
+                            pendingTruncateAction = null
+                        },
+                        isDestructive = true
                     )
                 }
             }
 
-            AnimatedVisibility(
-                visible = isUserScrolledAway || !autoFollowEnabled,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp)
-            ) {
-                FloatingActionButton(
-                    onClick = {
-                        autoFollowEnabled = true
-                        scope.launch {
-                            val groups = buildPipelineGroups(uiState.messages)
-                            listState.animateScrollToItem(groups.size)
-                        }
-                    },
-                    containerColor = NexaraColors.SurfaceHigh,
-                    contentColor = NexaraColors.Primary,
-                    shape = CircleShape,
-                    modifier = Modifier.size(40.dp)
+                // ── 宽幅低矮版 MD3 风格浮岛 (Optimized Solid MD3 Island) ──
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 4.dp) // 极窄外边距，显著加宽
+                        .padding(bottom = 20.dp)
+                        .fillMaxWidth(),
+                    color = NexaraColors.SurfaceLow, // 调整颜色为更深的 SurfaceLow，契合 Header
+                    shape = RoundedCornerShape(24.dp), // 略微减小圆角，配合加宽效果
+                    border = BorderStroke(1.dp, NexaraColors.OutlineVariant.copy(alpha = 0.3f)),
+                    shadowElevation = 6.dp
                 ) {
-                    Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(20.dp))
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp, vertical = 10.dp), // 降低水平间距从 18dp -> 8dp，拓宽本体
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ChatInputTopBar(
+                            modelName = uiState.session?.modelId ?: "",
+                            tokenState = tokenState,
+                            onModelClick = { showModelSettingsSheet = true },
+                            onManualSummary = { chatViewModel.summarizeHistory() }
+                        )
+
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            ChatInputBar(
+                                text = inputText,
+                                placeholder = if (agentName.isNotBlank()) stringResource(R.string.chat_input_placeholder, agentName) else stringResource(R.string.chat_input_placeholder_default),
+                                onTextChange = { chatViewModel.updateInputText(it) },
+                                onSend = {
+                                    if (inputText.isNotBlank()) {
+                                        chatViewModel.sendMessage(inputText)
+                                    }
+                                },
+                                status = uiState.status,
+                                onStop = { chatViewModel.stopGeneration() },
+                                isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
+                                onModelHint = { showModelHint = true }
+                            )
+    
+                            // ── 模型未选择提示气泡 ──
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = showModelHint,
+                                enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
+                                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(y = (-45).dp, x = (-10).dp)
+                            ) {
+                                Surface(
+                                    color = NexaraColors.Primary,
+                                    shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 12.dp, bottomEnd = 2.dp),
+                                    shadowElevation = 8.dp
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.chat_hint_select_model),
+                                        style = NexaraTypography.labelMedium,
+                                        color = NexaraColors.OnPrimary,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            
+                AnimatedVisibility(
+                    visible = isUserScrolledAway,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)
+                ) {
+                    FloatingActionButton(
+                        onClick = {
+                            autoFollowEnabled = true
+                            scope.launch {
+                                val groups = buildPipelineGroups(uiState.messages)
+                                listState.animateScrollToItem(groups.size)
+                            }
+                        },
+                        containerColor = NexaraColors.SurfaceHigh,
+                        contentColor = NexaraColors.Primary,
+                        shape = CircleShape,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
-    }
 
     if (showClearDialog) {
         Dialog(onDismissRequest = { showClearDialog = false }) {
@@ -1050,7 +1096,9 @@ fun ChatInputBar(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     status: GenerationStatus = GenerationStatus.IDLE,
-    onStop: () -> Unit = {}
+    onStop: () -> Unit = {},
+    isModelSelected: Boolean = true,
+    onModelHint: () -> Unit = {}
 ) {
     val isGenerating = status != GenerationStatus.IDLE
     NexaraGlassCard(
@@ -1060,7 +1108,7 @@ fun ChatInputBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                .padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), // 拓宽本体：start 20 -> 12
             verticalAlignment = Alignment.CenterVertically
         ) {
             BasicTextField(
@@ -1086,9 +1134,12 @@ fun ChatInputBar(
 
             GenerationStatusButton(
                 status = status,
-                onSend = onSend,
+                onSend = {
+                    if (isModelSelected) onSend() else onModelHint()
+                },
                 onStop = onStop,
-                enabled = text.isNotBlank()
+                enabled = text.isNotBlank(),
+                isModelSelected = isModelSelected
             )
         }
     }
@@ -1216,7 +1267,8 @@ private fun GenerationStatusButton(
     status: GenerationStatus,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    isModelSelected: Boolean = true
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "gen_status")
     
@@ -1270,7 +1322,13 @@ private fun GenerationStatusButton(
 
     val containerColor by animateColorAsState(
         when (status) {
-            GenerationStatus.IDLE -> if (enabled) NexaraColors.Primary else NexaraColors.SurfaceHighest
+            GenerationStatus.IDLE -> {
+                if (enabled) {
+                    if (isModelSelected) NexaraColors.Primary else NexaraColors.SurfaceHighest
+                } else {
+                    NexaraColors.SurfaceHighest
+                }
+            }
             GenerationStatus.UPLOADING -> NexaraColors.Primary.copy(alpha = pulseAlpha)
             GenerationStatus.THINKING -> NexaraColors.Primary
             GenerationStatus.RECEIVING -> NexaraColors.Error
@@ -1282,7 +1340,13 @@ private fun GenerationStatusButton(
 
     val contentColor by animateColorAsState(
         when (status) {
-            GenerationStatus.IDLE -> if (enabled) NexaraColors.OnPrimary else NexaraColors.OnSurfaceVariant
+            GenerationStatus.IDLE -> {
+                if (enabled) {
+                    if (isModelSelected) NexaraColors.OnPrimary else NexaraColors.OnSurfaceVariant
+                } else {
+                    NexaraColors.OnSurfaceVariant
+                }
+            }
             GenerationStatus.UPLOADING -> NexaraColors.OnPrimary
             GenerationStatus.THINKING -> NexaraColors.OnPrimary
             GenerationStatus.RECEIVING -> Color.White

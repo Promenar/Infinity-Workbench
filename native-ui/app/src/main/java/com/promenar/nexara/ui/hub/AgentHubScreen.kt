@@ -26,6 +26,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.SwipeableItem
+import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -41,6 +42,8 @@ fun AgentHubScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
+
+    var agentToDelete by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
@@ -78,6 +81,19 @@ fun AgentHubScreen(
                 }
             )
         }
+
+        ConfirmDialog(
+            show = agentToDelete != null,
+            onDismiss = { agentToDelete = null },
+            onConfirm = {
+                agentToDelete?.let { viewModel.deleteAgent(it) }
+                agentToDelete = null
+            },
+            title = stringResource(R.string.agent_edit_delete_title),
+            description = stringResource(R.string.agent_edit_delete_message),
+            confirmLabel = stringResource(R.string.agent_edit_delete_confirm),
+            destructive = true
+        )
 
         if (agents.isEmpty() && searchQuery.isEmpty()) {
             EmptyAgentState(
@@ -127,7 +143,7 @@ fun AgentHubScreen(
                         iconContainerColor = parsedColor,
                         isPinned = agent.isPinned,
                         onPin = { viewModel.togglePin(agent.id) },
-                        onDelete = { viewModel.deleteAgent(agent.id) },
+                        onDelete = { agentToDelete = agent.id },
                         onEdit = { onNavigateToAgentEdit(agent.id) },
                         onClick = { onNavigateToSessionList(agent.id) }
                     )

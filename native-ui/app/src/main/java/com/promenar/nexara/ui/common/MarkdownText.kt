@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -222,7 +223,20 @@ fun MarkdownText(
                 cache.segments = result
                 result
             } else {
-                cache.segments + ContentSegment.Markdown(newPart)
+                // Merge with last segment if it's Markdown to avoid component explosion
+                val last = cache.segments.lastOrNull()
+                if (last is ContentSegment.Markdown) {
+                    val updatedLast = ContentSegment.Markdown(last.content + newPart)
+                    val newSegments = cache.segments.dropLast(1) + updatedLast
+                    cache.text = smoothed
+                    cache.segments = newSegments
+                    newSegments
+                } else {
+                    val newSegments = cache.segments + ContentSegment.Markdown(newPart)
+                    cache.text = smoothed
+                    cache.segments = newSegments
+                    newSegments
+                }
             }
         } else {
             val result = splitRichSegments(smoothed)
@@ -367,6 +381,9 @@ private fun MarkdownSafe(
     onContentChange: ((String) -> Unit)?,
 ) {
     var renderError by remember(content) { mutableStateOf(false) }
+    // 使用 rememberUpdatedState 避免回调变化导致 components 重建
+    val currentMarkdown = rememberUpdatedState(markdown)
+    val currentOnContentChange = rememberUpdatedState(onContentChange)
 
     if (renderError) {
         Text(
@@ -377,7 +394,7 @@ private fun MarkdownSafe(
         return
     }
 
-    val components = remember(fontSize, markdown, onContentChange) {
+    val components = remember(fontSize) {
         markdownComponents(
             heading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.ATX_CONTENT),
             heading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.ATX_CONTENT),
@@ -449,11 +466,13 @@ private fun MarkdownSafe(
                         code = code,
                         language = language,
                         fontSize = fontSize,
-                        onCodeChange = onContentChange?.let { cb ->
+                        onCodeChange = if (currentOnContentChange.value != null) {
                             { newCode ->
-                                cb(replaceCodeInMarkdown(markdown, language, code, newCode))
+                                currentOnContentChange.value?.invoke(
+                                    replaceCodeInMarkdown(currentMarkdown.value, language, code, newCode)
+                                )
                             }
-                        }
+                        } else null
                     ) {
                         MarkdownHighlightedCode(
                             code = code,
@@ -473,11 +492,13 @@ private fun MarkdownSafe(
                         code = code,
                         language = language,
                         fontSize = fontSize,
-                        onCodeChange = onContentChange?.let { cb ->
+                        onCodeChange = if (currentOnContentChange.value != null) {
                             { newCode ->
-                                cb(replaceCodeInMarkdown(markdown, language, code, newCode))
+                                currentOnContentChange.value?.invoke(
+                                    replaceCodeInMarkdown(currentMarkdown.value, language, code, newCode)
+                                )
                             }
-                        }
+                        } else null
                     ) {
                         MarkdownHighlightedCode(
                             code = code,

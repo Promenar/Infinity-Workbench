@@ -792,4 +792,5 @@
     <string name="sheet_settings_ui_title">UI Settings</string>
     <string name="sheet_settings_font_size">Font Size</string>
     <string name="sheet_settings_font_size_unit">px</string>
+    <string name="chat_hint_select_model">请先点击顶部配置会话模型</string>
 </resources>

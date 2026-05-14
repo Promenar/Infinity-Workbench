@@ -30,3 +30,4 @@ secure_env/
 # === Git Worktrees ===
 worktrees/
 worktree/
+native-ui/.agent/
