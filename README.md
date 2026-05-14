@@ -4,6 +4,8 @@
 ![Platform](https://img.shields.io/badge/platform-Android-green.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
 ![Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg)
+![Version](https://img.shields.io/badge/version-2.0.0--beta-orange.svg)
+![Progress](https://img.shields.io/badge/progress-92%25-brightgreen.svg)
 
 > Android 端 BYOK 开源 AI 客户端 — 对标桌面端 LobeHub / Cherry Studio，原生 Kotlin + Jetpack Compose 实现。
 
@@ -16,19 +18,22 @@ Nexara is a BYOK (Bring Your Own Key) AI client for Android, serving as the mobi
 ### Core Features
 
 **Multi-Provider BYOK Chat**
-Connect to OpenAI, Anthropic, Vertex AI, DeepSeek, GLM, KIMI, and any OpenAI-compatible endpoint. Full streaming SSE support with real-time Markdown rendering. Switch models within a conversation.
+Connect to OpenAI, Anthropic, Vertex AI, DeepSeek, GLM, KIMI, and any OpenAI-compatible endpoint. Full streaming SSE with real-time Markdown rendering (GFM Alert, LaTeX, Mermaid, ECharts). Image upload with Vision (VLM) support. Smooth streaming speed control. Switch models within a conversation.
 
 **RAG Knowledge Engine**
-Built-in vector store (SQLite + FTS5) with semantic search. Import documents (TXT/MD), auto-chunk, vectorize via remote embedding APIs, and retrieve context during conversations. Hybrid search combining vector similarity and full-text matching.
+Built-in vector store (SQLite + FTS5) with semantic search. Import TXT/MD/PDF/Word/HTML documents, auto-chunk, vectorize via remote embedding APIs. Hybrid search (RRF fusion) + Rerank + Query Rewrite. Session memory vectorization with Memory browser view. Full-text FTS5 search.
 
 **Knowledge Graph**
-Automatic entity extraction from documents and conversations via LLM. Structured knowledge network stored in SQLite, enabling relationship queries and visualization.
+Automatic entity extraction from documents and conversations via LLM. Structured knowledge network in SQLite, with interactive ECharts force-directed graph visualization. Global/Document/Concept multi-view. JIT micro-graph extraction during conversations.
 
 **Agent System**
-Custom agents with configurable system prompts, model bindings, RAG scope, and tool sets. Function Calling with approval loops (Semi-Automatic mode). MCP protocol support for external tool integration.
+13 built-in tools (web search ×3 engines, calculator, JS sandbox, file system ×4, image generation, meta-tool). MCP protocol support for external tool integration. Function Calling with Semi-Automatic approval loops. Tool timeline visualization in chat.
 
-**Local Inference** *(experimental)*
-Optional on-device LLM via llama.cpp JNI bindings. GGUF model parsing, GPU detection, and model download management.
+**Token Dashboard**
+Per-session and global token tracking with Canvas trend charts, model breakdown, and cost estimation.
+
+**HTML Artifacts**
+Live WebView preview for HTML/CSS/JS/SVG code blocks, full-screen split mode, and PNG export.
 
 ### Tech Stack
 
@@ -60,19 +65,22 @@ Nexara 是一款 Android 端 BYOK 开源 AI 客户端，对标桌面端的 LobeH
 ### 核心功能
 
 **多服务商 BYOK 自由接入**
-支持 OpenAI、Anthropic、Vertex AI、DeepSeek、GLM、KIMI 及任意 OpenAI 兼容接口。完整 SSE 流式响应，实时 Markdown 渲染，会话内模型自由切换。
+支持 OpenAI、Anthropic、Vertex AI、DeepSeek、GLM、KIMI 及任意 OpenAI 兼容接口。完整 SSE 流式响应，实时 Markdown 渲染（GFM Alert、LaTeX、Mermaid、ECharts）。支持图片上传与 VLM 视觉理解。流式平滑调速。会话内模型自由切换。
 
 **RAG 知识引擎**
-内置向量库（SQLite + FTS5），支持语义检索。导入 TXT/MD 文档，自动分块，通过远程 Embedding API 向量化，在对话中检索相关上下文。支持向量相似度 + 全文混合检索。
+内置向量库（SQLite + FTS5），支持语义检索。导入 TXT/MD/PDF/Word/HTML 文档，自动分块，通过远程 Embedding API 向量化。混合检索（RRF 融合）+ Rerank 重排序 + 查询重写。会话记忆向量化与 Memory 浏览视图。FTS5 全文搜索。
 
 **知识图谱**
-通过 LLM 从文档和对话中自动抽取实体关系。结构化知识网络存储于 SQLite，支持关系查询与可视化。
+通过 LLM 从文档和对话中自动抽取实体关系。结构化知识网络存储于 SQLite，支持 ECharts 力导向图交互式可视化。全局/文档/概念三维视图。对话中 JIT 微图抽取。
 
 **Agent 系统**
-自定义 Agent，可配置系统提示词、模型绑定、RAG 范围与工具集。支持 Function Calling + 审批循环（Semi-Automatic 模式）。MCP 协议支持接入外部工具。
+13 个内置工具（联网搜索 ×3 引擎、数学计算、JS 沙箱、文件系统 ×4、AI 生图、元工具）。MCP 协议接入外部工具。Function Calling + Semi-Automatic 审批循环。对话中工具执行时间轴可视化。
 
-**本地推理** *(实验性)*
-可选设备端 LLM 运行（llama.cpp JNI 绑定）。GGUF 模型解析、GPU 检测、模型下载管理。
+**Token 仪表盘**
+会话级与全局级 Token 统计，Canvas 趋势图，模型用量明细，费用估算。
+
+**HTML Artifacts**
+HTML/CSS/JS/SVG 代码块 WebView 实时预览，全屏分屏模式，PNG 导出。
 
 ### 技术栈
 
