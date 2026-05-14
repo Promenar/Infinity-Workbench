@@ -136,6 +136,8 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraCustomShapes
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.common.EditorMode
+import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -769,7 +771,7 @@ fun ChatTopBar(
                     )
                     DropdownMenuItem(
                         text = { Text("Session Prompt", style = NexaraTypography.labelMedium) },
-                        leadingIcon = { Icon(Icons.Rounded.Description, null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(Icons.Rounded.Terminal, null, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             showMenu = false
                             onSessionPrompt()
