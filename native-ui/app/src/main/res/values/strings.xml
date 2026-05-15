@@ -359,19 +359,20 @@
     <string name="sheet_tool_web_search">Web Search</string>
     <string name="sheet_tool_filesystem_server">Filesystem Server</string>
     <string name="sheet_tool_github_server">GitHub Server</string>
-    <string name="sheet_tool_rerank">Passive RAG (Long-term Memory)</string>
+    <string name="sheet_settings_section_retrieval">Long-term Memory</string>
+    <string name="sheet_settings_memory">Session RAG</string>
+    <string name="sheet_settings_global_memory">Cross-session Retrieval</string>
+    <string name="sheet_settings_docs">Knowledge Base Search</string>
+    <string name="sheet_settings_kg">Knowledge Graph Reasoning</string>
+    <string name="sheet_tool_rerank">Retrieval Reranking</string>
+    <string name="sheet_settings_summary_threshold">Auto Compression Threshold</string>
     <string name="sheet_settings_section_inference">Generation Parameters</string>
-    <string name="sheet_settings_section_vectorization">Session Vectorization</string>
-    <string name="sheet_settings_section_retrieval">Vector Retrieval</string>
-    <string name="sheet_settings_summary_threshold">Auto-Summary Threshold</string>
+    <string name="sheet_settings_section_vectorization">Context Management</string>
     <string name="sheet_settings_active_window">Active Context Window</string>
     <string name="sheet_settings_active_window_unit">%1$d Messages</string>
     <string name="sheet_settings_stream_timeout">Request Timeout</string>
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">Max Tokens</string>
-    <string name="sheet_settings_memory">Long-term Memory</string>
-    <string name="sheet_settings_docs">Document Retrieval</string>
-    <string name="sheet_settings_kg">Knowledge Graph</string>
     <string name="sheet_settings_unlimited">Unlimited</string>
 
     <!-- WorkspaceSheet -->

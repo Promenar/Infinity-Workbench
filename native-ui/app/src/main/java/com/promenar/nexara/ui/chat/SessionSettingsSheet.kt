@@ -564,6 +564,7 @@ private fun SettingsPanel(
     
     var rerankEnabled by remember(ragOptions.enableRerank) { mutableStateOf(ragOptions.enableRerank) }
     var memoryEnabled by remember(ragOptions.enableMemory) { mutableStateOf(ragOptions.enableMemory) }
+    var globalMemoryEnabled by remember(ragOptions.isGlobal) { mutableStateOf(ragOptions.isGlobal) }
     var docsEnabled by remember(ragOptions.enableDocs) { mutableStateOf(ragOptions.enableDocs) }
     var kgEnabled by remember(ragOptions.enableKnowledgeGraph) { mutableStateOf(ragOptions.enableKnowledgeGraph ?: false) }
 
@@ -750,19 +751,23 @@ private fun SettingsPanel(
 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ToolToggleRow(stringResource(R.string.sheet_tool_rerank), Icons.Rounded.Sync, rerankEnabled) { 
-                    rerankEnabled = it
-                    chatViewModel.updateRagOptions(ragOptions.copy(enableRerank = it))
-                }
                 ToolToggleRow(stringResource(R.string.sheet_settings_memory), Icons.Rounded.History, memoryEnabled) { 
                     memoryEnabled = it
                     chatViewModel.updateRagOptions(ragOptions.copy(enableMemory = it))
+                }
+                ToolToggleRow(stringResource(R.string.sheet_settings_global_memory), Icons.Rounded.Share, globalMemoryEnabled) { 
+                    globalMemoryEnabled = it
+                    chatViewModel.updateRagOptions(ragOptions.copy(isGlobal = it))
                 }
                 ToolToggleRow(stringResource(R.string.sheet_settings_docs), Icons.Rounded.Description, docsEnabled) { 
                     docsEnabled = it
                     chatViewModel.updateRagOptions(ragOptions.copy(enableDocs = it))
                 }
-                ToolToggleRow(stringResource(R.string.sheet_settings_kg), Icons.Rounded.Share, kgEnabled) { 
+                ToolToggleRow(stringResource(R.string.sheet_tool_rerank), Icons.Rounded.Sync, rerankEnabled) { 
+                    rerankEnabled = it
+                    chatViewModel.updateRagOptions(ragOptions.copy(enableRerank = it))
+                }
+                ToolToggleRow(stringResource(R.string.sheet_settings_kg), Icons.Rounded.Psychology, kgEnabled) { 
                     kgEnabled = it
                     chatViewModel.updateRagOptions(ragOptions.copy(enableKnowledgeGraph = it))
                 }
@@ -801,7 +806,7 @@ private fun SettingsPanel(
                         chatViewModel.updateFontSize(currentFontSize)
                     },
                     valueRange = 10..18,
-                    steps = 8,
+                    steps = 7,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(16.dp))

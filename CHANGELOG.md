@@ -7,8 +7,10 @@ All notable changes to this project will be documented in this file.
 - **多模态图片/VLM**: ChatInputBar 图片选择 + 缩略图预览 + base64 编码发送 + OpenAI Vision/Anthropic 协议适配 + ChatBubble 渲染
 - **Token 统计仪表盘**: TokenUsageScreen（全局统计/会话排行/Canvas 趋势图/模型明细/费用估算）
 - **HTML Artifacts**: HtmlArtifactCard WebView 实时预览 + HtmlArtifactsPopup 全屏分屏 + PNG 导出
-- **测试补全**: 新增 10 个测试文件（4 文件 Skill + RerankClient + ExecJsSkill + 3 ViewModel 补全），合计 22 个新用例
-- **测试覆盖率**: 52 个测试文件，覆盖 Skills/ViewModels/Repositories/RAG 全链路
+- **测试补全**: 新增 11 个测试文件（4 文件 Skill + RerankClient + ExecJsSkill + 3 ViewModel 补全 + ChatLogicTest），合计 23 个新用例
+- **测试覆盖率**: 53 个测试文件，覆盖 Skills/ViewModels/Repositories/RAG 全链路
+- **RAG 术语标准化**: 将“向量检索”更名为“长期记忆”，解耦“会话 RAG”与“跨会话检索”，统一“上下文自动压缩阈值”等专业术语
+- **字体设置修复**: 修复了 SessionSettingsSheet 中字体大小滑动条断点与持久化失效问题，确保设置即时生效并跨会话保存
 
 ### Phase 8 — Agent 工具系统重构与增强 (2026-05-15)
 - **工具分类体系**: 被动注入（时间）与主动调用分离，CurrentTimeSkill 退役为 ContextBuilder 注入
