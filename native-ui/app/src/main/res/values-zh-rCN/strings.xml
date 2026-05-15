@@ -374,6 +374,11 @@
     <string name="sheet_settings_docs">知识库检索</string>
     <string name="sheet_settings_kg">知识图谱</string>
     <string name="sheet_settings_unlimited">无限制</string>
+    <string name="sheet_settings_top_k">Top K</string>
+    <string name="sheet_settings_repetition_penalty">重复惩罚</string>
+    <string name="sheet_settings_presence_penalty">话题新鲜度 (Presence)</string>
+    <string name="sheet_settings_frequency_penalty">词频惩罚 (Frequency)</string>
+    <string name="sheet_settings_advanced_params">高级生成参数</string>
 
     <!-- WorkspaceSheet -->
     <string name="workspace_title">工作区</string>

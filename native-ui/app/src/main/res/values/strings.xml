@@ -374,6 +374,11 @@
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">Max Tokens</string>
     <string name="sheet_settings_unlimited">Unlimited</string>
+    <string name="sheet_settings_top_k">Top K</string>
+    <string name="sheet_settings_repetition_penalty">Repetition Penalty</string>
+    <string name="sheet_settings_presence_penalty">Presence Penalty</string>
+    <string name="sheet_settings_frequency_penalty">Frequency Penalty</string>
+    <string name="sheet_settings_advanced_params">Advanced Parameters</string>
 
     <!-- WorkspaceSheet -->
     <string name="workspace_title">Workspace</string>

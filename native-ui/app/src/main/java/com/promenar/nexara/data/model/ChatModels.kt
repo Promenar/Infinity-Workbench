@@ -50,6 +50,8 @@ data class InferenceParams(
     val maxTokens: Int? = null,
     val frequencyPenalty: Double? = null,
     val presencePenalty: Double? = null,
+    val topK: Int? = null,
+    val repetitionPenalty: Double? = null,
     val thinkingLevel: String? = null,
     val streamTimeout: Int? = 120,
     val autoSummaryThreshold: Double = 0.8,
