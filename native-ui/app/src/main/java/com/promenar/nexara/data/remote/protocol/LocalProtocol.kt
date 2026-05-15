@@ -1,6 +1,5 @@
 package com.promenar.nexara.data.remote.protocol
 
-import com.promenar.nexara.data.local.inference.GenerateConfig
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -31,11 +30,7 @@ class LocalProtocol(
             }
         }
 
-        val genConfig = GenerateConfig(
-            maxTokens = request.maxTokens ?: 512,
-            temperature = (request.temperature ?: 0.7).toFloat(),
-            topP = (request.topP ?: 0.9).toFloat()
-        )
+        val genConfig = ProtocolParamAdapter.buildGenerateConfig(request)
 
         engine.generate(formattedPrompt, genConfig).collect { tokenText ->
             emit(StreamChunk.TextDelta(content = tokenText))
@@ -59,7 +54,7 @@ class LocalProtocol(
             }
         }
 
-        val genConfig = GenerateConfig(maxTokens = request.maxTokens ?: 512)
+        val genConfig = ProtocolParamAdapter.buildGenerateConfig(request)
         val result = StringBuilder()
 
         engine.generate(formattedPrompt, genConfig).collect { tokenText ->

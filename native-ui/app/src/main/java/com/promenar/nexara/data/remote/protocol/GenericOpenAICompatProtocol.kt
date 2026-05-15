@@ -239,11 +239,9 @@ class GenericOpenAICompatProtocol(
                 })
             }
 
-            request.temperature?.let { put("temperature", it) }
-            request.topP?.let { if (it < 1.0) put("top_p", it) }
-            request.maxTokens?.let { put("max_tokens", it) }
-            request.frequencyPenalty?.let { if (it != 0.0) put("frequency_penalty", it) }
-            request.presencePenalty?.let { if (it != 0.0) put("presence_penalty", it) }
+            ProtocolParamAdapter.mapCommonParams(this, request)
+            ProtocolParamAdapter.mapPenaltyParams(this, request, protocolType)
+            ProtocolParamAdapter.mapSamplingParams(this, request)
 
             if (stream) {
                 put("stream_options", buildJsonObject { put("include_usage", true) })

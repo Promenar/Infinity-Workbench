@@ -80,7 +80,7 @@ class LlamaContext private constructor(
         release()
     }
 
-    fun generate(prompt: String, maxTokens: Int = 256): Flow<String> = flow {
+    fun generate(prompt: String, config: GenerateConfig = GenerateConfig()): Flow<String> = flow {
         clear()
 
         val promptTokens = tokenize(prompt, addBos = true)
@@ -92,7 +92,7 @@ class LlamaContext private constructor(
         var currentToken = sample()
         if (currentToken < 0) return@flow
 
-        for (i in 0 until maxTokens) {
+        for (i in 0 until config.maxTokens) {
             if (currentToken == eosToken) break
 
             val text = detokenize(intArrayOf(currentToken))

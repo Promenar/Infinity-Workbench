@@ -245,8 +245,9 @@ class AnthropicProtocol(
                 }
             }))
 
-            request.temperature?.let { put("temperature", it) }
-            request.topP?.let { if (it < 1.0) put("top_p", it) }
+            ProtocolParamAdapter.mapCommonParams(this, request)
+            ProtocolParamAdapter.mapPenaltyParams(this, request, protocolType)
+            ProtocolParamAdapter.mapSamplingParams(this, request)
 
             if (request.reasoning == true) {
                 put("thinking", buildJsonObject {

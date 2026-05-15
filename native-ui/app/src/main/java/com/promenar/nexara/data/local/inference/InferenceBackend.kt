@@ -35,5 +35,7 @@ data class GenerateConfig(
     val temperature: Float = 0.0f,
     val topP: Float = 1.0f,
     val topK: Int = 40,
-    val repeatPenalty: Float = 1.0f
+    val repeatPenalty: Float = 1.0f,
+    val frequencyPenalty: Float = 0.0f,
+    val presencePenalty: Float = 0.0f
 )

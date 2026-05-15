@@ -340,6 +340,8 @@ class ChatViewModel(
             maxTokens = effectiveParams.maxTokens,
             frequencyPenalty = effectiveParams.frequencyPenalty,
             presencePenalty = effectiveParams.presencePenalty,
+            topK = effectiveParams.topK,
+            repetitionPenalty = effectiveParams.repetitionPenalty,
             tools = activeTools.ifEmpty { null },
             webSearch = sessionForCtx.options.webSearch,
             stream = true,

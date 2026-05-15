@@ -331,7 +331,7 @@
     <!-- SessionSettingsSheet -->
     <string name="sheet_title">会话设置</string>
     <string name="sheet_tab_model">模型</string>
-    <string name="sheet_tab_thinking">思考级别</string>
+    <string name="sheet_tab_thinking">参数</string>
     <string name="sheet_tab_tools">工具</string>
     <string name="sheet_tab_settings">设置</string>
     <string name="sheet_thinking_minimal">最小</string>
@@ -379,6 +379,8 @@
     <string name="sheet_settings_presence_penalty">话题新鲜度 (Presence)</string>
     <string name="sheet_settings_frequency_penalty">词频惩罚 (Frequency)</string>
     <string name="sheet_settings_advanced_params">高级生成参数</string>
+    <string name="sheet_settings_rag_disabled">所有记忆功能已关闭</string>
+    <string name="sheet_settings_rag_disabled_hint">AI 将仅基于当前对话上下文回答</string>
 
     <!-- WorkspaceSheet -->
     <string name="workspace_title">工作区</string>

@@ -328,7 +328,7 @@
     <!-- SessionSettingsSheet -->
     <string name="sheet_title">Session Settings</string>
     <string name="sheet_tab_model">Model</string>
-    <string name="sheet_tab_thinking">Thinking</string>
+    <string name="sheet_tab_thinking">Parameters</string>
     <string name="sheet_tab_tools">Tools</string>
     <string name="sheet_tab_settings">Settings</string>
     <string name="sheet_thinking_minimal">Minimal</string>
@@ -379,6 +379,8 @@
     <string name="sheet_settings_presence_penalty">Presence Penalty</string>
     <string name="sheet_settings_frequency_penalty">Frequency Penalty</string>
     <string name="sheet_settings_advanced_params">Advanced Parameters</string>
+    <string name="sheet_settings_rag_disabled">All memory features disabled</string>
+    <string name="sheet_settings_rag_disabled_hint">AI will only use current conversation context</string>
 
     <!-- WorkspaceSheet -->
     <string name="workspace_title">Workspace</string>

@@ -56,7 +56,7 @@ class LlamaCppBackend : InferenceBackend {
 
     override fun generate(prompt: String, config: GenerateConfig): Flow<String> {
         val context = ctx ?: throw IllegalStateException("No model loaded")
-        return context.generate(prompt, config.maxTokens)
+        return context.generate(prompt, config)
     }
 
     override suspend fun embed(text: String): Result<FloatArray> {

@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -38,11 +39,13 @@ fun NexaraCollapsibleSection(
     content: @Composable () -> Unit
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val animDuration = if (screenWidthDp < 360) 150 else 300
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .animateContentSize(animationSpec = tween(300))
+            .animateContentSize(animationSpec = tween(animDuration))
     ) {
         Row(
             modifier = Modifier

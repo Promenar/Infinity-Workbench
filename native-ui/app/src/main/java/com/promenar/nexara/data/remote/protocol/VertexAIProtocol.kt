@@ -361,9 +361,9 @@ class VertexAIProtocol(
             )))
 
             put("generation_config", buildJsonObject {
-                put("temperature", request.temperature ?: 0.7)
-                request.topP?.let { if (it < 1.0) put("top_p", it) }
-                request.maxTokens?.let { put("max_output_tokens", it) }
+                ProtocolParamAdapter.mapCommonParamsVertexAI(this, request)
+                ProtocolParamAdapter.mapPenaltyParamsVertexAI(this, request)
+                ProtocolParamAdapter.mapSamplingParams(this, request)
 
                 if (request.reasoning == true) {
                     put("thinking_config", buildJsonObject {

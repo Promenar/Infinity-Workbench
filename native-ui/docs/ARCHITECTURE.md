@@ -74,6 +74,8 @@ graph TD
 | :--- | :--- |
 | `data/local` | Room 数据库定义、实体 (Entities) 与数据访问对象 (DAOs) |
 | `data/remote` | LLM 协议实现 (OpenAI, Anthropic, VertexAI) 与流式解析器 |
+| `data/remote/protocol` | 协议接口定义 (`LlmProtocol`, `PromptRequest`) + 实现类 + `ProtocolParamAdapter` 参数抽象层 |
+| `data/remote/provider` | LlmProvider 工厂（协议创建与路由） |
 | `data/rag` | RAG 核心逻辑：向量存储 (VectorStore)、知识图谱 (GraphStore)、文本切分等 |
 | `data/repository` | 数据仓库层，封装本地数据库与业务逻辑的交互 |
 | `ui/chat` | 聊天会话核心界面及逻辑管理 (MessageManager, ContextBuilder, SummaryManager) |
@@ -113,6 +115,24 @@ graph TD
 - **无感追赶 (Smooth Catch-up)**：`rememberSmoothStreamContent` 不再随内容更新重启 Effect，而是通过内部循环平滑步进，在高频更新下仍能保持丝滑。
 - **分段合并 (Segment Merging)**：在流式解析 Markdown 时，系统会动态合并连续的纯文本段落，避免 Jetpack Compose 渲染树过度膨胀，大幅降低 UI 线程压力。
 - **布局平滑器 (Layout Smoother)**：利用 `animateContentSize()` 缓冲 Markdown 重排（如代码块闭合）带来的尺寸跳变。
+
+## RAG 命名标准化与参数中心 (2026-05-15 完成)
+- **命名语义化**: 统一了 UI 术语，将"向量检索"更名为"长期记忆" (Long-term Memory)，将"会话向量化"更名为"上下文管理" (Context Management)，提升了非极客用户的理解度。
+- **参数控制中心**: 重构了设置面板，将"思考级别"升级为"参数" (Parameters) 标签页。
+- **高级采样支持**: 实装了 Top K、重复惩罚 (Repetition Penalty) 等极客参数在协议层的透传，支持本地 Ollama 及各主流云端端点的精细化控制。
+- **步进逻辑修复**: 修复了字体大小滑动条的断点失效问题，实现了 10-18px 的 7 档离散步进。
+
+## 协议参数抽象层 (2026-05-15 完成)
+- **ProtocolParamAdapter**: 新建 `data/remote/protocol/ProtocolParamAdapter.kt`，作为所有 LLM 协议的共享参数映射工具。
+  - `mapCommonParams()` — temperature, topP, maxTokens
+  - `mapPenaltyParams()` — frequencyPenalty, presencePenalty, repetitionPenalty（协议感知降级）
+  - `mapSamplingParams()` — topK
+  - `mapCommonParamsVertexAI()` / `mapPenaltyParamsVertexAI()` — VertexAI 专用 key 名适配
+  - `buildGenerateConfig()` / `clampGenerateConfig()` — LocalProtocol 参数构建 + 极端值安全裁剪
+- **全协议迁移**: OpenAIProtocol / AnthropicProtocol / VertexAIProtocol / GenericOpenAICompatProtocol / LocalProtocol 全部改用 Adapter，参数映射从分散手写收敛至单一信任源
+- **LlmProvider 路由修复**: Cohere_Chat / Mistral_Chat / DeepSeek / Generic_OpenAI_Compat 现路由至 `GenericOpenAICompatProtocol`（全 7 参数支持），修复此前路由至 `OpenAIProtocol`（缺 topK/repetitionPenalty）的 Bug
+- **GenerateConfig 扩展**: `data/local/inference/GenerateConfig` 新增 `frequencyPenalty`/`presencePenalty` (Float, 默认 0.0)，数据类从 5 字段扩展至 7 字段
+- **LlamaCppBackend JNI 修复**: `generate()` 现传递完整 `GenerateConfig` 到 JNI 层，修复此前仅传 `maxTokens` 导致所有采样参数丢失的问题
 
 ## 远期设计目标 (Roadmap)
 

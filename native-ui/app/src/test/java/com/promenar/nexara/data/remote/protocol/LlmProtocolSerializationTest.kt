@@ -189,6 +189,21 @@ class LlmProtocolSerializationTest {
             assertThat(decoded.stream).isFalse()
             assertThat(decoded.reasoning).isTrue()
         }
+
+        @Test
+        fun `serialize and deserialize advanced parameters`() {
+            val req = PromptRequest(
+                messages = listOf(ProtocolMessage(role = "user", content = "hi")),
+                model = "test-model",
+                topK = 50,
+                repetitionPenalty = 1.2
+            )
+            val encoded = json.encodeToString(req)
+            val decoded = json.decodeFromString<PromptRequest>(encoded)
+
+            assertThat(decoded.topK).isEqualTo(50)
+            assertThat(decoded.repetitionPenalty).isEqualTo(1.2)
+        }
     }
 
     @Nested

@@ -4,6 +4,7 @@ import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.remote.protocol.AnthropicProtocol
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.LocalProtocol
+import com.promenar.nexara.data.remote.protocol.GenericOpenAICompatProtocol
 import com.promenar.nexara.data.remote.protocol.OpenAIProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
@@ -76,10 +77,10 @@ class LlmProvider(internal val protocol: LlmProtocol) {
                 location = location,
                 model = model
             )
-            is ProtocolType.Cohere_Chat -> OpenAIProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Mistral_Chat -> OpenAIProtocol(baseUrl, apiKey, model)
-            is ProtocolType.DeepSeek -> OpenAIProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Generic_OpenAI_Compat -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Cohere_Chat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Mistral_Chat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.DeepSeek -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Generic_OpenAI_Compat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
             is ProtocolType.Local -> throw IllegalStateException(
                 "Use LlmProvider.local(engine) factory for local models"
             )

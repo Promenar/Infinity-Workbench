@@ -83,6 +83,8 @@ data class PromptRequest(
     val maxTokens: Int? = null,
     val frequencyPenalty: Double? = null,
     val presencePenalty: Double? = null,
+    val topK: Int? = null,
+    val repetitionPenalty: Double? = null,
     val tools: List<ProtocolTool>? = null,
     val stream: Boolean = true,
     val reasoning: Boolean? = null,

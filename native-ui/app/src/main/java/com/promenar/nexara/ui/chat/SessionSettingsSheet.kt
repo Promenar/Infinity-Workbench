@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Timer
@@ -245,12 +247,9 @@ fun SessionSettingsSheet(
                         },
                         settingsViewModel = settingsViewModel
                     )
-                    1 -> ThinkingLevelPanel(
-                        currentTemperature = (session?.inferenceParams?.temperature ?: 0.7).toFloat(),
-                        onUpdate = { temp ->
-                            val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                            chatViewModel.updateInferenceParams(params.copy(temperature = temp.toDouble()))
-                        }
+                    1 -> ParamsPanel(
+                        session = session,
+                        chatViewModel = chatViewModel
                     )
                     2 -> ToolsPanel(chatViewModel = chatViewModel, session = session)
                     3 -> SettingsPanel(
@@ -408,10 +407,21 @@ private fun ModelPanel(
 }
 
 @Composable
-private fun ThinkingLevelPanel(
-    currentTemperature: Float,
-    onUpdate: (Float) -> Unit
+private fun ParamsPanel(
+    session: com.promenar.nexara.data.model.Session?,
+    chatViewModel: ChatViewModel
 ) {
+    val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
+    
+    var currentTemperature by remember(params.temperature) { mutableStateOf((params.temperature ?: 0.7).toFloat()) }
+    var currentTimeout by remember(params.streamTimeout) { mutableStateOf(params.streamTimeout ?: 120) }
+    var currentTopP by remember(params.topP) { mutableStateOf((params.topP ?: 1.0).toFloat()) }
+    var currentMaxTokens by remember(params.maxTokens) { mutableStateOf(params.maxTokens ?: 0) }
+    
+    var currentTopK by remember(params.topK) { mutableStateOf(params.topK ?: 0) }
+    var currentRepetitionPenalty by remember(params.repetitionPenalty) { mutableStateOf((params.repetitionPenalty ?: 1.0).toFloat()) }
+    var currentPresencePenalty by remember(params.presencePenalty) { mutableStateOf((params.presencePenalty ?: 0.0).toFloat()) }
+    var currentFrequencyPenalty by remember(params.frequencyPenalty) { mutableStateOf((params.frequencyPenalty ?: 0.0).toFloat()) }
     val selectedLevel = when {
         currentTemperature <= 0.3f -> "minimal"
         currentTemperature <= 0.6f -> "low"
@@ -420,14 +430,21 @@ private fun ThinkingLevelPanel(
     }
 
     val onLevelClick: (String) -> Unit = { levelId ->
-        val newTemp = when (levelId) {
-            "minimal" -> 0.1f
-            "low" -> 0.4f
-            "medium" -> 0.7f
-            "high" -> 1.0f
-            else -> 0.7f
+        val (newTemp, newTopP, newTopK) = when (levelId) {
+            "minimal" -> Triple(0.1f, 0.5f, 10)
+            "low"     -> Triple(0.4f, 0.8f, 30)
+            "medium"  -> Triple(0.7f, 0.9f, 50)
+            "high"    -> Triple(1.0f, 1.0f, 100)
+            else      -> Triple(0.7f, 0.9f, 50)
         }
-        onUpdate(newTemp)
+        currentTemperature = newTemp
+        currentTopP = newTopP
+        currentTopK = newTopK
+        chatViewModel.updateInferenceParams(params.copy(
+            temperature = newTemp.toDouble(),
+            topP = newTopP.toDouble(),
+            topK = newTopK
+        ))
     }
 
     LazyColumn(
@@ -482,6 +499,222 @@ private fun ThinkingLevelPanel(
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
+        }
+
+        // --- Standard Generation Parameters ---
+        item {
+            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.sheet_settings_section_inference),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = NexaraColors.OnSurface
+            )
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_stream_timeout),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSliderInt(
+                    value = currentTimeout,
+                    onValueChange = {
+                        currentTimeout = it
+                        chatViewModel.updateInferenceParams(params.copy(streamTimeout = currentTimeout))
+                    },
+                    valueRange = 30..300,
+                    steps = 26,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = stringResource(R.string.session_settings_unit_seconds, currentTimeout),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_top_p),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSlider(
+                    value = currentTopP,
+                    onValueChange = {
+                        currentTopP = it
+                        chatViewModel.updateInferenceParams(params.copy(topP = it.toDouble()))
+                    },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = String.format("%.2f", currentTopP),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_max_tokens),
+                style = NexaraTypography.titleSmall,
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSlider(
+                    value = currentMaxTokens.toFloat(),
+                    onValueChange = {
+                        currentMaxTokens = it.toInt()
+                        chatViewModel.updateInferenceParams(params.copy(maxTokens = if (currentMaxTokens == 0) null else currentMaxTokens))
+                    },
+                    valueRange = 0f..8192f,
+                    steps = 64,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = if (currentMaxTokens == 0) stringResource(R.string.sheet_settings_unlimited) else currentMaxTokens.toString(),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        // --- Advanced Parameters ---
+        item {
+            NexaraCollapsibleSection(
+                title = stringResource(R.string.sheet_settings_advanced_params),
+                initiallyExpanded = false
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Top K
+                    Column {
+                        Text(
+                            text = stringResource(R.string.sheet_settings_top_k),
+                            style = NexaraTypography.titleSmall,
+                            color = NexaraColors.OnSurface,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NexaraSliderInt(
+                                value = currentTopK,
+                                onValueChange = {
+                                    currentTopK = it
+                                    chatViewModel.updateInferenceParams(params.copy(topK = if (currentTopK == 0) null else currentTopK))
+                                },
+                                valueRange = 0..100,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = if (currentTopK == 0) stringResource(R.string.sheet_settings_unlimited) else currentTopK.toString(),
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.Primary,
+                                modifier = Modifier.width(60.dp)
+                            )
+                        }
+                    }
+
+                    // Repetition Penalty
+                    Column {
+                        Text(
+                            text = stringResource(R.string.sheet_settings_repetition_penalty),
+                            style = NexaraTypography.titleSmall,
+                            color = NexaraColors.OnSurface,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NexaraSlider(
+                                value = currentRepetitionPenalty,
+                                onValueChange = {
+                                    currentRepetitionPenalty = it
+                                    chatViewModel.updateInferenceParams(params.copy(repetitionPenalty = it.toDouble()))
+                                },
+                                valueRange = 0.5f..2.0f,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = String.format("%.2f", currentRepetitionPenalty),
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.Primary,
+                                modifier = Modifier.width(60.dp)
+                            )
+                        }
+                    }
+
+                    // Presence Penalty
+                    Column {
+                        Text(
+                            text = stringResource(R.string.sheet_settings_presence_penalty),
+                            style = NexaraTypography.titleSmall,
+                            color = NexaraColors.OnSurface,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NexaraSlider(
+                                value = currentPresencePenalty,
+                                onValueChange = {
+                                    currentPresencePenalty = it
+                                    chatViewModel.updateInferenceParams(params.copy(presencePenalty = it.toDouble()))
+                                },
+                                valueRange = -2.0f..2.0f,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = String.format("%.2f", currentPresencePenalty),
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.Primary,
+                                modifier = Modifier.width(60.dp)
+                            )
+                        }
+                    }
+
+                    // Frequency Penalty
+                    Column {
+                        Text(
+                            text = stringResource(R.string.sheet_settings_frequency_penalty),
+                            style = NexaraTypography.titleSmall,
+                            color = NexaraColors.OnSurface,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NexaraSlider(
+                                value = currentFrequencyPenalty,
+                                onValueChange = {
+                                    currentFrequencyPenalty = it
+                                    chatViewModel.updateInferenceParams(params.copy(frequencyPenalty = it.toDouble()))
+                                },
+                                valueRange = -2.0f..2.0f,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = String.format("%.2f", currentFrequencyPenalty),
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.Primary,
+                                modifier = Modifier.width(60.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -556,17 +789,9 @@ private fun SettingsPanel(
     val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
     val ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
 
-    var currentTimeout by remember(params.streamTimeout) { mutableStateOf(params.streamTimeout ?: 120) }
-    var currentTopP by remember(params.topP) { mutableStateOf((params.topP ?: 1.0).toFloat()) }
-    var currentMaxTokens by remember(params.maxTokens) { mutableStateOf(params.maxTokens ?: 0) }
     var currentSummaryThreshold by remember(params.autoSummaryThreshold) { mutableStateOf(params.autoSummaryThreshold.toFloat()) }
     var currentActiveWindow by remember(params.activeContextWindow) { mutableStateOf(params.activeContextWindow) }
     
-    var currentTopK by remember(params.topK) { mutableStateOf(params.topK ?: 0) }
-    var currentRepetitionPenalty by remember(params.repetitionPenalty) { mutableStateOf((params.repetitionPenalty ?: 1.0).toFloat()) }
-    var currentPresencePenalty by remember(params.presencePenalty) { mutableStateOf((params.presencePenalty ?: 0.0).toFloat()) }
-    var currentFrequencyPenalty by remember(params.frequencyPenalty) { mutableStateOf((params.frequencyPenalty ?: 0.0).toFloat()) }
-
     var rerankEnabled by remember(ragOptions.enableRerank) { mutableStateOf(ragOptions.enableRerank) }
     var memoryEnabled by remember(ragOptions.enableMemory) { mutableStateOf(ragOptions.enableMemory) }
     var globalMemoryEnabled by remember(ragOptions.isGlobal) { mutableStateOf(ragOptions.isGlobal) }
@@ -580,228 +805,8 @@ private fun SettingsPanel(
             .padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // --- Generation Parameters ---
-        item {
-            Text(
-                stringResource(R.string.sheet_settings_section_inference),
-                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = NexaraColors.OnSurface
-            )
-        }
 
         item {
-            Text(
-                text = stringResource(R.string.sheet_settings_stream_timeout),
-                style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                NexaraSlider(
-                    value = currentTimeout.toFloat(),
-                    onValueChange = {
-                        currentTimeout = it.toInt()
-                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                        chatViewModel.updateInferenceParams(p.copy(streamTimeout = currentTimeout))
-                    },
-                    valueRange = 30f..300f,
-                    steps = 26,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = stringResource(R.string.session_settings_unit_seconds, currentTimeout),
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
-                    modifier = Modifier.width(60.dp)
-                )
-            }
-        }
-
-        item {
-            Text(
-                text = stringResource(R.string.sheet_settings_top_p),
-                style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                NexaraSlider(
-                    value = currentTopP,
-                    onValueChange = {
-                        currentTopP = it
-                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                        chatViewModel.updateInferenceParams(p.copy(topP = it.toDouble()))
-                    },
-                    valueRange = 0f..1f,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = String.format("%.2f", currentTopP),
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
-                    modifier = Modifier.width(60.dp)
-                )
-            }
-        }
-
-        item {
-            Text(
-                text = stringResource(R.string.sheet_settings_max_tokens),
-                style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                NexaraSlider(
-                    value = currentMaxTokens.toFloat(),
-                    onValueChange = {
-                        currentMaxTokens = it.toInt()
-                        val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                        chatViewModel.updateInferenceParams(p.copy(maxTokens = if (currentMaxTokens == 0) null else currentMaxTokens))
-                    },
-                    valueRange = 0f..8192f,
-                    steps = 64,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = if (currentMaxTokens == 0) stringResource(R.string.sheet_settings_unlimited) else currentMaxTokens.toString(),
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
-                    modifier = Modifier.width(60.dp)
-                )
-            }
-        }
-        item {
-            NexaraCollapsibleSection(
-                title = stringResource(R.string.sheet_settings_advanced_params),
-                initiallyExpanded = false
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Top K
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_top_k),
-                            style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSliderInt(
-                                value = currentTopK,
-                                onValueChange = {
-                                    currentTopK = it
-                                    val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                                    chatViewModel.updateInferenceParams(p.copy(topK = if (currentTopK == 0) null else currentTopK))
-                                },
-                                valueRange = 0..100,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = if (currentTopK == 0) stringResource(R.string.sheet_settings_unlimited) else currentTopK.toString(),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-
-                    // Repetition Penalty
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_repetition_penalty),
-                            style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSlider(
-                                value = currentRepetitionPenalty,
-                                onValueChange = {
-                                    currentRepetitionPenalty = it
-                                    val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                                    chatViewModel.updateInferenceParams(p.copy(repetitionPenalty = it.toDouble()))
-                                },
-                                valueRange = 0.5f..2.0f,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = String.format("%.2f", currentRepetitionPenalty),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-
-                    // Presence Penalty
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_presence_penalty),
-                            style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSlider(
-                                value = currentPresencePenalty,
-                                onValueChange = {
-                                    currentPresencePenalty = it
-                                    val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                                    chatViewModel.updateInferenceParams(p.copy(presencePenalty = it.toDouble()))
-                                },
-                                valueRange = -2.0f..2.0f,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = String.format("%.2f", currentPresencePenalty),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-
-                    // Frequency Penalty
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_frequency_penalty),
-                            style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSlider(
-                                value = currentFrequencyPenalty,
-                                onValueChange = {
-                                    currentFrequencyPenalty = it
-                                    val p = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-                                    chatViewModel.updateInferenceParams(p.copy(frequencyPenalty = it.toDouble()))
-                                },
-                                valueRange = -2.0f..2.0f,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = String.format("%.2f", currentFrequencyPenalty),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- Context Management ---
-        item {
-            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 stringResource(R.string.sheet_settings_section_vectorization),
@@ -899,6 +904,42 @@ private fun SettingsPanel(
                 ToolToggleRow(stringResource(R.string.sheet_settings_kg), Icons.Rounded.Psychology, kgEnabled) { 
                     kgEnabled = it
                     chatViewModel.updateRagOptions(ragOptions.copy(enableKnowledgeGraph = it))
+                }
+                val isRagFullyDisabled = !memoryEnabled && !globalMemoryEnabled && !docsEnabled && !kgEnabled
+                if (isRagFullyDisabled) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        color = NexaraColors.SurfaceLow.copy(alpha = 0.5f),
+                        border = BorderStroke(0.5.dp, NexaraColors.GlassBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Rounded.Info,
+                                contentDescription = null,
+                                tint = NexaraColors.OnSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    stringResource(R.string.sheet_settings_rag_disabled),
+                                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = NexaraColors.OnSurfaceVariant
+                                )
+                                Text(
+                                    stringResource(R.string.sheet_settings_rag_disabled_hint),
+                                    style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
