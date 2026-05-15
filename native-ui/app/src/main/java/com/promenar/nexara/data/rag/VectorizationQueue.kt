@@ -1,6 +1,5 @@
 package com.promenar.nexara.data.rag
 
-import com.promenar.nexara.data.local.db.dao.DocumentDao
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
@@ -11,7 +10,6 @@ class VectorizationQueue(
     private val vectorStore: VectorStore,
     private val embeddingClient: EmbeddingClient,
     private val graphExtractor: GraphExtractor?,
-    private val documentDao: DocumentDao,
     private val vectorDao: VectorDao,
     private val vectorizationTaskDao: VectorizationTaskDao,
     private val ragConfig: RagConfiguration = RagConfiguration(),
@@ -48,10 +46,6 @@ class VectorizationQueue(
         queue.add(task)
         saveTaskToDb(task)
         notifyStateChange()
-
-        if (!skipVectorization) {
-            documentDao.updateVectorized(docId, 1)
-        }
 
         if (!isProcessing) {
             scope.launch { processNext() }
@@ -106,7 +100,6 @@ class VectorizationQueue(
             notifyStateChange()
 
             when (task.type) {
-                "document" -> processDocumentTask(task)
                 "memory" -> processMemoryTask(task)
             }
 
@@ -143,12 +136,7 @@ class VectorizationQueue(
                 task.error = getFriendlyErrorMessage(error)
                 saveTaskToDb(task)
 
-                // 通知"失败"状态（必须在移除队列前）
                 notifyStateChange()
-
-                if (task.type == "document" && task.docId != null && !task.skipVectorization) {
-                    documentDao.updateVectorized(task.docId, -1)
-                }
             }
         } finally {
             if (queue.isNotEmpty() && queue[0] === task) {
@@ -164,123 +152,6 @@ class VectorizationQueue(
             } else {
                 isProcessing = false
                 cleanupCompletedTasks()
-            }
-        }
-    }
-
-    private suspend fun processDocumentTask(task: VectorizationTask) {
-        val docId = task.docId ?: throw IllegalStateException("Document task missing docId")
-        val doc = documentDao.getById(docId) ?: throw IllegalStateException("Document not found")
-        val content = doc.content ?: throw IllegalStateException("Document has no content")
-
-        val contentHash = simpleHash(content)
-        if (!task.skipVectorization && ragConfig.enableIncrementalHash) {
-            if (doc.contentHash == contentHash && doc.vectorized == 2) {
-                task.status = "completed"
-                task.progress = 100.0
-                return
-            }
-        }
-
-        var processedContent = content
-        if (ragConfig.enableLocalPreprocess) {
-            processedContent = preprocessText(content)
-        }
-
-        task.status = "chunking"
-        task.progress = 10.0
-        notifyStateChange()
-
-        val splitter = TrigramTextSplitter(
-            chunkSize = ragConfig.docChunkSize,
-            chunkOverlap = ragConfig.chunkOverlap
-        )
-        val chunks = splitter.splitText(processedContent)
-        task.totalChunks = chunks.size
-
-        if (!task.skipVectorization) {
-            task.status = "vectorizing"
-            task.progress = 20.0
-            notifyStateChange()
-
-            val batchSize = 10
-            val allEmbeddings = mutableListOf<FloatArray>()
-            val startIndex = task.lastChunkIndex
-
-            for (i in startIndex until chunks.size step batchSize) {
-                val batch = chunks.subList(i, minOf(i + batchSize, chunks.size))
-                val result = embeddingClient.embedDocuments(batch)
-                allEmbeddings.addAll(result.embeddings)
-
-                val completedChunks = minOf(i + batchSize, chunks.size)
-                task.progress = 20.0 + (completedChunks.toDouble() / chunks.size) * 60.0
-                task.lastChunkIndex = completedChunks
-                task.subStatus = "Vectorizing $completedChunks/${chunks.size} chunks"
-                task.updatedAt = System.currentTimeMillis()
-                notifyStateChange()
-            }
-
-            task.status = "saving"
-            task.progress = 85.0
-            notifyStateChange()
-
-            val vectors = chunks.mapIndexed { index, chunk ->
-                VectorStore.NewVectorRecord(
-                    docId = docId,
-                    content = chunk,
-                    embedding = allEmbeddings[index],
-                    metadata = """{"source":"import","type":"doc","chunkIndex":$index}"""
-                )
-            }
-            vectorStore.addVectorRecords(vectors)
-            documentDao.updateVectorizationStatusWithHash(docId, 2, vectors.size, contentHash)
-        } else {
-            task.progress = 85.0
-        }
-
-        // Knowledge Graph extraction
-        if (task.skipVectorization || ragConfig.enableKnowledgeGraph) {
-            if (graphExtractor != null) {
-                task.status = "extracting"
-                task.progress = 85.0
-                notifyStateChange()
-
-                val strategy = task.kgStrategy ?: ragConfig.costStrategy
-                var kgHasError = false
-
-                when (strategy) {
-                    "full" -> {
-                        for ((k, chunk) in chunks.withIndex()) {
-                            val kgResult = graphExtractor.extractAndSave(chunk, docId)
-                            if (kgResult.error != null) kgHasError = true
-                            task.progress = 85.0 + ((k + 1).toDouble() / chunks.size) * 15.0
-                            task.subStatus = "KG extraction ${k + 1}/${chunks.size} chunks"
-                            task.updatedAt = System.currentTimeMillis()
-                            notifyStateChange()
-                        }
-                    }
-                    "summary-first" -> {
-                        val sample = listOfNotNull(
-                            chunks.getOrNull(0),
-                            chunks.getOrNull(chunks.size / 2),
-                            chunks.lastOrNull()
-                        )
-                        for ((s, sampleText) in sample.withIndex()) {
-                            val kgResult = graphExtractor.extractAndSave(sampleText, docId)
-                            if (kgResult.error != null) kgHasError = true
-                            task.progress = 85.0 + ((s + 1).toDouble() / sample.size) * 15.0
-                            task.subStatus = "KG extraction ${s + 1}/${sample.size} chunks (summary)"
-                            task.updatedAt = System.currentTimeMillis()
-                            notifyStateChange()
-                        }
-                    }
-                }
-
-                if (kgHasError) {
-                    task.status = "warning"
-                    task.subStatus = "Vectorization succeeded, KG extraction partially failed"
-                    notifyStateChange()
-                }
             }
         }
     }

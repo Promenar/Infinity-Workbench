@@ -80,6 +80,8 @@ interface KgEdgeDao {
         val agent_id: String?,
         val source_type: String?,
         val created_at: Long,
+        val stale: Boolean,
+        val file_uuid: String?,
         val source_name: String,
         val target_name: String
     )

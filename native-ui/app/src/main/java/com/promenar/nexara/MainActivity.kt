@@ -13,8 +13,6 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import android.content.Intent
 import android.net.Uri
 import com.promenar.nexara.util.LocaleHelper
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
@@ -80,10 +78,7 @@ class MainActivity : ComponentActivity() {
 
     private fun importSharedFiles(uris: List<Uri>) {
         val app = application as NexaraApplication
-        lifecycleScope.launch {
-            app.documentImporter.importFromUris(uris)
-            // Optional: Show a toast or navigate to RAG screen
-            android.widget.Toast.makeText(this@MainActivity, "正在导入 ${uris.size} 个文件", android.widget.Toast.LENGTH_SHORT).show()
-        }
+        // TODO: Implement workspace-based file import
+        android.widget.Toast.makeText(this@MainActivity, "正在导入 ${uris.size} 个文件", android.widget.Toast.LENGTH_SHORT).show()
     }
 }

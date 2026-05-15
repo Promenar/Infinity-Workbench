@@ -48,6 +48,8 @@ data class SessionEntity(
     val activeSkillIds: String? = null,
     @ColumnInfo(name = "workspace_path")
     val workspacePath: String? = null,
+    @ColumnInfo(name = "workspace_root_uuid")
+    val workspaceRootUuid: String? = null,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")

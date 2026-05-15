@@ -5,26 +5,25 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.data.rag.VectorStatsService
 import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
-import com.promenar.nexara.domain.repository.IDocumentRepository
-import com.promenar.nexara.domain.repository.IFolderRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import com.promenar.nexara.domain.usecase.DeleteDocumentUseCase
-import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.ui.common.ModelItem
 import com.promenar.nexara.ui.common.ModelCapability
@@ -48,11 +47,10 @@ data class RagSearchResult(
 
 class RagViewModel(
     application: Application,
-    private val documentRepository: IDocumentRepository,
+    private val workspaceRepository: IWorkspaceRepository,
     private val vectorRepository: IVectorRepository,
     private val kgRepository: IKnowledgeGraphRepository,
-    private val folderRepository: IFolderRepository,
-    private val deleteDocumentUseCase: DeleteDocumentUseCase,
+    private val fileOperationRepository: IFileOperationRepository,
     private val ragConfigPersistence: RagConfigPersistence,
     private val keywordSearcher: KeywordSearcher
 ) : ViewModel() {
@@ -61,8 +59,8 @@ class RagViewModel(
 
     private val vectorStatsService = VectorStatsService(vectorRepository)
 
-    val folders: StateFlow<List<Folder>> = folderRepository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val _folders = MutableStateFlow<List<Folder>>(emptyList())
+    val folders: StateFlow<List<Folder>> = _folders.asStateFlow()
 
     private val _folderStats = MutableStateFlow<Map<String, Int>>(emptyMap())
     val folderStats: StateFlow<Map<String, Int>> = _folderStats.asStateFlow()
@@ -100,8 +98,6 @@ class RagViewModel(
     private val prefs = app.getSharedPreferences("rag_settings", 0)
     private val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
 
-    private val _folders = MutableStateFlow<List<Folder>>(emptyList())
-
     private val _stats = MutableStateFlow(RagStats())
     val stats: StateFlow<RagStats> = _stats.asStateFlow()
 
@@ -138,19 +134,16 @@ class RagViewModel(
             _indexingStatus.value = statusText
             _indexingSubStatus.value = currentTask?.subStatus
 
-            // 任务失败时持久化错误信息，防止进度条消失后用户看不到失败原因
             if (currentTask?.status == "failed") {
                 _lastQueueError.value = currentTask.error ?: "向量化失败，请检查 Embedding 模型配置"
-                _isIndexing.value = true  // 保持可见
+                _isIndexing.value = true
             }
-            // 新任务开始或完成时清除错误
             if (currentTask != null && currentTask.status != "failed" && currentTask.status != "warning") {
                 _lastQueueError.value = null
             }
 
             if (queue.isEmpty() && currentTask == null) {
                 refreshStats()
-                // 延迟关闭进度条，让用户有时间看到最后的状态
                 if (_lastQueueError.value == null) {
                     _isIndexing.value = false
                 }
@@ -160,15 +153,17 @@ class RagViewModel(
 
     private fun startDataObservation() {
         viewModelScope.launch {
-            documentRepository.observeAll().collect { list ->
-                _documents.value = list
+            workspaceRepository.observeRoots().collect { roots ->
+                val allFiles = roots.filter { !it.isDirectory }
+                _documents.value = allFiles.map { it.toDocument() }
             }
         }
-        
+
         viewModelScope.launch {
-            folderRepository.observeAll().collect { list ->
-                _folders.value = list
-                updateFolderStats(list)
+            workspaceRepository.observeRoots().collect { entries ->
+                val dirs = entries.filter { it.isDirectory }
+                _folders.value = dirs.map { it.toFolder() }
+                updateFolderStats(_folders.value)
             }
         }
     }
@@ -184,7 +179,8 @@ class RagViewModel(
         viewModelScope.launch {
             val stats = mutableMapOf<String, Int>()
             for (folder in folderList) {
-                stats[folder.id] = documentRepository.countByFolderId(folder.id)
+                val children = workspaceRepository.observeChildren(folder.id).first()
+                stats[folder.id] = children.size
             }
             _folderStats.value = stats
         }
@@ -329,7 +325,7 @@ class RagViewModel(
     private fun loadStats() {
         viewModelScope.launch {
             try {
-                val docCount = documentRepository.getCount()
+                val docCount = _documents.value.size
                 val nodeCount = kgRepository.getNodeCount()
                 val vStats = vectorStatsService.getStats()
                 _vectorStats.value = vStats
@@ -342,16 +338,18 @@ class RagViewModel(
         }
     }
 
-
     fun createFolder(name: String) {
         viewModelScope.launch {
             try {
-                val folder = Folder(
-                    id = IdGenerator.uuid(),
+                val uuid = java.util.UUID.randomUUID().toString()
+                val matPath = "/$name"
+                workspaceRepository.createDirectory(
+                    uuid = uuid,
                     name = name,
-                    createdAt = System.currentTimeMillis()
+                    parentUuid = null,
+                    physicalRootPath = matPath,
+                    materializedPath = matPath
                 )
-                folderRepository.create(folder)
             } catch (_: Exception) { }
         }
     }
@@ -359,7 +357,9 @@ class RagViewModel(
     fun loadDocumentsForFolder(folderId: String) {
         viewModelScope.launch {
             try {
-                _documents.value = documentRepository.getByFolderId(folderId)
+                workspaceRepository.observeChildren(folderId).collect { entries ->
+                    _documents.value = entries.filter { !it.isDirectory }.map { it.toDocument() }
+                }
             } catch (_: Exception) { }
         }
     }
@@ -367,24 +367,15 @@ class RagViewModel(
     fun deleteCollection(id: String) {
         viewModelScope.launch {
             try {
-                val docs = documentRepository.getByFolderId(id)
-                if (docs.isNotEmpty()) {
-                    deleteDocumentUseCase(docs.map { it.id })
-                }
-                val folder = folderRepository.getById(id)
-                if (folder != null) folderRepository.delete(folder)
+                workspaceRepository.permanentDelete(id)
                 loadStats()
             } catch (_: Exception) { }
         }
     }
 
     fun renameFolder(id: String, newName: String) {
-        viewModelScope.launch {
-            try {
-                val folder = folderRepository.getById(id) ?: return@launch
-                folderRepository.update(folder.copy(name = newName))
-            } catch (_: Exception) { }
-        }
+        // Workspace directories are renamed by updating the FileEntry
+        // For now, this is a no-op until rename is implemented in IWorkspaceRepository
     }
 
     fun deleteFolder(id: String) = deleteCollection(id)
@@ -392,7 +383,9 @@ class RagViewModel(
     fun deleteDocuments(ids: List<String>) {
         viewModelScope.launch {
             try {
-                deleteDocumentUseCase(ids)
+                for (id in ids) {
+                    workspaceRepository.permanentDelete(id)
+                }
                 loadStats()
             } catch (_: Exception) { }
         }
@@ -400,27 +393,16 @@ class RagViewModel(
 
     fun importDocuments(uris: List<android.net.Uri>, folderId: String? = null) {
         viewModelScope.launch {
-            app.documentImporter.importFromUris(uris, folderId)
+            // TODO: Implement workspace-based file import
         }
     }
 
-    /**
-     * 手动触发文档的知识图谱抽取。
-     * 复用 VectorizationQueue 的 KG 抽取管线（分块→GraphExtractor→GraphStore）。
-     * @param kgStrategy "full" 全量抽取 / "summary-first" 摘要优先（仅采样首中尾三块）
-     */
     fun extractKnowledgeGraph(docId: String, kgStrategy: String) {
         viewModelScope.launch {
             try {
-                val doc = documentRepository.getById(docId) ?: return@launch
-                val content = doc.content ?: return@launch
-                app.vectorizationQueue.enqueueDocument(
-                    docId = docId,
-                    docTitle = doc.title,
-                    content = content,
-                    kgStrategy = kgStrategy,
-                    skipVectorization = true  // 向量已存在，仅做 KG 抽取
-                )
+                val result = fileOperationRepository.readFileRange(docId)
+                val content = result.content
+                kgRepository.extractFromContent(content, docId)
             } catch (e: Exception) {
                 _indexingSubStatus.value = "KG extraction failed: ${e.message?.take(60)}"
             }
@@ -511,16 +493,31 @@ class RagViewModel(
         }
     }
 
+    private fun FileEntry.toFolder() = Folder(
+        id = uuid,
+        name = name,
+        parentId = parentUuid,
+        createdAt = createdAt
+    )
+
+    private fun FileEntry.toDocument() = Document(
+        id = uuid,
+        folderId = parentUuid ?: "",
+        title = name,
+        content = "",
+        hash = hash,
+        fileSize = sizeBytes,
+        vectorized = if (vectorizedAt != null) 2 else 0,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
-                    val documentRepo = com.promenar.nexara.data.repository.DocumentRepository(
-                        documentDao = app.database.documentDao(),
-                        folderDao = app.database.folderDao()
-                    )
                     val vectorRepo = com.promenar.nexara.data.repository.VectorRepository(
                         vectorDao = app.database.vectorDao(),
                         embeddingClient = app.embeddingClient
@@ -528,18 +525,14 @@ class RagViewModel(
                     val ragPrefs = app.getSharedPreferences("rag_settings", 0)
                     return RagViewModel(
                         application = application,
-                        documentRepository = documentRepo,
+                        workspaceRepository = app.workspaceRepository,
                         vectorRepository = vectorRepo,
                         kgRepository = com.promenar.nexara.data.repository.KnowledgeGraphRepository(
                             kgNodeDao = app.database.kgNodeDao(),
                             kgEdgeDao = app.database.kgEdgeDao(),
-                            graphExtractor = app.graphExtractor,
-                            documentDao = app.database.documentDao()
+                            graphExtractor = app.graphExtractor
                         ),
-                        folderRepository = com.promenar.nexara.data.repository.FolderRepository(
-                            folderDao = app.database.folderDao()
-                        ),
-                        deleteDocumentUseCase = DeleteDocumentUseCase(documentRepo, vectorRepo),
+                        fileOperationRepository = app.fileOperationRepository,
                         ragConfigPersistence = RagConfigPersistence(ragPrefs),
                         keywordSearcher = app.keywordSearcher
                     ) as T

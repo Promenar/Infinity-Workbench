@@ -19,14 +19,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ExecutionStep
+import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -85,10 +88,12 @@ fun ThinkingBlock(
 ) {
     var isExpanded by remember { mutableStateOf(false) }
 
-    // Auto-expand when reasoning starts appearing during generation
+    // Auto-expand during generation, auto-collapse when generation finishes
     LaunchedEffect(reasoning.isNotBlank(), isGenerating) {
         if (reasoning.isNotBlank() && isGenerating) {
             isExpanded = true
+        } else if (!isGenerating) {
+            isExpanded = false
         }
     }
 
@@ -169,15 +174,16 @@ fun ThinkingBlock(
                     CompositionLocalProvider(
                         LocalTextStyle provides NexaraTypography.bodySmall.copy(
                             color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f),
-                            fontSize = (fontSize - 1).coerceAtLeast(11).sp,
-                            lineHeight = (fontSize + 4).sp
+                            fontSize = (fontSize - 2).coerceAtLeast(11).sp,
+                            lineHeight = (fontSize + 4).sp,
+                            fontStyle = FontStyle.Italic
                         )
                     ) {
                         MarkdownText(
                             markdown = reasoning,
                             modifier = Modifier.fillMaxWidth(),
                             isStreaming = isGenerating,
-                            fontSize = (fontSize - 1).coerceAtLeast(11),
+                            fontSize = (fontSize - 2).coerceAtLeast(11),
                             showCursor = false // Hide cursor in thinking block to avoid double cursors
                         )
                     }
@@ -192,8 +198,11 @@ fun RagOmniIndicator(
     progress: RagProgress?,
     metadata: RagMetadata?,
     references: List<RagReference>?,
+    kgPaths: List<KgPath>? = null,
     isLoading: Boolean
 ) {
+    var showDetailsSheet by remember { mutableStateOf(false) }
+
     val showProgress = when {
         isLoading -> true
         progress == null -> false
@@ -206,7 +215,8 @@ fun RagOmniIndicator(
     NexaraGlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp)
+            .clickable(enabled = (!references.isNullOrEmpty() || !kgPaths.isNullOrEmpty())) { showDetailsSheet = true },
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
@@ -330,6 +340,14 @@ fun RagOmniIndicator(
                 }
             }
         }
+    }
+
+    if (showDetailsSheet) {
+        RagDetailsSheet(
+            references = references,
+            kgPaths = kgPaths,
+            onDismissRequest = { showDetailsSheet = false }
+        )
     }
 }
 

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Changed
+- [Architecture] **统一资源操作系统**: 移除旧 documents/folders 系统（12 文件删除），全面切换至 UUID 锚定的 workspace_files 体系。RagViewModel、DocEditorViewModel、VectorizationQueue、KnowledgeGraphRepository 等组件已适配新接口（IWorkspaceRepository / IFileOperationRepository）。数据库迁移 v8→v9。
+- [Architecture] **FK 解耦**: VectorEntity、KgEdgeEntity 等移除对 DocumentEntity 的 ForeignKey，保留 doc_id 列数据。
+
+### Added
+- [Testing] **WorkspaceSeqDaoTest**: 原子序号并发递增测试（4 测试，含 20 并发协程竞态验证）
+- [Testing] **FileOperationRepositoryTest**: 乐观锁写入测试（5 测试：成功写入/Hash 冲突/UUID 不存在/内容读取/行号范围读取）
+- [RAG/UX] **知识审计系统 (Knowledge Inspection)**：实装了全新的 RAG 详情弹窗 `RagDetailsSheet`，支持查看检索片段的原始文本、向量得分、重排得分及排名变化。
+- [RAG/KG] **知识图谱可视化**：实装了 `KgPath` 可视化组件，支持在 UI 上以拓扑路径形式展示 AI 的图谱推理链路，并包含推理说明（Reasoning）。
+- [RAG/Data] **增强型数据模型**：在 `Message` 中整合了 `kgPaths`，并在 `RagReference` 中新增了 `rerankScore` 和 `rankChange` 元数据。
+- [Testing] **RAG 详情序列化测试**：新增 `RagDetailsSerializationTest.kt`，验证了复杂图谱路径与增强型引用数据的无损持久化。
+- [Planning] **全局资源管理器架构**：完成了 Nexara 统一资源操作系统的架构规划（存档于 `.agent/plans/20260515-ResourceManagerArchitecture.md`），将实现 UUID 锚定的文件操作系统。
+- [Planning] **内置任务规划工具 (Task Planner)**：完成了任务拆分与追踪工具的架构规划（存档于 `.agent/plans/20260515-TaskPlanningToolArchitecture.md`），设定为最高优先级任务。
+
+### Fixed
+- [RAG] **UI 点击反馈**：`RagOmniIndicator` 现支持点击，在存在检索参考或图谱路径时可弹出知识审计面板。
+- [Architecture] **MessageManager 状态同步**：修复了流式消息更新过程中 `kgPaths` 数据丢失的问题。
+
 ### Added
 - [RAG/Parameters] **生成参数控制中心**：将"思考级别"标签页重构为"参数" (Parameters)，整合了 Top K、重复惩罚 (Repetition Penalty)、存在惩罚 (Presence Penalty) 及频率惩罚 (Frequency Penalty) 等高级模型采样控制项。
 - [Protocol] **标准化参数透传**：在 `LlmProtocol` 接口及所有实现类（OpenAI, Anthropic, VertexAI, Local, GenericOpenAICompat）中实装了对新增采样参数的支持，确保高级设置能透传至各后端模型。

@@ -1,6 +1,5 @@
 package com.promenar.nexara.data.repository
 
-import com.promenar.nexara.data.local.db.dao.DocumentDao
 import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
@@ -18,13 +17,11 @@ class KnowledgeGraphRepositoryTest {
     private val kgNodeDao: KgNodeDao = mockk()
     private val kgEdgeDao: KgEdgeDao = mockk()
     private val graphExtractor: GraphExtractor = mockk()
-    private val documentDao: DocumentDao = mockk()
 
     private val repo = KnowledgeGraphRepository(
         kgNodeDao = kgNodeDao,
         kgEdgeDao = kgEdgeDao,
-        graphExtractor = graphExtractor,
-        documentDao = documentDao
+        graphExtractor = graphExtractor
     )
 
     private fun nodeEntity(

@@ -87,6 +87,12 @@ interface VectorDao {
     @Query("SELECT session_id, COUNT(*) as count FROM vectors WHERE session_id IS NOT NULL GROUP BY session_id ORDER BY count DESC LIMIT :limit")
     suspend fun countBySession(limit: Int = 10): List<SessionCount>
 
+    @Query("SELECT * FROM vectors WHERE file_uuid = :fileUuid AND stale = 0 ORDER BY updated_at")
+    suspend fun getActiveChunks(fileUuid: String): List<VectorEntity>
+
+    @Query("DELETE FROM vectors WHERE stale = 1 AND updated_at < :cutoff")
+    suspend fun cleanupStaleChunks(cutoff: Long)
+
     data class TypeCount(val type: String, val count: Int)
     data class SessionCount(val session_id: String, val count: Int)
 }

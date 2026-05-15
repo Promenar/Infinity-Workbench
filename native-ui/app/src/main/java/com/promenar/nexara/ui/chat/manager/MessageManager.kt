@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager
 import com.promenar.nexara.data.model.BillingUsage
 import com.promenar.nexara.data.model.Citation
 import com.promenar.nexara.data.model.ExecutionStep
+import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagMetadata
@@ -40,6 +41,7 @@ class MessageManager(
         var reasoning: String? = null,
         var citations: List<Citation>? = null,
         var ragReferences: List<RagReference>? = null,
+        var kgPaths: List<KgPath>? = null,
         var ragReferencesLoading: Boolean? = null,
         var ragMetadata: RagMetadata? = null,
         var thoughtSignature: String? = null,
@@ -119,6 +121,7 @@ class MessageManager(
         options?.reasoning?.let { current.reasoning = it }
         options?.citations?.let { current.citations = it }
         options?.ragReferences?.let { current.ragReferences = it }
+        options?.kgPaths?.let { current.kgPaths = it }
         options?.ragReferencesLoading?.let { current.ragReferencesLoading = it }
         options?.ragMetadata?.let { current.ragMetadata = it }
         options?.thoughtSignature?.let { current.thoughtSignature = it }
@@ -164,8 +167,8 @@ class MessageManager(
                 MessageRole.ASSISTANT -> {
                     val newOutputCount = currentBilling.chatOutput.count + deltaOutput
                     val ragSystemDelta = deltaTotal - deltaOutput
-                    val hasRag = pending.ragMetadata != null || pending.ragReferences != null
-                            || message.ragMetadata != null || message.ragReferences != null
+                    val hasRag = pending.ragMetadata != null || pending.ragReferences != null || pending.kgPaths != null
+                            || message.ragMetadata != null || message.ragReferences != null || message.kgPaths != null
 
                     if (hasRag && ragSystemDelta > 0) {
                         currentBilling.copy(
@@ -198,6 +201,7 @@ class MessageManager(
             pending.reasoning?.let { put("reasoning", it) }
             pending.citations?.let { put("citations", it) }
             pending.ragReferences?.let { put("ragReferences", it) }
+            pending.kgPaths?.let { put("kgPaths", it) }
             pending.ragMetadata?.let { put("ragMetadata", it) }
             pending.thoughtSignature?.let { put("thoughtSignature", it) }
             pending.taskState?.let { put("planningTask", it) }
@@ -243,6 +247,7 @@ class MessageManager(
         reasoning = pending.reasoning ?: message.reasoning,
         citations = pending.citations ?: message.citations,
         ragReferences = pending.ragReferences ?: message.ragReferences,
+        kgPaths = pending.kgPaths ?: message.kgPaths,
         ragReferencesLoading = pending.ragReferencesLoading ?: message.ragReferencesLoading,
         ragMetadata = pending.ragMetadata ?: message.ragMetadata,
         thoughtSignature = pending.thoughtSignature ?: message.thoughtSignature,

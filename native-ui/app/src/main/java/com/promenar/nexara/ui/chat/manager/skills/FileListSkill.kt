@@ -1,52 +1,45 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
-import java.io.File
+import kotlinx.coroutines.flow.firstOrNull
 
-class FileListSkill : SkillDefinition {
-    override val id = "file_list"
-    override val name = "list_dir"
-    override val description = "List files and directories in the workspace."
+class FileListSkill(
+    private val workspaceRepo: IWorkspaceRepository
+) : SkillDefinition {
+    override val id = "list_files"
+    override val name = "list_files"
+    override val description = "列出工作区指定目录下的文件和子目录。"
     override val mcpServerId: String? = null
-
-    override val parametersSchema = """{
-        "type":"object",
-        "properties":{
-            "path":{"type":"string","description":"Relative path to directory. Default: workspace root"}
-        },
-        "required":[]
-    }""".trimIndent()
+    override val parametersSchema = """{"type":"object","properties":{"parentUuid":{"type":"string","description":"父目录UUID(不传则列出根目录)"}}}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val relativePath = args["path"]?.toString() ?: ""
+        val parentUuid = args["parentUuid"] as? String
 
-        val wsPath = context.workspacePath
-            ?: return ToolResult("err", "No workspace path configured", "error")
-
-        return try {
-            val dir = File(wsPath, relativePath).canonicalFile
-            val canonicalWs = File(wsPath).canonicalPath
-            if (!dir.path.startsWith(canonicalWs)) {
-                return ToolResult("err", "Security: path escapes workspace", "error")
-            }
-            if (!dir.exists() || !dir.isDirectory) {
-                return ToolResult("err", "Directory not found: $relativePath", "error")
-            }
-
-            val sb = StringBuilder()
-            sb.appendLine("Contents of ${relativePath.ifEmpty { "/" }}:")
-            dir.listFiles()?.sortedBy { it.name }?.forEach { f ->
-                val type = if (f.isDirectory) "[DIR] " else "[FILE]"
-                val size = if (f.isFile) " (${formatSize(f.length())})" else ""
-                sb.appendLine("  $type${f.name}$size")
-            } ?: sb.appendLine("  (empty)")
-
-            ToolResult("file_list_${System.currentTimeMillis()}", sb.toString())
-        } catch (e: Exception) {
-            ToolResult("file_list_${System.currentTimeMillis()}", "List failed: ${e.message}", "error")
+        val children = if (parentUuid != null) {
+            workspaceRepo.observeChildren(parentUuid).firstOrNull()
+        } else {
+            workspaceRepo.observeRoots().firstOrNull()
         }
+
+        if (children == null || children.isEmpty()) {
+            return ToolResult(
+                "list_files_${System.currentTimeMillis()}",
+                if (parentUuid != null) "目录为空或不存在" else "工作区为空"
+            )
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("目录内容 (${children.size} 项):")
+        for (entry in children) {
+            val type = if (entry.isDirectory) "[DIR]" else "[FILE]"
+            val size = if (!entry.isDirectory && entry.sizeBytes > 0) " (${formatSize(entry.sizeBytes)})" else ""
+            sb.appendLine("  $type ${entry.name}$size [uuid=${entry.uuid}]")
+        }
+
+        return ToolResult("list_files_${System.currentTimeMillis()}", sb.toString())
     }
 
     private fun formatSize(bytes: Long): String = when {

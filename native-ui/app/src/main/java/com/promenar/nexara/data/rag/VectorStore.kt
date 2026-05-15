@@ -1,6 +1,5 @@
 package com.promenar.nexara.data.rag
 
-import com.promenar.nexara.data.local.db.dao.DocumentDao
 import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.dao.VectorDao
@@ -12,8 +11,7 @@ import java.util.UUID
 class VectorStore(
     private val vectorDao: VectorDao,
     private val kgNodeDao: KgNodeDao,
-    private val kgEdgeDao: KgEdgeDao,
-    private val documentDao: DocumentDao
+    private val kgEdgeDao: KgEdgeDao
 ) {
     private fun toBlob(embedding: FloatArray): ByteArray {
         val buffer = ByteBuffer.allocate(embedding.size * 4)

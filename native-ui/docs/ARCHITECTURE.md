@@ -51,6 +51,7 @@ graph TD
         VQ --> LC
         D1V --> LP[LlmProvider]
         LP --> Prot[LlmProtocol]
+        TE --> TP[TaskPlannerTool]
     end
 
     subgraph LocalInference ["本地推理引擎 (规划中)"]
@@ -133,6 +134,12 @@ graph TD
 - **LlmProvider 路由修复**: Cohere_Chat / Mistral_Chat / DeepSeek / Generic_OpenAI_Compat 现路由至 `GenericOpenAICompatProtocol`（全 7 参数支持），修复此前路由至 `OpenAIProtocol`（缺 topK/repetitionPenalty）的 Bug
 - **GenerateConfig 扩展**: `data/local/inference/GenerateConfig` 新增 `frequencyPenalty`/`presencePenalty` (Float, 默认 0.0)，数据类从 5 字段扩展至 7 字段
 - **LlamaCppBackend JNI 修复**: `generate()` 现传递完整 `GenerateConfig` 到 JNI 层，修复此前仅传 `maxTokens` 导致所有采样参数丢失的问题
+- **知识审计系统 (2026-05-15 完成)**:
+  - `RagDetailsSheet`: 全新的 BottomSheet 组件，用于可视化 RAG 片段与 KG 路径。
+  - `KgPath 可视化`: 通过 `KgNodeBadge` 与连线渲染图谱推理拓扑。
+  - `数据模型增强`: `RagReference` 扩展了 `rerankScore`/`rankChange`，`Message` 新增 `kgPaths` 列表。
+  - `交互集成`: `RagOmniIndicator` 现作为详情入口支持点击触发。
+  - `持久化校验`: 通过 `RagDetailsSerializationTest` 确保复杂嵌套数据的 Room 兼容性。
 
 ## 远期设计目标 (Roadmap)
 

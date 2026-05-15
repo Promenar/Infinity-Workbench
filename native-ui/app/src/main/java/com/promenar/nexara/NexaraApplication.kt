@@ -26,12 +26,13 @@ import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.provider.LlmProvider
-import com.promenar.nexara.data.repository.DocumentRepository
+import com.promenar.nexara.data.repository.FileOperationRepository
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.MessageRepository
 import com.promenar.nexara.data.repository.SessionRepository
 import com.promenar.nexara.data.repository.VectorRepository
+import com.promenar.nexara.data.repository.WorkspaceRepository
 import com.promenar.nexara.ui.chat.manager.WebSearchContextProvider
 import com.promenar.nexara.ui.chat.manager.WebSearchProvider
 import com.promenar.nexara.ui.chat.manager.registry.DefaultSkillRegistry
@@ -49,6 +50,8 @@ import com.promenar.nexara.ui.chat.manager.skills.CreateToolSkill
 import com.promenar.nexara.ui.chat.manager.skills.ImageGenerationSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileReadSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileWriteSkill
+import com.promenar.nexara.ui.chat.manager.skills.FileDiffSkill
+import com.promenar.nexara.ui.chat.manager.skills.FilePatchSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileListSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileSearchSkill
 import com.promenar.nexara.ui.chat.manager.skills.ExecJsSkill
@@ -79,7 +82,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
-            .addMigrations(NexaraDatabase.MIGRATION_4_5, NexaraDatabase.MIGRATION_6_7)
+            .addMigrations(NexaraDatabase.MIGRATION_4_5, NexaraDatabase.MIGRATION_6_7, NexaraDatabase.MIGRATION_7_8, NexaraDatabase.MIGRATION_8_9)
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -111,10 +114,6 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val chatStore: ChatStore by lazy { ChatStore() }
-    
-    val documentRepository: com.promenar.nexara.domain.repository.IDocumentRepository by lazy {
-        DocumentRepository(database.documentDao(), database.folderDao())
-    }
 
     val vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository by lazy {
         VectorRepository(database.vectorDao(), embeddingClient)
@@ -126,6 +125,14 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val tokenStatsRepository: ITokenStatsRepository by lazy {
         TokenStatsRepository(database.messageDao())
+    }
+
+    val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository by lazy {
+        WorkspaceRepository(database.fileEntryDao(), database.workspaceSeqDao())
+    }
+
+    val fileOperationRepository: com.promenar.nexara.domain.repository.IFileOperationRepository by lazy {
+        FileOperationRepository(database.fileEntryDao())
     }
 
     val httpClient: HttpClient by lazy {
@@ -144,10 +151,12 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
             register(CreateToolSkill(database.skillDao()))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
-            register(FileReadSkill())
-            register(FileWriteSkill())
-            register(FileListSkill())
-            register(FileSearchSkill())
+            register(FileReadSkill(fileOperationRepository))
+            register(FileWriteSkill(fileOperationRepository))
+            register(FileDiffSkill(fileOperationRepository))
+            register(FilePatchSkill(fileOperationRepository))
+            register(FileListSkill(workspaceRepository))
+            register(FileSearchSkill(workspaceRepository))
             register(ExecJsSkill(this@NexaraApplication))
         }
     }
@@ -274,8 +283,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         VectorStore(
             vectorDao = database.vectorDao(),
             kgNodeDao = database.kgNodeDao(),
-            kgEdgeDao = database.kgEdgeDao(),
-            documentDao = database.documentDao()
+            kgEdgeDao = database.kgEdgeDao()
         )
     }
 
@@ -335,17 +343,8 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             vectorStore = vectorStore,
             embeddingClient = embeddingClient,
             graphExtractor = graphExtractor,
-            documentDao = database.documentDao(),
             vectorDao = database.vectorDao(),
             vectorizationTaskDao = database.vectorizationTaskDao()
-        )
-    }
-
-    val documentImporter: com.promenar.nexara.data.rag.DocumentImporter by lazy {
-        com.promenar.nexara.data.rag.DocumentImporter(
-            context = this,
-            documentDao = database.documentDao(),
-            vectorizationQueue = vectorizationQueue
         )
     }
 

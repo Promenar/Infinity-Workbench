@@ -10,12 +10,6 @@ import androidx.room.PrimaryKey
     tableName = "vectors",
     foreignKeys = [
         ForeignKey(
-            entity = DocumentEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["doc_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
             entity = SessionEntity::class,
             parentColumns = ["id"],
             childColumns = ["session_id"],
@@ -40,6 +34,14 @@ data class VectorEntity(
     val endMessageId: String? = null,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long? = null,
+    @ColumnInfo(name = "stale")
+    val stale: Boolean = false,
+    @ColumnInfo(name = "version")
+    val version: Int = 1,
+    @ColumnInfo(name = "file_uuid")
+    val fileUuid: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

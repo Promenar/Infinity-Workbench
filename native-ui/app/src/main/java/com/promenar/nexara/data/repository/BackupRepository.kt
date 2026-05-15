@@ -20,6 +20,19 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Serializable
+data class BackupFileEntry(
+    val uuid: String,
+    val parentUuid: String? = null,
+    val name: String,
+    val hash: String,
+    val sizeBytes: Long = 0,
+    val isDirectory: Boolean = false,
+    val materializedPath: String,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+@Serializable
 data class BackupDataPackage(
     val version: Int = 1,
     val timestamp: Long = System.currentTimeMillis(),
@@ -28,7 +41,7 @@ data class BackupDataPackage(
     val messages: List<MessageEntity> = emptyList(),
     val skills: List<CustomSkillEntity> = emptyList(),
     val mcpServers: List<McpServerEntity> = emptyList(),
-    val documents: List<DocumentEntity> = emptyList()
+    val documents: List<BackupFileEntry> = emptyList()
 )
 
 class BackupRepository(private val context: Context) {
@@ -56,7 +69,8 @@ class BackupRepository(private val context: Context) {
         val mcpServers = if (state.keysChecked) app.database.skillDao().getAllMcpServers().first() else emptyList()
         
         onProgress(0.8f, "Fetching Library Documents...")
-        val documents = if (state.libraryChecked) app.database.documentDao().observeAll().first() else emptyList()
+        val fileEntries = if (state.libraryChecked) app.database.fileEntryDao().observeRoots().first() else emptyList()
+        val documents = fileEntries.map { BackupFileEntry(it.uuid, it.parentUuid, it.name, it.hash, it.sizeBytes, it.isDirectory, it.materializedPath, it.createdAt, it.updatedAt) }
 
         val pkg = BackupDataPackage(
             agents = agents,
@@ -131,7 +145,20 @@ class BackupRepository(private val context: Context) {
         onProgress(0.9f, "Restoring Skills & Documents...")
         pkg.skills.forEach { app.database.skillDao().insertCustomSkill(it) }
         pkg.mcpServers.forEach { app.database.skillDao().insertMcpServer(it) }
-        pkg.documents.forEach { app.database.documentDao().insert(it) }
+        pkg.documents.forEach { backup ->
+            app.database.fileEntryDao().insert(FileEntry(
+                uuid = backup.uuid,
+                parentUuid = backup.parentUuid,
+                name = backup.name,
+                hash = backup.hash,
+                sizeBytes = backup.sizeBytes,
+                isDirectory = backup.isDirectory,
+                physicalRootPath = backup.materializedPath.substringBeforeLast("/").ifBlank { "/" },
+                materializedPath = backup.materializedPath,
+                createdAt = backup.createdAt,
+                updatedAt = backup.updatedAt
+            ))
+        }
         onProgress(1.0f, "Restore Complete")
     }
 

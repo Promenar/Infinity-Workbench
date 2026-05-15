@@ -584,7 +584,7 @@ fun ChatScreen(
         )
     }
 
-    WorkspaceSheet(
+    ResourceExplorerSheet(
         show = showWorkspaceSheet,
         onDismiss = { showWorkspaceSheet = false },
         sessionId = sessionId
@@ -1029,13 +1029,15 @@ fun ChatBubble(
                         progress = message.ragProgress,
                         metadata = message.ragMetadata,
                         references = message.ragReferences,
+                        kgPaths = message.kgPaths,
                         isLoading = isGenerating && message.content.isEmpty()
                     )
-                } else if (message.role == MessageRole.ASSISTANT && message.ragReferences != null && message.ragReferences!!.isNotEmpty()) {
+                } else if (message.role == MessageRole.ASSISTANT && (!message.ragReferences.isNullOrEmpty() || !message.kgPaths.isNullOrEmpty())) {
                     RagOmniIndicator(
                         progress = message.ragProgress,
                         metadata = message.ragMetadata,
                         references = message.ragReferences,
+                        kgPaths = message.kgPaths,
                         isLoading = false
                     )
                 }

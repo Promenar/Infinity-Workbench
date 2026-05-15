@@ -242,8 +242,7 @@ class KnowledgeGraphViewModel(
                     val repo = KnowledgeGraphRepository(
                         kgNodeDao = app.database.kgNodeDao(),
                         kgEdgeDao = app.database.kgEdgeDao(),
-                        graphExtractor = app.graphExtractor,
-                        documentDao = app.database.documentDao()
+                        graphExtractor = app.graphExtractor
                     )
                     return KnowledgeGraphViewModel(repo, app.graphStore, application) as T
                 }

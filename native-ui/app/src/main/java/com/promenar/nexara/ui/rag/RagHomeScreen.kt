@@ -42,12 +42,15 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RotateRight
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -94,7 +97,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 
-private enum class PortalView { DOCUMENTS, MEMORY, GRAPH }
+private enum class PortalTab { DOCUMENTS, MEMORY, GRAPH }
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -117,7 +120,7 @@ fun RagHomeScreen(
     val searchResults by viewModel.searchResults.collectAsState()
     val memoryVectors by viewModel.memoryVectors.collectAsState()
 
-    var currentView by remember { mutableStateOf(PortalView.DOCUMENTS) }
+    var currentTab by remember { mutableStateOf(PortalTab.DOCUMENTS) }
     var searchQuery by remember { mutableStateOf("") }
     val selectedIds = remember { mutableStateListOf<String>() }
     var showMoveSheet by remember { mutableStateOf(false) }
@@ -126,8 +129,8 @@ fun RagHomeScreen(
     var memoryDeleteTarget by remember { mutableStateOf<MemoryVectorRecord?>(null) }
     var expandedMemoryId by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(currentView) {
-        if (currentView == PortalView.MEMORY) {
+    LaunchedEffect(currentTab) {
+        if (currentTab == PortalTab.MEMORY) {
             viewModel.loadMemoryVectors()
         }
     }
@@ -206,91 +209,43 @@ fun RagHomeScreen(
                 }
 
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    TabRow(
+                        selectedTabIndex = currentTab.ordinal,
+                        containerColor = Color.Transparent,
+                        contentColor = NexaraColors.Primary,
+                        divider = {
+                            HorizontalDivider(color = NexaraColors.OutlineVariant)
+                        }
                     ) {
                         listOf(
-                            PortalView.DOCUMENTS to Triple(Icons.Rounded.Description, stringResource(R.string.rag_home_documents), stringResource(R.string.rag_home_count_docs, stats.documentCount)),
-                            PortalView.MEMORY to Triple(Icons.Rounded.Psychology, stringResource(R.string.rag_home_memory), stringResource(R.string.rag_home_count_items, stats.memoryCount)),
-                            PortalView.GRAPH to Triple(Icons.Rounded.AccountTree, stringResource(R.string.rag_home_graph), stringResource(R.string.rag_home_count_nodes, stats.graphEntityCount))
-                        ).forEach { (view, data) ->
-                            val (icon, title, subtitle) = data
-                            Box(modifier = Modifier.weight(1f)) {
-                                val isActive = currentView == view
-                                val borderColor by animateColorAsState(
-                                    if (isActive) NexaraColors.Primary else NexaraColors.GlassBorder,
-                                    label = "portalBorder"
-                                )
-                                val bgColor by animateColorAsState(
-                                    if (isActive) NexaraColors.Primary.copy(alpha = 0.06f) else NexaraColors.GlassSurface,
-                                    label = "portalBg"
-                                )
-                                NexaraGlassCard(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .border(
-                                            1.dp,
-                                            borderColor,
-                                            NexaraShapes.large as RoundedCornerShape
-                                        ),
-                                    shape = NexaraShapes.large as RoundedCornerShape,
-                                    onClick = {
-                                        when (view) {
-                                            PortalView.DOCUMENTS -> currentView = PortalView.DOCUMENTS
-                                            PortalView.MEMORY -> currentView = PortalView.MEMORY
-                                            PortalView.GRAPH -> onNavigateToGraph()
-                                        }
+                            PortalTab.DOCUMENTS to (Icons.Rounded.Description to stringResource(R.string.rag_home_documents)),
+                            PortalTab.MEMORY to (Icons.Rounded.Psychology to stringResource(R.string.rag_home_memory)),
+                            PortalTab.GRAPH to (Icons.Rounded.AccountTree to stringResource(R.string.rag_home_graph))
+                        ).forEach { (tab, data) ->
+                            Tab(
+                                selected = currentTab == tab,
+                                onClick = {
+                                    when (tab) {
+                                        PortalTab.GRAPH -> onNavigateToGraph()
+                                        else -> currentTab = tab
                                     }
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(bgColor)
-                                            .padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(NexaraColors.Primary.copy(alpha = 0.1f))
-                                                .border(1.dp, NexaraColors.Primary.copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = icon,
-                                                contentDescription = null,
-                                                tint = NexaraColors.Primary,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Text(
-                                                text = title,
-                                                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                                                color = NexaraColors.OnSurfaceVariant
-                                            )
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(if (currentView == view) NexaraColors.Primary.copy(alpha = 0.15f) else Color.Transparent)
-                                                    .padding(horizontal = 4.dp, vertical = 0.dp)
-                                            ) {
-                                                Text(
-                                                    text = subtitle,
-                                                    style = NexaraTypography.bodySmall.copy(
-                                                        fontSize = 12.sp,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        fontWeight = FontWeight.SemiBold
-                                                    ),
-                                                    color = if (currentView == view) NexaraColors.Primary else NexaraColors.OnSurface
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                                },
+                                icon = {
+                                    Icon(
+                                        data.first,
+                                        contentDescription = data.second,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                text = {
+                                    Text(
+                                        data.second,
+                                        style = NexaraTypography.labelMedium
+                                    )
+                                },
+                                selectedContentColor = NexaraColors.Primary,
+                                unselectedContentColor = NexaraColors.OnSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -315,8 +270,8 @@ fun RagHomeScreen(
                     }
                 }
 
-                when (currentView) {
-                    PortalView.DOCUMENTS -> {
+                when (currentTab) {
+                    PortalTab.DOCUMENTS -> {
                         item {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -448,7 +403,7 @@ fun RagHomeScreen(
                             }
                         }
                     }
-                    PortalView.MEMORY -> {
+                    PortalTab.MEMORY -> {
                         item {
                             Text(stringResource(R.string.rag_home_memory_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
                         }
@@ -542,7 +497,7 @@ fun RagHomeScreen(
                             }
                         }
                     }
-                    PortalView.GRAPH -> {}
+                    PortalTab.GRAPH -> {}
                 }
             }
 

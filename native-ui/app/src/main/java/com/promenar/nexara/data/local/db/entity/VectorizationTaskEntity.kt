@@ -10,12 +10,6 @@ import androidx.room.PrimaryKey
     tableName = "vectorization_tasks",
     foreignKeys = [
         ForeignKey(
-            entity = DocumentEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["doc_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
             entity = SessionEntity::class,
             parentColumns = ["id"],
             childColumns = ["session_id"],

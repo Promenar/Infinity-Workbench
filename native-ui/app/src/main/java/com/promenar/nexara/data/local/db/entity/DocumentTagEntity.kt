@@ -9,12 +9,6 @@ import androidx.room.Index
     tableName = "document_tags",
     foreignKeys = [
         ForeignKey(
-            entity = DocumentEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["doc_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
             entity = TagEntity::class,
             parentColumns = ["id"],
             childColumns = ["tag_id"],

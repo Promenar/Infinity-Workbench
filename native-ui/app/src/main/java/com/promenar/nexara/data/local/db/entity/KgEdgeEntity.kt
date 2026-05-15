@@ -20,12 +20,6 @@ import androidx.room.PrimaryKey
             parentColumns = ["id"],
             childColumns = ["target_id"],
             onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = DocumentEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["doc_id"],
-            onDelete = ForeignKey.CASCADE,
         )
     ],
     indices = [Index("source_id"), Index("target_id"), Index("doc_id")]
@@ -49,4 +43,8 @@ data class KgEdgeEntity(
     val sourceType: String = "full",
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
+    @ColumnInfo(name = "stale")
+    val stale: Boolean = false,
+    @ColumnInfo(name = "file_uuid")
+    val fileUuid: String? = null,
 )

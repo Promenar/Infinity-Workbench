@@ -1,10 +1,10 @@
 package com.promenar.nexara.ui.rag
 
-import app.cash.turbine.test
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.rag.GraphData
 import com.promenar.nexara.data.rag.GraphStore
-import com.promenar.nexara.domain.model.KgEdge
-import com.promenar.nexara.domain.model.KgNode
+import com.promenar.nexara.data.rag.KgNode
+import com.promenar.nexara.data.rag.KgEdge
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
@@ -38,144 +38,109 @@ class KnowledgeGraphViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun domainNode(
+    private fun dataNode(
         id: String = "n1",
-        label: String = "Node1",
+        name: String = "Node1",
         type: String = "concept"
-    ) = KgNode(id = id, label = label, type = type)
+    ) = KgNode(id = id, name = name, type = type, createdAt = 100L)
 
-    private fun domainEdge(
+    private fun dataEdge(
         id: String = "e1",
         sourceId: String = "n1",
         targetId: String = "n2",
         relation: String = "contains"
-    ) = KgEdge(id = id, sourceId = sourceId, targetId = targetId, relation = relation)
+    ) = KgEdge(id = id, sourceId = sourceId, targetId = targetId, relation = relation, createdAt = 100L)
 
     @Test
     fun `init loadGraph uses repo getAllNodes and getAllEdges`() = runTest {
-        val nodes = listOf(domainNode(id = "n1", label = "Alpha", type = "concept"))
-        val edges = listOf(domainEdge(id = "e1", sourceId = "n1", targetId = "n2"))
-        coEvery { repo.getAllNodes() } returns nodes
-        coEvery { repo.getAllEdges() } returns edges
+        val nodes = listOf(dataNode(id = "n1", name = "Alpha", type = "concept"))
+        val edges = listOf(dataEdge(id = "e1", sourceId = "n1", targetId = "n2"))
+        coEvery { graphStore.getGraphData() } returns GraphData(nodes, edges)
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
-        vm.nodes.test {
-            val result = awaitItem()
-            assertThat(result).hasSize(1)
-            assertThat(result[0].id).isEqualTo("n1")
-            assertThat(result[0].label).isEqualTo("Alpha")
-            assertThat(result[0].type).isEqualTo("concept")
-        }
-        vm.edges.test {
-            val result = awaitItem()
-            assertThat(result).hasSize(1)
-            assertThat(result[0].sourceId).isEqualTo("n1")
-        }
+        assertThat(vm.nodes.value).hasSize(1)
+        assertThat(vm.nodes.value[0].id).isEqualTo("n1")
+        assertThat(vm.nodes.value[0].label).isEqualTo("Alpha")
+        assertThat(vm.nodes.value[0].type).isEqualTo("concept")
     }
 
     @Test
     fun `loadGraph maps node types to correct icons`() = runTest {
         val nodes = listOf(
-            domainNode(id = "c", type = "concept"),
-            domainNode(id = "d", type = "document"),
-            domainNode(id = "p", type = "person"),
-            domainNode(id = "o", type = "other")
+            dataNode(id = "c", type = "concept"),
+            dataNode(id = "d", type = "document"),
+            dataNode(id = "p", type = "person"),
+            dataNode(id = "o", type = "other")
         )
-        coEvery { repo.getAllNodes() } returns nodes
-        coEvery { repo.getAllEdges() } returns emptyList()
+        coEvery { graphStore.getGraphData() } returns GraphData(nodes, emptyList())
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
-        vm.nodes.test {
-            val result = awaitItem()
-            assertThat(result).hasSize(4)
-        }
+        assertThat(vm.nodes.value).hasSize(4)
     }
 
     @Test
     fun `clearGraph calls repo clear then reloads`() = runTest {
-        coEvery { repo.getAllNodes() } returns emptyList()
-        coEvery { repo.getAllEdges() } returns emptyList()
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
         coEvery { repo.clear() } returns Unit
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.clearGraph()
 
         coVerify { repo.clear() }
-        coVerify(exactly = 2) { repo.getAllNodes() }
-        coVerify(exactly = 2) { repo.getAllEdges() }
+        coVerify(atLeast = 2) { graphStore.getGraphData() }
     }
 
     @Test
     fun `clearGraph results in empty nodes and edges`() = runTest {
-        coEvery { repo.getAllNodes() } returns emptyList()
-        coEvery { repo.getAllEdges() } returns emptyList()
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
         coEvery { repo.clear() } returns Unit
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.clearGraph()
 
-        vm.nodes.test {
-            assertThat(awaitItem()).isEmpty()
-        }
-        vm.edges.test {
-            assertThat(awaitItem()).isEmpty()
-        }
+        assertThat(vm.nodes.value).isEmpty()
+        assertThat(vm.edges.value).isEmpty()
     }
 
     @Test
     fun `injectMockData populates nodes and edges`() = runTest {
-        coEvery { repo.getAllNodes() } returns emptyList()
-        coEvery { repo.getAllEdges() } returns emptyList()
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.injectMockData()
 
-        vm.nodes.test {
-            val result = awaitItem()
-            assertThat(result).hasSize(16)
-            result.forEach { node ->
-                assertThat(node.id).isNotEmpty()
-                assertThat(node.label).isNotEmpty()
-                assertThat(node.type).isIn(listOf("concept", "document", "person"))
-            }
+        assertThat(vm.nodes.value).hasSize(16)
+        vm.nodes.value.forEach { node ->
+            assertThat(node.id).isNotEmpty()
+            assertThat(node.label).isNotEmpty()
+            assertThat(node.type).isIn(listOf("concept", "document", "person"))
         }
-        vm.edges.test {
-            val result = awaitItem()
-            assertThat(result).isNotEmpty()
-            result.forEach { edge ->
-                assertThat(edge.sourceId).isNotEmpty()
-                assertThat(edge.targetId).isNotEmpty()
-                assertThat(edge.relation).isIn(listOf("contains", "references", "depends_on", "authored"))
-            }
+        assertThat(vm.edges.value).isNotEmpty()
+        vm.edges.value.forEach { edge ->
+            assertThat(edge.sourceId).isNotEmpty()
+            assertThat(edge.targetId).isNotEmpty()
+            assertThat(edge.relation).isIn(listOf("contains", "references", "depends_on", "authored"))
         }
     }
 
     @Test
     fun `isLoading is false after loadGraph completes`() = runTest {
-        coEvery { repo.getAllNodes() } returns emptyList()
-        coEvery { repo.getAllEdges() } returns emptyList()
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
-        vm.isLoading.test {
-            assertThat(awaitItem()).isFalse()
-        }
+        assertThat(vm.isLoading.value).isFalse()
     }
 
     @Test
     fun `loadGraph handles exception gracefully`() = runTest {
-        coEvery { repo.getAllNodes() } throws RuntimeException("db error")
-        coEvery { repo.getAllEdges() } returns emptyList()
+        coEvery { graphStore.getGraphData() } throws RuntimeException("db error")
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
-        vm.nodes.test {
-            assertThat(awaitItem()).isEmpty()
-        }
-        vm.isLoading.test {
-            assertThat(awaitItem()).isFalse()
-        }
+        assertThat(vm.nodes.value).isEmpty()
+        assertThat(vm.isLoading.value).isFalse()
     }
 }

@@ -18,7 +18,6 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
-import com.promenar.nexara.domain.repository.IDocumentRepository
 import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
@@ -84,7 +83,6 @@ data class SkillInfo(
 class SettingsViewModel(
     application: Application,
     private val vectorRepository: IVectorRepository,
-    private val documentRepository: IDocumentRepository,
     private val tokenStatsRepository: ITokenStatsRepository,
     private val mcpSkillRegistry: McpSkillRegistry? = null
 ) : ViewModel() {
@@ -294,12 +292,7 @@ class SettingsViewModel(
     }
 
     private fun loadKnowledgeStats() {
-        viewModelScope.launch {
-            try {
-                val docCount = documentRepository.getCount()
-                _activeSourcesCount.value = docCount
-            } catch (_: Exception) { }
-        }
+        _activeSourcesCount.value = 0
     }
 
     fun updateUserName(name: String) {
@@ -557,7 +550,7 @@ class SettingsViewModel(
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
-                    return SettingsViewModel(application, app.vectorRepository, app.documentRepository, app.tokenStatsRepository, app.mcpSkillRegistry) as T
+                    return SettingsViewModel(application, app.vectorRepository, app.tokenStatsRepository, app.mcpSkillRegistry) as T
                 }
             }
     }

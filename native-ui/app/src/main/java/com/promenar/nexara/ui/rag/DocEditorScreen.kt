@@ -73,10 +73,7 @@ fun DocEditorScreen(
     val app = context.applicationContext as com.promenar.nexara.NexaraApplication
     val viewModel: DocEditorViewModel = viewModel(
         factory = DocEditorViewModel.Factory(
-            documentRepository = com.promenar.nexara.data.repository.DocumentRepository(
-                app.database.documentDao(),
-                app.database.folderDao()
-            )
+            fileOperationRepository = app.fileOperationRepository
         )
     )
 

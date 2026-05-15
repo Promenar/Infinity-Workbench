@@ -21,4 +21,8 @@ data class KgNodeEntity(
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long? = null,
+    @ColumnInfo(name = "stale")
+    val stale: Boolean = false,
+    @ColumnInfo(name = "file_uuid")
+    val fileUuid: String? = null,
 )

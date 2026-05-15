@@ -79,8 +79,32 @@ data class RagReference(
     val content: String = "",
     val source: String = "",
     val score: Float = 0f,
+    val rerankScore: Float? = null,
+    val rankChange: Int? = null,
     val documentId: String? = null,
     val chunkIndex: Int = 0
+)
+
+@Serializable
+data class KgNode(
+    val id: String,
+    val label: String,
+    val type: String
+)
+
+@Serializable
+data class KgEdge(
+    val sourceId: String,
+    val targetId: String,
+    val relation: String
+)
+
+@Serializable
+data class KgPath(
+    val queryKeywords: List<String> = emptyList(),
+    val nodes: List<KgNode> = emptyList(),
+    val edges: List<KgEdge> = emptyList(),
+    val reasoning: String? = null
 )
 
 @Serializable
@@ -162,6 +186,7 @@ data class UpdateMessageOptions(
     val reasoning: String? = null,
     val citations: List<Citation>? = null,
     val ragReferences: List<RagReference>? = null,
+    val kgPaths: List<KgPath>? = null,
     val ragReferencesLoading: Boolean? = null,
     val ragMetadata: RagMetadata? = null,
     val thoughtSignature: String? = null,
@@ -249,6 +274,7 @@ data class Message(
     val tokens: TokenUsage? = null,
     val citations: List<Citation>? = null,
     val ragReferences: List<RagReference>? = null,
+    val kgPaths: List<KgPath>? = null,
     val ragProgress: RagProgress? = null,
     val ragMetadata: RagMetadata? = null,
     val ragReferencesLoading: Boolean = false,

@@ -1,6 +1,5 @@
 package com.promenar.nexara.data.repository
 
-import com.promenar.nexara.data.local.db.dao.DocumentDao
 import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.mapper.toDomain
@@ -13,20 +12,17 @@ import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 class KnowledgeGraphRepository(
     private val kgNodeDao: KgNodeDao,
     private val kgEdgeDao: KgEdgeDao,
-    private val graphExtractor: GraphExtractor,
-    private val documentDao: DocumentDao
+    private val graphExtractor: GraphExtractor
 ) : IKnowledgeGraphRepository {
 
-    override suspend fun extractFromDocument(documentId: String): ExtractionResult {
-        val document = documentDao.getById(documentId)
-            ?: return ExtractionResult(emptyList(), emptyList())
-
-        val content = document.content
-            ?: return ExtractionResult(emptyList(), emptyList())
+    override suspend fun extractFromContent(content: String, docId: String): ExtractionResult {
+        if (content.isBlank()) {
+            return ExtractionResult(emptyList(), emptyList())
+        }
 
         val extractResult = graphExtractor.extractAndSave(
             text = content,
-            docId = documentId
+            docId = docId
         )
 
         if (extractResult.nodes.isEmpty() && extractResult.edges.isEmpty()) {
@@ -37,7 +33,7 @@ class KnowledgeGraphRepository(
             kgNodeDao.getByName(extractedNode.name)
         }
 
-        val edgeEntities = kgEdgeDao.getByDocId(documentId)
+        val edgeEntities = kgEdgeDao.getByDocId(docId)
 
         return ExtractionResult(
             nodes = nodeEntities.map { it.toDomain() },

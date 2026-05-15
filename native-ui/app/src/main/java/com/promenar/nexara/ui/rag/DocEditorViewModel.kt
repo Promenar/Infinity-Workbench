@@ -3,18 +3,20 @@ package com.promenar.nexara.ui.rag
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.promenar.nexara.domain.repository.IDocumentRepository
+import com.promenar.nexara.domain.model.Document
+import com.promenar.nexara.domain.repository.IFileOperationRepository
+import com.promenar.nexara.domain.repository.WriteResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class DocEditorViewModel(
-    private val documentRepository: IDocumentRepository
+    private val fileOperationRepository: IFileOperationRepository
 ) : ViewModel() {
 
-    private val _document = MutableStateFlow<com.promenar.nexara.domain.model.Document?>(null)
-    val document: StateFlow<com.promenar.nexara.domain.model.Document?> = _document.asStateFlow()
+    private val _document = MutableStateFlow<Document?>(null)
+    val document: StateFlow<Document?> = _document.asStateFlow()
 
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content.asStateFlow()
@@ -31,41 +33,63 @@ class DocEditorViewModel(
     private val _warningDismissed = MutableStateFlow(false)
     val warningDismissed: StateFlow<Boolean> = _warningDismissed.asStateFlow()
 
+    private val _fileName = MutableStateFlow("")
+    val fileName: StateFlow<String> = _fileName.asStateFlow()
+
+    private var currentHash = ""
+    private var currentUuid = ""
     private var originalContent = ""
 
-    fun loadDocument(docId: String) {
+    fun loadFile(uuid: String) {
         viewModelScope.launch {
             try {
-                val doc = documentRepository.getById(docId)
-                _document.value = doc
-                if (doc != null) {
-                    val realContent = doc.content
-                    val sizeMb = (realContent.length.toDouble()) / (1024.0 * 1024.0)
-                    _isLargeFile.value = sizeMb > 10.0
-                    _content.value = realContent
-                    originalContent = realContent
+                val result = fileOperationRepository.readFileRange(uuid)
+                currentUuid = uuid
+                currentHash = result.hash
+                _fileName.value = result.name
+                _content.value = result.content
+                originalContent = result.content
+                _isLargeFile.value = result.totalLines > 10000
+
+                _document.value = Document(
+                    id = uuid,
+                    folderId = "",
+                    title = result.name,
+                    content = result.content,
+                    hash = result.hash,
+                    createdAt = result.lastModified,
+                    updatedAt = result.lastModified
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun loadDocument(docId: String) = loadFile(docId)
+
+    fun saveDocument() {
+        viewModelScope.launch {
+            try {
+                val result = fileOperationRepository.writeFileAtomic(
+                    uuid = currentUuid,
+                    newContent = _content.value,
+                    sessionId = "editor",
+                    expectedHash = currentHash
+                )
+                if (result is WriteResult.Success) {
+                    currentHash = result.newHash
+                    _isDirty.value = false
+                    originalContent = _content.value
                 }
             } catch (_: Exception) {}
         }
     }
 
-    fun saveDocument() {
-        viewModelScope.launch {
-            try {
-                val doc = _document.value ?: return@launch
-                documentRepository.update(doc.id, _content.value)
-                _isDirty.value = false
-                originalContent = _content.value
-            } catch (_: Exception) {}
-        }
-    }
-
     class Factory(
-        private val documentRepository: IDocumentRepository
+        private val fileOperationRepository: IFileOperationRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DocEditorViewModel(documentRepository) as T
+            DocEditorViewModel(fileOperationRepository) as T
     }
 
     fun onContentChanged(newContent: String) {
@@ -85,10 +109,5 @@ class DocEditorViewModel(
         val doc = _document.value ?: return
         _document.value = doc.copy(title = newTitle)
         _isDirty.value = true
-        viewModelScope.launch {
-            try {
-                documentRepository.updateTitle(doc.id, newTitle)
-            } catch (_: Exception) {}
-        }
     }
 }

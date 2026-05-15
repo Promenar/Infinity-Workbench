@@ -9,7 +9,6 @@ import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.remote.mcp.McpClient
 import com.promenar.nexara.data.remote.mcp.McpTool
 import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
-import com.promenar.nexara.domain.repository.IDocumentRepository
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import com.promenar.nexara.domain.repository.TokenUsageAggregate
@@ -38,7 +37,6 @@ class SettingsViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 
     private lateinit var vectorRepo: IVectorRepository
-    private lateinit var docRepo: IDocumentRepository
     private lateinit var tokenStatsRepo: ITokenStatsRepository
     private lateinit var mockApp: NexaraApplication
     private lateinit var prefs: SharedPreferences
@@ -49,7 +47,6 @@ class SettingsViewModelTest {
         Dispatchers.setMain(testDispatcher)
 
         vectorRepo = mockk()
-        docRepo = mockk()
         tokenStatsRepo = mockk()
         mockApp = mockk(relaxed = true)
         prefs = mockk {
@@ -81,9 +78,8 @@ class SettingsViewModelTest {
     fun `loadTokenStats uses tokenStatsRepository`() = runTest {
         coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate(inputTokens = 100, outputTokens = 50)
         coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
-        coEvery { docRepo.getCount() } returns 10
 
-        SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
 
         coVerify { tokenStatsRepo.getTotalUsage() }
     }
@@ -95,47 +91,33 @@ class SettingsViewModelTest {
         coEvery { tokenStatsRepo.getUsageByModel() } returns listOf(
             com.promenar.nexara.domain.repository.ModelTokenStats("gpt-4", usage)
         )
-        coEvery { docRepo.getCount() } returns 0
 
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
 
         assertThat(vm.tokenStats.value).hasSize(1)
         assertThat(vm.tokenStats.value[0].totalTokens).isEqualTo(500)
     }
 
     @Test
-    fun `loadKnowledgeStats uses documentRepository count`() = runTest {
+    fun `loadKnowledgeStats sets zero by default`() = runTest {
         coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate()
         coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
-        coEvery { docRepo.getCount() } returns 7
 
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
-
-        coVerify { docRepo.getCount() }
-        assertThat(vm.activeSourcesCount.value).isEqualTo(7)
-    }
-
-    @Test
-    fun `loadKnowledgeStats sets zero when repository returns zero`() = runTest {
-        coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate()
-        coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
-        coEvery { docRepo.getCount() } returns 0
-
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
 
         assertThat(vm.activeSourcesCount.value).isEqualTo(0)
     }
 
     @Test
     fun `skills list excludes deprecated current_time`() = runTest {
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
         val skills = vm.skills.value
         assertThat(skills.find { it.id == "current_time" }).isNull()
     }
 
     @Test
     fun `skills list includes image_generation`() = runTest {
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
         val skills = vm.skills.value
         val imgSkill = skills.find { it.id == "image_generation" }
         assertThat(imgSkill).isNotNull()
@@ -144,7 +126,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `skills list includes file tools`() = runTest {
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo)
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
         val skills = vm.skills.value
         val toolIds = skills.map { it.id }
         assertThat(toolIds).containsAtLeast("file_read", "file_list", "file_search", "exec_js")
@@ -158,7 +140,6 @@ class SettingsViewModelTest {
         every { skillRepo.getAllMcpServers() } returns kotlinx.coroutines.flow.flowOf(listOf(testServer))
         coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate()
         coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
-        coEvery { docRepo.getCount() } returns 0
 
         val mockMcpRegistry = mockk<McpSkillRegistry>(relaxed = true)
         every { mockApp.httpClient } returns mockk(relaxed = true)
@@ -168,7 +149,7 @@ class SettingsViewModelTest {
             McpTool("test_tool", "A test tool", """{"type":"object"}""")
         )
 
-        val vm = SettingsViewModel(mockApp, vectorRepo, docRepo, tokenStatsRepo, mockMcpRegistry)
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo, mockMcpRegistry)
         advanceUntilIdle()
 
         vm.syncMcpServer("srv1")
