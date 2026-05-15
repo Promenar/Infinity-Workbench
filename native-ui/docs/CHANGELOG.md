@@ -15,6 +15,7 @@
 - [Testing] **RAG 详情序列化测试**：新增 `RagDetailsSerializationTest.kt`，验证了复杂图谱路径与增强型引用数据的无损持久化。
 - [Planning] **全局资源管理器架构**：完成了 Nexara 统一资源操作系统的架构规划（存档于 `.agent/plans/20260515-ResourceManagerArchitecture.md`），将实现 UUID 锚定的文件操作系统。
 - [Planning] **内置任务规划工具 (Task Planner)**：完成了任务拆分与追踪工具的架构规划（存档于 `.agent/plans/20260515-TaskPlanningToolArchitecture.md`），设定为最高优先级任务。
+- [Planning] **任务规划器 (Task Planner) V2 方案设计完成**：确立了基于递归树状结构的 `TaskNode` 模型、会话级唯一激活任务约束、抗中断持久化机制，以及集成在输入框顶部的 HUD 交互设计。方案论证已通过。
 
 ### Fixed
 - [RAG] **UI 点击反馈**：`RagOmniIndicator` 现支持点击，在存在检索参考或图谱路径时可弹出知识审计面板。
