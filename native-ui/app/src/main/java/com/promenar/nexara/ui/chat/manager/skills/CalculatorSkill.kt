@@ -100,13 +100,13 @@ class CalculatorSkill : SkillDefinition {
         }
 
         private fun parseFactor(): Double {
-            var result = parseUnary()
-            while (pos < tokens.size && tokens[pos].value == "^") {
+            val base = parseUnary()
+            if (pos < tokens.size && tokens[pos].value == "^") {
                 pos++
-                val right = parseUnary()
-                result = Math.pow(result, right)
+                val exponent = parseFactor()
+                return Math.pow(base, exponent)
             }
-            return result
+            return base
         }
 
         private fun parseUnary(): Double {

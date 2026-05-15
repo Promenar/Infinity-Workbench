@@ -215,12 +215,21 @@ class ThinkingDetector {
             return text.length
         }
 
-        // 如果距离末尾很近，可能还有未完成的标签
-        val tailLength = text.length - lastOpenBracket
-        if (tailLength < 2) { // 缩减到 2，只要不是刚写了一个 < 就输出
-            return lastOpenBracket
+        val afterBracket = text.substring(lastOpenBracket + 1)
+        val mightBeIncompleteTag = when {
+            afterBracket.startsWith("/") -> {
+                val afterSlash = afterBracket.substring(1)
+                afterSlash.length <= "thought".length
+            }
+            afterBracket.isEmpty() -> true
+            else -> {
+                afterBracket.length <= "thought".length &&
+                listOf("think", "thought", "!").any { p ->
+                    p.startsWith(afterBracket) || afterBracket.startsWith(p.take(maxOf(afterBracket.length, 1)))
+                }
+            }
         }
-
+        if (mightBeIncompleteTag) return lastOpenBracket
         return text.length
     }
 }

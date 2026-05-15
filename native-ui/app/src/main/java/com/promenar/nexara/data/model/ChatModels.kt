@@ -131,9 +131,17 @@ data class RagUsage(
 @Serializable
 data class TaskStep(
     val id: String = "",
+    val parentId: String? = null,
     val title: String = "",
     val description: String = "",
-    val status: String = "pending"
+    val status: String = "pending",
+    val sortOrder: Int = 0,
+    val note: String? = null,
+    val artifactFileUuids: List<String>? = null,
+    val children: List<TaskStep> = emptyList(),
+    val isCollapsed: Boolean = false,
+    val createdAt: Long = 0,
+    val updatedAt: Long = 0
 )
 
 @Serializable
@@ -142,7 +150,9 @@ data class TaskState(
     val title: String = "",
     val status: String = "idle",
     val progress: Int = 0,
-    val steps: List<TaskStep> = emptyList()
+    val steps: List<TaskStep> = emptyList(),
+    val currentFocusStepId: String? = null,
+    val createdAt: Long = 0
 )
 
 @Serializable

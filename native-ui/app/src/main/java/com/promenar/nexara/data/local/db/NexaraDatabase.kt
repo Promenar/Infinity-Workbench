@@ -19,6 +19,7 @@ import com.promenar.nexara.data.local.db.dao.SkillDao
 import com.promenar.nexara.data.local.db.dao.TagDao
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
+import com.promenar.nexara.data.local.db.dao.TaskNodeDao
 import com.promenar.nexara.data.local.db.dao.WorkspaceSeqDao
 import com.promenar.nexara.data.local.db.entity.ArtifactEntity
 import com.promenar.nexara.data.local.db.entity.AttachmentEntity
@@ -38,6 +39,7 @@ import com.promenar.nexara.data.local.db.entity.VectorFtsEntity
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
+import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceSeqEntity
 
 @Database(
@@ -61,8 +63,9 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceSeqEntity
         McpServerEntity::class,
         FileEntry::class,
         WorkspaceSeqEntity::class,
+        TaskNodeEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -84,6 +87,7 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun skillDao(): SkillDao
     abstract fun fileEntryDao(): FileEntryDao
     abstract fun workspaceSeqDao(): WorkspaceSeqDao
+    abstract fun taskNodeDao(): TaskNodeDao
 
     companion object {
         val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {

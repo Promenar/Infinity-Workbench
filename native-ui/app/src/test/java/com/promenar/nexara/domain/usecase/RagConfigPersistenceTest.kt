@@ -75,7 +75,7 @@ class RagConfigPersistenceTest {
         every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_QUERY_REWRITE, false) } returns false
         every { p.getString(RagConfigPersistence.KEY_QUERY_REWRITE_STRATEGY, "multi-query") } returns "multi-query"
         every { p.getInt(RagConfigPersistence.KEY_QUERY_REWRITE_COUNT, 3) } returns 3
-        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_HYBRID_SEARCH, false) } returns true
+        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_HYBRID_SEARCH, true) } returns true
         every { p.getFloat(RagConfigPersistence.KEY_HYBRID_ALPHA, 0.6f) } returns 0.8f
         every { p.getFloat(RagConfigPersistence.KEY_HYBRID_BM25_BOOST, 1.0f) } returns 1.0f
         every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_MEMORY, true) } returns false

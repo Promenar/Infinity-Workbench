@@ -29,7 +29,7 @@ class CurrentTimeSkill : SkillDefinition {
         val now = ZonedDateTime.now(ZoneId.systemDefault())
         val formatted = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(now)
         return ToolResult(
-            id = "result_${System.currentTimeMillis()}",
+            id = "result_${System.nanoTime()}",
             content = formatted
         )
     }

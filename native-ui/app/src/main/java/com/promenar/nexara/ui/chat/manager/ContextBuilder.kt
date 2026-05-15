@@ -158,13 +158,12 @@ class ContextBuilder(
         }
 
         // 5. Session Custom Prompt
-        params.sessionCustomPrompt?.let { prompt ->
-            if (prompt.isNotBlank()) {
-                sb.appendLine()
-                sb.appendLine("## Session Instructions")
-                sb.appendLine(prompt)
-                sb.appendLine()
-            }
+        val customPrompt = params.sessionCustomPrompt ?: session.customPrompt
+        if (!customPrompt.isNullOrBlank()) {
+            sb.appendLine()
+            sb.appendLine("## Session Instructions")
+            sb.appendLine(customPrompt)
+            sb.appendLine()
         }
 
         // 6. RAG Context (Memory & Docs)

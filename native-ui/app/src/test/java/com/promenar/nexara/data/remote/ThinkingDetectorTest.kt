@@ -209,10 +209,10 @@ class ThinkingDetectorTest {
             assertThat(r1.content).isEqualTo("some text")
             assertThat(r1.reasoning).isEmpty()
             val r2 = detector.process("more text")
-            assertThat(r2.content).isEmpty()
+            assertThat(r2.content).isEqualTo("<more text")
             assertThat(r2.reasoning).isEmpty()
             val r3 = detector.flush()
-            assertThat(r3.content).isEqualTo("<more text")
+            assertThat(r3.content).isEmpty()
             assertThat(r3.reasoning).isEmpty()
         }
     }

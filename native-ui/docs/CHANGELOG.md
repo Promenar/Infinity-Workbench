@@ -7,7 +7,9 @@
 - [Architecture] **FK 解耦**: VectorEntity、KgEdgeEntity 等移除对 DocumentEntity 的 ForeignKey，保留 doc_id 列数据。
 
 ### Added
+- [Architecture] **任务规划器**: 完整实装。4 工具（initialize/update/get/drop），递归任务树 + 叶节点状态独立 + 父节点派生双模 Token 注入（标准/节约），TaskFloatingPanel UI + ContextBuilder 集成，economyMode 系统级开关（ARCHITECTURE_DESIGN.md §6.3 长期伏笔）。数据库 v9→v10
 - [Testing] **WorkspaceSeqDaoTest**: 原子序号并发递增测试（4 测试，含 20 并发协程竞态验证）
+- [Testing] **TaskRepositoryTest**: 任务规划器完整测试（6 场景）
 - [Testing] **FileOperationRepositoryTest**: 乐观锁写入测试（5 测试：成功写入/Hash 冲突/UUID 不存在/内容读取/行号范围读取）
 - [RAG/UX] **知识审计系统 (Knowledge Inspection)**：实装了全新的 RAG 详情弹窗 `RagDetailsSheet`，支持查看检索片段的原始文本、向量得分、重排得分及排名变化。
 - [RAG/KG] **知识图谱可视化**：实装了 `KgPath` 可视化组件，支持在 UI 上以拓扑路径形式展示 AI 的图谱推理链路，并包含推理说明（Reasoning）。
