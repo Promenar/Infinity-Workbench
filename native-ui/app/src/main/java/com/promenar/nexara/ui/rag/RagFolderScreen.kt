@@ -131,6 +131,7 @@ fun RagFolderScreen(
                 }
             } else {
                 LazyColumn(
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(documents, key = { it.id }) { doc ->

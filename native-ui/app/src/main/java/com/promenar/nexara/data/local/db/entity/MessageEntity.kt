@@ -45,7 +45,7 @@ data class MessageEntity(
     val ragProgress: String? = null,
     @ColumnInfo(name = "rag_metadata")
     val ragMetadata: String? = null,
-    @ColumnInfo(name = "rag_references_loading")
+    @ColumnInfo(name = "rag_references_loading", defaultValue = "0")
     val ragReferencesLoading: Int = 0,
     @ColumnInfo(name = "execution_steps")
     val executionSteps: String? = null,
@@ -58,7 +58,7 @@ data class MessageEntity(
     val name: String? = null,
     @ColumnInfo(name = "planning_task")
     val planningTask: String? = null,
-    @ColumnInfo(name = "is_archived")
+    @ColumnInfo(name = "is_archived", defaultValue = "0")
     val isArchived: Int = 0,
     @ColumnInfo(name = "vectorization_status")
     val vectorizationStatus: String? = null,
@@ -69,7 +69,7 @@ data class MessageEntity(
     val files: String? = null,
     @ColumnInfo(name = "user_images")
     val userImages: String? = null,
-    @ColumnInfo(name = "is_error")
+    @ColumnInfo(name = "is_error", defaultValue = "0")
     val isError: Int = 0,
     @ColumnInfo(name = "error_message")
     val errorMessage: String? = null,

@@ -29,15 +29,17 @@ data class TaskNodeEntity(
     val sessionId: String,
     @ColumnInfo(name = "parent_id")
     val parentId: String? = null,
-    @ColumnInfo(name = "sort_order")
+    @ColumnInfo(name = "sort_order", defaultValue = "0")
     val sortOrder: Int = 0,
     val title: String,
+    @ColumnInfo(defaultValue = "")
     val description: String = "",
-    val status: String = "todo",
+    @ColumnInfo(defaultValue = "pending")
+    val status: String = "pending",
     val note: String? = null,
     @ColumnInfo(name = "artifact_file_uuids")
     val artifactFileUuids: String? = null,
-    @ColumnInfo(name = "is_collapsed")
+    @ColumnInfo(name = "is_collapsed", defaultValue = "0")
     val isCollapsed: Boolean = false,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,

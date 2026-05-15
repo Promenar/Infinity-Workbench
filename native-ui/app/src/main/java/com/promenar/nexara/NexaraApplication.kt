@@ -55,6 +55,11 @@ import com.promenar.nexara.ui.chat.manager.skills.FilePatchSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileListSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileSearchSkill
 import com.promenar.nexara.ui.chat.manager.skills.ExecJsSkill
+import com.promenar.nexara.ui.chat.manager.skills.InitializePlanSkill
+import com.promenar.nexara.ui.chat.manager.skills.UpdatePlanSkill
+import com.promenar.nexara.ui.chat.manager.skills.GetPlanSkill
+import com.promenar.nexara.ui.chat.manager.skills.DropPlanSkill
+import com.promenar.nexara.data.repository.TaskRepository
 import com.promenar.nexara.data.repository.SkillRepository
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.repository.TokenStatsRepository
@@ -82,7 +87,14 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
-            .addMigrations(NexaraDatabase.MIGRATION_4_5, NexaraDatabase.MIGRATION_6_7, NexaraDatabase.MIGRATION_7_8, NexaraDatabase.MIGRATION_8_9)
+            .addMigrations(
+                NexaraDatabase.MIGRATION_4_5,
+                NexaraDatabase.MIGRATION_6_7,
+                NexaraDatabase.MIGRATION_7_8,
+                NexaraDatabase.MIGRATION_8_9,
+                NexaraDatabase.MIGRATION_9_10,
+                NexaraDatabase.MIGRATION_10_11
+            )
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -135,6 +147,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         FileOperationRepository(database.fileEntryDao())
     }
 
+    val taskRepository: com.promenar.nexara.domain.repository.ITaskRepository by lazy {
+        TaskRepository(database.taskNodeDao())
+    }
+
     val httpClient: HttpClient by lazy {
         HttpClient(OkHttp) {
             install(ContentNegotiation) {
@@ -158,6 +174,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(FileListSkill(workspaceRepository))
             register(FileSearchSkill(workspaceRepository))
             register(ExecJsSkill(this@NexaraApplication))
+            register(InitializePlanSkill(taskRepository))
+            register(UpdatePlanSkill(taskRepository))
+            register(GetPlanSkill(taskRepository))
+            register(DropPlanSkill(taskRepository))
         }
     }
 

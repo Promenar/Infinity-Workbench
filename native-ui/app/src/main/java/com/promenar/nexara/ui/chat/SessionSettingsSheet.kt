@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Token
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.History
@@ -743,6 +744,12 @@ private fun ToolsPanel(
         ToolToggleRow(stringResource(R.string.sheet_tool_time_injection), Icons.Rounded.Timer, timeInjection) { 
             timeInjection = it
             onToggle("timeInjection", it)
+        }
+
+        var economyMode by remember(options.economyMode) { mutableStateOf(options.economyMode) }
+        ToolToggleRow("Token 节约模式", Icons.Rounded.Tune, economyMode) {
+            economyMode = it
+            onToggle("economyMode", it)
         }
 
         Text(stringResource(R.string.sheet_tab_tools), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)

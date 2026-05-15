@@ -2,7 +2,6 @@ package com.promenar.nexara.ui.rag
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,9 +24,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Check
@@ -44,9 +41,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -79,14 +73,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
+import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
-import com.promenar.nexara.ui.rag.components.FolderItem
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
-import com.promenar.nexara.ui.rag.components.RagDocItem
 import com.promenar.nexara.ui.rag.components.RagStatus
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
@@ -272,135 +264,36 @@ fun RagHomeScreen(
 
                 when (currentTab) {
                     PortalTab.DOCUMENTS -> {
+                        // 资源管理器工具栏
                         item {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    stringResource(R.string.rag_home_section_collections),
-                                    style = NexaraTypography.headlineMedium,
-                                    color = NexaraColors.OnSurface
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(NexaraColors.SurfaceHigh)
-                                            .clickable { showNewFolderDialog = true }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(16.dp))
-                                            Text(stringResource(R.string.rag_home_new), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.Primary)
-                                        }
+                                Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(NexaraColors.SurfaceHigh).clickable { showNewFolderDialog = true }.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Icon(Icons.Rounded.CreateNewFolder, null, tint = NexaraColors.Primary, modifier = Modifier.size(16.dp))
+                                        Text(stringResource(R.string.rag_home_new), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.Primary)
+                                    }
+                                }
+                                Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(NexaraColors.SurfaceHigh).clickable { filePickerLauncher.launch(arrayOf("*/*")) }.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Icon(Icons.Rounded.CloudUpload, null, tint = NexaraColors.Primary, modifier = Modifier.size(16.dp))
+                                        Text(stringResource(R.string.rag_home_upload_area), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.Primary)
                                     }
                                 }
                             }
                         }
 
+                        // 文件资源管理器（嵌套模式下禁用内部滚动）
                         item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(NexaraColors.SurfaceContainer.copy(alpha = 0.5f))
-                                    .border(1.dp, NexaraColors.OutlineVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        filePickerLauncher.launch(arrayOf("*/*"))
-                                    }
-                                    .padding(32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .background(NexaraColors.SurfaceHigh, CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Rounded.CloudUpload, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(24.dp))
-                                    }
-                                    Text(stringResource(R.string.rag_home_upload_area), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                                    Text(stringResource(R.string.rag_home_upload_hint), style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant)
-                                }
-                            }
-                        }
-
-                        if (folders.isEmpty()) {
-                            item {
-                                NexaraGlassCard(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = NexaraShapes.large as RoundedCornerShape
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(32.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(Icons.Rounded.Folder, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(40.dp))
-                                        Text(stringResource(R.string.rag_home_empty_title), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                                        Text(stringResource(R.string.rag_home_empty_subtitle), style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant)
-                                    }
-                                }
-                            }
-                        } else {
-                            items(folders, key = { it.id }) { folder ->
-                                FolderItem(
-                                    name = folder.name,
-                                    documentCount = folderStats[folder.id] ?: 0,
-                                    onClick = { onNavigateToFolder(folder.id, folder.name) }
-                                )
-                            }
-                        }
-
-                        if (searchResults.isNotEmpty()) {
-                            item {
-                                Text(
-                                    stringResource(R.string.rag_home_search_results),
-                                    style = NexaraTypography.headlineMedium,
-                                    color = NexaraColors.OnSurface
-                                )
-                            }
-                            items(searchResults, key = { it.document.id }) { result ->
-                                DocListItem(
-                                    doc = result.document,
-                                    isSelected = selectedIds.contains(result.document.id),
-                                    onSelect = { checked ->
-                                        if (checked) selectedIds.add(result.document.id) else selectedIds.remove(result.document.id)
-                                    },
-                                    showCheckbox = selectedIds.isNotEmpty(),
-                                    onClick = { onNavigateToDocEditor(result.document.id) },
-                                    onExtractKG = { strategy -> viewModel.extractKnowledgeGraph(result.document.id, strategy) },
-                                    snippet = result.snippet
-                                )
-                            }
-                        } else {
-                            item {
-                                Text(
-                                    stringResource(R.string.rag_home_recent_docs),
-                                    style = NexaraTypography.headlineMedium,
-                                    color = NexaraColors.OnSurface
-                                )
-                            }
-                            val shownDocs = if (searchQuery.isBlank()) documents.take(10) else emptyList()
-                            if (shownDocs.isNotEmpty()) {
-                                items(shownDocs, key = { it.id }) { doc ->
-                                    DocListItem(doc = doc, isSelected = selectedIds.contains(doc.id), onSelect = { checked ->
-                                        if (checked) selectedIds.add(doc.id) else selectedIds.remove(doc.id)
-                                    }, showCheckbox = selectedIds.isNotEmpty(), onClick = { onNavigateToDocEditor(doc.id) },
-                                        onExtractKG = { strategy -> viewModel.extractKnowledgeGraph(doc.id, strategy) })
-                                }
-                            }
+                            FilesPanel(
+                                workspaceRootUuid = viewModel.workspaceRootUuid.collectAsState().value,
+                                workspaceRepo = viewModel.getWorkspaceRepo(),
+                                searchQuery = searchQuery,
+                                useScroll = false
+                            )
                         }
                     }
                     PortalTab.MEMORY -> {
@@ -723,167 +616,6 @@ fun RagHomeScreen(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun DocListItem(
-    doc: Document,
-    isSelected: Boolean,
-    onSelect: (Boolean) -> Unit,
-    showCheckbox: Boolean,
-    onClick: () -> Unit,
-    onExtractKG: ((String) -> Unit)? = null,
-    snippet: String? = null
-) {
-    val status = when (doc.vectorized) {
-        1 -> RagStatus.READY
-        -1 -> RagStatus.ERROR
-        else -> RagStatus.PENDING
-    }
-    var showContextMenu by remember { mutableStateOf(false) }
-
-    Box {
-        NexaraGlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (onExtractKG != null) {
-                        Modifier.combinedClickable(
-                            onClick = {
-                                if (showCheckbox) onSelect(!isSelected)
-                                else onClick()
-                            },
-                            onLongClick = { showContextMenu = true }
-                        )
-                    } else {
-                        Modifier
-                    }
-                ),
-            shape = RoundedCornerShape(12.dp),
-            onClick = if (onExtractKG == null) {
-                {
-                    if (showCheckbox) onSelect(!isSelected)
-                    else onClick()
-                }
-            } else null
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (showCheckbox) {
-                    androidx.compose.material3.Checkbox(
-                        checked = isSelected,
-                        onCheckedChange = onSelect,
-                        colors = androidx.compose.material3.CheckboxDefaults.colors(
-                            checkedColor = NexaraColors.Primary,
-                            uncheckedColor = NexaraColors.Outline
-                        )
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(NexaraColors.SurfaceContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Description,
-                        contentDescription = null,
-                        tint = NexaraColors.Primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        text = doc.title.ifBlank { "Untitled" },
-                        style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        doc.fileSize?.let { fs ->
-                            Text(formatFileSize(fs), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-                        }
-                        doc.updatedAt?.let { ua ->
-                            Text(
-                                java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(ua)),
-                                style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant
-                            )
-                        }
-                    }
-                    if (snippet != null) {
-                        Text(
-                            text = snippet,
-                            style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
-                            color = NexaraColors.OnSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                    }
-                }
-
-                com.promenar.nexara.ui.rag.components.RagStatusChip(status = status)
-            }
-        }
-
-        DropdownMenu(
-            expanded = showContextMenu,
-            onDismissRequest = { showContextMenu = false },
-            modifier = Modifier.background(NexaraColors.SurfaceContainer)
-        ) {
-            DropdownMenuItem(
-                text = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.AccountTree, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-                        Text(stringResource(R.string.rag_home_extract_kg), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                    }
-                },
-                onClick = { /* 标题不可点击 */ },
-                enabled = false
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        stringResource(R.string.rag_home_extract_kg_full),
-                        style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnSurface,
-                        modifier = Modifier.padding(start = 26.dp)
-                    )
-                },
-                onClick = {
-                    showContextMenu = false
-                    onExtractKG?.invoke("full")
-                }
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        stringResource(R.string.rag_home_extract_kg_summary),
-                        style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnSurface,
-                        modifier = Modifier.padding(start = 26.dp)
-                    )
-                },
-                onClick = {
-                    showContextMenu = false
-                    onExtractKG?.invoke("summary-first")
-                }
-            )
-        }
-    }
-}
-
 @Composable
 private fun NewFolderDialog(
     onDismiss: () -> Unit,
@@ -920,20 +652,4 @@ private fun NewFolderDialog(
     )
 }
 
-private fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB")
-    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-        .coerceIn(0, units.size - 1)
-    val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
-    return "${"%.1f".format(value)} ${units[digitGroups]}"
-}
 
-private fun formatBytes(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB")
-    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-        .coerceIn(0, units.size - 1)
-    val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
-    return "${"%.1f".format(value)} ${units[digitGroups]}"
-}

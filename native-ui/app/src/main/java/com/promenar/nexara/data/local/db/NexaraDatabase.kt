@@ -65,7 +65,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceSeqEntity
         WorkspaceSeqEntity::class,
         TaskNodeEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -90,6 +90,149 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun taskNodeDao(): TaskNodeDao
 
     companion object {
+        private fun columnExists(db: androidx.sqlite.db.SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
+            val cursor = db.query("PRAGMA table_info(`$tableName`)")
+            try {
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameIndex) == columnName) return true
+                }
+            } catch (_: Exception) {
+                // Ignore errors during check
+            } finally {
+                cursor.close()
+            }
+            return false
+        }
+
+        private fun safeAddColumn(db: androidx.sqlite.db.SupportSQLiteDatabase, tableName: String, columnName: String, columnDef: String) {
+            if (!columnExists(db, tableName, columnName)) {
+                db.execSQL("ALTER TABLE `$tableName` ADD COLUMN $columnName $columnDef")
+            }
+        }
+
+        val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // agents table missing columns
+                safeAddColumn(db, "agents", "temperature", "REAL")
+                safeAddColumn(db, "agents", "top_p", "REAL")
+                safeAddColumn(db, "agents", "max_tokens", "INTEGER")
+                safeAddColumn(db, "agents", "rag_config", "TEXT")
+                safeAddColumn(db, "agents", "retrieval_config", "TEXT")
+                safeAddColumn(db, "agents", "use_inherited_config", "INTEGER NOT NULL DEFAULT 1")
+
+                // sessions table missing columns
+                safeAddColumn(db, "sessions", "draft", "TEXT")
+                safeAddColumn(db, "sessions", "execution_mode", "TEXT NOT NULL DEFAULT 'auto'")
+                safeAddColumn(db, "sessions", "loop_status", "TEXT NOT NULL DEFAULT 'idle'")
+                safeAddColumn(db, "sessions", "pending_intervention", "TEXT")
+                safeAddColumn(db, "sessions", "approval_request", "TEXT")
+                safeAddColumn(db, "sessions", "rag_options", "TEXT")
+                safeAddColumn(db, "sessions", "inference_params", "TEXT")
+                safeAddColumn(db, "sessions", "active_task", "TEXT")
+                safeAddColumn(db, "sessions", "stats", "TEXT")
+                safeAddColumn(db, "sessions", "options", "TEXT")
+                safeAddColumn(db, "sessions", "active_mcp_server_ids", "TEXT")
+                safeAddColumn(db, "sessions", "active_skill_ids", "TEXT")
+                safeAddColumn(db, "sessions", "workspace_path", "TEXT")
+
+                // messages table missing columns
+                safeAddColumn(db, "messages", "model_id", "TEXT")
+                safeAddColumn(db, "messages", "status", "TEXT")
+                safeAddColumn(db, "messages", "reasoning", "TEXT")
+                safeAddColumn(db, "messages", "thought_signature", "TEXT")
+                safeAddColumn(db, "messages", "images", "TEXT")
+                safeAddColumn(db, "messages", "tokens", "TEXT")
+                safeAddColumn(db, "messages", "citations", "TEXT")
+                safeAddColumn(db, "messages", "rag_references", "TEXT")
+                safeAddColumn(db, "messages", "rag_progress", "TEXT")
+                safeAddColumn(db, "messages", "rag_metadata", "TEXT")
+                safeAddColumn(db, "messages", "rag_references_loading", "INTEGER NOT NULL DEFAULT 0")
+                safeAddColumn(db, "messages", "execution_steps", "TEXT")
+                safeAddColumn(db, "messages", "tool_calls", "TEXT")
+                safeAddColumn(db, "messages", "pending_approval_tool_ids", "TEXT")
+                safeAddColumn(db, "messages", "tool_call_id", "TEXT")
+                safeAddColumn(db, "messages", "name", "TEXT")
+                safeAddColumn(db, "messages", "planning_task", "TEXT")
+                safeAddColumn(db, "messages", "is_archived", "INTEGER NOT NULL DEFAULT 0")
+                safeAddColumn(db, "messages", "vectorization_status", "TEXT")
+                safeAddColumn(db, "messages", "layout_height", "REAL")
+                safeAddColumn(db, "messages", "tool_results", "TEXT")
+                safeAddColumn(db, "messages", "files", "TEXT")
+                safeAddColumn(db, "messages", "is_error", "INTEGER NOT NULL DEFAULT 0")
+                safeAddColumn(db, "messages", "error_message", "TEXT")
+
+                // vectors table missing columns
+                safeAddColumn(db, "vectors", "stale", "INTEGER NOT NULL DEFAULT 0")
+                safeAddColumn(db, "vectors", "version", "INTEGER NOT NULL DEFAULT 1")
+                safeAddColumn(db, "vectors", "file_uuid", "TEXT")
+
+                // kg_nodes table missing columns
+                safeAddColumn(db, "kg_nodes", "stale", "INTEGER NOT NULL DEFAULT 0")
+                safeAddColumn(db, "kg_nodes", "file_uuid", "TEXT")
+
+                // kg_edges table missing columns
+                safeAddColumn(db, "kg_edges", "stale", "INTEGER NOT NULL DEFAULT 0")
+                safeAddColumn(db, "kg_edges", "file_uuid", "TEXT")
+
+                // Create vectorization_tasks table if missing
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `vectorization_tasks` (
+                        `id` TEXT NOT NULL, 
+                        `type` TEXT NOT NULL, 
+                        `status` TEXT NOT NULL, 
+                        `doc_id` TEXT, 
+                        `doc_title` TEXT, 
+                        `session_id` TEXT, 
+                        `user_content` TEXT, 
+                        `ai_content` TEXT, 
+                        `user_message_id` TEXT, 
+                        `assistant_message_id` TEXT, 
+                        `last_chunk_index` INTEGER NOT NULL, 
+                        `total_chunks` INTEGER, 
+                        `progress` REAL NOT NULL, 
+                        `error` TEXT, 
+                        `created_at` INTEGER NOT NULL, 
+                        `updated_at` INTEGER NOT NULL, 
+                        PRIMARY KEY(`id`), 
+                        FOREIGN KEY(`session_id`) REFERENCES `sessions`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vectorization_tasks_status` ON `vectorization_tasks` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vectorization_tasks_doc_id` ON `vectorization_tasks` (`doc_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vectorization_tasks_session_id` ON `vectorization_tasks` (`session_id`)")
+
+                // vectors_fts virtual table
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS vectors_fts USING fts4(content, contentEntity=`vectors`)")
+            }
+        }
+
+        val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS task_nodes (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        session_id TEXT NOT NULL,
+                        parent_id TEXT,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        note TEXT,
+                        artifact_file_uuids TEXT,
+                        is_collapsed INTEGER NOT NULL DEFAULT 0,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_task_nodes_session ON task_nodes(session_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_task_nodes_parent ON task_nodes(parent_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_task_nodes_status ON task_nodes(status)")
+                safeAddColumn(db, "sessions", "active_task_tree_id", "TEXT")
+            }
+        }
+
         val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("DROP TABLE IF EXISTS documents")
@@ -136,13 +279,13 @@ abstract class NexaraDatabase : RoomDatabase() {
                         last_seq INTEGER NOT NULL
                     )
                 """.trimIndent())
-                db.execSQL("ALTER TABLE sessions ADD COLUMN workspace_root_uuid TEXT")
+                safeAddColumn(db, "sessions", "workspace_root_uuid", "TEXT")
             }
         }
 
         val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE messages ADD COLUMN user_images TEXT DEFAULT NULL")
+                safeAddColumn(db, "messages", "user_images", "TEXT DEFAULT NULL")
             }
         }
 

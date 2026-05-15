@@ -1,8 +1,10 @@
 package com.promenar.nexara.ui.rag
 
+import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.WriteResult
@@ -12,8 +14,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class DocEditorViewModel(
+    private val application: Application,
     private val fileOperationRepository: IFileOperationRepository
 ) : ViewModel() {
+
+    private val app = application as NexaraApplication
 
     private val _document = MutableStateFlow<Document?>(null)
     val document: StateFlow<Document?> = _document.asStateFlow()
@@ -85,11 +90,12 @@ class DocEditorViewModel(
     }
 
     class Factory(
+        private val application: Application,
         private val fileOperationRepository: IFileOperationRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DocEditorViewModel(fileOperationRepository) as T
+            DocEditorViewModel(application, fileOperationRepository) as T
     }
 
     fun onContentChanged(newContent: String) {
@@ -108,6 +114,20 @@ class DocEditorViewModel(
     fun updateTitle(newTitle: String) {
         val doc = _document.value ?: return
         _document.value = doc.copy(title = newTitle)
+        _fileName.value = newTitle
         _isDirty.value = true
+
+        // 持久化标题到数据库（通过 FileEntry 名称字段）
+        if (currentUuid.isNotEmpty()) {
+            viewModelScope.launch {
+                try {
+                    val dao = app.database.fileEntryDao()
+                    val entry = dao.getByUuid(currentUuid)
+                    if (entry != null) {
+                        dao.update(entry.copy(name = newTitle, updatedAt = System.currentTimeMillis()))
+                    }
+                } catch (_: Exception) { }
+            }
+        }
     }
 }

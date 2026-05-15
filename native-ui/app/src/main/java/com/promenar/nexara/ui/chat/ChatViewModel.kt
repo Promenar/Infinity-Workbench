@@ -110,9 +110,10 @@ class ChatViewModel(
     private val contextBuilder = ContextBuilder(
         webSearchProvider = webSearchContextProvider,
         ragProvider = memoryManager?.let { MemoryManagerRagAdapter(it) },
-        kgProvider = kgProvider
+        kgProvider = kgProvider,
+        taskRepository = (application as NexaraApplication).taskRepository
     )
-    private val toolExecutor = ToolExecutor(store, messageManager, skillRegistry)
+    private val toolExecutor = ToolExecutor(store, messageManager, skillRegistry, (application as NexaraApplication).taskRepository)
     private val postProcessor = PostProcessor(store, sessionManager, messageManager, embeddingClient, vectorStore, textSplitter)
     private val summaryManager = SummaryManager(llmProvider)
     private val approvalManager = ApprovalManager(store)
@@ -834,6 +835,7 @@ class ChatViewModel(
         val nextOptions = when (toolName) {
             "timeInjection" -> options.copy(enableTimeInjection = enabled)
             "toolsEnabled" -> options.copy(toolsEnabled = enabled)
+            "economyMode" -> options.copy(economyMode = enabled)
             else -> options
         }
         viewModelScope.launch {

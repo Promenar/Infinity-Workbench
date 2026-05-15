@@ -36,9 +36,9 @@ data class VectorEntity(
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long? = null,
-    @ColumnInfo(name = "stale")
+    @ColumnInfo(name = "stale", defaultValue = "0")
     val stale: Boolean = false,
-    @ColumnInfo(name = "version")
+    @ColumnInfo(name = "version", defaultValue = "1")
     val version: Int = 1,
     @ColumnInfo(name = "file_uuid")
     val fileUuid: String? = null,

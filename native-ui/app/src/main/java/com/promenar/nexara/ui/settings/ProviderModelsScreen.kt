@@ -127,8 +127,7 @@ fun ProviderModelsScreen(
     NexaraPageLayout(
         title = effectiveTitle,
         onBack = onNavigateBack,
-        scrollable = false,
-        modifier = Modifier.imePadding()
+        scrollable = false
     ) {
         NexaraSearchBar(
             value = searchQuery,

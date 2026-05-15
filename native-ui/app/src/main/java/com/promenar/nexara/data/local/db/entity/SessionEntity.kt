@@ -26,9 +26,9 @@ data class SessionEntity(
     @ColumnInfo(name = "scroll_offset")
     val scrollOffset: Double? = null,
     val draft: String? = null,
-    @ColumnInfo(name = "execution_mode")
+    @ColumnInfo(name = "execution_mode", defaultValue = "auto")
     val executionMode: String = "auto",
-    @ColumnInfo(name = "loop_status")
+    @ColumnInfo(name = "loop_status", defaultValue = "idle")
     val loopStatus: String = "idle",
     @ColumnInfo(name = "pending_intervention")
     val pendingIntervention: String? = null,
@@ -50,6 +50,8 @@ data class SessionEntity(
     val workspacePath: String? = null,
     @ColumnInfo(name = "workspace_root_uuid")
     val workspaceRootUuid: String? = null,
+    @ColumnInfo(name = "active_task_tree_id")
+    val activeTaskTreeId: String? = null,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")

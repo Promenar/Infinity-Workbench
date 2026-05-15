@@ -3,6 +3,9 @@ package com.promenar.nexara.ui.chat.manager
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.model.TaskState
+import com.promenar.nexara.data.model.TaskStep
+import com.promenar.nexara.domain.repository.ITaskRepository
 
 data class ContextBuilderResult(
     val searchContext: String,
@@ -49,7 +52,8 @@ interface KgProvider {
 class ContextBuilder(
     private val webSearchProvider: WebSearchProvider? = null,
     private val ragProvider: RagProvider? = null,
-    private val kgProvider: KgProvider? = null
+    private val kgProvider: KgProvider? = null,
+    private val taskRepository: ITaskRepository? = null
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
         val searchContext = if (params.session.options.webSearch) {
@@ -62,7 +66,13 @@ class ContextBuilder(
                 kgProvider.extractContext(params.content, params.sessionId, ragResult.second) ?: ""
             } catch (_: Exception) { "" }
         } else ""
-        val systemPrompt = buildSystemPrompt(params, ragResult.second, searchContext, kgContext)
+
+        // 预取任务计划（suspend 调用）
+        val activePlan: TaskState? = try {
+            taskRepository?.getPlan(params.sessionId)
+        } catch (_: Exception) { null }
+
+        val systemPrompt = buildSystemPrompt(params, ragResult.second, searchContext, kgContext, activePlan)
 
         return ContextBuilderResult(
             searchContext = searchContext,
@@ -116,7 +126,8 @@ class ContextBuilder(
         params: ContextBuilderParams,
         ragReferences: List<RagReference>,
         searchContext: String,
-        kgContext: String = ""
+        kgContext: String = "",
+        activePlan: TaskState? = null
     ): String {
         val sb = StringBuilder()
 
@@ -139,15 +150,14 @@ class ContextBuilder(
             sb.appendLine()
         }
         
-        // 3. Task Information
-        if (session.activeTask != null && session.activeTask?.status == "in-progress") {
-            val task = session.activeTask!!
-            val currentStepIndex = task.steps.indexOfFirst { it.status == "pending" }
-            val currentStep = task.steps.getOrNull(currentStepIndex)
-            sb.appendLine("## Active Task")
-            sb.appendLine("- **Current Task**: \"${task.title}\"")
-            sb.appendLine("- **Immediate Goal**: ${currentStep?.description ?: "Review and Complete Task"}")
-            sb.appendLine()
+        // 3. Task Plan Context
+        if (activePlan != null && activePlan.status !in listOf("idle", "dropped")) {
+            val economyMode = params.session.options.economyMode
+            if (economyMode) {
+                appendEconomyTaskContext(sb, activePlan)
+            } else {
+                appendFullTaskContext(sb, activePlan)
+            }
         }
 
         // 4. Agent System Prompt
@@ -201,5 +211,134 @@ class ContextBuilder(
         }
 
         return sb.toString()
+    }
+
+    /** 完整任务树上下文（economyMode=false） */
+    private fun appendFullTaskContext(
+        sb: StringBuilder,
+        plan: TaskState
+    ) {
+        val (completed, total) = countLeaves(plan.steps)
+        sb.appendLine("## Active Task Plan")
+        sb.appendLine("- **Goal**: \"${plan.title}\"")
+        sb.appendLine("- **Progress**: $completed/$total leaf steps done")
+        plan.currentFocusStepId?.let { focusId ->
+            val focus = findStepById(plan.steps, focusId)
+            if (focus != null) {
+                sb.appendLine("- **Current Focus**: \"${focus.title}\" — ${focus.description}")
+            }
+        }
+        sb.appendLine()
+        sb.appendLine("### Task Tree")
+        sb.appendLine("```")
+        renderTaskTree(sb, plan.steps, indent = 0)
+        sb.appendLine("```")
+        sb.appendLine()
+
+        // 断点重连提示
+        val doingLeaf = findDoingLeaf(plan.steps)
+        if (doingLeaf != null) {
+            sb.appendLine("[Resume Hint]: Step \"${doingLeaf.title}\" was in progress. Resume from where you left off.")
+            sb.appendLine()
+        }
+
+        // 下一个待办步骤
+        val nextTodos = findNextTodos(plan.steps, maxCount = 3)
+        if (nextTodos.isNotEmpty()) {
+            sb.appendLine("**Next**: ${nextTodos.joinToString(" → ") { "\"${it.title}\"" }}")
+            sb.appendLine()
+        }
+
+        sb.appendLine("[Use update_plan to modify status, add/remove/move steps, or set notes.]")
+        sb.appendLine("[Use get_plan to re-read the full task tree when context is truncated.]")
+        sb.appendLine()
+    }
+
+    /** 精简任务上下文（economyMode=true） */
+    private fun appendEconomyTaskContext(
+        sb: StringBuilder,
+        plan: TaskState
+    ) {
+        val (completed, total) = countLeaves(plan.steps)
+        sb.appendLine("## Task Plan (Compact)")
+        sb.appendLine("- Goal: \"${plan.title}\" | Progress: $completed/$total steps")
+        plan.currentFocusStepId?.let { focusId ->
+            val focus = findStepById(plan.steps, focusId)
+            if (focus != null) {
+                sb.appendLine("- Focus: \"${focus.title}\" — ${focus.description.take(80)}")
+            }
+        }
+        val nextTodos = findNextTodos(plan.steps, maxCount = 1)
+        if (nextTodos.isNotEmpty()) {
+            sb.appendLine("- Next: \"${nextTodos.first().title}\"")
+        }
+        sb.appendLine("[Use get_plan to read the full task tree.]")
+        sb.appendLine()
+    }
+
+    private fun renderTaskTree(sb: StringBuilder, steps: List<TaskStep>, indent: Int) {
+        val prefix = "  ".repeat(indent)
+        for (step in steps) {
+            val icon = when (step.status) {
+                "completed" -> "✅"
+                "in_progress" -> "⟳"
+                "failed" -> "✕"
+                "dropped" -> "⊗"
+                else -> "○"
+            }
+            sb.appendLine("$prefix$icon ${step.title}")
+            if (step.note != null) {
+                sb.appendLine("$prefix   📝 ${step.note!!.take(120)}")
+            }
+            if (step.children.isNotEmpty()) {
+                renderTaskTree(sb, step.children, indent + 1)
+            }
+        }
+    }
+
+    private fun findStepById(steps: List<TaskStep>, targetId: String): TaskStep? {
+        for (step in steps) {
+            if (step.id == targetId) return step
+            findStepById(step.children, targetId)?.let { return it }
+        }
+        return null
+    }
+
+    private fun findDoingLeaf(steps: List<TaskStep>): TaskStep? {
+        for (step in steps) {
+            if (step.status == "in_progress" && step.children.isEmpty()) return step
+            findDoingLeaf(step.children)?.let { return it }
+        }
+        return null
+    }
+
+    private fun findNextTodos(steps: List<TaskStep>, maxCount: Int): List<TaskStep> {
+        val result = mutableListOf<TaskStep>()
+        for (step in steps) {
+            if (result.size >= maxCount) break
+            if (step.status == "pending" && step.children.isEmpty()) {
+                result.add(step)
+            }
+            if (step.children.isNotEmpty()) {
+                result.addAll(findNextTodos(step.children, maxCount - result.size))
+            }
+        }
+        return result
+    }
+
+    private fun countLeaves(steps: List<TaskStep>): Pair<Int, Int> {
+        var completed = 0
+        var total = 0
+        for (step in steps) {
+            if (step.children.isEmpty()) {
+                total++
+                if (step.status == "completed") completed++
+            } else {
+                val (c, t) = countLeaves(step.children)
+                completed += c
+                total += t
+            }
+        }
+        return Pair(completed, total)
     }
 }

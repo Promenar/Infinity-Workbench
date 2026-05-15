@@ -9,8 +9,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -41,58 +45,68 @@ fun NexaraPageLayout(
     title: String,
     onBack: (() -> Unit)? = null,
     scrollable: Boolean = true,
+    imePadding: Boolean = true,
     modifier: Modifier = Modifier,
-    actions: @Composable () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
-    Column(
+    androidx.compose.material3.Scaffold(
         modifier = modifier
             .fillMaxSize()
-            .background(NexaraColors.CanvasBackground)
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
-    ) {
-        TopAppBar(
-            title = {
-                Box(modifier = Modifier.padding(start = if (onBack != null) 0.dp else 4.dp)) {
-                    Text(
-                        text = title,
-                        style = NexaraTypography.headlineLarge,
-                        color = NexaraColors.OnSurface,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                }
-            },
-            navigationIcon = {
-                if (onBack != null) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back),
-                            tint = NexaraColors.OnSurface,
-                            modifier = Modifier.size(24.dp)
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = NexaraColors.CanvasBackground,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Box(modifier = Modifier.padding(start = if (onBack != null) 0.dp else 4.dp)) {
+                        Text(
+                            text = title,
+                            style = NexaraTypography.headlineLarge,
+                            color = NexaraColors.OnSurface,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
-                }
-            },
-            actions = { actions() },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)
-            ),
-            scrollBehavior = scrollBehavior
-        )
-
+                },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.common_cd_back),
+                                tint = NexaraColors.OnSurface,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                },
+                actions = { actions() },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)
+                ),
+                scrollBehavior = scrollBehavior
+            )
+        },
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.systemBars
+    ) { paddingValues ->
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
-                .padding(horizontal = 20.dp, vertical = 24.dp)
-                .padding(bottom = 40.dp)
+                .fillMaxSize()
+                .padding(paddingValues)
+                .then(if (imePadding) Modifier.imePadding() else Modifier)
         ) {
-            content()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                    .padding(horizontal = 20.dp, vertical = 24.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+                content()
+            }
         }
     }
 }

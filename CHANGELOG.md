@@ -3,6 +3,39 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Phase 7 知识库修复补齐 + AgentEntity 崩溃修复 (2026-05-16)
+- **崩溃修复**: 移除 AgentEntity.useInheritedConfig 的 `defaultValue` 注解，修复 Room migration 验证失败
+- **PDF 导入管道**: importDocuments 接入 PdfExtractor.extract()，PDF 真实提取文本
+- **Word 导入**: 新建 DocumentImporter（Apache POI），提取 .docx 段落+表格
+- **文件夹重命名**: renameFolder 从 no-op 桩重写为 FileEntry 名称+路径更新
+- **标题持久化**: DocEditorViewModel.updateTitle() 通过 FileEntryDao 写回 DB
+- **文件夹级联删除**: deleteCollection 增加显式子文件遍历删除
+
+### 数据库完整性校验与架构补全 (2026-05-16) 🔴 P0
+- **Room 崩溃修复**: 彻底解决了 `java.lang.IllegalStateException: Room cannot verify the data integrity` 崩溃问题。
+- **架构版本升级**: 数据库版本从 v10 强制升级至 v11，并新增 `MIGRATION_10_11` 补全了所有缺失的字段。
+- **字段补全**:
+    - `sessions`: 补全了 `draft`, `execution_mode`, `loop_status`, `rag_options`, `inference_params`, `active_mcp_server_ids` 等 13 个关键字段。
+    - `vectors` / `kg_nodes` / `kg_edges`: 补全了 `stale`, `file_uuid`, `version` 字段，支持 Resource OS 统一资源管理。
+- **FTS 搜索修复**: 显式创建了 `vectors_fts` 虚拟表，解决了全文检索功能的潜在初始化失败风险。
+- **一致性保护**: 为 Entity 类的 NOT NULL 字段补充了 `@ColumnInfo(defaultValue = "...")`，确保 Room 生成的 identity hash 与手动 Migration 保持严格一致，防止未来再次发生哈希不匹配。
+
+### 任务规划器全链路集成修复 (2026-05-16)
+- **数据库迁移**: 新增 MIGRATION_9_10，创建 task_nodes 表 + sessions.active_task_tree_id 列
+- **Skill 注册**: InitializePlanSkill / UpdatePlanSkill / GetPlanSkill / DropPlanSkill 注册到 NexaraApplication
+- **数据模型**: SessionOptions.economyMode / ExecutionStep.taskStepId / SessionEntity.activeTaskTreeId 全量添加
+- **任务上下文注入**: ContextBuilder 从 3 行占位扩展为 full/economy 双模式（树形渲染、进度统计、断点重连）
+- **ChatScreen**: 集成 TaskFloatingPanel 浮动任务面板
+- **ToolExecutor**: 执行步骤自动关联当前任务 focus step
+- **设置界面**: 新增 Token 节约模式开关 + 补全 6 个技能的用户开关 (任务规划 4 + file_diff/patch 2)
+
+### 知识库 UI — FilesPanel 资源管理器迁移 (2026-05-16)
+- **文件导入实现**: `importDocuments()` 从桩实现重写为完整 ContentResolver → FileEntry 流程，文件真正导入到 `rag_workspace` 目录
+- **文档管理页重构**: DOCUMENTS Tab 从旧版"集合/文件夹/最近文档" UI 完全替换为 FilesPanel 文件资源管理器
+- **移除冗余 UI**: 删除"集合"小标题、"最近文档"功能区、DocListItem (157 行死代码) 及 6 个未使用 import
+- **工作区根目录管理**: 新增 `ensureRagWorkspaceRoot()` 自动创建 RAG 知识库根目录 FileEntry
+- **文件夹创建修复**: `createFolder()` 的 `physicalRootPath` 从错误的 matPath 修正为真实文件系统路径
+
 ### Phase 9 — 发布冲刺 + 测试补全 (2026-05-15)
 - **多模态图片/VLM**: ChatInputBar 图片选择 + 缩略图预览 + base64 编码发送 + OpenAI Vision/Anthropic 协议适配 + ChatBubble 渲染
 - **Token 统计仪表盘**: TokenUsageScreen（全局统计/会话排行/Canvas 趋势图/模型明细/费用估算）
@@ -11,6 +44,8 @@ All notable changes to this project will be documented in this file.
 - **测试覆盖率**: 53 个测试文件，覆盖 Skills/ViewModels/Repositories/RAG 全链路
 - **RAG 术语标准化**: 将“向量检索”更名为“长期记忆”，解耦“会话 RAG”与“跨会话检索”，统一“上下文自动压缩阈值”等专业术语
 - **字体设置修复**: 修复了 SessionSettingsSheet 中字体大小滑动条断点与持久化失效问题，确保设置即时生效并跨会话保存
+- **崩溃修复 (ProtocolType NPE)**: 彻底解决了 `ProtocolType` 静态初始化导致的 `NullPointerException` 竞态条件，通过引入计算属性与 UI 层非空校验实现双重保护。
+- **架构重构 (NexaraPageLayout)**: 将全局页面基类 `NexaraPageLayout` 迁移至基于 `Scaffold` 的现代化布局架构，通过局部按需应用 `imePadding` 与 `weight(1f)` 约束，从根本上解决了滚动容器嵌套导致的 `IllegalStateException` 崩溃与键盘遮挡问题。
 
 ### Phase 8 — Agent 工具系统重构与增强 (2026-05-15)
 - **工具分类体系**: 被动注入（时间）与主动调用分离，CurrentTimeSkill 退役为 ContextBuilder 注入

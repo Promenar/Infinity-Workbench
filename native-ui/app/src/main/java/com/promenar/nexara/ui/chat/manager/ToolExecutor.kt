@@ -6,6 +6,7 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.chat.ChatStore
 
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
@@ -15,7 +16,8 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 class ToolExecutor(
     private val store: ChatStore,
     private val messageManager: MessageManager,
-    private val skillRegistry: SkillRegistry?
+    private val skillRegistry: SkillRegistry?,
+    private val taskRepository: ITaskRepository? = null
 ) {
     suspend fun executeTools(
         sessionId: String,
@@ -63,6 +65,7 @@ class ToolExecutor(
             }
 
             val stepId = "step_${System.currentTimeMillis()}_${tc.id}"
+            val currentFocusId = session.activeTask?.currentFocusStepId
 
             appendStep(sessionId, targetMsgId, ExecutionStep(
                 id = stepId,
@@ -70,7 +73,8 @@ class ToolExecutor(
                 toolName = tc.name,
                 toolArgs = tc.arguments,
                 toolCallId = tc.id,
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                taskStepId = currentFocusId
             ))
 
             val result: ToolResult = executeSkill(tc, session)
@@ -88,7 +92,8 @@ class ToolExecutor(
                 toolCallId = tc.id,
                 content = finalContent,
                 data = result.data,
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                taskStepId = currentFocusId
             ))
 
             val toolMessage = Message(

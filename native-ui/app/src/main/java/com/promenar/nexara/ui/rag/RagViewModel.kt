@@ -59,6 +59,15 @@ class RagViewModel(
 
     private val vectorStatsService = VectorStatsService(vectorRepository)
 
+    /** RAG 知识库工作区物理根目录 */
+    private val ragWorkspaceRoot: java.io.File by lazy {
+        java.io.File(app.filesDir, "rag_workspace").also { it.mkdirs() }
+    }
+
+    /** 当前工作区根目录的 FileEntry UUID（首个根目录，用于 FilesPanel） */
+    private val _workspaceRootUuid = MutableStateFlow<String?>(null)
+    val workspaceRootUuid: StateFlow<String?> = _workspaceRootUuid.asStateFlow()
+
     private val _folders = MutableStateFlow<List<Folder>>(emptyList())
     val folders: StateFlow<List<Folder>> = _folders.asStateFlow()
 
@@ -110,6 +119,30 @@ class RagViewModel(
         loadStats()
         startDataObservation()
         observeQueue()
+        ensureRagWorkspaceRoot()
+    }
+
+    /** 确保 RAG 工作区在数据库中有一个根目录 FileEntry */
+    private fun ensureRagWorkspaceRoot() {
+        viewModelScope.launch {
+            try {
+                val existingRoots = workspaceRepository.observeRoots().first()
+                val rootEntry = existingRoots.firstOrNull { it.physicalRootPath == ragWorkspaceRoot.absolutePath }
+                if (rootEntry != null) {
+                    _workspaceRootUuid.value = rootEntry.uuid
+                } else {
+                    val uuid = java.util.UUID.randomUUID().toString()
+                    workspaceRepository.createDirectory(
+                        uuid = uuid,
+                        name = "知识库",
+                        parentUuid = null,
+                        physicalRootPath = ragWorkspaceRoot.absolutePath,
+                        materializedPath = "/"
+                    )
+                    _workspaceRootUuid.value = uuid
+                }
+            } catch (_: Exception) { }
+        }
     }
 
     private fun observeQueue() {
@@ -308,6 +341,9 @@ class RagViewModel(
         _availableModels.value = models
     }
 
+    /** 暴露工作区仓库供 UI 层 FilesPanel 使用 */
+    fun getWorkspaceRepo(): IWorkspaceRepository = workspaceRepository
+
     fun loadCollections() {
         viewModelScope.launch {
             loadStats()
@@ -346,8 +382,8 @@ class RagViewModel(
                 workspaceRepository.createDirectory(
                     uuid = uuid,
                     name = name,
-                    parentUuid = null,
-                    physicalRootPath = matPath,
+                    parentUuid = _workspaceRootUuid.value,
+                    physicalRootPath = ragWorkspaceRoot.absolutePath,
                     materializedPath = matPath
                 )
             } catch (_: Exception) { }
@@ -367,6 +403,19 @@ class RagViewModel(
     fun deleteCollection(id: String) {
         viewModelScope.launch {
             try {
+                // 获取文件夹条目以获取其路径（用于级联删除子内容）
+                val entry = workspaceRepository.getByUuid(id)
+                if (entry != null && entry.isDirectory) {
+                    // 先递归删除子树中的子文件（permanentDelete 内部已处理子树）
+                    val childList = try {
+                        workspaceRepository.observeChildren(id).first()
+                    } catch (_: Exception) { emptyList() }
+                    for (child in childList) {
+                        try {
+                            workspaceRepository.permanentDelete(child.uuid)
+                        } catch (_: Exception) { }
+                    }
+                }
                 workspaceRepository.permanentDelete(id)
                 loadStats()
             } catch (_: Exception) { }
@@ -374,8 +423,25 @@ class RagViewModel(
     }
 
     fun renameFolder(id: String, newName: String) {
-        // Workspace directories are renamed by updating the FileEntry
-        // For now, this is a no-op until rename is implemented in IWorkspaceRepository
+        viewModelScope.launch {
+            try {
+                val entry = workspaceRepository.getByUuid(id) ?: return@launch
+                // 通过 DAO 直接更新 FileEntry 的名称字段
+                val dao = app.database.fileEntryDao()
+                val now = System.currentTimeMillis()
+                val updatedMatPath = entry.materializedPath
+                    .substringBeforeLast('/')
+                    .let { if (it.isEmpty()) "/$newName" else "$it/$newName" }
+                dao.update(
+                    entry.copy(
+                        name = newName,
+                        materializedPath = updatedMatPath,
+                        updatedAt = now
+                    )
+                )
+                loadStats()
+            } catch (_: Exception) { }
+        }
     }
 
     fun deleteFolder(id: String) = deleteCollection(id)
@@ -392,9 +458,97 @@ class RagViewModel(
     }
 
     fun importDocuments(uris: List<android.net.Uri>, folderId: String? = null) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
-            // TODO: Implement workspace-based file import
+            val rootPath = ragWorkspaceRoot.absolutePath
+            val parentUuid = folderId ?: _workspaceRootUuid.value
+            val importedFiles = mutableListOf<FileEntry>()
+
+            for (uri in uris) {
+                var fileName: String? = null
+                try {
+                    val contentResolver = app.contentResolver
+                    val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+                    fileName = resolveFileName(uri, contentResolver)
+                        ?: "imported_${System.currentTimeMillis()}.bin"
+
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: continue
+
+                    // 根据文件类型选择提取器
+                    val content = when {
+                        mimeType == "application/pdf" || fileName!!.endsWith(".pdf", ignoreCase = true) -> {
+                            val result = com.promenar.nexara.data.rag.PdfExtractor.extract(app, uri)
+                            result.getOrNull()?.text ?: String(bytes, Charsets.UTF_8)
+                        }
+                        mimeType.contains("wordprocessingml") || fileName!!.endsWith(".docx", ignoreCase = true) -> {
+                            com.promenar.nexara.data.rag.DocumentImporter.extractWord(uri, contentResolver)
+                        }
+                        mimeType.startsWith("text/") || isPlainTextFile(fileName!!) -> {
+                            String(bytes, Charsets.UTF_8)
+                        }
+                        else -> {
+                            // 二进制文件：存储原始内容
+                            "Binary file: ${fileName!!} (${formatBytes(bytes.size.toLong())})"
+                        }
+                    }
+
+                    val uuid = java.util.UUID.randomUUID().toString()
+                    val matPath = "/${fileName}"
+
+                    val entry = workspaceRepository.createFile(
+                        uuid = uuid,
+                        name = fileName!!,
+                        content = content,
+                        parentUuid = parentUuid,
+                        physicalRootPath = rootPath,
+                        materializedPath = matPath
+                    )
+
+                    importedFiles.add(entry)
+                } catch (e: Exception) {
+                    _lastQueueError.value = "导入失败: ${fileName ?: "未知文件"} - ${e.message?.take(80)}"
+                }
+            }
+
+            if (importedFiles.isNotEmpty()) {
+                _lastQueueError.value = null
+                loadStats()
+            }
         }
+    }
+
+    /** 判断是否为纯文本文件扩展名 */
+    private fun isPlainTextFile(fileName: String): Boolean {
+        val textExtensions = setOf("txt", "md", "json", "xml", "csv", "yml", "yaml", "log", "kt", "java", "py", "js", "ts", "html", "css", "sql")
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return ext in textExtensions
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB")
+        val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
+        val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
+        return "${"%.1f".format(value)} ${units[digitGroups]}"
+    }
+
+    /**
+     * 从 Content URI 解析文件显示名。
+     * 优先使用 OpenableColumns.DISPLAY_NAME，回退到 URI 最后一段。
+     */
+    private fun resolveFileName(uri: android.net.Uri, resolver: android.content.ContentResolver): String? {
+        var name: String? = null
+        resolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (nameIdx >= 0 && cursor.moveToFirst()) {
+                name = cursor.getString(nameIdx)
+            }
+        }
+        if (name.isNullOrBlank()) {
+            name = uri.lastPathSegment?.substringAfterLast('/')
+        }
+        return name
     }
 
     fun extractKnowledgeGraph(docId: String, kgStrategy: String) {

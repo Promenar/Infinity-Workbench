@@ -165,7 +165,8 @@ data class ExecutionStep(
     val content: String? = null,
     val data: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
-    val throttledUntil: Long? = null
+    val throttledUntil: Long? = null,
+    val taskStepId: String? = null
 )
 
 @Serializable
@@ -236,7 +237,8 @@ data class SessionOptions(
     val enableTimeInjection: Boolean = true,
     val webSearch: Boolean = false,  // 降级：默认关闭被动预注入，不影响工具调用
     val ragOptions: RagOptions? = null,
-    val fontSize: Int = 13
+    val fontSize: Int = 13,
+    val economyMode: Boolean = false
 )
 
 @Serializable
@@ -332,8 +334,10 @@ data class Session(
     val activeMcpServerIds: List<String> = emptyList(),
     val activeSkillIds: List<String> = emptyList(),
     val workspacePath: String? = null,
+    val workspaceRootUuid: String? = null,
     val continuationBudget: Int = 0,
     val autoLoopLimit: Int = 5,
+    val activeTaskTreeId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

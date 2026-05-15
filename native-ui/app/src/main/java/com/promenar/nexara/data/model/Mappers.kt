@@ -42,6 +42,8 @@ fun SessionEntity.toDomain(): Session = Session(
     activeMcpServerIds = activeMcpServerIds?.let { decodeFromJson<List<String>>(it) } ?: emptyList(),
     activeSkillIds = activeSkillIds?.let { decodeFromJson<List<String>>(it) } ?: emptyList(),
     workspacePath = workspacePath,
+    workspaceRootUuid = workspaceRootUuid,
+    activeTaskTreeId = activeTaskTreeId,
     continuationBudget = 0,
     autoLoopLimit = 5,
     createdAt = createdAt,
@@ -72,6 +74,8 @@ fun Session.toEntity(): SessionEntity = SessionEntity(
     activeMcpServerIds = if (activeMcpServerIds.isNotEmpty()) encodeToJson(activeMcpServerIds) else null,
     activeSkillIds = if (activeSkillIds.isNotEmpty()) encodeToJson(activeSkillIds) else null,
     workspacePath = workspacePath,
+    workspaceRootUuid = workspaceRootUuid,
+    activeTaskTreeId = activeTaskTreeId,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

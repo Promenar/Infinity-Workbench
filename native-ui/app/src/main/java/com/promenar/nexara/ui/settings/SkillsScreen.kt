@@ -22,23 +22,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -99,7 +101,11 @@ fun SkillsScreen(
             "file_write" to Icons.Rounded.Edit,
             "file_list" to Icons.Rounded.Folder,
             "file_search" to Icons.Rounded.Search,
-            "exec_js" to Icons.Rounded.Code
+            "exec_js" to Icons.Rounded.Code,
+            "initialize_plan" to Icons.Rounded.AccountTree,
+            "update_plan" to Icons.Rounded.Edit,
+            "get_plan" to Icons.Rounded.Visibility,
+            "drop_plan" to Icons.Rounded.Cancel
         )
     }
     val presetSkills by viewModel.skills.collectAsState()
@@ -125,7 +131,7 @@ fun SkillsScreen(
         onBack = onNavigateBack,
         scrollable = true
     ) {
-        Column(modifier = Modifier.padding(bottom = 32.dp).navigationBarsPadding()) {
+        Column(modifier = Modifier.padding(bottom = 32.dp)) {
             Text(
                 stringResource(R.string.skills_desc),
                 style = NexaraTypography.bodyMedium,

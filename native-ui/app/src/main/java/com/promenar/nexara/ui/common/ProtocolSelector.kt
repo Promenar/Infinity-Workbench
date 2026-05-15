@@ -32,7 +32,7 @@ fun ProtocolSelector(
     onSelect: (ProtocolType) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val options = ProtocolType.entries.filter { it !is ProtocolType.Local }
+    val options = ProtocolType.entries.filterNotNull().filter { it !is ProtocolType.Local }
 
     Column(
         modifier = modifier.fillMaxWidth(),

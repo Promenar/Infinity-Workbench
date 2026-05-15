@@ -143,6 +143,8 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.common.EditorMode
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
+import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.NexaraApplication
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -157,10 +159,12 @@ fun ChatScreen(
     onNavigateToSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(context.applicationContext as android.app.Application))
+    val application = context.applicationContext as NexaraApplication
+    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(application))
     val uiState by chatViewModel.uiState.collectAsState()
     val inputText by chatViewModel.inputText.collectAsState()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsState()
+    val taskRepo = application.taskRepository
 
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarData by remember { mutableStateOf<com.promenar.nexara.ui.common.NexaraSnackbarData?>(null) }
@@ -470,6 +474,14 @@ fun ChatScreen(
                                 }
                             }
                         }
+
+                        // 任务浮动面板
+                        TaskFloatingPanel(
+                            sessionId = sessionId,
+                            taskRepo = taskRepo,
+                            goalTitle = uiState.session?.activeTask?.title ?: "",
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
 
                         Box(modifier = Modifier.fillMaxWidth()) {
                             ChatInputBar(

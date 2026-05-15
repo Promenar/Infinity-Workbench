@@ -88,6 +88,8 @@ open class SessionRepository(
                 "activeMcpServerIds" -> result.copy(activeMcpServerIds = value?.let { encode(it as List<String>) })
                 "activeSkillIds" -> result.copy(activeSkillIds = value?.let { encode(it as List<String>) })
                 "workspacePath" -> result.copy(workspacePath = value as? String)
+                "workspaceRootUuid" -> result.copy(workspaceRootUuid = value as? String)
+                "activeTaskTreeId" -> result.copy(activeTaskTreeId = value as? String)
                 else -> result
             }
         }

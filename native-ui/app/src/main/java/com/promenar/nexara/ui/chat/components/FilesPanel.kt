@@ -49,7 +49,8 @@ import java.util.Locale
 fun FilesPanel(
     workspaceRootUuid: String?,
     workspaceRepo: IWorkspaceRepository,
-    searchQuery: String = ""
+    searchQuery: String = "",
+    useScroll: Boolean = true
 ) {
     val roots by workspaceRepo.observeRoots().collectAsState(initial = emptyList())
 
@@ -59,23 +60,28 @@ fun FilesPanel(
 
     if (filteredRoots.isEmpty() && searchQuery.isBlank()) {
         EmptyFilesState()
-    } else {
+    } else if (useScroll) {
+        // 独立使用场景：带 LazyColumn 滚动
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(
-                items = filteredRoots,
-                key = { it.uuid }
-            ) { root ->
-                FileTreeNode(
-                    file = root,
-                    depth = 0,
-                    workspaceRepo = workspaceRepo,
-                    searchQuery = searchQuery
-                )
+            items(filteredRoots, key = { it.uuid }) { root ->
+                FileTreeNode(file = root, depth = 0, workspaceRepo = workspaceRepo, searchQuery = searchQuery)
+            }
+        }
+    } else {
+        // 嵌套在外部 LazyColumn 中使用：无滚动，纯列表渲染
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            filteredRoots.forEach { root ->
+                FileTreeNode(file = root, depth = 0, workspaceRepo = workspaceRepo, searchQuery = searchQuery)
             }
         }
     }

@@ -201,7 +201,7 @@ sealed class ProtocolType(
             }
         }
 
-        val entries: List<ProtocolType> = listOf(
+        val entries: List<ProtocolType> get() = listOfNotNull(
             OpenAI_ChatCompletions, OpenAI_Responses, Anthropic_Messages,
             Google_VertexAI, Cohere_Chat, Mistral_Chat, DeepSeek,
             Generic_OpenAI_Compat, Local

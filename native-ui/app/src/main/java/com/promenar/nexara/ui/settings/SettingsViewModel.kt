@@ -274,7 +274,8 @@ class SettingsViewModel(
     private fun loadSkills() {
         val enabledSet = prefs.getStringSet("enabled_skills", setOf(
             "web_search", "calculator", "create_tool",
-            "file_read", "file_list", "file_search", "exec_js"
+            "file_read", "file_list", "file_search", "exec_js",
+            "initialize_plan", "update_plan", "get_plan", "drop_plan"
         ))
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
@@ -287,7 +288,13 @@ class SettingsViewModel(
             SkillInfo("file_write", "File Write", "Write/create files in workspace", enabledSet?.contains("file_write") ?: true),
             SkillInfo("file_list", "List Directory", "List workspace directory contents", enabledSet?.contains("file_list") ?: true),
             SkillInfo("file_search", "Search Files", "Search files by name pattern", enabledSet?.contains("file_search") ?: true),
-            SkillInfo("exec_js", "JS Sandbox", "Execute JavaScript in a sandbox for calculations and data processing", enabledSet?.contains("exec_js") ?: true)
+            SkillInfo("file_diff", "File Diff", "Compute line-by-line diff between file versions", enabledSet?.contains("file_diff") ?: true),
+            SkillInfo("file_patch", "File Patch", "Apply patch operations (replace/insert/delete) to files", enabledSet?.contains("file_patch") ?: true),
+            SkillInfo("exec_js", "JS Sandbox", "Execute JavaScript in a sandbox for calculations and data processing", enabledSet?.contains("exec_js") ?: true),
+            SkillInfo("initialize_plan", "Task Planner", "Create structured task plans with subtask trees", enabledSet?.contains("initialize_plan") ?: true),
+            SkillInfo("update_plan", "Update Plan", "Modify task plan status, add/remove/move steps", enabledSet?.contains("update_plan") ?: true),
+            SkillInfo("get_plan", "Get Plan", "Read the full task tree with derived statuses", enabledSet?.contains("get_plan") ?: true),
+            SkillInfo("drop_plan", "Drop Plan", "Terminate the current task plan", enabledSet?.contains("drop_plan") ?: true)
         )
     }
 

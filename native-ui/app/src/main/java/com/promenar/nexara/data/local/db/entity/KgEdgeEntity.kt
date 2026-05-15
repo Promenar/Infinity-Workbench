@@ -43,7 +43,7 @@ data class KgEdgeEntity(
     val sourceType: String = "full",
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
-    @ColumnInfo(name = "stale")
+    @ColumnInfo(name = "stale", defaultValue = "0")
     val stale: Boolean = false,
     @ColumnInfo(name = "file_uuid")
     val fileUuid: String? = null,
