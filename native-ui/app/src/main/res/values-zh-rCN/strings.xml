@@ -484,7 +484,7 @@
     <!-- ProviderModelsScreen -->
     <string name="provider_models_search">搜索模型…</string>
     <string name="provider_models_desc">管理模型访问与能力。</string>
-    <string name="provider_models_auto_fetch">自动获取</string>
+    <string name="provider_models_auto_fetch">同步模型</string>
     <string name="provider_models_add">添加</string>
     <string name="provider_models_disable_all">全部禁用</string>
     <string name="provider_models_delete_all">全部删除</string>

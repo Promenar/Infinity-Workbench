@@ -486,7 +486,7 @@
     <!-- ProviderModelsScreen -->
     <string name="provider_models_search">Search models…</string>
     <string name="provider_models_desc">Manage model access and capabilities.</string>
-    <string name="provider_models_auto_fetch">Auto Fetch</string>
+    <string name="provider_models_auto_fetch">Sync Models</string>
     <string name="provider_models_add">Add</string>
     <string name="provider_models_disable_all">Disable All</string>
     <string name="provider_models_delete_all">Delete All</string>

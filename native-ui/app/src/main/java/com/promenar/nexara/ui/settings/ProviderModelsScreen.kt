@@ -75,7 +75,13 @@ private data class CapabilityTag(
 
 private val CapabilityTags = listOf(
     CapabilityTag("vision", "Vision", "visibility", NexaraColors.StatusError.copy(alpha = 0.8f)),
-    CapabilityTag("internet", "Internet", "public", NexaraColors.StatusInfo)
+    CapabilityTag("internet", "Internet", "public", NexaraColors.StatusInfo),
+    CapabilityTag("audioinput", "Audio In", "mic", NexaraColors.StatusSuccess),
+    CapabilityTag("audiooutput", "Audio Out", "volume_up", NexaraColors.StatusSuccess),
+    CapabilityTag("videounderstanding", "Video", "videocam", NexaraColors.Tertiary),
+    CapabilityTag("structuredoutput", "JSON", "data_object", NexaraColors.Primary),
+    CapabilityTag("promptcaching", "Cache", "cached", NexaraColors.StatusWarning),
+    CapabilityTag("computeruse", "Computer", "computer", NexaraColors.Secondary)
 )
 
 /** type → 基础能力推导表。当用户在 UI 中切换 type 时联动刷新 capabilities。 */
@@ -158,7 +164,7 @@ fun ProviderModelsScreen(
             ActionChip(
                 icon = Icons.Rounded.Sync,
                 label = stringResource(R.string.provider_models_auto_fetch),
-                onClick = { viewModel.refreshModels() },
+                onClick = { viewModel.refreshProviderModels() },
                 iconModifier = Modifier.rotate(rotation),
                 modifier = Modifier.weight(1f)
             )
