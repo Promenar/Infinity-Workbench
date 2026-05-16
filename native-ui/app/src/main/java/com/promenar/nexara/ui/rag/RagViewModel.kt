@@ -552,6 +552,25 @@ class RagViewModel(
         }
     }
 
+    /** 批量重新索引 */
+    fun reindexDocuments(uuids: Collection<String>) {
+        viewModelScope.launch {
+            uuids.forEach { uuid ->
+                try {
+                    val entry = workspaceRepository.getByUuid(uuid) ?: return@forEach
+                    val result = fileOperationRepository.readFileRange(uuid)
+                    if (result.content.isNotBlank()) {
+                        app.vectorizationQueue.enqueueDocument(
+                            docId = uuid,
+                            docTitle = entry.name,
+                            content = result.content
+                        )
+                    }
+                } catch (_: Exception) { }
+            }
+        }
+    }
+
     /** 移动文件到指定目录 */
     fun moveFile(uuid: String, targetParentUuid: String) {
         viewModelScope.launch {
@@ -576,6 +595,27 @@ class RagViewModel(
                         kgStrategy = "full"
                     )
                 }
+            } catch (_: Exception) { }
+        }
+    }
+
+    /** 复制文件 */
+    fun copyFile(uuid: String) {
+        viewModelScope.launch {
+            try {
+                val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
+                val content = fileOperationRepository.readFileRange(uuid).content
+                val newUuid = java.util.UUID.randomUUID().toString()
+                val newName = "${entry.name.substringBeforeLast('.')} - 副本.${entry.name.substringAfterLast('.', "")}"
+                val rootPath = ragWorkspaceRoot.absolutePath
+                workspaceRepository.createFile(
+                    uuid = newUuid,
+                    name = newName,
+                    content = content,
+                    parentUuid = entry.parentUuid,
+                    physicalRootPath = rootPath,
+                    materializedPath = "/$newName"
+                )
             } catch (_: Exception) { }
         }
     }

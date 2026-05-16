@@ -265,6 +265,7 @@ fun RagHomeScreen(
                             onRename = { u, n -> viewModel.renameFolder(u, n) },
                             onMove = { u, t -> viewModel.moveFile(u, t) },
                             onExtractKG = { viewModel.extractKG(it) },
+                            onCopy = { viewModel.copyFile(it) },
                             indexingFileIds = viewModel.indexingDocIds.collectAsState().value
                         )
                     }

@@ -80,8 +80,9 @@ fun FilesPanel(
     onRename: ((String, String) -> Unit)? = null,
     onMove: ((String, String) -> Unit)? = null,
     onExtractKG: ((String) -> Unit)? = null,
+    onCopy: ((String) -> Unit)? = null,
     indexingFileIds: Set<String> = emptySet(),
-    folders: List<FileEntry> = emptyList(), // 用于"移动到"弹窗的目录列表
+    folders: List<FileEntry> = emptyList(),
     externalSelectedIds: MutableList<String>? = null,
     onFileClick: (String) -> Unit = {}
 ) {
@@ -103,7 +104,7 @@ fun FilesPanel(
             onReindex = onReindex, onDelete = { id ->
                 onDelete?.invoke(id); selectedIds.remove(id)
             },
-            onRename = onRename, onMove = onMove, onExtractKG = onExtractKG,
+            onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onCopy = onCopy,
             indexingFileIds = indexingFileIds,
             selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
             onFileClick = onFileClick
@@ -200,6 +201,7 @@ private fun FileTreeNode(
     onRename: ((String, String) -> Unit)? = null,
     onMove: ((String, String) -> Unit)? = null,
     onExtractKG: ((String) -> Unit)? = null,
+    onCopy: ((String) -> Unit)? = null,
     indexingFileIds: Set<String> = emptySet(),
     selectedIds: MutableList<String> = mutableStateListOf(),
     isMultiSelectMode: Boolean = false,
@@ -294,6 +296,17 @@ private fun FileTreeNode(
                     onClick = { showMenu = false; showMoveSheet = true }
                 )
             }
+            if (onCopy != null && !file.isDirectory) {
+                DropdownMenuItem(
+                    text = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Description, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(18.dp))
+                            Text("复制", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                        }
+                    },
+                    onClick = { showMenu = false; onCopy(file.uuid) }
+                )
+            }
             if (onDelete != null) {
                 DropdownMenuItem(
                     text = {
@@ -345,7 +358,7 @@ private fun FileTreeNode(
             FileTreeNode(
                 file = child, depth = depth + 1, workspaceRepo = workspaceRepo,
                 searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
-                onRename = onRename, onMove = onMove, onExtractKG = onExtractKG,
+                onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onCopy = onCopy,
                 indexingFileIds = indexingFileIds,
                 selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
                 onFileClick = onFileClick
