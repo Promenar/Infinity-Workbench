@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -61,6 +62,7 @@ class MemoryManager(
         val queryEmbedding = try {
             embeddingClient.embedQuery(query).first
         } catch (e: Exception) {
+            NexaraLogger.logError("MemoryManager.embedQuery", e)
             return emptyResult(System.currentTimeMillis() - startTime)
         }
 
@@ -80,7 +82,7 @@ class MemoryManager(
                 )
                 results.addAll(memoryResults)
             } catch (e: Exception) {
-                // Continue without memory results
+                NexaraLogger.logError("MemoryManager.searchMemory", e)
             }
 
             try {
@@ -95,7 +97,7 @@ class MemoryManager(
                 )
                 results.addAll(summaryResults)
             } catch (e: Exception) {
-                // Continue without summary results
+                NexaraLogger.logError("MemoryManager.searchSummary", e)
             }
         }
 
@@ -113,7 +115,7 @@ class MemoryManager(
                 )
                 results.addAll(docResults)
             } catch (e: Exception) {
-                // Continue without doc results
+                NexaraLogger.logError("MemoryManager.searchDocs", e)
             }
         }
 
@@ -150,6 +152,7 @@ class MemoryManager(
             try {
                 rerankClient.rerank(query, uniqueResults, effectiveConfig.rerankTopK)
             } catch (e: Exception) {
+                NexaraLogger.logError("MemoryManager.rerank", e)
                 uniqueResults
             }.also {
                 actualRerankTimeMs = System.currentTimeMillis() - rerankStart

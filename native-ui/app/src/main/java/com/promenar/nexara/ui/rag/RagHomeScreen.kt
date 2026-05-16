@@ -2,6 +2,12 @@ package com.promenar.nexara.ui.rag
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -199,7 +205,6 @@ fun RagHomeScreen(
                     Tab(
                         selected = currentTab == tab,
                         onClick = { if (tab == PortalTab.GRAPH) onNavigateToGraph() else currentTab = tab },
-                        icon = { Icon(data.first, data.second, Modifier.size(20.dp)) },
                         text = { Text(data.second, style = NexaraTypography.labelMedium) },
                         selectedContentColor = NexaraColors.Primary,
                         unselectedContentColor = NexaraColors.OnSurfaceVariant
@@ -209,12 +214,39 @@ fun RagHomeScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // Indexing progress
-            if (isIndexing) {
-                IndexingProgressBar(progress = indexingProgress, statusText = indexingStatus, subStatusText = indexingSubStatus)
-            }
-            if (lastQueueError != null && !isIndexing) {
-                IndexingProgressBar(progress = 0f, statusText = lastQueueError, subStatusText = "请检查 Embedding 模型配置后重新导入")
+            // Indexing progress — 带入场/退场动画
+            AnimatedVisibility(
+                visible = isIndexing || lastQueueError != null,
+                enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { -it },
+                exit = fadeOut(tween(400)) + slideOutVertically(tween(400)) { -it }
+            ) {
+                Column {
+                    if (isIndexing) {
+                        IndexingProgressBar(
+                            progress = indexingProgress,
+                            statusText = indexingStatus,
+                            subStatusText = indexingSubStatus,
+                            isError = lastQueueError != null
+                        )
+                    } else if (lastQueueError != null) {
+                        // 带关闭按钮的错误卡片
+                        Box {
+                            IndexingProgressBar(
+                                progress = indexingProgress.coerceAtLeast(0f),
+                                statusText = "向量化失败: ${lastQueueError?.take(80) ?: "未知错误"}",
+                                subStatusText = "请检查 Embedding 模型配置后重试 | 点击关闭",
+                                isError = true
+                            )
+                            // 覆盖层关闭按钮
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { viewModel.dismissQueueError() }
+                            )
+                        }
+                    }
+                }
             }
 
             // Tab content

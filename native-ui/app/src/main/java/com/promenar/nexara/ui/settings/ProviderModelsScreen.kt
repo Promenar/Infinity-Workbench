@@ -110,19 +110,25 @@ fun ProviderModelsScreen(
     var newModelId by remember { mutableStateOf("") }
     var newModelName by remember { mutableStateOf("") }
 
-    val filteredModels = remember(models, searchQuery) {
-        if (searchQuery.isBlank()) models
-        else models.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-            it.id.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
     val providers by viewModel.providers.collectAsState()
     val provider = remember(providers, providerId) {
         providers.find { it.id == providerId }
     }
     val effectiveTitle = provider?.name ?: providerName
+
+    // 按提供商过滤模型（主提供商显示所有模型，其他只显示关联模型）
+    val scopedModels = remember(models, providerId, provider) {
+        if (providerId == "default" || provider == null) models
+        else models.filter { it.providerName == provider.name || it.providerName == providerId }
+    }
+
+    val filteredModels = remember(scopedModels, searchQuery) {
+        if (searchQuery.isBlank()) scopedModels
+        else scopedModels.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+            it.id.contains(searchQuery, ignoreCase = true)
+        }
+    }
 
     NexaraPageLayout(
         title = effectiveTitle,
@@ -626,8 +632,55 @@ private fun EnhancedModelCard(
                     color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
+
+            // 最大输出 / 知识截止日期（来自 ModelSpec 数据库自动匹配）
+            if (model.maxOutputTokens > 0 || model.knowledgeCutoff != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (model.maxOutputTokens > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(NexaraColors.Primary.copy(alpha = 0.08f))
+                                .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Output: ${formatTokens(model.maxOutputTokens)}",
+                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                                color = NexaraColors.Primary
+                            )
+                        }
+                    }
+                    if (model.knowledgeCutoff != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(NexaraColors.StatusWarning.copy(alpha = 0.08f))
+                                .border(0.5.dp, NexaraColors.StatusWarning.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "截止: ${model.knowledgeCutoff!!}",
+                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                                color = NexaraColors.StatusWarning
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+private fun formatTokens(tokens: Int): String = when {
+    tokens >= 128000 -> "${tokens / 1000}K"
+    tokens >= 1000 -> "${"%.1f".format(tokens / 1000.0)}k"
+    else -> "$tokens"
 }
 
 @Composable

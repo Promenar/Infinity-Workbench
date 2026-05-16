@@ -22,11 +22,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.NexaraSearchBar
-import com.promenar.nexara.ui.common.SwipeableItem
-import com.promenar.nexara.ui.common.ConfirmDialog
+import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -122,7 +121,7 @@ fun AgentHubScreen(
                         NexaraSearchBar(
                             value = searchQuery,
                             onValueChange = { viewModel.updateSearchQuery(it) },
-                             placeholder = stringResource(R.string.hub_search_placeholder)
+                            placeholder = stringResource(R.string.hub_search_placeholder)
                         )
                     }
                 }
@@ -299,6 +298,20 @@ private fun AddAgentDialog(
     var description by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var systemPrompt by remember { mutableStateOf("") }
+    var showPromptEditor by remember { mutableStateOf(false) }
+
+    UnifiedPromptEditor(
+        show = showPromptEditor,
+        onDismiss = { showPromptEditor = false },
+        onSave = {
+            systemPrompt = it
+            showPromptEditor = false
+        },
+        title = stringResource(R.string.hub_dialog_label_prompt),
+        initialText = systemPrompt,
+        placeholder = stringResource(R.string.agent_edit_prompt_placeholder),
+        mode = EditorMode.DIALOG
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -323,15 +336,34 @@ private fun AddAgentDialog(
                     label = { Text(stringResource(R.string.hub_dialog_label_model)) },
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = systemPrompt,
-                    onValueChange = { systemPrompt = it },
-                    label = { Text(stringResource(R.string.hub_dialog_label_prompt)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
-                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                NexaraGlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showPromptEditor = true },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = stringResource(R.string.hub_dialog_label_prompt),
+                            style = NexaraTypography.labelMedium,
+                            color = NexaraColors.OnSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = systemPrompt.ifBlank { stringResource(R.string.agent_edit_prompt_hint) },
+                            style = NexaraTypography.bodyMedium,
+                            color = if (systemPrompt.isNotBlank()) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         },
+
         confirmButton = {
             Button(
                 onClick = { onConfirm(name, description, model, systemPrompt) },

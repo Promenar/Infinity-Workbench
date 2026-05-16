@@ -168,6 +168,13 @@ class ProviderManager private constructor(private val app: Application) {
         persistExtraProviders()
     }
 
+    fun updateExtraProvider(id: String, item: ProviderListItem) {
+        _providers.update { list ->
+            list.map { if (it.id == id) item else it }
+        }
+        persistExtraProviders()
+    }
+
     fun deleteProvider(providerId: String) {
         _providers.update { it.filter { p -> p.id != providerId } }
         persistExtraProviders()
@@ -208,6 +215,8 @@ class ProviderManager private constructor(private val app: Application) {
             val contextLength = settingsPrefs.getInt("${prefix}_context", 8192)
             val providerName = settingsPrefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
             val enabled = enabledSet.contains(id)
+            val maxOutput = settingsPrefs.getInt("${prefix}_maxoutput", 0)
+            val cutoff = settingsPrefs.getString("${prefix}_cutoff", null)
 
             val model = ModelInfo(
                 name = storedName,
@@ -217,7 +226,9 @@ class ProviderManager private constructor(private val app: Application) {
                 type = type,
                 contextLength = contextLength,
                 capabilities = storedCaps.toList(),
-                providerName = providerName
+                providerName = providerName,
+                maxOutputTokens = maxOutput,
+                knowledgeCutoff = cutoff
             )
 
             // 迁移逻辑：自动修复名称和能力
@@ -258,8 +269,32 @@ class ProviderManager private constructor(private val app: Application) {
             correctCaps
         } else model.capabilities
 
+        // 3. 修复上下文长度：如果存储值与数据库不符
+        val newContext = if (model.contextLength != spec.contextLength && spec.contextLength > 0) {
+            changed = true
+            spec.contextLength
+        } else model.contextLength
+
+        // 4. 修复最大输出 token：如果存储值为 0 且数据库有值
+        val newMaxOutput = if (model.maxOutputTokens == 0 && spec.maxOutputTokens > 0) {
+            changed = true
+            spec.maxOutputTokens
+        } else model.maxOutputTokens
+
+        // 5. 修复知识截止日期：如果存储值为 null 且数据库有值
+        val newCutoff = if (model.knowledgeCutoff == null && spec.knowledgeCutoff != null) {
+            changed = true
+            spec.knowledgeCutoff
+        } else model.knowledgeCutoff
+
         return if (changed) {
-            model.copy(name = newName, capabilities = newCaps)
+            model.copy(
+                name = newName,
+                capabilities = newCaps,
+                contextLength = newContext,
+                maxOutputTokens = newMaxOutput,
+                knowledgeCutoff = newCutoff
+            )
         } else model
     }
 
@@ -349,7 +384,13 @@ class ProviderManager private constructor(private val app: Application) {
                 .putInt("${prefix}_context", model.contextLength)
                 .putStringSet("${prefix}_caps", model.capabilities.toSet())
                 .putString("${prefix}_provider", model.providerName)
+                .putInt("${prefix}_maxoutput", model.maxOutputTokens)
                 .apply()
+            if (model.knowledgeCutoff != null) {
+                settingsPrefs.edit()
+                    .putString("${prefix}_cutoff", model.knowledgeCutoff)
+                    .apply()
+            }
         }
     }
 

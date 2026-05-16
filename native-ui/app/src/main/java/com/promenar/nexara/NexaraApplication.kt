@@ -224,6 +224,12 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         instance = this
         com.promenar.nexara.utils.NexaraLogger.init(this)
 
+        // 初始化应用级别的 WorkSpace 物理目录
+        val workSpaceDir = java.io.File(filesDir, "WorkSpace")
+        if (!workSpaceDir.exists()) {
+            workSpaceDir.mkdirs()
+        }
+
         // 初始化统一数据源（必须在 buildProviderFromPrefs 之前）
         ProviderManager.init(this)
 

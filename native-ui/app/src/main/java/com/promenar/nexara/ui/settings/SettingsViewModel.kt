@@ -39,7 +39,11 @@ data class ModelInfo(
     val contextLength: Int = 8192,
     val capabilities: List<String> = emptyList(),
     val providerName: String = "Cloud",
-    val testStatus: String? = null
+    val testStatus: String? = null,
+    /** 最大输出 token 数，0=未指定 */
+    val maxOutputTokens: Int = 0,
+    /** 训练数据截止日期（YYYYMM），null=未知 */
+    val knowledgeCutoff: String? = null
 )
 
 data class ProviderStats(
@@ -362,9 +366,12 @@ class SettingsViewModel(
 
     fun deleteProvider(providerId: String) = pm.deleteProvider(providerId)
 
+    fun updateExtraProvider(id: String, item: ProviderListItem) {
+        pm.updateExtraProvider(id, item)
+    }
+
     fun addProvider(item: ProviderListItem) {
         pm.addProvider(item)
-        refreshModels()
     }
 
     fun updateModel(updatedModel: ModelInfo) = pm.updateModel(updatedModel)
@@ -379,17 +386,19 @@ class SettingsViewModel(
                 if (fetchedIds.isNotEmpty()) {
                     val currentModels = pm.providerModels.value.toMutableList()
                     val existingIds = currentModels.map { it.id }.toSet()
-                    val newModels = fetchedIds.filter { it !in existingIds }.map { id ->
-                        val spec = com.promenar.nexara.data.model.findModelSpec(id)
-                        val type = spec?.type?.name?.lowercase() ?: "chat"
-                        ModelInfo(
-                            name = spec?.note ?: id, id = id,
-                            description = spec?.note ?: "Fetched model",
-                            enabled = false, type = type,
-                            contextLength = spec?.contextLength ?: 8192,
-                            providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
-                            capabilities = pm.buildModelCapabilities(type, spec)
-                        )
+                val newModels = fetchedIds.filter { it !in existingIds }.map { id ->
+                    val spec = com.promenar.nexara.data.model.findModelSpec(id)
+                    val type = spec?.type?.name?.lowercase() ?: "chat"
+                    ModelInfo(
+                        name = spec?.note ?: id, id = id,
+                        description = spec?.note ?: "Fetched model",
+                        enabled = false, type = type,
+                        contextLength = spec?.contextLength ?: 8192,
+                        providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
+                        capabilities = pm.buildModelCapabilities(type, spec),
+                        maxOutputTokens = spec?.maxOutputTokens ?: 0,
+                        knowledgeCutoff = spec?.knowledgeCutoff
+                    )
                     }
                     newModels.forEach { pm.addModel(it) }
                 }
@@ -412,7 +421,9 @@ class SettingsViewModel(
             enabled = true, type = type,
             contextLength = spec?.contextLength ?: 8192,
             providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
-            capabilities = pm.buildModelCapabilities(type, spec)
+            capabilities = pm.buildModelCapabilities(type, spec),
+            maxOutputTokens = spec?.maxOutputTokens ?: 0,
+            knowledgeCutoff = spec?.knowledgeCutoff
         )
         pm.addModel(newModel)
     }

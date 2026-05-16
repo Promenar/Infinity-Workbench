@@ -85,6 +85,10 @@ class VectorRepository(
         vectorDao.deleteById(id)
     }
 
+    override suspend fun deleteAll() {
+        vectorDao.deleteAll()
+    }
+
     override suspend fun getCount(): Int =
         vectorDao.getCount()
 

@@ -3,6 +3,7 @@ package com.promenar.nexara.data.rag
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.*
 
 class GraphExtractor(
@@ -50,7 +51,7 @@ class GraphExtractor(
                     val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
                     nameToIdMap[node.name] = id
                 } catch (e: Exception) {
-                    // Continue with other nodes
+                    NexaraLogger.log("GraphExtractor: Node upsert failed for '${node.name}': ${e.message?.take(80)}")
                 }
             }
 
@@ -61,13 +62,14 @@ class GraphExtractor(
                     try {
                         graphStore.createEdge(sourceId, targetId, edge.relation, docId, edge.weight, scope)
                     } catch (e: Exception) {
-                        // Continue with other edges
+                        NexaraLogger.log("GraphExtractor: Edge create failed '${edge.source}->${edge.target}': ${e.message?.take(80)}")
                     }
                 }
             }
 
             ExtractionResult(nodes = result.nodes, edges = result.edges)
         } catch (e: Exception) {
+            NexaraLogger.logError("GraphExtractor.extractAndSave", e)
             ExtractionResult(nodes = emptyList(), edges = emptyList(), error = e.message?.take(80))
         }
     }
@@ -124,6 +126,7 @@ class GraphExtractor(
 
                 ExtractionResult(nodes = nodes, edges = edges)
             } catch (e2: Exception) {
+                NexaraLogger.log("GraphExtractor: JSON fallback parse error: ${e2.message?.take(100)}")
                 null
             }
         }

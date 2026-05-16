@@ -122,14 +122,14 @@ fun FilesPanel(
         if (useScroll) {
             LazyColumn(
                 modifier = Modifier.weight(1f).padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filteredRoots, key = { it.uuid }) { root -> content(root) }
             }
         } else {
             Column(
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (filteredRoots.isEmpty() && searchQuery.isBlank()) {
                     EmptyFilesState()
@@ -224,11 +224,12 @@ private fun FileTreeNode(
     var showMoveSheet by rememberSaveable { mutableStateOf(false) }
     val isSelected = file.uuid in selectedIds
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = (depth * 16).dp)
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = (depth * 16).dp)
+        ) {
         // 多选高亮动画
         val bgColor by animateColorAsState(
             targetValue = if (isSelected) NexaraColors.Primary.copy(alpha = 0.08f) else NexaraColors.GlassSurface,
@@ -272,79 +273,44 @@ private fun FileTreeNode(
             if (!file.isDirectory) {
                 if (onReindex != null) {
                     DropdownMenuItem(
-                        text = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Refresh, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-                                Text("重新索引", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                            }
-                        },
+                        text = { Text("重新索引", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                         onClick = { showMenu = false; onReindex(file.uuid) }
                     )
                 }
                 if (onExtractKG != null) {
                     DropdownMenuItem(
-                        text = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.AccountTree, null, tint = NexaraColors.Tertiary, modifier = Modifier.size(18.dp))
-                                Text("提取知识图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                            }
-                        },
+                        text = { Text("提取知识图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                         onClick = { showMenu = false; onExtractKG(file.uuid) }
                     )
                 }
             }
             if (onRename != null) {
                 DropdownMenuItem(
-                    text = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Edit, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(18.dp))
-                            Text("重命名", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        }
-                    },
+                    text = { Text("重命名", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; showRenameDialog = true }
                 )
             }
             if (onMove != null && !file.isDirectory) {
                 DropdownMenuItem(
-                    text = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Folder, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(18.dp))
-                            Text("移动到…", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        }
-                    },
+                    text = { Text("移动到…", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; showMoveSheet = true }
                 )
             }
             if (onCopy != null && !file.isDirectory) {
                 DropdownMenuItem(
-                    text = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Description, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(18.dp))
-                            Text("复制", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        }
-                    },
+                    text = { Text("复制", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; onCopy(file.uuid) }
                 )
             }
             if (!isMultiSelectMode) {
                 DropdownMenuItem(
-                    text = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Check, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-                            Text("多选模式", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        }
-                    },
+                    text = { Text("多选模式", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; selectedIds.add(file.uuid) }
                 )
             }
             if (onDelete != null) {
                 DropdownMenuItem(
-                    text = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Delete, null, tint = NexaraColors.Error, modifier = Modifier.size(18.dp))
-                            Text("删除", style = NexaraTypography.labelMedium, color = NexaraColors.Error)
-                        }
-                    },
+                    text = { Text("删除", style = NexaraTypography.labelMedium, color = NexaraColors.Error) },
                     onClick = { showMenu = false; onDelete(file.uuid) }
                 )
             }
@@ -389,7 +355,7 @@ private fun FileTreeNode(
                 children.filter { it.name.contains(searchQuery, ignoreCase = true) }
             }
 
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 filteredChildren.forEach { child ->
                     FileTreeNode(
                         file = child, depth = depth + 1, workspaceRepo = workspaceRepo,
@@ -402,6 +368,7 @@ private fun FileTreeNode(
                 }
             }
         }
+    }
     }
 }
 
@@ -433,7 +400,7 @@ private fun FileRow(
         Icon(
             imageVector = fileIcon(file),
             contentDescription = null,
-            tint = if (file.isDirectory) NexaraColors.Tertiary else NexaraColors.OnSurfaceVariant,
+            tint = if (file.isDirectory) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
             modifier = Modifier.size(24.dp)
         )
 

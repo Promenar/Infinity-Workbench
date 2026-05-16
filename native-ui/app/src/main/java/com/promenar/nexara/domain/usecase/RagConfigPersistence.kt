@@ -12,9 +12,8 @@ class RagConfigPersistence(
             docChunkSize = prefs.getInt(KEY_CHUNK_SIZE, DEFAULT_CHUNK_SIZE),
             chunkOverlap = prefs.getInt(KEY_CHUNK_OVERLAP, DEFAULT_CHUNK_OVERLAP),
             memoryChunkSize = prefs.getInt(KEY_MEMORY_CHUNK_SIZE, DEFAULT_MEMORY_CHUNK_SIZE),
-            contextWindow = prefs.getInt(KEY_CONTEXT_WINDOW, DEFAULT_CONTEXT_WINDOW),
-            summaryThreshold = prefs.getInt(KEY_SUMMARY_THRESHOLD, DEFAULT_SUMMARY_THRESHOLD),
-            summaryTemplate = prefs.getString(KEY_SUMMARY_TEMPLATE, "") ?: ""
+            summaryTemplate = prefs.getString(KEY_SUMMARY_TEMPLATE, "") ?: "",
+            currentPreset = prefs.getString(KEY_CURRENT_PRESET, null)
         )
     }
 
@@ -23,9 +22,8 @@ class RagConfigPersistence(
             .putInt(KEY_CHUNK_SIZE, config.docChunkSize)
             .putInt(KEY_CHUNK_OVERLAP, config.chunkOverlap)
             .putInt(KEY_MEMORY_CHUNK_SIZE, config.memoryChunkSize)
-            .putInt(KEY_CONTEXT_WINDOW, config.contextWindow)
-            .putInt(KEY_SUMMARY_THRESHOLD, config.summaryThreshold)
             .putString(KEY_SUMMARY_TEMPLATE, config.summaryTemplate)
+            .putString(KEY_CURRENT_PRESET, config.currentPreset)
             .apply()
     }
 
@@ -90,9 +88,8 @@ class RagConfigPersistence(
         const val KEY_CHUNK_SIZE = "doc_chunk_size"
         const val KEY_CHUNK_OVERLAP = "chunk_overlap"
         const val KEY_MEMORY_CHUNK_SIZE = "memory_chunk_size"
-        const val KEY_CONTEXT_WINDOW = "context_window"
-        const val KEY_SUMMARY_THRESHOLD = "summary_threshold"
         const val KEY_SUMMARY_TEMPLATE = "summary_template"
+        const val KEY_CURRENT_PRESET = "current_preset"
         const val KEY_MEMORY_LIMIT = "memory_limit"
         const val KEY_MEMORY_THRESHOLD = "memory_threshold"
         const val KEY_DOC_LIMIT = "doc_limit"
@@ -125,8 +122,6 @@ class RagConfigPersistence(
         const val DEFAULT_CHUNK_SIZE = 800
         const val DEFAULT_CHUNK_OVERLAP = 100
         const val DEFAULT_MEMORY_CHUNK_SIZE = 1000
-        const val DEFAULT_CONTEXT_WINDOW = 20
-        const val DEFAULT_SUMMARY_THRESHOLD = 10
         const val DEFAULT_MEMORY_LIMIT = 5
         const val DEFAULT_MEMORY_THRESHOLD = 0.7f
         const val DEFAULT_DOC_LIMIT = 8

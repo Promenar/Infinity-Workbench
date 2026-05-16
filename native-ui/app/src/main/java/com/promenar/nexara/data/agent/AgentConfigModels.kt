@@ -7,9 +7,8 @@ data class AgentRagConfig(
     val docChunkSize: Int = 800,
     val chunkOverlap: Int = 100,
     val memoryChunkSize: Int = 1000,
-    val contextWindow: Int = 20,
-    val summaryThreshold: Int = 10,
-    val summaryTemplate: String = ""
+    val summaryTemplate: String = "",
+    val currentPreset: String? = null
 )
 
 @Serializable

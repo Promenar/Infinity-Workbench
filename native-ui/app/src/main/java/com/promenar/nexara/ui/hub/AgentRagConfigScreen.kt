@@ -197,24 +197,6 @@ fun AgentRagConfigScreen(
                         enabled = true,
                         onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(memoryChunkSize = newVal.toInt()) } }
                     )
-                    RagConfigSlider(
-                        label = stringResource(R.string.agent_rag_active_window),
-                        value = ragConfig.contextWindow.toFloat(),
-                        valueRange = 10f..50f,
-                        step = 1f,
-                        displayValue = "${ragConfig.contextWindow}",
-                        enabled = true,
-                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(contextWindow = newVal.toInt()) } }
-                    )
-                    RagConfigSlider(
-                        label = stringResource(R.string.agent_rag_summary_threshold),
-                        value = ragConfig.summaryThreshold.toFloat(),
-                        valueRange = 0f..30f,
-                        step = 1f,
-                        displayValue = "${ragConfig.summaryThreshold}",
-                        enabled = true,
-                        onValueChange = { newVal -> viewModel.updateRagConfig { it.copy(summaryThreshold = newVal.toInt()) } }
-                    )
                 }
             }
 

@@ -104,7 +104,7 @@ fun AgentEditScreen(
         viewModel.loadAgent(agentId)
     }
 
-    FloatingTextEditor(
+    UnifiedPromptEditor(
         show = showSystemPromptEditor,
         onDismiss = { showSystemPromptEditor = false },
         onSave = {
@@ -113,7 +113,8 @@ fun AgentEditScreen(
         },
         title = stringResource(R.string.agent_edit_prompt_label),
         initialText = systemPrompt,
-        placeholder = stringResource(R.string.agent_edit_prompt_placeholder)
+        placeholder = stringResource(R.string.agent_edit_prompt_placeholder),
+        mode = EditorMode.DIALOG
     )
 
     val settingsViewModel: SettingsViewModel = viewModel(

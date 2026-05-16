@@ -1,8 +1,10 @@
 package com.promenar.nexara.data.rag
 
+import android.util.Log
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.*
 import java.util.UUID
 
@@ -96,10 +98,10 @@ class VectorizationQueue(
         val task = queue[0]
 
         try {
-            task.status = "vectorizing"
+            // 不在此处预设状态，交由具体处理函数逐步推进——
+            // 避免 "vectorizing(0%)→chunking(15%)→vectorizing(30%)" 的进度回跳
             task.updatedAt = System.currentTimeMillis()
-            saveTaskToDb(task)
-            notifyStateChange()
+            NexaraLogger.log("[VectorQueue] 开始处理任务 type=${task.type} docTitle=${task.docTitle ?: "N/A"}")
 
             when (task.type) {
                 "memory" -> processMemoryTask(task)
@@ -111,9 +113,13 @@ class VectorizationQueue(
             }
             retryCountMap.remove(task.id)
             task.progress = 100.0
-            notifyStateChange()  // 通知"已完成"状态（必须在移除队列前）
+            task.subStatus = "处理完成"
+            NexaraLogger.log("[VectorQueue] 任务完成 type=${task.type} docTitle=${task.docTitle ?: "N/A"}")
+            notifyStateChange()
             removeTaskFromDb(task.id)
         } catch (error: Exception) {
+            NexaraLogger.logError("VectorQueue.processNext", error)
+
             val msg = error.message?.lowercase() ?: ""
 
             val isRetryable = msg.contains("network") ||
@@ -123,23 +129,35 @@ class VectorizationQueue(
 
             val currentRetries = retryCountMap[task.id] ?: 0
 
+            // 保留失败的阶段信息，避免进度掉回 0
+            val failedStep = task.status
+            val failedProgress = task.progress
+
             if (isRetryable && currentRetries < MAX_RETRIES) {
                 retryCountMap[task.id] = currentRetries + 1
-                task.subStatus = "Retrying (${currentRetries + 1}/$MAX_RETRIES)..."
+                task.subStatus = "正在重试 (${currentRetries + 1}/$MAX_RETRIES)..."
+                task.error = getFriendlyErrorMessage(error)
+                NexaraLogger.log("[VectorQueue] 可重试错误 (${currentRetries + 1}/$MAX_RETRIES): ${error.message?.take(100)}")
                 saveTaskToDb(task)
                 notifyStateChange()
 
-                val delay = minOf(3000L * (1L shl currentRetries), 15000L)
-                delay(delay)
+                val delayMs = minOf(3000L * (1L shl currentRetries), 15000L)
+                delay(delayMs)
                 processNext()
                 return
             } else {
                 retryCountMap.remove(task.id)
                 task.status = "failed"
                 task.error = getFriendlyErrorMessage(error)
+                // 保留失败时的进度，不下掉到 0
+                task.progress = failedProgress
+                task.subStatus = "失败于阶段: $failedStep — ${getFriendlyErrorMessage(error)}"
+                NexaraLogger.log("[VectorQueue] 任务彻底失败 type=${task.type} step=$failedStep error=${task.error}")
                 saveTaskToDb(task)
 
                 notifyStateChange()
+                // 失败后暂停 2 秒再移除，让用户看清错误信息
+                delay(2000)
             }
         } finally {
             if (queue.isNotEmpty() && queue[0] === task) {
@@ -168,6 +186,7 @@ class VectorizationQueue(
 
         task.status = "chunking"
         task.progress = 20.0
+        task.subStatus = "正在对对话记忆进行语义切块..."
         notifyStateChange()
 
         val splitter = TrigramTextSplitter(
@@ -176,15 +195,19 @@ class VectorizationQueue(
         )
         val chunks = splitter.splitText(turnText)
         task.totalChunks = chunks.size
+        NexaraLogger.log("[VectorQueue] Memory chunking: ${chunks.size} chunks from session=$sessionId")
 
         task.status = "vectorizing"
         task.progress = 40.0
+        task.subStatus = "正在发送 ${chunks.size} 个记忆切块至模型处理..."
         notifyStateChange()
 
+        NexaraLogger.log("[VectorQueue] Memory embedding: ${chunks.size} chunks")
         val embeddingResult = embeddingClient.embedDocuments(chunks)
 
         task.status = "saving"
         task.progress = 80.0
+        task.subStatus = "正在持久化记忆向量数据..."
         notifyStateChange()
 
         val vectors = chunks.mapIndexed { i, chunk ->
@@ -198,6 +221,7 @@ class VectorizationQueue(
             )
         }
         vectorStore.addVectorRecords(vectors)
+        NexaraLogger.log("[VectorQueue] Memory saved: ${vectors.size} vectors for session=$sessionId")
     }
 
     private suspend fun processDocumentTask(task: VectorizationTask) {
@@ -217,8 +241,10 @@ class VectorizationQueue(
         )
         val chunks = splitter.splitText(content)
         task.totalChunks = chunks.size
+        NexaraLogger.log("[VectorQueue] Document chunking: ${chunks.size} chunks for doc=$docTitle")
 
         if (chunks.isEmpty()) {
+            NexaraLogger.log("[VectorQueue] Document has no chunkable content, skipping: $docTitle")
             task.status = "completed"
             task.progress = 100.0
             notifyStateChange()
@@ -231,6 +257,7 @@ class VectorizationQueue(
         task.subStatus = "正在发送 ${chunks.size} 个切块至模型处理..."
         notifyStateChange()
 
+        NexaraLogger.log("[VectorQueue] Document embedding: ${chunks.size} chunks for doc=$docTitle")
         val embeddingResult = embeddingClient.embedDocuments(chunks)
 
         task.status = "saving"
@@ -240,7 +267,7 @@ class VectorizationQueue(
 
         val records = chunks.mapIndexed { i, chunk ->
             VectorStore.NewVectorRecord(
-                sessionId = "",
+                sessionId = null,
                 content = chunk,
                 embedding = embeddingResult.embeddings[i],
                 metadata = """{"type":"document","fileUuid":"$docId","chunkIndex":$i}""",
@@ -249,6 +276,7 @@ class VectorizationQueue(
             )
         }
         vectorStore.addVectorRecords(records)
+        NexaraLogger.log("[VectorQueue] Document vectors saved: ${records.size} vectors for doc=$docTitle")
 
         task.progress = 95.0
         task.subStatus = "正在更新文件索引状态..."
@@ -262,9 +290,12 @@ class VectorizationQueue(
             task.progress = 98.0
             task.subStatus = "正在构建知识图谱节点..."
             notifyStateChange()
+            NexaraLogger.log("[VectorQueue] KG extraction starting for doc=$docTitle")
             try {
                 graphExtractor.extractAndSave(content, docId)
-            } catch (_: Exception) {
+                NexaraLogger.log("[VectorQueue] KG extraction completed for doc=$docTitle")
+            } catch (e: Exception) {
+                NexaraLogger.logError("VectorQueue.KGExtraction", e)
                 task.subStatus = "知识图谱提取跳过（非致命）"
             }
         }

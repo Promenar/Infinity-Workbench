@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag
 
+import android.app.Application
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,28 +15,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,9 +39,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -62,18 +51,20 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RagAdvancedScreen(
-    viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(LocalContext.current.applicationContext as android.app.Application)),
     onNavigateBack: () -> Unit,
     onNavigateToGraph: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(context.applicationContext as Application))
     val config by viewModel.config.collectAsState()
     val settingsViewModel: SettingsViewModel = viewModel(
         modelClass = SettingsViewModel::class.java,
-        factory = SettingsViewModel.factory(LocalContext.current.applicationContext as android.app.Application)
+        factory = SettingsViewModel.factory(context.applicationContext as Application)
     )
     val allModels by settingsViewModel.providerModels.collectAsState()
-    
+
     var showPromptEditor by remember { mutableStateOf(false) }
+    var showSummaryTemplateEditor by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
 
     NexaraPageLayout(
@@ -87,7 +78,41 @@ fun RagAdvancedScreen(
                 color = NexaraColors.OnSurfaceVariant
             )
 
-            SettingsSectionHeader(stringResource(R.string.rag_advanced_kg_section))
+            // === 摘要模板（始终可见） ===
+            NexaraGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.large as RoundedCornerShape
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SettingsSectionHeader(stringResource(R.string.rag_config_section_template))
+                    NexaraGlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showSummaryTemplateEditor = true },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                config.summaryTemplate.take(100) + if (config.summaryTemplate.length > 100) "..." else "",
+                                style = NexaraTypography.bodySmall.copy(fontSize = 12.sp),
+                                color = NexaraColors.OnSurface,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+
+            // === 知识图谱 ===
             SettingsToggle(
                 title = stringResource(R.string.rag_advanced_kg_enable),
                 description = stringResource(R.string.rag_advanced_kg_desc),
@@ -384,58 +409,23 @@ fun RagAdvancedScreen(
         }
     )
 
-    if (showPromptEditor) {
-        ModalBottomSheet(
-            onDismissRequest = { showPromptEditor = false },
-            containerColor = NexaraColors.SurfaceLow,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        ) {
-            var promptText by remember { mutableStateOf(config.kgExtractionPrompt ?: "") }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.7f)
-                    .padding(24.dp)
-                    .padding(bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(stringResource(R.string.rag_advanced_edit_prompt), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                NexaraGlassCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = promptText,
-                        onValueChange = { promptText = it },
-                        textStyle = NexaraTypography.bodyMedium,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp)
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(NexaraColors.Primary)
-                            .clickable {
-                                viewModel.updateConfig { it.copy(kgExtractionPrompt = promptText.ifBlank { null }) }
-                                showPromptEditor = false
-                            }
-                            .padding(horizontal = 24.dp, vertical = 12.dp)
-                    ) {
-                        Text(stringResource(R.string.shared_btn_save), style = NexaraTypography.labelMedium, color = NexaraColors.OnPrimary)
-                    }
-                }
-            }
-        }
-    }
+    UnifiedPromptEditor(
+        show = showPromptEditor,
+        onDismiss = { showPromptEditor = false },
+        initialText = config.kgExtractionPrompt ?: "",
+        title = stringResource(R.string.rag_advanced_edit_prompt),
+        onSave = { text -> viewModel.updateConfig { it.copy(kgExtractionPrompt = text.ifBlank { null }) } },
+        placeholder = stringResource(R.string.rag_advanced_extract_prompt_placeholder)
+    )
+
+    UnifiedPromptEditor(
+        show = showSummaryTemplateEditor,
+        onDismiss = { showSummaryTemplateEditor = false },
+        initialText = config.summaryTemplate,
+        title = stringResource(R.string.rag_advanced_cost_summary),
+        onSave = { text -> viewModel.updateConfig { it.copy(summaryTemplate = text.ifBlank { RagConfiguration().summaryTemplate }) } },
+        placeholder = stringResource(R.string.rag_config_summary_template_placeholder)
+    )
 }
 
 @Composable

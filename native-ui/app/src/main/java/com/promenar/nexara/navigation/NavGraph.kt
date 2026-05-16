@@ -195,10 +195,7 @@ fun NexaraNavGraph(
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
             ChatScreen(
                 sessionId = sessionId,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToSettings = {
-                    navController.navigate(NavDestinations.sessionSettings(sessionId))
-                }
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -337,6 +334,7 @@ fun NexaraNavGraph(
             val providerId = backStackEntry.arguments?.getString("providerId")
             val context = LocalContext.current
             val app = context.applicationContext as NexaraApplication
+            val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
             ProviderFormScreen(
                 providerId = providerId,
                 onNavigateBack = { navController.popBackStack() },
@@ -352,7 +350,35 @@ fun NexaraNavGraph(
                     }
                 },
                 onSave = { protocolType, baseUrl, apiKey, model, name ->
-                    app.updateProvider(protocolType, baseUrl, apiKey, model, name)
+                    if (providerId == null) {
+                        // 新增额外提供商
+                        val id = "extra_${java.util.UUID.randomUUID()}"
+                        val item = com.promenar.nexara.data.model.ProviderListItem(
+                            id = id,
+                            name = name ?: protocolType.displayName,
+                            typeName = protocolType.displayName,
+                            baseUrl = baseUrl,
+                            model = model,
+                            protocolType = protocolType,
+                            apiKey = apiKey
+                        )
+                        viewModel.addProvider(item)
+                    } else if (providerId == "default") {
+                        // 编辑主提供商
+                        app.updateProvider(protocolType, baseUrl, apiKey, model, name)
+                    } else {
+                        // 编辑额外提供商
+                        val item = com.promenar.nexara.data.model.ProviderListItem(
+                            id = providerId,
+                            name = name ?: protocolType.displayName,
+                            typeName = protocolType.displayName,
+                            baseUrl = baseUrl,
+                            model = model,
+                            protocolType = protocolType,
+                            apiKey = apiKey
+                        )
+                        viewModel.updateExtraProvider(providerId, item)
+                    }
                 }
             )
         }
@@ -364,11 +390,7 @@ fun NexaraNavGraph(
             val providerId = backStackEntry.arguments?.getString("providerId") ?: ""
             val context = LocalContext.current
             val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
-            
-            LaunchedEffect(providerId) {
-                viewModel.refreshProviderModels()
-            }
-            
+
             ProviderModelsScreen(
                 providerId = providerId,
                 onNavigateBack = { navController.popBackStack() }

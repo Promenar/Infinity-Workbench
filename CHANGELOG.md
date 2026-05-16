@@ -3,6 +3,58 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Provider 管理系统全线修复 (2026-05-16)
+- **🔴 P0 多提供商存储**: 修复添加第二个提供商覆盖第一个的致命 Bug。`NavGraph` 中 `onSave` 改为三路分发：新增→`addProvider()`、编辑主→`app.updateProvider()`、编辑额外→`updateExtraProvider()`
+- **🔴 P0 模型列表作用域**: 修复点进第二提供商显示第一提供商模型的 Bug。`ProviderModelsScreen` 新增 `scopedModels` 按 `providerId`/`providerName` 过滤
+- **🔴 P0 自动拉取移除**: 删除 `NavGraph` 中 `LaunchedEffect` 自动网络拉取；`SettingsViewModel.addProvider()` 移除多余的 `refreshModels()` 调用
+- **🟡 模型能力数据库扩展 (2026-04)**: `ModelSpec` 新增 `maxOutputTokens`/`knowledgeCutoff` 字段；新增 42 个 2026 年模型条目（GPT-5 全系、Claude Sonnet/Opus 新系、Gemini 3.1/3、Gemma 4、DeepSeek V4、Qwen 3.6/Flash/Long/Omni、GLM-5.1、Grok 4、Doubao 1.5、Kimi K2、Mistral 3、Granite 4、Command A）；新增 20 个定价条目；模型覆盖从 75+ 增至 117+
+- **🟡 RAG 僵尸配置清理**: 从 `RagConfiguration`/`AgentRagConfig`/`RagConfigPersistence` 及 3 个 Screen 中彻底移除从未被管线消费的 `contextWindow`/`summaryThreshold` 字段和 UI 控件
+
+### RAG 设置页面审计与 3 页重构 (2026-05-16)
+- **审计报告**: `docs/audit/RAG_SETTINGS_AUDIT_20260516.md` — 39 个可交互项全量审计，发现 4 个 Bug + 3 组重复 + 5 项放置不当
+- **3 页重构**: 分块与向量化(Page1) / 检索策略(Page3) / 知识图谱与上下文(Page2)
+- **Bug 修复**: Preset 选中检测、摘要模板丢失、查询改写策略初始值、清除孤立死按钮、跨页重复消除
+- **新增 UI**: `enableMemory`/`enableDocs` 检索来源开关；`rerankMaxPerCall` 滑块
+
+### RAG 重新归类 — 保留会话级删除全局设置中的上下文/摘要 (2026-05-16)
+- 确认 `RagConfiguration.contextWindow`/`summaryThreshold` 为从未被管线消费的僵尸配置，从 RAG 设置面板、数据模型、持久化层全面移除
+- 会话面板中的 `InferenceParams.activeContextWindow`/`autoSummaryThreshold` 保留不变（实际被 ChatViewModel 消费）
+
+### UI 导航与术语对齐 (2026-05-16)
+- **高级 RAG 重命名**: 将“高级 RAG”页面 Header 标题更名为“知识图谱”（Knowledge Graph），以消除与上一级“高级检索”页面的名称冗余，并更准确地反映该页面的核心功能（KG 抽取与配置）。
+- **提示词编辑器标准化**: 全站推广 `UnifiedPromptEditor` 原子组件，替换了 `RagAdvancedScreen`、`AgentEditScreen` 及 `AgentHubScreen` 中的异构输入框。新编辑器支持预览/编辑/分屏三模式切换。
+- **清理过时组件**: 彻底移除旧版 `FloatingTextEditor.kt` 组件，统一维护 UI 原子库。
+- **UI 冗余清理**: 移除 `RagAdvancedScreen` 中重复的“知识图谱”部分小标题，确保页面视觉焦点集中在配置项上。
+
+### RAG 向量化全线修复与可观测性增强 (2026-05-16)
+- **进度展示动画**: `IndexingProgressBar` 新增 `animateFloatAsState` 平滑进度过渡 + `AnimatedVisibility` 入场/退场动画，消除突兀跳变
+- **向量化状态一致性**: 修复 `VectorizationQueue.processNext()` 过早预设 `vectorizing` 状态导致的进度回跳（pending→vectorizing(0%)→chunking(15%)→vectorizing(30%)），现由子流程逐步推进
+- **错误持久化**: 失败任务保留阶段进度不再掉落至 0%；错误卡片支持手动关闭（`dismissQueueError()`）；失败后延迟 2s 移除，确保用户看清错误信息
+- **全链路日志注入**: 覆盖 VectorizationQueue/MemoryManager/MicroGraphExtractor/GraphExtractor/ContextBuilder 全部 25+ 个静默 catch 块，统一接入 `NexaraLogger`
+  - VectorizationQueue: 每阶段（chunking/vectorizing/saving/extracting）输出切块数/向量数/耗时日志
+  - MemoryManager: embedQuery/memory search/summary search/doc search/rerank 5 个关键路径日志
+  - MicroGraphExtractor: cache read/write、LLM extraction、JSON parse、background merge 6 个步骤日志
+  - GraphExtractor: node upsert/edge create/LLM extraction/JSON parse 4 个步骤日志
+  - ContextBuilder: KG extraction/task plan/RAG retrieval/Web search 4 个源日志
+- **错误信息增强**: `processDocumentTask`/`processMemoryTask` 追加切块数/文档名上下文；失败 subStatus 标注具体失败阶段
+
+### 文件系统初始化优化 (2026-05-16)
+- **WorkSpace 目录**: `NexaraApplication.onCreate()` 自动创建 `filesDir/WorkSpace` 物理目录，用户在 App 启动即可看到
+- **移除强制根文件夹**: 知识库不再强制创建"知识库"根文件夹；文档导入/文件夹创建直接挂在根层级（`parentUuid=null`），由用户自由组织
+
+### Embed/Rerank 模型高级设置 (2026-05-16)
+- **RagConfiguration 新增字段**: `embedDimension`（向量维度，null=模型默认）、`maxEmbedTokensPerCall`（单次调用 Token 上限）、`rerankMaxPerCall`（单次调用文档上限）
+- **UI 设置面板**: `GlobalRagConfigScreen` 新增 Embed 维度滑块（0-4096，0=自动）、Max Embed Tokens 滑块（256-16384）、Rerank Max Per Call 滑块（8-200）
+- **持久化**: 配置通过 `rag_settings` SharedPreferences 自动保存/加载
+
+### UI 细节打磨与视觉一致性增强 (2026-05-16)
+- **资源列表间距**: 优化了 `FilesPanel` 树状目录的布局结构，不仅增加了顶层列表间距，还增加了父目录与子目录之间、以及子目录项之间的垂直间距（统一为 8dp），彻底解决了边框紧贴的问题。
+- **文件夹图标配色**: 将全站文件夹图标颜色从 `Tertiary`（橙褐色）统一修改为 `Primary`（淡紫色），与界面整体强调色保持一致。
+- **界面纯净化与空间优化**: 
+    - 移除 `FilesPanel` 右键菜单及 `ChatScreen` 顶部菜单中的功能图标，改为纯文本菜单。
+    - 移除知识库（RagHomeScreen）顶部三个标签页（文档、记忆、图谱）的图标，仅保留文字，以释放更多垂直视觉空间。
+- **菜单宽度对齐**: 通过移除图标并统一文本容器，确保同一菜单内的所有选项宽度严格一致。
+
 ### Phase 7 知识库修复补齐 + AgentEntity 崩溃修复 (2026-05-16)
 - **崩溃修复**: 移除 AgentEntity.useInheritedConfig 的 `defaultValue` 注解，修复 Room migration 验证失败
 - **PDF 导入管道**: importDocuments 接入 PdfExtractor.extract()，PDF 真实提取文本
@@ -10,6 +62,14 @@ All notable changes to this project will be documented in this file.
 - **文件夹重命名**: renameFolder 从 no-op 桩重写为 FileEntry 名称+路径更新
 - **标题持久化**: DocEditorViewModel.updateTitle() 通过 FileEntryDao 写回 DB
 - **文件夹级联删除**: deleteCollection 增加显式子文件遍历删除
+
+### RAG 知识库现代化与编辑器升级 (2026-05-16)
+- **多选批处理**: `FilesPanel` 支持多选模式（Shift/长按），同步状态至 `RagHomeScreen` 底部操作栏。
+- **批量索引**: 实现 `reindexDocuments(uuids)` 批量向量化接口，支持一键修复 Stale/Not-Indexed 文档。
+- **现代化编辑器**: `DocEditorScreen` 升级为 **编辑/预览/分屏** 三模式架构。
+- **高保真渲染**: 移除旧版正则高亮逻辑，采用 `MarkdownText` 引擎，支持 GFM、LaTeX 公式、代码块实时渲染。
+- **交互增强**: `FilesPanel` 增加 `onFileClick` 回调，实现从资源管理器到编辑器的高效跳转。
+- **视觉优化**: 选中的文件行应用 `NexaraColors.Primary` 浅色背景高亮，提升多选操作辨识度。
 
 ### 数据库完整性校验与架构补全 (2026-05-16) 🔴 P0
 - **Room 崩溃修复**: 彻底解决了 `java.lang.IllegalStateException: Room cannot verify the data integrity` 崩溃问题。

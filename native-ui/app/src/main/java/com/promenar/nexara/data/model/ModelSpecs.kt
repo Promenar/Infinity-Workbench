@@ -36,7 +36,11 @@ data class ModelSpec(
     val capabilities: ModelCapabilities? = null,
     val forcedReasoning: Boolean = false,
     val icon: String? = null,
-    val note: String? = null
+    val note: String? = null,
+    /** 最大输出 token 数，0 表示未指定 */
+    val maxOutputTokens: Int = 0,
+    /** 知识截止日期（YYYYMM），如 202604 */
+    val knowledgeCutoff: String? = null
 )
 
 val MODEL_SPECS: List<ModelSpec> = listOf(
@@ -1197,6 +1201,446 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         capabilities = ModelCapabilities(image = true),
         icon = "image",
         note = "Kolors"
+    ),
+
+    // ==================== 2026 April — OpenAI GPT-5 系列 ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-5.5"),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, structuredOutput = true, promptCaching = true),
+        icon = "openai",
+        note = "GPT-5.5 (Spud, Apr 2026)",
+        maxOutputTokens = 128000,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-5.4"),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, structuredOutput = true),
+        icon = "openai",
+        note = "GPT-5.4 (Mar 2026)",
+        maxOutputTokens = 128000,
+        knowledgeCutoff = "202603"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-5.3"),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, structuredOutput = true),
+        icon = "openai",
+        note = "GPT-5.3",
+        maxOutputTokens = 128000
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-5.2"),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true),
+        icon = "openai",
+        note = "GPT-5.2",
+        maxOutputTokens = 128000
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-5.1"),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true),
+        icon = "openai",
+        note = "GPT-5.1",
+        maxOutputTokens = 128000
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-5-pro"),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, structuredOutput = true, promptCaching = true),
+        icon = "openai",
+        note = "GPT-5 Pro",
+        maxOutputTokens = 128000
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gpt-5-nano"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true),
+        icon = "openai",
+        note = "GPT-5 Nano",
+        maxOutputTokens = 32768
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gpt-5\.\d-codex""", RegexOption.IGNORE_CASE)),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true, reasoning = true),
+        icon = "openai",
+        note = "GPT-5.x Codex",
+        maxOutputTokens = 128000
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gpt-5[.-]""", RegexOption.IGNORE_CASE)),
+        contextLength = 400000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true),
+        icon = "openai",
+        note = "GPT-5 Series"
+    ),
+
+    // ==================== 2026 April — OpenAI O 推理系列补充 ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("o3-pro"),
+        contextLength = 200000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        forcedReasoning = true,
+        icon = "openai",
+        note = "O3 Pro (2026)",
+        maxOutputTokens = 100000
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("o3-deep-research"),
+        contextLength = 200000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        forcedReasoning = true,
+        icon = "openai",
+        note = "O3 Deep Research"
+    ),
+
+    // ==================== 2026 April — Anthropic Claude 新系列 ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-sonnet-5"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, computerUse = true, promptCaching = true, structuredOutput = true),
+        icon = "claude",
+        note = "Claude Sonnet 5 (Apr 2026, 1M)",
+        maxOutputTokens = 128000,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-sonnet-4-6"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, computerUse = true, promptCaching = true),
+        icon = "claude",
+        note = "Claude Sonnet 4.6 (1M)",
+        maxOutputTokens = 128000
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-opus-4-7"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, computerUse = true, promptCaching = true, structuredOutput = true),
+        icon = "claude",
+        note = "Claude Opus 4.7 (2026)",
+        maxOutputTokens = 32768
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-opus-4-6"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, computerUse = true, promptCaching = true),
+        icon = "claude",
+        note = "Claude Opus 4.6",
+        maxOutputTokens = 32768
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("claude-haiku-4-5"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, promptCaching = true),
+        icon = "claude",
+        note = "Claude Haiku 4.5 (2026)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""claude-sonnet-4[.-]""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, promptCaching = true),
+        icon = "claude",
+        note = "Claude Sonnet 4 Series"
+    ),
+
+    // ==================== 2026 April — Google Gemini 3 系列 ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3.1-pro"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, audioOutput = true, videoUnderstanding = true, structuredOutput = true),
+        icon = "gemini",
+        note = "Gemini 3.1 Pro (Apr 2026)",
+        maxOutputTokens = 65536,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3.1-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, videoUnderstanding = true),
+        icon = "gemini",
+        note = "Gemini 3.1 Flash",
+        maxOutputTokens = 65536
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3-pro"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, videoUnderstanding = true),
+        icon = "gemini",
+        note = "Gemini 3 Pro",
+        maxOutputTokens = 65536
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true),
+        icon = "gemini",
+        note = "Gemini 3 Flash",
+        maxOutputTokens = 65536
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gemini-3[.-]""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "gemini",
+        note = "Gemini 3 Series"
+    ),
+
+    // ==================== Google Gemma 4 (2026 Apr) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemma-4-31b"),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "gemma",
+        note = "Gemma 4 31B (Apr 2026, Apache 2.0)",
+        maxOutputTokens = 8192,
+        knowledgeCutoff = "202603"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemma-4-27b"),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "gemma",
+        note = "Gemma 4 27B",
+        maxOutputTokens = 8192
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemma-4-9b"),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true),
+        icon = "gemma",
+        note = "Gemma 4 9B"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gemma-4""", RegexOption.IGNORE_CASE)),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        icon = "gemma",
+        note = "Gemma 4 Series"
+    ),
+
+    // ==================== DeepSeek V4 (2026 Apr) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("deepseek-v4-pro"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        icon = "deepseek",
+        note = "DeepSeek V4 Pro (Apr 2026, 1.6T MoE, MIT)",
+        maxOutputTokens = 65536,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""deepseek-v4""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "deepseek",
+        note = "DeepSeek V4 Series"
+    ),
+
+    // ==================== Alibaba Qwen 3.6 (2026 Apr) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("qwen-3.6-plus"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        icon = "qwen",
+        note = "Qwen 3.6 Plus (Apr 2026)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""qwen3\.6""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "qwen",
+        note = "Qwen 3.6 Series"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("qwen-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        icon = "qwen",
+        note = "Qwen Flash (1M context)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("qwen-long"),
+        contextLength = 10000000,
+        type = ModelType.CHAT,
+        icon = "qwen",
+        note = "Qwen Long (10M context)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("qwen-omni-turbo"),
+        contextLength = 32768,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, audioInput = true, audioOutput = true, videoUnderstanding = true, image = true),
+        icon = "qwen",
+        note = "Qwen Omni Turbo (Full Multimodal)"
+    ),
+
+    // ==================== xAI Grok 4 系列 (2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("grok-4.1"),
+        contextLength = 2000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true, internet = true),
+        icon = "xai",
+        note = "Grok 4.1 (Apr 2026, 2M context)",
+        maxOutputTokens = 65536
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""grok-4-?fast""", RegexOption.IGNORE_CASE)),
+        contextLength = 2000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        icon = "xai",
+        note = "Grok 4 Fast (2M)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""grok-4[.-]""", RegexOption.IGNORE_CASE)),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        icon = "xai",
+        note = "Grok 4 Series"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("grok-code-fast"),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "xai",
+        note = "Grok Code Fast"
+    ),
+
+    // ==================== GLM-5 系列 (2026 Apr) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("glm-5.1"),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true, structuredOutput = true),
+        icon = "zhipu",
+        note = "GLM-5.1 (Apr 2026, 744B MoE, MIT)",
+        maxOutputTokens = 32768,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""glm-5[.-]""", RegexOption.IGNORE_CASE)),
+        contextLength = 200000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        icon = "zhipu",
+        note = "GLM-5 Series"
+    ),
+
+    // ==================== Doubao 1.5 系列 (2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""doubao-1\.5-pro""", RegexOption.IGNORE_CASE)),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        icon = "bytedance",
+        note = "Doubao 1.5 Pro (2026)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""doubao-1\.5-thinking""", RegexOption.IGNORE_CASE)),
+        contextLength = 256000,
+        type = ModelType.REASONING,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        forcedReasoning = true,
+        icon = "bytedance",
+        note = "Doubao 1.5 Thinking"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""doubao-1\.5""", RegexOption.IGNORE_CASE)),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        icon = "bytedance",
+        note = "Doubao 1.5 Series"
+    ),
+
+    // ==================== Kimi K2 (2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("kimi-k2"),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        icon = "kimi",
+        note = "Kimi K2 (2026)"
+    ),
+
+    // ==================== Mistral 3 系列 (2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("mistral-3-large"),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true, reasoning = true),
+        icon = "mistral",
+        note = "Mistral 3 Large (2026)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("mistral-3-small"),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, structuredOutput = true),
+        icon = "mistral",
+        note = "Mistral 3 Small (2026)"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""mistral-3""", RegexOption.IGNORE_CASE)),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        icon = "mistral",
+        note = "Mistral 3 Series"
+    ),
+
+    // ==================== IBM Granite 4 (2026 Apr) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""granite-4[.-]""", RegexOption.IGNORE_CASE)),
+        contextLength = 128000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "ibm",
+        note = "Granite 4.0 (Apr 2026, Apache 2.0)",
+        knowledgeCutoff = "202604"
+    ),
+
+    // ==================== Cohere Command A (2025-2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""command-a""", RegexOption.IGNORE_CASE)),
+        contextLength = 256000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(rerank = true, internet = true, reasoning = true),
+        icon = "cohere",
+        note = "Command A (2025)"
     )
 )
 
@@ -1263,6 +1707,32 @@ private val MODEL_PRICING: List<Pair<ModelPattern, ModelPricing>> = listOf(
     ModelPattern.StringPattern("moonshot") to ModelPricing(0.50, 2.0),
     ModelPattern.StringPattern("minimax") to ModelPricing(0.40, 1.60),
     ModelPattern.StringPattern("qwen") to ModelPricing(0.30, 0.90),
+
+    // ==================== 2026 年定价更新 ====================
+    ModelPattern.StringPattern("gpt-5.5") to ModelPricing(7.50, 30.0),
+    ModelPattern.StringPattern("gpt-5.4") to ModelPricing(5.0, 20.0),
+    ModelPattern.StringPattern("gpt-5.3") to ModelPricing(3.75, 15.0),
+    ModelPattern.StringPattern("gpt-5.2") to ModelPricing(3.75, 15.0),
+    ModelPattern.StringPattern("gpt-5.1") to ModelPricing(3.75, 15.0),
+    ModelPattern.StringPattern("gpt-5-pro") to ModelPricing(15.0, 60.0),
+    ModelPattern.StringPattern("gpt-5-nano") to ModelPricing(0.075, 0.30),
+    ModelPattern.StringPattern("gpt-5-codex") to ModelPricing(3.75, 15.0),
+    ModelPattern.StringPattern("o3-pro") to ModelPricing(10.0, 40.0),
+    ModelPattern.StringPattern("claude-sonnet-5") to ModelPricing(5.0, 25.0),
+    ModelPattern.StringPattern("claude-sonnet-4-6") to ModelPricing(3.75, 18.75),
+    ModelPattern.StringPattern("claude-opus-4-7") to ModelPricing(18.75, 93.75),
+    ModelPattern.StringPattern("claude-haiku-4-5") to ModelPricing(1.0, 5.0),
+    ModelPattern.StringPattern("gemini-3.1-pro") to ModelPricing(1.875, 7.50),
+    ModelPattern.StringPattern("gemini-3.1-flash") to ModelPricing(0.25, 0.75),
+    ModelPattern.StringPattern("gemini-3-flash") to ModelPricing(0.15, 0.60),
+    ModelPattern.StringPattern("deepseek-v4-pro") to ModelPricing(0.60, 2.40),
+    ModelPattern.StringPattern("grok-4.1") to ModelPricing(2.50, 10.0),
+    ModelPattern.StringPattern("grok-4-fast") to ModelPricing(1.0, 4.0),
+    ModelPattern.StringPattern("glm-5.1") to ModelPricing(0.70, 2.80),
+    ModelPattern.StringPattern("qwen-3.6-plus") to ModelPricing(0.28, 1.12),
+    ModelPattern.StringPattern("qwen-flash") to ModelPricing(0.082, 0.32),
+    ModelPattern.StringPattern("mistral-3-large") to ModelPricing(2.0, 6.0),
+    ModelPattern.StringPattern("mistral-3-small") to ModelPricing(0.20, 0.60),
 )
 
 fun findModelPricing(modelId: String): ModelPricing? {

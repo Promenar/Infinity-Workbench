@@ -147,8 +147,7 @@
     <string name="agent_rag_section_memory">记忆</string>
     <string name="agent_rag_memory_chunk">记忆分块大小</string>
     <string name="agent_rag_section_context">上下文</string>
-    <string name="agent_rag_active_window">活跃上下文窗口</string>
-    <string name="agent_rag_summary_threshold">摘要触发阈值</string>
+
     <string name="agent_rag_section_summary">摘要模板</string>
     <string name="agent_rag_summary_placeholder">输入摘要模板…</string>
     <string name="agent_rag_summary_hint">点击编辑摘要模板…</string>
@@ -662,7 +661,7 @@
     <string name="kg_expand_context">展开上下文</string>
 
     <!-- RagAdvancedScreen -->
-    <string name="rag_advanced_title">高级 RAG</string>
+    <string name="rag_advanced_title">知识图谱</string>
     <string name="rag_advanced_desc">知识图谱抽取、检索策略与成本管理，用于智能上下文增强。</string>
     <string name="rag_advanced_kg_section">知识图谱</string>
     <string name="rag_advanced_kg_enable">启用知识图谱（KG）</string>
@@ -695,6 +694,8 @@
     <string name="rag_advanced_view_graph">查看完整图谱</string>
     <string name="rag_advanced_edit_prompt">编辑抽取提示词</string>
     <string name="rag_advanced_reset_default">重置默认</string>
+    <string name="rag_advanced_extract_prompt_placeholder">请输入 KG 抽取提示词...</string>
+    <string name="rag_config_summary_template_placeholder">请输入摘要模板...</string>
 
     <!-- RagDebugScreen -->
     <string name="rag_debug_title">向量统计</string>
@@ -721,8 +722,7 @@
     <string name="rag_config_retrieval_params">检索参数</string>
     <string name="rag_config_chunk_size">分块大小</string>
     <string name="rag_config_overlap">重叠</string>
-    <string name="rag_config_context_window">上下文窗口</string>
-    <string name="rag_config_summary_threshold">摘要阈值</string>
+
     <string name="rag_config_threshold_section">检索阈值</string>
     <string name="rag_config_memory_threshold">对话记忆阈值</string>
     <string name="rag_config_memory_threshold_hint">越高越精准，越低召回越多</string>
@@ -742,6 +742,20 @@
     <string name="rag_config_advanced_desc">知识图谱与抽取设置</string>
     <string name="rag_config_details_link">向量统计</string>
     <string name="rag_config_details_desc">调试与诊断</string>
+    <string name="rag_config_embed_section">Embedding 模型</string>
+    <string name="rag_config_embed_dimension">输出向量维度</string>
+    <string name="rag_config_embed_dimension_desc">输出向量维度（null=使用模型默认，如 text-embedding-3-small=1536）</string>
+    <string name="rag_config_max_embed_tokens">单次调用最大 Token</string>
+    <string name="rag_config_max_embed_tokens_desc">Embedding API 单次调用最大输入 token 数（影响每批切块数；默认 8192）</string>
+    <string name="rag_config_rerank_section">Rerank 模型</string>
+    <string name="rag_config_rerank_max_per_call">单次调用最大文档数</string>
+    <string name="rag_config_rerank_max_per_call_desc">Rerank API 单次调用处理的文档上限（受模型限制，通常 32-100）</string>
+
+    <string name="retrieval_source_section">检索来源</string>
+    <string name="retrieval_enable_memory">记忆检索</string>
+    <string name="retrieval_enable_memory_desc">在搜索结果中包含对话记忆向量</string>
+    <string name="retrieval_enable_docs">文档检索</string>
+    <string name="retrieval_enable_docs_desc">在搜索结果中包含知识库文档</string>
     <string name="rag_config_clear_vectors">清除向量数据</string>
     <string name="rag_config_clean_orphans">清理孤立数据</string>
     <string name="rag_config_clear_message">这将删除所有已索引的向量数据。知识图谱数据和原始文档不受影响。</string>

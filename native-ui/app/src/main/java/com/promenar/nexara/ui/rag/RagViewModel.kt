@@ -126,26 +126,13 @@ class RagViewModel(
         ensureRagWorkspaceRoot()
     }
 
-    /** 确保 RAG 工作区在数据库中有一个根目录 FileEntry */
+    /** 确保 RAG 工作区物理目录存在；不再强制创建"知识库"根文件夹——
+     *  文档分布在根目录或用户自行创建文件夹整理，交由用户决定。 */
     private fun ensureRagWorkspaceRoot() {
-        viewModelScope.launch {
-            try {
-                val existingRoots = workspaceRepository.observeRoots().first()
-                val rootEntry = existingRoots.firstOrNull { it.physicalRootPath == ragWorkspaceRoot.absolutePath }
-                if (rootEntry != null) {
-                    _workspaceRootUuid.value = rootEntry.uuid
-                } else {
-                    val uuid = java.util.UUID.randomUUID().toString()
-                    workspaceRepository.createDirectory(
-                        uuid = uuid,
-                        name = "知识库",
-                        parentUuid = null,
-                        physicalRootPath = ragWorkspaceRoot.absolutePath,
-                        materializedPath = "/"
-                    )
-                    _workspaceRootUuid.value = uuid
-                }
-            } catch (_: Exception) { }
+        // 仅确保物理目录存在，不创建数据库中的强制根文件夹。
+        // _workspaceRootUuid 保持为 null，表示文件/文件夹挂在根层级。
+        if (!ragWorkspaceRoot.exists()) {
+            ragWorkspaceRoot.mkdirs()
         }
     }
 
@@ -153,6 +140,7 @@ class RagViewModel(
         app.vectorizationQueue.setOnStateChange { queue, currentTask ->
             val isProcessing = app.vectorizationQueue.getState().isProcessing
             _isIndexing.value = isProcessing
+            // 使用 currentTask 的进度；若队列空但有残留错误，保持上次进度
             _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
 
             // 更新正在索引中的文件 UUID 集合
@@ -163,10 +151,10 @@ class RagViewModel(
                 when (task.status) {
                     "pending" -> "等待队列中..."
                     "chunking" -> "正在对文档进行语义切块..."
-                    "vectorizing" -> "正在发送切块至模型处理..."
+                    "vectorizing" -> "正在发送 ${task.totalChunks ?: "?"} 个切块至模型处理..."
                     "saving" -> "正在接受并持久化向量数据..."
                     "extracting" -> "正在构建知识图谱节点..."
-                    "failed" -> "失败: ${task.error?.take(15) ?: "未知错误"}"
+                    "failed" -> "向量化失败: ${task.error?.take(80) ?: "未知错误"}"
                     "completed" -> "任务已完成"
                     "warning" -> "完成 (存在部分提取警告)"
                     else -> task.status
@@ -175,21 +163,32 @@ class RagViewModel(
             _indexingStatus.value = statusText
             _indexingSubStatus.value = currentTask?.subStatus
 
+            // 错误状态处理：记录并保持可见
             if (currentTask?.status == "failed") {
                 _lastQueueError.value = currentTask.error ?: "向量化失败，请检查 Embedding 模型配置"
-                _isIndexing.value = true
+                _isIndexing.value = true  // 保持错误卡片可见
+                _indexingProgress.value = (currentTask.progress / 100.0).toFloat()
             }
+            // 非失败/非警告状态且无历史错误时清空错误
             if (currentTask != null && currentTask.status != "failed" && currentTask.status != "warning") {
                 _lastQueueError.value = null
             }
 
+            // 队列空 & 无当前任务 & 无错误留存 → 停止展示
             if (queue.isEmpty() && currentTask == null) {
                 refreshStats()
                 if (_lastQueueError.value == null) {
                     _isIndexing.value = false
                 }
+                // 有错误留存时保持 isIndexing=true，直到用户手动关闭
             }
         }
+    }
+
+    /** 手动关闭错误提示（用户点击关闭后清除） */
+    fun dismissQueueError() {
+        _lastQueueError.value = null
+        _isIndexing.value = false
     }
 
     private fun startDataObservation() {
@@ -262,8 +261,13 @@ class RagViewModel(
             showRetrievalProgress = prefs.getBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_PROGRESS, true),
             showRetrievalDetails = prefs.getBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_DETAILS, true),
             trackRetrievalMetrics = prefs.getBoolean(RagConfigPersistence.KEY_TRACK_RETRIEVAL_METRICS, false),
-            contextWindow = rag.contextWindow,
-            summaryThreshold = rag.summaryThreshold
+            summaryTemplate = rag.summaryTemplate.ifEmpty {
+                RagConfiguration().summaryTemplate
+            },
+            currentPreset = rag.currentPreset,
+            embedDimension = prefs.getInt("embed_dimension", -1).takeIf { it > 0 },
+            maxEmbedTokensPerCall = prefs.getInt("max_embed_tokens_per_call", 8192),
+            rerankMaxPerCall = prefs.getInt("rerank_max_per_call", 100)
         )
     }
 
@@ -273,8 +277,8 @@ class RagViewModel(
                 docChunkSize = config.docChunkSize,
                 chunkOverlap = config.chunkOverlap,
                 memoryChunkSize = config.memoryChunkSize,
-                contextWindow = config.contextWindow,
-                summaryThreshold = config.summaryThreshold
+                summaryTemplate = config.summaryTemplate,
+                currentPreset = config.currentPreset
             )
         )
         ragConfigPersistence.saveRetrievalConfig(
@@ -310,6 +314,9 @@ class RagViewModel(
             .putBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_PROGRESS, config.showRetrievalProgress)
             .putBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_DETAILS, config.showRetrievalDetails)
             .putBoolean(RagConfigPersistence.KEY_TRACK_RETRIEVAL_METRICS, config.trackRetrievalMetrics)
+            .putInt("embed_dimension", config.embedDimension ?: -1)
+            .putInt("max_embed_tokens_per_call", config.maxEmbedTokensPerCall)
+            .putInt("rerank_max_per_call", config.rerankMaxPerCall)
             .apply()
     }
 
@@ -710,6 +717,18 @@ class RagViewModel(
         }
     }
 
+    fun clearAllVectors(withGraph: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                vectorRepository.deleteAll()
+                if (withGraph) {
+                    kgRepository.clear()
+                }
+                loadStats()
+            } catch (_: Exception) { }
+        }
+    }
+
     fun updateConfig(config: RagConfiguration) {
         _config.update { config }
         saveConfig(config)
@@ -725,28 +744,26 @@ class RagViewModel(
 
     fun applyPreset(preset: String) {
         _config.update { current ->
-            when (preset) {
-                "Balanced" -> current.copy(
+            when (preset.lowercase()) {
+                "balanced" -> current.copy(
+                    currentPreset = "balanced",
                     docChunkSize = 800,
-                    chunkOverlap = 100,
-                    contextWindow = 20,
-                    summaryThreshold = 10
+                    chunkOverlap = 100
                 )
-                "Writing" -> current.copy(
+                "writing" -> current.copy(
+                    currentPreset = "writing",
                     docChunkSize = 1200,
-                    chunkOverlap = 200,
-                    contextWindow = 32,
-                    summaryThreshold = 15
+                    chunkOverlap = 200
                 )
-                "Coding" -> current.copy(
+                "coding" -> current.copy(
+                    currentPreset = "coding",
                     docChunkSize = 500,
-                    chunkOverlap = 50,
-                    contextWindow = 16,
-                    summaryThreshold = 8
+                    chunkOverlap = 50
                 )
                 else -> current
             }
         }
+        saveConfig(_config.value)
     }
 
     private fun FileEntry.toFolder() = Folder(

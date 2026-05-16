@@ -59,9 +59,18 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.SpaceGrotesk
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.rounded.VerticalSplit
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.graphics.SolidColor
+
+enum class DocEditorViewMode { EDIT, PREVIEW, SPLIT }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +94,7 @@ fun DocEditorScreen(
     val isDirty by viewModel.isDirty.collectAsState()
     val warningDismissed by viewModel.warningDismissed.collectAsState()
 
+    var viewMode by remember { mutableStateOf(DocEditorViewMode.EDIT) }
     var titleText by remember(document) { mutableStateOf(document?.title ?: "") }
 
     androidx.compose.runtime.LaunchedEffect(docId) {
@@ -173,68 +183,24 @@ fun DocEditorScreen(
                             .border(0.5.dp, NexaraColors.OutlineVariant, RoundedCornerShape(8.dp))
                     ) {
                         Row {
-                            val previewBg by animateColorAsState(
-                                if (!isEditing) NexaraColors.SurfaceBright else Color.Transparent,
-                                label = "previewBg"
+                            DocEditorTabItem(
+                                icon = Icons.Rounded.Edit,
+                                label = stringResource(R.string.doc_editor_edit),
+                                selected = viewMode == DocEditorViewMode.EDIT,
+                                onClick = { viewMode = DocEditorViewMode.EDIT; if (!isEditing) viewModel.toggleEditMode() }
                             )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(previewBg)
-                                    .then(
-                                        if (!isEditing) Modifier else Modifier
-                                    )
-                                    .clickableNoRipple { if (isEditing) viewModel.toggleEditMode() }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.Visibility,
-                                        contentDescription = null,
-                                        tint = if (!isEditing) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        stringResource(R.string.doc_editor_preview),
-                                        style = NexaraTypography.labelMedium,
-                                        color = if (!isEditing) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant
-                                    )
-                                }
-                            }
-                            val editBg by animateColorAsState(
-                                if (isEditing) NexaraColors.SurfaceBright else Color.Transparent,
-                                label = "editBg"
+                            DocEditorTabItem(
+                                icon = Icons.Rounded.Visibility,
+                                label = stringResource(R.string.doc_editor_preview),
+                                selected = viewMode == DocEditorViewMode.PREVIEW,
+                                onClick = { viewMode = DocEditorViewMode.PREVIEW; if (isEditing) viewModel.toggleEditMode() }
                             )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(editBg)
-                                    .then(
-                                        if (isEditing) Modifier else Modifier
-                                    )
-                                    .clickableNoRipple { if (!isEditing) viewModel.toggleEditMode() }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.Edit,
-                                        contentDescription = null,
-                                        tint = if (isEditing) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        stringResource(R.string.doc_editor_edit),
-                                        style = NexaraTypography.labelMedium,
-                                        color = if (isEditing) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant
-                                    )
-                                }
-                            }
+                            DocEditorTabItem(
+                                icon = Icons.Rounded.VerticalSplit,
+                                label = "Split",
+                                selected = viewMode == DocEditorViewMode.SPLIT,
+                                onClick = { viewMode = DocEditorViewMode.SPLIT; if (!isEditing) viewModel.toggleEditMode() }
+                            )
                         }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -307,98 +273,35 @@ fun DocEditorScreen(
                     modifier = Modifier.fillMaxSize(),
                     shape = NexaraShapes.large as RoundedCornerShape
                 ) {
-                    if (isEditing) {
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            Column(
-                                modifier = Modifier
-                                    .width(40.dp)
-                                    .fillMaxSize()
-                                    .background(Color(0xFF151517))
-                                    .padding(end = 8.dp, top = 12.dp),
-                                horizontalAlignment = Alignment.End
-                            ) {
-                                for (i in 1..lineCount.coerceAtLeast(1)) {
-                                    Text(
-                                        "$i",
-                                        style = NexaraTypography.bodySmall.copy(
-                                            fontSize = 12.sp,
-                                            color = NexaraColors.OutlineVariant
-                                        ),
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
-                            BasicTextField(
-                                value = content,
-                                onValueChange = { viewModel.onContentChanged(it) },
-                                textStyle = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 14.sp,
-                                    lineHeight = 22.sp,
-                                    color = NexaraColors.OnSurface
-                                ),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState())
-                                    .horizontalScroll(rememberScrollState())
-                                    .padding(12.dp),
-                                decorationBox = { innerTextField ->
-                                    if (content.isEmpty()) {
-                                        Text(
-                                            stringResource(R.string.doc_editor_typing_placeholder),
-                                            style = TextStyle(
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 14.sp,
-                                                color = NexaraColors.OnSurfaceVariant
-                                            )
-                                        )
-                                    }
-                                    innerTextField()
-                                }
+                    when (viewMode) {
+                        DocEditorViewMode.EDIT -> {
+                            EditorPane(
+                                content = content,
+                                onContentChange = { viewModel.onContentChanged(it) },
+                                lineCount = lineCount
                             )
                         }
-                    } else {
-                        val scrollState = rememberScrollState()
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(scrollState)
-                        ) {
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                Column(
-                                    modifier = Modifier
-                                        .width(40.dp)
-                                        .fillMaxSize()
-                                        .background(Color(0xFF151517))
-                                        .padding(end = 8.dp, top = 12.dp),
-                                    horizontalAlignment = Alignment.End
-                                ) {
-                                    for (i in 1..lineCount.coerceAtLeast(1)) {
-                                        Text(
-                                            "$i",
-                                            style = NexaraTypography.bodySmall.copy(
-                                                fontSize = 12.sp,
-                                                color = NexaraColors.OutlineVariant
-                                            ),
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                    }
-                                }
+                        DocEditorViewMode.PREVIEW -> {
+                            PreviewPane(content = content)
+                        }
+                        DocEditorViewMode.SPLIT -> {
+                            Row(modifier = Modifier.fillMaxSize()) {
+                                EditorPane(
+                                    content = content,
+                                    onContentChange = { viewModel.onContentChanged(it) },
+                                    lineCount = lineCount,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 Box(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .padding(12.dp)
-                                ) {
-                                    Text(
-                                        buildHighlightedText(content),
-                                        style = TextStyle(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 14.sp,
-                                            lineHeight = 22.sp
-                                        )
-                                    )
-                                }
+                                        .width(1.dp)
+                                        .fillMaxHeight()
+                                        .background(NexaraColors.OutlineVariant)
+                                )
+                                PreviewPane(
+                                    content = content,
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
                         }
                     }
@@ -454,6 +357,123 @@ fun DocEditorScreen(
     }
 }
 
+@Composable
+private fun DocEditorTabItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val bg by animateColorAsState(
+        if (selected) NexaraColors.SurfaceBright else Color.Transparent,
+        label = "tabBg"
+    )
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                label,
+                style = NexaraTypography.labelMedium,
+                color = if (selected) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditorPane(
+    content: String,
+    onContentChange: (String) -> Unit,
+    lineCount: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .width(40.dp)
+                .fillMaxHeight()
+                .background(Color(0xFF151517))
+                .padding(end = 8.dp, top = 12.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.End
+        ) {
+            for (i in 1..lineCount.coerceAtLeast(1)) {
+                Text(
+                    "$i",
+                    style = NexaraTypography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        color = NexaraColors.OutlineVariant
+                    ),
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+        BasicTextField(
+            value = content,
+            onValueChange = onContentChange,
+            textStyle = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp,
+                lineHeight = 22.sp,
+                color = NexaraColors.OnSurface
+            ),
+            cursorBrush = SolidColor(NexaraColors.Primary),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .horizontalScroll(rememberScrollState())
+                .padding(12.dp),
+            decorationBox = { innerTextField ->
+                if (content.isEmpty()) {
+                    Text(
+                        stringResource(R.string.doc_editor_typing_placeholder),
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 14.sp,
+                            color = NexaraColors.OnSurfaceVariant
+                        )
+                    )
+                }
+                innerTextField()
+            }
+        )
+    }
+}
+
+@Composable
+private fun PreviewPane(
+    content: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp)
+    ) {
+        MarkdownText(
+            markdown = content,
+            fontSize = 15,
+            overrideColor = NexaraColors.OnSurface
+        )
+    }
+}
+
 private fun formatFileSize(bytes: Long): String {
     if (bytes <= 0) return "0 B"
     val units = arrayOf("B", "KB", "MB", "GB")
@@ -461,55 +481,6 @@ private fun formatFileSize(bytes: Long): String {
         .coerceIn(0, units.size - 1)
     val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
     return "${"%.1f".format(value)} ${units[digitGroups]}"
-}
-
-@Composable
-private fun buildHighlightedText(content: String) = buildAnnotatedString {
-    val headingColor = NexaraColors.Primary
-    val subheadingColor = Color(0xFF4ADE80)
-    val boldColor = Color(0xFFFBBF24)
-    val codeKeywordColor = Color(0xFF60A5FA)
-    val stringColor = Color(0xFFF472B6)
-    val commentColor = Color(0xFF6B7280)
-
-    for (line in content.lines()) {
-        when {
-            line.startsWith("# ") -> withStyle(SpanStyle(color = headingColor, fontWeight = FontWeight.Bold)) {
-                append(line)
-            }
-            line.startsWith("## ") -> withStyle(SpanStyle(color = subheadingColor, fontWeight = FontWeight.SemiBold)) {
-                append(line)
-            }
-            line.startsWith("### ") -> withStyle(SpanStyle(color = subheadingColor)) {
-                append(line)
-            }
-            line.startsWith("```") -> withStyle(SpanStyle(color = stringColor)) {
-                append(line)
-            }
-            line.startsWith("- **") -> {
-                val parts = line.split("**:")
-                if (parts.size >= 2) {
-                    append("- ")
-                    withStyle(SpanStyle(color = boldColor, fontWeight = FontWeight.Bold)) {
-                        append(parts[0].removePrefix("- **"))
-                    }
-                    append("**:")
-                    withStyle(SpanStyle(color = NexaraColors.OnSurface)) {
-                        append(parts[1])
-                    }
-                } else {
-                    append(line)
-                }
-            }
-            line.trimStart().startsWith("|") -> withStyle(SpanStyle(color = NexaraColors.OnSurfaceVariant)) {
-                append(line)
-            }
-            else -> withStyle(SpanStyle(color = NexaraColors.OnSurface)) {
-                append(line)
-            }
-        }
-        append("\n")
-    }
 }
 
 @Composable

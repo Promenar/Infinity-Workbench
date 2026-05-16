@@ -70,6 +70,7 @@ data class RagConfiguration(
     val enableRerank: Boolean = false,
     val enableIncrementalHash: Boolean = true,
     val enableLocalPreprocess: Boolean = false,
+    val currentPreset: String? = null,
     val queryRewriteStrategy: String = "multi-query",
     val queryRewriteModel: String? = null,
     val queryRewriteCount: Int = 3,
@@ -98,8 +99,18 @@ data class RagConfiguration(
     val jitTimeoutMs: Long = 5000,
     val jitMaxCharsPerChunk: Int = 2000,
     val jitCacheTTL: Long = 3600,
-    val contextWindow: Int = 20,
-    val summaryThreshold: Int = 10
+    val summaryTemplate: String = "System: You are given the following retrieved chunks:\n\n{retrieved_chunks}\n\nBased on these, answer the user query.\n\nUser Query: {query}",
+    // === Embed 模型设置 ===
+    /** Embedding 向量维度，null=使用模型默认（如 text-embedding-3-small=1536）。
+     *  某些模型支持降维输出，可显式指定。 */
+    val embedDimension: Int? = null,
+    /** Embedding API 单次调用最大 token 数（影响每批发送的切块数）。
+     *  不同模型上限不同（如 512/2048/8191）；默认 8192 适用于大多数现代模型。 */
+    val maxEmbedTokensPerCall: Int = 8192,
+    // === Rerank 模型设置 ===
+    /** Rerank 模型单次调用最大文档数，超过则自动分批。
+     *  大多数 rerank 模型限制在 32-100 篇之间；默认 100 适应主流服务。 */
+    val rerankMaxPerCall: Int = 100
 )
 
 @Serializable

@@ -222,6 +222,7 @@ fun SessionSettingsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
+                        @Suppress("DEPRECATION")
                         Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_cd_back), tint = NexaraColors.OnSurface)
                     }
                 },

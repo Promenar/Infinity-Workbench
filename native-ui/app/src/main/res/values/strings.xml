@@ -141,8 +141,7 @@
     <string name="agent_rag_section_memory">Memory</string>
     <string name="agent_rag_memory_chunk">Memory Chunk Size</string>
     <string name="agent_rag_section_context">Context</string>
-    <string name="agent_rag_active_window">Active Context Window</string>
-    <string name="agent_rag_summary_threshold">Summary Trigger Threshold</string>
+
     <string name="agent_rag_section_summary">Summary Template</string>
     <string name="agent_rag_summary_placeholder">Enter summary template…</string>
     <string name="agent_rag_summary_hint">Tap to edit summary template…</string>
@@ -665,9 +664,10 @@
     <string name="kg_expand_context">Expand Context</string>
 
     <!-- RagAdvancedScreen -->
-    <string name="rag_advanced_title">Advanced RAG</string>
+    <string name="rag_advanced_title">Knowledge Graph</string>
     <string name="rag_advanced_desc">Knowledge graph extraction, retrieval strategies, and cost management for intelligent context augmentation.</string>
     <string name="rag_advanced_kg_section">Knowledge Graph</string>
+
     <string name="rag_advanced_kg_enable">Enable Knowledge Graph (KG)</string>
     <string name="rag_advanced_kg_desc">Extract entities and relationships from documents</string>
     <string name="rag_advanced_extract_config">Extraction Configuration</string>
@@ -698,6 +698,8 @@
     <string name="rag_advanced_view_graph">View Full Graph</string>
     <string name="rag_advanced_edit_prompt">Edit Extraction Prompt</string>
     <string name="rag_advanced_reset_default">Reset Default</string>
+    <string name="rag_advanced_extract_prompt_placeholder">Enter KG extraction prompt...</string>
+    <string name="rag_config_summary_template_placeholder">Enter summary template...</string>
 
     <!-- RagDebugScreen -->
     <string name="rag_debug_title">Vector Stats</string>
@@ -724,8 +726,7 @@
     <string name="rag_config_retrieval_params">Retrieval Parameters</string>
     <string name="rag_config_chunk_size">Chunk Size</string>
     <string name="rag_config_overlap">Overlap</string>
-    <string name="rag_config_context_window">Context Window</string>
-    <string name="rag_config_summary_threshold">Summary Threshold</string>
+
     <string name="rag_config_threshold_section">Retrieval Thresholds</string>
     <string name="rag_config_memory_threshold">Memory Threshold</string>
     <string name="rag_config_memory_threshold_hint">Higher = more precise, lower = more recall</string>
@@ -745,6 +746,14 @@
     <string name="rag_config_advanced_desc">Knowledge graph and extraction settings</string>
     <string name="rag_config_details_link">Vector Stats</string>
     <string name="rag_config_details_desc">Debug and diagnostics</string>
+    <string name="rag_config_embed_section">Embedding Model</string>
+    <string name="rag_config_embed_dimension">Vector Dimension</string>
+    <string name="rag_config_embed_dimension_desc">Output vector dimension (null = model default, e.g. 1536 for text-embedding-3-small)</string>
+    <string name="rag_config_max_embed_tokens">Max Tokens Per Embed Call</string>
+    <string name="rag_config_max_embed_tokens_desc">Max input tokens per API call (affects batch size; 8192 default)</string>
+    <string name="rag_config_rerank_section">Rerank Model</string>
+    <string name="rag_config_rerank_max_per_call">Max Docs Per Rerank Call</string>
+    <string name="rag_config_rerank_max_per_call_desc">Batch size for rerank API (limited by model, typically 32-100)</string>
     <string name="rag_config_clear_vectors">Clear Vector Data</string>
     <string name="rag_config_clean_orphans">Clean Orphans</string>
     <string name="rag_config_clear_message">This will delete all indexed vector data. Knowledge graph data and original documents will not be affected.</string>
@@ -757,6 +766,11 @@
     <string name="retrieval_title">Adv. Retrieval</string>
     <string name="retrieval_title_full">Advanced Retrieval</string>
     <string name="retrieval_desc">Fine-tune the RAG pipeline parameters to optimize context extraction, relevance filtering, and query execution.</string>
+    <string name="retrieval_source_section">Retrieval Sources</string>
+    <string name="retrieval_enable_memory">Memory Retrieval</string>
+    <string name="retrieval_enable_memory_desc">Include conversation memory vectors in search results</string>
+    <string name="retrieval_enable_docs">Document Retrieval</string>
+    <string name="retrieval_enable_docs_desc">Include knowledge base documents in search results</string>
     <string name="retrieval_memory_section">Memory Retrieval</string>
     <string name="retrieval_memory_limit">Retrieval Limit</string>
     <string name="retrieval_similarity_threshold">Similarity Threshold</string>

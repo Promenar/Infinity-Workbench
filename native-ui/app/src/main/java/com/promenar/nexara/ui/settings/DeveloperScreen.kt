@@ -34,6 +34,7 @@ fun DeveloperScreen(
                 title = { Text("开发者面板", style = NexaraTypography.headlineLarge) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
+                        @Suppress("DEPRECATION")
                         Icon(Icons.Rounded.ArrowBack, contentDescription = null)
                     }
                 },

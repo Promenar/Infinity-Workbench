@@ -5,6 +5,7 @@ import com.promenar.nexara.data.local.db.entity.KgJitCacheEntity
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -60,9 +61,11 @@ class MicroGraphExtractor(
             return try {
                 Json.decodeFromString<MicroGraphResult>(cached.resultJson)
             } catch (e: Exception) {
+                NexaraLogger.log("MicroGraphExtractor: Cache JSON parse error for key=$key")
                 null
             }
         } catch (e: Exception) {
+            NexaraLogger.log("MicroGraphExtractor: Cache read error: ${e.message?.take(100)}")
             return null
         }
     }
@@ -83,7 +86,7 @@ class MicroGraphExtractor(
                 )
             )
         } catch (e: Exception) {
-            // Cache save failure is non-critical
+            NexaraLogger.log("MicroGraphExtractor: Cache save error: ${e.message?.take(100)}")
         }
     }
 
@@ -113,6 +116,7 @@ $text"""
 
             parseJsonFromContent(content)
         } catch (e: Exception) {
+            NexaraLogger.logError("MicroGraphExtractor.performExtraction", e)
             null
         }
     }
@@ -166,6 +170,7 @@ $text"""
             if (nodes.isEmpty() && edges.isEmpty()) return null
             ExtractionResult(nodes = nodes, edges = edges)
         } catch (e: Exception) {
+            NexaraLogger.log("MicroGraphExtractor: JSON parse error: ${e.message?.take(120)}")
             null
         }
     }
@@ -201,7 +206,7 @@ $text"""
                 }
             }
         } catch (e: Exception) {
-            // Background merge failure is non-critical
+            NexaraLogger.logError("MicroGraphExtractor.backgroundMerge", e)
         }
     }
 

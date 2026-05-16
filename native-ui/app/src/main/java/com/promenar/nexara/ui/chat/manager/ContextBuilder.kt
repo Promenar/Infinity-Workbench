@@ -6,6 +6,7 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.domain.repository.ITaskRepository
+import com.promenar.nexara.utils.NexaraLogger
 
 data class ContextBuilderResult(
     val searchContext: String,
@@ -64,13 +65,19 @@ class ContextBuilder(
         val kgContext = if (kgProvider != null && ragResult.second.isNotEmpty() && kgEnabled) {
             try {
                 kgProvider.extractContext(params.content, params.sessionId, ragResult.second) ?: ""
-            } catch (_: Exception) { "" }
+            } catch (e: Exception) {
+                NexaraLogger.logError("ContextBuilder.KGExtract", e)
+                ""
+            }
         } else ""
 
         // 预取任务计划（suspend 调用）
         val activePlan: TaskState? = try {
             taskRepository?.getPlan(params.sessionId)
-        } catch (_: Exception) { null }
+        } catch (e: Exception) {
+            NexaraLogger.log("ContextBuilder: Task plan fetch error: ${e.message?.take(80)}")
+            null
+        }
 
         val systemPrompt = buildSystemPrompt(params, ragResult.second, searchContext, kgContext, activePlan)
 
@@ -89,7 +96,8 @@ class ContextBuilder(
         return try {
             val (context, _) = webSearchProvider.search(query)
             context
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            NexaraLogger.logError("ContextBuilder.WebSearch", e)
             ""
         }
     }
@@ -117,7 +125,8 @@ class ContextBuilder(
                 params.content, params.sessionId, finalRagOptions, params.onRagProgress
             )
             Triple(context, references, usage)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            NexaraLogger.logError("ContextBuilder.RAGRetrieval", e)
             Triple("", emptyList(), null)
         }
     }

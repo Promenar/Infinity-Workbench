@@ -32,7 +32,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,7 +58,6 @@ fun AdvancedRetrievalScreen(
     onNavigateToRagAdvanced: () -> Unit = {}
 ) {
     val config by viewModel.config.collectAsState()
-    var queryRewriteStrategy by remember { mutableStateOf("hyde") }
 
     NexaraPageLayout(
         title = stringResource(R.string.retrieval_title),
@@ -73,6 +71,30 @@ fun AdvancedRetrievalScreen(
                 style = NexaraTypography.bodyMedium,
                 color = NexaraColors.OnSurfaceVariant
             )
+
+            NexaraGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.large as RoundedCornerShape
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SettingsSectionHeader(stringResource(R.string.retrieval_source_section))
+                    SettingsToggle(
+                        title = stringResource(R.string.retrieval_enable_memory),
+                        description = stringResource(R.string.retrieval_enable_memory_desc),
+                        checked = config.enableMemory,
+                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableMemory = enabled) } }
+                    )
+                    SettingsToggle(
+                        title = stringResource(R.string.retrieval_enable_docs),
+                        description = stringResource(R.string.retrieval_enable_docs_desc),
+                        checked = config.enableDocs,
+                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableDocs = enabled) } }
+                    )
+                }
+            }
 
             NexaraGlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -273,6 +295,15 @@ fun AdvancedRetrievalScreen(
                             rerankBadge = false,
                             onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankFinalK = v.toInt()) } }
                         )
+                        AdaptiveSlider(
+                            label = stringResource(R.string.rag_config_rerank_max_per_call),
+                            value = config.rerankMaxPerCall.toFloat(),
+                            valueRange = 8f..200f,
+                            displayValue = "${config.rerankMaxPerCall}",
+                            enabled = true,
+                            rerankBadge = false,
+                            onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankMaxPerCall = v.toInt()) } }
+                        )
                     }
                 }
             }
@@ -298,7 +329,7 @@ fun AdvancedRetrievalScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         listOf("hyde" to "HyDE", "multi-query" to "Multi-Query", "expansion" to "Expansion").forEach { (value, label) ->
-                            val isSelected = queryRewriteStrategy == value
+                            val isSelected = config.queryRewriteStrategy == value
                             val bg by animateColorAsState(
                                 if (isSelected) NexaraColors.Primary.copy(alpha = 0.12f) else NexaraColors.SurfaceContainer,
                                 label = value
@@ -315,7 +346,6 @@ fun AdvancedRetrievalScreen(
                                         .background(bg)
                                         .border(1.dp, border, RoundedCornerShape(10.dp))
                                         .clickable {
-                                            queryRewriteStrategy = value
                                             viewModel.updateConfig { it.copy(queryRewriteStrategy = value) }
                                         }
                                         .padding(vertical = 10.dp),

@@ -2,7 +2,8 @@ package com.promenar.nexara.ui.chat
 
 import android.app.Activity
 import android.view.WindowManager
-import kotlinx.coroutines.delay
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -12,84 +13,59 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.AddPhotoAlternate
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -107,9 +83,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -118,45 +91,40 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
-import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.findModelSpec
-import com.promenar.nexara.ui.common.MarkdownText
+import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.ui.common.EditorMode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.common.NexaraSnackbarData
+import com.promenar.nexara.ui.common.NexaraSnackbarHost
+import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraCustomShapes
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.ui.common.EditorMode
-import com.promenar.nexara.ui.common.UnifiedPromptEditor
-import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
-import com.promenar.nexara.NexaraApplication
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
-import com.promenar.nexara.ui.chat.manager.skills.GeneratedImageData
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.launch
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
     sessionId: String,
-    onNavigateBack: () -> Unit = {},
-    onNavigateToSettings: () -> Unit = {}
+    onNavigateBack: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as NexaraApplication
@@ -167,11 +135,10 @@ fun ChatScreen(
     val taskRepo = application.taskRepository
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var snackbarData by remember { mutableStateOf<com.promenar.nexara.ui.common.NexaraSnackbarData?>(null) }
+    var snackbarData by remember { mutableStateOf<NexaraSnackbarData?>(null) }
 
     val listState = rememberLazyListState()
     var showWorkspaceSheet by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
     var showModelSettingsSheet by remember { mutableStateOf(false) }
     var showSessionPromptEditor by remember { mutableStateOf(false) }
     var showTruncateDialog by remember { mutableStateOf(false) }
@@ -198,7 +165,7 @@ fun ChatScreen(
 
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
 
-    val density = androidx.compose.ui.platform.LocalDensity.current
+    val density = LocalDensity.current
     val isUserScrolledAway by remember(pipelineGroups.size) {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -253,7 +220,7 @@ fun ChatScreen(
     }
 
     // 新用户消息 → 恢复追踪 + 滚到底部
-    val latestUserMsgId = uiState.messages.filter { it.role == MessageRole.USER }.lastOrNull()?.id ?: ""
+    val latestUserMsgId = uiState.messages.lastOrNull { it.role == MessageRole.USER }?.id ?: ""
     LaunchedEffect(latestUserMsgId) {
         if (latestUserMsgId.isNotEmpty()) {
             autoFollowEnabled = true
@@ -278,7 +245,7 @@ fun ChatScreen(
                         listState.scrollToItem(totalItems - 1)
                     }
                 }
-                kotlinx.coroutines.delay(50)
+                delay(50)
             }
         }
     }
@@ -295,35 +262,11 @@ fun ChatScreen(
         }
     }
 
-    fun isDestructive(message: Message): Boolean {
-        val index = uiState.messages.indexOfFirst { it.id == message.id }
-        if (index == -1) return false
-        return if (message.role == MessageRole.USER) {
-            // User message: Destructive if there are messages beyond its immediate AI response
-            index < uiState.messages.size - 2
-        } else {
-            // AI message: Destructive if there are any messages after it
-            index < uiState.messages.size - 1
-        }
-    }
 
-    fun showUndoSnackbar(msg: String) {
-        scope.launch {
-            snackbarData = com.promenar.nexara.ui.common.NexaraSnackbarData(
-                message = msg,
-                type = com.promenar.nexara.ui.common.SnackbarType.INFO,
-                actionLabel = context.getString(R.string.chat_btn_undo)
-            )
-            snackbarHostState.currentSnackbarData?.dismiss()
-            snackbarHostState.showSnackbar(msg)
-        }
-    }
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         topBar = {
-            val fontSize = uiState.session?.options?.fontSize ?: 13
-            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
             ChatTopBar(
                 title = sessionTitle,
                 subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName.ifBlank { sessionTitle },
@@ -337,7 +280,7 @@ fun ChatScreen(
             )
         },
         snackbarHost = {
-            com.promenar.nexara.ui.common.NexaraSnackbarHost(
+            NexaraSnackbarHost(
                 hostState = snackbarHostState,
                 snackbarData = snackbarData,
                 onAction = {
@@ -361,7 +304,6 @@ fun ChatScreen(
 
                         if (group.isUser) {
                             val msg = group.messages.first()
-                            var showActionSheet by remember { mutableStateOf(false) }
                             
                             UserMessageBubble(
                                 message = msg,
@@ -795,6 +737,7 @@ fun ChatTopBar(
         },
         navigationIcon = {
             IconButton(onClick = onBack) {
+                @Suppress("DEPRECATION")
                 Icon(Icons.Rounded.ArrowBack, null, tint = NexaraColors.OnSurface)
             }
         },
@@ -813,7 +756,6 @@ fun ChatTopBar(
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_menu_session_settings), style = NexaraTypography.labelMedium) },
-                        leadingIcon = { Icon(Icons.Rounded.Tune, null, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             showMenu = false
                             onSettings()
@@ -821,10 +763,16 @@ fun ChatTopBar(
                     )
                     DropdownMenuItem(
                         text = { Text("Session Prompt", style = NexaraTypography.labelMedium) },
-                        leadingIcon = { Icon(Icons.Rounded.Terminal, null, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             showMenu = false
                             onSessionPrompt()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_menu_clear_history), style = NexaraTypography.labelMedium) },
+                        onClick = {
+                            showMenu = false
+                            onClearHistory()
                         }
                     )
                     HorizontalDivider(
@@ -833,7 +781,6 @@ fun ChatTopBar(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_menu_rename), style = NexaraTypography.labelMedium) },
-                        leadingIcon = { Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             showMenu = false
                             onRename()
@@ -841,7 +788,6 @@ fun ChatTopBar(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_menu_delete_session), style = NexaraTypography.labelMedium, color = NexaraColors.Error) },
-                        leadingIcon = { Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp), tint = NexaraColors.Error) },
                         onClick = {
                             showMenu = false
                             onDeleteSession()
@@ -897,7 +843,7 @@ fun RenameDialog(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    TextButton(onClick = onDismiss) {
                         Text(stringResource(R.string.common_btn_cancel), color = NexaraColors.OnSurfaceVariant)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -913,308 +859,7 @@ fun RenameDialog(
     }
 }
 
-@Composable
-fun ChatBubble(
-    message: Message,
-    isGenerating: Boolean = false,
-    streamingContent: String = "",
-    fontSize: Int = 13,
-    onApprove: () -> Unit = {},
-    onDecline: () -> Unit = {},
-    onLongClick: () -> Unit = {},
-    onContentChange: ((String) -> Unit)? = null
-) {
-    val isUser = message.role == MessageRole.USER
-    val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
-    val timestamp = remember(message.createdAt) { timeFormat.format(java.util.Date(message.createdAt)) }
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                detectTapGestures(onLongPress = { onLongClick() })
-            },
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
-        if (isUser) {
-            Column(horizontalAlignment = Alignment.End) {
-                Surface(
-                    shape = NexaraCustomShapes.ChatBubbleUser,
-                    color = NexaraColors.SurfaceHigh,
-                    border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
-                    modifier = Modifier.widthIn(max = 280.dp)
-                ) {
-                    Column {
-                        if (!message.userImages.isNullOrEmpty()) {
-                            Column(
-                                modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                message.userImages!!.forEach { dataUrl ->
-                                    coil3.compose.AsyncImage(
-                                        model = dataUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(max = 200.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.FillWidth
-                                    )
-                                }
-                            }
-                        }
-                        Text(
-                            text = message.content,
-                            style = NexaraTypography.bodyMedium.copy(
-                                fontSize = fontSize.sp,
-                                lineHeight = (fontSize * 1.5).sp
-                            ),
-                            color = NexaraColors.OnBackground,
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
-                }
-                Text(
-                    text = timestamp,
-                    style = NexaraTypography.labelSmall.copy(
-                        color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                        fontSize = 11.sp
-                    ),
-                    modifier = Modifier.padding(top = 4.dp, end = 4.dp)
-                )
-            }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min)
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // ── Global Timeline Axis ──
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .fillMaxHeight()
-                        .padding(top = 10.dp)
-                        .background(NexaraColors.OutlineVariant.copy(alpha = 0.4f), CircleShape)
-                )
 
-                Column(modifier = Modifier.weight(1f)) {
-                // ── 思维链 / 推理展示 ──
-                if (!message.reasoning.isNullOrBlank()) {
-                    ThinkingBlock(
-                        reasoning = message.reasoning!!,
-                        isGenerating = isGenerating,
-                        fontSize = fontSize
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // ── 工具执行流水线时间线 ──
-                if (!message.executionSteps.isNullOrEmpty()) {
-                    ToolExecutionTimeline(
-                        steps = message.executionSteps!!,
-                        isExecuting = isGenerating
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // ── 审批卡片 ──
-                if (!message.pendingApprovalToolIds.isNullOrEmpty()) {
-                    val pendingId = message.pendingApprovalToolIds!!.firstOrNull()
-                    val pendingToolName = if (pendingId != null) {
-                        message.toolCalls?.find { it.id == pendingId }?.name ?: pendingId
-                    } else "unknown"
-                    ApprovalCard(
-                        toolName = pendingToolName,
-                        description = stringResource(R.string.chat_approval_desc_tool),
-                        onApprove = onApprove,
-                        onDecline = onDecline
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // ── RAG 检索指示器 ──
-                if (message.role == MessageRole.ASSISTANT && message.content.isEmpty()) {
-                    RagOmniIndicator(
-                        progress = message.ragProgress,
-                        metadata = message.ragMetadata,
-                        references = message.ragReferences,
-                        kgPaths = message.kgPaths,
-                        isLoading = isGenerating && message.content.isEmpty()
-                    )
-                } else if (message.role == MessageRole.ASSISTANT && (!message.ragReferences.isNullOrEmpty() || !message.kgPaths.isNullOrEmpty())) {
-                    RagOmniIndicator(
-                        progress = message.ragProgress,
-                        metadata = message.ragMetadata,
-                        references = message.ragReferences,
-                        kgPaths = message.kgPaths,
-                        isLoading = false
-                    )
-                }
-
-                // ── 流式工具调用选择指示器 ──
-                if (isGenerating && !message.toolCalls.isNullOrEmpty()) {
-                    val toolNames = message.toolCalls!!.joinToString(", ") { it.name }
-                    SummaryIndicator(
-                        text = "${stringResource(R.string.chat_tool_selecting)} $toolNames"
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // ── 消息内容：区分 TOOL 结果与普通消息 ──
-                if (message.role == MessageRole.TOOL) {
-                    var toolExpanded by remember { mutableStateOf(true) }
-                    NexaraGlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { toolExpanded = !toolExpanded },
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Terminal,
-                                    null,
-                                    tint = NexaraColors.Tertiary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "${stringResource(R.string.chat_tool_result)}: ${message.name ?: "unknown"}",
-                                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = NexaraColors.Tertiary
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                Icon(
-                                    if (toolExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                    null,
-                                    tint = NexaraColors.OnSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            AnimatedVisibility(
-                                visible = toolExpanded,
-                                enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut()
-                            ) {
-                                MarkdownText(
-                                    markdown = message.content,
-                                    isStreaming = false,
-                                    fontSize = fontSize,
-                                    modifier = Modifier.padding(top = 8.dp)
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    val displayContent = if (isGenerating && streamingContent.isNotEmpty()) streamingContent else message.content
-                    MarkdownText(
-                        markdown = displayContent,
-                        isStreaming = isGenerating,
-                        fontSize = fontSize,
-                        onContentChange = onContentChange,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                }
-
-                // ── 生成图片展示 ──
-                val generatedImages = remember(message.images) {
-                    parseGeneratedImages(message.images)
-                }
-                if (generatedImages.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier.padding(top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        generatedImages.forEach { imageData ->
-                            if (imageData.localPath != null) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(NexaraColors.SurfaceContainer)
-                                ) {
-                                    coil3.compose.AsyncImage(
-                                        model = imageData.localPath,
-                                        contentDescription = imageData.revisedPrompt ?: "Generated image",
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                    )
-                                }
-                                if (!imageData.revisedPrompt.isNullOrBlank()) {
-                                    Text(
-                                        text = imageData.revisedPrompt!!,
-                                        style = NexaraTypography.bodySmall.copy(
-                                            fontSize = 11.sp,
-                                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.7f)
-                                        ),
-                                        modifier = Modifier.padding(top = 2.dp, start = 4.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 元信息行 ──
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
-                    val metaStyle = NexaraTypography.labelSmall.copy(
-                        color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                        fontSize = 11.sp
-                    )
-                    if (!message.modelId.isNullOrBlank()) {
-                        val friendlyModelName = remember(message.modelId) {
-                            findModelSpec(message.modelId!!)?.note ?: message.modelId!!
-                        }
-                        Text(
-                            text = friendlyModelName,
-                            style = metaStyle,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                    }
-                    Text(
-                        text = timestamp,
-                        style = metaStyle
-                    )
-                }
-
-                // ── 错误信息 ──
-                if (message.isError && message.errorMessage != null) {
-                    Text(
-                        text = message.errorMessage!!,
-                        style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
-                        color = NexaraColors.Error,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-}
-
-/**
- * 解析 Message.images JSON 字段为 GeneratedImageData 列表。
- * 用于在 ChatBubble 中渲染生成的图片。
- */
-private fun parseGeneratedImages(imagesJson: String?): List<GeneratedImageData> {
-    if (imagesJson.isNullOrBlank()) return emptyList()
-    return try {
-        val json = Json { ignoreUnknownKeys = true }
-        json.decodeFromString<List<GeneratedImageData>>(imagesJson)
-    } catch (_: Exception) {
-        emptyList()
-    }
-}
 
 
 @Composable
@@ -1288,122 +933,9 @@ fun ChatInputBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MessageActionSheet(
-    message: Message,
-    onDismiss: () -> Unit,
-    onCopy: () -> Unit,
-    onEdit: (String) -> Unit,
-    onDelete: () -> Unit,
-    onResend: () -> Unit
-) {
-    var isEditing by remember { mutableStateOf(false) }
-    var editContent by remember { mutableStateOf(message.content) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = NexaraColors.SurfaceContainer,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = NexaraColors.OutlineVariant) }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
-        ) {
-            if (isEditing) {
-                Text(
-                    stringResource(R.string.chat_action_edit),
-                    style = NexaraTypography.titleMedium,
-                    color = NexaraColors.OnSurface
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                BasicTextField(
-                    value = editContent,
-                    onValueChange = { editContent = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 100.dp, max = 300.dp)
-                        .background(NexaraColors.SurfaceVariant, NexaraShapes.medium)
-                        .padding(12.dp),
-                    textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                    cursorBrush = SolidColor(NexaraColors.Primary),
-                    decorationBox = { innerTextField ->
-                        innerTextField()
-                    }
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { isEditing = false }) {
-                        Text(stringResource(R.string.common_decline), color = NexaraColors.OnSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Button(
-                        onClick = { onEdit(editContent) },
-                        colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Primary)
-                    ) {
-                        Text(stringResource(R.string.common_approve))
-                    }
-                }
-            } else {
-                ActionMenuItem(
-                    icon = Icons.Rounded.ContentCopy,
-                    label = stringResource(R.string.chat_action_copy),
-                    onClick = onCopy
-                )
-                ActionMenuItem(
-                    icon = Icons.Rounded.Edit,
-                    label = stringResource(R.string.chat_action_edit),
-                    onClick = { isEditing = true }
-                )
-                if (message.role == MessageRole.USER) {
-                    ActionMenuItem(
-                        icon = Icons.Rounded.Refresh,
-                        label = stringResource(R.string.chat_action_resend),
-                        onClick = onResend
-                    )
-                } else {
-                    ActionMenuItem(
-                        icon = Icons.Rounded.Refresh,
-                        label = stringResource(R.string.chat_action_regenerate),
-                        onClick = onResend
-                    )
-                }
-                ActionMenuItem(
-                    icon = Icons.Rounded.Delete,
-                    label = stringResource(R.string.chat_action_delete),
-                    color = NexaraColors.Error,
-                    onClick = onDelete
-                )
-            }
-        }
-    }
-}
 
-@Composable
-private fun ActionMenuItem(
-    icon: ImageVector,
-    label: String,
-    color: Color = NexaraColors.OnSurface,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(label, style = NexaraTypography.bodyLarge, color = color)
-        }
-    }
-}
+
 
 @Composable
 private fun GenerationStatusButton(
@@ -1521,7 +1053,7 @@ private fun GenerationStatusButton(
         },
         modifier = Modifier
             .size(40.dp)
-            .offset(x = if (status == GenerationStatus.ERROR) shakeOffset.dp else 0.dp)
+            .offset { IntOffset(x = if (status == GenerationStatus.ERROR) (shakeOffset.dp).roundToPx() else 0, y = 0) }
             .clip(CircleShape)
             .background(containerColor),
         enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING)

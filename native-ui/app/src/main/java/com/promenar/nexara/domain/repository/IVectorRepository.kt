@@ -18,6 +18,7 @@ interface IVectorRepository {
     suspend fun index(documentId: String, chunks: List<VectorChunk>)
     suspend fun deleteByDocument(documentId: String)
     suspend fun deleteVector(id: String)
+    suspend fun deleteAll()
     suspend fun getCount(): Int
     suspend fun countByType(): List<VectorTypeCount>
     suspend fun countBySession(limit: Int = 10): List<VectorSessionCount>
