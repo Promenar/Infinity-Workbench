@@ -295,6 +295,9 @@ fun RagHomeScreen(
                                 useScroll = false,
                                 onReindex = { uuid -> viewModel.reindexFile(uuid) },
                                 onDelete = { uuid -> viewModel.deleteCollection(uuid) },
+                                onRename = { uuid, newName -> viewModel.renameFolder(uuid, newName) },
+                                onMove = { uuid, target -> viewModel.moveFile(uuid, target) },
+                                onExtractKG = { uuid -> viewModel.extractKG(uuid) },
                                 indexingFileIds = viewModel.indexingDocIds.collectAsState().value
                             )
                         }

@@ -552,6 +552,34 @@ class RagViewModel(
         }
     }
 
+    /** 移动文件到指定目录 */
+    fun moveFile(uuid: String, targetParentUuid: String) {
+        viewModelScope.launch {
+            try {
+                val newParent = targetParentUuid.ifEmpty { null }
+                workspaceRepository.updateParent(uuid, targetParentUuid)
+            } catch (_: Exception) { }
+        }
+    }
+
+    /** 触发单个文件的知识图谱抽取 */
+    fun extractKG(uuid: String) {
+        viewModelScope.launch {
+            try {
+                val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
+                val content = fileOperationRepository.readFileRange(uuid).content
+                if (content.isNotBlank()) {
+                    app.vectorizationQueue.enqueueDocument(
+                        docId = uuid,
+                        docTitle = entry.name,
+                        content = content,
+                        kgStrategy = "full"
+                    )
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
     /** 判断是否为纯文本文件扩展名 */
     private fun isPlainTextFile(fileName: String): Boolean {
         val textExtensions = setOf("txt", "md", "json", "xml", "csv", "yml", "yaml", "log", "kt", "java", "py", "js", "ts", "html", "css", "sql")
