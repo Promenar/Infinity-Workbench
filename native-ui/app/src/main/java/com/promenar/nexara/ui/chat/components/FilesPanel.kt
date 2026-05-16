@@ -207,11 +207,14 @@ private fun FileTreeNode(
     var showMoveSheet by rememberSaveable { mutableStateOf(false) }
     val isSelected = file.uuid in selectedIds
 
-    Box {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = (depth * 16).dp)
+    ) {
         NexaraGlassCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = (depth * 16).dp)
                 .combinedClickable(
                     onClick = {
                         if (isMultiSelectMode) {
