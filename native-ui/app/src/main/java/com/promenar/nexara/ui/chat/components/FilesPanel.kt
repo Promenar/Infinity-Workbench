@@ -1,5 +1,12 @@
 package com.promenar.nexara.ui.chat.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -132,8 +139,12 @@ fun FilesPanel(
             }
         }
 
-        // 底部批量操作栏
-        if (isMultiSelectMode) {
+        // 底部批量操作栏（MD3 过渡动画）
+        AnimatedVisibility(
+            visible = isMultiSelectMode,
+            enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(300)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+            exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(200)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(200))
+        ) {
             BatchActionBar(
                 selectedCount = selectedIds.size,
                 onClear = { selectedIds.clear() },
@@ -218,22 +229,30 @@ private fun FileTreeNode(
             .fillMaxWidth()
             .padding(start = (depth * 16).dp)
     ) {
+        // 多选高亮动画
+        val bgColor by animateColorAsState(
+            targetValue = if (isSelected) NexaraColors.Primary.copy(alpha = 0.08f) else NexaraColors.GlassSurface,
+            animationSpec = androidx.compose.animation.core.tween(200),
+            label = "selectBg"
+        )
+
         NexaraGlassCard(
             modifier = Modifier
                 .fillMaxWidth()
+                .animateContentSize(animationSpec = androidx.compose.animation.core.tween(200))
                 .pointerInput(file.uuid, isMultiSelectMode, isSelected) {
                     detectTapGestures(
                         onLongPress = {
-                            if (!isMultiSelectMode) {
-                                selectedIds.add(file.uuid)
-                                showMenu = true
-                            }
+                            // 长按仅弹出菜单，不自动进入多选
+                            showMenu = true
                         },
                         onTap = {
                             if (isMultiSelectMode) {
                                 if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
                             } else if (file.isDirectory) {
                                 expanded = !expanded
+                            } else {
+                                onFileClick(file.uuid)
                             }
                         }
                     )
@@ -307,6 +326,17 @@ private fun FileTreeNode(
                     onClick = { showMenu = false; onCopy(file.uuid) }
                 )
             }
+            if (!isMultiSelectMode) {
+                DropdownMenuItem(
+                    text = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Check, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
+                            Text("多选模式", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                        }
+                    },
+                    onClick = { showMenu = false; selectedIds.add(file.uuid) }
+                )
+            }
             if (onDelete != null) {
                 DropdownMenuItem(
                     text = {
@@ -346,23 +376,31 @@ private fun FileTreeNode(
         )
     }
 
-    if (file.isDirectory && expanded) {
-        val children by workspaceRepo.observeChildren(file.uuid)
-            .collectAsState(initial = emptyList())
+    if (file.isDirectory) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(200)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
+            exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(150)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
+        ) {
+            val children by workspaceRepo.observeChildren(file.uuid)
+                .collectAsState(initial = emptyList())
 
-        val filteredChildren = if (searchQuery.isBlank()) children else {
-            children.filter { it.name.contains(searchQuery, ignoreCase = true) }
-        }
+            val filteredChildren = if (searchQuery.isBlank()) children else {
+                children.filter { it.name.contains(searchQuery, ignoreCase = true) }
+            }
 
-        filteredChildren.forEach { child ->
-            FileTreeNode(
-                file = child, depth = depth + 1, workspaceRepo = workspaceRepo,
-                searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
-                onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onCopy = onCopy,
-                indexingFileIds = indexingFileIds,
-                selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
-                onFileClick = onFileClick
-            )
+            Column {
+                filteredChildren.forEach { child ->
+                    FileTreeNode(
+                        file = child, depth = depth + 1, workspaceRepo = workspaceRepo,
+                        searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
+                        onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onCopy = onCopy,
+                        indexingFileIds = indexingFileIds,
+                        selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
+                        onFileClick = onFileClick
+                    )
+                }
+            }
         }
     }
 }
