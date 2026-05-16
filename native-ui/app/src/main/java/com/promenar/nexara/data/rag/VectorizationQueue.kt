@@ -13,7 +13,8 @@ class VectorizationQueue(
     private val vectorDao: VectorDao,
     private val vectorizationTaskDao: VectorizationTaskDao,
     private val ragConfig: RagConfiguration = RagConfiguration(),
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val fileEntryDao: com.promenar.nexara.data.local.db.dao.FileEntryDao? = null
 ) {
     private val queue = mutableListOf<VectorizationTask>()
     private var isProcessing = false
@@ -40,7 +41,8 @@ class VectorizationQueue(
             docTitle = docTitle,
             status = "pending",
             kgStrategy = kgStrategy,
-            skipVectorization = skipVectorization
+            skipVectorization = skipVectorization,
+            userContent = content
         )
 
         queue.add(task)
@@ -101,6 +103,7 @@ class VectorizationQueue(
 
             when (task.type) {
                 "memory" -> processMemoryTask(task)
+                "document" -> processDocumentTask(task)
             }
 
             if (task.status != "warning") {
@@ -195,6 +198,85 @@ class VectorizationQueue(
             )
         }
         vectorStore.addVectorRecords(vectors)
+    }
+
+    private suspend fun processDocumentTask(task: VectorizationTask) {
+        val docId = task.docId ?: throw IllegalStateException("Document task missing docId")
+        val docTitle = task.docTitle ?: "Untitled"
+        val content = task.userContent
+            ?: throw IllegalStateException("Document task missing content")
+
+        task.status = "chunking"
+        task.progress = 15.0
+        task.subStatus = "正在对文档进行语义切块..."
+        notifyStateChange()
+
+        val splitter = TrigramTextSplitter(
+            chunkSize = ragConfig.docChunkSize,
+            chunkOverlap = ragConfig.chunkOverlap
+        )
+        val chunks = splitter.splitText(content)
+        task.totalChunks = chunks.size
+
+        if (chunks.isEmpty()) {
+            task.status = "completed"
+            task.progress = 100.0
+            notifyStateChange()
+            updateFileEntryVectorizedAt(docId, System.currentTimeMillis())
+            return
+        }
+
+        task.status = "vectorizing"
+        task.progress = 30.0
+        task.subStatus = "正在发送 ${chunks.size} 个切块至模型处理..."
+        notifyStateChange()
+
+        val embeddingResult = embeddingClient.embedDocuments(chunks)
+
+        task.status = "saving"
+        task.progress = 70.0
+        task.subStatus = "正在持久化向量数据..."
+        notifyStateChange()
+
+        val records = chunks.mapIndexed { i, chunk ->
+            VectorStore.NewVectorRecord(
+                sessionId = "",
+                content = chunk,
+                embedding = embeddingResult.embeddings[i],
+                metadata = """{"type":"document","fileUuid":"$docId","chunkIndex":$i}""",
+                startMessageId = docId,
+                endMessageId = docId
+            )
+        }
+        vectorStore.addVectorRecords(records)
+
+        task.progress = 95.0
+        task.subStatus = "正在更新文件索引状态..."
+        notifyStateChange()
+
+        updateFileEntryVectorizedAt(docId, System.currentTimeMillis())
+
+        // 可选：知识图谱提取
+        if (graphExtractor != null && task.kgStrategy != null) {
+            task.status = "extracting"
+            task.progress = 98.0
+            task.subStatus = "正在构建知识图谱节点..."
+            notifyStateChange()
+            try {
+                graphExtractor.extractAndSave(content, docId)
+            } catch (_: Exception) {
+                task.subStatus = "知识图谱提取跳过（非致命）"
+            }
+        }
+    }
+
+    /** 更新 FileEntry 的 vectorizedAt 时间戳 */
+    private suspend fun updateFileEntryVectorizedAt(docId: String, timestamp: Long) {
+        try {
+            val dao = fileEntryDao ?: return
+            val entry = dao.getByUuid(docId) ?: return
+            dao.update(entry.copy(vectorizedAt = timestamp, updatedAt = timestamp))
+        } catch (_: Exception) { }
     }
 
     fun getQueueLength(): Int = queue.size

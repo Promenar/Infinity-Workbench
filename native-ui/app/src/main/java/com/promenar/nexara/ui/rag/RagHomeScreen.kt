@@ -286,13 +286,16 @@ fun RagHomeScreen(
                             }
                         }
 
-                        // 文件资源管理器（嵌套模式下禁用内部滚动）
+                        // 文件资源管理器（嵌套模式，禁用内部滚动）
                         item {
                             FilesPanel(
                                 workspaceRootUuid = viewModel.workspaceRootUuid.collectAsState().value,
                                 workspaceRepo = viewModel.getWorkspaceRepo(),
                                 searchQuery = searchQuery,
-                                useScroll = false
+                                useScroll = false,
+                                onReindex = { uuid -> viewModel.reindexFile(uuid) },
+                                onDelete = { uuid -> viewModel.deleteCollection(uuid) },
+                                indexingFileIds = viewModel.indexingDocIds.collectAsState().value
                             )
                         }
                     }

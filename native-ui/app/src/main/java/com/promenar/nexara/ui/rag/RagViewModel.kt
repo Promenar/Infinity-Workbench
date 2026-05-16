@@ -98,6 +98,10 @@ class RagViewModel(
     private val _lastQueueError = MutableStateFlow<String?>(null)
     val lastQueueError: StateFlow<String?> = _lastQueueError.asStateFlow()
 
+    /** 当前正在索引中的文件 UUID 集合 */
+    private val _indexingDocIds = MutableStateFlow<Set<String>>(emptySet())
+    val indexingDocIds: StateFlow<Set<String>> = _indexingDocIds.asStateFlow()
+
     private val _config = MutableStateFlow(RagConfiguration())
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
 
@@ -150,6 +154,10 @@ class RagViewModel(
             val isProcessing = app.vectorizationQueue.getState().isProcessing
             _isIndexing.value = isProcessing
             _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
+
+            // 更新正在索引中的文件 UUID 集合
+            _indexingDocIds.value = queue.filter { it.type == "document" && it.docId != null }
+                .mapNotNull { it.docId }.toSet()
 
             val statusText = currentTask?.let { task ->
                 when (task.status) {
@@ -506,6 +514,15 @@ class RagViewModel(
                     )
 
                     importedFiles.add(entry)
+
+                    // 触发自动向量化
+                    if (!content.startsWith("Binary file:") && !content.startsWith("[Error]")) {
+                        app.vectorizationQueue.enqueueDocument(
+                            docId = uuid,
+                            docTitle = fileName!!,
+                            content = content
+                        )
+                    }
                 } catch (e: Exception) {
                     _lastQueueError.value = "导入失败: ${fileName ?: "未知文件"} - ${e.message?.take(80)}"
                 }
@@ -515,6 +532,23 @@ class RagViewModel(
                 _lastQueueError.value = null
                 loadStats()
             }
+        }
+    }
+
+    /** 手动触发重新索引 */
+    fun reindexFile(uuid: String) {
+        viewModelScope.launch {
+            try {
+                val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
+                val result = fileOperationRepository.readFileRange(uuid)
+                if (result.content.isNotBlank()) {
+                    app.vectorizationQueue.enqueueDocument(
+                        docId = uuid,
+                        docTitle = entry.name,
+                        content = result.content
+                    )
+                }
+            } catch (_: Exception) { }
         }
     }
 

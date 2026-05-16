@@ -364,7 +364,8 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             embeddingClient = embeddingClient,
             graphExtractor = graphExtractor,
             vectorDao = database.vectorDao(),
-            vectorizationTaskDao = database.vectorizationTaskDao()
+            vectorizationTaskDao = database.vectorizationTaskDao(),
+            fileEntryDao = database.fileEntryDao()
         )
     }
 

@@ -1,6 +1,9 @@
 package com.promenar.nexara.ui.chat.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,12 +18,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,7 +57,10 @@ fun FilesPanel(
     workspaceRootUuid: String?,
     workspaceRepo: IWorkspaceRepository,
     searchQuery: String = "",
-    useScroll: Boolean = true
+    useScroll: Boolean = true,
+    onReindex: ((String) -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
+    indexingFileIds: Set<String> = emptySet()
 ) {
     val roots by workspaceRepo.observeRoots().collectAsState(initial = emptyList())
 
@@ -58,52 +68,95 @@ fun FilesPanel(
         roots.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
 
+    val content = @Composable { root: FileEntry ->
+        FileTreeNode(
+            file = root, depth = 0, workspaceRepo = workspaceRepo,
+            searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
+            indexingFileIds = indexingFileIds
+        )
+    }
+
     if (filteredRoots.isEmpty() && searchQuery.isBlank()) {
         EmptyFilesState()
     } else if (useScroll) {
-        // 独立使用场景：带 LazyColumn 滚动
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxSize().padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(filteredRoots, key = { it.uuid }) { root ->
-                FileTreeNode(file = root, depth = 0, workspaceRepo = workspaceRepo, searchQuery = searchQuery)
-            }
+            items(filteredRoots, key = { it.uuid }) { root -> content(root) }
         }
     } else {
-        // 嵌套在外部 LazyColumn 中使用：无滚动，纯列表渲染
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            filteredRoots.forEach { root ->
-                FileTreeNode(file = root, depth = 0, workspaceRepo = workspaceRepo, searchQuery = searchQuery)
-            }
+            filteredRoots.forEach { root -> content(root) }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileTreeNode(
     file: FileEntry,
     depth: Int,
     workspaceRepo: IWorkspaceRepository,
-    searchQuery: String = ""
+    searchQuery: String = "",
+    onReindex: ((String) -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
+    indexingFileIds: Set<String> = emptySet()
 ) {
     var expanded by rememberSaveable { mutableStateOf(depth < 2) }
+    var showMenu by rememberSaveable { mutableStateOf(false) }
 
-    NexaraGlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = (depth * 16).dp),
-        shape = RoundedCornerShape(12.dp),
-        onClick = { if (file.isDirectory) expanded = !expanded }
-    ) {
-        FileRow(file = file)
+    Box {
+        NexaraGlassCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = (depth * 16).dp)
+                .combinedClickable(
+                    onClick = { if (file.isDirectory) expanded = !expanded },
+                    onLongClick = { showMenu = true }
+                ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            FileRow(file = file, indexingFileIds = indexingFileIds)
+        }
+
+        // 长按上下文菜单
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            if (!file.isDirectory && onReindex != null) {
+                DropdownMenuItem(
+                    text = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Refresh, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
+                            Text("重新索引", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                        }
+                    },
+                    onClick = {
+                        showMenu = false
+                        onReindex(file.uuid)
+                    }
+                )
+            }
+            if (onDelete != null) {
+                DropdownMenuItem(
+                    text = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Delete, null, tint = NexaraColors.Error, modifier = Modifier.size(18.dp))
+                            Text("删除", style = NexaraTypography.labelMedium, color = NexaraColors.Error)
+                        }
+                    },
+                    onClick = {
+                        showMenu = false
+                        onDelete(file.uuid)
+                    }
+                )
+            }
+        }
     }
 
     if (file.isDirectory && expanded) {
@@ -116,17 +169,19 @@ private fun FileTreeNode(
 
         filteredChildren.forEach { child ->
             FileTreeNode(
-                file = child,
-                depth = depth + 1,
-                workspaceRepo = workspaceRepo,
-                searchQuery = searchQuery
+                file = child, depth = depth + 1, workspaceRepo = workspaceRepo,
+                searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
+                indexingFileIds = indexingFileIds
             )
         }
     }
 }
 
 @Composable
-private fun FileRow(file: FileEntry) {
+private fun FileRow(
+    file: FileEntry,
+    indexingFileIds: Set<String> = emptySet()
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -162,7 +217,7 @@ private fun FileRow(file: FileEntry) {
             }
         }
 
-        IndexStatusBadge(status = resolveIndexStatus(file))
+        IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
     }
 }
 
@@ -206,9 +261,15 @@ private fun fileIcon(file: FileEntry): ImageVector {
     }
 }
 
-private fun resolveIndexStatus(file: FileEntry): FileIndexStatus {
+private fun resolveIndexStatus(file: FileEntry, indexingFileIds: Set<String> = emptySet()): FileIndexStatus {
     if (file.isDirectory) return FileIndexStatus.NOT_INDEXED
+    // 正在队列中处理
+    if (file.uuid in indexingFileIds) return FileIndexStatus.INDEXING
+    // 从未索引
     if (file.vectorizedAt == null) return FileIndexStatus.NOT_INDEXED
+    // 文件已更新但未重新索引（hash 变更）
+    if (file.updatedAt > (file.vectorizedAt ?: 0)) return FileIndexStatus.STALE
+    // 已索引
     return FileIndexStatus.INDEXED
 }
 
