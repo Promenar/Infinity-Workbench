@@ -1,10 +1,9 @@
 package com.promenar.nexara.ui.chat.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,7 +81,9 @@ fun FilesPanel(
     onMove: ((String, String) -> Unit)? = null,
     onExtractKG: ((String) -> Unit)? = null,
     indexingFileIds: Set<String> = emptySet(),
-    folders: List<FileEntry> = emptyList() // 用于"移动到"弹窗的目录列表
+    folders: List<FileEntry> = emptyList(), // 用于"移动到"弹窗的目录列表
+    externalSelectedIds: MutableList<String>? = null,
+    onFileClick: (String) -> Unit = {}
 ) {
     val roots by workspaceRepo.observeRoots().collectAsState(initial = emptyList())
 
@@ -90,7 +92,8 @@ fun FilesPanel(
     }
 
     // 多选状态
-    val selectedIds = remember { mutableStateListOf<String>() }
+    val localSelectedIds = remember { mutableStateListOf<String>() }
+    val selectedIds = externalSelectedIds ?: localSelectedIds
     val isMultiSelectMode = selectedIds.isNotEmpty()
 
     val content = @Composable { root: FileEntry ->
@@ -102,7 +105,8 @@ fun FilesPanel(
             },
             onRename = onRename, onMove = onMove, onExtractKG = onExtractKG,
             indexingFileIds = indexingFileIds,
-            selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode
+            selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
+            onFileClick = onFileClick
         )
     }
 
@@ -185,7 +189,6 @@ private fun BatchActionBar(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileTreeNode(
     file: FileEntry,
@@ -199,7 +202,8 @@ private fun FileTreeNode(
     onExtractKG: ((String) -> Unit)? = null,
     indexingFileIds: Set<String> = emptySet(),
     selectedIds: MutableList<String> = mutableStateListOf(),
-    isMultiSelectMode: Boolean = false
+    isMultiSelectMode: Boolean = false,
+    onFileClick: (String) -> Unit = {}
 ) {
     var expanded by rememberSaveable { mutableStateOf(depth < 2) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
@@ -215,21 +219,23 @@ private fun FileTreeNode(
         NexaraGlassCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .combinedClickable(
-                    onClick = {
-                        if (isMultiSelectMode) {
-                            if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
-                        } else if (file.isDirectory) {
-                            expanded = !expanded
+                .pointerInput(file.uuid, isMultiSelectMode, isSelected) {
+                    detectTapGestures(
+                        onLongPress = {
+                            if (!isMultiSelectMode) {
+                                selectedIds.add(file.uuid)
+                                showMenu = true
+                            }
+                        },
+                        onTap = {
+                            if (isMultiSelectMode) {
+                                if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
+                            } else if (file.isDirectory) {
+                                expanded = !expanded
+                            }
                         }
-                    },
-                    onLongClick = {
-                        if (!isMultiSelectMode) {
-                            selectedIds.add(file.uuid)
-                            showMenu = true
-                        }
-                    }
-                ),
+                    )
+                },
             shape = RoundedCornerShape(12.dp)
         ) {
             FileRow(
@@ -341,7 +347,8 @@ private fun FileTreeNode(
                 searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
                 onRename = onRename, onMove = onMove, onExtractKG = onExtractKG,
                 indexingFileIds = indexingFileIds,
-                selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode
+                selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
+                onFileClick = onFileClick
             )
         }
     }
@@ -357,6 +364,10 @@ private fun FileRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isSelected) Modifier.background(NexaraColors.Primary.copy(alpha = 0.15f))
+                else Modifier
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
