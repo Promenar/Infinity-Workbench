@@ -449,7 +449,7 @@ private fun InlineThinkingRow(
                         .padding(bottom = 4.dp)
                 ) {
                     val dimmedColor = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f) // 弱化颜色
-                    val targetFontSize = (fontSize + 1).coerceAtLeast(11)
+                    val targetFontSize = (fontSize - 2).coerceAtLeast(10)
                     CompositionLocalProvider(
                         androidx.compose.material3.LocalContentColor provides dimmedColor,
                         androidx.compose.material3.LocalTextStyle provides NexaraTypography.bodySmall.copy(

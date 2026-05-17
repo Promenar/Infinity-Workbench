@@ -4,10 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### XML 代码预览卡片渲染缺陷根治 — Compose 生命周期时序竞态修复 (2026-05-18)
+- **🔴 P0 — 根治 WebView 高度测算时序竞态导致大面积空白**：
+  - *病原定位*：`RichContentWebView` 中原测高 `WebViewClient` 在 `LaunchedEffect` 中设置，落后于 `AndroidView.update` 中的 `loadDataWithBaseURL`；简单 HTML 页面 <1ms 加载完毕，测高回调永远赶不上。辅因：`RichContentWebViewPool` 中 `layoutParams.height = WRAP_CONTENT` 使 `scrollHeight` 测量返回无约束视口高度（≈屏幕高度），被 `coerceIn(60,600)` 钳制。
+  - *修复方案*：将测高 `WebViewClient` 前置至 `remember { acquire() }` 块（见 ADR-013）；`layoutParams` 改为 `MATCH_PARENT`；新增 `lastLoadedHtml` 去重消除冗余 WebView reload。
+- **🔴 P0 — 激活 isLikelyRenderableHtml 死代码**：
+  - *病原定位*：`isLikelyRenderableHtml` 在 `HtmlArtifactRenderer.kt` 定义但从未被调用；`CodeBlockHeader` 仅使用 `isHtmlArtifact(language)`，导致所有 ` ```xml ` 代码块均被当作 HTML artifact 渲染。
+  - *修复方案*：`isRenderableHtml = isHtmlArtifact(language) && isLikelyRenderableHtml(code)`，有效排除 `<tool_call>`、`<function_call>` 等纯数据 XML。
+- **新建 ADR-013**：WebView 生命周期管理 — 测高 WebViewClient 前置绑定
+- **详见**：`docs/audit/XML_RENDERER_BUG_AUDIT_20260518.md`
+
 ### UI 细节抛光与视觉统一 (2026-05-18)
-- **🔴 P0 — 根治思考容器字号放缩失效与行高重叠的终极排查修复**：
-  - *排查发现*：生成完毕后的思考容器真实渲染由合并气泡类 [PipelineBubble.kt](file:///k:/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt) 的内联组件 `InlineThinkingRow` 承载，该处原包含硬编码 `THINKING_FONT_SIZE_DELTA = 6` 且未提供 `lineHeight` 行高，导致此前修改无效、字号缩死至最小极值 `8`sp，且多行文本挤压重叠。
-  - *重构修复*：物理清除 `PipelineBubble.kt` 的硬编码 delta 常量；将其实时渲染字号完美重塑重构为 **`14`sp (`fontSize + 1`)**，并破天荒地显式注入匹配黄金分割比例的 **`19`sp 行高**（`targetFontSize + 5`），一举根治了字号失效与行距过小文字重叠的 P0 排版难题！
+- **🔴 P0 — 根治思考容器字号放缩失效、与字体设置对接（始终小 2 号）及行高重叠的终极重构**：
+  - *排查发现*：生成完毕后的思考容器真实渲染由合并气泡类 [PipelineBubble.kt](file:///k:/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt) 的内联组件 `InlineThinkingRow` 承载，该处原包含硬编码 `THINKING_FONT_SIZE_DELTA = 6` 且未提供 `lineHeight` 行高，导致此前修改无效、字号缩死至最小极值 `8`sp，且多行文本挤压重叠，无法跟设置中的字体大小联动。
+  - *重构修复*：物理清除 `PipelineBubble.kt` 的所有硬编码 delta 常量；将其实时渲染字号完美对接用户设置中的字体大小，**动态计算为始终比正文小 2 号（`(fontSize - 2).coerceAtLeast(10)`）**。当默认 `fontSize` 为 13 时，思考容器为清朗雅致的 `11`sp，并显式注入匹配黄金比例的 **`16`sp 行高**（`lineHeight = (targetFontSize + 5).sp`），一举根治了字号失效与文字行距重叠的 P0 排版难题！
 - **设置页"Token 用量"更名为"用量管理"**：将设置主页菜单项及全局详情统计页面标题统一更名为"用量管理"（英文 "Usage Management"），语义更具普适性。
 - **清空向量数据库时文档索引状态同步重置**：重构 `clearAllVectors` 链路，在底层 DAO 和 Repository 层引入 `resetAllRAGStatus` 批量重置接口，清空向量时一键归零所有文档的 `vectorized_at` 与 `kg_extracted_at` 时间戳，完美闭合物理资源与向量存储生命周期的同步机制。
 - **"记忆设置"页面功能去噪与更名统一**：移除记忆设置主页顶部"向量索引状态"卡片（与"向量统计"二级页面高度重复），将"高级"选项卡正式重命名为"知识图谱"，与跳转后二级页面 Header 标题完全吻合。
