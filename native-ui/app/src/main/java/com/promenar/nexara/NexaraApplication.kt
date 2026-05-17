@@ -205,6 +205,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val llmProvider: LlmProvider get() = _llmProvider.value
     val llmProviderFlow: StateFlow<LlmProvider> get() = _llmProvider
 
+    private var _unifiedLlmClient: com.promenar.nexara.data.remote.UnifiedLlmClient? = null
+    val unifiedLlmClient: com.promenar.nexara.data.remote.UnifiedLlmClient?
+        get() = _unifiedLlmClient ?: buildUnifiedLlmClient().also { _unifiedLlmClient = it }
+
     var hapticEnabled: Boolean = true
         internal set
 
@@ -533,6 +537,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         rebuildEmbeddingClient()
         rebuildRerankClient()
         _vectorizationQueue = null  // 让 VectorizationQueue 下次访问时重新捕获新的 embeddingClient
+        _unifiedLlmClient = null
     }
 
     fun switchToLocalProvider(modelName: String = "") {
@@ -541,6 +546,18 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     fun getSavedProviderConfig(): ProviderConfig? {
         return ProviderManager.getInstance().getMainProviderConfig()
+    }
+
+    private fun buildUnifiedLlmClient(): com.promenar.nexara.data.remote.UnifiedLlmClient? {
+        val config = getSavedProviderConfig() ?: return null
+        if (config.apiKey.isBlank() && config.protocolType !is ProtocolType.Local) return null
+        val uConfig = com.promenar.nexara.data.remote.UnifiedProviderConfig(
+            protocolType = config.protocolType,
+            baseUrl = config.baseUrl,
+            apiKey = config.apiKey,
+            defaultModel = config.model
+        )
+        return com.promenar.nexara.data.remote.UnifiedLlmClient(uConfig)
     }
 
     private fun buildProviderFromPrefs(): LlmProvider {

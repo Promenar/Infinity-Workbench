@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 工具调用系统全面移植与 10 项缺陷根治 — 基于 Cherry-Studio 参考实现 (2026-05-18)
+- **参考源**: Cherry-Studio v1.9.6 工具调用系统完整架构分析（13 个核心源文件）
+- **架构重构**:
+  - 新增 `ToolCallLifecycleHandler` — 工具调用全生命周期管理（streaming→pending→complete/error）
+  - 新增 `UnifiedLlmClient` — 统一 LLM 调用入口 + 中间件链整合
+  - 新增 `LlmMiddleware` / `LlmMiddlewareChain` — 可扩展中间件管线
+  - 新增 `ToolOrchestrationPlugin` — 意图分析 + 动态工具注入 + 记忆存储
+  - 新增 `DsmlStreamParser` — DeepSeek DSML 格式工具调用流式解析
+  - 新增 `ProviderToolFactory` — 各 Provider 原生工具定义（OpenAI/Anthropic/Google/xAI/Hunyuan）
+  - 新增 `ResultSizeOptimizer` — 多模态结果文本化（防 base64 撑爆消息体）
+  - 新增 `ToolChunkType` / `ToolType` / `ToolCallLifecycleEvent` — 统一工具调用事件类型体系
+- **🔴 P0 致命修复**:
+  - D-1: Anthropic 流式 tool_use 解析 — 新增 `content_block_start/stop` + `input_json_delta` 处理（原完全不可用）
+  - D-8: `Collection.all` 空集合死锁 — `isNotEmpty()` 前置检查已验证正确
+- **🟡 P1 重要修复**:
+  - D-3: DSML 格式工具调用解析 — DsmlStreamParser 集成到 ChatViewModel fallback 管线
+  - D-5: maxToolCalls 控制 — `generateMessage` 新增 `loopCount` 参数 + `loop_limit` 配置
+  - D-6: OpenAI 流式 tool_calls 实时增量发送 — 除 flushRemaining 外每次累积即发送
+  - D-7: VertexAI functionCall/functionDeclarations — 完整适配请求构建和响应解析
+- **变更文件**: 8 修改 + 8 新建 = 16 文件，+243 insertions
+- **编译验证**: `BUILD SUCCESSFUL in 5s`，零 lint 错误
+- **4 会话并行施工**: 参考 `20260518-Parallel-Session-Implementation-Plan.md`
+
 ### XML 代码预览卡片渲染缺陷根治 — Compose 生命周期时序竞态修复 (2026-05-18)
 - **🔴 P0 — 根治 WebView 高度测算时序竞态导致大面积空白**：
   - *病原定位*：`RichContentWebView` 中原测高 `WebViewClient` 在 `LaunchedEffect` 中设置，落后于 `AndroidView.update` 中的 `loadDataWithBaseURL`；简单 HTML 页面 <1ms 加载完毕，测高回调永远赶不上。辅因：`RichContentWebViewPool` 中 `layoutParams.height = WRAP_CONTENT` 使 `scrollHeight` 测量返回无约束视口高度（≈屏幕高度），被 `coerceIn(60,600)` 钳制。

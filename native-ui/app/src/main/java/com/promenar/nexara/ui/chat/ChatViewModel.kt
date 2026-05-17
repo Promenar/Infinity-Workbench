@@ -39,6 +39,7 @@ import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ImageInput
 import com.promenar.nexara.data.remote.protocol.StreamChunk
+import com.promenar.nexara.data.remote.UnifiedLlmClient
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -68,8 +69,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.File
 
 enum class GenerationStatus {
@@ -99,6 +102,7 @@ class ChatViewModel(
     private val messageRepository: IMessageRepository,
     private val agentRepository: IAgentRepository,
     private val llmProvider: LlmProvider,
+    private val unifiedLlmClient: UnifiedLlmClient? = null,
     private val configResolver: AgentConfigResolver,
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
@@ -464,7 +468,23 @@ class ChatViewModel(
         val accumulatedToolCalls = mutableListOf<ToolCall>()
 
         try {
-            val flow = llmProvider.sendPrompt(request)
+            val flow = if (unifiedLlmClient != null) {
+                val stParams = com.promenar.nexara.data.remote.middleware.StreamTextParams(
+                    messages = request.messages,
+                    model = request.model,
+                    temperature = request.temperature,
+                    topP = request.topP,
+                    maxOutputTokens = request.maxTokens,
+                    tools = activeTools.associateBy { it.function.name },
+                    enableWebSearch = sessionForCtx.options.webSearch == true
+                )
+                val sConfig = com.promenar.nexara.data.remote.StreamConfig(
+                    enableWebSearch = sessionForCtx.options.webSearch == true
+                )
+                unifiedLlmClient.sendStream(stParams, sConfig)
+            } else {
+                llmProvider.sendPrompt(request)
+            }
             _generationStatus.update { GenerationStatus.THINKING }
             
             flow.collect { chunk ->
@@ -547,6 +567,7 @@ class ChatViewModel(
                             kotlinx.coroutines.CancellationException("Stream error received: ${chunk.message}")
                         )
                     }
+                    is StreamChunk.ToolCallLifecycle -> {}
                     is StreamChunk.Done -> {}
                 }
             }
@@ -1370,6 +1391,7 @@ class ChatViewModel(
                         messageRepository = app.messageRepository,
                         agentRepository = app.agentRepository,
                         llmProvider = app.llmProvider,
+                        unifiedLlmClient = app.unifiedLlmClient,
                         configResolver = app.configResolver,
                         embeddingClient = app.embeddingClient,
                         vectorStore = app.vectorStore,
@@ -1465,6 +1487,30 @@ class ChatViewModel(
      */
     private fun extractToolCallsFromText(content: String): List<ToolCall> {
         val results = mutableListOf<ToolCall>()
+
+        val dsmlParser = com.promenar.nexara.data.remote.parser.DsmlStreamParser()
+        val outputText = StringBuilder()
+        val dsmlCalls = dsmlParser.process(content, outputText)
+        dsmlParser.flush(outputText)
+        if (dsmlCalls.isNotEmpty()) {
+            dsmlCalls.mapTo(results) { dc ->
+                val argsMap = buildJsonObject { dc.args.forEach { (k, v) ->
+                    put(k, when (v) {
+                        is String -> JsonPrimitive(v)
+                        is Number -> JsonPrimitive(v)
+                        is Boolean -> JsonPrimitive(v)
+                        is JsonElement -> v
+                        else -> JsonPrimitive(v.toString())
+                    })
+                }}
+                ToolCall(
+                    id = "dsml_${System.currentTimeMillis()}_${results.size}",
+                    name = dc.toolName,
+                    arguments = argsMap.toString()
+                )
+            }
+            return results
+        }
 
         // [DeepSeek 审计优化] xmlToolCallRegex 带有捕获组 (.*?)，用于在 Fallback 时精准提取文本段。
         // 它与文件底部的 XML_TOOL_PATTERN（无捕获组，用于整体匹配剔除）分工不同。

@@ -16,6 +16,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.*
 
+private data class ToolUseAccumulator(
+    val id: String,
+    val name: String,
+    val arguments: StringBuilder = StringBuilder()
+)
+
 class AnthropicProtocol(
     private val baseUrl: String,
     private val apiKey: String,
@@ -38,8 +44,11 @@ class AnthropicProtocol(
     @Volatile
     private var activeChannel: ByteReadChannel? = null
 
+    private val toolUseAccumulator = mutableMapOf<Int, ToolUseAccumulator>()
+
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
+        toolUseAccumulator.clear()
 
         try {
             httpClient.preparePost(buildUrl()) {
@@ -292,10 +301,12 @@ class AnthropicProtocol(
 
         when (type) {
             "content_block_delta" -> processContentBlockDelta(eventData)
+            "content_block_start" -> processContentBlockStart(eventData)
+            "content_block_stop" -> processContentBlockStop(eventData)
             "message_delta" -> processMessageDelta(eventData)
             "message_start" -> processMessageStart(eventData)
             "message_stop" -> { }
-            "content_block_start", "content_block_stop", "ping" -> { }
+            "ping" -> { }
             "error" -> {
                 val errorMsg = eventData["error"]?.jsonObject?.let { errObj ->
                     errObj["message"]?.jsonPrimitive?.contentOrNull ?: data
@@ -322,6 +333,19 @@ class AnthropicProtocol(
                     send(StreamChunk.Thinking(content = thinking))
                 }
             }
+            "input_json_delta" -> {
+                val partialJson = delta["partial_json"]?.jsonPrimitive?.contentOrNull ?: return
+                val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: 0
+                val acc = toolUseAccumulator[index] ?: return
+                acc.arguments.append(partialJson)
+
+                send(StreamChunk.ToolCallDelta(
+                    id = acc.id,
+                    name = acc.name,
+                    arguments = partialJson,
+                    index = index
+                ))
+            }
         }
     }
 
@@ -345,6 +369,43 @@ class AnthropicProtocol(
         inputTokenCount = eventData["message"]?.jsonObject
             ?.get("usage")?.jsonObject
             ?.get("input_tokens")?.jsonPrimitive?.intOrNull ?: 0
+    }
+
+    private suspend fun SendChannel<StreamChunk>.processContentBlockStart(eventData: JsonObject) {
+        val contentBlock = eventData["content_block"]?.jsonObject ?: return
+        val blockType = contentBlock["type"]?.jsonPrimitive?.contentOrNull ?: return
+        if (blockType != "tool_use") return
+
+        val id = contentBlock["id"]?.jsonPrimitive?.contentOrNull ?: return
+        val name = contentBlock["name"]?.jsonPrimitive?.contentOrNull ?: return
+        val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: 0
+
+        toolUseAccumulator[index] = ToolUseAccumulator(id, name)
+
+        send(StreamChunk.ToolCallDelta(
+            id = id,
+            name = name,
+            arguments = "",
+            index = index
+        ))
+    }
+
+    private suspend fun SendChannel<StreamChunk>.processContentBlockStop(eventData: JsonObject) {
+        val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: return
+        val acc = toolUseAccumulator.remove(index) ?: return
+
+        val argsStr = acc.arguments.toString()
+        try {
+            json.parseToJsonElement(argsStr)
+        } catch (_: Exception) {
+        }
+
+        send(StreamChunk.ToolCallDelta(
+            id = acc.id,
+            name = acc.name,
+            arguments = argsStr,
+            index = index
+        ))
     }
 
     private fun parseSyncResponse(responseText: String): PromptResponse {

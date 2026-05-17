@@ -3,6 +3,7 @@ package com.promenar.nexara.data.remote.protocol
 import kotlinx.coroutines.flow.Flow
 import com.promenar.nexara.R
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class ImageInput(
@@ -142,6 +143,11 @@ sealed class StreamChunk {
         val category: String? = null
     ) : StreamChunk()
 
+    data class ToolCallLifecycle(
+        val type: ToolChunkType,
+        val events: List<ToolCallLifecycleEvent>
+    ) : StreamChunk()
+
     data object Done : StreamChunk()
 }
 
@@ -223,4 +229,47 @@ interface LlmProtocol {
     suspend fun sendPromptSync(request: PromptRequest): PromptResponse
     suspend fun listModels(): List<String> = emptyList()
     fun cancel()
+}
+
+enum class ToolChunkType {
+    MCP_TOOL_STREAMING,
+    MCP_TOOL_PENDING,
+    MCP_TOOL_COMPLETE
+}
+
+enum class ToolType {
+    BUILTIN,
+    PROVIDER,
+    MCP
+}
+
+sealed interface ToolCallLifecycleEvent {
+    val toolCallId: String
+    val toolName: String
+    val toolType: ToolType
+
+    data class Streaming(
+        override val toolCallId: String,
+        override val toolName: String,
+        override val toolType: ToolType,
+        val arguments: Map<String, JsonElement>? = null,
+        val partialArguments: String? = null
+    ) : ToolCallLifecycleEvent
+
+    data class Pending(
+        override val toolCallId: String,
+        override val toolName: String,
+        override val toolType: ToolType,
+        val arguments: Map<String, JsonElement>?
+    ) : ToolCallLifecycleEvent
+
+    data class Complete(
+        override val toolCallId: String,
+        override val toolName: String,
+        override val toolType: ToolType,
+        val arguments: Map<String, JsonElement>?,
+        val response: JsonElement?,
+        val status: String = "done",
+        val imageBase64List: List<String> = emptyList()
+    ) : ToolCallLifecycleEvent
 }

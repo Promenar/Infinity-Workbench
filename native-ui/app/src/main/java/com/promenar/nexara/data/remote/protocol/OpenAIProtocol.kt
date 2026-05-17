@@ -312,6 +312,14 @@ class OpenAIProtocol(
                         arguments = existing.arguments + (newArgs ?: "")
                     )
                 }
+
+                val acc = toolCallAccumulator[index]!!
+                send(StreamChunk.ToolCallDelta(
+                    id = acc.id,
+                    name = acc.name,
+                    arguments = acc.arguments,
+                    index = index
+                ))
             }
         }
 
