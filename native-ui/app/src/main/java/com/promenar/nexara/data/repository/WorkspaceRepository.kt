@@ -319,4 +319,8 @@ class WorkspaceRepository(
             )
         }
     }
+
+    override suspend fun resetAllRAGStatus() = withContext(Dispatchers.IO) {
+        dao.resetAllRAGStatus()
+    }
 }

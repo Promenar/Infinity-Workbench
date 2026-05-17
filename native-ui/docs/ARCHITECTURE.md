@@ -141,6 +141,17 @@ graph TD
   - `交互集成`: `RagOmniIndicator` 现作为详情入口支持点击触发。
   - `持久化校验`: 通过 `RagDetailsSerializationTest` 确保复杂嵌套数据的 Room 兼容性。
 
+## 弹窗确认系统重构与视觉统一 (2026-05-17 完成)
+- **ConfirmDialog 组件架构重构**：重构了 `ConfirmDialog.kt` 的底层架构，使其由原来的普通布局重写为直接以 `Dialog` 窗体承载 `NexaraConfirmDialog`。这一重构实现了原有普通确认界面向高阶拟态磨砂玻璃（Glassmorphism）风格的无损升级。
+- **全局 Dialog 容器安全包裹**：对 `UserSettingsHomeScreen.kt`、`SessionSettingsScreen.kt`、`RecycleBinPanel.kt` 和 `ProviderModelsScreen.kt` 进行了包裹修复，将缺失 `Dialog` 导致组件飞到屏幕最顶端覆盖状态栏的 Bug 彻底铲除，保证弹窗能够优雅、居中地渲染在屏幕中央。
+- **破坏性删除按钮配色统一**：遵循高阶视觉质量规范，将危险操作按钮的背景色统一为深红色（`Color(0xFFBA1A1A)`），前景文字升级为高对比度、极其清晰的纯白色（`Color.White`），彻底解决了淡粉红字迹难以看清的问题。
+
+## 增强渲染器与排版视觉调优 (2026-05-18 完成)
+- **思考容器排版挤压重叠根治与字号微调优化**：在 `NexaraMarkdownTheme.kt` 中为段落拷贝属性注入 `fontSize = base`。使得微缩后的行高与字号完美协同，彻底解决了思考内容行距过小文字重叠的 P0 级排版顽疾；在此基础上，将思考气泡的字体大小由 11sp **调大 1 号优化至 12sp**（比普通消息气泡字号小 1 号，比原本的 11sp 略大），并将行高同步增加至 `18.sp`（`fontSize + 5`），保证排版在微调后重现极其清透、呼吸舒展的视觉美感。
+- **XML 渲染器头部动作合并与高度高精度无感自适应重构**：重写了 `HtmlArtifactRenderer.kt` 与 `CodeBlockHeader.kt` 的交互逻辑，将“全屏预览”和“下载（导出 PNG）”动作按钮，**从 HTML 页面右下角直接移入代码块最顶部的 Header 动作栏**，与“编辑”和“复制”图标按钮并排展示，高度彻底合一；同步移除了 `RichContentWebView` 和 `HtmlArtifactCard` 外部强行限制的 `200.dp` 硬编码高度，并在 `RichContentWebView` 内部**构建了智能 Viewport 与 Monospace HTML 模板包裹外壳**：针对裸 XML（如 `<tool_call>`）自动渲染在紧凑 CSS 模板中以解决缩放失准问题，配合 Math.max 双测量与 100ms 延时二次校准，实现了无空白残留的 100% 精准自适应。
+- **代码行号与间距紧凑化**：将 `CodeBlockHeader` 中行号物理宽度 `gutterWidth` 缩窄至专业紧凑标准，同步缩减行号 Column 和代码 Box 的 paddings，累计为屏幕赢回了 34dp 以上的水平宽度，大幅降低了移动设备上的代码折行率。
+
+
 ## 远期设计目标 (Roadmap)
 
 ### 1. 多分支会话系统 (Multi-branching System)

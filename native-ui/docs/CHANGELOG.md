@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- [UI/Common] **根治思考容器中文段落排版重叠与字号微调优化**：在 `NexaraMarkdownTheme.kt` 中补全了段落拷贝属性的 `fontSize = base`，使得微缩文本能够与其 12.8sp 行高完美搭配，彻底告别文字挤压重叠；针对用户关于“思考容器字体偏小/偏大”的高阶设计微调，将思考容器字号整体**优化至 12sp**（相比原 11sp 增大 1 号，比普通消息气泡字号小 1 号），行高同步设定为极其舒适舒展的 `18.sp`，使思考内容依然重现极其清透、呼吸舒展的现代感排版美感。
+- [UI/Common] **XML (HTML) 渲染器头部动作合并与高度高精度无感自适应重构**：将原本位于 HTML 卡片右下角悬浮的“下载（导出 PNG）”与“全屏预览”操作按钮，直接**并入代码块顶部的 Header Row 动作栏**，与“编辑”和“复制”按钮在同一行内整齐并列展示。同步移除了 `RichContentWebView` 和 `HtmlArtifactCard` 外部强行限制的 `200.dp` 硬编码高度，并在 `RichContentWebView` 内部**引入了智能 Viewport 与 Monospace HTML 模板包裹外壳**：针对不包含 `<html>` 标签的裸 XML/片段（包括 `<tool_call>` 纯指令代码），自动注入带 Viewport、margin 归零的紧凑 CSS 模板以解决 WebView 缩放测量失准问题；同时在 JS 测量层采用 `Math.max(scrollHeight)` 并加入 100ms 延时的二次精细校准，确保任何 XML 代码块底部的包裹容器都能以 100% 精准的高度自动收缩包裹，绝无大片空白残留。
+- [UI/Common] **代码块行号与两端白边 IDE 级深度瘦身**：缩窄 `CodeBlockHeader` 中行号列的 `gutterWidth`（由 44/36/28.dp 极致缩窄为 28/20/12.dp），并将列两端的内边距缩减至极简的 8.dp/6.dp 级别，**累计在横向上为移动设备夺回了 34dp 以上的黄金阅读宽度**，极大缩减了代码折行率。
+- [UI/Settings] **设置页“Token 用量”更名为“用量管理”**：为了更贴合高品质应用的用户视角，将设置主页的“Token 用量”菜单项以及其对应的全局详情统计页面 Title 同步更名为**“用量管理”**（英文环境下同步为**“Usage Management”**），使其在语义上更具普适性与现代感。
+- [RAG] **清空向量数据库时文档索引状态同步重置**：彻底解决了清空向量数据库后，知识库文档和目录的索引徽章状态仍顽固保持为“已索引”的生命周期不同步 Bug。重构了 `clearAllVectors` 数据操作链路，在底层 DAO（`FileEntryDao.kt`）和 Repository 层引入了批量重置接口 `resetAllRAGStatus`。清空向量时一键将 `workspace_files` 表中所有文档的 `vectorized_at` 与 `kg_extracted_at` 时间戳字段彻底归零，完美闭合了物理资源状态与向量存储生命周期的响应式同步机制。
+- [UI/Settings] **“记忆设置”页面功能去噪与更名统一**：采纳用户的高阶设计洞察，将记忆设置主页顶部的“向量索引状态”卡片彻底移除，规避了与“向量统计”二级页面内部指标的高度重复，大幅精炼了页面高度；同时，将主页的“高级”点击选项卡正式重命名为“知识图谱”，实现了与跳转后二级页面 Header 标题“知识图谱”的完全吻合与视觉体验的一致性。
+- [UI/Settings] **用户卡片视觉去噪**：删除了 `UserSettingsHomeScreen.kt` 的 `UserProfileHeader` 中硬编码的 `"ID: 8823192"` 文字，使设置界面顶部的用户信息卡片仅保留用户头像和用户名，界面视觉效果显著更加清爽、简约，避免了多余的信息噪点。
+- [UI/Common] **P0 统一危险操作二次确认弹窗样式与错位修复**：彻底解决了 `NexaraConfirmDialog` 因在 `UserSettingsHomeScreen`、`SessionSettingsScreen`、`RecycleBinPanel`、`ProviderModelsScreen` 中漏掉 `androidx.compose.ui.window.Dialog` 包裹导致弹窗飘在屏幕最顶端、覆盖状态栏的严重错位 Bug。同时，重构了 `ConfirmDialog` 内部实现，直接以 `Dialog` 窗体承载 `NexaraConfirmDialog`，使得全系统 6 处删除确认弹窗（助手、会话、提供商、文件、模型）完全统一为优雅奢华的屏幕中央 Glassmorphism 拟态暗磨砂玻璃弹窗！
+- [UI/Common] **删除确认按钮高对比度深红配色统一**：遵循高阶视觉质量规范，将破坏性操作按钮的背景色统一为深红色（`Color(0xFFBA1A1A)`），前景文字由低对比度的淡粉红升级为高对比度、极其清晰的纯白文字（`Color.White`），彻底解决了淡红色背景与文字混杂、导致文字看不清的 Bug。
 - [RAG] **P0 文档检索丢失修复**：修复了 `MemoryManager.kt` 中由于 parseType 判定与向量入库标签不匹配（`"doc"` vs `"document"`）导致所有文档检索结果在后处理时被静默丢弃的 Bug。
 - [KG] **UI 清理**：移除知识图谱界面 `KnowledgeGraphScreen` 中用于测试/Mock 的 Mock 数据注入（AutoFixHigh）和清空图谱（DeleteSweep）按钮，并在 `KnowledgeGraphViewModel` 中清理了对应的 `injectMockData` 及 `clearGraph` 逻辑，统一使用真实数据。
 

@@ -62,7 +62,7 @@ class ContextBuilder(
         } else ""
         val ragResult = performRagRetrieval(params)
         val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
-        val kgEnabled = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else (params.session.ragOptions?.enableKnowledgeGraph ?: false)
+        val kgEnabled = (params.session.ragOptions ?: tempRagOptions).enableKnowledgeGraph == true
         val kgContext = if (kgProvider != null && ragResult.second.isNotEmpty() && kgEnabled) {
             try {
                 params.onRagProgress?.invoke("KG retrieval", 95, null)
@@ -307,7 +307,7 @@ class ContextBuilder(
             }
             sb.appendLine("$prefix$icon ${step.title}")
             if (step.note != null) {
-                sb.appendLine("$prefix   📝 ${step.note!!.take(120)}")
+                sb.appendLine("$prefix   📝 ${step.note.take(120)}")
             }
             if (step.children.isNotEmpty()) {
                 renderTaskTree(sb, step.children, indent + 1)

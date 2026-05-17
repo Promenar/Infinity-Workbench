@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -101,12 +102,12 @@ fun NexaraConfirmDialog(
                     onClick = onConfirm,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isDestructive) {
-                            NexaraColors.ErrorContainer
+                            Color(0xFFBA1A1A) // 优雅醒目的深红色
                         } else {
                             NexaraColors.Primary
                         },
                         contentColor = if (isDestructive) {
-                            NexaraColors.OnErrorContainer
+                            Color.White // 高对比度的纯白文字，保证易读性
                         } else {
                             NexaraColors.OnPrimary
                         }

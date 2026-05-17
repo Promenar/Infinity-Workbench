@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Agent 工具 Fallback 解析器重构与工作区图标优化 (2026-05-18 00:45)
+- **🔴 P0 — 修复 Kotlin `Collection.all` 导致的 Fallback 解析锁死 Bug**：
+  - 在流式生成完成判定中，将 `hasCompleteToolCalls` 的条件修正为 `accumulatedToolCalls.isNotEmpty() && ...`。
+  - 彻底解决了当没有标准工具调用（列表为空）时，`all` 默认返回 `true` 导致兜底 Fallback 解析被永久闭锁的重大 Bug。
+- **🔴 P0 — 消除大括号配对扫描 3 处冗余并提供超强维护性**：
+  - 提炼并实现 `scanBalancedJsonSegments` 和 `findMatchingCloseBrace` 公共方法，完美实现嵌套 JSON 的数学级闭合配对，避开了大括号嵌套时的解析截断问题，并彻底消除 3 处相同逻辑的冗余。
+- **🔴 P0 — 编译安全 getSkill O(1) 过滤与误杀防护**：
+  - 用 `skillRegistry?.getSkill(it) != null` 替换了原方案中不存在的 `hasTool()`，杜绝了编译阻塞。
+  - 结合合法工具数据库校验，只物理剔除合法的系统工具，科普类 Markdown JSON 示例予以 100% 完整保留。
+- **🟡 P1 — 工作区右上角图标高保真更替**：
+  - 将聊天界面右上角起动 Workspace 的按钮图标从 `Icons.Rounded.Tune`（设置旋钮）更替为高级亮丽的 `Icons.Rounded.Folder`（文件夹）。
+  - 同步修正了第 58 行静态导入，规避编译风险。
+- **编译与回归测试验证**：全量编译 100% 顺利绿灯秒过，架构稳固如磐石。
+
+### Token 用量页面三维审计修复 — P0 全表扫描消除 + 安全确认弹窗 + 国际化 (2026-05-17 22:35)
+- **🔴 P0 — 消除 4× 全表扫描性能灾难**：
+  - 在 MessageDao 中新增 3 个 SQL 级聚合查询：`getTotalTokenUsage()`、`getTokenUsageByModel()`，修复了 `getSessionTokenRanking()` 的 JOIN Bug（`m.id = s.id` → `m.session_id = s.id`），用 `COALESCE` 防止 NULL 聚合。
+  - 重写 TokenStatsRepository，所有聚合改用 SQL 级查询，5000 条消息从 20,000 次 Entity 反序列化降至 SQL 直接返回约 23 行。
+  - 修复 `getTopSessions` 会话标题永远为 null 的 Bug，现在通过 SQL `LEFT JOIN sessions` 正确获取标题。
+- **🔴 P0 — 清空操作添加二次确认弹窗**：
+  - "Clear All History" 按钮现在使用 `ConfirmDialog` → `NexaraConfirmDialog` 二次确认，与系统其他破坏性操作一致。
+  - ViewModel 新增 `showClearConfirm()` / `dismissClearConfirm()` / `clearStats()` 三段式安全流程。
+- **🟡 P1 — 国际化 9 处硬编码字符串**：全部迁入 strings.xml，中英双语完整覆盖。
+- **🟡 P2 — 加载态 + 异常日志**：新增 `CircularProgressIndicator` 加载态，异常从空 catch 升级为 `Log.e`。
+- **🟡 P2 — 测试全覆盖**：重写 TokenStatsRepositoryTest，适配新 SQL 接口，新增 getTopSessions / getDailyTrend 测试。
+- **🔧 formatTokenCount 精度修复**：改用浮点除法，不再截断 1.25M 级数值。
+- **编译验证**：`compileDebugKotlin` 100% 绿灯通过。
 ### 思考容器完毕折叠、首条消息 RAG 故障根治及知识图谱大文本分段提取 (2026-05-17 21:55)
 - **🔴 P0 — 思考容器完毕后自动折叠与斜体小字样式优化**：
   - 重构 [ChatInlineComponents.kt](file:///k:/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/chat/ChatInlineComponents.kt#L100)，在 `MarkdownText` 中添加并透传了 `fontStyle` 字型参数。

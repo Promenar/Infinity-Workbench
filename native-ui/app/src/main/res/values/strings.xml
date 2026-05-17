@@ -199,7 +199,7 @@
     <string name="settings_rag_desc">Chunking, memory, vectorization</string>
     <string name="settings_advanced_retrieval">Advanced Retrieval</string>
     <string name="settings_retrieval_desc">Reranking, query rewriting, hybrid search</string>
-    <string name="settings_token_usage">Token Usage</string>
+    <string name="settings_token_usage">Usage Management</string>
     <string name="settings_token_cost_month">%1$s this month</string>
     <string name="settings_section_tools">Tools</string>
     <string name="settings_web_search">Web Search</string>
@@ -603,14 +603,24 @@
     <string name="theme_secondary_btn">Secondary Button</string>
 
     <!-- TokenUsageScreen -->
-    <string name="token_title">Token Usage</string>
+    <string name="token_title">Usage Management</string>
     <string name="token_desc">Global statistics across all providers and models.</string>
     <string name="token_total_usage">TOTAL USAGE</string>
     <string name="token_tokens">tokens</string>
     <string name="token_clear_history">Clear All History</string>
     <string name="token_in_out">In: %1$s · Out: %2$s</string>
+    <string name="token_in_short">In: %1$s</string>
+    <string name="token_out_short">Out: %1$s</string>
     <string name="token_active_model">Active Model</string>
     <string name="token_no_data">No token usage data yet. Start a conversation to see stats.</string>
+    <string name="token_top_sessions">Top Sessions</string>
+    <string name="token_7day_trend">7-Day Trend</string>
+    <string name="token_input_label">Input</string>
+    <string name="token_output_label">Output</string>
+    <string name="token_est_cost">Est. Cost: $%.4f</string>
+    <string name="token_pricing_unavailable">Pricing unavailable</string>
+    <string name="token_clear_confirm_title">Clear Token History</string>
+    <string name="token_clear_confirm_desc">This will permanently erase all token usage statistics. This action cannot be undone.</string>
     <string name="common_cancel">Cancel</string>
 
     <!-- SettingsViewModel defaults -->
@@ -777,7 +787,7 @@
     <string name="rag_config_reranker">Reranker</string>
     <string name="rag_config_reranker_enable">Enable Reranker</string>
     <string name="rag_config_reranker_desc">Re-ranks retrieved chunks for better relevance</string>
-    <string name="rag_config_advanced_link">Advanced</string>
+    <string name="rag_config_advanced_link">Knowledge Graph</string>
     <string name="rag_config_advanced_desc">Knowledge graph and extraction settings</string>
     <string name="rag_config_details_link">Vector Stats</string>
     <string name="rag_config_details_desc">Debug and diagnostics</string>

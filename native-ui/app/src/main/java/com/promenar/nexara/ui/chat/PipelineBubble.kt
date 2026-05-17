@@ -32,6 +32,8 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
+import kotlinx.coroutines.delay
+import org.json.JSONObject
 
 // ─────────────────────────────────────────────────────────────────
 //  样式与布局常量
@@ -234,6 +236,78 @@ private sealed class PipelineStep {
     ) : PipelineStep()
 }
 
+// ── 工具内容嗅探：覆盖 JSON 代码块、裸 JSON、分隔符文本、XML 四种格式 ──
+private val TOOL_CONTENT_SNIFFER = Regex(
+    """(?:
+        ```(?:json)?\s*\n?\{[\s\S]*?"(?:query|name|tool|function)"[\s\S]*?\}\s*\n?```
+        |\{[^}]*"(?:tool_name|tool_call_id|query|search|top_n|top_k)"[^}]*\}
+        |---\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]
+        |<(?:tool_call|function_call|function_name)[\s\S]*?/>
+    )""",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.COMMENTS)
+)
+
+private fun hasInlineToolData(content: String): Boolean =
+    TOOL_CONTENT_SNIFFER.containsMatchIn(content)
+
+private fun stripToolArtifacts(content: String): String {
+    var clean = content
+    clean = TOOL_CONTENT_SNIFFER.replace(clean, "")
+    return clean.trim()
+}
+
+private fun buildSyntheticExecutionSteps(
+    toolCalls: List<String>,
+    toolResults: List<String>
+): List<ExecutionStep> {
+    if (toolCalls.isEmpty() && toolResults.isEmpty()) return emptyList()
+
+    val steps = mutableListOf<ExecutionStep>()
+    val timestamp = System.currentTimeMillis()
+
+    toolCalls.forEachIndexed { index, args ->
+        val toolName = runCatching {
+            JSONObject(args).optString("name")
+                ?: JSONObject(args).optString("tool")
+                ?: JSONObject(args).optString("function")
+                ?: "工具调用"
+        }.getOrDefault("工具调用")
+
+        steps.add(
+            ExecutionStep(
+                id = "synthetic-tool-$timestamp-$index",
+                type = "tool_call",
+                toolName = toolName,
+                toolArgs = args,
+                timestamp = timestamp + index
+            )
+        )
+    }
+
+    toolResults.forEachIndexed { index, result ->
+        steps.add(
+            ExecutionStep(
+                id = "synthetic-result-$timestamp-$index",
+                type = if (result.contains("error", ignoreCase = true)) "error" else "tool_result",
+                content = result.take(500),
+                timestamp = timestamp + toolCalls.size + index
+            )
+        )
+    }
+
+    return steps
+}
+
+private fun extractSyntheticExecutionSteps(content: String): List<ExecutionStep> {
+    val jsonPattern = Regex("""\{[^{}]*"(?:tool_name|tool_call_id|query|name|function)"[^{}]*\}""")
+    val separatorPattern = Regex("""---\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]""", RegexOption.IGNORE_CASE)
+
+    val toolCalls = jsonPattern.findAll(content).map { it.value }.toList()
+    val toolResults = separatorPattern.split(content).drop(1).map { it.trim() }
+
+    return buildSyntheticExecutionSteps(toolCalls, toolResults)
+}
+
 private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
     val steps = mutableListOf<PipelineStep>()
 
@@ -252,9 +326,23 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
                 ))
             }
 
-            // 3. 正文 → Content step
+            // 3. 正文 → Content step（含工具内容嗅探）
             if (msg.content.isNotBlank()) {
-                steps.add(PipelineStep.Content(content = msg.content))
+                // 渲染层最后防线：对 content 做工具特征检测
+                if (hasInlineToolData(msg.content)) {
+                    val syntheticSteps = extractSyntheticExecutionSteps(msg.content)
+                    steps.add(PipelineStep.ToolExec(
+                        steps = syntheticSteps,
+                        isExecuting = false
+                    ))
+                    // 清洗后的剩余正文（移除工具 JSON/XML 部分）
+                    val cleanContent = stripToolArtifacts(msg.content)
+                    if (cleanContent.isNotBlank()) {
+                        steps.add(PipelineStep.Content(content = cleanContent))
+                    }
+                } else {
+                    steps.add(PipelineStep.Content(content = msg.content))
+                }
             }
         }
         // TOOL 消息的内容已经在 executionSteps 中展示，此处跳过
@@ -273,10 +361,24 @@ private fun InlineThinkingRow(
     isGenerating: Boolean,
     fontSize: Int
 ) {
-    var isExpanded by remember { mutableStateOf(isGenerating) }
-    // 联动 isGenerating 状态，生成时自动展开，生成完毕时自动折叠
+    var internalExpanded by remember { mutableStateOf(isGenerating) }
+    var collapsePending by remember { mutableStateOf(false) }
+
+    // 联动 isGenerating 状态：生成时立即展开，生成完毕 300ms 延迟折叠
     LaunchedEffect(isGenerating) {
-        isExpanded = isGenerating
+        when {
+            isGenerating -> {
+                collapsePending = false
+                internalExpanded = true
+            }
+            else -> {
+                collapsePending = true
+                delay(300L)
+                if (collapsePending) {
+                    internalExpanded = false
+                }
+            }
+        }
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -293,7 +395,10 @@ private fun InlineThinkingRow(
                     .clip(RoundedCornerShape(8.dp))
                     .background(NexaraColors.Primary.copy(alpha = 0.08f))
                     .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                    .clickable { isExpanded = !isExpanded } // 移到此处修复涟漪超出容器 Bug
+                    .clickable {
+                        collapsePending = false
+                        internalExpanded = !internalExpanded
+                    } // 移到此处修复涟漪超出容器 Bug
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -327,7 +432,7 @@ private fun InlineThinkingRow(
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Icon(
-                    if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    if (internalExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                     null,
                     tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.size(14.dp)
@@ -336,9 +441,9 @@ private fun InlineThinkingRow(
         }
 
         AnimatedVisibility(
-            visible = isExpanded && reasoning.isNotBlank(),
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            visible = internalExpanded && reasoning.isNotBlank(),
+            enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(200)),
+            exit = shrinkVertically(animationSpec = tween(300)) + fadeOut(animationSpec = tween(200))
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Surface(
@@ -346,9 +451,8 @@ private fun InlineThinkingRow(
                     shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.15f)),
                     modifier = Modifier
-                        .fillMaxWidth() // 展开内容与正文等宽
+                        .fillMaxWidth()
                         .padding(bottom = 4.dp)
-                        .animateContentSize() // 增加平滑动画，解决重排时的视觉跳变
                 ) {
                     val dimmedColor = NexaraColors.Outline.copy(alpha = 0.7f) // 弱化颜色
                     val targetFontSize = (fontSize - THINKING_FONT_SIZE_DELTA).coerceAtLeast(THINKING_MIN_FONT_SIZE)

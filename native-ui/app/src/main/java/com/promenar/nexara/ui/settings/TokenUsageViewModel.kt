@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.settings
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -9,7 +10,6 @@ import com.promenar.nexara.data.model.findModelPricing
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.domain.repository.DailyTokenStats
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
-import com.promenar.nexara.domain.repository.ModelTokenStats
 import com.promenar.nexara.domain.repository.SessionTokenUsage
 import com.promenar.nexara.domain.repository.TokenUsageAggregate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,7 +34,9 @@ data class TokenStatsState(
     val modelBreakdown: List<ModelCostInfo> = emptyList(),
     val topSessions: List<SessionTokenUsage> = emptyList(),
     val dailyTrend: List<DailyTokenStats> = emptyList(),
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val error: String? = null,
+    val showClearConfirm: Boolean = false
 )
 
 class TokenUsageViewModel(
@@ -51,7 +53,7 @@ class TokenUsageViewModel(
 
     fun loadStats() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.value = _state.value.copy(isLoading = true, error = null)
             try {
                 val totalUsage = tokenStatsRepository.getTotalUsage()
                 val byModel = tokenStatsRepository.getUsageByModel()
@@ -87,10 +89,19 @@ class TokenUsageViewModel(
                     dailyTrend = dailyTrend,
                     isLoading = false
                 )
-            } catch (_: Exception) {
-                _state.value = _state.value.copy(isLoading = false)
+            } catch (e: Exception) {
+                Log.e(TAG, "loadStats failed", e)
+                _state.value = _state.value.copy(isLoading = false, error = e.message)
             }
         }
+    }
+
+    fun showClearConfirm() {
+        _state.value = _state.value.copy(showClearConfirm = true)
+    }
+
+    fun dismissClearConfirm() {
+        _state.value = _state.value.copy(showClearConfirm = false)
     }
 
     fun clearStats() {
@@ -98,11 +109,17 @@ class TokenUsageViewModel(
             try {
                 tokenStatsRepository.resetStats()
                 _state.value = TokenStatsState(isLoading = false)
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                Log.e(TAG, "clearStats failed", e)
+            } finally {
+                _state.value = _state.value.copy(showClearConfirm = false)
+            }
         }
     }
 
     companion object {
+        private const val TAG = "TokenUsageVM"
+
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

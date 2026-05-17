@@ -325,17 +325,19 @@ fun UserSettingsHomeScreen(
     }
 
     if (showDeleteDialog != null) {
-        NexaraConfirmDialog(
-            title = stringResource(R.string.settings_delete_provider_title),
-            message = stringResource(R.string.settings_delete_provider_message),
-            confirmText = stringResource(R.string.settings_btn_delete),
-            isDestructive = true,
-            onConfirm = {
-                showDeleteDialog?.let { viewModel.deleteProvider(it) }
-                showDeleteDialog = null
-            },
-            onCancel = { showDeleteDialog = null }
-        )
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showDeleteDialog = null }) {
+            NexaraConfirmDialog(
+                title = stringResource(R.string.settings_delete_provider_title),
+                message = stringResource(R.string.settings_delete_provider_message),
+                confirmText = stringResource(R.string.settings_btn_delete),
+                isDestructive = true,
+                onConfirm = {
+                    showDeleteDialog?.let { viewModel.deleteProvider(it) }
+                    showDeleteDialog = null
+                },
+                onCancel = { showDeleteDialog = null }
+            )
+        }
     }
 
     if (showLanguageDialog) {
@@ -676,11 +678,6 @@ private fun UserProfileHeader(
                     text = userName,
                     style = NexaraTypography.headlineMedium,
                     color = NexaraColors.OnSurface
-                )
-                Text(
-                    text = "ID: 8823192",
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant
                 )
             }
 

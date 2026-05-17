@@ -48,4 +48,7 @@ interface FileEntryDao {
     @Transaction
     @Query("DELETE FROM workspace_files WHERE uuid = :uuid")
     suspend fun deleteByUuid(uuid: String)
+
+    @Query("UPDATE workspace_files SET vectorized_at = NULL, kg_extracted_at = NULL")
+    suspend fun resetAllRAGStatus()
 }

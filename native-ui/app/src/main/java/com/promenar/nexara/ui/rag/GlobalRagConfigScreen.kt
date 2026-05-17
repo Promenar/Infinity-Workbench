@@ -73,7 +73,6 @@ fun GlobalRagConfigScreen(
     onNavigateToDebug: () -> Unit = {}
 ) {
     val config by viewModel.config.collectAsState()
-    val vectorStats by viewModel.vectorStats.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
     var clearWithGraph by remember { mutableStateOf(true) }
 
@@ -186,36 +185,7 @@ fun GlobalRagConfigScreen(
                 }
             }
 
-            NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.large as RoundedCornerShape
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(stringResource(R.string.rag_config_vector_status), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                    val stats = vectorStats
-                    if (stats != null) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                 StatCard(stringResource(R.string.rag_config_stats_documents), "${"%,d".format(stats.byType.doc)}")
-                            }
-                            Box(modifier = Modifier.weight(1f)) {
-                                 StatCard(stringResource(R.string.rag_config_stats_vectors), "${"%,d".format(stats.total)}")
-                            }
-                            Box(modifier = Modifier.weight(1f)) {
-                                 StatCard(stringResource(R.string.rag_config_stats_storage), "${"%.1f".format(stats.storageSizeMb)} MB")
-                            }
-                        }
-                    } else {
-                        Text(stringResource(R.string.rag_config_no_data), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-                    }
-                }
-            }
+
 
             // Embedding 模型高级设置
             NexaraGlassCard(
@@ -395,21 +365,7 @@ fun GlobalRagConfigScreen(
 
 }
 
-@Composable
-private fun StatCard(label: String, value: String) {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NexaraShapes.medium as RoundedCornerShape
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(value, style = NexaraTypography.headlineMedium.copy(fontWeight = FontWeight.Black), color = NexaraColors.Primary)
-            Text(label, style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
-        }
-    }
-}
+
 
 @Composable
 private fun NavigationRow(

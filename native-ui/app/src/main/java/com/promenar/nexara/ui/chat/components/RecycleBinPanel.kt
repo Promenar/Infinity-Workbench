@@ -114,33 +114,37 @@ fun RecycleBinPanel(
     }
 
     showPermanentDeleteConfirm?.let { target ->
-        NexaraConfirmDialog(
-            title = "永久删除",
-            message = "永久删除「${target.name}」？此操作不可撤销。",
-            confirmText = "永久删除",
-            onConfirm = {
-                scope.launch { workspaceRepo.permanentDelete(target.uuid) }
-                showPermanentDeleteConfirm = null
-            },
-            onCancel = { showPermanentDeleteConfirm = null },
-            isDestructive = true
-        )
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showPermanentDeleteConfirm = null }) {
+            NexaraConfirmDialog(
+                title = "永久删除",
+                message = "永久删除「${target.name}」？此操作不可撤销。",
+                confirmText = "永久删除",
+                onConfirm = {
+                    scope.launch { workspaceRepo.permanentDelete(target.uuid) }
+                    showPermanentDeleteConfirm = null
+                },
+                onCancel = { showPermanentDeleteConfirm = null },
+                isDestructive = true
+            )
+        }
     }
 
     if (showEmptyConfirm) {
-        NexaraConfirmDialog(
-            title = "清空回收站",
-            message = "清空此工作区的回收站？所有文件将被永久删除。此操作不可撤销。",
-            confirmText = "清空全部",
-            onConfirm = {
-                if (workspaceRootUuid != null) {
-                    scope.launch { workspaceRepo.emptyRecycleBin(workspaceRootUuid) }
-                }
-                showEmptyConfirm = false
-            },
-            onCancel = { showEmptyConfirm = false },
-            isDestructive = true
-        )
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showEmptyConfirm = false }) {
+            NexaraConfirmDialog(
+                title = "清空回收站",
+                message = "清空此工作区的回收站？所有文件将被永久删除。此操作不可撤销。",
+                confirmText = "清空全部",
+                onConfirm = {
+                    if (workspaceRootUuid != null) {
+                        scope.launch { workspaceRepo.emptyRecycleBin(workspaceRootUuid) }
+                    }
+                    showEmptyConfirm = false
+                },
+                onCancel = { showEmptyConfirm = false },
+                isDestructive = true
+            )
+        }
     }
 }
 

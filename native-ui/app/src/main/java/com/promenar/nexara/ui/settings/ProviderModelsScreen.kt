@@ -276,17 +276,19 @@ fun ProviderModelsScreen(
     }
 
     if (showDeleteAllDialog) {
-        NexaraConfirmDialog(
-            title = stringResource(R.string.provider_models_delete_all_title),
-            message = stringResource(R.string.provider_models_delete_all_message),
-            confirmText = stringResource(R.string.shared_btn_delete),
-            isDestructive = true,
-            onConfirm = {
-                viewModel.deleteAllModels()
-                showDeleteAllDialog = false
-            },
-            onCancel = { showDeleteAllDialog = false }
-        )
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showDeleteAllDialog = false }) {
+            NexaraConfirmDialog(
+                title = stringResource(R.string.provider_models_delete_all_title),
+                message = stringResource(R.string.provider_models_delete_all_message),
+                confirmText = stringResource(R.string.shared_btn_delete),
+                isDestructive = true,
+                onConfirm = {
+                    viewModel.deleteAllModels()
+                    showDeleteAllDialog = false
+                },
+                onCancel = { showDeleteAllDialog = false }
+            )
+        }
     }
 
     NexaraBottomSheet(

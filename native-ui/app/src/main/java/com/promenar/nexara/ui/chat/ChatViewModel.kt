@@ -18,6 +18,7 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.TokenUsage
+import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.model.RagMetadata
@@ -474,6 +475,11 @@ class ChatViewModel(
                     is StreamChunk.TextDelta -> {
                         accumulatedContent += chunk.content
                         chunk.reasoning?.let { accumulatedReasoning += it }
+                        val sanitized = sanitizeStreamingContent(accumulatedContent, accumulatedToolCalls)
+                        if (sanitized.isToolInjection) {
+                            accumulatedContent = sanitized.cleanText
+                            appendSyntheticExecutionStep(sessionId, assistantMsgId, sanitized.toolCallData)
+                        }
                         _streamingContent.update { accumulatedContent }
                         messageManager.updateMessageContent(
                             sessionId, assistantMsgId, accumulatedContent,
@@ -569,7 +575,10 @@ class ChatViewModel(
         // ── Fallback 解析器：模型可能在 TextDelta 中以 Markdown 代码块形式输出工具调用 JSON ──
         // 部分模型（如 MiniMax-M2.7）不会通过标准 ToolCallDelta 协议下发工具指令，
         // 而是将工具调用以 JSON 代码块形式嵌入普通文本流。此处做后置正则提取兜底。
-        if (accumulatedToolCalls.isEmpty() && accumulatedContent.isNotBlank()) {
+        val hasCompleteToolCalls = accumulatedToolCalls.isNotEmpty() && accumulatedToolCalls.all {
+            it.name.isNotEmpty() && it.arguments.isNotEmpty()
+        }
+        if (!hasCompleteToolCalls && accumulatedContent.isNotBlank()) {
             val fallbackCalls = extractToolCallsFromText(accumulatedContent)
             if (fallbackCalls.isNotEmpty()) {
                 // 将提取到的工具调用追加到累积列表
@@ -1457,23 +1466,30 @@ class ChatViewModel(
     private fun extractToolCallsFromText(content: String): List<ToolCall> {
         val results = mutableListOf<ToolCall>()
 
-        // 匹配 Markdown 代码块中的 JSON（```json ... ``` 或 ``` ... ```）
+        // [DeepSeek 审计优化] xmlToolCallRegex 带有捕获组 (.*?)，用于在 Fallback 时精准提取文本段。
+        // 它与文件底部的 XML_TOOL_PATTERN（无捕获组，用于整体匹配剔除）分工不同。
+        val xmlToolCallRegex = Regex(
+            """<(?:tool_call|function_call)[^>]*>(.*?)</(?:tool_call|function_call)>""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+
         val codeBlockRegex = Regex(
             """```(?:json)?\s*\n(.*?)\n\s*```""",
             setOf(RegexOption.DOT_MATCHES_ALL)
         )
 
-        // 匹配裸 JSON 对象（含 tool/function/name 字段）
-        val bareJsonRegex = Regex(
-            """\{\s*"(?:name|function|tool|tool_name)"\s*:\s*"[^"]+"[^}]*\}"""
-        )
-
         val candidates = mutableListOf<String>()
+
+        // 优先 1：XML 标签提取
+        xmlToolCallRegex.findAll(content).forEach { candidates.add(it.groupValues[1]) }
+
+        // 优先 2：Markdown 代码块提取
         codeBlockRegex.findAll(content).forEach { candidates.add(it.groupValues[1]) }
 
-        // 如果代码块中没找到，尝试直接从整个 content 中提取裸 JSON
+        // 优先 3：终极兜底，用数学精确的大括号匹配算法寻找嵌套裸 JSON
         if (candidates.isEmpty()) {
-            bareJsonRegex.findAll(content).forEach { candidates.add(it.value) }
+            val segments = scanBalancedJsonSegments(content)
+            segments.forEach { candidates.add(it.content) }
         }
 
         for (candidate in candidates) {
@@ -1485,15 +1501,16 @@ class ChatViewModel(
                     results.add(toolCall)
                 }
             } catch (_: Exception) {
-                // 单行 JSON 未命中，尝试在代码块内再做裸 JSON 提取
-                bareJsonRegex.findAll(trimmed).forEach { m ->
+                // [DeepSeek 审计优化] 如果外层解析失败，尝试深度检索一次（兼容首尾存在杂质文本的情况）
+                val segments = scanBalancedJsonSegments(trimmed)
+                for (segment in segments) {
                     try {
-                        val inner = Json.parseToJsonElement(m.value)
+                        val inner = Json.parseToJsonElement(segment.content)
                         val tc = parseToolCallFromJson(inner, results.size)
                         if (tc != null && results.none { it.name == tc.name }) {
                             results.add(tc)
                         }
-                    } catch (_: Exception) { /* 静默跳过 */ }
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -1540,24 +1557,70 @@ class ChatViewModel(
      *   1. Markdown 代码块包裹的 JSON（```json ... ```）
      *   2. 裸 JSON 对象（以 { 开头含 tool/name/function 字段的行）
      */
-    private fun stripToolCallJsonBlocks(content: String): String {
-        // 模式 1: 代码块包裹的 JSON（含任何工具调用字段）
-        var result = content.replace(
-            Regex(
-                """```(?:json)?\s*\n(?:[\s\S]*?"(?:name|function|tool|tool_name)"[\s\S]*?)\n\s*```""",
-                setOf(RegexOption.MULTILINE)
-            )
-        ) { "" }
+    private val XML_TOOL_PATTERN = Regex(
+        """<(?:tool_call|function_call|function_name)[^>]*/?>[\s\S]*?</(?:tool_call|function_call)>""",
+        RegexOption.IGNORE_CASE
+    )
 
-        // 模式 2: 独立的裸 JSON 对象行（不是代码块的一部分）
-        val bareJsonLineRegex = Regex(
-            """^\s*\{\s*"(?:name|function|tool|tool_name)"\s*:\s*"[^"]+"[^}]*\}\s*$""",
+    private val TOOL_RESULT_SEPARATOR_PATTERN = Regex(
+        """---\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]\s*[\s\S]*?(?=\n\n|\n?$)""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+    )
+
+    private fun stripToolCallJsonBlocks(content: String): String {
+        var result = content
+
+        // 1. 彻底剔除 XML 格式标签及其内部内容
+        result = result.replace(XML_TOOL_PATTERN, "")
+
+        // 2. 彻底剔除 Markdown 代码块格式工具 JSON
+        val codeBlockJsonRegex = Regex(
+            """```(?:json)?\s*\n(?:[\s\S]*?"(?:name|function|tool|tool_name)"[\s\S]*?)\n\s*```""",
             setOf(RegexOption.MULTILINE)
         )
-        result = result.replace(bareJsonLineRegex) { "" }
+        result = result.replace(codeBlockJsonRegex) { "" }
 
-        // 清理多余空行
+        // 3. 利用大括号配对扫描器，彻底定位并剔除多行或嵌套裸 JSON 段
+        var index = 0
+        while (index < result.length) {
+            val segments = scanBalancedJsonSegments(result, index)
+            if (segments.isEmpty()) break
+
+            val firstSegment = segments.first()
+            val openBraceIdx = firstSegment.start
+            val closeBraceIdx = firstSegment.end
+            val possibleJson = firstSegment.content
+
+            var didRemove = false
+            try {
+                val element = Json.parseToJsonElement(possibleJson) as? JsonObject
+                val name = element?.get("name")?.jsonPrimitive?.content
+                    ?: element?.get("tool")?.jsonPrimitive?.content
+                    ?: element?.get("tool_name")?.jsonPrimitive?.content
+                    ?: element?.get("function")?.jsonObject?.get("name")?.jsonPrimitive?.content
+
+                // [DeepSeek 审计 P0 修复] 使用 getSkill O(1) 安全地检查该工具是否已被合法注册与启用，杜绝编译死锁
+                val isRegistered = name?.let { skillRegistry?.getSkill(it) != null } ?: false
+
+                if (isRegistered) {
+                    // [DeepSeek 审计 P1 优化] 剪裁掉这部分 JSON 文本段。由于字符串已被物理缩短，
+                    // 原 closeBraceIdx 之后的内容在新字符串中向前平移到了原 openBraceIdx 位置。
+                    // 故我们将 index 设为 openBraceIdx 重新在此处做下一轮扫描。
+                    result = result.substring(0, openBraceIdx) + result.substring(closeBraceIdx + 1)
+                    index = openBraceIdx
+                    didRemove = true
+                }
+            } catch (_: Exception) {}
+
+            if (!didRemove) {
+                index = closeBraceIdx + 1
+            }
+        }
+
+        // 4. 清理工具结果指示符与多余空行
+        result = result.replace(TOOL_RESULT_SEPARATOR_PATTERN, "")
         result = result.replace(Regex("\n{3,}"), "\n\n").trim()
+        
         return result
     }
 
@@ -1590,4 +1653,119 @@ class ChatViewModel(
             isGlobal = true
         )
     }
+
+    private data class SanitizedStreamingContent(
+        val cleanText: String,
+        val isToolInjection: Boolean,
+        val toolCallData: List<ExecutionStep> = emptyList()
+    )
+
+    private fun sanitizeStreamingContent(
+        content: String,
+        toolCalls: List<ToolCall>
+    ): SanitizedStreamingContent {
+        if (toolCalls.isNotEmpty()) return SanitizedStreamingContent(content, false)
+
+        val separatorIdx = content.indexOf("---")
+        if (separatorIdx < 0) return SanitizedStreamingContent(content, false)
+
+        val beforeSeparator = content.substring(0, separatorIdx)
+        val afterSeparator = content.substring(separatorIdx)
+
+        val isToolResult = afterSeparator.contains("结果") || afterSeparator.contains("result", ignoreCase = true)
+        if (!isToolResult) return SanitizedStreamingContent(content, false)
+
+        return SanitizedStreamingContent(
+            cleanText = beforeSeparator.trimEnd(),
+            isToolInjection = true,
+            toolCallData = listOf(
+                ExecutionStep(
+                    id = "stream-sniff-${System.currentTimeMillis()}",
+                    type = "tool_result",
+                    content = afterSeparator.take(500)
+                )
+            )
+        )
+    }
+
+    private suspend fun appendSyntheticExecutionStep(
+        sessionId: String,
+        targetMsgId: String,
+        newSteps: List<ExecutionStep>
+    ) {
+        val currentSession = store.getSession(sessionId) ?: return
+        val currentMsg = currentSession.messages.find { it.id == targetMsgId } ?: return
+        val currentSteps = currentMsg.executionSteps ?: emptyList()
+        val updatedSteps = currentSteps + newSteps
+        messageManager.updateMessageContent(
+            sessionId, targetMsgId, currentMsg.content,
+            UpdateMessageOptions(executionSteps = updatedSteps)
+        )
+    }
+
+    private data class JsonSegment(val start: Int, val end: Int, val content: String)
+
+    /**
+     * [DeepSeek 审计优化] 提取公共的大括号配对扫描器，消除重复代码。
+     * 在文本中扫描配对大括号包围的 JSON 段，支持任意深度的对象/数组嵌套，且跳过字面量及转义大括号。
+     * @return 匹配到的 JsonSegment 列表（含首尾索引对与 JSON 串），已通过 triggerKeywords 过滤
+     */
+    private fun scanBalancedJsonSegments(
+        text: String,
+        startIndex: Int = 0,
+        triggerKeywords: List<String> = listOf("\"name\"", "\"tool\"", "\"tool_name\"", "\"function\"")
+    ): List<JsonSegment> {
+        val segments = mutableListOf<JsonSegment>()
+        var index = startIndex
+        while (index < text.length) {
+            val openBraceIdx = text.indexOf('{', index)
+            if (openBraceIdx == -1) break
+            
+            val closeBraceIdx = findMatchingCloseBrace(text, openBraceIdx)
+            
+            if (closeBraceIdx != -1) {
+                val possibleJson = text.substring(openBraceIdx, closeBraceIdx + 1)
+                if (triggerKeywords.any { possibleJson.contains(it) }) {
+                    segments.add(JsonSegment(openBraceIdx, closeBraceIdx, possibleJson))
+                }
+                index = closeBraceIdx + 1
+            } else {
+                index = openBraceIdx + 1
+            }
+        }
+        return segments
+    }
+
+    /**
+     * 精确匹配闭合大括号。能够识别双引号作用域，并忽略其内部的任何大括号。
+     */
+    private fun findMatchingCloseBrace(text: String, startAt: Int): Int {
+        var braceCount = 0
+        var inQuote = false
+        var escaped = false
+        for (i in startAt until text.length) {
+            val c = text[i]
+            if (escaped) {
+                escaped = false
+                continue
+            }
+            if (c == '\\') {
+                escaped = true
+                continue
+            }
+            if (c == '"') {
+                inQuote = !inQuote
+                continue
+            }
+            if (!inQuote) {
+                if (c == '{') braceCount++
+                else if (c == '}') {
+                    braceCount--
+                    if (braceCount == 0) return i
+                }
+            }
+        }
+        return -1
+    }
 }
+

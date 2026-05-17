@@ -182,8 +182,8 @@ fun ThinkingBlock(
                     CompositionLocalProvider(
                         LocalTextStyle provides NexaraTypography.bodySmall.copy(
                             color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f),
-                            fontSize = (fontSize - 2).coerceAtLeast(11).sp,
-                            lineHeight = (fontSize + 4).sp,
+                            fontSize = (fontSize - 1).coerceAtLeast(11).sp,
+                            lineHeight = (fontSize + 5).sp,
                             fontStyle = FontStyle.Italic
                         )
                     ) {
@@ -191,7 +191,7 @@ fun ThinkingBlock(
                             markdown = reasoning,
                             modifier = Modifier.fillMaxWidth(),
                             isStreaming = isGenerating,
-                            fontSize = (fontSize - 2).coerceAtLeast(11),
+                            fontSize = (fontSize - 1).coerceAtLeast(11),
                             showCursor = false // Hide cursor in thinking block to avoid double cursors
                         )
                     }

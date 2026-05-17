@@ -16,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -42,6 +45,8 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
+import android.webkit.WebView
+
 
 @Composable
 fun CodeBlockWithHeader(
@@ -53,15 +58,22 @@ fun CodeBlockWithHeader(
     codeContent: @Composable () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
     var copied by remember { mutableStateOf(false) }
     var isEditing by remember { mutableStateOf(false) }
     var editedCode by remember(code) { mutableStateOf(code) }
     val lines = remember(code) { code.lines() }
     val lineCount = lines.size
     val gutterWidth = when {
-        lineCount >= 100 -> 44.dp
-        lineCount >= 10 -> 36.dp
-        else -> 28.dp
+        lineCount >= 100 -> 28.dp
+        lineCount >= 10 -> 20.dp
+        else -> 12.dp
+    }
+
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var showFullScreen by remember { mutableStateOf(false) }
+    val isRenderableHtml = remember(language) {
+        isHtmlArtifact(language)
     }
 
     LaunchedEffect(copied) {
@@ -93,6 +105,30 @@ fun CodeBlockWithHeader(
                 color = NexaraColors.OnSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
+            if (!isEditing && isRenderableHtml) {
+                IconButton(
+                    onClick = { showFullScreen = true },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Fullscreen,
+                        contentDescription = "Full screen",
+                        tint = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { webView?.let { exportHtmlArtifactPng(it, context) } },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Download,
+                        contentDescription = "Export PNG",
+                        tint = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
             if (onCodeChange != null) {
                 IconButton(
                     onClick = {
@@ -152,7 +188,7 @@ fun CodeBlockWithHeader(
         } else {
             Row(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 16.dp)
+                    modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 16.dp, bottom = 16.dp)
                 ) {
                     lines.forEachIndexed { index, _ ->
                         Text(
@@ -176,19 +212,28 @@ fun CodeBlockWithHeader(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)
+                        .padding(start = 8.dp, end = 8.dp, top = 16.dp, bottom = 16.dp)
                 ) {
                     codeContent()
                 }
             }
         }
-        if (!isEditing && isHtmlArtifact(language)) {
+        if (!isEditing && isRenderableHtml) {
             HtmlArtifactCard(
                 htmlCode = code,
                 language = language,
                 fontSize = fontSize,
+                onWebViewCreated = { wv -> webView = wv },
                 modifier = Modifier.padding(8.dp)
             )
         }
+    }
+
+    if (showFullScreen) {
+        HtmlArtifactsPopup(
+            htmlCode = code,
+            fontSize = fontSize,
+            onDismiss = { showFullScreen = false }
+        )
     }
 }

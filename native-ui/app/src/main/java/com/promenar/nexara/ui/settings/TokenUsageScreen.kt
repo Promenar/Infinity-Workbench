@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -36,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.repository.DailyTokenStats
 import com.promenar.nexara.domain.repository.SessionTokenUsage
+import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.common.NexaraCollapsibleSection
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
@@ -51,6 +53,16 @@ fun TokenUsageScreen(
     val viewModel: TokenUsageViewModel = viewModel(factory = TokenUsageViewModel.factory(context.applicationContext as android.app.Application))
     val state by viewModel.state.collectAsState()
 
+    ConfirmDialog(
+        show = state.showClearConfirm,
+        onDismiss = { viewModel.dismissClearConfirm() },
+        onConfirm = { viewModel.clearStats() },
+        title = stringResource(R.string.token_clear_confirm_title),
+        description = stringResource(R.string.token_clear_confirm_desc),
+        confirmLabel = stringResource(R.string.token_clear_history),
+        destructive = true
+    )
+
     NexaraPageLayout(
         title = stringResource(R.string.token_title),
         onBack = onNavigateBack
@@ -63,83 +75,100 @@ fun TokenUsageScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        GlobalStatsCard(state)
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (state.topSessions.isNotEmpty()) {
-            Text(
-                text = "Top Sessions",
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            state.topSessions.forEachIndexed { index, session ->
-                SessionRankingRow(index + 1, session)
-                Spacer(modifier = Modifier.height(6.dp))
-            }
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
-        if (state.dailyTrend.isNotEmpty()) {
-            Text(
-                text = "7-Day Trend",
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            TrendChart(state.dailyTrend)
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
-        if (state.modelBreakdown.isNotEmpty()) {
-            state.modelBreakdown.forEach { model ->
-                NexaraCollapsibleSection(
-                    title = buildString {
-                        append(model.name)
-                        append(" \u2014 ")
-                        append(formatTokenCount(model.inputTokens + model.outputTokens))
-                        append(" tokens")
-                    },
-                    initiallyExpanded = state.modelBreakdown.size <= 3
-                ) {
-                    ModelBreakdownRow(model)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-        }
-
-        if (state.globalInput == 0L && state.globalOutput == 0L) {
-            NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.medium as RoundedCornerShape
+        if (state.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = stringResource(R.string.token_no_data),
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant,
-                    modifier = Modifier.padding(16.dp)
+                CircularProgressIndicator(
+                    color = NexaraColors.Primary,
+                    strokeWidth = 2.dp
                 )
+            }
+        } else {
+            GlobalStatsCard(state)
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            if (state.topSessions.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.token_top_sessions),
+                    style = NexaraTypography.headlineMedium,
+                    color = NexaraColors.OnSurface
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                state.topSessions.forEachIndexed { index, session ->
+                    SessionRankingRow(index + 1, session)
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+
+            if (state.dailyTrend.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.token_7day_trend),
+                    style = NexaraTypography.headlineMedium,
+                    color = NexaraColors.OnSurface
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                TrendChart(state.dailyTrend)
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+
+            if (state.modelBreakdown.isNotEmpty()) {
+                state.modelBreakdown.forEach { model ->
+                    NexaraCollapsibleSection(
+                        title = buildString {
+                            append(model.name)
+                            append(" \u2014 ")
+                            append(formatTokenCount(model.inputTokens + model.outputTokens))
+                            append(" ")
+                            append(stringResource(R.string.token_tokens))
+                        },
+                        initiallyExpanded = state.modelBreakdown.size <= 3
+                    ) {
+                        ModelBreakdownRow(model)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            if (state.globalInput == 0L && state.globalOutput == 0L) {
+                NexaraGlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = NexaraShapes.medium as RoundedCornerShape
+                ) {
+                    Text(
+                        text = stringResource(R.string.token_no_data),
+                        style = NexaraTypography.bodyMedium,
+                        color = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(NexaraShapes.medium)
-                .background(NexaraColors.Error.copy(alpha = 0.1f))
-                .border(0.5.dp, NexaraColors.Error.copy(alpha = 0.3f), NexaraShapes.medium)
-                .clickable { viewModel.clearStats() }
-                .padding(vertical = 14.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = stringResource(R.string.token_clear_history),
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.Error
-            )
+        if (!state.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(NexaraShapes.medium)
+                    .background(NexaraColors.Error.copy(alpha = 0.1f))
+                    .border(0.5.dp, NexaraColors.Error.copy(alpha = 0.3f), NexaraShapes.medium)
+                    .clickable { viewModel.showClearConfirm() }
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.token_clear_history),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Error
+                )
+            }
         }
     }
 }
@@ -212,7 +241,7 @@ private fun GlobalStatsCard(state: TokenStatsState) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "In: ${formatTokenCount(state.globalInput)}",
+                        text = stringResource(R.string.token_in_short, formatTokenCount(state.globalInput)),
                         style = NexaraTypography.labelMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ),
@@ -224,7 +253,7 @@ private fun GlobalStatsCard(state: TokenStatsState) {
                         color = NexaraColors.Primary.copy(alpha = 0.5f)
                     )
                     Text(
-                        text = "Out: ${formatTokenCount(state.globalOutput)}",
+                        text = stringResource(R.string.token_out_short, formatTokenCount(state.globalOutput)),
                         style = NexaraTypography.labelMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ),
@@ -235,7 +264,7 @@ private fun GlobalStatsCard(state: TokenStatsState) {
                 if (state.globalCostUSD > 0.0) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Est. Cost: $%.4f".format(state.globalCostUSD),
+                        text = stringResource(R.string.token_est_cost, state.globalCostUSD),
                         style = NexaraTypography.labelMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ),
@@ -296,7 +325,11 @@ private fun SessionRankingRow(rank: Int, session: SessionTokenUsage) {
                     maxLines = 1
                 )
                 Text(
-                    text = "In: ${formatTokenCount(session.inputTokens)} \u00B7 Out: ${formatTokenCount(session.outputTokens)}",
+                    text = stringResource(
+                        R.string.token_in_out,
+                        formatTokenCount(session.inputTokens),
+                        formatTokenCount(session.outputTokens)
+                    ),
                     style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
                     color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f)
                 )
@@ -409,7 +442,7 @@ private fun TrendChart(dailyTrend: List<DailyTokenStats>) {
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = "Input",
+                text = stringResource(R.string.token_input_label),
                 style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
                 color = NexaraColors.OnSurfaceVariant
             )
@@ -422,7 +455,7 @@ private fun TrendChart(dailyTrend: List<DailyTokenStats>) {
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = "Output",
+                text = stringResource(R.string.token_output_label),
                 style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
                 color = NexaraColors.OnSurfaceVariant
             )
@@ -463,7 +496,7 @@ private fun ModelBreakdownRow(model: ModelCostInfo) {
                     )
                 } else if (!model.pricingAvailable) {
                     Text(
-                        text = "Pricing unavailable",
+                        text = stringResource(R.string.token_pricing_unavailable),
                         style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
                         color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.4f)
                     )
@@ -480,8 +513,8 @@ private fun ModelBreakdownRow(model: ModelCostInfo) {
 
 private fun formatTokenCount(count: Long): String {
     return when {
-        count >= 1_000_000 -> "${(count / 100_000).toInt() / 10.0}M"
-        count >= 1_000 -> "${(count / 100).toInt() / 10.0}K"
+        count >= 1_000_000 -> "%.1fM".format(count / 1_000_000.0)
+        count >= 1_000 -> "%.1fK".format(count / 1_000.0)
         else -> count.toString()
     }
 }

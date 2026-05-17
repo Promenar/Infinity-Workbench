@@ -8,6 +8,8 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.WebView
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,18 +52,39 @@ private val HTML_ARTIFACT_LANGUAGES = setOf("html", "htm", "svg", "xml")
 internal fun isHtmlArtifact(language: String?): Boolean =
     language != null && language.lowercase() in HTML_ARTIFACT_LANGUAGES
 
+/**
+ * 智能判定 XML/HTML 内容是否为真正有意义的可渲染网页或图形。
+ * 防止将 <tool_call> 等普通 XML 代码块误判为 HTML 并渲染大白底。
+ */
+internal fun isLikelyRenderableHtml(code: String): Boolean {
+    val trimmed = code.trim()
+    // SVG 图形必然是可渲染的
+    if (trimmed.contains("<svg", ignoreCase = true)) return true
+
+    // 典型的 HTML 标记
+    val renderableTags = setOf(
+        "html", "body", "div", "iframe", "canvas", "table", "form",
+        "h1", "h2", "h3", "style", "section", "article", "p", "a"
+    )
+    val hasTag = renderableTags.any { tag ->
+        trimmed.contains("<$tag", ignoreCase = true) || trimmed.contains("</$tag", ignoreCase = true)
+    }
+
+    // 排除工具调用标签
+    val isToolCall = trimmed.contains("tool_call", ignoreCase = true) || trimmed.contains("function_call", ignoreCase = true)
+
+    return hasTag && !isToolCall
+}
+
 @Composable
 fun HtmlArtifactCard(
     htmlCode: String,
     language: String?,
     fontSize: Int = 13,
+    onWebViewCreated: (WebView) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (!isHtmlArtifact(language)) return
-
-    var showFullScreen by remember { mutableStateOf(false) }
-    var webView by remember { mutableStateOf<WebView?>(null) }
-    val context = LocalContext.current
 
     Card(
         modifier = modifier
@@ -69,69 +92,18 @@ fun HtmlArtifactCard(
             .padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = NexaraColors.SurfaceHigh)
     ) {
-        Column {
+        Box(modifier = Modifier.fillMaxWidth()) {
             RichContentWebView(
                 html = htmlCode,
                 fontSize = fontSize,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp),
-                minHeight = 150,
-                onWebViewCreated = { wv -> webView = wv }
+                modifier = Modifier.fillMaxWidth(),
+                minHeight = 60,
+                onWebViewCreated = onWebViewCreated
             )
-
-            HorizontalDivider(
-                color = NexaraColors.OutlineVariant,
-                thickness = 0.5.dp
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = {
-                    webView?.let { exportHtmlArtifactPng(it, context) }
-                }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Download,
-                        contentDescription = "Export PNG",
-                        modifier = Modifier.size(16.dp),
-                        tint = NexaraColors.OnSurfaceVariant
-                    )
-                    Text(
-                        "Export PNG",
-                        modifier = Modifier.padding(start = 4.dp),
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                }
-                TextButton(onClick = { showFullScreen = true }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Fullscreen,
-                        contentDescription = "Full screen",
-                        modifier = Modifier.size(16.dp),
-                        tint = NexaraColors.OnSurfaceVariant
-                    )
-                    Text(
-                        "Full Screen Preview",
-                        modifier = Modifier.padding(start = 4.dp),
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                }
-            }
         }
     }
-
-    if (showFullScreen) {
-        HtmlArtifactsPopup(
-            htmlCode = htmlCode,
-            fontSize = fontSize,
-            onDismiss = { showFullScreen = false }
-        )
-    }
 }
+
 
 @Composable
 fun HtmlArtifactsPopup(
@@ -204,7 +176,7 @@ fun HtmlArtifactsPopup(
     }
 }
 
-private fun exportHtmlArtifactPng(webView: WebView, context: Context) {
+internal fun exportHtmlArtifactPng(webView: WebView, context: Context) {
     if (webView.width <= 0 || webView.height <= 0) return
     val bitmap = Bitmap.createBitmap(
         webView.width, webView.height, Bitmap.Config.ARGB_8888

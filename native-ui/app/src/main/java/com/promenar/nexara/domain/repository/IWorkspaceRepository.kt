@@ -31,4 +31,5 @@ interface IWorkspaceRepository {
     suspend fun emptyRecycleBin(workspaceRootUuid: String)
     suspend fun updateParent(uuid: String, newParentUuid: String)
     suspend fun getNextSeqForDate(dateKey: String): Int
+    suspend fun resetAllRAGStatus()
 }

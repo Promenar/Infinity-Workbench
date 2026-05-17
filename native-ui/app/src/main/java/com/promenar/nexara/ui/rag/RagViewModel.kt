@@ -766,6 +766,7 @@ class RagViewModel(
                 if (withGraph) {
                     kgRepository.clear()
                 }
+                workspaceRepository.resetAllRAGStatus()
                 loadStats()
             } catch (_: Exception) { }
         }

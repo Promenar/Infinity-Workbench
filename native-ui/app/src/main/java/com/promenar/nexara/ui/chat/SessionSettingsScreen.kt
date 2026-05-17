@@ -143,17 +143,19 @@ fun SessionSettingsScreen(
     )
 
     if (showDeleteDialog) {
-        NexaraConfirmDialog(
-            title = stringResource(R.string.session_settings_delete_title),
-            message = stringResource(R.string.chat_confirm_delete_session_message),
-            confirmText = stringResource(R.string.shared_btn_delete),
-            onConfirm = {
-                showDeleteDialog = false
-                onNavigateBack()
-            },
-            onCancel = { showDeleteDialog = false },
-            isDestructive = true
-        )
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showDeleteDialog = false }) {
+            NexaraConfirmDialog(
+                title = stringResource(R.string.session_settings_delete_title),
+                message = stringResource(R.string.chat_confirm_delete_session_message),
+                confirmText = stringResource(R.string.shared_btn_delete),
+                onConfirm = {
+                    showDeleteDialog = false
+                    onNavigateBack()
+                },
+                onCancel = { showDeleteDialog = false },
+                isDestructive = true
+            )
+        }
     }
 
     if (showExportFormatDialog) {

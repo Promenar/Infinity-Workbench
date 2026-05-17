@@ -342,7 +342,8 @@ fun MarkdownText(
                                     fontSize = fontSize,
                                     markdown = markdown,
                                     onContentChange = onContentChange,
-                                    textColor = effectiveColor
+                                    textColor = effectiveColor,
+                                    fontStyle = fontStyle
                                 )
                             }
                         }
@@ -386,6 +387,7 @@ private fun MarkdownSafe(
     markdown: String,
     onContentChange: ((String) -> Unit)?,
     textColor: Color = NexaraColors.OnBackground,
+    fontStyle: androidx.compose.ui.text.font.FontStyle? = null,
 ) {
     var renderError by remember(content) { mutableStateOf(false) }
     // 使用 rememberUpdatedState 避免回调变化导致 components 重建
@@ -401,7 +403,7 @@ private fun MarkdownSafe(
         return
     }
 
-    val components = remember(fontSize) {
+    val components = remember(fontSize, fontStyle) {
         markdownComponents(
             heading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.ATX_CONTENT),
             heading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.ATX_CONTENT),
@@ -539,7 +541,7 @@ private fun MarkdownSafe(
     Markdown(
         content = content,
         colors = nexaraMarkdownColors(textColor = textColor),
-        typography = nexaraMarkdownTypography(fontSize),
+        typography = nexaraMarkdownTypography(fontSize, fontStyle = fontStyle),
         components = components,
         modifier = Modifier.fillMaxWidth()
     )

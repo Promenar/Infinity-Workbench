@@ -55,7 +55,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -777,7 +777,7 @@ fun ChatTopBar(
         },
         actions = {
             IconButton(onClick = onWorkspace) {
-                Icon(Icons.Rounded.Tune, null, tint = NexaraColors.OnSurface)
+                Icon(Icons.Rounded.Folder, null, tint = NexaraColors.OnSurface)
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {

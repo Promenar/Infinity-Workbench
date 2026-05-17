@@ -81,11 +81,33 @@ interface MessageDao {
     @Query("UPDATE messages SET tokens = NULL")
     suspend fun clearAllTokenData()
 
+    // ── SQL 级聚合查询（替代 Kotlin 层全表扫描）──
+
     @Query("""
-        SELECT m.session_id, s.title, SUM(CAST(json_extract(m.tokens, '$.input') AS INTEGER)) as total_input,
-               SUM(CAST(json_extract(m.tokens, '$.output') AS INTEGER)) as total_output
+        SELECT COALESCE(SUM(CAST(json_extract(tokens, '$.input') AS INTEGER)), 0) as total_input,
+               COALESCE(SUM(CAST(json_extract(tokens, '$.output') AS INTEGER)), 0) as total_output
+        FROM messages
+        WHERE tokens IS NOT NULL
+    """)
+    suspend fun getTotalTokenUsage(): TokenTotalRow
+
+    @Query("""
+        SELECT COALESCE(model_id, 'unknown') as model_id,
+               COALESCE(SUM(CAST(json_extract(tokens, '$.input') AS INTEGER)), 0) as total_input,
+               COALESCE(SUM(CAST(json_extract(tokens, '$.output') AS INTEGER)), 0) as total_output
+        FROM messages
+        WHERE tokens IS NOT NULL
+        GROUP BY model_id
+        ORDER BY total_input + total_output DESC
+    """)
+    suspend fun getTokenUsageByModel(): List<ModelTokenRow>
+
+    @Query("""
+        SELECT m.session_id, s.title,
+               COALESCE(SUM(CAST(json_extract(m.tokens, '$.input') AS INTEGER)), 0) as total_input,
+               COALESCE(SUM(CAST(json_extract(m.tokens, '$.output') AS INTEGER)), 0) as total_output
         FROM messages m
-        LEFT JOIN sessions s ON m.id = s.id OR m.session_id = s.id
+        LEFT JOIN sessions s ON m.session_id = s.id
         WHERE m.tokens IS NOT NULL
         GROUP BY m.session_id
         ORDER BY total_input + total_output DESC
@@ -95,8 +117,8 @@ interface MessageDao {
 
     @Query("""
         SELECT date(m.created_at / 1000, 'unixepoch') as day,
-               SUM(CAST(json_extract(m.tokens, '$.input') AS INTEGER)) as total_input,
-               SUM(CAST(json_extract(m.tokens, '$.output') AS INTEGER)) as total_output
+               COALESCE(SUM(CAST(json_extract(m.tokens, '$.input') AS INTEGER)), 0) as total_input,
+               COALESCE(SUM(CAST(json_extract(m.tokens, '$.output') AS INTEGER)), 0) as total_output
         FROM messages m
         WHERE m.tokens IS NOT NULL AND m.created_at >= :sinceTimestamp
         GROUP BY day
@@ -104,6 +126,17 @@ interface MessageDao {
     """)
     suspend fun getDailyTokenTrend(sinceTimestamp: Long): List<DailyTokenRow>
 }
+
+data class TokenTotalRow(
+    val total_input: Long,
+    val total_output: Long
+)
+
+data class ModelTokenRow(
+    val model_id: String,
+    val total_input: Long,
+    val total_output: Long
+)
 
 data class SessionTokenRow(
     val session_id: String,
