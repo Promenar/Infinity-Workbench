@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+### UI 细节抛光与视觉统一 (2026-05-18)
+- **设置页"Token 用量"更名为"用量管理"**：将设置主页菜单项及全局详情统计页面标题统一更名为"用量管理"（英文 "Usage Management"），语义更具普适性。
+- **清空向量数据库时文档索引状态同步重置**：重构 `clearAllVectors` 链路，在底层 DAO 和 Repository 层引入 `resetAllRAGStatus` 批量重置接口，清空向量时一键归零所有文档的 `vectorized_at` 与 `kg_extracted_at` 时间戳，完美闭合物理资源与向量存储生命周期的同步机制。
+- **"记忆设置"页面功能去噪与更名统一**：移除记忆设置主页顶部"向量索引状态"卡片（与"向量统计"二级页面高度重复），将"高级"选项卡正式重命名为"知识图谱"，与跳转后二级页面 Header 标题完全吻合。
+- **用户卡片视觉去噪**：删除 `UserSettingsHomeScreen` 中 `UserProfileHeader` 硬编码的 `"ID: 8823192"` 文字，仅保留用户头像和用户名。
+- **P0 统一危险操作二次确认弹窗样式与错位修复**：修复 `NexaraConfirmDialog` 因缺少 `androidx.compose.ui.window.Dialog` 包裹导致弹窗飘在屏幕顶端覆盖状态栏的 Bug。全系统 6 处删除确认弹窗统一为屏幕中央 Glassmorphism 暗磨砂玻璃弹窗。
+- **删除确认按钮高对比度深红配色统一**：破坏性操作按钮背景统一为深红色（`0xFFBA1A1A`），前景文字升级为纯白色，彻底解决低对比度文字看不清的 Bug。
+- **KG UI 清理**：移除知识图谱界面 `KnowledgeGraphScreen` 中用于测试的 Mock 数据注入按钮和清空图谱按钮，清理对应 ViewModel 逻辑。
+
 ### Agent 工具 Fallback 解析器重构与工作区图标优化 (2026-05-18 00:45)
 - **🔴 P0 — 修复 Kotlin `Collection.all` 导致的 Fallback 解析锁死 Bug**：
   - 在流式生成完成判定中，将 `hasCompleteToolCalls` 的条件修正为 `accumulatedToolCalls.isNotEmpty() && ...`。
