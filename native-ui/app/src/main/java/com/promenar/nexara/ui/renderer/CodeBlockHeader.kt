@@ -72,8 +72,10 @@ fun CodeBlockWithHeader(
 
     var webView by remember { mutableStateOf<WebView?>(null) }
     var showFullScreen by remember { mutableStateOf(false) }
-    val isRenderableHtml = remember(language) {
-        isHtmlArtifact(language)
+    // 双重判定：语言必须是 HTML artifact + 内容必须包含可渲染标记
+    // 有效排除 <tool_call>、<function_call> 等纯数据 XML
+    val isRenderableHtml = remember(language, code) {
+        isHtmlArtifact(language) && isLikelyRenderableHtml(code)
     }
 
     LaunchedEffect(copied) {

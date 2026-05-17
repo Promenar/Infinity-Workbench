@@ -39,9 +39,11 @@ object RichContentWebViewPool {
 
     private fun createWebView(context: Context): WebView {
         return WebView(context).apply {
+            // 使用 MATCH_PARENT 而非 WRAP_CONTENT，避免 WebView 内部测量时
+            // scrollHeight 返回无约束视口高度（数千 px），被 maxHeight 钳制后造成大面积空白
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.MATCH_PARENT
             )
             settings.javaScriptEnabled = true
             settings.loadWithOverviewMode = true

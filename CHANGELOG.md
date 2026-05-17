@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### UI 细节抛光与视觉统一 (2026-05-18)
-- **思考容器字号放回与二次放大优化**：根据真机高频实测，思考容器中 12sp 及 14sp 字号在部分超高密度物理屏幕上仍显过于微缩导致易读性不足。特将其在原始 baseline 基础上累计**放大 4 个字号至极具易读性的 16sp**，并同步将行高优化匹配为极其饱满大气的 `21.sp`，完美根除长文本段落的视觉压迫感。
+- **🔴 P0 — 根治思考容器字号放缩失效与行高重叠的终极排查修复**：
+  - *排查发现*：生成完毕后的思考容器真实渲染由合并气泡类 [PipelineBubble.kt](file:///k:/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt) 的内联组件 `InlineThinkingRow` 承载，该处原包含硬编码 `THINKING_FONT_SIZE_DELTA = 6` 且未提供 `lineHeight` 行高，导致此前修改无效、字号缩死至最小极值 `8`sp，且多行文本挤压重叠。
+  - *重构修复*：物理清除 `PipelineBubble.kt` 的硬编码 delta 常量；将其实时渲染字号完美重塑重构为 **`14`sp (`fontSize + 1`)**，并破天荒地显式注入匹配黄金分割比例的 **`19`sp 行高**（`targetFontSize + 5`），一举根治了字号失效与行距过小文字重叠的 P0 排版难题！
 - **设置页"Token 用量"更名为"用量管理"**：将设置主页菜单项及全局详情统计页面标题统一更名为"用量管理"（英文 "Usage Management"），语义更具普适性。
 - **清空向量数据库时文档索引状态同步重置**：重构 `clearAllVectors` 链路，在底层 DAO 和 Repository 层引入 `resetAllRAGStatus` 批量重置接口，清空向量时一键归零所有文档的 `vectorized_at` 与 `kg_extracted_at` 时间戳，完美闭合物理资源与向量存储生命周期的同步机制。
 - **"记忆设置"页面功能去噪与更名统一**：移除记忆设置主页顶部"向量索引状态"卡片（与"向量统计"二级页面高度重复），将"高级"选项卡正式重命名为"知识图谱"，与跳转后二级页面 Header 标题完全吻合。

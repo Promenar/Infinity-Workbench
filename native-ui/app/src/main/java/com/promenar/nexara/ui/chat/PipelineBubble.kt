@@ -36,12 +36,6 @@ import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 // ─────────────────────────────────────────────────────────────────
-//  样式与布局常量
-// ─────────────────────────────────────────────────────────────────
-private const val THINKING_FONT_SIZE_DELTA = 6
-private const val THINKING_MIN_FONT_SIZE = 8
-
-// ─────────────────────────────────────────────────────────────────
 //  Pipeline 数据结构
 // ─────────────────────────────────────────────────────────────────
 
@@ -454,12 +448,13 @@ private fun InlineThinkingRow(
                         .fillMaxWidth()
                         .padding(bottom = 4.dp)
                 ) {
-                    val dimmedColor = NexaraColors.Outline.copy(alpha = 0.7f) // 弱化颜色
-                    val targetFontSize = (fontSize - THINKING_FONT_SIZE_DELTA).coerceAtLeast(THINKING_MIN_FONT_SIZE)
+                    val dimmedColor = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f) // 弱化颜色
+                    val targetFontSize = (fontSize + 1).coerceAtLeast(11)
                     CompositionLocalProvider(
                         androidx.compose.material3.LocalContentColor provides dimmedColor,
                         androidx.compose.material3.LocalTextStyle provides NexaraTypography.bodySmall.copy(
                             fontSize = targetFontSize.sp,
+                            lineHeight = (targetFontSize + 5).sp,
                             color = dimmedColor,
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
