@@ -280,8 +280,7 @@ fun NexaraNavGraph(
 
         composable(NavDestinations.RAG_ADVANCED) {
             AdvancedRetrievalScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToRagAdvanced = { navController.navigate(NavDestinations.RAG_ADVANCED_KG) }
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -351,18 +350,25 @@ fun NexaraNavGraph(
                 },
                 onSave = { protocolType, baseUrl, apiKey, model, name ->
                     if (providerId == null) {
-                        // 新增额外提供商
-                        val id = "extra_${java.util.UUID.randomUUID()}"
-                        val item = com.promenar.nexara.data.model.ProviderListItem(
-                            id = id,
-                            name = name ?: protocolType.displayName,
-                            typeName = protocolType.displayName,
-                            baseUrl = baseUrl,
-                            model = model,
-                            protocolType = protocolType,
-                            apiKey = apiKey
-                        )
-                        viewModel.addProvider(item)
+                        // 判断是首次配置还是新增额外提供商
+                        val mainConfig = app.getSavedProviderConfig()
+                        if (mainConfig == null || mainConfig.apiKey.isBlank()) {
+                            // 全新安装 / 主提供商未配置：创建主提供商，使 Tier 3 兜底生效
+                            app.updateProvider(protocolType, baseUrl, apiKey, model, name)
+                        } else {
+                            // 已有主提供商：新增额外提供商
+                            val id = "extra_${java.util.UUID.randomUUID()}"
+                            val item = com.promenar.nexara.data.model.ProviderListItem(
+                                id = id,
+                                name = name ?: protocolType.displayName,
+                                typeName = protocolType.displayName,
+                                baseUrl = baseUrl,
+                                model = model,
+                                protocolType = protocolType,
+                                apiKey = apiKey
+                            )
+                            viewModel.addProvider(item)
+                        }
                     } else if (providerId == "default") {
                         // 编辑主提供商
                         app.updateProvider(protocolType, baseUrl, apiKey, model, name)

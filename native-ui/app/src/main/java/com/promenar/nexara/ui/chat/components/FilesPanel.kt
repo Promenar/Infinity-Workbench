@@ -69,6 +69,8 @@ import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
+import com.promenar.nexara.ui.common.KgStatus
+import com.promenar.nexara.ui.common.KgStatusIcon
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -87,8 +89,10 @@ fun FilesPanel(
     onRename: ((String, String) -> Unit)? = null,
     onMove: ((String, String) -> Unit)? = null,
     onExtractKG: ((String) -> Unit)? = null,
+    onViewKG: ((String) -> Unit)? = null,
     onCopy: ((String) -> Unit)? = null,
     indexingFileIds: Set<String> = emptySet(),
+    kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     folders: List<FileEntry> = emptyList(),
     externalSelectedIds: MutableList<String>? = null,
     onFileClick: (String) -> Unit = {}
@@ -111,8 +115,9 @@ fun FilesPanel(
             onReindex = onReindex, onDelete = { id ->
                 onDelete?.invoke(id); selectedIds.remove(id)
             },
-            onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onCopy = onCopy,
+            onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onViewKG = onViewKG, onCopy = onCopy,
             indexingFileIds = indexingFileIds,
+            kgExtractionStates = kgExtractionStates,
             selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
             onFileClick = onFileClick
         )
@@ -212,8 +217,10 @@ private fun FileTreeNode(
     onRename: ((String, String) -> Unit)? = null,
     onMove: ((String, String) -> Unit)? = null,
     onExtractKG: ((String) -> Unit)? = null,
+    onViewKG: ((String) -> Unit)? = null,
     onCopy: ((String) -> Unit)? = null,
     indexingFileIds: Set<String> = emptySet(),
+    kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     selectedIds: MutableList<String> = mutableStateListOf(),
     isMultiSelectMode: Boolean = false,
     onFileClick: (String) -> Unit = {}
@@ -263,6 +270,7 @@ private fun FileTreeNode(
             FileRow(
                 file = file,
                 indexingFileIds = indexingFileIds,
+                kgExtractionStates = kgExtractionStates,
                 isMultiSelectMode = isMultiSelectMode,
                 isSelected = isSelected
             )
@@ -281,6 +289,20 @@ private fun FileTreeNode(
                     DropdownMenuItem(
                         text = { Text("提取知识图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                         onClick = { showMenu = false; onExtractKG(file.uuid) }
+                    )
+                }
+                if (onViewKG != null) {
+                    DropdownMenuItem(
+                        text = { Text("查看图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                        onClick = { showMenu = false; onViewKG(file.uuid) }
+                    )
+                }
+            } else {
+                // 目录: 查看图谱
+                if (onViewKG != null) {
+                    DropdownMenuItem(
+                        text = { Text("查看目录图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                        onClick = { showMenu = false; onViewKG(file.uuid) }
                     )
                 }
             }
@@ -360,8 +382,9 @@ private fun FileTreeNode(
                     FileTreeNode(
                         file = child, depth = depth + 1, workspaceRepo = workspaceRepo,
                         searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
-                        onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onCopy = onCopy,
+                        onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onViewKG = onViewKG, onCopy = onCopy,
                         indexingFileIds = indexingFileIds,
+                        kgExtractionStates = kgExtractionStates,
                         selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
                         onFileClick = onFileClick
                     )
@@ -376,6 +399,7 @@ private fun FileTreeNode(
 private fun FileRow(
     file: FileEntry,
     indexingFileIds: Set<String> = emptySet(),
+    kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     isMultiSelectMode: Boolean = false,
     isSelected: Boolean = false
 ) {
@@ -424,6 +448,11 @@ private fun FileRow(
         }
 
         IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
+
+        if (!file.isDirectory) {
+            Spacer(modifier = Modifier.width(6.dp))
+            KgStatusIcon(status = resolveKgStatus(file, kgExtractionStates))
+        }
     }
 }
 
@@ -532,6 +561,13 @@ private fun resolveIndexStatus(file: FileEntry, indexingFileIds: Set<String> = e
     if (file.vectorizedAt == null) return FileIndexStatus.NOT_INDEXED
     if (file.updatedAt > (file.vectorizedAt ?: 0)) return FileIndexStatus.STALE
     return FileIndexStatus.INDEXED
+}
+
+private fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgStatus>): KgStatus {
+    val state = kgExtractionStates[file.uuid]
+    if (state != null) return state
+    if (file.kgExtractedAt != null) return KgStatus.COMPLETED
+    return KgStatus.NOT_STARTED
 }
 
 private fun formatFileMetadata(file: FileEntry): String {

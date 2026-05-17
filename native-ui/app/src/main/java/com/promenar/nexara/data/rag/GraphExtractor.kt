@@ -10,43 +10,83 @@ class GraphExtractor(
     private val protocol: LlmProtocol,
     private val graphStore: GraphStore,
     private val modelId: String? = null,
-    private val systemPrompt: String = DEFAULT_KG_PROMPT
+    private val systemPrompt: String = DEFAULT_KG_PROMPT,
+    private val chunkSize: Int = 1200,
+    private val chunkOverlap: Int = 200
 ) {
+    private fun splitText(text: String): List<String> {
+        if (text.length <= chunkSize) {
+            return listOf(text)
+        }
+        val chunks = mutableListOf<String>()
+        var start = 0
+        val step = chunkSize - chunkOverlap
+        while (start < text.length) {
+            val end = (start + chunkSize).coerceAtMost(text.length)
+            chunks.add(text.substring(start, end))
+            if (end == text.length) break
+            start += step
+        }
+        return chunks
+    }
     suspend fun extractAndSave(
         text: String,
         docId: String? = null,
         scope: KgScope? = null
     ): ExtractionResult {
         return try {
-            val effectiveModelId = modelId ?: "default"
-            val request = PromptRequest(
-                messages = listOf(
-                    ProtocolMessage(role = "system", content = systemPrompt),
-                    ProtocolMessage(role = "user", content = text)
-                ),
-                model = effectiveModelId,
-                temperature = 0.0,
-                stream = false
-            )
+            val chunks = splitText(text)
+            NexaraLogger.log("GraphExtractor: Splitting text into ${chunks.size} chunks (chunkSize=$chunkSize, overlap=$chunkOverlap) for KG extraction.")
 
-            val response = protocol.sendPromptSync(request)
-            val content = response.content
-
-            if (content.isBlank()) {
-                return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "Empty response")
+            val results = mutableListOf<ExtractionResult>()
+            for ((index, chunk) in chunks.withIndex()) {
+                try {
+                    NexaraLogger.log("GraphExtractor: Extracting chunk ${index + 1}/${chunks.size} (${chunk.length} chars)")
+                    val res = extractSingleChunk(chunk)
+                    results.add(res)
+                } catch (e: Exception) {
+                    NexaraLogger.log("GraphExtractor: Extraction failed for chunk ${index + 1}: ${e.message?.take(80)}")
+                }
             }
 
-            val result = parseExtractionResult(content)
-            if (result == null || result.nodes.isEmpty() && result.edges.isEmpty()) {
-                return ExtractionResult(
-                    nodes = emptyList(),
-                    edges = emptyList(),
-                    error = if (result == null) "Failed to parse JSON" else null
-                )
+            if (results.isEmpty()) {
+                return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "All chunks failed extraction")
+            }
+
+            // 合并与不区分大小写去重
+            val mergedNodes = mutableListOf<ExtractedNode>()
+            val mergedEdges = mutableListOf<ExtractedEdge>()
+            val nodeKeys = mutableSetOf<String>()
+            val edgeKeys = mutableSetOf<String>()
+
+            for (res in results) {
+                for (node in res.nodes) {
+                    val key = node.name.trim().lowercase()
+                    if (key.isNotEmpty() && !nodeKeys.contains(key)) {
+                        nodeKeys.add(key)
+                        mergedNodes.add(node)
+                    }
+                }
+                for (edge in res.edges) {
+                    val sKey = edge.source.trim().lowercase()
+                    val tKey = edge.target.trim().lowercase()
+                    val rKey = edge.relation.trim().lowercase()
+                    val key = "$sKey|$tKey|$rKey"
+                    if (sKey.isNotEmpty() && tKey.isNotEmpty() && !edgeKeys.contains(key)) {
+                        edgeKeys.add(key)
+                        mergedEdges.add(edge)
+                    }
+                }
+            }
+
+            NexaraLogger.log("GraphExtractor: Merged KG results, unique nodes=${mergedNodes.size}, unique edges=${mergedEdges.size}")
+
+            if (mergedNodes.isEmpty() && mergedEdges.isEmpty()) {
+                return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "No nodes or edges extracted")
             }
 
             val nameToIdMap = mutableMapOf<String, String>()
-            for (node in result.nodes) {
+            for (node in mergedNodes) {
                 try {
                     val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
                     nameToIdMap[node.name] = id
@@ -55,7 +95,7 @@ class GraphExtractor(
                 }
             }
 
-            for (edge in result.edges) {
+            for (edge in mergedEdges) {
                 val sourceId = nameToIdMap[edge.source]
                 val targetId = nameToIdMap[edge.target]
                 if (sourceId != null && targetId != null) {
@@ -67,11 +107,41 @@ class GraphExtractor(
                 }
             }
 
-            ExtractionResult(nodes = result.nodes, edges = result.edges)
+            ExtractionResult(nodes = mergedNodes, edges = mergedEdges)
         } catch (e: Exception) {
             NexaraLogger.logError("GraphExtractor.extractAndSave", e)
             ExtractionResult(nodes = emptyList(), edges = emptyList(), error = e.message?.take(80))
         }
+    }
+
+    private suspend fun extractSingleChunk(chunkText: String): ExtractionResult {
+        val effectiveModelId = modelId ?: "default"
+        val request = PromptRequest(
+            messages = listOf(
+                ProtocolMessage(role = "system", content = systemPrompt),
+                ProtocolMessage(role = "user", content = chunkText)
+            ),
+            model = effectiveModelId,
+            temperature = 0.0,
+            stream = false
+        )
+
+        val response = protocol.sendPromptSync(request)
+        val content = response.content
+
+        if (content.isBlank()) {
+            return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "Empty response")
+        }
+
+        val result = parseExtractionResult(content)
+        if (result == null || (result.nodes.isEmpty() && result.edges.isEmpty())) {
+            return ExtractionResult(
+                nodes = emptyList(),
+                edges = emptyList(),
+                error = if (result == null) "Failed to parse JSON" else null
+            )
+        }
+        return result
     }
 
     private fun parseExtractionResult(content: String): ExtractionResult? {

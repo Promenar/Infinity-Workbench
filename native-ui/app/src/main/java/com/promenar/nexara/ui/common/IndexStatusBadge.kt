@@ -13,6 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -104,4 +110,62 @@ private fun PulseDot(
             .clip(CircleShape)
             .background(color)
     )
+}
+
+enum class KgStatus {
+    COMPLETED,
+    IN_PROGRESS,
+    FAILED,
+    NOT_STARTED
+}
+
+@Composable
+fun KgStatusIcon(
+    status: KgStatus,
+    modifier: Modifier = Modifier
+) {
+    when (status) {
+        KgStatus.COMPLETED -> {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = NexaraColors.StatusSuccess,
+                modifier = modifier.size(14.dp)
+            )
+        }
+        KgStatus.IN_PROGRESS -> {
+            val infiniteTransition = rememberInfiniteTransition(label = "kgPulse")
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1.0f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 800),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "kgPulseAlpha"
+            )
+            Icon(
+                imageVector = Icons.Rounded.AccountTree,
+                contentDescription = null,
+                tint = NexaraColors.Primary.copy(alpha = alpha),
+                modifier = modifier.size(14.dp)
+            )
+        }
+        KgStatus.FAILED -> {
+            Icon(
+                imageVector = Icons.Rounded.Error,
+                contentDescription = null,
+                tint = NexaraColors.StatusError,
+                modifier = modifier.size(14.dp)
+            )
+        }
+        KgStatus.NOT_STARTED -> {
+            Icon(
+                imageVector = Icons.Rounded.RadioButtonUnchecked,
+                contentDescription = null,
+                tint = NexaraColors.Outline.copy(alpha = 0.3f),
+                modifier = modifier.size(14.dp)
+            )
+        }
+    }
 }

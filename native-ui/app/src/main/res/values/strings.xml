@@ -261,6 +261,16 @@
     <string name="chat_context_label_rag">Memory RAG</string>
     <string name="chat_context_btn_compress">Compress History</string>
 
+    <!-- Summary Card -->
+    <string name="chat_summary_card_title">Context Summary</string>
+    <string name="chat_summary_card_compressing">Compressing</string>
+    <string name="chat_summary_card_done">Done</string>
+    <string name="chat_summary_card_expand">View Summary</string>
+    <string name="chat_summary_card_collapse">Collapse</string>
+    <string name="chat_summary_card_progress_preparing">Preparing summary request…</string>
+    <string name="chat_summary_card_progress_calling">Calling model…</string>
+    <string name="chat_summary_card_progress_done">Summary generated</string>
+
     <!-- Chat Inline Components -->
     <string name="chat_rag_knowledge_retrieval">Knowledge Retrieval</string>
     <string name="chat_rag_active">Active</string>
@@ -545,6 +555,28 @@
     <string name="skill_create_tool_desc">Create new custom tools via meta-tool</string>
     <string name="skill_image_generation">Image Generation</string>
     <string name="skill_image_generation_desc">Generate AI images from text descriptions</string>
+    <string name="skill_file_read">File Read</string>
+    <string name="skill_file_read_desc">Read content from a file in the workspace</string>
+    <string name="skill_file_write">File Write</string>
+    <string name="skill_file_write_desc">Write or update content to a file in the workspace</string>
+    <string name="skill_file_list">File List</string>
+    <string name="skill_file_list_desc">List contents of a directory in the workspace</string>
+    <string name="skill_file_search">File Search</string>
+    <string name="skill_file_search_desc">Search for content in the workspace files</string>
+    <string name="skill_file_diff">File Diff</string>
+    <string name="skill_file_diff_desc">Compute line-by-line diff between file versions</string>
+    <string name="skill_file_patch">File Patch</string>
+    <string name="skill_file_patch_desc">Apply patch changes to workspace files</string>
+    <string name="skill_exec_js">Exec JS</string>
+    <string name="skill_exec_js_desc">Execute JavaScript code in a secure sandbox</string>
+    <string name="skill_initialize_plan">Initialize Plan</string>
+    <string name="skill_initialize_plan_desc">Initialize a new structured agent execution plan</string>
+    <string name="skill_update_plan">Update Plan</string>
+    <string name="skill_update_plan_desc">Update steps in the current execution plan</string>
+    <string name="skill_get_plan">Get Plan</string>
+    <string name="skill_get_plan_desc">Retrieve current execution plan details</string>
+    <string name="skill_drop_plan">Drop Plan</string>
+    <string name="skill_drop_plan_desc">Cancel or drop current execution plan</string>
     <string name="skills_configure">Configure</string>
     <string name="skills_edit_skill">Edit Skill Config</string>
     <string name="skills_user_empty">No custom skills yet.\nTap the button below to create your first tool.</string>
@@ -668,6 +700,9 @@
     <string name="rag_advanced_desc">Knowledge graph extraction, retrieval strategies, and cost management for intelligent context augmentation.</string>
     <string name="rag_advanced_kg_section">Knowledge Graph</string>
 
+    <string name="rag_advanced_coming_soon">Coming Soon</string>
+    <string name="rag_advanced_default_prompt">Extract named entities, concepts, and relationships from the following text. Format as JSON with nodes and edges arrays.</string>
+    <string name="rag_advanced_summary_template_title">Summary Template Editor</string>
     <string name="rag_advanced_kg_enable">Enable Knowledge Graph (KG)</string>
     <string name="rag_advanced_kg_desc">Extract entities and relationships from documents</string>
     <string name="rag_advanced_extract_config">Extraction Configuration</string>
@@ -679,8 +714,8 @@
     <string name="rag_advanced_jit_max_blocks">Max Chunks</string>
     <string name="rag_advanced_jit_free_mode">Free Mode</string>
     <string name="rag_advanced_jit_free_desc">Allow unrestricted entity extraction</string>
-    <string name="rag_advanced_jit_domain">Domain Auto-Detection</string>
-    <string name="rag_advanced_jit_domain_desc">Automatically detect domain for entity filtering</string>
+    <string name="rag_advanced_jit_domain">Auto Category Detection</string>
+    <string name="rag_advanced_jit_domain_desc">Automatically detect text category to optimize entity extraction</string>
     <string name="rag_advanced_cost_section">Cost Strategy</string>
     <string name="rag_advanced_cost_summary">Summary First</string>
     <string name="rag_advanced_cost_summary_desc">Low cost, summarize then extract</string>
@@ -781,6 +816,7 @@
     <string name="retrieval_hybrid_desc">Combine dense vector with sparse BM25 matching</string>
     <string name="retrieval_vector_weight">Vector Weight</string>
     <string name="retrieval_bm25_boost">BM25 Boost</string>
+    <string name="retrieval_advanced_features">Advanced Features</string>
     <string name="retrieval_rerank_section">Reranker</string>
     <string name="retrieval_rerank_enable">Enable Reranker</string>
     <string name="retrieval_rerank_desc">Re-order retrieved chunks using cross-encoder</string>

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -176,7 +177,7 @@ fun UserSettingsHomeScreen(
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets.systemBars,
+        contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             TopAppBar(
                 title = {
@@ -229,7 +230,7 @@ fun UserSettingsHomeScreen(
                             },
                             onShowLanguageDialog = { showLanguageDialog = true },
                             onShowModelPicker = { type ->
-                                viewModel.refreshProviderModels()
+                                viewModel.refreshProviders()
                                 showModelPickerType = type
                             },
                             onAboutClick = {
@@ -430,7 +431,7 @@ private fun AppSettingsContent(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item { UserProfileHeader(userName = userName, avatarUri = userAvatar, onEditName = onEditName, onChangeAvatar = onChangeAvatar) }
@@ -582,7 +583,7 @@ private fun ProviderSettingsContent(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {

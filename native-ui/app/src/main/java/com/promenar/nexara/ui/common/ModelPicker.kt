@@ -50,7 +50,7 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
 
 enum class ModelCapability {
-    REASONING, VISION, WEB, RERANK, EMBEDDING, CHAT, IMAGE,
+    REASONING, VISION, INTERNET, RERANK, EMBEDDING, CHAT, IMAGE,
     AUDIOINPUT, AUDIOOUTPUT, VIDEOUNDERSTANDING, STRUCTUREDOUTPUT, PROMPTCACHING, COMPUTERUSE
 }
 
@@ -65,7 +65,7 @@ data class ModelItem(
 private val capabilityColors: Map<ModelCapability, Pair<Color, Color>> = mapOf(
     ModelCapability.REASONING to (Color(0xFFA78BFA) to Color(0xFF1E1B4B)),
     ModelCapability.VISION to (Color(0xFFF472B6) to Color(0xFF4A1942)),
-    ModelCapability.WEB to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
+    ModelCapability.INTERNET to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
     ModelCapability.RERANK to (Color(0xFFFB923C) to Color(0xFF431407)),
     ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344)),
     ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22)),

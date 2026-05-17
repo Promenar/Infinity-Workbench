@@ -1,6 +1,5 @@
 package com.promenar.nexara.ui
 
-import android.os.Build
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -20,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -91,8 +89,6 @@ private fun NexaraBottomNavigationBar(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit
 ) {
-    val isBlurSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -102,7 +98,6 @@ private fun NexaraBottomNavigationBar(
             modifier = Modifier
                 .matchParentSize()
                 .background(NexaraColors.CanvasBackground.copy(alpha = 0.8f))
-                .then(if (isBlurSupported) Modifier.blur(20.dp) else Modifier)
         )
 
         Box(

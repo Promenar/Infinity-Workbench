@@ -10,6 +10,7 @@ import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.data.rag.VectorStatsService
 import com.promenar.nexara.data.rag.KeywordSearcher
+import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
@@ -27,6 +28,7 @@ import kotlinx.coroutines.launch
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.ui.common.ModelItem
 import com.promenar.nexara.ui.common.ModelCapability
+import com.promenar.nexara.ui.common.KgStatus
 
 data class RagStats(
     val documentCount: Int = 0,
@@ -101,6 +103,11 @@ class RagViewModel(
     /** 当前正在索引中的文件 UUID 集合 */
     private val _indexingDocIds = MutableStateFlow<Set<String>>(emptySet())
     val indexingDocIds: StateFlow<Set<String>> = _indexingDocIds.asStateFlow()
+
+    private val _kgExtractionStates = MutableStateFlow<Map<String, KgStatus>>(emptyMap())
+    val kgExtractionStates: StateFlow<Map<String, KgStatus>> = _kgExtractionStates.asStateFlow()
+
+    private val _kgExtractingIds = mutableSetOf<String>()
 
     private val _config = MutableStateFlow(RagConfiguration())
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
@@ -181,6 +188,21 @@ class RagViewModel(
                     _isIndexing.value = false
                 }
                 // 有错误留存时保持 isIndexing=true，直到用户手动关闭
+            }
+
+            // KG extraction state tracking
+            val kgDocId = currentTask?.docId
+            if (kgDocId != null && kgDocId in _kgExtractingIds) {
+                when (currentTask!!.status) {
+                    "completed", "warning" -> {
+                        _kgExtractingIds.remove(kgDocId)
+                        _kgExtractionStates.value = _kgExtractionStates.value + (kgDocId to KgStatus.COMPLETED)
+                    }
+                    "failed" -> {
+                        _kgExtractingIds.remove(kgDocId)
+                        _kgExtractionStates.value = _kgExtractionStates.value + (kgDocId to KgStatus.FAILED)
+                    }
+                }
             }
         }
     }
@@ -318,6 +340,9 @@ class RagViewModel(
             .putInt("max_embed_tokens_per_call", config.maxEmbedTokensPerCall)
             .putInt("rerank_max_per_call", config.rerankMaxPerCall)
             .apply()
+
+        // P0: 用户修改配置后立即重建 MemoryManager，使新参数即时生效
+        app.rebuildMemoryManager()
     }
 
     private fun loadAvailableModels() {
@@ -339,7 +364,7 @@ class RagViewModel(
                         "chat" -> add(ModelCapability.CHAT)
                         "reasoning" -> add(ModelCapability.REASONING)
                         "vision" -> add(ModelCapability.VISION)
-                        "internet" -> add(ModelCapability.WEB)
+                        "internet" -> add(ModelCapability.INTERNET)
                         "embedding" -> add(ModelCapability.EMBEDDING)
                         "rerank" -> add(ModelCapability.RERANK)
                         "image" -> add(ModelCapability.IMAGE)
@@ -522,12 +547,14 @@ class RagViewModel(
 
                     importedFiles.add(entry)
 
-                    // 触发自动向量化
+                    // 触发自动向量化（若用户开启了 KG，同步触发图谱抽取）
                     if (!content.startsWith("Binary file:") && !content.startsWith("[Error]")) {
+                        val kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
                         app.vectorizationQueue.enqueueDocument(
                             docId = uuid,
                             docTitle = fileName!!,
-                            content = content
+                            content = content,
+                            kgStrategy = kgStrategy
                         )
                     }
                 } catch (e: Exception) {
@@ -549,10 +576,12 @@ class RagViewModel(
                 val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
                 val result = fileOperationRepository.readFileRange(uuid)
                 if (result.content.isNotBlank()) {
+                    val kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
                     app.vectorizationQueue.enqueueDocument(
                         docId = uuid,
                         docTitle = entry.name,
-                        content = result.content
+                        content = result.content,
+                        kgStrategy = kgStrategy
                     )
                 }
             } catch (_: Exception) { }
@@ -570,10 +599,13 @@ class RagViewModel(
                         app.vectorizationQueue.enqueueDocument(
                             docId = uuid,
                             docTitle = entry.name,
-                            content = result.content
+                            content = result.content,
+                            kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
                         )
                     }
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    NexaraLogger.logError("[RagViewModel] reindexDocuments failed: uuid=$uuid", e)
+                }
             }
         }
     }
@@ -588,21 +620,31 @@ class RagViewModel(
         }
     }
 
-    /** 触发单个文件的知识图谱抽取 */
+    /** 触发单个文件的知识图谱抽取 — 直接调用 GraphExtractor，独立于向量化管线 */
     fun extractKG(uuid: String) {
         viewModelScope.launch {
             try {
                 val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
                 val content = fileOperationRepository.readFileRange(uuid).content
                 if (content.isNotBlank()) {
-                    app.vectorizationQueue.enqueueDocument(
-                        docId = uuid,
-                        docTitle = entry.name,
-                        content = content,
-                        kgStrategy = "full"
-                    )
+                    _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.IN_PROGRESS)
+                    NexaraLogger.log("[RagViewModel] extractKG start: uuid=$uuid name=${entry.name} contentLen=${content.length}")
+                    val result = app.graphExtractor.extractAndSave(content, uuid)
+                    if (result.error != null) {
+                        NexaraLogger.log("[RagViewModel] extractKG error: uuid=$uuid error=${result.error}")
+                        _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.FAILED)
+                    } else if (result.nodes.isEmpty() && result.edges.isEmpty()) {
+                        NexaraLogger.log("[RagViewModel] extractKG empty: uuid=$uuid — LLM returned no entities/edges")
+                        _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.FAILED)
+                    } else {
+                        NexaraLogger.log("[RagViewModel] extractKG success: uuid=$uuid nodes=${result.nodes.size} edges=${result.edges.size}")
+                        _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.COMPLETED)
+                    }
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                NexaraLogger.logError("[RagViewModel] extractKG exception: uuid=$uuid", e)
+                _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.FAILED)
+            }
         }
     }
 

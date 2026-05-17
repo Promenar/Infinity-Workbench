@@ -20,7 +20,8 @@ class MemoryManagerRagAdapter(
             enableDocs = options.enableDocs,
             activeDocIds = options.activeDocIds,
             isGlobal = options.isGlobal,
-            sessionId = sessionId
+            sessionId = sessionId,
+            enableRerank = options.enableRerank  // 传递用户重排开关
         )
 
         val result = memoryManager.retrieveContext(query, sessionId, retrieveOptions, onProgress)

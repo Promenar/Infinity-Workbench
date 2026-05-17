@@ -3,10 +3,50 @@ package com.promenar.nexara.domain.usecase
 import android.content.SharedPreferences
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.rag.RagConfiguration
 
 class RagConfigPersistence(
     private val prefs: SharedPreferences
 ) {
+
+    /** P0 修复: 将 SharedPreferences 中的用户配置直接构建为 RagConfiguration
+     *  解决 MemoryManager 始终使用硬编码默认值的问题 */
+    fun loadFullConfig(): RagConfiguration {
+        val retrieval = loadRetrievalConfig()
+        val rag = loadRagConfig()
+        return RagConfiguration(
+            enableMemory = retrieval.enableMemory,
+            enableDocs = retrieval.enableDocs,
+            enableKnowledgeGraph = retrieval.enableKnowledgeGraph,
+            enableQueryRewrite = retrieval.enableQueryRewrite,
+            enableHybridSearch = retrieval.enableHybridSearch,
+            enableRerank = retrieval.enableRerank,
+            enableIncrementalHash = prefs.getBoolean(KEY_ENABLE_INCREMENTAL_HASH, true),
+            enableLocalPreprocess = prefs.getBoolean(KEY_ENABLE_LOCAL_PREPROCESS, false),
+            memoryLimit = retrieval.memoryLimit,
+            memoryThreshold = retrieval.memoryThreshold,
+            docLimit = retrieval.docLimit,
+            docThreshold = retrieval.docThreshold,
+            docChunkSize = rag.docChunkSize,
+            chunkOverlap = rag.chunkOverlap,
+            memoryChunkSize = rag.memoryChunkSize,
+            rerankTopK = retrieval.rerankTopK,
+            rerankFinalK = retrieval.rerankFinalK,
+            rerankMaxPerCall = prefs.getInt(KEY_RERANK_MAX_PER_CALL, 100),
+            hybridAlpha = retrieval.hybridAlpha,
+            hybridBM25Boost = retrieval.hybridBM25Boost,
+            kgExtractionModel = retrieval.kgExtractionModel,
+            kgExtractionPrompt = retrieval.kgExtractionPrompt,
+            kgFreeMode = retrieval.kgFreeMode,
+            kgDomainAuto = retrieval.kgDomainAuto,
+            queryRewriteStrategy = retrieval.queryRewriteStrategy,
+            queryRewriteModel = retrieval.queryRewriteModel,
+            queryRewriteCount = retrieval.queryRewriteCount,
+            jitMaxChunks = retrieval.jitMaxChunks,
+            summaryTemplate = rag.summaryTemplate,
+            currentPreset = rag.currentPreset
+        )
+    }
     fun loadRagConfig(): AgentRagConfig {
         return AgentRagConfig(
             docChunkSize = prefs.getInt(KEY_CHUNK_SIZE, DEFAULT_CHUNK_SIZE),
@@ -97,6 +137,7 @@ class RagConfigPersistence(
         const val KEY_ENABLE_RERANK = "enable_rerank"
         const val KEY_RERANK_TOP_K = "rerank_top_k"
         const val KEY_RERANK_FINAL_K = "rerank_final_k"
+        const val KEY_RERANK_MAX_PER_CALL = "rerank_max_per_call"
         const val KEY_ENABLE_QUERY_REWRITE = "enable_query_rewrite"
         const val KEY_QUERY_REWRITE_STRATEGY = "query_rewrite_strategy"
         const val KEY_QUERY_REWRITE_COUNT = "query_rewrite_count"

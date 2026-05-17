@@ -18,7 +18,8 @@ class RerankClient(
     private val apiKey: String,
     private val modelId: String,
     private val llmProtocol: LlmProtocol? = null,
-    private val llmModelId: String? = null
+    private val llmModelId: String? = null,
+    private val maxPerCall: Int = 100  // P1: 单次最多重排文档数，超过分批
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val httpClient = HttpClient(OkHttp) {
@@ -50,50 +51,70 @@ class RerankClient(
         if (baseUrl.isBlank() || apiKey.isBlank()) return null
 
         return try {
-            val cleanBase = baseUrl.trimEnd('/')
-            val suffix = if (cleanBase.endsWith("/v1")) "/rerank" else "/v1/rerank"
-            val endpoint = "$cleanBase$suffix"
-
-            val requestBody = buildJsonObject {
-                put("model", modelId)
-                put("query", query)
-                put("documents", buildJsonArray {
-                    documents.forEach { doc -> add(doc.content) }
-                })
-                put("top_n", topK)
-            }
-
-            val response: HttpResponse = httpClient.post(endpoint) {
-                contentType(ContentType.Application.Json)
-                header("Authorization", "Bearer $apiKey")
-                setBody(json.encodeToString(JsonObject.serializer(), requestBody))
-            }
-
-            if (!response.status.isSuccess()) return null
-
-            val responseText = response.bodyAsText()
-            val jsonResponse = json.parseToJsonElement(responseText).jsonObject
-            val results = jsonResponse["results"]?.jsonArray ?: return null
-
-            val reorderedResults = mutableListOf<SearchResult>()
-            for (resultItem in results) {
-                val index = resultItem.jsonObject["index"]?.jsonPrimitive?.int ?: continue
-                val score = resultItem.jsonObject["relevance_score"]?.jsonPrimitive?.float ?: continue
-                if (index in documents.indices) {
-                    val original = documents[index]
-                    reorderedResults.add(
-                        original.copy(
-                            similarity = score,
-                            originalSimilarity = original.similarity
-                        )
-                    )
+            // P1: 分批重排，单次不超过 maxPerCall
+            if (documents.size <= maxPerCall) {
+                rerankBatch(query, documents, topK)
+            } else {
+                val batches = documents.chunked(maxPerCall)
+                val allResults = mutableListOf<SearchResult>()
+                for (batch in batches) {
+                    val batchResults = rerankBatch(query, batch, topK)
+                    if (batchResults != null) allResults.addAll(batchResults)
                 }
+                if (allResults.isEmpty()) null
+                else allResults.sortedByDescending { it.similarity }.take(topK)
             }
-
-            if (reorderedResults.isEmpty()) null else reorderedResults
         } catch (e: Exception) {
             null
         }
+    }
+
+    private suspend fun rerankBatch(
+        query: String,
+        documents: List<SearchResult>,
+        topK: Int
+    ): List<SearchResult>? {
+        val cleanBase = baseUrl.trimEnd('/')
+        val suffix = if (cleanBase.endsWith("/v1")) "/rerank" else "/v1/rerank"
+        val endpoint = "$cleanBase$suffix"
+
+        val requestBody = buildJsonObject {
+            put("model", modelId)
+            put("query", query)
+            put("documents", buildJsonArray {
+                documents.forEach { doc -> add(doc.content) }
+            })
+            put("top_n", topK)
+        }
+
+        val response: HttpResponse = httpClient.post(endpoint) {
+            contentType(ContentType.Application.Json)
+            header("Authorization", "Bearer $apiKey")
+            setBody(json.encodeToString(JsonObject.serializer(), requestBody))
+        }
+
+        if (!response.status.isSuccess()) return null
+
+        val responseText = response.bodyAsText()
+        val jsonResponse = json.parseToJsonElement(responseText).jsonObject
+        val results = jsonResponse["results"]?.jsonArray ?: return null
+
+        val reorderedResults = mutableListOf<SearchResult>()
+        for (resultItem in results) {
+            val index = resultItem.jsonObject["index"]?.jsonPrimitive?.int ?: continue
+            val score = resultItem.jsonObject["relevance_score"]?.jsonPrimitive?.float ?: continue
+            if (index in documents.indices) {
+                val original = documents[index]
+                reorderedResults.add(
+                    original.copy(
+                        similarity = score,
+                        originalSimilarity = original.similarity
+                    )
+                )
+            }
+        }
+
+        return if (reorderedResults.isEmpty()) null else reorderedResults
     }
 
     private suspend fun rerankViaLlm(

@@ -61,10 +61,14 @@ class ContextBuilder(
             performClientSideSearch(params.content)
         } else ""
         val ragResult = performRagRetrieval(params)
-        val kgEnabled = params.session.ragOptions?.enableKnowledgeGraph ?: false
+        val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
+        val kgEnabled = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else (params.session.ragOptions?.enableKnowledgeGraph ?: false)
         val kgContext = if (kgProvider != null && ragResult.second.isNotEmpty() && kgEnabled) {
             try {
-                kgProvider.extractContext(params.content, params.sessionId, ragResult.second) ?: ""
+                params.onRagProgress?.invoke("KG retrieval", 95, null)
+                val result = kgProvider.extractContext(params.content, params.sessionId, ragResult.second) ?: ""
+                params.onRagProgress?.invoke("Context ready", 100, null)
+                result
             } catch (e: Exception) {
                 NexaraLogger.logError("ContextBuilder.KGExtract", e)
                 ""
@@ -103,7 +107,10 @@ class ContextBuilder(
     }
 
     private suspend fun performRagRetrieval(params: ContextBuilderParams): Triple<String, List<RagReference>, RagUsage?> {
-        if (ragProvider == null) return Triple("", emptyList(), null)
+        if (ragProvider == null) {
+            NexaraLogger.log("[ContextBuilder] ragProvider is null, skipping retrieval")
+            return Triple("", emptyList(), null)
+        }
 
         val sessionRagOptions = params.session.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
         val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
@@ -114,8 +121,11 @@ class ContextBuilder(
             activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
             activeFolderIds = tempRagOptions.activeFolderIds.ifEmpty { sessionRagOptions.activeFolderIds },
             isGlobal = tempRagOptions.isGlobal,
-            enableRerank = sessionRagOptions.enableRerank
+            enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
+            enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
         )
+
+        NexaraLogger.log("[ContextBuilder] ragOptions: session=${sessionRagOptions.enableDocs}/${sessionRagOptions.enableMemory}, temp=${tempRagOptions.enableDocs}/${tempRagOptions.enableMemory}, final=${finalRagOptions.enableDocs}/${finalRagOptions.enableMemory}, isGlobal=${finalRagOptions.isGlobal}, rerank=${finalRagOptions.enableRerank}")
 
         val isRagEnabled = finalRagOptions.enableMemory || finalRagOptions.enableDocs
         if (!isRagEnabled) return Triple("", emptyList(), null)

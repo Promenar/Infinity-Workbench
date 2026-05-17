@@ -95,21 +95,35 @@ class PostProcessor(
         }
     }
 
-    suspend fun archiveMessagesToRag(sessionId: String, messages: List<com.promenar.nexara.data.model.Message>, modelId: String) {
+    suspend fun archiveMessagesToRag(
+        sessionId: String,
+        messages: List<com.promenar.nexara.data.model.Message>,
+        modelId: String,
+        onProgress: ((Float, String) -> Unit)? = null
+    ) {
         if (messages.isEmpty()) return
         
         val msgIds = messages.map { it.id }
         messageManager.setVectorizationStatus(sessionId, msgIds, "processing")
+        onProgress?.invoke(0.1f, "Preparing ${messages.size} messages")
 
         val client = embeddingClient
         val store = vectorStore
         val splitter = textSplitter
 
         if (client == null || store == null || splitter == null) {
-            Log.w(TAG, "Embedding pipeline not configured, skipping archive")
+            val missing = listOfNotNull(
+                if (client == null) "EmbeddingClient" else null,
+                if (store == null) "VectorStore" else null,
+                if (splitter == null) "TextSplitter" else null
+            ).joinToString(", ")
+            Log.w(TAG, "archiveMessagesToRag skipped: $missing not configured — session=$sessionId msgs=${messages.size}")
             messageManager.setVectorizationStatus(sessionId, msgIds, "skipped")
             return
         }
+
+        val archiveStart = System.currentTimeMillis()
+        Log.i(TAG, "archiveMessagesToRag start: session=$sessionId msgs=${messages.size} msgIds=${msgIds.first().take(8)}...~${msgIds.last().take(8)}")
 
         try {
             val combinedText = messages.joinToString("\n\n") { msg ->
@@ -118,13 +132,21 @@ class PostProcessor(
 
             val chunks = splitter.splitText(combinedText)
             if (chunks.isEmpty()) {
+                Log.i(TAG, "archiveMessagesToRag: 0 chunks after split, marking success — session=$sessionId")
                 messageManager.setVectorizationStatus(sessionId, msgIds, "success")
                 return
             }
 
+            onProgress?.invoke(0.3f, "Split into ${chunks.size} chunks")
+
+            val embedStart = System.currentTimeMillis()
             val embeddingResult = withContext(Dispatchers.IO) {
                 client.embedDocuments(chunks)
             }
+            val embedMs = System.currentTimeMillis() - embedStart
+            Log.i(TAG, "archiveMessagesToRag embedding: ${chunks.size} chunks, dim=${embeddingResult.embeddings.firstOrNull()?.size}, time=${embedMs}ms")
+
+            onProgress?.invoke(0.7f, "Embeddings generated")
 
             val vectorRecords = chunks.mapIndexed { index, chunk ->
                 VectorStore.NewVectorRecord(
@@ -141,10 +163,15 @@ class PostProcessor(
                 store.addVectorRecords(vectorRecords)
             }
 
+            val totalMs = System.currentTimeMillis() - archiveStart
+            Log.i(TAG, "archiveMessagesToRag done: ${vectorRecords.size} vectors stored, session=$sessionId total=${totalMs}ms")
+            onProgress?.invoke(0.95f, "Stored ${vectorRecords.size} vectors")
             messageManager.setVectorizationStatus(sessionId, msgIds, "success")
         } catch (e: Exception) {
-            Log.e(TAG, "archiveMessagesToRag failed for session $sessionId", e)
+            val totalMs = System.currentTimeMillis() - archiveStart
+            Log.e(TAG, "archiveMessagesToRag FAILED after ${totalMs}ms: session=$sessionId error=${e.message?.take(120)}", e)
             messageManager.setVectorizationStatus(sessionId, msgIds, "error")
+            throw e
         }
     }
 

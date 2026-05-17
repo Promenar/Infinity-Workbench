@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -26,9 +27,16 @@ import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.KgPath
+import com.promenar.nexara.data.model.PhaseStatus
+import com.promenar.nexara.data.model.PostProcessStatus
+import com.promenar.nexara.data.model.PostProcessTask
+import com.promenar.nexara.data.model.PostProcessType
 import com.promenar.nexara.data.model.RagMetadata
+import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraGlassCard
@@ -193,6 +201,7 @@ fun ThinkingBlock(
     }
 }
 
+@Deprecated("Use RagProgressCard instead", ReplaceWith("RagProgressCard"))
 @Composable
 fun RagOmniIndicator(
     progress: RagProgress?,
@@ -348,6 +357,301 @@ fun RagOmniIndicator(
             kgPaths = kgPaths,
             onDismissRequest = { showDetailsSheet = false }
         )
+    }
+}
+
+private val RAG_DEFAULT_PHASES = listOf(
+    RagPhase("query_intent", "分析查询意图", PhaseStatus.DONE, 100),
+    RagPhase("vector_search", "向量库检索", PhaseStatus.DONE, 100),
+    RagPhase("keyword_search", "关键词检索", PhaseStatus.DONE, 100),
+    RagPhase("hybrid_merge", "混合检索融合", PhaseStatus.DONE, 100),
+    RagPhase("kg_retrieval", "知识图谱关系检索", PhaseStatus.DONE, 100),
+    RagPhase("rerank", "相关性重排过滤", PhaseStatus.DONE, 100),
+    RagPhase("context_compress", "上下文提示词压缩", PhaseStatus.DONE, 100),
+    RagPhase("prompt_build", "注入大模型上下文", PhaseStatus.DONE, 100)
+)
+
+@Composable
+fun RagProgressCard(
+    phases: List<RagPhase>,
+    references: List<RagReference>?,
+    kgPaths: List<KgPath>? = null,
+    isComplete: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var showDetailsSheet by remember { mutableStateOf(false) }
+
+    val hasReferences = references?.isNullOrEmpty() == false
+    val hasKgPaths = kgPaths?.isNullOrEmpty() == false
+
+    // 如果是历史消息（phases 为空且已完成），自动回退使用默认的 8 步已完成状态填充
+    val displayPhases = if (phases.isEmpty() && isComplete) {
+        RAG_DEFAULT_PHASES
+    } else {
+        phases
+    }
+
+    val activePhase = displayPhases.find { it.status == PhaseStatus.ACTIVE }
+
+    // 极端保护：无数据时不展示
+    if (activePhase == null && isComplete == false && hasReferences == false && displayPhases.isEmpty()) return
+
+    // 自动匹配当前精细状态描述
+    val currentText = when {
+        isComplete -> "✓ 知识检索就绪"
+        activePhase != null -> {
+            val name = activePhase.name
+            val detail = activePhase.detail
+            if (!detail.isNullOrBlank()) "$name • $detail" else name
+        }
+        displayPhases.isNotEmpty() -> "正在准备检索上下文..."
+        else -> "✓ 检索就绪"
+    }
+
+    NexaraGlassCard(
+        modifier = modifier
+            .fillMaxWidth(0.7f)
+            .padding(vertical = 4.dp)
+            .clickable(enabled = hasReferences || hasKgPaths) { showDetailsSheet = true },
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // 第一行：极简单行状态与百分比
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 雷达旋转加载动画
+                    val infiniteTransition = rememberInfiniteTransition(label = "rag_radar")
+                    val rotationAngle by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(2200, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "angle"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .rotate(if (isComplete) 0f else rotationAngle)
+                    ) {
+                        if (isComplete) {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                null,
+                                tint = NexaraColors.StatusSuccess,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        } else {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                drawArc(
+                                    brush = Brush.sweepGradient(
+                                        colors = listOf(
+                                            NexaraColors.Primary.copy(alpha = 0.2f),
+                                            NexaraColors.Primary,
+                                            NexaraColors.Tertiary,
+                                            NexaraColors.Primary.copy(alpha = 0.2f)
+                                        )
+                                    ),
+                                    startAngle = 0f,
+                                    sweepAngle = 300f,
+                                    useCenter = false,
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                        width = 1.5.dp.toPx(),
+                                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // 智能垂直翻页文本
+                    AnimatedContent(
+                        targetState = currentText,
+                        transitionSpec = {
+                            (slideInVertically { height -> height } + fadeIn())
+                                .togetherWith(slideOutVertically { height -> -height } + fadeOut())
+                                .using(SizeTransform(clip = false))
+                        },
+                        label = "rag_text",
+                        modifier = Modifier.weight(1f)
+                    ) { text ->
+                        Text(
+                            text = text,
+                            style = NexaraTypography.labelMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                            color = if (isComplete) NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f) else NexaraColors.OnSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // 右侧微标
+                if (isComplete) {
+                    Text(
+                        text = "Done",
+                        style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = NexaraColors.StatusSuccess
+                    )
+                } else if (activePhase != null) {
+                    Text(
+                        text = "${activePhase.progress}%",
+                        style = NexaraTypography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        ),
+                        color = NexaraColors.Primary
+                    )
+                } else {
+                    Text(
+                        text = "Active",
+                        style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = NexaraColors.Primary
+                    )
+                }
+            }
+
+            if (displayPhases.isNotEmpty()) {
+                NeonMicroRail(phases = displayPhases, isComplete = isComplete)
+            }
+        }
+    }
+
+    if (showDetailsSheet) {
+        RagDetailsSheet(
+            references = references,
+            kgPaths = kgPaths,
+            onDismissRequest = { showDetailsSheet = false }
+        )
+    }
+}
+
+@Composable
+private fun NeonMicroRail(
+    phases: List<RagPhase>,
+    isComplete: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "shimmer_flow")
+        
+        // 活跃段的光晕呼吸系数
+        val activeGlowAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.22f,
+            targetValue = 0.38f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glow_alpha"
+        )
+
+        phases.forEach { phase ->
+            val status = if (isComplete) PhaseStatus.DONE else phase.status
+            val weightModifier = Modifier.weight(1f)
+
+            when (status) {
+                PhaseStatus.DONE -> {
+                    val neonGreen = Color(0xFF00FF66)
+                    Canvas(modifier = weightModifier.height(8.dp)) {
+                        // 1. 底层半透明发光层（高度 6.dp）
+                        drawRoundRect(
+                            color = neonGreen.copy(alpha = 0.25f),
+                            size = androidx.compose.ui.geometry.Size(size.width, 6.dp.toPx()),
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 6.dp.toPx()) / 2f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                        )
+                        // 2. 顶层高亮实体核心段（高度 3.dp）
+                        drawRoundRect(
+                            color = neonGreen,
+                            size = androidx.compose.ui.geometry.Size(size.width, 3.dp.toPx()),
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 3.dp.toPx()) / 2f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
+                        )
+                    }
+                }
+                PhaseStatus.ACTIVE -> {
+                    val progressFloat = phase.progress / 100f
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = progressFloat,
+                        animationSpec = spring(
+                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                        ),
+                        label = "active_progress"
+                    )
+
+                    val neonPurple = Color(0xFFB026FF)
+                    val innerHighlightColor = Color(0xFFFDF4FF)
+
+                    Canvas(modifier = weightModifier.height(8.dp)) {
+                        // 1. 绘制准备底轨
+                        drawRoundRect(
+                            color = Color(0xFF3F3F46).copy(alpha = 0.35f),
+                            size = androidx.compose.ui.geometry.Size(size.width, 3.dp.toPx()),
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 3.dp.toPx()) / 2f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
+                        )
+
+                        val activeWidth = size.width * animatedProgress
+                        if (activeWidth > 0f) {
+                            // 2. 绘制填充段发光层
+                            drawRoundRect(
+                                color = neonPurple.copy(alpha = activeGlowAlpha),
+                                size = androidx.compose.ui.geometry.Size(activeWidth, 6.dp.toPx()),
+                                topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 6.dp.toPx()) / 2f),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                            )
+                            // 3. 绘制填充段实体层
+                            drawRoundRect(
+                                color = neonPurple,
+                                size = androidx.compose.ui.geometry.Size(activeWidth, 3.dp.toPx()),
+                                topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 3.dp.toPx()) / 2f),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
+                            )
+                            // 4. 极细高亮灯丝核心线
+                            drawRoundRect(
+                                color = innerHighlightColor.copy(alpha = 0.85f),
+                                size = androidx.compose.ui.geometry.Size(activeWidth, 1.dp.toPx()),
+                                topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 1.dp.toPx()) / 2f),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(0.5.dp.toPx())
+                            )
+                        }
+                    }
+                }
+                PhaseStatus.PENDING -> {
+                    val darkGrey = Color(0xFF3F3F46)
+                    Canvas(modifier = weightModifier.height(8.dp)) {
+                        drawRoundRect(
+                            color = darkGrey.copy(alpha = 0.5f),
+                            size = androidx.compose.ui.geometry.Size(size.width, 2.dp.toPx()),
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 2.dp.toPx()) / 2f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -511,6 +815,272 @@ private fun TimelineStep(
 }
 
 @Composable
+fun PostProcessBar(
+    tasks: List<PostProcessTask>,
+    onRemoveTask: (String) -> Unit
+) {
+    if (tasks.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tasks.forEach { task ->
+            PostProcessChip(
+                task = task,
+                onRemove = { onRemoveTask(task.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PostProcessChip(
+    task: PostProcessTask,
+    onRemove: () -> Unit
+) {
+    val label = when (task.type) {
+        PostProcessType.ARCHIVE_TO_RAG -> "Memory"
+        PostProcessType.AUTO_SUMMARY -> "Summary"
+    }
+
+    val iconColor = when (task.status) {
+        PostProcessStatus.RUNNING -> NexaraColors.Primary
+        PostProcessStatus.DONE -> NexaraColors.StatusSuccess
+        PostProcessStatus.ERROR -> NexaraColors.StatusError
+    }
+
+    val icon = when (task.status) {
+        PostProcessStatus.RUNNING -> Icons.Rounded.Sync
+        PostProcessStatus.DONE -> Icons.Rounded.CheckCircle
+        PostProcessStatus.ERROR -> Icons.Rounded.Error
+    }
+
+    NexaraGlassCard(
+        shape = RoundedCornerShape(50),
+        modifier = Modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (task.status == PostProcessStatus.RUNNING) {
+                val infiniteTransition = rememberInfiniteTransition(label = "pp_pulse_${task.id}")
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.4f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(800),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pp_alpha_${task.id}"
+                )
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier
+                        .size(12.dp)
+                        .alpha(alpha)
+                )
+            } else {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+
+            Text(
+                text = label,
+                style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
+                color = NexaraColors.OnSurfaceVariant
+            )
+        }
+    }
+
+    if (task.status == PostProcessStatus.DONE) {
+        LaunchedEffect(task.id) {
+            kotlinx.coroutines.delay(3000)
+            onRemove()
+        }
+    }
+}
+
+@Composable
+fun SummaryCard(
+    isCompressing: Boolean,
+    progress: Float,
+    detail: String,
+    result: String?,
+    modifier: Modifier = Modifier
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    NexaraGlassCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isCompressing) {
+                        val infiniteTransition = rememberInfiniteTransition(label = "summary_pulse")
+                        val alpha by infiniteTransition.animateFloat(
+                            initialValue = 0.4f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(800),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "summary_alpha"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .alpha(alpha)
+                                .background(NexaraColors.Primary)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.CheckCircle,
+                            null,
+                            tint = NexaraColors.StatusSuccess,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.chat_summary_card_title),
+                        style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = NexaraColors.OnSurface
+                    )
+                }
+
+                Surface(
+                    color = if (isCompressing) NexaraColors.Primary.copy(alpha = 0.1f) else NexaraColors.StatusSuccess.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = if (isCompressing) stringResource(R.string.chat_summary_card_compressing) else stringResource(R.string.chat_summary_card_done),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = NexaraTypography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                        color = if (isCompressing) NexaraColors.Primary else NexaraColors.StatusSuccess
+                    )
+                }
+            }
+
+            if (isCompressing) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = detail,
+                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp),
+                        color = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                        color = NexaraColors.Primary
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(NexaraColors.SurfaceHigh)
+                ) {
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = progress,
+                        animationSpec = tween(500),
+                        label = "summary_progress"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(animatedProgress)
+                            .fillMaxHeight()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(NexaraColors.Primary, NexaraColors.Tertiary)
+                                )
+                            )
+                    )
+                }
+            }
+
+            if (result != null) {
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = NexaraColors.OutlineVariant.copy(alpha = 0.2f)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { isExpanded = !isExpanded }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (isExpanded) stringResource(R.string.chat_summary_card_collapse) else stringResource(R.string.chat_summary_card_expand),
+                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+                        color = NexaraColors.Primary
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        null,
+                        tint = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = isExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Surface(
+                        color = NexaraColors.SurfaceLow.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = result,
+                            style = NexaraTypography.bodyMedium.copy(fontSize = 15.sp),
+                            color = NexaraColors.OnSurfaceVariant,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ApprovalCard(
     toolName: String,
     description: String,
@@ -528,7 +1098,6 @@ fun ApprovalCard(
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            // Left accent border
             Box(
                 modifier = Modifier
                     .width(4.dp)

@@ -48,7 +48,10 @@ import androidx.compose.material.icons.rounded.Token
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -125,7 +128,7 @@ private fun thinkingLevelDesc(id: String): String = when (id) {
 private val capabilityColorMap: Map<ModelCapability, Pair<Color, Color>> = mapOf(
     ModelCapability.REASONING to (Color(0xFFA78BFA) to Color(0xFF1E1B4B)),
     ModelCapability.VISION to (Color(0xFFF472B6) to Color(0xFF4A1942)),
-    ModelCapability.WEB to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
+    ModelCapability.INTERNET to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
     ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22)),
     ModelCapability.RERANK to (Color(0xFFFB923C) to Color(0xFF431407)),
     ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344)),
@@ -285,7 +288,7 @@ private fun ModelPanel(
         info.capabilities.forEach { capStr ->
             when (capStr.lowercase()) {
                 "vision" -> mappedCaps.add(ModelCapability.VISION)
-                "internet", "web" -> mappedCaps.add(ModelCapability.WEB)
+                "internet", "web" -> mappedCaps.add(ModelCapability.INTERNET)
                 "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
                 "image" -> mappedCaps.add(ModelCapability.IMAGE)
                 "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
@@ -891,26 +894,52 @@ private fun SettingsPanel(
         }
 
         item {
+            val compressionState by chatViewModel.compressionState.collectAsState()
+            Button(
+                onClick = { chatViewModel.compressContext() },
+                enabled = !compressionState.isCompressing,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = NexaraColors.Primary,
+                    disabledContainerColor = NexaraColors.Primary.copy(alpha = 0.4f)
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Compress,
+                    null,
+                    modifier = Modifier.size(16.dp),
+                    tint = if (compressionState.isCompressing) NexaraColors.OnSurfaceVariant else NexaraColors.OnPrimary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (compressionState.isCompressing) compressionState.detail else stringResource(R.string.chat_context_btn_compress),
+                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+        }
+
+        item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ToolToggleRow(stringResource(R.string.sheet_settings_memory), Icons.Rounded.History, memoryEnabled) { 
                     memoryEnabled = it
-                    chatViewModel.updateRagOptions(ragOptions.copy(enableMemory = it))
+                    chatViewModel.updateRagOptions(chatViewModel.currentRagOptions.value.copy(enableMemory = it))
                 }
                 ToolToggleRow(stringResource(R.string.sheet_settings_global_memory), Icons.Rounded.Share, globalMemoryEnabled) { 
                     globalMemoryEnabled = it
-                    chatViewModel.updateRagOptions(ragOptions.copy(isGlobal = it))
+                    chatViewModel.updateRagOptions(chatViewModel.currentRagOptions.value.copy(isGlobal = it))
                 }
                 ToolToggleRow(stringResource(R.string.sheet_settings_docs), Icons.Rounded.Description, docsEnabled) { 
                     docsEnabled = it
-                    chatViewModel.updateRagOptions(ragOptions.copy(enableDocs = it))
+                    chatViewModel.updateRagOptions(chatViewModel.currentRagOptions.value.copy(enableDocs = it))
                 }
                 ToolToggleRow(stringResource(R.string.sheet_tool_rerank), Icons.Rounded.Sync, rerankEnabled) { 
                     rerankEnabled = it
-                    chatViewModel.updateRagOptions(ragOptions.copy(enableRerank = it))
+                    chatViewModel.updateRagOptions(chatViewModel.currentRagOptions.value.copy(enableRerank = it))
                 }
                 ToolToggleRow(stringResource(R.string.sheet_settings_kg), Icons.Rounded.Psychology, kgEnabled) { 
                     kgEnabled = it
-                    chatViewModel.updateRagOptions(ragOptions.copy(enableKnowledgeGraph = it))
+                    chatViewModel.updateRagOptions(chatViewModel.currentRagOptions.value.copy(enableKnowledgeGraph = it))
                 }
                 val isRagFullyDisabled = !memoryEnabled && !globalMemoryEnabled && !docsEnabled && !kgEnabled
                 if (isRagFullyDisabled) {

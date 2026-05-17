@@ -1,8 +1,11 @@
 package com.promenar.nexara.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Icon
@@ -164,7 +168,7 @@ fun ProviderModelsScreen(
             ActionChip(
                 icon = Icons.Rounded.Sync,
                 label = stringResource(R.string.provider_models_auto_fetch),
-                onClick = { viewModel.refreshProviderModels() },
+                onClick = { viewModel.refreshProviderModels(providerId) },
                 iconModifier = Modifier.rotate(rotation),
                 modifier = Modifier.weight(1f)
             )
@@ -188,6 +192,59 @@ fun ProviderModelsScreen(
                 onClick = { showDeleteAllDialog = true },
                 modifier = Modifier.weight(1f)
             )
+        }
+
+        // 同步反馈消息
+        val syncMsg by viewModel.modelSyncMessage.collectAsState()
+        AnimatedVisibility(
+            visible = syncMsg != null,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(200))
+        ) {
+            syncMsg?.let { msg ->
+                val isError = msg.startsWith("同步失败") || msg.startsWith("未找到")
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isError) NexaraColors.StatusError.copy(alpha = 0.1f)
+                            else NexaraColors.StatusSuccess.copy(alpha = 0.1f)
+                        )
+                        .border(
+                            0.5.dp,
+                            if (isError) NexaraColors.StatusError.copy(alpha = 0.3f)
+                            else NexaraColors.StatusSuccess.copy(alpha = 0.3f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = msg,
+                            style = NexaraTypography.labelMedium.copy(fontSize = 12.sp),
+                            color = if (isError) NexaraColors.StatusError else NexaraColors.StatusSuccess
+                        )
+                        IconButton(
+                            onClick = { viewModel.clearSyncMessage() },
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "关闭",
+                                tint = if (isError) NexaraColors.StatusError.copy(alpha = 0.6f)
+                                else NexaraColors.StatusSuccess.copy(alpha = 0.6f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

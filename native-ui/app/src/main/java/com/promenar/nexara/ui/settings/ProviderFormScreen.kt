@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -47,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -127,6 +131,15 @@ fun ProviderFormScreen(
 
     val isEditing = providerId != null
     val isLocal = selectedPreset.protocolType == ProtocolType.Local
+
+    // 键盘避让：当任意配置字段获取焦点时，将 "Configuration" 标题带入视野
+    val bringIntoView = remember { BringIntoViewRequester() }
+    var focusTrigger by remember { mutableStateOf(0) }
+    LaunchedEffect(focusTrigger) {
+        if (focusTrigger > 0) {
+            bringIntoView.bringIntoView()
+        }
+    }
 
     NexaraPageLayout(
         title = when {
@@ -232,14 +245,16 @@ fun ProviderFormScreen(
                 Text(
                     text = stringResource(R.string.provider_form_config_section),
                     style = NexaraTypography.headlineMedium,
-                    color = NexaraColors.OnSurface
+                    color = NexaraColors.OnSurface,
+                    modifier = Modifier.bringIntoViewRequester(bringIntoView).focusable()
                 )
 
                 LabeledField(label = stringResource(R.string.provider_form_label_name)) {
                     GlassInputField(
                         value = name,
                         onValueChange = { name = it },
-                        placeholder = stringResource(R.string.provider_form_placeholder_name)
+                        placeholder = stringResource(R.string.provider_form_placeholder_name),
+                        modifier = Modifier.onFocusChanged { if (it.isFocused) focusTrigger++ }
                     )
                 }
 
@@ -247,7 +262,8 @@ fun ProviderFormScreen(
                     GlassInputField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
-                        placeholder = stringResource(R.string.provider_form_placeholder_url)
+                        placeholder = stringResource(R.string.provider_form_placeholder_url),
+                        modifier = Modifier.onFocusChanged { if (it.isFocused) focusTrigger++ }
                     )
                 }
 
@@ -262,7 +278,9 @@ fun ProviderFormScreen(
                             placeholder = stringResource(R.string.provider_form_placeholder_api_key),
                             visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            modifier = Modifier.padding(end = 40.dp)
+                            modifier = Modifier
+                                .onFocusChanged { if (it.isFocused) focusTrigger++ }
+                                .padding(end = 40.dp)
                         )
                         IconButton(
                             onClick = { apiKeyVisible = !apiKeyVisible },
@@ -405,7 +423,8 @@ fun ProviderFormScreen(
 
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        // 键盘避让底部留白 — 确保键盘弹起时用户可滚动查看全部 3 行配置字段
+        Spacer(modifier = Modifier.height(200.dp))
     }
 }
 

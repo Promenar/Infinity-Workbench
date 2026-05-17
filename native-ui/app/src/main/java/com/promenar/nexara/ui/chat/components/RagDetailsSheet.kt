@@ -12,10 +12,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,6 +29,11 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlin.math.roundToInt
 
+private enum class InspectionTab(val label: String) {
+    Retrieved("检索结果"),
+    KnowledgeGraph("知识图谱")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RagDetailsSheet(
@@ -35,6 +42,11 @@ fun RagDetailsSheet(
     onDismissRequest: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = InspectionTab.entries
+
+    val hasReferences = !references.isNullOrEmpty()
+    val hasKgPaths = !kgPaths.isNullOrEmpty()
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -51,45 +63,87 @@ fun RagDetailsSheet(
                 text = "知识审计 (Knowledge Inspection)",
                 style = NexaraTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 12.dp)
             )
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 32.dp)
-            ) {
-                // RAG References (Chunks)
-                if (!references.isNullOrEmpty()) {
-                    item {
-                        SectionHeader(title = "检索片段 (Retrieved Chunks)", icon = Icons.Rounded.Source)
-                    }
-                    itemsIndexed(references) { index, ref ->
-                        RagReferenceCard(ref = ref, rank = index + 1)
-                    }
-                }
-
-                // KG Paths
-                if (!kgPaths.isNullOrEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SectionHeader(title = "知识图谱 (Knowledge Graph Paths)", icon = Icons.Rounded.Hub)
-                    }
-                    itemsIndexed(kgPaths) { index, path ->
-                        KgPathCard(path = path, index = index + 1)
-                    }
-                }
-
-                if (references.isNullOrEmpty() && kgPaths.isNullOrEmpty()) {
-                    item {
-                        Text(
-                            text = "暂无检索详情",
-                            style = NexaraTypography.bodyMedium,
-                            color = NexaraColors.OnSurfaceVariant
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = NexaraColors.SurfaceLow,
+                contentColor = NexaraColors.Primary,
+                edgePadding = 0.dp,
+                indicator = { tabPositions ->
+                    if (selectedTab < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            height = 2.dp,
+                            color = NexaraColors.Primary
                         )
+                    }
+                },
+                divider = {}
+            ) {
+                tabs.forEachIndexed { index, tab ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                text = tab.label,
+                                style = NexaraTypography.labelMedium.copy(
+                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
+                                ),
+                                color = if (selectedTab == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                            )
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Crossfade(targetState = selectedTab, label = "tab-crossfade") { page ->
+                when (page) {
+                    0 -> {
+                        if (hasReferences) {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                contentPadding = PaddingValues(bottom = 32.dp)
+                            ) {
+                                item {
+                                    SectionHeader(title = "检索片段 (Retrieved Chunks)", icon = Icons.Rounded.Source)
+                                }
+                                itemsIndexed(references!!) { index, ref ->
+                                    RagReferenceCard(ref = ref, rank = index + 1)
+                                }
+                            }
+                        } else {
+                            EmptyStateText()
+                        }
+                    }
+                    1 -> {
+                        if (hasKgPaths) {
+                            KgPathsTab(kgPaths = kgPaths!!)
+                        } else {
+                            EmptyStateText()
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyStateText() {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "暂无数据",
+            style = NexaraTypography.bodyMedium,
+            color = NexaraColors.OnSurfaceVariant
+        )
     }
 }
 
@@ -206,85 +260,131 @@ private fun ScoreBadge(label: String, score: Float, color: androidx.compose.ui.g
 }
 
 @Composable
-private fun KgPathCard(path: KgPath, index: Int) {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
+private fun KgPathsTab(kgPaths: List<KgPath>) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 32.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Header
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        itemsIndexed(kgPaths) { index, path ->
+            KgPathSection(path = path, index = index + 1)
+        }
+    }
+}
+
+@Composable
+private fun KgPathSection(path: KgPath, index: Int) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .background(NexaraColors.Tertiary.copy(alpha = 0.2f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "P$index",
+                    style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = NexaraColors.Tertiary
+                )
+            }
+            Text(
+                text = "关键词: ${path.queryKeywords.joinToString(", ")}",
+                style = NexaraTypography.labelSmall,
+                color = NexaraColors.OnSurfaceVariant
+            )
+        }
+
+        path.edges.forEachIndexed { i, edge ->
+            val sourceNode = path.nodes.find { it.id == edge.sourceId }?.label ?: edge.sourceId
+            val targetNode = path.nodes.find { it.id == edge.targetId }?.label ?: edge.targetId
+
+            KgEdgeRow(
+                sourceLabel = sourceNode,
+                targetLabel = targetNode,
+                relation = edge.relation
+            )
+
+            if (i < path.edges.size - 1) {
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
-                        .background(NexaraColors.Tertiary.copy(alpha = 0.2f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("P$index", style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold), color = NexaraColors.Tertiary)
-                }
+                        .padding(start = 10.dp)
+                        .width(2.dp)
+                        .height(8.dp)
+                        .background(NexaraColors.OutlineVariant.copy(alpha = 0.3f))
+                )
+            }
+        }
+
+        if (!path.reasoning.isNullOrBlank()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    Icons.Rounded.Lightbulb,
+                    null,
+                    tint = NexaraColors.Primary,
+                    modifier = Modifier.size(14.dp)
+                )
                 Text(
-                    text = "关键词: ${path.queryKeywords.joinToString(", ")}",
+                    text = path.reasoning,
                     style = NexaraTypography.labelSmall,
                     color = NexaraColors.OnSurfaceVariant
                 )
-            }
-
-            // Topology
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(NexaraColors.SurfaceContainer.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .padding(12.dp)
-            ) {
-                path.edges.forEachIndexed { i, edge ->
-                    val sourceNode = path.nodes.find { it.id == edge.sourceId }?.label ?: edge.sourceId
-                    val targetNode = path.nodes.find { it.id == edge.targetId }?.label ?: edge.targetId
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        KgNodeBadge(text = sourceNode)
-                        Icon(Icons.Rounded.ArrowRightAlt, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(16.dp))
-                        Text(
-                            text = edge.relation,
-                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                            color = NexaraColors.Tertiary
-                        )
-                        Icon(Icons.Rounded.ArrowRightAlt, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(16.dp))
-                        KgNodeBadge(text = targetNode)
-                    }
-                    if (i < path.edges.size - 1) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-            }
-
-            if (!path.reasoning.isNullOrBlank()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Rounded.Lightbulb, null, tint = NexaraColors.Primary, modifier = Modifier.size(14.dp))
-                    Text(
-                        text = path.reasoning,
-                        style = NexaraTypography.labelSmall,
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                }
             }
         }
     }
 }
 
 @Composable
-private fun KgNodeBadge(text: String) {
+private fun KgEdgeRow(sourceLabel: String, targetLabel: String, relation: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        KgNodeCard(label = sourceLabel, modifier = Modifier.weight(1f))
+        KgRelationBadge(relation = relation)
+        KgNodeCard(label = targetLabel, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun KgNodeCard(label: String, modifier: Modifier = Modifier) {
+    NexaraGlassCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(2.dp)
+                    .background(NexaraColors.Primary)
+            )
+            Text(
+                text = label,
+                style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                color = NexaraColors.OnSurface,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun KgRelationBadge(relation: String) {
     Surface(
         color = NexaraColors.SurfaceHigh,
-        shape = RoundedCornerShape(4.dp),
-        border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.2f))
+        shape = RoundedCornerShape(4.dp)
     ) {
         Text(
-            text = text,
-            style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Medium),
-            color = NexaraColors.OnSurface,
+            text = relation,
+            style = NexaraTypography.labelSmall.copy(
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace
+            ),
+            color = NexaraColors.OnSurfaceVariant,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
         )
     }

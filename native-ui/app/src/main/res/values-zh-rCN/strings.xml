@@ -118,9 +118,9 @@
     <string name="agent_edit_current_model">当前模型</string>
     <string name="agent_edit_label_presets">推理预设</string>
     <string name="agent_edit_section_knowledge">知识</string>
-    <string name="agent_edit_rag_config">RAG 配置</string>
-    <string name="agent_edit_rag_desc">分块、记忆、向量化</string>
-    <string name="agent_edit_advanced_retrieval">高级检索</string>
+    <string name="agent_edit_rag_config">记忆设置</string>
+    <string name="agent_edit_rag_desc">分块、记忆、向量化、知识图谱</string>
+    <string name="agent_edit_advanced_retrieval">检索设置</string>
     <string name="agent_edit_retrieval_desc">重排序、查询改写、混合搜索</string>
     <string name="agent_edit_section_danger">危险区</string>
     <string name="agent_edit_delete_btn">删除助手</string>
@@ -135,7 +135,7 @@
     <string name="sheet_settings_font_size_unit">像素</string>
 
     <!-- ============ RAG Config ============ -->
-    <string name="agent_rag_title">RAG 配置</string>
+    <string name="agent_rag_title">记忆设置</string>
     <string name="agent_rag_status_inherited">继承全局</string>
     <string name="agent_rag_status_custom">自定义</string>
     <string name="agent_rag_reset_title">重置配置</string>
@@ -157,7 +157,7 @@
     <string name="agent_rag_unit_messages">条消息</string>
 
     <!-- ============ Advanced Retrieval ============ -->
-    <string name="agent_retrieval_title">高级检索</string>
+    <string name="agent_retrieval_title">检索设置</string>
     <string name="agent_retrieval_section_memory">记忆检索</string>
     <string name="agent_retrieval_memory_limit">记忆数量限制</string>
     <string name="agent_retrieval_memory_threshold">记忆相似度阈值</string>
@@ -201,16 +201,16 @@
     <string name="settings_model_rerank">重排模型</string>
     <string name="settings_not_set">未设置</string>
     <string name="settings_section_knowledge">知识管理</string>
-    <string name="settings_rag_config">RAG 配置</string>
-    <string name="settings_rag_desc">分块、记忆、向量化</string>
-    <string name="settings_advanced_retrieval">高级检索</string>
+    <string name="settings_rag_config">记忆设置</string>
+    <string name="settings_rag_desc">分块、记忆、向量化、知识图谱</string>
+    <string name="settings_advanced_retrieval">检索设置</string>
     <string name="settings_retrieval_desc">重排序、查询改写、混合搜索</string>
     <string name="settings_token_usage">Token 用量</string>
     <string name="settings_token_cost_month">%1$s 本月</string>
     <string name="settings_section_tools">工具</string>
     <string name="settings_web_search">Web 搜索</string>
     <string name="settings_web_search_desc">Tavily 深度搜索</string>
-    <string name="settings_skills">工具管理</string>
+    <string name="settings_skills">工具设置</string>
     <string name="settings_skills_desc">配置 Agent 工具与 MCP 服务器</string>
     <string name="settings_local_models">本地模型</string>
     <string name="settings_local_models_desc">GGUF 端侧推理 · 实验性</string>
@@ -265,6 +265,16 @@
     <string name="chat_context_label_active">活跃对话</string>
     <string name="chat_context_label_rag">知识增强</string>
     <string name="chat_context_btn_compress">压缩历史</string>
+
+    <!-- Summary Card -->
+    <string name="chat_summary_card_title">上下文摘要</string>
+    <string name="chat_summary_card_compressing">压缩中</string>
+    <string name="chat_summary_card_done">完成</string>
+    <string name="chat_summary_card_expand">查看摘要</string>
+    <string name="chat_summary_card_collapse">收起</string>
+    <string name="chat_summary_card_progress_preparing">正在准备摘要请求…</string>
+    <string name="chat_summary_card_progress_calling">正在调用模型…</string>
+    <string name="chat_summary_card_progress_done">摘要已生成</string>
 
     <!-- Chat Inline Components -->
     <string name="chat_rag_knowledge_retrieval">知识检索</string>
@@ -510,7 +520,7 @@
     <string name="search_config_depth_advanced">高级</string>
 
     <!-- SkillsScreen -->
-    <string name="skills_title">工具管理</string>
+    <string name="skills_title">工具设置</string>
     <string name="skills_desc">配置 AI 助手的能力与外部工具连接。</string>
     <string name="skills_loop_limit">执行循环限制</string>
     <string name="skills_loop_limit_desc">每次请求的最大工具调用迭代次数</string>
@@ -543,6 +553,28 @@
     <string name="skill_create_tool_desc">通过元工具创建新的自定义技能</string>
     <string name="skill_image_generation">图像生成</string>
     <string name="skill_image_generation_desc">根据文本描述生成 AI 图像</string>
+    <string name="skill_file_read">文件读取</string>
+    <string name="skill_file_read_desc">读取工作空间中文件的内容</string>
+    <string name="skill_file_write">文件写入</string>
+    <string name="skill_file_write_desc">在工作空间中创建或更新文件内容</string>
+    <string name="skill_file_list">目录列表</string>
+    <string name="skill_file_list_desc">列出工作空间中目录的子项列表</string>
+    <string name="skill_file_search">文件检索</string>
+    <string name="skill_file_search_desc">在工作空间的所有文件中检索指定文本</string>
+    <string name="skill_file_diff">文件对比</string>
+    <string name="skill_file_diff_desc">对比计算文件版本之间的逐行差异</string>
+    <string name="skill_file_patch">补丁应用</string>
+    <string name="skill_file_patch_desc">将补丁更改应用到工作空间文件</string>
+    <string name="skill_exec_js">沙箱 JS 执行</string>
+    <string name="skill_exec_js_desc">在安全沙箱环境中执行 JavaScript 代码</string>
+    <string name="skill_initialize_plan">初始化计划</string>
+    <string name="skill_initialize_plan_desc">初始化一个新的结构化 Agent 执行计划</string>
+    <string name="skill_update_plan">更新计划</string>
+    <string name="skill_update_plan_desc">更新当前正在执行的计划步骤</string>
+    <string name="skill_get_plan">获取计划</string>
+    <string name="skill_get_plan_desc">获取当前执行计划的详细数据</string>
+    <string name="skill_drop_plan">放弃计划</string>
+    <string name="skill_drop_plan_desc">取消或丢弃当前的执行计划</string>
     <string name="skills_configure">配置</string>
     <string name="skills_edit_skill">编辑技能配置</string>
     <string name="skills_edit_custom">编辑自定义技能</string>
@@ -664,6 +696,9 @@
     <string name="rag_advanced_title">知识图谱</string>
     <string name="rag_advanced_desc">知识图谱抽取、检索策略与成本管理，用于智能上下文增强。</string>
     <string name="rag_advanced_kg_section">知识图谱</string>
+    <string name="rag_advanced_coming_soon">即将上线</string>
+    <string name="rag_advanced_default_prompt">从以下文本中提取命名实体、概念和关系。以 JSON 格式输出，包含 nodes 和 edges 数组。</string>
+    <string name="rag_advanced_summary_template_title">摘要模板编辑器</string>
     <string name="rag_advanced_kg_enable">启用知识图谱（KG）</string>
     <string name="rag_advanced_kg_desc">从文档中提取实体与关系</string>
     <string name="rag_advanced_extract_config">抽取配置</string>
@@ -675,8 +710,8 @@
     <string name="rag_advanced_jit_max_blocks">最大块数</string>
     <string name="rag_advanced_jit_free_mode">免费模式</string>
     <string name="rag_advanced_jit_free_desc">允许无限制的实体抽取</string>
-    <string name="rag_advanced_jit_domain">域名自动检测</string>
-    <string name="rag_advanced_jit_domain_desc">自动检测域名以过滤实体</string>
+    <string name="rag_advanced_jit_domain">自动识别类别</string>
+    <string name="rag_advanced_jit_domain_desc">自动识别文本类别以优化实体抽取</string>
     <string name="rag_advanced_cost_section">成本策略</string>
     <string name="rag_advanced_cost_summary">摘要优先</string>
     <string name="rag_advanced_cost_summary_desc">低成本，先摘要后抽取</string>
@@ -713,7 +748,7 @@
     <string name="rag_debug_empty">暂无向量数据</string>
 
     <!-- GlobalRagConfigScreen -->
-    <string name="rag_config_title">RAG 配置</string>
+    <string name="rag_config_title">记忆设置</string>
     <string name="rag_config_desc">微调全局检索增强生成逻辑，以优化各操作的 AI 表现。</string>
     <string name="rag_config_presets">配置预设</string>
     <string name="rag_config_preset_balanced">均衡</string>
@@ -744,7 +779,7 @@
     <string name="rag_config_details_desc">调试与诊断</string>
     <string name="rag_config_embed_section">Embedding 模型</string>
     <string name="rag_config_embed_dimension">输出向量维度</string>
-    <string name="rag_config_embed_dimension_desc">输出向量维度（null=使用模型默认，如 text-embedding-3-small=1536）</string>
+    <string name="rag_config_embed_dimension_desc">输出向量维度（null = 使用模型默认，如 text&#x200B;-&#x200B;embedding&#x200B;-&#x200B;3&#x200B;-&#x200B;small = 1536）</string>
     <string name="rag_config_max_embed_tokens">单次调用最大 Token</string>
     <string name="rag_config_max_embed_tokens_desc">Embedding API 单次调用最大输入 token 数（影响每批切块数；默认 8192）</string>
     <string name="rag_config_rerank_section">Rerank 模型</string>
@@ -765,8 +800,8 @@
     <string name="rag_config_edit_template">编辑摘要模板</string>
 
     <!-- AdvancedRetrievalScreen -->
-    <string name="retrieval_title">高级检索</string>
-    <string name="retrieval_title_full">高级检索</string>
+    <string name="retrieval_title">检索设置</string>
+    <string name="retrieval_title_full">检索设置</string>
     <string name="retrieval_desc">微调 RAG 流水线参数，优化上下文提取、相关性过滤与查询执行。</string>
     <string name="retrieval_memory_section">记忆检索</string>
     <string name="retrieval_memory_limit">检索数量限制</string>
@@ -778,6 +813,7 @@
     <string name="retrieval_hybrid_desc">结合密集向量与稀疏 BM25 匹配</string>
     <string name="retrieval_vector_weight">向量权重</string>
     <string name="retrieval_bm25_boost">BM25 增益</string>
+    <string name="retrieval_advanced_features">进阶功能</string>
     <string name="retrieval_rerank_section">重排序</string>
     <string name="retrieval_rerank_enable">启用重排序</string>
     <string name="retrieval_rerank_desc">使用交叉编码器对检索分块重新排序</string>

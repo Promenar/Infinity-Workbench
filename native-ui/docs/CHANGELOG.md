@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- [RAG] **P0 文档检索丢失修复**：修复了 `MemoryManager.kt` 中由于 parseType 判定与向量入库标签不匹配（`"doc"` vs `"document"`）导致所有文档检索结果在后处理时被静默丢弃的 Bug。
+- [KG] **UI 清理**：移除知识图谱界面 `KnowledgeGraphScreen` 中用于测试/Mock 的 Mock 数据注入（AutoFixHigh）和清空图谱（DeleteSweep）按钮，并在 `KnowledgeGraphViewModel` 中清理了对应的 `injectMockData` 及 `clearGraph` 逻辑，统一使用真实数据。
+
 ### Changed
 - [Architecture] **统一资源操作系统**: 移除旧 documents/folders 系统（12 文件删除），全面切换至 UUID 锚定的 workspace_files 体系。RagViewModel、DocEditorViewModel、VectorizationQueue、KnowledgeGraphRepository 等组件已适配新接口（IWorkspaceRepository / IFileOperationRepository）。数据库迁移 v8→v9。
 - [Architecture] **FK 解耦**: VectorEntity、KgEdgeEntity 等移除对 DocumentEntity 的 ForeignKey，保留 doc_id 列数据。

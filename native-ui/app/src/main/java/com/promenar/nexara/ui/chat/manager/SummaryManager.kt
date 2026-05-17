@@ -20,9 +20,12 @@ class SummaryManager(private val llmProvider: LlmProvider) {
         oldSummary: String?,
         overflowMessages: List<Message>,
         summaryModelId: String?,
-        currentModelId: String
+        currentModelId: String,
+        onProgress: ((String) -> Unit)? = null
     ): String = withContext(Dispatchers.IO) {
         if (overflowMessages.isEmpty()) return@withContext oldSummary ?: ""
+
+        onProgress?.invoke("Preparing summary request")
 
         val modelToUse = if (!summaryModelId.isNullOrBlank()) summaryModelId else currentModelId
         
@@ -36,6 +39,8 @@ class SummaryManager(private val llmProvider: LlmProvider) {
             "你是一个信息压缩助手。现有摘要如下：\n$oldSummary\n\n请将以下新产生的对话记录压缩并合并到已有摘要中，确保保留关键事实、用户偏好和核心实体：\n\n$historyText"
         }
 
+        onProgress?.invoke("Calling model...")
+
         val request = PromptRequest(
             messages = listOf(ProtocolMessage(role = "user", content = prompt)),
             model = modelToUse,
@@ -44,10 +49,11 @@ class SummaryManager(private val llmProvider: LlmProvider) {
 
         try {
             val response = llmProvider.sendPromptSync(request)
+            onProgress?.invoke("Summary generated")
             response.content
         } catch (e: Exception) {
             e.printStackTrace()
-            oldSummary ?: "" // Fallback to old summary on error
+            oldSummary ?: ""
         }
     }
 }

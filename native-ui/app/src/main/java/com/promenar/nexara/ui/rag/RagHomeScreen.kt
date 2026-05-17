@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -108,6 +109,7 @@ fun RagHomeScreen(
     val indexingSubStatus by viewModel.indexingSubStatus.collectAsState()
     val lastQueueError by viewModel.lastQueueError.collectAsState()
     val memoryVectors by viewModel.memoryVectors.collectAsState()
+    val kgExtractionStates by viewModel.kgExtractionStates.collectAsState()
 
     var currentTab by remember { mutableStateOf(PortalTab.DOCUMENTS) }
     var searchQuery by remember { mutableStateOf("") }
@@ -130,7 +132,7 @@ fun RagHomeScreen(
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets.systemBars,
+        contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             TopAppBar(
                 title = {
@@ -297,8 +299,10 @@ fun RagHomeScreen(
                             onRename = { u, n -> viewModel.renameFolder(u, n) },
                             onMove = { u, t -> viewModel.moveFile(u, t) },
                             onExtractKG = { viewModel.extractKG(it) },
+                            onViewKG = { _ -> onNavigateToGraph() },
                             onCopy = { viewModel.copyFile(it) },
-                            indexingFileIds = viewModel.indexingDocIds.collectAsState().value
+                            indexingFileIds = viewModel.indexingDocIds.collectAsState().value,
+                            kgExtractionStates = kgExtractionStates
                         )
                     }
                 }
@@ -306,7 +310,7 @@ fun RagHomeScreen(
                 PortalTab.MEMORY -> {
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(bottom = 80.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         item { Text(stringResource(R.string.rag_home_memory_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface) }
@@ -360,7 +364,7 @@ fun RagHomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .padding(start = 20.dp, end = 20.dp, bottom = 100.dp)
+                    .padding(start = 20.dp, end = 20.dp, bottom = 24.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(NexaraColors.SurfaceLow.copy(alpha = 0.95f))
                     .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(16.dp))

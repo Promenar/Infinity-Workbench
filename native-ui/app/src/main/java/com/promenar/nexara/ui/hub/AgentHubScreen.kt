@@ -46,7 +46,7 @@ fun AgentHubScreen(
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets.systemBars,
+        contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             TopAppBar(
                 title = {
@@ -106,7 +106,7 @@ fun AgentHubScreen(
                     .padding(paddingValues),
                 contentPadding = PaddingValues(
                     start = 20.dp, end = 20.dp,
-                    top = 8.dp, bottom = 120.dp
+                    top = 8.dp, bottom = 24.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {

@@ -16,8 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.rounded.AutoFixHigh
-import androidx.compose.material.icons.rounded.DeleteSweep
+
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,22 +82,7 @@ fun KnowledgeGraphScreen(
                             )
                         }
                     },
-                    actions = {
-                        IconButton(onClick = { viewModel.injectMockData() }) {
-                            Icon(
-                                Icons.Rounded.AutoFixHigh,
-                                contentDescription = "Inject Mock Data",
-                                tint = NexaraColors.Primary
-                            )
-                        }
-                        IconButton(onClick = { viewModel.clearGraph() }) {
-                            Icon(
-                                Icons.Rounded.DeleteSweep,
-                                contentDescription = "Clear Graph",
-                                tint = NexaraColors.Error
-                            )
-                        }
-                    },
+
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)
                     )

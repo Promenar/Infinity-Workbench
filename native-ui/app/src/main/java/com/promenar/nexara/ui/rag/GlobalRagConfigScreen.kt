@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -252,7 +253,14 @@ fun GlobalRagConfigScreen(
                     ) {
                         viewModel.updateConfig { c -> c.copy(embedDimension = it.toInt().takeIf { v -> v > 0 }) }
                     }
-                    Text(stringResource(R.string.rag_config_embed_dimension_desc), style = NexaraTypography.bodySmall.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
+                    Text(
+                        text = stringResource(R.string.rag_config_embed_dimension_desc),
+                        style = NexaraTypography.bodySmall.copy(
+                            fontSize = 11.sp,
+                            lineBreak = LineBreak.Paragraph
+                        ),
+                        color = NexaraColors.OnSurfaceVariant
+                    )
 
                     dimSlider(
                         stringResource(R.string.rag_config_max_embed_tokens),
@@ -262,7 +270,14 @@ fun GlobalRagConfigScreen(
                     ) {
                         viewModel.updateConfig { c -> c.copy(maxEmbedTokensPerCall = it.toInt()) }
                     }
-                    Text(stringResource(R.string.rag_config_max_embed_tokens_desc), style = NexaraTypography.bodySmall.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
+                    Text(
+                        text = stringResource(R.string.rag_config_max_embed_tokens_desc),
+                        style = NexaraTypography.bodySmall.copy(
+                            fontSize = 11.sp,
+                            lineBreak = LineBreak.Paragraph
+                        ),
+                        color = NexaraColors.OnSurfaceVariant
+                    )
                 }
             }
 

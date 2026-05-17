@@ -11,13 +11,20 @@ import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.PostProcessStatus
+import com.promenar.nexara.data.model.PostProcessTask
+import com.promenar.nexara.data.model.PostProcessType
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
+import com.promenar.nexara.R
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.model.RagMetadata
+import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.model.RagProgress
+import com.promenar.nexara.utils.NexaraLogger
+import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
 import com.promenar.nexara.domain.usecase.ExportSessionUseCase
@@ -140,6 +147,39 @@ class ChatViewModel(
     )
     private val _tokenIndicatorState = MutableStateFlow(TokenIndicatorState())
     val tokenIndicatorState: StateFlow<TokenIndicatorState> = _tokenIndicatorState
+
+    private val _ragPhases = MutableStateFlow<List<RagPhase>>(emptyList())
+    val ragPhases: StateFlow<List<RagPhase>> = _ragPhases
+
+    data class CompressionState(
+        val isCompressing: Boolean = false,
+        val progress: Float = 0f,
+        val detail: String = "",
+        val result: String? = null
+    )
+
+    private val _compressionState = MutableStateFlow(CompressionState())
+    val compressionState: StateFlow<CompressionState> = _compressionState
+
+    private val _postProcessTasks = MutableStateFlow<List<PostProcessTask>>(emptyList())
+    val postProcessTasks: StateFlow<List<PostProcessTask>> = _postProcessTasks
+
+    fun addPostProcessTask(type: PostProcessType, status: PostProcessStatus = PostProcessStatus.RUNNING, progress: Float = 0f, detail: String = ""): String {
+        val id = "pp_${System.currentTimeMillis()}_${type.ordinal}"
+        val task = PostProcessTask(id = id, type = type, status = status, progress = progress, detail = detail)
+        _postProcessTasks.update { it + task }
+        return id
+    }
+
+    fun updatePostProcessTask(id: String, status: PostProcessStatus? = null, progress: Float? = null, detail: String? = null) {
+        _postProcessTasks.update { tasks ->
+            tasks.map { if (it.id == id) it.copy(status = status ?: it.status, progress = progress ?: it.progress, detail = detail ?: it.detail) else it }
+        }
+    }
+
+    fun removePostProcessTask(id: String) {
+        _postProcessTasks.update { tasks -> tasks.filter { it.id != id } }
+    }
 
     private var generationJob: Job? = null
 
@@ -273,21 +313,74 @@ class ChatViewModel(
         _isGenerating.update { true }
         _generationStatus.update { GenerationStatus.UPLOADING }
         _streamingContent.update { "" }
-        _error.update { null } // 每轮新生成强制清除上一轮的残留错误
+        _error.update { null }
+
+        val defaultPhases = listOf(
+            RagPhase("embed", "Embedding query", PhaseStatus.PENDING),
+            RagPhase("memory", "Searching memory", PhaseStatus.PENDING),
+            RagPhase("docs", "Searching documents", PhaseStatus.PENDING),
+            RagPhase("hybrid", "Hybrid fusion", PhaseStatus.PENDING),
+            RagPhase("rank", "Ranking results", PhaseStatus.PENDING),
+            RagPhase("rerank", "Reranking", PhaseStatus.PENDING),
+            RagPhase("kg", "KG retrieval", PhaseStatus.PENDING),
+            RagPhase("ready", "Context ready", PhaseStatus.PENDING)
+        )
+        _ragPhases.update { defaultPhases }
 
         val agent = agentRepository.getById(sessionForCtx.agentId)
         val agentConfig = configResolver.resolve(agent)
+
+        // 使用缓存的 ragOptions，确保与用户最新设置一致（绕过 store 异步延迟）
+        val effectiveRagOptions = _currentRagOptions.value.let { cached ->
+            val sessionOpts = sessionForCtx.ragOptions
+            if (sessionOpts != null && sessionOpts != cached) {
+                // 回退：如果 session 中有值但与缓存不同，以缓存为准
+                cached
+            } else if (sessionOpts != null) {
+                sessionOpts
+            } else {
+                cached
+            }
+        }
+        NexaraLogger.log("[ChatViewModel] generateMessage ragOptions: enableMemory=${effectiveRagOptions.enableMemory}, enableDocs=${effectiveRagOptions.enableDocs}, isGlobal=${effectiveRagOptions.isGlobal}")
 
         val contextParams = ContextBuilderParams(
             sessionId = sessionId,
             content = effectiveUserContent,
             assistantMsgId = assistantMsgId,
             session = sessionForCtx,
+            ragOptions = effectiveRagOptions,  // 显式传递，确保生效
             onRagProgress = { stage, percentage, subStage ->
                 messageManager.updateMessageProgress(
                     sessionId, assistantMsgId,
                     RagProgress(stage = stage, percentage = percentage, subStage = subStage)
                 )
+                _ragPhases.update { phases ->
+                    val phaseId = when {
+                        stage.contains("Embedding", ignoreCase = true) -> "embed"
+                        stage.contains("memory", ignoreCase = true) || stage.contains("Searching memory", ignoreCase = true) -> "memory"
+                        stage.contains("document", ignoreCase = true) || stage.contains("Searching documents", ignoreCase = true) -> "docs"
+                        stage.contains("Hybrid", ignoreCase = true) || stage.contains("fusion", ignoreCase = true) -> "hybrid"
+                        stage.contains("Ranking", ignoreCase = true) || stage.contains("Rank", ignoreCase = true) -> "rank"
+                        stage.contains("Rerank", ignoreCase = true) -> "rerank"
+                        stage.contains("KG", ignoreCase = true) -> "kg"
+                        stage.contains("Context ready", ignoreCase = true) -> "ready"
+                        else -> null
+                    }
+                    if (phaseId == null) return@update phases
+                    val idx = phases.indexOfFirst { it.id == phaseId }
+                    if (idx < 0) return@update phases
+                    phases.mapIndexed { i, p ->
+                        if (i == idx) p.copy(
+                            status = PhaseStatus.ACTIVE,
+                            progress = percentage,
+                            detail = subStage
+                        )
+                        else if (i < idx && p.status == PhaseStatus.ACTIVE) p.copy(status = PhaseStatus.DONE)
+                        else if (phaseId == "ready" && i == idx) p.copy(status = PhaseStatus.DONE, progress = 100)
+                        else p
+                    }
+                }
             },
             agentSystemPrompt = agentConfig.systemPrompt,
             sessionCustomPrompt = sessionForCtx.customPrompt
@@ -297,6 +390,7 @@ class ChatViewModel(
             contextBuilder.buildContext(contextParams)
         } catch (e: Exception) {
             _error.update { "Context build failed: ${e.message}" }
+            _ragPhases.update { phases -> phases.map { p -> if (p.status == PhaseStatus.ACTIVE) p.copy(status = PhaseStatus.DONE) else p } }
             _isGenerating.update { false }
             _generationStatus.update { GenerationStatus.ERROR }
             viewModelScope.launch {
@@ -304,6 +398,20 @@ class ChatViewModel(
                 _generationStatus.update { GenerationStatus.IDLE }
             }
             return
+        }
+
+        // P0 修复: 仅将真正执行过的 ACTIVE 阶段标记为 DONE；未触发的 PENDING 阶段保持原状
+        // 原逻辑: phases.map { if (p.status != DONE) p.copy(status = DONE) } — 批量假完成
+        _ragPhases.update { phases ->
+            val executedPhaseIds = phases.filter { it.status == PhaseStatus.ACTIVE || it.status == PhaseStatus.DONE }.map { it.id }.toSet()
+            phases.map { p ->
+                when {
+                    // 已执行 (ACTIVE→DONE) 或已完成的保持 DONE
+                    p.id in executedPhaseIds && p.status != PhaseStatus.DONE -> p.copy(status = PhaseStatus.DONE)
+                    // 未执行 (PENDING) 保持 PENDING，不批量升级
+                    else -> p
+                }
+            }
         }
 
         if (contextResult.ragReferences.isNotEmpty()) {
@@ -556,6 +664,28 @@ class ChatViewModel(
                     )
                     postProcessor.updateStats(ppParams)
 
+                    // P0 修复: 每轮对话完成后自动存储记忆向量 (addTurnToMemory 之前从未被调用)
+                    if (sessionRagOpts?.enableMemory == true
+                        && effectiveUserContent.isNotBlank()
+                        && accumulatedContent.isNotBlank()
+                        && memoryManager != null
+                    ) {
+                        try {
+                            val turnStart = System.currentTimeMillis()
+                            memoryManager.addTurnToMemory(
+                                sessionId = sessionId,
+                                userContent = effectiveUserContent,
+                                aiContent = accumulatedContent,
+                                userMessageId = userMsgId,
+                                assistantMessageId = assistantMsgId
+                            )
+                            val turnMs = System.currentTimeMillis() - turnStart
+                            NexaraLogger.log("[ChatViewModel] addTurnToMemory success: session=$sessionId, time=${turnMs}ms")
+                        } catch (e: Exception) {
+                            NexaraLogger.logError("[ChatViewModel] addTurnToMemory failed for session=$sessionId", e)
+                        }
+                    }
+
                     // Sliding window and archiving logic
                     val windowSize = finalSession.inferenceParams?.activeContextWindow ?: 10
                     if (finalSession.messages.size > windowSize) {
@@ -567,7 +697,25 @@ class ChatViewModel(
                         if (overflowMsgs.isNotEmpty()) {
                             // 1. Archive to RAG
                             if (sessionRagOpts?.enableMemory == true) {
-                                postProcessor.archiveMessagesToRag(sessionId, overflowMsgs, finalSession.modelId ?: "")
+                                val archiveTaskId = addPostProcessTask(
+                                    type = PostProcessType.ARCHIVE_TO_RAG,
+                                    detail = "Archiving ${overflowMsgs.size} messages"
+                                )
+                                try {
+                                    postProcessor.archiveMessagesToRag(
+                                        sessionId, overflowMsgs, finalSession.modelId ?: "",
+                                        onProgress = { progress, detail ->
+                                            updatePostProcessTask(archiveTaskId, progress = progress, detail = detail)
+                                        }
+                                    )
+                                    updatePostProcessTask(archiveTaskId, status = PostProcessStatus.DONE, progress = 1f)
+                                    viewModelScope.launch {
+                                        kotlinx.coroutines.delay(3000)
+                                        removePostProcessTask(archiveTaskId)
+                                    }
+                                } catch (e: Exception) {
+                                    updatePostProcessTask(archiveTaskId, status = PostProcessStatus.ERROR, detail = e.message ?: "Archive failed")
+                                }
                             }
                             
                             // 2. Mark as archived in DB
@@ -583,18 +731,34 @@ class ChatViewModel(
                             )?.contextLength ?: 128000
                             
                             if (totalTokens > maxTokens * threshold) {
+                                val summaryTaskId = addPostProcessTask(
+                                    type = PostProcessType.AUTO_SUMMARY,
+                                    detail = "Summarizing conversation"
+                                )
                                 val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
                                 val summaryModelId = settingsPrefs.getString("preset_summary_model", "")
                                 
-                                val newSummary = summaryManager.summarize(
-                                    oldSummary = finalSession.summary,
-                                    overflowMessages = overflowMsgs,
-                                    summaryModelId = summaryModelId,
-                                    currentModelId = finalSession.modelId ?: ""
-                                )
-                                
-                                if (newSummary != finalSession.summary) {
-                                    sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
+                                try {
+                                    val newSummary = summaryManager.summarize(
+                                        oldSummary = finalSession.summary,
+                                        overflowMessages = overflowMsgs,
+                                        summaryModelId = summaryModelId,
+                                        currentModelId = finalSession.modelId ?: "",
+                                        onProgress = { detail ->
+                                            updatePostProcessTask(summaryTaskId, detail = detail)
+                                        }
+                                    )
+                                    
+                                    if (newSummary != finalSession.summary) {
+                                        sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
+                                    }
+                                    updatePostProcessTask(summaryTaskId, status = PostProcessStatus.DONE, progress = 1f)
+                                    viewModelScope.launch {
+                                        kotlinx.coroutines.delay(3000)
+                                        removePostProcessTask(summaryTaskId)
+                                    }
+                                } catch (e: Exception) {
+                                    updatePostProcessTask(summaryTaskId, status = PostProcessStatus.ERROR, detail = e.message ?: "Summary failed")
                                 }
                             }
                         }
@@ -607,10 +771,23 @@ class ChatViewModel(
     }
 
     fun loadSession(sessionId: String) {
+        _ragPhases.update { emptyList() }
         val existing = store.getSession(sessionId)
         if (existing != null) {
             _currentSessionId.update { sessionId }
             updateAgentName(existing.agentId)
+            // 同步当前会话的 ragOptions 到缓存
+            existing.ragOptions?.let { _currentRagOptions.value = it }
+            // P0 持久化修复: 恢复历史检索指示器
+            val lastMsg = existing.messages.lastOrNull { it.role == MessageRole.ASSISTANT && !it.ragReferences.isNullOrEmpty() }
+            if (lastMsg?.ragReferences.isNullOrEmpty() == false) {
+                _ragPhases.update {
+                    listOf(
+                        RagPhase("retrieved", "已检索", PhaseStatus.DONE, 100,
+                            "${lastMsg!!.ragReferences!!.size} 个来源")
+                    )
+                }
+            }
             // 恢复未发送的草稿
             if (!existing.draft.isNullOrBlank()) {
                 _inputText.update { existing.draft!! }
@@ -624,14 +801,31 @@ class ChatViewModel(
                 val session = sessionRepository.getById(sessionId)
                 if (session != null) {
                     val messages = messageRepository.getBySession(sessionId)
-                    val hydrated = session.copy(messages = messages)
+                    var hydrated = session.copy(messages = messages)
+                    if (hydrated.ragOptions == null) {
+                        val defaultOptions = getDefaultRagOptions()
+                        hydrated = hydrated.copy(ragOptions = defaultOptions)
+                        sessionManager.updateSession(sessionId, mapOf("ragOptions" to defaultOptions))
+                    }
                     store.update { state ->
                         if (state.sessions.any { it.id == sessionId }) state
                         else state.copy(sessions = state.sessions + hydrated)
                     }
                     _currentSessionId.update { sessionId }
                     updateAgentName(hydrated.agentId)
-                    // 从 DB 恢复未发送的草稿
+                    // 同步当前会话的 ragOptions 到缓存
+                    hydrated.ragOptions?.let { _currentRagOptions.value = it }
+                // P0 持久化修复: 若会话中已有检索结果，恢复指示器为历史完成态
+                val lastAssistantMsg = hydrated.messages.lastOrNull { it.role == MessageRole.ASSISTANT && !it.ragReferences.isNullOrEmpty() }
+                if (lastAssistantMsg?.ragReferences.isNullOrEmpty() == false) {
+                    _ragPhases.update {
+                        listOf(
+                            RagPhase("retrieved", "已检索", PhaseStatus.DONE, 100,
+                                "${lastAssistantMsg!!.ragReferences!!.size} 个来源")
+                        )
+                    }
+                }
+                // 从 DB 恢复未发送的草稿
                     if (!session.draft.isNullOrBlank()) {
                         _inputText.update { session.draft!! }
                     }
@@ -653,12 +847,14 @@ class ChatViewModel(
                 if (!exists()) mkdirs()
             }.absolutePath
             
+            val defaultOptions = getDefaultRagOptions()
             val session = Session(
                 id = sessionId,
                 agentId = agentId,
                 workspacePath = workspacePath,
                 createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                updatedAt = System.currentTimeMillis(),
+                ragOptions = defaultOptions
             )
             sessionManager.addSession(session)
             _currentSessionId.update { sessionId }
@@ -765,8 +961,13 @@ class ChatViewModel(
         }
     }
 
+    private val _currentRagOptions = MutableStateFlow(com.promenar.nexara.data.model.RagOptions())
+    val currentRagOptions: StateFlow<com.promenar.nexara.data.model.RagOptions> = _currentRagOptions
+
     fun updateRagOptions(options: com.promenar.nexara.data.model.RagOptions) {
         val sessionId = _currentSessionId.value ?: return
+        _currentRagOptions.value = options  // 立即缓存，绕过 store 异步延迟
+        NexaraLogger.log("[ChatViewModel] updateRagOptions: enableMemory=${options.enableMemory}, enableDocs=${options.enableDocs}, isGlobal=${options.isGlobal}, enableRerank=${options.enableRerank}, enableKG=${options.enableKnowledgeGraph}")
         viewModelScope.launch {
             sessionManager.updateSession(sessionId, mapOf("ragOptions" to options))
         }
@@ -802,6 +1003,58 @@ class ChatViewModel(
                 _isGenerating.update { false }
             }
         }
+    }
+
+    fun compressContext() {
+        val sessionId = _currentSessionId.value ?: return
+        val session = store.getSession(sessionId) ?: return
+
+        viewModelScope.launch {
+            try {
+                _compressionState.update { CompressionState(isCompressing = true, progress = 0.1f, detail = application.getString(R.string.chat_summary_card_progress_preparing)) }
+                _isGenerating.update { true }
+
+                val messages = session.messages.filter { !it.isArchived }
+                if (messages.isEmpty()) {
+                    _compressionState.update { CompressionState(isCompressing = false, detail = "No messages to compress") }
+                    return@launch
+                }
+
+                val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
+                val summaryModelId = settingsPrefs.getString("preset_summary_model", "")
+
+                _compressionState.update { it.copy(progress = 0.3f, detail = application.getString(R.string.chat_summary_card_progress_calling)) }
+
+                val newSummary = summaryManager.summarize(
+                    oldSummary = session.summary,
+                    overflowMessages = messages,
+                    summaryModelId = summaryModelId,
+                    currentModelId = session.modelId ?: "",
+                    onProgress = { detail ->
+                        _compressionState.update { it.copy(progress = (it.progress + 0.15f).coerceAtMost(0.9f), detail = detail) }
+                    }
+                )
+
+                _compressionState.update { it.copy(progress = 0.95f, detail = application.getString(R.string.chat_summary_card_progress_done)) }
+
+                sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
+
+                messages.forEach { msg ->
+                    messageManager.updateMessage(sessionId, msg.id, msg.copy(isArchived = true))
+                }
+
+                _compressionState.update { CompressionState(isCompressing = false, progress = 1f, result = newSummary) }
+            } catch (e: Exception) {
+                _compressionState.update { CompressionState(isCompressing = false, detail = e.message ?: "Compression failed") }
+                _error.update { "Context compression failed: ${e.message}" }
+            } finally {
+                _isGenerating.update { false }
+            }
+        }
+    }
+
+    fun dismissCompressionResult() {
+        _compressionState.update { CompressionState() }
     }
 
     fun resendMessage(messageId: String) {
@@ -1323,5 +1576,18 @@ class ChatViewModel(
                 .filter { it.name in highRiskToolNames }
                 .map { it.id }
         }
+    }
+
+    private fun getDefaultRagOptions(): com.promenar.nexara.data.model.RagOptions {
+        val ragPrefs = application.getSharedPreferences("rag_settings", android.content.Context.MODE_PRIVATE)
+        val persistence = com.promenar.nexara.domain.usecase.RagConfigPersistence(ragPrefs)
+        val fullConfig = persistence.loadFullConfig()
+        return com.promenar.nexara.data.model.RagOptions(
+            enableMemory = fullConfig.enableMemory,
+            enableDocs = fullConfig.enableDocs,
+            enableRerank = fullConfig.enableRerank,
+            enableKnowledgeGraph = fullConfig.enableKnowledgeGraph,
+            isGlobal = true
+        )
     }
 }

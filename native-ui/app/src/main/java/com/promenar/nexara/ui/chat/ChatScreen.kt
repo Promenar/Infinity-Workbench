@@ -105,6 +105,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.common.EditorMode
@@ -132,6 +133,8 @@ fun ChatScreen(
     val uiState by chatViewModel.uiState.collectAsState()
     val inputText by chatViewModel.inputText.collectAsState()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsState()
+    val ragPhases by chatViewModel.ragPhases.collectAsState()
+    val compressionState by chatViewModel.compressionState.collectAsState()
     val taskRepo = application.taskRepository
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -229,7 +232,7 @@ fun ChatScreen(
         }
     }
 
-    // 生成中自动跟随：周期检查（~5Hz），仅用户还在底部时才轻推
+    // 生成中自动跟随：旗舰级 120Hz 频率物理帧率级像素实时追踪，确保流畅吐字不跟丢
     LaunchedEffect(uiState.isGenerating, autoFollowEnabled) {
         if (uiState.isGenerating && autoFollowEnabled) {
             while (isActive) {
@@ -245,7 +248,7 @@ fun ChatScreen(
                         listState.scrollToItem(totalItems - 1)
                     }
                 }
-                delay(50)
+                delay(8)
             }
         }
     }
@@ -313,6 +316,20 @@ fun ChatScreen(
                             // Long-click gesture handled via MessageActionSheet (tap version)
                             // For now, keep action sheet accessible via simple mechanism
                         } else {
+                            val ragActiveMsg = group.assistantMessages.find { !it.ragReferences.isNullOrEmpty() || it.ragReferencesLoading } ?: group.assistantMessages.lastOrNull()
+
+                            if (ragActiveMsg != null && ((isGeneratingGroup && ragPhases.isNotEmpty()) || !ragActiveMsg.ragReferences.isNullOrEmpty())) {
+                                val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
+                                val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
+                                val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
+                                RagProgressCard(
+                                    phases = targetPhases,
+                                    references = ragActiveMsg.ragReferences,
+                                    kgPaths = ragActiveMsg.kgPaths,
+                                    isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
+                                )
+                            }
+
                             PipelineBubble(
                                 group = group,
                                 isGenerating = isGeneratingGroup,
@@ -324,6 +341,17 @@ fun ChatScreen(
                                         chatViewModel.updateMessageContentOnly(lastMsg.id, newContent)
                                     }
                                 }
+                            )
+                        }
+                    }
+
+                    if (compressionState.isCompressing || compressionState.result != null) {
+                        item(key = "summary_card") {
+                            SummaryCard(
+                                isCompressing = compressionState.isCompressing,
+                                progress = compressionState.progress,
+                                detail = compressionState.detail,
+                                result = compressionState.result
                             )
                         }
                     }
@@ -390,6 +418,12 @@ fun ChatScreen(
                             tokenState = tokenState,
                             onModelClick = { showModelSettingsSheet = true },
                             onManualSummary = { chatViewModel.summarizeHistory() }
+                        )
+
+                        val postProcessTasks by chatViewModel.postProcessTasks.collectAsState()
+                        PostProcessBar(
+                            tasks = postProcessTasks,
+                            onRemoveTask = { chatViewModel.removePostProcessTask(it) }
                         )
 
                         if (selectedImageUris.isNotEmpty()) {

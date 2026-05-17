@@ -11,6 +11,7 @@ import androidx.room.Room
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.GraphStore
 import com.promenar.nexara.data.rag.ImageService
@@ -20,6 +21,7 @@ import com.promenar.nexara.data.rag.MicroGraphExtractor
 import com.promenar.nexara.data.rag.MicroGraphKgAdapter
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.RerankClient
+import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.manager.ProviderManager
@@ -127,9 +129,9 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val chatStore: ChatStore by lazy { ChatStore() }
 
-    val vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository by lazy {
-        VectorRepository(database.vectorDao(), embeddingClient)
-    }
+    private var _vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository? = null
+    val vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository
+        get() = _vectorRepository ?: VectorRepository(database.vectorDao(), embeddingClient).also { _vectorRepository = it }
 
     val skillRepository: ISkillRepository by lazy {
         com.promenar.nexara.data.repository.SkillRepository(database.skillDao())
@@ -259,51 +261,148 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         CoroutineScope(Dispatchers.IO).launch {
             vectorizationQueue.resumeInterruptedTasks()
         }
+
+        prefs.registerOnSharedPreferenceChangeListener(providerListener)
+        settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
     }
 
-    val embeddingClient: EmbeddingClient by lazy {
+    private var _embeddingClient: EmbeddingClient? = null
+    val embeddingClient: EmbeddingClient
+        get() = _embeddingClient ?: buildEmbeddingClient().also { _embeddingClient = it }
+
+    private fun buildEmbeddingClient(): EmbeddingClient {
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        // 优先读取专用的 embedding_* 键，为空时回退到主 LLM 提供商的 base_url/api_key
-        val baseUrl = prefs.getString("embedding_base_url", "")?.ifBlank {
-            prefs.getString("base_url", "") ?: ""
-        } ?: ""
-        val apiKey = prefs.getString("embedding_api_key", "")?.ifBlank {
-            prefs.getString("api_key", "") ?: ""
-        } ?: ""
+        // 1. 优先读取显式手动配置的 embedding_base_url (nexara_provider)
+        var baseUrl = prefs.getString("embedding_base_url", "") ?: ""
+        var apiKey = prefs.getString("embedding_api_key", "") ?: ""
+        var resolvedBy = if (baseUrl.isNotBlank()) "manual" else ""
+        
+        // 2. 如果手动配置为空，则根据预设模型自动查找所属提供商配置
         val presetModel = settingsPrefs.getString("preset_embedding_model", "") ?: ""
+        if (baseUrl.isBlank() && presetModel.isNotBlank()) {
+            val config = ProviderManager.getInstance().getProviderConfigByModelId(presetModel)
+            if (config != null) {
+                baseUrl = config.baseUrl
+                apiKey = config.apiKey
+                resolvedBy = "preset-model"
+            }
+        }
+        
+        // 3. 兜底：回退到主 LLM 提供商配置
+        if (baseUrl.isBlank()) {
+            baseUrl = prefs.getString("base_url", "") ?: ""
+            apiKey = prefs.getString("api_key", "") ?: ""
+            if (baseUrl.isNotBlank()) resolvedBy = "main-provider"
+        }
+        
+        // 4. 二次兜底：遍历所有已配置提供商（覆盖纯额外提供商场景）
+        if (baseUrl.isBlank()) {
+            val pm = ProviderManager.getInstance()
+            for (provider in pm.providers.value) {
+                val config = pm.getProviderConfig(provider.id)
+                if (config != null && config.baseUrl.isNotBlank() && config.apiKey.isNotBlank()) {
+                    baseUrl = config.baseUrl
+                    apiKey = config.apiKey
+                    resolvedBy = "any-provider-fallback(${provider.id})"
+                    break
+                }
+            }
+        }
+        
         val model = prefs.getString("embedding_model", "")?.ifBlank { presetModel } ?: presetModel
-        EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model)
+        NexaraLogger.log("[EmbeddingClient] 构建: model=$model resolvedBy=$resolvedBy baseUrlSet=${baseUrl.isNotBlank()} apiKeySet=${apiKey.isNotBlank()} baseUrl=${if (baseUrl.isNotBlank()) baseUrl.take(50) + "..." else "(empty)"}")
+        return EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model, localEngine = localInferenceEngine)
     }
 
-    val rerankClient: RerankClient by lazy {
+    fun rebuildEmbeddingClient() {
+        _embeddingClient = buildEmbeddingClient()
+        rebuildMemoryManager()
+        rebuildGraphExtractor()
+        _vectorRepository = null
+        _imageService = null
+        _microGraphExtractor = null
+        _kgProvider = null
+    }
+
+    private var _rerankClient: RerankClient? = null
+    val rerankClient: RerankClient
+        get() = _rerankClient ?: buildRerankClient().also { _rerankClient = it }
+
+    private fun buildRerankClient(): RerankClient {
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        val baseUrl = prefs.getString("embedding_base_url", "")?.ifBlank {
-            prefs.getString("base_url", "") ?: ""
-        } ?: ""
-        val apiKey = prefs.getString("embedding_api_key", "")?.ifBlank {
-            prefs.getString("api_key", "") ?: ""
-        } ?: ""
+        var baseUrl = prefs.getString("embedding_base_url", "") ?: ""
+        var apiKey = prefs.getString("embedding_api_key", "") ?: ""
+        
         val presetModel = settingsPrefs.getString("preset_rerank_model", "") ?: ""
+        if (baseUrl.isBlank() && presetModel.isNotBlank()) {
+            val config = ProviderManager.getInstance().getProviderConfigByModelId(presetModel)
+            if (config != null) {
+                baseUrl = config.baseUrl
+                apiKey = config.apiKey
+            }
+        }
+        
+        if (baseUrl.isBlank()) {
+            baseUrl = prefs.getString("base_url", "") ?: ""
+            apiKey = prefs.getString("api_key", "") ?: ""
+        }
+        
         val savedConfig = getSavedProviderConfig()
-        RerankClient(
+        val maxPerCall = ragConfigPersistence.loadFullConfig().rerankMaxPerCall
+        NexaraLogger.log("[RerankClient] 构建: model=$presetModel hasBaseUrl=${baseUrl.isNotBlank()} maxPerCall=$maxPerCall")
+        return RerankClient(
             baseUrl = baseUrl,
             apiKey = apiKey,
             modelId = presetModel,
             llmProtocol = savedConfig?.let {
                 try { llmProvider.protocol } catch (_: Exception) { null }
             },
-            llmModelId = savedConfig?.model
+            llmModelId = savedConfig?.model,
+            maxPerCall = maxPerCall
         )
     }
 
-    val imageService: ImageService by lazy {
-        ImageService(
+    fun rebuildRerankClient() {
+        _rerankClient = buildRerankClient()
+        rebuildMemoryManager()
+    }
+
+    private val providerListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "base_url" || key == "api_key" || key == "embedding_base_url" || key == "embedding_api_key") {
+            rebuildEmbeddingClient()
+            rebuildRerankClient()
+            _vectorizationQueue = null
+        }
+        if (key == "model") {
+            rebuildEmbeddingClient()
+            _vectorizationQueue = null
+        }
+    }
+
+    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "preset_embedding_model" || key == "all_models" || key == "enabled_models") {
+            rebuildEmbeddingClient()
+            _vectorizationQueue = null
+        }
+        if (key == "preset_rerank_model" || key == "all_models") {
+            rebuildRerankClient()
+        }
+        // 额外提供商配置变更（extra_provider_N_base_url/api_key 等）也需要重建客户端
+        if (key?.startsWith("extra_provider_") == true && (key.endsWith("_base_url") || key.endsWith("_api_key"))) {
+            rebuildEmbeddingClient()
+            rebuildRerankClient()
+            _vectorizationQueue = null
+        }
+    }
+
+    private var _imageService: ImageService? = null
+    val imageService: ImageService
+        get() = _imageService ?: ImageService(
             context = this,
             embeddingClient = embeddingClient,
             vectorStore = vectorStore,
             textSplitter = textSplitter
-        )
-    }
+        ).also { _imageService = it }
 
     val vectorStore: VectorStore by lazy {
         VectorStore(
@@ -324,56 +423,84 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         KeywordSearcher(vectorDao = database.vectorDao())
     }
 
-    val memoryManager: MemoryManager by lazy {
-        MemoryManager(
+    /** RAG 配置持久化读取器，与 RagViewModel 共用同一个 SharedPreferences */
+    private val ragConfigPersistence: RagConfigPersistence by lazy {
+        RagConfigPersistence(getSharedPreferences("rag_settings", MODE_PRIVATE))
+    }
+
+    private var _memoryManager: MemoryManager? = null
+    val memoryManager: MemoryManager
+        get() = _memoryManager ?: MemoryManager(
             vectorStore = vectorStore,
             keywordSearcher = keywordSearcher,
             graphStore = graphStore,
             embeddingClient = embeddingClient,
             rerankClient = rerankClient,
-            ragConfig = RagConfiguration()
-        )
+            ragConfig = ragConfigPersistence.loadFullConfig()  // P0: 从用户保存的配置读取，不再硬编码默认值
+        ).also { _memoryManager = it }
+
+    fun rebuildMemoryManager() {
+        _memoryManager = null
     }
 
     val textSplitter: RecursiveCharacterTextSplitter by lazy {
         RecursiveCharacterTextSplitter(chunkSize = 800, chunkOverlap = 100)
     }
 
-    val microGraphExtractor: MicroGraphExtractor by lazy {
-        MicroGraphExtractor(
+    private var _microGraphExtractor: MicroGraphExtractor? = null
+    val microGraphExtractor: MicroGraphExtractor
+        get() = _microGraphExtractor ?: MicroGraphExtractor(
             protocol = llmProvider.protocol,
             graphStore = graphStore,
             jitCacheDao = database.kgJitCacheDao(),
             modelId = getSavedProviderConfig()?.model
-        )
-    }
+        ).also { _microGraphExtractor = it }
 
-    val kgProvider: KgProvider by lazy {
-        MicroGraphKgAdapter(microGraphExtractor)
-    }
+    private var _kgProvider: KgProvider? = null
+    val kgProvider: KgProvider
+        get() = _kgProvider ?: MicroGraphKgAdapter(microGraphExtractor).also { _kgProvider = it }
 
     val webSearchContextProvider: WebSearchProvider by lazy {
         WebSearchContextProvider(this, httpClient)
     }
 
-    val graphExtractor: com.promenar.nexara.data.rag.GraphExtractor by lazy {
-        com.promenar.nexara.data.rag.GraphExtractor(
-            protocol = llmProvider.protocol,
-            graphStore = graphStore,
-            modelId = getSavedProviderConfig()?.model
-        )
+    private var _graphExtractor: com.promenar.nexara.data.rag.GraphExtractor? = null
+    val graphExtractor: com.promenar.nexara.data.rag.GraphExtractor
+        get() = _graphExtractor ?: run {
+            val config = ragConfigPersistence.loadFullConfig()
+            // P1: kgExtractionModel 优先 → 降级 summary model → 降级主 LLM 模型
+            val effectiveModel = config.kgExtractionModel?.takeIf { it.isNotBlank() }
+                ?: getSharedPreferences("nexara_settings", MODE_PRIVATE)
+                    .getString("preset_summary_model", "")?.takeIf { it.isNotBlank() }
+                ?: getSavedProviderConfig()?.model
+            // P1: kgExtractionPrompt 优先 → 降级 DEFAULT_KG_PROMPT
+            val effectivePrompt = config.kgExtractionPrompt?.takeIf { it.isNotBlank() }
+                ?: com.promenar.nexara.data.rag.GraphExtractor.DEFAULT_KG_PROMPT
+
+            com.promenar.nexara.data.rag.GraphExtractor(
+                protocol = llmProvider.protocol,
+                graphStore = graphStore,
+                modelId = effectiveModel,
+                systemPrompt = effectivePrompt,
+                chunkSize = config.docChunkSize.coerceAtLeast(400),
+                chunkOverlap = config.chunkOverlap.coerceAtMost(200)
+            ).also { _graphExtractor = it }
+        }
+
+    fun rebuildGraphExtractor() {
+        _graphExtractor = null
     }
 
-    val vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue by lazy {
-        com.promenar.nexara.data.rag.VectorizationQueue(
+    private var _vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue? = null
+    val vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue
+        get() = _vectorizationQueue ?: com.promenar.nexara.data.rag.VectorizationQueue(
             vectorStore = vectorStore,
             embeddingClient = embeddingClient,
             graphExtractor = graphExtractor,
             vectorDao = database.vectorDao(),
             vectorizationTaskDao = database.vectorizationTaskDao(),
             fileEntryDao = database.fileEntryDao()
-        )
-    }
+        ).also { _vectorizationQueue = it }
 
     val defaultAgents: List<com.promenar.nexara.domain.model.Agent> by lazy {
         listOf(
@@ -402,6 +529,10 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 .model(model)
                 .build()
         }
+        // 同步重建 Embedding / Rerank 客户端（使用最新的 baseUrl/apiKey）
+        rebuildEmbeddingClient()
+        rebuildRerankClient()
+        _vectorizationQueue = null  // 让 VectorizationQueue 下次访问时重新捕获新的 embeddingClient
     }
 
     fun switchToLocalProvider(modelName: String = "") {

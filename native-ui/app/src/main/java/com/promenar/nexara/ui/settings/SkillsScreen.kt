@@ -101,6 +101,8 @@ fun SkillsScreen(
             "file_write" to Icons.Rounded.Edit,
             "file_list" to Icons.Rounded.Folder,
             "file_search" to Icons.Rounded.Search,
+            "file_diff" to Icons.Rounded.Sync,
+            "file_patch" to Icons.Rounded.Build,
             "exec_js" to Icons.Rounded.Code,
             "initialize_plan" to Icons.Rounded.AccountTree,
             "update_plan" to Icons.Rounded.Edit,
@@ -588,7 +590,7 @@ private fun SkillCard(
                             color = NexaraColors.Outline
                         )
                     }
-                    Text(skill.description, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant)
+                    Text(skill.description, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp), color = NexaraColors.OnSurfaceVariant)
                 }
             }
             
@@ -647,7 +649,7 @@ private fun UserSkillCard(
                     }
                     Column {
                         Text(name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        Text(description, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant)
+                        Text(description, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp), color = NexaraColors.OnSurfaceVariant)
                     }
                 }
                 Switch(checked = isEnabled, onCheckedChange = { isEnabled = it; onToggle() }, colors = SwitchDefaults.colors(checkedTrackColor = NexaraColors.Primary, checkedThumbColor = NexaraColors.OnPrimary))

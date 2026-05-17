@@ -17,12 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountTree
-import androidx.compose.material.icons.rounded.BarChart
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -54,15 +50,13 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 @Composable
 fun AdvancedRetrievalScreen(
     viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(LocalContext.current.applicationContext as Application)),
-    onNavigateBack: () -> Unit,
-    onNavigateToRagAdvanced: () -> Unit = {}
+    onNavigateBack: () -> Unit
 ) {
     val config by viewModel.config.collectAsState()
 
     NexaraPageLayout(
         title = stringResource(R.string.retrieval_title),
-        onBack = onNavigateBack,
-        scrollable = false
+        onBack = onNavigateBack
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
 
@@ -167,62 +161,6 @@ fun AdvancedRetrievalScreen(
                 }
             }
 
-            // Knowledge Graph — 配置请前往 RAG 高级设置
-            NexaraGlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onNavigateToRagAdvanced() },
-                shape = NexaraShapes.large as RoundedCornerShape
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .background(NexaraColors.SurfaceContainer, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Rounded.AccountTree,
-                                contentDescription = null,
-                                tint = NexaraColors.Primary,
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                        Column {
-                            Text(
-                                stringResource(R.string.rag_advanced_kg_section),
-                                style = NexaraTypography.headlineMedium,
-                                color = NexaraColors.OnSurface
-                            )
-                            Text(
-                                text = if (config.enableKnowledgeGraph) 
-                                    "已启用 — 点击配置" 
-                                else 
-                                    "已关闭 — 点击配置",
-                                style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                                color = if (config.enableKnowledgeGraph) NexaraColors.StatusSuccess else NexaraColors.OnSurfaceVariant
-                            )
-                        }
-                    }
-                    Icon(
-                        Icons.Rounded.ChevronRight,
-                        contentDescription = null,
-                        tint = NexaraColors.Outline,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
             NexaraGlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = NexaraShapes.large as RoundedCornerShape
@@ -260,6 +198,19 @@ fun AdvancedRetrievalScreen(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = NexaraColors.OutlineVariant.copy(alpha = 0.2f)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.retrieval_advanced_features),
+                style = NexaraTypography.headlineMedium,
+                color = NexaraColors.OnSurface
+            )
+            Spacer(modifier = Modifier.height(4.dp))
 
             NexaraGlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -364,38 +315,7 @@ fun AdvancedRetrievalScreen(
                 }
             }
 
-            NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.large as RoundedCornerShape
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    SettingsSectionHeader(stringResource(R.string.retrieval_section_observability))
-                    SettingsToggle(
-                        title = stringResource(R.string.retrieval_show_progress),
-                        description = stringResource(R.string.retrieval_show_progress_desc),
-                        checked = config.showRetrievalProgress,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(showRetrievalProgress = enabled) } },
-                        icon = Icons.Rounded.Visibility
-                    )
-                    SettingsToggle(
-                        title = stringResource(R.string.retrieval_show_details),
-                        description = stringResource(R.string.retrieval_show_details_desc),
-                        checked = config.showRetrievalDetails,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(showRetrievalDetails = enabled) } },
-                        icon = Icons.Rounded.BarChart
-                    )
-                    SettingsToggle(
-                        title = stringResource(R.string.retrieval_track_metrics),
-                        description = stringResource(R.string.retrieval_track_metrics_desc),
-                        checked = config.trackRetrievalMetrics,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { it.copy(trackRetrievalMetrics = enabled) } },
-                        icon = Icons.Rounded.Tune
-                    )
-                }
-            }
+            // 可观测性区域已移除 — 项目强制启用 RAG 可视化与检索过程
 
             Spacer(modifier = Modifier.height(80.dp))
         }

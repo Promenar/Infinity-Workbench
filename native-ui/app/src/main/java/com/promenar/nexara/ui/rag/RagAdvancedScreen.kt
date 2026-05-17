@@ -112,26 +112,19 @@ fun RagAdvancedScreen(
                 }
             }
 
-            // === 知识图谱 ===
-            SettingsToggle(
-                title = stringResource(R.string.rag_advanced_kg_enable),
-                description = stringResource(R.string.rag_advanced_kg_desc),
-                checked = config.enableKnowledgeGraph,
-                onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableKnowledgeGraph = enabled) } }
-            )
+            // === 知识图谱（全局配置，会话级开关由聊天设置面板控制，默认关闭） ===
 
-            if (config.enableKnowledgeGraph) {
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
+            NexaraGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.large as RoundedCornerShape
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        SettingsSectionHeader(stringResource(R.string.rag_advanced_extract_config))
+                    SettingsSectionHeader(stringResource(R.string.rag_advanced_extract_config))
 
                         NexaraGlassCard(
                             modifier = Modifier
@@ -175,6 +168,12 @@ fun RagAdvancedScreen(
                                 viewModel.updateConfig { it.copy(jitMaxChunks = if (enabled) 128 else 0) }
                             }
                         )
+                        Text(
+                            stringResource(R.string.rag_advanced_coming_soon),
+                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
 
                         if (config.jitMaxChunks > 0) {
                             ConfigSlider(
@@ -186,72 +185,17 @@ fun RagAdvancedScreen(
                         }
 
                         SettingsToggle(
-                            title = stringResource(R.string.rag_advanced_jit_free_mode),
-                            description = stringResource(R.string.rag_advanced_jit_free_desc),
-                            checked = config.kgFreeMode,
-                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(kgFreeMode = enabled) } }
-                        )
-                        SettingsToggle(
                             title = stringResource(R.string.rag_advanced_jit_domain),
                             description = stringResource(R.string.rag_advanced_jit_domain_desc),
                             checked = config.kgDomainAuto,
                             onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(kgDomainAuto = enabled) } }
                         )
-                    }
-                }
-
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SettingsSectionHeader(stringResource(R.string.rag_advanced_cost_section))
-                        val strategies = listOf(
-                            Triple("summary", stringResource(R.string.rag_advanced_cost_summary), stringResource(R.string.rag_advanced_cost_summary_desc)),
-                            Triple("on-demand", stringResource(R.string.rag_advanced_cost_on_demand), stringResource(R.string.rag_advanced_cost_on_demand_desc)),
-                            Triple("full-scan", stringResource(R.string.rag_advanced_cost_full_scan), stringResource(R.string.rag_advanced_cost_full_scan_desc))
+                        Text(
+                            stringResource(R.string.rag_advanced_coming_soon),
+                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(start = 4.dp)
                         )
-
-                        strategies.forEach { (value, label, description) ->
-                            val isSelected = config.costStrategy == value
-                            val bgColor by animateColorAsState(
-                                if (isSelected) NexaraColors.Primary.copy(alpha = 0.08f) else NexaraColors.SurfaceContainer,
-                                label = "cost_$value"
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(bgColor)
-                                    .border(
-                                        0.5.dp,
-                                        if (isSelected) NexaraColors.Primary.copy(alpha = 0.3f) else NexaraColors.GlassBorder,
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .clickable { viewModel.updateConfig { it.copy(costStrategy = value) } }
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = { viewModel.updateConfig { it.copy(costStrategy = value) } },
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = NexaraColors.Primary,
-                                        unselectedColor = NexaraColors.Outline
-                                    )
-                                )
-                                Column {
-                                    Text(label, style = NexaraTypography.labelMedium, color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface)
-                                    Text(description, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant)
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -272,11 +216,23 @@ fun RagAdvancedScreen(
                             checked = config.enableIncrementalHash,
                             onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableIncrementalHash = enabled) } }
                         )
+                        Text(
+                            stringResource(R.string.rag_advanced_coming_soon),
+                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
                         SettingsToggle(
                             title = stringResource(R.string.rag_advanced_rule_prefilter),
                             description = stringResource(R.string.rag_advanced_rule_prefilter_desc),
                             checked = config.enableLocalPreprocess,
                             onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableLocalPreprocess = enabled) } }
+                        )
+                        Text(
+                            stringResource(R.string.rag_advanced_coming_soon),
+                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(start = 4.dp)
                         )
                     }
                 }
@@ -320,7 +276,7 @@ fun RagAdvancedScreen(
                                     )
                                 }
                                 Text(
-                                    config.kgExtractionPrompt ?: "Extract named entities, concepts, and relationships from the following text. Format as JSON with nodes and edges arrays.",
+                                    config.kgExtractionPrompt ?: stringResource(R.string.rag_advanced_default_prompt),
                                     style = NexaraTypography.bodySmall.copy(fontSize = 12.sp),
                                     color = NexaraColors.OnSurface,
                                     maxLines = 4,
@@ -377,7 +333,6 @@ fun RagAdvancedScreen(
                         Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = NexaraColors.Outline)
                     }
                 }
-            }
 
             Spacer(modifier = Modifier.height(80.dp))
         }
@@ -422,7 +377,7 @@ fun RagAdvancedScreen(
         show = showSummaryTemplateEditor,
         onDismiss = { showSummaryTemplateEditor = false },
         initialText = config.summaryTemplate,
-        title = stringResource(R.string.rag_advanced_cost_summary),
+        title = stringResource(R.string.rag_advanced_summary_template_title),
         onSave = { text -> viewModel.updateConfig { it.copy(summaryTemplate = text.ifBlank { RagConfiguration().summaryTemplate }) } },
         placeholder = stringResource(R.string.rag_config_summary_template_placeholder)
     )

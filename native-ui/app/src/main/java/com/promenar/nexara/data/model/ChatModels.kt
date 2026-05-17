@@ -2,6 +2,26 @@ package com.promenar.nexara.data.model
 
 import kotlinx.serialization.Serializable
 
+enum class PostProcessType {
+    ARCHIVE_TO_RAG,
+    AUTO_SUMMARY
+}
+
+enum class PostProcessStatus {
+    RUNNING,
+    DONE,
+    ERROR
+}
+
+data class PostProcessTask(
+    val id: String,
+    val type: PostProcessType,
+    val status: PostProcessStatus,
+    val progress: Float = 0f,
+    val detail: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Serializable
 data class Agent(
     val id: String,
@@ -223,7 +243,7 @@ data class ApprovalRequest(
 @Serializable
 data class RagOptions(
     val enableMemory: Boolean = true,
-    val enableDocs: Boolean = false,
+    val enableDocs: Boolean = true,  // 默认开启：用户导入文档的意图就是检索，不应要求手动再开开关
     val activeDocIds: List<String> = emptyList(),
     val activeFolderIds: List<String> = emptyList(),
     val isGlobal: Boolean = false,
@@ -340,4 +360,17 @@ data class Session(
     val activeTaskTreeId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+enum class PhaseStatus {
+    PENDING, ACTIVE, DONE
+}
+
+data class RagPhase(
+    val id: String,
+    val name: String,
+    val status: PhaseStatus = PhaseStatus.PENDING,
+    val progress: Int = 0,
+    val detail: String? = null,
+    val durationMs: Long? = null
 )

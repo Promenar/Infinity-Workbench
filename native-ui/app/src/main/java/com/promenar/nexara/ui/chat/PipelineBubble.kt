@@ -34,6 +34,12 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 // ─────────────────────────────────────────────────────────────────
+//  样式与布局常量
+// ─────────────────────────────────────────────────────────────────
+private const val THINKING_FONT_SIZE_DELTA = 6
+private const val THINKING_MIN_FONT_SIZE = 8
+
+// ─────────────────────────────────────────────────────────────────
 //  Pipeline 数据结构
 // ─────────────────────────────────────────────────────────────────
 
@@ -268,9 +274,9 @@ private fun InlineThinkingRow(
     fontSize: Int
 ) {
     var isExpanded by remember { mutableStateOf(isGenerating) }
-    // remember 只记初始值，生成态变化时需要同步展开
+    // 联动 isGenerating 状态，生成时自动展开，生成完毕时自动折叠
     LaunchedEffect(isGenerating) {
-        if (isGenerating) isExpanded = true
+        isExpanded = isGenerating
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -345,19 +351,22 @@ private fun InlineThinkingRow(
                         .animateContentSize() // 增加平滑动画，解决重排时的视觉跳变
                 ) {
                     val dimmedColor = NexaraColors.Outline.copy(alpha = 0.7f) // 弱化颜色
+                    val targetFontSize = (fontSize - THINKING_FONT_SIZE_DELTA).coerceAtLeast(THINKING_MIN_FONT_SIZE)
                     CompositionLocalProvider(
                         androidx.compose.material3.LocalContentColor provides dimmedColor,
                         androidx.compose.material3.LocalTextStyle provides NexaraTypography.bodySmall.copy(
-                            fontSize = (fontSize - 4).coerceAtLeast(10).sp, // 字号更小
-                            color = dimmedColor
+                            fontSize = targetFontSize.sp,
+                            color = dimmedColor,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     ) {
                         MarkdownText(
                             markdown = reasoning,
                             isStreaming = isGenerating,
-                            fontSize = (fontSize - 4).coerceAtLeast(10),
+                            fontSize = targetFontSize,
                             showCursor = false,
                             overrideColor = dimmedColor,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                             modifier = Modifier.padding(10.dp)
                         )
                     }

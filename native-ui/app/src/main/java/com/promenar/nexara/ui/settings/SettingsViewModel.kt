@@ -39,6 +39,7 @@ data class ModelInfo(
     val contextLength: Int = 8192,
     val capabilities: List<String> = emptyList(),
     val providerName: String = "Cloud",
+    val providerId: String? = null,
     val testStatus: String? = null,
     /** 最大输出 token 数，0=未指定 */
     val maxOutputTokens: Int = 0,
@@ -147,6 +148,12 @@ class SettingsViewModel(
     private val _isFetchingModels = MutableStateFlow(false)
     val isFetchingModels: StateFlow<Boolean> = _isFetchingModels.asStateFlow()
 
+    /** 同步模型后的反馈消息，null 表示无消息 */
+    private val _modelSyncMessage = MutableStateFlow<String?>(null)
+    val modelSyncMessage: StateFlow<String?> = _modelSyncMessage.asStateFlow()
+
+    fun clearSyncMessage() { _modelSyncMessage.value = null }
+
     val summaryModelId: StateFlow<String> = pm.summaryModelId
     val imageModelId: StateFlow<String> = pm.imageModelId
     val embeddingModelId: StateFlow<String> = pm.embeddingModelId
@@ -220,10 +227,129 @@ class SettingsViewModel(
         pm.refreshAll()
     }
 
-    /** 刷新模型列表（触发 ProviderManager 重新加载 + 远程获取） */
-    fun refreshProviderModels() {
-        pm.loadModels()
-        refreshModels()
+    /** 刷新模型列表（远程获取 + ModelSpecs 数据库回退 + 元数据更新） */
+    fun refreshProviderModels(providerId: String) {
+        viewModelScope.launch {
+            _isFetchingModels.value = true
+            _modelSyncMessage.value = null
+            try {
+                val config = pm.getProviderConfig(providerId)
+                if (config == null) {
+                    _modelSyncMessage.value = "未找到提供商配置"
+                    return@launch
+                }
+                val providerName = pm.providers.value.find { it.id == providerId }?.name ?: "Provider"
+
+                // 步骤 1: 尝试远程拉取模型列表
+                var fetchedIds: List<String> = emptyList()
+                try {
+                    val tmpProvider = if (config.protocolType is com.promenar.nexara.data.remote.protocol.ProtocolType.Local) {
+                        com.promenar.nexara.data.remote.provider.LlmProvider.local(app.localInferenceEngine, config.model)
+                    } else {
+                        com.promenar.nexara.data.remote.provider.LlmProvider.builder()
+                            .protocolType(config.protocolType)
+                            .baseUrl(config.baseUrl)
+                            .apiKey(config.apiKey)
+                            .model(config.model)
+                            .build()
+                    }
+                    fetchedIds = tmpProvider.listModels()
+                } catch (_: Exception) { /* 远程拉取失败，回退到数据库 */ }
+
+                // 步骤 2: 回退 — 从 ModelSpecs 数据库匹配该协议类型的已知模型
+                if (fetchedIds.isEmpty()) {
+                    fetchedIds = getFallbackModelIds(config.protocolType)
+                }
+
+                // 步骤 3: 合并模型（新增 + 更新元数据）
+                if (fetchedIds.isNotEmpty()) {
+                    val currentModels = pm.providerModels.value.toMutableList()
+                    val existingIds = currentModels.map { it.id }.toSet()
+                    var newCount = 0
+                    var updatedCount = 0
+
+                    for (id in fetchedIds) {
+                        val spec = com.promenar.nexara.data.model.findModelSpec(id)
+                        val type = spec?.type?.name?.lowercase() ?: "chat"
+                        val caps = pm.buildModelCapabilities(type, spec)
+
+                        if (id in existingIds) {
+                            // 更新已存在模型的元数据
+                            val existing = currentModels.find { it.id == id } ?: continue
+                            val refreshed = existing.copy(
+                                name = spec?.note ?: existing.name,
+                                type = type,
+                                contextLength = spec?.contextLength ?: existing.contextLength,
+                                capabilities = caps,
+                                providerId = providerId,
+                                maxOutputTokens = spec?.maxOutputTokens ?: existing.maxOutputTokens,
+                                knowledgeCutoff = spec?.knowledgeCutoff ?: existing.knowledgeCutoff
+                            )
+                            if (refreshed != existing) {
+                                pm.updateModel(refreshed)
+                                updatedCount++
+                            }
+                        } else {
+                            // 新增模型
+                            pm.addModel(ModelInfo(
+                                name = spec?.note ?: id, id = id,
+                                description = spec?.note ?: "Fetched model",
+                                enabled = false, type = type,
+                                contextLength = spec?.contextLength ?: 8192,
+                                providerName = providerName,
+                                providerId = providerId,
+                                capabilities = caps,
+                                maxOutputTokens = spec?.maxOutputTokens ?: 0,
+                                knowledgeCutoff = spec?.knowledgeCutoff
+                            ))
+                            newCount++
+                        }
+                    }
+
+                    // 构造反馈消息
+                    val parts = mutableListOf<String>()
+                    if (newCount > 0) parts.add("新增 $newCount 个")
+                    if (updatedCount > 0) parts.add("更新 $updatedCount 个")
+                    if (parts.isEmpty()) parts.add("模型已是最新")
+                    _modelSyncMessage.value = parts.joinToString("，")
+                } else {
+                    _modelSyncMessage.value = "未找到可用模型"
+                }
+            } catch (e: Exception) {
+                _modelSyncMessage.value = "同步失败：${e.message?.take(50) ?: "未知错误"}"
+            } finally {
+                _isFetchingModels.value = false
+            }
+        }
+    }
+
+    /**
+     * 当远程 API 不可用时，从 ModelSpecs 数据库匹配已知模型 ID。
+     * 按协议类型的关键词匹配 ModelSpec 条目。
+     */
+    private fun getFallbackModelIds(protocolType: com.promenar.nexara.data.remote.protocol.ProtocolType): List<String> {
+        val keywords = when (protocolType) {
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Anthropic_Messages -> listOf("claude")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Google_VertexAI -> listOf("gemini")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.DeepSeek -> listOf("deepseek")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Mistral_Chat -> listOf("mistral")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Cohere_Chat -> listOf("command")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.OpenAI_ChatCompletions -> listOf("gpt", "o1", "o3", "o4")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Local -> return emptyList()
+            else -> return emptyList()
+        }
+        // 扫描 MODEL_SPECS，匹配 StringPattern 包含任一关键词的条目
+        return com.promenar.nexara.data.model.MODEL_SPECS
+            .filter { spec ->
+                keywords.any { kw -> spec.pattern.matches(kw) }
+            }
+            .mapNotNull { spec ->
+                when (val p = spec.pattern) {
+                    is com.promenar.nexara.data.model.ModelPattern.StringPattern -> p.value
+                    else -> null
+                }
+            }
+            .distinct()
     }
 
     /**
@@ -288,17 +414,17 @@ class SettingsViewModel(
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
             SkillInfo("create_tool", app.getString(R.string.skill_create_tool), app.getString(R.string.skill_create_tool_desc), enabledSet?.contains("create_tool") ?: true),
             SkillInfo("image_generation", app.getString(R.string.skill_image_generation), app.getString(R.string.skill_image_generation_desc), enabledSet?.contains("image_generation") ?: true),
-            SkillInfo("file_read", "File Read", "Read file contents from workspace", enabledSet?.contains("file_read") ?: true),
-            SkillInfo("file_write", "File Write", "Write/create files in workspace", enabledSet?.contains("file_write") ?: true),
-            SkillInfo("file_list", "List Directory", "List workspace directory contents", enabledSet?.contains("file_list") ?: true),
-            SkillInfo("file_search", "Search Files", "Search files by name pattern", enabledSet?.contains("file_search") ?: true),
-            SkillInfo("file_diff", "File Diff", "Compute line-by-line diff between file versions", enabledSet?.contains("file_diff") ?: true),
-            SkillInfo("file_patch", "File Patch", "Apply patch operations (replace/insert/delete) to files", enabledSet?.contains("file_patch") ?: true),
-            SkillInfo("exec_js", "JS Sandbox", "Execute JavaScript in a sandbox for calculations and data processing", enabledSet?.contains("exec_js") ?: true),
-            SkillInfo("initialize_plan", "Task Planner", "Create structured task plans with subtask trees", enabledSet?.contains("initialize_plan") ?: true),
-            SkillInfo("update_plan", "Update Plan", "Modify task plan status, add/remove/move steps", enabledSet?.contains("update_plan") ?: true),
-            SkillInfo("get_plan", "Get Plan", "Read the full task tree with derived statuses", enabledSet?.contains("get_plan") ?: true),
-            SkillInfo("drop_plan", "Drop Plan", "Terminate the current task plan", enabledSet?.contains("drop_plan") ?: true)
+            SkillInfo("file_read", app.getString(R.string.skill_file_read), app.getString(R.string.skill_file_read_desc), enabledSet?.contains("file_read") ?: true),
+            SkillInfo("file_write", app.getString(R.string.skill_file_write), app.getString(R.string.skill_file_write_desc), enabledSet?.contains("file_write") ?: true),
+            SkillInfo("file_list", app.getString(R.string.skill_file_list), app.getString(R.string.skill_file_list_desc), enabledSet?.contains("file_list") ?: true),
+            SkillInfo("file_search", app.getString(R.string.skill_file_search), app.getString(R.string.skill_file_search_desc), enabledSet?.contains("file_search") ?: true),
+            SkillInfo("file_diff", app.getString(R.string.skill_file_diff), app.getString(R.string.skill_file_diff_desc), enabledSet?.contains("file_diff") ?: true),
+            SkillInfo("file_patch", app.getString(R.string.skill_file_patch), app.getString(R.string.skill_file_patch_desc), enabledSet?.contains("file_patch") ?: true),
+            SkillInfo("exec_js", app.getString(R.string.skill_exec_js), app.getString(R.string.skill_exec_js_desc), enabledSet?.contains("exec_js") ?: true),
+            SkillInfo("initialize_plan", app.getString(R.string.skill_initialize_plan), app.getString(R.string.skill_initialize_plan_desc), enabledSet?.contains("initialize_plan") ?: true),
+            SkillInfo("update_plan", app.getString(R.string.skill_update_plan), app.getString(R.string.skill_update_plan_desc), enabledSet?.contains("update_plan") ?: true),
+            SkillInfo("get_plan", app.getString(R.string.skill_get_plan), app.getString(R.string.skill_get_plan_desc), enabledSet?.contains("get_plan") ?: true),
+            SkillInfo("drop_plan", app.getString(R.string.skill_drop_plan), app.getString(R.string.skill_drop_plan_desc), enabledSet?.contains("drop_plan") ?: true)
         )
     }
 
@@ -378,35 +504,7 @@ class SettingsViewModel(
 
     fun toggleModel(id: String) = pm.toggleModel(id)
 
-    fun refreshModels() {
-        viewModelScope.launch {
-            _isFetchingModels.value = true
-            try {
-                val fetchedIds = app.llmProvider.listModels()
-                if (fetchedIds.isNotEmpty()) {
-                    val currentModels = pm.providerModels.value.toMutableList()
-                    val existingIds = currentModels.map { it.id }.toSet()
-                val newModels = fetchedIds.filter { it !in existingIds }.map { id ->
-                    val spec = com.promenar.nexara.data.model.findModelSpec(id)
-                    val type = spec?.type?.name?.lowercase() ?: "chat"
-                    ModelInfo(
-                        name = spec?.note ?: id, id = id,
-                        description = spec?.note ?: "Fetched model",
-                        enabled = false, type = type,
-                        contextLength = spec?.contextLength ?: 8192,
-                        providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
-                        capabilities = pm.buildModelCapabilities(type, spec),
-                        maxOutputTokens = spec?.maxOutputTokens ?: 0,
-                        knowledgeCutoff = spec?.knowledgeCutoff
-                    )
-                    }
-                    newModels.forEach { pm.addModel(it) }
-                }
-            } catch (_: Exception) { } finally {
-                _isFetchingModels.value = false
-            }
-        }
-    }
+
 
     fun disableAllModels() = pm.disableAllModels()
 
@@ -415,12 +513,14 @@ class SettingsViewModel(
     fun addCustomModel(id: String, name: String) {
         val spec = com.promenar.nexara.data.model.findModelSpec(id)
         val type = spec?.type?.name?.lowercase() ?: "chat"
+        val defaultProvider = pm.providers.value.firstOrNull { it.id == "default" }
         val newModel = ModelInfo(
             name = name.ifEmpty { spec?.note ?: id }, id = id,
             description = spec?.note ?: "Custom model",
             enabled = true, type = type,
             contextLength = spec?.contextLength ?: 8192,
-            providerName = pm.providers.value.firstOrNull { it.id == "default" }?.name ?: "Cloud",
+            providerName = defaultProvider?.name ?: "Cloud",
+            providerId = defaultProvider?.id ?: "default",
             capabilities = pm.buildModelCapabilities(type, spec),
             maxOutputTokens = spec?.maxOutputTokens ?: 0,
             knowledgeCutoff = spec?.knowledgeCutoff

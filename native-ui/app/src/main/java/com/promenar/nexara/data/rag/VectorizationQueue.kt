@@ -267,6 +267,7 @@ class VectorizationQueue(
 
         val records = chunks.mapIndexed { i, chunk ->
             VectorStore.NewVectorRecord(
+                docId = docId,
                 sessionId = null,
                 content = chunk,
                 embedding = embeddingResult.embeddings[i],

@@ -98,26 +98,63 @@ class ProviderManager private constructor(private val app: Application) {
         )
     }
 
-    // ── 提供商查询（单个，用于编辑回填）───────────────────────────────
+    // ── 提供商查询 ──────────────────────────────────────────────────
+
+    /**
+     * 根据模型 ID 反向查找其所属提供商的完整配置。
+     *
+     * 查找策略：
+     * 1. 在模型列表中按 ID 匹配
+     * 2. 使用模型的 providerId 精确查找
+     * 3. 若 providerId 为空，按 providerName 在提供商列表中模糊匹配
+     */
+    fun getProviderConfigByModelId(modelId: String): ProviderConfig? {
+        val model = _providerModels.value.find { it.id == modelId }
+        if (model == null) {
+            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] 模型未找到: modelId=$modelId, 已加载模型IDs=${_providerModels.value.map { it.id }}")
+            return null
+        }
+        val pid = model.providerId
+            ?: _providers.value.find { it.name == model.providerName }?.id
+        if (pid == null) {
+            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] providerId 无法解析: modelId=$modelId providerId=null providerName=${model.providerName}, 已加载提供商=${_providers.value.map { "${it.id}->${it.name}" }}")
+            return null
+        }
+        val config = getProviderConfig(pid)
+        if (config == null) {
+            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] 提供商配置未找到: modelId=$modelId pid=$pid")
+        } else if (config.baseUrl.isBlank()) {
+            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] baseUrl 为空: modelId=$modelId pid=$pid protocolType=${config.protocolType::class.simpleName}")
+        }
+        return config
+    }
 
     /**
      * 根据 providerId 获取完整配置。
      * - "default" → 主提供商配置
-     * - "extra_N" → 额外提供商配置
+     * - "extra_N" → 额外提供商配置（新格式按索引，也支持按真实 ID 查找）
      */
     fun getProviderConfig(providerId: String): ProviderConfig? {
         if (providerId == "default") return getMainProviderConfig()
         if (providerId.startsWith("extra_")) {
             val index = providerId.removePrefix("extra_")
-            val prefix = "extra_provider_$index"
-            val protocolName = settingsPrefs.getString("${prefix}_protocol", null) ?: return null
-            return ProviderConfig(
-                protocolType = ProtocolType.fromLegacyName(protocolName),
-                baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
-                apiKey = settingsPrefs.getString("${prefix}_api_key", "") ?: "",
-                model = settingsPrefs.getString("${prefix}_model", "") ?: "",
-                name = settingsPrefs.getString("${prefix}_name", null)
-            )
+            // 先尝试按索引查找
+            val count = settingsPrefs.getInt("extra_providers_count", 0)
+            for (i in 0 until count) {
+                val prefix = "extra_provider_$i"
+                val storedId = settingsPrefs.getString("${prefix}_id", "extra_$i")
+                if (storedId == providerId || "extra_$i" == providerId) {
+                    val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
+                        ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
+                    return ProviderConfig(
+                        protocolType = ProtocolType.fromLegacyName(protocolName),
+                        baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
+                        apiKey = settingsPrefs.getString("${prefix}_api_key", "") ?: "",
+                        model = settingsPrefs.getString("${prefix}_model", "") ?: "",
+                        name = settingsPrefs.getString("${prefix}_name", null)
+                    )
+                }
+            }
         }
         return null
     }
@@ -143,14 +180,20 @@ class ProviderManager private constructor(private val app: Application) {
             _currentModelSummary.value = config.model
         }
         val count = settingsPrefs.getInt("extra_providers_count", 0)
+        val extraIds = settingsPrefs.getString("extra_providers_ids", null)
+            ?.split(",")?.map { it.trim() } ?: emptyList()
         for (i in 0 until count) {
             val prefix = "extra_provider_$i"
             val name = settingsPrefs.getString("${prefix}_name", null) ?: continue
             val protoName = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null) ?: ""
+            // 优先使用持久化的真实 ID，回退到索引生成（兼容旧数据）
+            val realId = settingsPrefs.getString("${prefix}_id", null)
+                ?: extraIds.getOrNull(i)
+                ?: "extra_$i"
             items.add(
                 ProviderListItem(
-                    id = "extra_$i",
+                    id = realId,
                     name = name,
                     typeName = protoName,
                     baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
@@ -184,6 +227,7 @@ class ProviderManager private constructor(private val app: Application) {
         val extras = _providers.value.filter { it.id != "default" }
         settingsPrefs.edit()
             .putInt("extra_providers_count", extras.size)
+            .putString("extra_providers_ids", extras.joinToString(",") { it.id })
             .apply()
         extras.forEachIndexed { index, item ->
             val prefix = "extra_provider_$index"
@@ -193,6 +237,7 @@ class ProviderManager private constructor(private val app: Application) {
                 .putString("${prefix}_base_url", item.baseUrl)
                 .putString("${prefix}_model", item.model)
                 .putString("${prefix}_api_key", item.apiKey)
+                .putString("${prefix}_id", item.id)
                 .apply()
         }
     }
@@ -205,20 +250,32 @@ class ProviderManager private constructor(private val app: Application) {
             _providerModels.value = emptyList()
             return
         }
+        // 优先从有序 ID 列表恢复顺序（跨 session 稳定排序）
+        val orderedIds = settingsPrefs.getString("all_models_order", null)
+            ?.split(",")?.mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }
+        val idOrder = if (orderedIds != null && orderedIds.size == allIds.size) {
+            // 以持久化顺序为主，同时兼容新增/缺失的 ID
+            val idIndex = orderedIds.withIndex().associate { (i, id) -> id to i }
+            allIds.sortedBy { idIndex[it] ?: Int.MAX_VALUE }
+        } else {
+            allIds.toList()
+        }
         val enabledSet = settingsPrefs.getStringSet("enabled_models", emptySet()) ?: emptySet()
         var migrated = false
-        val models = allIds.map { id ->
+        // 稳定排序：enabled 降序 → 持久化顺序 → name 字母序
+        val models = idOrder.map { id ->
             val prefix = "model_info_$id"
             val storedName = settingsPrefs.getString("${prefix}_name", id) ?: id
             val storedCaps = settingsPrefs.getStringSet("${prefix}_caps", emptySet()) ?: emptySet()
             val type = settingsPrefs.getString("${prefix}_type", "chat") ?: "chat"
             val contextLength = settingsPrefs.getInt("${prefix}_context", 8192)
             val providerName = settingsPrefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
+            val storedProviderId = settingsPrefs.getString("${prefix}_provider_id", null)
             val enabled = enabledSet.contains(id)
             val maxOutput = settingsPrefs.getInt("${prefix}_maxoutput", 0)
             val cutoff = settingsPrefs.getString("${prefix}_cutoff", null)
 
-            val model = ModelInfo(
+            var model = ModelInfo(
                 name = storedName,
                 id = id,
                 description = "",
@@ -227,17 +284,26 @@ class ProviderManager private constructor(private val app: Application) {
                 contextLength = contextLength,
                 capabilities = storedCaps.toList(),
                 providerName = providerName,
+                providerId = storedProviderId,
                 maxOutputTokens = maxOutput,
                 knowledgeCutoff = cutoff
             )
 
             // 迁移逻辑：自动修复名称和能力
-            val migratedModel = migrateModelIfNeeded(model)
+            var migratedModel = migrateModelIfNeeded(model)
             if (migratedModel !== model) {
                 migrated = true
             }
+            // 回填 providerId：旧数据未存储 providerId，按 providerName 匹配
+            if (migratedModel.providerId == null && migratedModel.providerName != "Cloud") {
+                val matchedPid = _providers.value.find { it.name == migratedModel.providerName }?.id
+                if (matchedPid != null) {
+                    migratedModel = migratedModel.copy(providerId = matchedPid)
+                    migrated = true
+                }
+            }
             migratedModel
-        }.sortedByDescending { it.enabled }
+        }.sortedWith(compareByDescending<ModelInfo> { it.enabled }.thenBy { it.name.lowercase() })
 
         _providerModels.value = models
 
@@ -317,7 +383,7 @@ class ProviderManager private constructor(private val app: Application) {
         // 从 ModelSpec.capabilities 补充细粒度能力
         spec?.capabilities?.let { caps ->
             if (caps.vision && "vision" !in this) add("vision")
-            if (caps.internet && "web" !in this) add("web")
+            if (caps.internet && "internet" !in this) add("internet")
             if (caps.reasoning && "reasoning" !in this) add("reasoning")
             if (caps.image && "image" !in this) add("image")
             if (caps.embedding && "embedding" !in this) add("embedding")
@@ -375,6 +441,7 @@ class ProviderManager private constructor(private val app: Application) {
         settingsPrefs.edit()
             .putStringSet("all_models", allIds)
             .putStringSet("enabled_models", enabled)
+            .putString("all_models_order", models.joinToString(",") { it.id })
             .apply()
         models.forEach { model ->
             val prefix = "model_info_${model.id}"
@@ -384,6 +451,7 @@ class ProviderManager private constructor(private val app: Application) {
                 .putInt("${prefix}_context", model.contextLength)
                 .putStringSet("${prefix}_caps", model.capabilities.toSet())
                 .putString("${prefix}_provider", model.providerName)
+                .putString("${prefix}_provider_id", model.providerId)
                 .putInt("${prefix}_maxoutput", model.maxOutputTokens)
                 .apply()
             if (model.knowledgeCutoff != null) {

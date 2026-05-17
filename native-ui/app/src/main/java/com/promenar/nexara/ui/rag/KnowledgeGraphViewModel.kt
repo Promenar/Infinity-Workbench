@@ -19,7 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import com.promenar.nexara.domain.usecase.IdGenerator
+
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -75,10 +76,21 @@ class KnowledgeGraphViewModel(
     }
 
     fun loadGraph() {
+        loadGraphInternal(null)
+        NexaraLogger.log("[KG] loadGraph triggered, will query graphStore.getGraphData()")
+    }
+
+    fun loadGraphByDoc(docId: String) {
+        _viewMode.value = KgViewMode.DOCUMENT
+        loadGraphInternal(listOf(docId))
+    }
+
+    private fun loadGraphInternal(docIds: List<String>?) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val data = graphStore.getGraphData()
+                val data = graphStore.getGraphData(docIds = docIds)
+                NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges")
                 cachedGraphData = data
                 val mappedNodes = data.nodes.map { node ->
                     GraphNode(
@@ -137,7 +149,9 @@ class KnowledgeGraphViewModel(
         try {
             val template = application.assets.open("kg_template.html").bufferedReader().use { it.readText() }
             _graphHtml.value = template.replace("__GRAPH_DATA__", json)
+            NexaraLogger.log("[KG] render success: html=${_graphHtml.value?.length ?: 0} bytes")
         } catch (e: Exception) {
+            NexaraLogger.logError("[KG] renderFromCache failed", e)
             e.printStackTrace()
         }
     }
@@ -167,71 +181,7 @@ class KnowledgeGraphViewModel(
         }.toString()
     }
 
-    fun injectMockData() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                val rng = Random(System.currentTimeMillis())
-                val mockNodeIds = mutableListOf<String>()
 
-                val mockNodes = (0..15).map {
-                    val id = IdGenerator.uuid()
-                    mockNodeIds.add(id)
-                    val type = when (rng.nextInt(3)) {
-                        0 -> "concept"
-                        1 -> "document"
-                        else -> "person"
-                    }
-                    GraphNode(
-                        id = id,
-                        label = "${type.replaceFirstChar { it.uppercase() }} ${('A' + rng.nextInt(26))}${rng.nextInt(100)}",
-                        type = type,
-                        x = rng.nextFloat() * 1200f - 600f,
-                        y = rng.nextFloat() * 800f - 400f,
-                        icon = when (type) {
-                            "concept" -> Icons.Rounded.Psychology
-                            "document" -> Icons.Rounded.Description
-                            "person" -> Icons.Rounded.Person
-                            else -> Icons.Rounded.Hub
-                        }
-                    )
-                }
-
-                val mockEdges = (1..25).mapNotNull {
-                    val srcIdx = rng.nextInt(mockNodes.size)
-                    val tgtIdx = rng.nextInt(mockNodes.size)
-                    if (srcIdx != tgtIdx) {
-                        GraphEdge(
-                            sourceId = mockNodes[srcIdx].id,
-                            targetId = mockNodes[tgtIdx].id,
-                            relation = listOf("contains", "references", "depends_on", "authored").random(rng)
-                        )
-                    } else null
-                }
-
-                _nodes.value = mockNodes
-                _edges.value = mockEdges
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    fun clearGraph() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                repo.clear()
-                loadGraph()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
 
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =

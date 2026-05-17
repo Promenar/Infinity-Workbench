@@ -195,7 +195,8 @@ fun MarkdownText(
     fontSize: Int = 13,
     smoothingCps: Int = StreamSpeed.BALANCED.cps,
     overrideColor: androidx.compose.ui.graphics.Color? = null,
-    onContentChange: ((String) -> Unit)? = null
+    onContentChange: ((String) -> Unit)? = null,
+    fontStyle: androidx.compose.ui.text.font.FontStyle? = null
 ) {
     val processed = remember(markdown, isStreaming) {
         val normalized = normalizeLatexDelimiters(markdown)
@@ -310,17 +311,18 @@ fun MarkdownText(
         ?: currentStyle.color.takeUnless { it == Color.Unspecified }
         ?: NexaraColors.OnBackground
     val m3Typography = MaterialTheme.typography.copy(
-        bodyMedium = nexaraMarkdownTypography(fontSize).text.copy(color = effectiveColor),
-        headlineLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor),
-        headlineMedium = nexaraMarkdownTypography(fontSize).h2.copy(color = effectiveColor),
-        headlineSmall = nexaraMarkdownTypography(fontSize).h3.copy(color = effectiveColor),
-        titleLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor),
-        titleMedium = nexaraMarkdownTypography(fontSize).h2.copy(color = effectiveColor),
-        titleSmall = nexaraMarkdownTypography(fontSize).h3.copy(color = effectiveColor),
-        bodySmall = nexaraMarkdownTypography(fontSize).code.copy(color = effectiveColor),
+        bodyMedium = nexaraMarkdownTypography(fontSize).text.copy(color = effectiveColor, fontStyle = fontStyle),
+        headlineLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor, fontStyle = fontStyle),
+        headlineMedium = nexaraMarkdownTypography(fontSize).h2.copy(color = effectiveColor, fontStyle = fontStyle),
+        headlineSmall = nexaraMarkdownTypography(fontSize).h3.copy(color = effectiveColor, fontStyle = fontStyle),
+        titleLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor, fontStyle = fontStyle),
+        titleMedium = nexaraMarkdownTypography(fontSize).h2.copy(color = effectiveColor, fontStyle = fontStyle),
+        titleSmall = nexaraMarkdownTypography(fontSize).h3.copy(color = effectiveColor, fontStyle = fontStyle),
+        bodySmall = nexaraMarkdownTypography(fontSize).code.copy(color = effectiveColor, fontStyle = fontStyle),
         labelSmall = NexaraTypography.labelSmall.copy(
             fontSize = (fontSize - 2).coerceAtLeast(9).sp,
-            color = effectiveColor.copy(alpha = 0.7f)
+            color = effectiveColor.copy(alpha = 0.7f),
+            fontStyle = fontStyle
         )
     )
 

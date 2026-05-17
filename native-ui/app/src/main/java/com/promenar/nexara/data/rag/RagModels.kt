@@ -67,7 +67,7 @@ data class RagConfiguration(
     val enableKnowledgeGraph: Boolean = false,
     val enableQueryRewrite: Boolean = true,
     val enableHybridSearch: Boolean = true,
-    val enableRerank: Boolean = false,
+    val enableRerank: Boolean = true,  // 默认开启：用户通过会话级 toggle 控制，此处为全局配置门
     val enableIncrementalHash: Boolean = true,
     val enableLocalPreprocess: Boolean = false,
     val currentPreset: String? = null,

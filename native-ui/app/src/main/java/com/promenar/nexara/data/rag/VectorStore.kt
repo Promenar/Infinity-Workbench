@@ -114,12 +114,14 @@ class VectorStore(
         onWarning: ((String) -> Unit)? = null
     ): List<SearchResult> {
         val candidates = mutableListOf<SearchResult>()
+        val queryDim = queryEmbedding.size
         val queryMag = magnitude(queryEmbedding)
         var dimensionMismatchCount = 0
+        var belowThresholdCount = 0
 
         for (row in rows) {
             val vec = fromBlob(row.embedding)
-            if (vec.size != queryEmbedding.size) {
+            if (vec.size != queryDim) {
                 dimensionMismatchCount++
                 continue
             }
@@ -139,14 +141,32 @@ class VectorStore(
                         similarity = similarity
                     )
                 )
+            } else {
+                belowThresholdCount++
             }
         }
 
-        if (dimensionMismatchCount > 0) {
+        // P0 诊断增强: 记录完整的过滤统计，帮助定位 "0 results" 根因
+        if (dimensionMismatchCount > 0 || belowThresholdCount > 0 || candidates.isEmpty()) {
             val storedDim = rows.firstOrNull()?.embedding?.let { fromBlob(it).size }
-            val msg = "Dimension mismatch: $dimensionMismatchCount/${rows.size} vectors " +
-                "have dimension $storedDim but query has dimension ${queryEmbedding.size}. " +
-                "This may indicate a model change. Consider re-vectorizing documents."
+            val sb = StringBuilder()
+            sb.append("[VectorStore] searchInMemory: loaded=${rows.size} rows")
+            sb.append(", queryDim=$queryDim")
+            sb.append(", storedDim=${storedDim ?: "N/A"}")
+            sb.append(", threshold=$threshold")
+            sb.append(", dimMismatch=$dimensionMismatchCount")
+            sb.append(", belowThreshold=$belowThresholdCount")
+            sb.append(", candidates=${candidates.size}")
+            if (dimensionMismatchCount > 0) {
+                sb.append(" ⚠️ DIM_MISMATCH — stored v${storedDim} vs query v${queryDim} — 模型切换? 需要重新向量化!")
+            }
+            if (belowThresholdCount > 0 && rows.isNotEmpty()) {
+                sb.append(" ⚠️ BELOW_THRESHOLD — $belowThresholdCount rows below cutoff $threshold")
+            }
+            if (candidates.isEmpty() && rows.isEmpty()) {
+                sb.append(" ⚠️ EMPTY_TABLE — DB has 0 matching rows for this filter")
+            }
+            val msg = sb.toString()
             Log.w("VectorStore", msg)
             onWarning?.invoke(msg)
         }
@@ -210,6 +230,26 @@ class VectorStore(
         }
         val nodesDeleted = kgNodeDao.deleteOrphanNodes()
         return Pair(edgesDeleted, nodesDeleted)
+    }
+
+    // ── P0 诊断方法: 支持 MemoryManager 精准定位 "0 results" 根因 ──
+
+    /** vectors 表总行数 */
+    suspend fun getTotalVectorCount(): Int = vectorDao.getCount()
+
+    /** 指定 session 下的向量数量 */
+    suspend fun getSessionVectorCount(sessionId: String): Int {
+        return try {
+            vectorDao.getBySessionId(sessionId).size
+        } catch (_: Exception) { -1 }
+    }
+
+    /** 获取第一条存储向量的维度，用于跨检查询向量是否匹配 */
+    suspend fun getFirstStoredDimension(): Int? {
+        return try {
+            val rows = vectorDao.getAll()
+            rows.firstOrNull()?.embedding?.let { fromBlob(it).size }
+        } catch (_: Exception) { null }
     }
 
     companion object {
