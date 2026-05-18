@@ -98,6 +98,29 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 NexaraDatabase.MIGRATION_10_11
             )
             .fallbackToDestructiveMigration()
+            .setQueryCallback(
+                androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
+                    if (com.promenar.nexara.BuildConfig.DEBUG) {
+                        try {
+                            if (sqlQuery.contains("Message", ignoreCase = true) || 
+                                sqlQuery.contains("TaskNodeEntity", ignoreCase = true) ||
+                                sqlQuery.contains("Session", ignoreCase = true)
+                            ) {
+                                val json = org.json.JSONObject().apply {
+                                    put("sql", sqlQuery)
+                                    val argsArray = org.json.JSONArray()
+                                    bindArgs.forEach { argsArray.put(it?.toString() ?: "null") }
+                                    put("bindArgs", argsArray)
+                                }
+                                android.util.Log.d("NEXARA_METRO", "EVENT_START|DB_QUERY|${json}|EVENT_END")
+                            }
+                        } catch (e: Exception) {
+                            // Ignored
+                        }
+                    }
+                },
+                java.util.concurrent.Executors.newSingleThreadExecutor()
+            )
             .build()
     }
 
@@ -157,6 +180,9 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         HttpClient(OkHttp) {
             install(ContentNegotiation) {
                 json(Json { ignoreUnknownKeys = true })
+            }
+            engine {
+                addInterceptor(com.promenar.nexara.utils.MetroLogInterceptor())
             }
         }
     }
@@ -557,7 +583,12 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             apiKey = config.apiKey,
             defaultModel = config.model
         )
-        return com.promenar.nexara.data.remote.UnifiedLlmClient(uConfig)
+        val middlewares = if (com.promenar.nexara.BuildConfig.DEBUG) {
+            listOf(com.promenar.nexara.data.remote.middleware.MetroLoggingMiddleware())
+        } else {
+            emptyList()
+        }
+        return com.promenar.nexara.data.remote.UnifiedLlmClient(uConfig, middlewares)
     }
 
     private fun buildProviderFromPrefs(): LlmProvider {

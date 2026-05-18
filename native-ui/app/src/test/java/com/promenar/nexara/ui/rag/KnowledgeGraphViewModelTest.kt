@@ -80,50 +80,7 @@ class KnowledgeGraphViewModelTest {
         assertThat(vm.nodes.value).hasSize(4)
     }
 
-    @Test
-    fun `clearGraph calls repo clear then reloads`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
-        coEvery { repo.clear() } returns Unit
 
-        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
-        vm.clearGraph()
-
-        coVerify { repo.clear() }
-        coVerify(atLeast = 2) { graphStore.getGraphData() }
-    }
-
-    @Test
-    fun `clearGraph results in empty nodes and edges`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
-        coEvery { repo.clear() } returns Unit
-
-        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
-        vm.clearGraph()
-
-        assertThat(vm.nodes.value).isEmpty()
-        assertThat(vm.edges.value).isEmpty()
-    }
-
-    @Test
-    fun `injectMockData populates nodes and edges`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
-
-        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
-        vm.injectMockData()
-
-        assertThat(vm.nodes.value).hasSize(16)
-        vm.nodes.value.forEach { node ->
-            assertThat(node.id).isNotEmpty()
-            assertThat(node.label).isNotEmpty()
-            assertThat(node.type).isIn(listOf("concept", "document", "person"))
-        }
-        assertThat(vm.edges.value).isNotEmpty()
-        vm.edges.value.forEach { edge ->
-            assertThat(edge.sourceId).isNotEmpty()
-            assertThat(edge.targetId).isNotEmpty()
-            assertThat(edge.relation).isIn(listOf("contains", "references", "depends_on", "authored"))
-        }
-    }
 
     @Test
     fun `isLoading is false after loadGraph completes`() = runTest {

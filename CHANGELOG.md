@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Nexara Metro 调试桥系统 (Phase 1) 落地 — ADB Logcat 极轻、高内聚结构化捕获管道 (2026-05-18)
+- **💡 架构演进**:
+  - 与架构大师 GLM-5.1 的深度可行性评审反馈对齐，完成 V2 版调试方案重塑并编写 [20260518-Nexara-Metro-Debugger-Discussion.md](file:///Users/promenar/Codex/Nexara/docs/audit/20260518-Nexara-Metro-Debugger-Discussion.md)。
+  - 制定并归档了极其详尽的 Phase 1 实施蓝图 [.agent/plans/20260518-NexaraMetroDebuggerPhase1Plan.md](file:///Users/promenar/Codex/Nexara/.agent/plans/20260518-NexaraMetroDebuggerPhase1Plan.md)。
+- **📋 落地核心资产**:
+  - **手动 DI 对齐**: 纠正 Hilt 假设，将拦截器和中间件整合到 `NexaraApplication` 的 lazy 实例化链路中，通过构造参数手动解耦注入。
+  - **NexaraLogger 结构化升级与 JVM 单元测试安全沙盒**: 重构 `NexaraLogger.kt`，仅在 `BuildConfig.DEBUG` 激活时将带 Tag 的日志（如 [RAG]、[TOOL]）自动封装并以特定格式（`EVENT_START|${tag}|${json}|EVENT_END`）输出到系统 Logcat 管道，一键激活 80+ 处存量埋点。同时，引入 JVM 本地单元测试环境检测，在非真机环境下自动沙箱化隔离，物理绕过 `android.util.Log`、`org.json.JSONObject` 和 SharedPreferences 的访问，彻底根治本地测试套件中的 RuntimeException 闪崩缺陷。
+  - **Room Database 零侵入 SQL 审计**: 在 `databaseBuilder` 中挂接 `RoomDatabase.QueryCallback`，异步捕获并解析针对 `Message`、`Session`、`TaskNodeEntity` 表的所有的 SQL 语句与参数。
+  - **Ktor OkHttp 引擎拦截器 (SSE 抓包)**: 挂载自定义 `MetroLogInterceptor`，对于流式 API SSE 响应采用 okio.ForwardingSource 逐块（Chunk）非阻塞式拦截读取，实时统计 Token CPS 生成速率。
+  - **LlmMiddleware 内存监控中间件**: 挂载 `MetroLoggingMiddleware`，于大模型请求的 PRE/POST 节点抓取滑窗参数、是否开启高级检索等内存元数据。
+  - **ProGuard / R8 物理剥离**: 添加 ProGuard 规则以在编译 Release 时将调试上报代码全量裁剪，零体积与运行时开销负担。
+- **💻 桌面 TUI 渲染终端**:
+  - 编写了 zero-dependency 脚本 `scripts/nexara-metro-tui.js`，通过 spawn `adb logcat` 异步流监听，在桌面 VS Code 终端渲染出极高美学品质的动态生成流向图。
+
 ### 工具调用系统全面移植与 10 项缺陷根治 — 基于 Cherry-Studio 参考实现 (2026-05-18)
 - **参考源**: Cherry-Studio v1.9.6 工具调用系统完整架构分析（13 个核心源文件）
 - **架构重构**:

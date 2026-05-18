@@ -51,6 +51,7 @@ class RagViewModelTest {
         every { app.database } returns database
         every { app.getSharedPreferences(any(), any()) } returns mockk(relaxed = true)
         every { app.vectorizationQueue } returns mockk(relaxed = true)
+        every { app.filesDir } returns java.io.File(System.getProperty("java.io.tmpdir"))
 
         coEvery { kgRepository.getNodeCount() } returns 0
         every { workspaceRepository.observeRoots() } returns flowOf(emptyList())

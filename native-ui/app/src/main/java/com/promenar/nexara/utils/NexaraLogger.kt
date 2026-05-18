@@ -11,34 +11,84 @@ object NexaraLogger {
     private const val LOG_FILE_NAME = "nexara_logs.txt"
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
 
-    fun init(context: Context) {
-        val logFile = getLogFile(context)
-        if (!logFile.exists()) {
-            logFile.createNewFile()
-        }
+    private val isAndroid = System.getProperty("java.vendor") == "The Android Project"
 
-        val originalHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            logError("FATAL EXCEPTION", throwable)
-            originalHandler?.uncaughtException(thread, throwable)
+    fun init(context: Context) {
+        if (!isAndroid) return
+        try {
+            val logFile = getLogFile(context)
+            if (!logFile.exists()) {
+                logFile.createNewFile()
+            }
+
+            val originalHandler = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                logError("FATAL EXCEPTION", throwable)
+                originalHandler?.uncaughtException(thread, throwable)
+            }
+        } catch (e: Exception) {
+            // Ignored
         }
     }
 
     fun log(message: String) {
-        Log.d(TAG, message)
+        if (!isAndroid) {
+            println("[$TAG] $message")
+            return
+        }
+        if (com.promenar.nexara.BuildConfig.DEBUG) {
+            Log.d(TAG, message)
+            try {
+                val trimMsg = message.trim()
+                if (trimMsg.startsWith("[")) {
+                    val closeBracket = trimMsg.indexOf("]")
+                    if (closeBracket > 0) {
+                        val tag = trimMsg.substring(1, closeBracket).uppercase(Locale.getDefault())
+                        val content = trimMsg.substring(closeBracket + 1).trim()
+                        val json = org.json.JSONObject().apply {
+                            put("message", content)
+                        }
+                        Log.d("NEXARA_METRO", "EVENT_START|${tag}|${json}|EVENT_END")
+                    } else {
+                        logDefaultMetro(message)
+                    }
+                } else {
+                    logDefaultMetro(message)
+                }
+            } catch (e: Exception) {
+                logDefaultMetro(message)
+            }
+        }
         writeToDisk("DEBUG: $message")
     }
 
+    private fun logDefaultMetro(message: String) {
+        if (!isAndroid) return
+        try {
+            val json = org.json.JSONObject().apply {
+                put("message", message)
+            }
+            Log.d("NEXARA_METRO", "EVENT_START|LOG|${json}|EVENT_END")
+        } catch (e: Exception) {
+            // Ignored
+        }
+    }
+
     fun logError(tag: String, throwable: Throwable) {
+        if (!isAndroid) {
+            System.err.println("[$TAG] ERROR [$tag]: ${throwable.message}")
+            throwable.printStackTrace()
+            return
+        }
         val stackTrace = Log.getStackTraceString(throwable)
         Log.e(TAG, "$tag: $stackTrace")
         writeToDisk("ERROR [$tag]: $stackTrace")
     }
 
     private fun writeToDisk(content: String) {
-        // Run on a background thread if possible, but for fatal crashes we need to be careful
+        if (!isAndroid) return
         try {
-            val context = com.promenar.nexara.NexaraApplication.instance
+            val context = com.promenar.nexara.NexaraApplication.instance ?: return
             val logFile = getLogFile(context)
             val timestamp = dateFormat.format(Date())
             logFile.appendText("[$timestamp] $content\n")
@@ -60,11 +110,13 @@ object NexaraLogger {
     }
 
     fun getLogs(context: Context): String {
+        if (!isAndroid) return "No logs in non-android environment."
         val file = getLogFile(context)
         return if (file.exists()) file.readText() else "No logs found."
     }
 
     fun clearLogs(context: Context) {
+        if (!isAndroid) return
         val file = getLogFile(context)
         if (file.exists()) file.writeText("")
     }

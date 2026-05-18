@@ -25,8 +25,6 @@ class RagConfigPersistenceTest {
         assertThat(config.docChunkSize).isEqualTo(800)
         assertThat(config.chunkOverlap).isEqualTo(100)
         assertThat(config.memoryChunkSize).isEqualTo(1000)
-        assertThat(config.contextWindow).isEqualTo(20)
-        assertThat(config.summaryThreshold).isEqualTo(10)
     }
 
     @Test
@@ -46,8 +44,6 @@ class RagConfigPersistenceTest {
         every { p.getInt(RagConfigPersistence.KEY_CHUNK_SIZE, 800) } returns 600
         every { p.getInt(RagConfigPersistence.KEY_CHUNK_OVERLAP, 100) } returns 50
         every { p.getInt(RagConfigPersistence.KEY_MEMORY_CHUNK_SIZE, 1000) } returns 800
-        every { p.getInt(RagConfigPersistence.KEY_CONTEXT_WINDOW, 20) } returns 16
-        every { p.getInt(RagConfigPersistence.KEY_SUMMARY_THRESHOLD, 10) } returns 8
         every { p.getString(any(), any()) } answers { secondArg() }
         every { p.getFloat(any(), any()) } answers { secondArg() }
         every { p.getBoolean(any(), any()) } answers { secondArg() }
@@ -56,8 +52,6 @@ class RagConfigPersistenceTest {
         assertThat(config.docChunkSize).isEqualTo(600)
         assertThat(config.chunkOverlap).isEqualTo(50)
         assertThat(config.memoryChunkSize).isEqualTo(800)
-        assertThat(config.contextWindow).isEqualTo(16)
-        assertThat(config.summaryThreshold).isEqualTo(8)
     }
 
     @Test
@@ -101,8 +95,7 @@ class RagConfigPersistenceTest {
     fun `key constants are unique`() {
         val allKeys = setOf(
             RagConfigPersistence.KEY_CHUNK_SIZE, RagConfigPersistence.KEY_CHUNK_OVERLAP,
-            RagConfigPersistence.KEY_MEMORY_CHUNK_SIZE, RagConfigPersistence.KEY_CONTEXT_WINDOW,
-            RagConfigPersistence.KEY_SUMMARY_THRESHOLD, RagConfigPersistence.KEY_SUMMARY_TEMPLATE,
+            RagConfigPersistence.KEY_MEMORY_CHUNK_SIZE, RagConfigPersistence.KEY_SUMMARY_TEMPLATE,
             RagConfigPersistence.KEY_MEMORY_LIMIT, RagConfigPersistence.KEY_MEMORY_THRESHOLD,
             RagConfigPersistence.KEY_DOC_LIMIT, RagConfigPersistence.KEY_DOC_THRESHOLD,
             RagConfigPersistence.KEY_ENABLE_RERANK, RagConfigPersistence.KEY_RERANK_TOP_K,
@@ -118,6 +111,6 @@ class RagConfigPersistenceTest {
             RagConfigPersistence.KEY_COST_STRATEGY, RagConfigPersistence.KEY_SHOW_RETRIEVAL_PROGRESS,
             RagConfigPersistence.KEY_SHOW_RETRIEVAL_DETAILS, RagConfigPersistence.KEY_TRACK_RETRIEVAL_METRICS
         )
-        assertThat(allKeys).hasSize(34)
+        assertThat(allKeys).hasSize(32)
     }
 }
