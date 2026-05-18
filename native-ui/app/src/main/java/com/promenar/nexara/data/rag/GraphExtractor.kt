@@ -32,6 +32,7 @@ class GraphExtractor(
         }
         return chunks
     }
+
     suspend fun extractAndSave(
         text: String,
         docId: String? = null,
@@ -40,6 +41,11 @@ class GraphExtractor(
         return try {
             val chunks = splitText(text)
             NexaraLogger.log("[RAG][GraphExtractor] Splitting text into ${chunks.size} chunks (chunkSize=$chunkSize, overlap=$chunkOverlap) for KG extraction.")
+
+            // 重新抽取时先清除该文档的旧图谱数据，避免 weight 累加和重复边
+            if (docId != null) {
+                graphStore.clearGraphForDoc(docId)
+            }
 
             val results = mutableListOf<ExtractionResult>()
             var failCount = 0
@@ -93,7 +99,10 @@ class GraphExtractor(
                 }
             }
 
-            NexaraLogger.log("[RAG][GraphExtractor] Merged KG results, unique nodes=${mergedNodes.size}, unique edges=${mergedEdges.size}")
+            // 后处理剪枝：过滤低质量节点和边
+            val beforePrune = "${mergedNodes.size} nodes, ${mergedEdges.size} edges"
+            pruneLowQuality(mergedNodes, mergedEdges)
+            NexaraLogger.log("[RAG][GraphExtractor] Pruned: $beforePrune → ${mergedNodes.size} nodes, ${mergedEdges.size} edges")
 
             if (mergedNodes.isEmpty() && mergedEdges.isEmpty()) {
                 return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "No nodes or edges extracted")
@@ -226,27 +235,85 @@ class GraphExtractor(
         }
     }
 
+    /**
+     * 后处理剪枝：过滤低质量节点和边，保留高价值图谱结构。
+     * 策略：
+     * 1. 过滤名称过短（≤1 字符）或为纯数字的节点
+     * 2. 过滤 weight < 0.3 的低置信度边
+     * 3. 验证边的 source/target 必须指向现有节点，移除悬空边
+     * 4. 移除无连接的孤立节点（没有任何边引用它）
+     */
+    private fun pruneLowQuality(
+        nodes: MutableList<ExtractedNode>,
+        edges: MutableList<ExtractedEdge>
+    ) {
+        // Step 1: 过滤低质量节点（名称过短或纯数字）
+        nodes.removeAll { node ->
+            val name = node.name.trim()
+            name.length <= 1 || name.toDoubleOrNull() != null
+        }
+
+        // Step 2: 过滤低置信度边
+        edges.removeAll { it.weight < 0.3 }
+
+        // Step 3: 验证边的端点存在，移除悬空边
+        val nodeNames = nodes.map { it.name.trim().lowercase() }.toSet()
+        edges.removeAll { edge ->
+            val s = edge.source.trim().lowercase()
+            val t = edge.target.trim().lowercase()
+            s !in nodeNames || t !in nodeNames
+        }
+
+        // Step 4: 移除孤立节点（无任何边连接）
+        val connectedNodes = mutableSetOf<String>()
+        for (edge in edges) {
+            connectedNodes.add(edge.source.trim().lowercase())
+            connectedNodes.add(edge.target.trim().lowercase())
+        }
+        val beforeIsolatedPrune = nodes.size
+        nodes.removeAll { node ->
+            node.name.trim().lowercase() !in connectedNodes
+        }
+        if (beforeIsolatedPrune != nodes.size) {
+            NexaraLogger.log("[RAG][GraphExtractor] Removed ${beforeIsolatedPrune - nodes.size} isolated nodes")
+        }
+    }
+
     companion object {
         const val DEFAULT_KG_PROMPT = """You are an expert Knowledge Graph extractor.
-Extract meaningful entities and relationships from the user provided text.
+Extract the most important entities and their relationships from the user provided text.
 
-Target Entity Types: concept, person, org, location, event, product
+## Quality First
+- Focus on CENTRAL entities that are core to the narrative or topic.
+- Skip minor mentions, generic descriptors, abstract concepts, and fleeting references.
+- Aim for 10-25 key entities and 15-35 relationships per chunk.
+- Fewer high-quality extractions are better than many low-quality ones.
 
-Return a valid JSON object with the following structure:
+## Entity Types (use the most specific type that fits)
+- person: Named characters or real people
+- organization: Groups, factions, companies, teams
+- location: Named places, cities, regions, buildings
+- event: Specific plot events, historical incidents, milestones
+- item: Named objects, artifacts, technologies, tools
+- concept: Core themes, systems, rules, or doctrines (use sparingly)
+
+## Output Format
+Return a valid JSON object:
 {
   "nodes": [
-    { "name": "Exact Name", "type": "EntityType", "metadata": { "description": "short desc" } }
+    { "name": "Exact Name", "type": "EntityType", "metadata": { "description": "one short sentence" } }
   ],
   "edges": [
-    { "source": "SourceNodeName", "target": "TargetNodeName", "relation": "relationship_verb", "weight": 1.0 }
+    { "source": "SourceNodeName", "target": "TargetNodeName", "relation": "relationship_verb", "weight": 0.8 }
   ]
 }
 
-Rules:
-1. "name" must be the unique identifier.
-2. "source" and "target" in edges must match a "name" in nodes.
-3. Keep descriptions concise.
-4. "weight" is 0.0 to 1.0, indicating confidence or importance.
-5. JSON ONLY. No markdown formatted blocks."""
+## Rules
+1. Each "name" must be unique within nodes.
+2. "source" and "target" in edges MUST match an existing node "name" exactly.
+3. "relation" should be a concise verb phrase (e.g. "allies_with", "located_in", "leads_to").
+4. "weight" (0.0-1.0): 0.9+=core relationship, 0.5-0.8=notable, below 0.5=skip it.
+5. Do NOT extract every named entity — only those with meaningful relationships.
+6. Return JSON only. No markdown code blocks, no explanation text."""
     }
 }

@@ -39,6 +39,9 @@ interface KgEdgeDao {
     @Query("DELETE FROM kg_edges WHERE id = :edgeId")
     suspend fun deleteById(edgeId: String)
 
+    @Query("DELETE FROM kg_edges WHERE doc_id = :docId")
+    suspend fun deleteByDocId(docId: String): Int
+
     @Query("DELETE FROM kg_edges WHERE session_id = :sessionId")
     suspend fun deleteBySessionId(sessionId: String)
 

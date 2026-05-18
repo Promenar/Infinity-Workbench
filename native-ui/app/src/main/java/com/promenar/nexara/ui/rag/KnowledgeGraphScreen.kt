@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.rag
 
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.app.Application
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,11 +23,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,13 +36,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
+import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
-
-import android.app.Application
-import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,8 +52,23 @@ fun KnowledgeGraphScreen(
     val nodes by viewModel.nodes.collectAsState()
     val edges by viewModel.edges.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val graphHtml by viewModel.graphHtml.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
+
+    // 维持 Native 图谱物理仿真器的协程生命周期
+    val scope = rememberCoroutineScope()
+    val simulator = remember(scope) { GraphPhysicsSimulator(scope) }
+
+    // 动态同步数据流至力导向模拟器
+    LaunchedEffect(nodes, edges) {
+        simulator.setData(nodes, edges)
+    }
+
+    // 页面销毁时自动注销并清空协程循环以防内存泄漏
+    DisposableEffect(simulator) {
+        onDispose {
+            simulator.clear()
+        }
+    }
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
@@ -140,40 +153,10 @@ fun KnowledgeGraphScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (graphHtml != null) {
-                var lastLoadedHtml by remember { mutableStateOf("") }
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.allowFileAccess = true
-                            webViewClient = WebViewClient()
-                            webChromeClient = object : android.webkit.WebChromeClient() {
-                                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                                    consoleMessage?.let {
-                                        com.promenar.nexara.utils.NexaraLogger.log("[WebView Console] ${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}")
-                                    }
-                                    return true
-                                }
-                            }
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        }
-                    },
-                    update = { wv ->
-                        graphHtml?.let { html ->
-                            if (lastLoadedHtml != html) {
-                                lastLoadedHtml = html
-                                wv.loadDataWithBaseURL(
-                                    "file:///android_asset/",
-                                    html,
-                                    "text/html",
-                                    "UTF-8",
-                                    null
-                                )
-                            }
-                        }
-                    },
+            if (nodes.isNotEmpty()) {
+                InteractiveGraphCanvas(
+                    simulator = simulator,
+                    edges = edges,
                     modifier = Modifier.fillMaxSize()
                 )
             } else if (isLoading) {

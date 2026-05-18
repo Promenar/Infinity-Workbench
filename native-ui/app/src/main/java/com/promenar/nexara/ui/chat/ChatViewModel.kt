@@ -223,7 +223,7 @@ class ChatViewModel(
             error = error,
             approvalRequest = session?.approvalRequest
         )
-    }.stateIn(viewModelScope, SharingStarted.Lazily, ChatUiState())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
 
     init {
         approvalManager.setCallbacks(
@@ -467,6 +467,9 @@ class ChatViewModel(
         var accumulatedReasoning = ""
         var accumulatedTokens = TokenUsage()
         val accumulatedToolCalls = mutableListOf<ToolCall>()
+        // P0-2 修复: 流式错误不应直接杀死整个 Agent Loop。
+        // 若模型已产出工具调用，即使流中遇到错误，仍应执行工具并反馈给模型重试。
+        var streamingError: String? = null
 
         try {
             val flow = if (unifiedLlmClient != null) {
@@ -556,6 +559,7 @@ class ChatViewModel(
                     }
                     is StreamChunk.Error -> {
                         _error.update { chunk.message }
+                        streamingError = chunk.message
                         messageManager.updateMessageContent(
                             sessionId, assistantMsgId, accumulatedContent,
                             UpdateMessageOptions(
@@ -563,10 +567,15 @@ class ChatViewModel(
                                 errorMessage = chunk.message
                             )
                         )
-                        // 发现错误立即停止当前流收集，防止并发冲突和后续乱序输出
-                        currentCoroutineContext().cancel(
-                            kotlinx.coroutines.CancellationException("Stream error received: ${chunk.message}")
-                        )
+                        // P0-2 修复：流式错误不再立即取消协程。
+                        // 若模型已产出工具调用（即使是错误的调用），仍需反馈给模型让其重试。
+                        // 仅当无工具调用且无内容时才立即终止流。
+                        if (accumulatedToolCalls.isEmpty() && accumulatedContent.isBlank()) {
+                            currentCoroutineContext().cancel(
+                                kotlinx.coroutines.CancellationException("Stream error received: ${chunk.message}")
+                            )
+                        }
+                        // 否则：让流自然结束（Done chunk 最终会到来），后续逻辑会处理工具调用
                     }
                     is StreamChunk.ToolCallLifecycle -> {}
                     is StreamChunk.Done -> {}
@@ -588,8 +597,10 @@ class ChatViewModel(
             }
         }
 
-        // 流式错误或协程取消后，禁止继续执行正常完成路径（避免 ERROR 被 COMPLETED 覆盖）
-        if (!currentCoroutineContext().isActive) return
+        // P0-2 修复：仅当流被取消（非 streamingError 导致）且无内容时提前返回。
+        // 若存在 streamingError 但有工具调用/内容，继续执行工具反馈循环。
+        val wasCancelled = !currentCoroutineContext().isActive && streamingError == null
+        if (wasCancelled) return
 
         messageManager.flushMessageUpdates(sessionId, assistantMsgId)
         _streamingContent.update { "" }
@@ -615,7 +626,8 @@ class ChatViewModel(
             }
         }
 
-        if (accumulatedToolCalls.isNotEmpty() && currentCoroutineContext().isActive) {
+        // P0-2 修复：即使 streamingError 存在，只要有工具调用，仍然执行并提供反馈
+        if (accumulatedToolCalls.isNotEmpty() && (currentCoroutineContext().isActive || streamingError != null)) {
             val executionMode = sessionForCtx.executionMode.ifEmpty { "semi" }
             val pendingIds = determinePendingToolIds(accumulatedToolCalls, executionMode)
 
@@ -659,10 +671,19 @@ class ChatViewModel(
             }
         } else {
             _isGenerating.update { false }
-            _generationStatus.update { GenerationStatus.COMPLETED }
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(1000)
-                _generationStatus.update { GenerationStatus.IDLE }
+            if (streamingError != null) {
+                // 流式错误且无工具调用：显示错误状态，不标记为 COMPLETED
+                _generationStatus.update { GenerationStatus.ERROR }
+                viewModelScope.launch {
+                    kotlinx.coroutines.delay(3000)
+                    _generationStatus.update { GenerationStatus.IDLE }
+                }
+            } else {
+                _generationStatus.update { GenerationStatus.COMPLETED }
+                viewModelScope.launch {
+                    kotlinx.coroutines.delay(1000)
+                    _generationStatus.update { GenerationStatus.IDLE }
+                }
             }
         }
 
@@ -1183,14 +1204,20 @@ class ChatViewModel(
         if (!session.options.toolsEnabled) return emptyList()
         
         val prefs = application.getSharedPreferences("nexara_settings", 0)
-        val enabledSkills = prefs.getStringSet("enabled_skills", null)
+        // Android SharedPreferences.getStringSet 有已知缓存 bug：
+        // 返回的 Set 是内部可变引用，修改后再次读取可能返回脏数据。
+        // 必须创建副本以隔离。
+        val enabledSkills = prefs.getStringSet("enabled_skills", null)?.toSet()
         
         if (enabledSkills.isNullOrEmpty()) return emptyList()
         
         // Tool availability is controlled entirely by the skill-level toggle in Settings.
         // No session-level web search switch — avoid dual-control confusion.
-        val allowedIds = enabledSkills.toMutableList()
+        val allowedIds = enabledSkills.toList()
         
+        // 同时刷新已知工具名缓存，供 Fallback 解析器使用
+        cachedKnownToolNames = null
+
         return skillRegistry?.getAllTools(allowedIds) ?: emptyList()
     }
 
@@ -1495,6 +1522,7 @@ class ChatViewModel(
     private fun extractToolCallsFromText(content: String): List<ToolCall> {
         val results = mutableListOf<ToolCall>()
 
+        // ── 优先级 0：DeepSeek DSML 格式（<||DSML||tool_calls>） ──
         val dsmlParser = com.promenar.nexara.data.remote.parser.DsmlStreamParser()
         val outputText = StringBuilder()
         val dsmlCalls = dsmlParser.process(content, outputText)
@@ -1516,57 +1544,68 @@ class ChatViewModel(
                     arguments = argsMap.toString()
                 )
             }
-            return results
+            // DSML 结果同样需要工具名校验
+            val filtered = results.filter { isKnownTool(it.name) }
+            if (filtered.isNotEmpty()) return filtered
+            results.clear()
         }
 
-        // [DeepSeek 审计优化] xmlToolCallRegex 带有捕获组 (.*?)，用于在 Fallback 时精准提取文本段。
-        // 它与文件底部的 XML_TOOL_PATTERN（无捕获组，用于整体匹配剔除）分工不同。
-        val xmlToolCallRegex = Regex(
-            """<(?:tool_call|function_call)[^>]*>(.*?)</(?:tool_call|function_call)>""",
+        // ── 优先级 1：MiniMax / 百川 / 智谱 等非标准 XML 标签（<FunctionCall>、<tool_call 等） ──
+        // 覆盖格式变体：
+        //   MiniMax:      <FunctionCall>func_name</FunctionCall>（纯文本函数名，无参数）
+        //   MiniMax-Alt:  <FunctionCall>{"name":"func","arguments":{}}</FunctionCall>（JSON 格式）
+        //   百川/Qwen:    <tool_call name="func">{"arg1":"val1"}</tool_call >
+        //   通用:         <function_call>JSON</function_call>
+        val xmlTagRegex = Regex(
+            """<\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*([^>]*)>([\s\S]*?)</\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
         )
 
-        val codeBlockRegex = Regex(
-            """```(?:json)?\s*\n(.*?)\n\s*```""",
-            setOf(RegexOption.DOT_MATCHES_ALL)
-        )
+        xmlTagRegex.findAll(content).forEach { match ->
+            val attrs = match.groupValues[1].trim()
+            val body = match.groupValues[2].trim()
+            if (body.isEmpty()) return@forEach
 
-        val candidates = mutableListOf<String>()
+            // 尝试从属性中提取 name（如 <tool_call name="func">）
+            val attrName = Regex("""name\s*=\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
+                .find(attrs)?.groupValues?.get(1)
 
-        // 优先 1：XML 标签提取
-        xmlToolCallRegex.findAll(content).forEach { candidates.add(it.groupValues[1]) }
-
-        // 优先 2：Markdown 代码块提取
-        codeBlockRegex.findAll(content).forEach { candidates.add(it.groupValues[1]) }
-
-        // 优先 3：终极兜底，用数学精确的大括号匹配算法寻找嵌套裸 JSON
-        if (candidates.isEmpty()) {
-            val segments = scanBalancedJsonSegments(content)
-            segments.forEach { candidates.add(it.content) }
-        }
-
-        for (candidate in candidates) {
-            val trimmed = candidate.trim()
-            try {
-                val element = Json.parseToJsonElement(trimmed)
-                val toolCall = parseToolCallFromJson(element, results.size)
-                if (toolCall != null) {
-                    results.add(toolCall)
+            if (body.startsWith("{") || body.startsWith("[")) {
+                // JSON 格式内容
+                try {
+                    val element = Json.parseToJsonElement(body)
+                    val tc = parseToolCallFromJson(element, results.size)
+                    if (tc != null) { results.add(tc); return@forEach }
+                } catch (_: Exception) {
+                    val segments = scanBalancedJsonSegments(body)
+                    for (segment in segments) {
+                        try {
+                            val inner = Json.parseToJsonElement(segment.content)
+                            val tc = parseToolCallFromJson(inner, results.size)
+                            if (tc != null && results.none { it.name == tc.name }) { results.add(tc); return@forEach }
+                        } catch (_: Exception) {}
+                    }
                 }
-            } catch (_: Exception) {
-                // [DeepSeek 审计优化] 如果外层解析失败，尝试深度检索一次（兼容首尾存在杂质文本的情况）
-                val segments = scanBalancedJsonSegments(trimmed)
-                for (segment in segments) {
-                    try {
-                        val inner = Json.parseToJsonElement(segment.content)
-                        val tc = parseToolCallFromJson(inner, results.size)
-                        if (tc != null && results.none { it.name == tc.name }) {
-                            results.add(tc)
-                        }
-                    } catch (_: Exception) {}
+            } else {
+                // 纯文本函数名（MiniMax 风格：<FunctionCall>get_current_time</FunctionCall>）
+                val funcName = attrName ?: body.lines().first().trim()
+                if (funcName.isNotEmpty() && funcName.none { it == '{' || it == '<' }) {
+                    if (isKnownTool(funcName)) {
+                        results.add(ToolCall(
+                            id = "xml_${System.currentTimeMillis()}_${results.size}",
+                            name = funcName,
+                            arguments = "{}"
+                        ))
+                    }
                 }
             }
         }
+
+        if (results.isNotEmpty()) return results
+
+        // ── 严格 XML 强标签约束升级 ──
+        // 废弃旧的 [优先级 2（Markdown 代码块提取）] 与 [优先级 3（终极兜底裸大括号扫描）]，防止日常对话中的科普/示例代码块被误提取为工具并运行。
+        // 普通 JSON 代码块和文本仅作为 Markdown 文本渲染，不作为工具 Fallback 处理。
 
         return results
     }
@@ -1585,6 +1624,9 @@ class ChatViewModel(
             ?: element["tool_name"]?.jsonPrimitive?.content
             ?: element["function"]?.jsonObject?.get("name")?.jsonPrimitive?.content
             ?: return null
+
+        // ── 工具名校验：必须存在于 SkillRegistry 中 ──
+        if (!isKnownTool(name)) return null
 
         // ── 提取参数 ──
         val rawArgs: Any? = element["arguments"]
@@ -1605,18 +1647,37 @@ class ChatViewModel(
     }
 
     /**
+     * 缓存的已知工具名集合，避免每次 Fallback 解析都重复调用 getAllTools()
+     */
+    @Volatile
+    private var cachedKnownToolNames: Set<String>? = null
+
+    private fun isKnownTool(name: String): Boolean {
+        val known = cachedKnownToolNames ?: run {
+            val tools = skillRegistry?.getAllTools()?.map { it.function.name }?.toSet() ?: emptySet()
+            cachedKnownToolNames = tools
+            tools
+        }
+        // 安全校验：如果工具列表为空，说明 registry 可能未就绪，信任放行
+        return known.isEmpty() || name in known
+    }
+
+    /**
      * 从内容中移除 JSON 工具调用代码块，避免用户看到原始 JSON 指令。
      * 处理两种场景：
      *   1. Markdown 代码块包裹的 JSON（```json ... ```）
      *   2. 裸 JSON 对象（以 { 开头含 tool/name/function 字段的行）
      */
     private val XML_TOOL_PATTERN = Regex(
-        """<(?:tool_call|function_call|function_name)[^>]*/?>[\s\S]*?</(?:tool_call|function_call)>""",
+        """<\s*(?:FunctionCall|tool_call|function_call|function_name|func_call|tool-call|function-call)[^>]*/?>[\s\S]*?</\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*>""",
         RegexOption.IGNORE_CASE
     )
 
+    // P1-2 修复：原正则 `---\s*...` 过于宽松，会误匹配 Markdown 表格分隔线 `---|---|---`。
+    // 现添加负向前瞻 `(?!-{2,})` 排除紧跟两个以上横线的表格分隔符。
+    // 并增加 `\n` 开头锚点要求行首匹配，避免匹配文本行内的三个横线。
     private val TOOL_RESULT_SEPARATOR_PATTERN = Regex(
-        """---\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]\s*[\s\S]*?(?=\n\n|\n?$)""",
+        """(?:^|\n)---(?!-{2,})\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]\s*[\s\S]*?(?=\n\n|\n?$)""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
     )
 
@@ -1626,49 +1687,9 @@ class ChatViewModel(
         // 1. 彻底剔除 XML 格式标签及其内部内容
         result = result.replace(XML_TOOL_PATTERN, "")
 
-        // 2. 彻底剔除 Markdown 代码块格式工具 JSON
-        val codeBlockJsonRegex = Regex(
-            """```(?:json)?\s*\n(?:[\s\S]*?"(?:name|function|tool|tool_name)"[\s\S]*?)\n\s*```""",
-            setOf(RegexOption.MULTILINE)
-        )
-        result = result.replace(codeBlockJsonRegex) { "" }
-
-        // 3. 利用大括号配对扫描器，彻底定位并剔除多行或嵌套裸 JSON 段
-        var index = 0
-        while (index < result.length) {
-            val segments = scanBalancedJsonSegments(result, index)
-            if (segments.isEmpty()) break
-
-            val firstSegment = segments.first()
-            val openBraceIdx = firstSegment.start
-            val closeBraceIdx = firstSegment.end
-            val possibleJson = firstSegment.content
-
-            var didRemove = false
-            try {
-                val element = Json.parseToJsonElement(possibleJson) as? JsonObject
-                val name = element?.get("name")?.jsonPrimitive?.content
-                    ?: element?.get("tool")?.jsonPrimitive?.content
-                    ?: element?.get("tool_name")?.jsonPrimitive?.content
-                    ?: element?.get("function")?.jsonObject?.get("name")?.jsonPrimitive?.content
-
-                // [DeepSeek 审计 P0 修复] 使用 getSkill O(1) 安全地检查该工具是否已被合法注册与启用，杜绝编译死锁
-                val isRegistered = name?.let { skillRegistry?.getSkill(it) != null } ?: false
-
-                if (isRegistered) {
-                    // [DeepSeek 审计 P1 优化] 剪裁掉这部分 JSON 文本段。由于字符串已被物理缩短，
-                    // 原 closeBraceIdx 之后的内容在新字符串中向前平移到了原 openBraceIdx 位置。
-                    // 故我们将 index 设为 openBraceIdx 重新在此处做下一轮扫描。
-                    result = result.substring(0, openBraceIdx) + result.substring(closeBraceIdx + 1)
-                    index = openBraceIdx
-                    didRemove = true
-                }
-            } catch (_: Exception) {}
-
-            if (!didRemove) {
-                index = closeBraceIdx + 1
-            }
-        }
+        // ── 严格 XML 强标签约束升级 ──
+        // 废弃旧的 [步骤 2（剔除 Markdown JSON 块）] 与 [步骤 3（利用大括号配对扫描剔除裸 JSON）]，
+        // 从而完美放行并完整保留正文中的普通 JSON 代码块与教学大括号文本。
 
         // 4. 清理工具结果指示符与多余空行
         result = result.replace(TOOL_RESULT_SEPARATOR_PATTERN, "")
@@ -1719,14 +1740,12 @@ class ChatViewModel(
     ): SanitizedStreamingContent {
         if (toolCalls.isNotEmpty()) return SanitizedStreamingContent(content, false)
 
-        val separatorIdx = content.indexOf("---")
-        if (separatorIdx < 0) return SanitizedStreamingContent(content, false)
+        val match = TOOL_RESULT_SEPARATOR_PATTERN.find(content)
+        if (match == null) return SanitizedStreamingContent(content, false)
 
+        val separatorIdx = content.indexOf(match.value)
         val beforeSeparator = content.substring(0, separatorIdx)
         val afterSeparator = content.substring(separatorIdx)
-
-        val isToolResult = afterSeparator.contains("结果") || afterSeparator.contains("result", ignoreCase = true)
-        if (!isToolResult) return SanitizedStreamingContent(content, false)
 
         return SanitizedStreamingContent(
             cleanText = beforeSeparator.trimEnd(),

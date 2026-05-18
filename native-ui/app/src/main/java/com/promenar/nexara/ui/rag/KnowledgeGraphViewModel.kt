@@ -58,9 +58,6 @@ class KnowledgeGraphViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _graphHtml = MutableStateFlow<String?>(null)
-    val graphHtml: StateFlow<String?> = _graphHtml.asStateFlow()
-
     private val _viewMode = MutableStateFlow(KgViewMode.GLOBAL)
     val viewMode: StateFlow<KgViewMode> = _viewMode.asStateFlow()
 
@@ -98,30 +95,6 @@ class KnowledgeGraphViewModel(
                     NexaraLogger.log("[KG] INFO: ${data.nodes.size} orphan nodes found (no edges) — these will be displayed as isolated points")
                 }
                 cachedGraphData = data
-                val mappedNodes = data.nodes.map { node ->
-                    GraphNode(
-                        id = node.id,
-                        label = node.name,
-                        type = node.type,
-                        x = Random.nextFloat() * 1200f - 600f,
-                        y = Random.nextFloat() * 800f - 400f,
-                        icon = when (node.type) {
-                            "concept" -> Icons.Rounded.Psychology
-                            "document" -> Icons.Rounded.Description
-                            "person" -> Icons.Rounded.Person
-                            else -> Icons.Rounded.Hub
-                        }
-                    )
-                }
-                val mappedEdges = data.edges.map { edge ->
-                    GraphEdge(
-                        sourceId = edge.sourceId,
-                        targetId = edge.targetId,
-                        relation = edge.relation
-                    )
-                }
-                _nodes.value = mappedNodes
-                _edges.value = mappedEdges
                 renderFromCache()
             } catch (e: Exception) {
                 NexaraLogger.logError("[KG] loadGraphInternal failed", e)
@@ -151,40 +124,33 @@ class KnowledgeGraphViewModel(
                 GraphData(data.nodes.filter { it.id in connectedIds }, filteredEdges)
             }
         }
-        val json = buildGraphJson(filteredData)
-        try {
-            val template = application.assets.open("kg_template.html").bufferedReader().use { it.readText() }
-            _graphHtml.value = template.replace("__GRAPH_DATA__", json)
-            NexaraLogger.log("[KG] render success: html=${_graphHtml.value?.length ?: 0} bytes")
-        } catch (e: Exception) {
-            NexaraLogger.logError("[KG] renderFromCache failed", e)
-            e.printStackTrace()
-        }
-    }
 
-    private fun buildGraphJson(data: GraphData): String {
-        val nodesArray = buildJsonArray {
-            data.nodes.forEach { node ->
-                add(buildJsonObject {
-                    put("id", node.id)
-                    put("name", node.name)
-                    put("type", node.type)
-                })
-            }
+        val mappedNodes = filteredData.nodes.map { node ->
+            GraphNode(
+                id = node.id,
+                label = node.name,
+                type = node.type,
+                x = 0f,
+                y = 0f,
+                icon = when (node.type) {
+                    "concept" -> Icons.Rounded.Psychology
+                    "document" -> Icons.Rounded.Description
+                    "person" -> Icons.Rounded.Person
+                    else -> Icons.Rounded.Hub
+                }
+            )
         }
-        val edgesArray = buildJsonArray {
-            data.edges.forEach { edge ->
-                add(buildJsonObject {
-                    put("sourceId", edge.sourceId)
-                    put("targetId", edge.targetId)
-                    put("relation", edge.relation)
-                })
-            }
+        val mappedEdges = filteredData.edges.map { edge ->
+            GraphEdge(
+                sourceId = edge.sourceId,
+                targetId = edge.targetId,
+                relation = edge.relation
+            )
         }
-        return buildJsonObject {
-            put("nodes", nodesArray)
-            put("edges", edgesArray)
-        }.toString()
+
+        _nodes.value = mappedNodes
+        _edges.value = mappedEdges
+        NexaraLogger.log("[KG] renderFromCache success: mapped ${mappedNodes.size} nodes, ${mappedEdges.size} edges")
     }
 
 

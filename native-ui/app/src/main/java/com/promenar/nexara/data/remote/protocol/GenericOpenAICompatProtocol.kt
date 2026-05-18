@@ -72,6 +72,16 @@ class GenericOpenAICompatProtocol(
                     return@execute
                 }
 
+                // HTML 响应前置检测（CDN/Nginx 错误页拦截）
+                response.contentType()?.let { ct ->
+                    if (ct.match(ContentType.Text.Html)) {
+                        send(StreamChunk.Error(
+                            "Received HTML response instead of JSON stream. Check your Base URL settings."
+                        ))
+                        return@execute
+                    }
+                }
+
                 val channel = response.body<ByteReadChannel>()
                 activeChannel = channel
                 val sb = StringBuilder()
@@ -91,6 +101,12 @@ class GenericOpenAICompatProtocol(
 
                     val line = sb.toString().trim()
                     if (line.isEmpty()) continue
+
+                    // HTML 行级检测（部分服务端在 SSE 流内返回 HTML 错误页）
+                    if (line.trimStart().startsWith('<')) {
+                        send(StreamChunk.Error("Received HTML response instead of JSON stream."))
+                        break
+                    }
 
                     val data = extractSseData(line) ?: continue
                     if (data == "[DONE]") break
@@ -172,6 +188,7 @@ class GenericOpenAICompatProtocol(
 
     private fun buildUrl(): String {
         val cleanBase = baseUrl.trimEnd('/')
+        // 如果 baseUrl 已经包含完整路径（如智谱 /v4/chat/completions），直接使用
         return if (cleanBase.endsWith("/chat/completions")) cleanBase else "$cleanBase/chat/completions"
     }
 
@@ -231,15 +248,18 @@ class GenericOpenAICompatProtocol(
 
                     if (msg.role == "tool") {
                         msg.toolCallId?.let { put("tool_call_id", it) }
+                        msg.name?.let { put("name", it) }
                     }
                 }
             }))
 
             val hasImages = request.messages.any { it.imageUrls?.isNotEmpty() == true }
-            if (hasImages) {
+            val hasAudio = request.messages.any { it.audioData?.isNotEmpty() == true }
+            if (hasImages || hasAudio) {
                 put("modalities", buildJsonArray {
                     add(JsonPrimitive("text"))
-                    add(JsonPrimitive("image"))
+                    if (hasImages) add(JsonPrimitive("image"))
+                    if (hasAudio) add(JsonPrimitive("audio"))
                 })
             }
 
@@ -294,23 +314,34 @@ class GenericOpenAICompatProtocol(
                 val index = tc["index"]?.jsonPrimitive?.intOrNull ?: continue
 
                 val existing = toolCallAccumulator[index]
+                // OpenAI SSE streaming 中 function.arguments 字段携带的是增量片段 (partial)
+                // 协议层在本地累积完整 JSON，但发送给 ViewModel 的 ToolCallDelta 必须只携带
+                // 本次新增的 fragment。否则 ViewModel 二次累积会导致参数膨胀/损坏。
+                val fragment = tc["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.contentOrNull ?: ""
                 if (existing == null) {
                     toolCallAccumulator[index] = AccumulatedToolCall(
                         id = tc["id"]?.jsonPrimitive?.contentOrNull ?: "",
                         name = tc["function"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull ?: "",
-                        arguments = tc["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.contentOrNull ?: ""
+                        arguments = fragment
                     )
                 } else {
                     val newId = tc["id"]?.jsonPrimitive?.contentOrNull
                     val newName = tc["function"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
-                    val newArgs = tc["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.contentOrNull
 
                     toolCallAccumulator[index] = existing.copy(
                         id = if (newId.isNullOrEmpty()) existing.id else newId,
                         name = if (newName.isNullOrEmpty()) existing.name else newName,
-                        arguments = existing.arguments + (newArgs ?: "")
+                        arguments = existing.arguments + fragment
                     )
                 }
+
+                // 增量流式发送：与 OpenAIProtocol 对齐，每个 delta chunk 携带增量 fragment
+                send(StreamChunk.ToolCallDelta(
+                    id = toolCallAccumulator[index]!!.id,
+                    name = toolCallAccumulator[index]!!.name,
+                    arguments = fragment,
+                    index = index
+                ))
             }
         }
 
@@ -337,11 +368,9 @@ class GenericOpenAICompatProtocol(
             send(StreamChunk.TextDelta(remaining.content, remaining.reasoning.ifEmpty { null }))
         }
 
-        for ((index, tc) in toolCallAccumulator) {
-            if (tc.id.isNotEmpty() && tc.name.isNotEmpty()) {
-                send(StreamChunk.ToolCallDelta(tc.id, tc.name, tc.arguments, index))
-            }
-        }
+        // 工具调用已在流式过程中通过 ToolCallDelta(incremental fragment) 发送完毕
+        // ViewModel 侧已完成累积，此处不再重复发送，避免双重累积
+        // flushRemaining 仅负责清理 ThinkingDetector 残余 + 发送 Done 信号
 
         send(StreamChunk.Done)
     }

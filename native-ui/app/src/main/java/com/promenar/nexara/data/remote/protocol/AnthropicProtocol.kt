@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 private data class ToolUseAccumulator(
@@ -57,7 +58,7 @@ class AnthropicProtocol(
                 header("x-api-key", apiKey)
                 header("anthropic-version", anthropicVersion)
                 header("Accept", "text/event-stream")
-                header("Accept-Encoding", "identity") // 强制禁用压缩，防止 Gzip 导致流式输出攒块
+                header("Accept-Encoding", "identity")
                 header("Cache-Control", "no-cache")
                 header("Connection", "keep-alive")
                 setBody(buildRequestBody(request, stream = true))
@@ -83,12 +84,21 @@ class AnthropicProtocol(
                 val channel = response.body<ByteReadChannel>()
                 activeChannel = channel
                 val sb = StringBuilder()
+                val timeoutMs = request.streamTimeout ?: 120000L
                 var currentEvent = ""
                 var currentData = ""
 
                 while (!channel.isClosedForRead) {
                     sb.clear()
-                    if (!channel.readUTF8LineTo(sb, 1_048_576)) break
+                    val readSuccess = withTimeoutOrNull(timeoutMs) {
+                        channel.readUTF8LineTo(sb, 1_048_576)
+                    }
+
+                    if (readSuccess == null) {
+                        send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                        break
+                    }
+                    if (!readSuccess) break
 
                     val line = sb.toString()
                     if (line.isEmpty()) {
@@ -399,17 +409,14 @@ class AnthropicProtocol(
         val acc = toolUseAccumulator.remove(index) ?: return
 
         val argsStr = acc.arguments.toString()
+        // 验证完整 JSON 合法性（静默失败，不阻塞流）
         try {
             json.parseToJsonElement(argsStr)
         } catch (_: Exception) {
         }
 
-        send(StreamChunk.ToolCallDelta(
-            id = acc.id,
-            name = acc.name,
-            arguments = argsStr,
-            index = index
-        ))
+        // 工具调用参数已通过 input_json_delta incremental fragments 在流式过程中发送完毕
+        // ViewModel 侧已完成累积，content_block_stop 不再重复发送，避免双重累积
     }
 
     private fun parseSyncResponse(responseText: String): PromptResponse {

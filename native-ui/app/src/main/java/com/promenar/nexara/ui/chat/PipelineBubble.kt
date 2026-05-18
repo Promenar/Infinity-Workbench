@@ -6,6 +6,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,9 +17,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.promenar.nexara.ui.common.NexaraGlassCard
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -90,13 +98,19 @@ fun PipelineBubble(
     streamingContent: String,
     fontSize: Int,
     onContentChange: ((String) -> Unit)? = null,
+    onCopy: ((String) -> Unit)? = null,
+    onRegenerate: ((String) -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (group.isUser) {
         // USER 消息保持原样
+        val msg = group.messages.first()
         UserMessageBubble(
-            message = group.messages.first(),
-            fontSize = fontSize
+            message = msg,
+            fontSize = fontSize,
+            onDelete = { onDelete?.invoke(msg.id) },
+            onCopy = { onCopy?.invoke(msg.content) }
         )
         return
     }
@@ -145,11 +159,15 @@ fun PipelineBubble(
                         } else {
                             step.content
                         }
+                        val lastMsg = group.assistantMessages.lastOrNull()
                         ContentSegment(
                             content = displayContent,
                             isStreaming = isLastInGroup && isGenerating,
                             fontSize = fontSize,
-                            onContentChange = onContentChange
+                            onContentChange = onContentChange,
+                            onCopy = { lastMsg?.let { onCopy?.invoke(it.content) } },
+                            onRegenerate = { lastMsg?.let { onRegenerate?.invoke(it.id) } },
+                            onDelete = { lastMsg?.let { onDelete?.invoke(it.id) } }
                         )
                     }
                 }
@@ -627,22 +645,55 @@ private fun InlineToolRow(
 //  ContentSegment — 正文渲染
 // ─────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ContentSegment(
     content: String,
     isStreaming: Boolean,
     fontSize: Int,
-    onContentChange: ((String) -> Unit)?
+    onContentChange: ((String) -> Unit)?,
+    onCopy: (() -> Unit)? = null,
+    onRegenerate: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
 ) {
-    MarkdownText(
-        markdown = content,
-        isStreaming = isStreaming,
-        fontSize = fontSize,
-        onContentChange = onContentChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-    )
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box {
+        Surface(
+            color = Color.Transparent,
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onLongClick = { showMenu = true },
+                    onClick = {}
+                )
+        ) {
+            MarkdownText(
+                markdown = content,
+                isStreaming = isStreaming,
+                fontSize = fontSize,
+                onContentChange = onContentChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+        }
+
+        MessageContextMenu(
+            expanded = showMenu,
+            onDismiss = { showMenu = false },
+            onCopy = {
+                onCopy?.invoke() ?: copyToClipboard(context, content)
+                showMenu = false
+            },
+            onRegenerate = onRegenerate,
+            onDelete = {
+                onDelete?.invoke()
+                showMenu = false
+            }
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -682,12 +733,17 @@ private fun PipelineConnector(
 //  UserMessageBubble — 用户消息（从 ChatBubble 抽取）
 // ─────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun UserMessageBubble(
     message: Message,
     fontSize: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDelete: (() -> Unit)? = null,
+    onCopy: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
     val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
     val timestamp = remember(message.createdAt) { timeFormat.format(java.util.Date(message.createdAt)) }
 
@@ -695,43 +751,64 @@ fun UserMessageBubble(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.End
     ) {
-        Surface(
-            shape = com.promenar.nexara.ui.theme.NexaraCustomShapes.ChatBubbleUser,
-            color = NexaraColors.SurfaceHigh,
-            border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
-            modifier = Modifier.widthIn(max = 280.dp)
-        ) {
-            Column {
-                if (!message.userImages.isNullOrEmpty()) {
-                    Column(
-                        modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        message.userImages!!.forEach { dataUrl ->
-                            coil3.compose.AsyncImage(
-                                model = dataUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 200.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.FillWidth
-                            )
+        Box {
+            Surface(
+                shape = com.promenar.nexara.ui.theme.NexaraCustomShapes.ChatBubbleUser,
+                color = NexaraColors.SurfaceHigh,
+                border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .combinedClickable(
+                        onLongClick = { showMenu = true },
+                        onClick = {}
+                    )
+            ) {
+                Column {
+                    if (!message.userImages.isNullOrEmpty()) {
+                        Column(
+                            modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            message.userImages!!.forEach { dataUrl ->
+                                coil3.compose.AsyncImage(
+                                    model = dataUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 200.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.FillWidth
+                                )
+                            }
                         }
                     }
-                }
-                if (message.content.isNotBlank()) {
-                    Text(
-                        text = message.content,
-                        style = NexaraTypography.bodyMedium.copy(
-                            fontSize = fontSize.sp,
-                            lineHeight = (fontSize * 1.5).sp
-                        ),
-                        color = NexaraColors.OnBackground,
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    if (message.content.isNotBlank()) {
+                        Text(
+                            text = message.content,
+                            style = NexaraTypography.bodyMedium.copy(
+                                fontSize = fontSize.sp,
+                                lineHeight = (fontSize * 1.5).sp
+                            ),
+                            color = NexaraColors.OnBackground,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
                 }
             }
+
+            MessageContextMenu(
+                expanded = showMenu,
+                onDismiss = { showMenu = false },
+                onCopy = {
+                    onCopy?.invoke() ?: copyToClipboard(context, message.content)
+                    showMenu = false
+                },
+                onRegenerate = null,
+                onDelete = {
+                    onDelete?.invoke()
+                    showMenu = false
+                }
+            )
         }
         Text(
             text = timestamp,
@@ -772,4 +849,82 @@ private fun StreamingCursor() {
                 .background(NexaraColors.Primary, RoundedCornerShape(2.dp))
         )
     }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  MessageContextMenu — 磨砂玻璃态消息上下文菜单
+// ─────────────────────────────────────────────────────────────────
+
+@Composable
+fun MessageContextMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+    onRegenerate: (() -> Unit)? = null,
+    onDelete: () -> Unit
+) {
+    MaterialTheme(
+        shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(16.dp))
+    ) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismiss,
+            modifier = Modifier
+                .background(Color.Transparent)
+                .width(160.dp)
+        ) {
+            NexaraGlassCard(
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("复制正文", style = NexaraTypography.labelMedium) },
+                        leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(16.dp)) },
+                        onClick = onCopy
+                    )
+                    
+                    if (onRegenerate != null) {
+                        DropdownMenuItem(
+                            text = { Text("重新生成", style = NexaraTypography.labelMedium) },
+                            leadingIcon = { Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(16.dp)) },
+                            onClick = onRegenerate
+                        )
+                    }
+
+                    HorizontalDivider(
+                        color = NexaraColors.OutlineVariant.copy(alpha = 0.2f),
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    DropdownMenuItem(
+                        text = { 
+                            Text(
+                                text = "删除消息", 
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.Error
+                            ) 
+                        },
+                        leadingIcon = { 
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteOutline, 
+                                contentDescription = null, 
+                                tint = NexaraColors.Error, 
+                                modifier = Modifier.size(16.dp)
+                            ) 
+                        },
+                        onClick = onDelete
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun copyToClipboard(context: android.content.Context, text: String) {
+    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    val clip = android.content.ClipData.newPlainText("NexaraMessage", text)
+    clipboard.setPrimaryClip(clip)
 }

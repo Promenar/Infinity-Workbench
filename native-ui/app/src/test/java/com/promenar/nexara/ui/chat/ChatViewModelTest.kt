@@ -47,11 +47,16 @@ class ChatViewModelTest {
         }
 
         override suspend fun updatePartial(id: String, updates: Map<String, Any?>) {
-            savedSessions.find { it.id == id }?.let { session ->
-                // Basic mock update
+            val index = savedSessions.indexOfFirst { it.id == id }
+            if (index != -1) {
+                var session = savedSessions[index]
                 if (updates.containsKey("title")) {
-                    // Update in list
+                    session = session.copy(title = updates["title"] as String)
                 }
+                if (updates.containsKey("stats")) {
+                    session = session.copy(stats = updates["stats"] as SessionStats?)
+                }
+                savedSessions[index] = session
             }
         }
         override suspend fun delete(id: String) {
@@ -73,8 +78,38 @@ class ChatViewModelTest {
         }
 
         override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
-            savedMessages.find { it.first.id == messageId }?.let { (msg, sid) ->
-                // Simplistic update
+            val index = savedMessages.indexOfFirst { it.first.id == messageId }
+            if (index != -1) {
+                val (msg, sid) = savedMessages[index]
+                var updatedMsg = msg
+                if (updates.containsKey("content")) {
+                    updatedMsg = updatedMsg.copy(content = updates["content"] as String)
+                }
+                if (updates.containsKey("reasoning")) {
+                    updatedMsg = updatedMsg.copy(reasoning = updates["reasoning"] as String?)
+                }
+                if (updates.containsKey("tokens")) {
+                    updatedMsg = updatedMsg.copy(tokens = updates["tokens"] as TokenUsage)
+                }
+                if (updates.containsKey("citations")) {
+                    @Suppress("UNCHECKED_CAST")
+                    updatedMsg = updatedMsg.copy(citations = updates["citations"] as List<Citation>)
+                }
+                if (updates.containsKey("toolCalls")) {
+                    @Suppress("UNCHECKED_CAST")
+                    updatedMsg = updatedMsg.copy(toolCalls = updates["toolCalls"] as List<ToolCall>)
+                }
+                savedMessages[index] = updatedMsg to sid
+
+                // 同步更新 session 中的 messages 缓存
+                savedSessions.find { it.id == sid }?.let { session ->
+                    val updatedMsgs = session.messages.map { 
+                        if (it.id == messageId) updatedMsg else it 
+                    }
+                    val updatedSession = session.copy(messages = updatedMsgs)
+                    savedSessions.removeIf { it.id == sid }
+                    savedSessions.add(updatedSession)
+                }
             }
         }
         override suspend fun delete(messageId: String) {
@@ -139,10 +174,30 @@ class ChatViewModelTest {
 
     private val fakeLlmProvider = LlmProvider(fakeProtocol)
 
+    private val fakeTaskRepository = object : com.promenar.nexara.domain.repository.ITaskRepository {
+        override fun observeActiveTree(sessionId: String): Flow<List<TaskStep>> = kotlinx.coroutines.flow.flowOf(emptyList())
+        override suspend fun initializePlan(sessionId: String, goal: String, tree: List<TaskStep>): TaskState = TaskState(id = "", title = goal, status = "idle", steps = emptyList())
+        override suspend fun updatePlan(sessionId: String, operations: List<com.promenar.nexara.domain.repository.PlanPatchOp>): TaskState = TaskState(id = "", title = "", status = "idle", steps = emptyList())
+        override suspend fun getPlan(sessionId: String): TaskState? = null
+        override suspend fun dropPlan(sessionId: String, reason: String) {}
+        override fun deriveParentStatus(children: List<TaskStep>): String = "todo"
+        override fun countLeafProgress(steps: List<TaskStep>): Pair<Int, Int> = 0 to 0
+    }
+
     @Before
     fun setUp() {
         kotlinx.coroutines.Dispatchers.setMain(testDispatcher)
         val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        
+        try {
+            val delegateField = NexaraApplication::class.java.getDeclaredField("taskRepository\$delegate")
+            delegateField.isAccessible = true
+            val customLazy = lazy { fakeTaskRepository }
+            delegateField.set(app, customLazy)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         app.chatStore.clear()
         
         savedSessions.clear()
@@ -169,6 +224,15 @@ class ChatViewModelTest {
             llmProvider = fakeLlmProvider,
             configResolver = configResolver
         )
+
+        // Force unifiedLlmClient to null in test environment to bypass remote API invocation and isolate LlmProvider stubbing
+        try {
+            val field = ChatViewModel::class.java.getDeclaredField("unifiedLlmClient")
+            field.isAccessible = true
+            field.set(viewModel, null)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     @After
@@ -198,6 +262,16 @@ class ChatViewModelTest {
 
         viewModel.sendMessage("hello"); advanceUntilIdle()
         
+        val app = ApplicationProvider.getApplicationContext<com.promenar.nexara.NexaraApplication>()
+        println("=== DIAGNOSTIC LOG ===")
+        println("chatStore sessions size: ${app.chatStore.get().sessions.size}")
+        if (app.chatStore.get().sessions.isNotEmpty()) {
+            println("chatStore session id: ${app.chatStore.get().sessions[0].id}")
+            println("chatStore session messages size: ${app.chatStore.get().sessions[0].messages.size}")
+        }
+        println("currentSessionId: ${viewModel.uiState.value.session?.id}")
+        println("uiState messages size: ${viewModel.uiState.value.messages.size}")
+        println("=======================")
 
         val uiState = viewModel.uiState.value
         assertThat(uiState.messages).hasSize(2)

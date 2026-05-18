@@ -181,6 +181,27 @@ sealed class ProtocolType(
     data object Generic_OpenAI_Compat : ProtocolType(
         "OpenAI 兼容 (通用)", "", "/v1/chat/completions", R.drawable.ic_provider_custom
     )
+
+    // ── 国产提供商（均兼容 OpenAI Chat Completions 协议） ──
+    data object Moonshot_Kimi : ProtocolType(
+        "Moonshot (Kimi)", "https://api.moonshot.cn", "/v1/chat/completions", R.drawable.ic_provider_kimi
+    )
+    data object Qwen_DashScope : ProtocolType(
+        "通义千问 (Qwen)", "https://dashscope.aliyuncs.com/compatible-mode", "/v1/chat/completions", R.drawable.ic_provider_qwen
+    )
+    data object Zhipu_GLM : ProtocolType(
+        "智谱 (GLM)", "https://open.bigmodel.cn/api/paas", "/v4/chat/completions", R.drawable.ic_provider_zhipu
+    )
+    data object Doubao_ByteDance : ProtocolType(
+        "豆包 (Doubao)", "https://ark.cn-beijing.volces.com/api", "/v3/chat/completions", R.drawable.ic_provider_doubao
+    )
+    data object Yi_ZeroOne : ProtocolType(
+        "零一万物 (Yi)", "https://api.lingyiwanwu.com", "/v1/chat/completions", R.drawable.ic_provider_yi
+    )
+    data object Baichuan : ProtocolType(
+        "百川 (Baichuan)", "https://api.baichuan-ai.com", "/v1/chat/completions", R.drawable.ic_provider_baichuan
+    )
+
     data object Local : ProtocolType("本地推理", "", "", R.drawable.ic_provider_local)
 
     companion object {
@@ -210,6 +231,8 @@ sealed class ProtocolType(
         val entries: List<ProtocolType> get() = listOfNotNull(
             OpenAI_ChatCompletions, OpenAI_Responses, Anthropic_Messages,
             Google_VertexAI, Cohere_Chat, Mistral_Chat, DeepSeek,
+            Moonshot_Kimi, Qwen_DashScope, Zhipu_GLM, Doubao_ByteDance,
+            Yi_ZeroOne, Baichuan,
             Generic_OpenAI_Compat, Local
         )
     }

@@ -80,6 +80,12 @@ class LlmProvider(internal val protocol: LlmProtocol) {
             is ProtocolType.Cohere_Chat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
             is ProtocolType.Mistral_Chat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
             is ProtocolType.DeepSeek -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Moonshot_Kimi -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Qwen_DashScope -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Zhipu_GLM -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Doubao_ByteDance -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Yi_ZeroOne -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            is ProtocolType.Baichuan -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
             is ProtocolType.Generic_OpenAI_Compat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
             is ProtocolType.Local -> throw IllegalStateException(
                 "Use LlmProvider.local(engine) factory for local models"

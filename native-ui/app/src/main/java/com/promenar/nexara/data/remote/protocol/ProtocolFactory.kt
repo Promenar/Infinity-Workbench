@@ -31,7 +31,13 @@ object ProtocolFactory {
             
             ProtocolType.Cohere_Chat,
             ProtocolType.Mistral_Chat,
-            ProtocolType.Generic_OpenAI_Compat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
+            ProtocolType.Generic_OpenAI_Compat,
+            ProtocolType.Moonshot_Kimi,
+            ProtocolType.Qwen_DashScope,
+            ProtocolType.Zhipu_GLM,
+            ProtocolType.Doubao_ByteDance,
+            ProtocolType.Yi_ZeroOne,
+            ProtocolType.Baichuan -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
             
             ProtocolType.DeepSeek -> OpenAIProtocol(baseUrl, apiKey, model)
             

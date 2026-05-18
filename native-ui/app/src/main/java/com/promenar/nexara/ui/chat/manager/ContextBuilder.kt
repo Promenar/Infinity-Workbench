@@ -165,7 +165,23 @@ class ContextBuilder(
 
         // 2. Tools Instructions
         if (session.options.toolsEnabled) {
-            sb.appendLine("[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]")
+            sb.appendLine("## Tool Usage Guidelines")
+            sb.appendLine()
+            sb.appendLine("You have access to function calling tools. Use them when you need real-time data, computation, file operations, or task planning.")
+            sb.appendLine()
+            sb.appendLine("### Calling Tools")
+            sb.appendLine("- Use the native function calling mechanism provided by this API. Your tool calls will be automatically intercepted and executed.")
+            sb.appendLine("- Each tool's parameters are defined by a JSON Schema. You MUST match the schema exactly — all required fields must be present with correct types.")
+            sb.appendLine("- Tool call arguments MUST be valid JSON objects. Do NOT nest or escape the JSON unnecessarily.")
+            sb.appendLine()
+            sb.appendLine("### Handling Errors")
+            sb.appendLine("- If a tool call returns an error, analyze the error message carefully. The most common causes are: missing required arguments, incorrect argument types, or malformed JSON.")
+            sb.appendLine("- When you receive an error, DO NOT give up. Instead: (1) identify the specific issue from the error message, (2) correct the arguments, (3) retry the tool with the corrected arguments.")
+            sb.appendLine("- You may retry a tool call up to 3 times with progressively corrected arguments before falling back to a text-only response.")
+            sb.appendLine()
+            sb.appendLine("### Important Constraints")
+            sb.appendLine("- When describing or listing available tools for the user, use plain text descriptions only. Do NOT emit any JSON or XML tool call formats in teaching/demonstration scenarios.")
+            sb.appendLine("- Only emit actual tool calls when you genuinely need to use the tool to fulfill the user's request.")
             sb.appendLine()
         }
         

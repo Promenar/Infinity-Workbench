@@ -4,6 +4,7 @@ import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
 import com.promenar.nexara.data.local.db.entity.KgNodeEntity
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.Json
 import java.util.UUID
 
@@ -142,6 +143,16 @@ class GraphStore(
             weight = updates.weight ?: existing.weight
         )
         kgEdgeDao.insert(updated)
+    }
+
+    /**
+     * 清除指定文档关联的图谱数据（边 + 孤立节点）。
+     * 用于重新抽取时先清理旧数据，避免 weight 累加和重复边。
+     */
+    suspend fun clearGraphForDoc(docId: String) {
+        val deletedEdges = kgEdgeDao.deleteByDocId(docId)
+        val deletedOrphans = kgNodeDao.deleteOrphanNodes()
+        NexaraLogger.log("[RAG][GraphStore] clearGraphForDoc: docId=$docId, deletedEdges=$deletedEdges, orphanNodes=$deletedOrphans")
     }
 
     suspend fun deleteEdge(id: String) {

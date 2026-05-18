@@ -838,7 +838,7 @@ fun PostProcessBar(
 }
 
 @Composable
-private fun PostProcessChip(
+fun PostProcessChip(
     task: PostProcessTask,
     onRemove: () -> Unit
 ) {

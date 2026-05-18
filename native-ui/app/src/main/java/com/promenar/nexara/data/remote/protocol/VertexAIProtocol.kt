@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 import java.io.File
 import java.security.KeyFactory
@@ -113,10 +114,19 @@ class VertexAIProtocol(
 
         try {
             val sb = StringBuilder()
+            val timeoutMs = request.streamTimeout ?: 120000L
 
             while (!channel.isClosedForRead) {
                 sb.clear()
-                if (!channel.readUTF8LineTo(sb, 1_048_576)) break
+                val readSuccess = withTimeoutOrNull(timeoutMs) {
+                    channel.readUTF8LineTo(sb, 1_048_576)
+                }
+
+                if (readSuccess == null) {
+                    send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                    return@channelFlow
+                }
+                if (!readSuccess) break
 
                 val line = sb.toString()
                 if (line.isEmpty()) continue

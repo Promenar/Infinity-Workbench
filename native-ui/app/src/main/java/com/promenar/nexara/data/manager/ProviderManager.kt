@@ -290,7 +290,18 @@ class ProviderManager private constructor(private val app: Application) {
             )
 
             // 迁移逻辑：自动修复名称和能力
-            var migratedModel = migrateModelIfNeeded(model)
+            val hasStoredCaps = settingsPrefs.contains("${prefix}_caps")
+            val hasStoredContext = settingsPrefs.contains("${prefix}_context")
+            val hasStoredMaxOutput = settingsPrefs.contains("${prefix}_maxoutput")
+            val hasStoredCutoff = settingsPrefs.contains("${prefix}_cutoff")
+
+            var migratedModel = migrateModelIfNeeded(
+                model,
+                hasStoredCaps = hasStoredCaps,
+                hasStoredContext = hasStoredContext,
+                hasStoredMaxOutput = hasStoredMaxOutput,
+                hasStoredCutoff = hasStoredCutoff
+            )
             if (migratedModel !== model) {
                 migrated = true
             }
@@ -303,7 +314,7 @@ class ProviderManager private constructor(private val app: Application) {
                 }
             }
             migratedModel
-        }.sortedWith(compareByDescending<ModelInfo> { it.enabled }.thenBy { it.name.lowercase() })
+         }.sortedWith(compareByDescending<ModelInfo> { it.enabled }.thenBy { it.name.lowercase() })
 
         _providerModels.value = models
 
@@ -317,7 +328,13 @@ class ProviderManager private constructor(private val app: Application) {
      * 检测并修复模型的元数据（名称和能力）。
      * 针对旧版本中 name = id 或 capabilities 构建不全的问题。
      */
-    private fun migrateModelIfNeeded(model: ModelInfo): ModelInfo {
+    private fun migrateModelIfNeeded(
+        model: ModelInfo,
+        hasStoredCaps: Boolean,
+        hasStoredContext: Boolean,
+        hasStoredMaxOutput: Boolean,
+        hasStoredCutoff: Boolean
+    ): ModelInfo {
         val spec = com.promenar.nexara.data.model.findModelSpec(model.id) ?: return model
         var changed = false
 
@@ -327,28 +344,29 @@ class ProviderManager private constructor(private val app: Application) {
             spec.note!!
         } else model.name
 
-        // 2. 修复能力：如果存储的能力集不完整（如 Rerank 模型没有 rerank 标签）
-        val currentCaps = model.capabilities.toSet()
-        val correctCaps = buildModelCapabilities(model.type, spec)
-        val newCaps = if (currentCaps != correctCaps.toSet()) {
-            changed = true
-            correctCaps
+        // 2. 修复能力：仅当 SharedPreferences 中没有存储过能力集时，才从 Spec 按需对齐初始化
+        val newCaps = if (!hasStoredCaps) {
+            val correctCaps = buildModelCapabilities(model.type, spec)
+            if (model.capabilities.toSet() != correctCaps.toSet()) {
+                changed = true
+                correctCaps
+            } else model.capabilities
         } else model.capabilities
 
-        // 3. 修复上下文长度：如果存储值与数据库不符
-        val newContext = if (model.contextLength != spec.contextLength && spec.contextLength > 0) {
+        // 3. 修复上下文长度：仅当 SharedPreferences 中没有存储过上下文长度时，才从 Spec 按需对齐初始化
+        val newContext = if (!hasStoredContext && spec.contextLength > 0 && model.contextLength != spec.contextLength) {
             changed = true
             spec.contextLength
         } else model.contextLength
 
-        // 4. 修复最大输出 token：如果存储值为 0 且数据库有值
-        val newMaxOutput = if (model.maxOutputTokens == 0 && spec.maxOutputTokens > 0) {
+        // 4. 修复最大输出 token：仅当 SharedPreferences 中没有存储过最大输出时，才从 Spec 对齐初始化
+        val newMaxOutput = if (!hasStoredMaxOutput && spec.maxOutputTokens > 0 && model.maxOutputTokens == 0) {
             changed = true
             spec.maxOutputTokens
         } else model.maxOutputTokens
 
-        // 5. 修复知识截止日期：如果存储值为 null 且数据库有值
-        val newCutoff = if (model.knowledgeCutoff == null && spec.knowledgeCutoff != null) {
+        // 5. 修复知识截止日期：仅当 SharedPreferences 中没有存储过截止日期时，才从 Spec 对齐初始化
+        val newCutoff = if (!hasStoredCutoff && spec.knowledgeCutoff != null && model.knowledgeCutoff == null) {
             changed = true
             spec.knowledgeCutoff
         } else model.knowledgeCutoff

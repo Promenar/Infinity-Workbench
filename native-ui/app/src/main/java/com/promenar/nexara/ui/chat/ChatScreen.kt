@@ -107,6 +107,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
+import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.common.EditorMode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
@@ -305,17 +306,7 @@ fun ChatScreen(
                         val group = pipelineGroups[idx]
                         val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
 
-                        if (group.isUser) {
-                            val msg = group.messages.first()
-                            
-                            UserMessageBubble(
-                                message = msg,
-                                fontSize = uiState.session?.options?.fontSize ?: 13
-                            )
-
-                            // Long-click gesture handled via MessageActionSheet (tap version)
-                            // For now, keep action sheet accessible via simple mechanism
-                        } else {
+                        if (!group.isUser) {
                             val ragActiveMsg = group.assistantMessages.find { !it.ragReferences.isNullOrEmpty() || it.ragReferencesLoading } ?: group.assistantMessages.lastOrNull()
 
                             if (ragActiveMsg != null && ((isGeneratingGroup && ragPhases.isNotEmpty()) || !ragActiveMsg.ragReferences.isNullOrEmpty())) {
@@ -329,20 +320,22 @@ fun ChatScreen(
                                     isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
                                 )
                             }
-
-                            PipelineBubble(
-                                group = group,
-                                isGenerating = isGeneratingGroup,
-                                status = uiState.status,
-                                streamingContent = uiState.streamingContent,
-                                fontSize = uiState.session?.options?.fontSize ?: 13,
-                                onContentChange = { newContent ->
-                                    group.assistantMessages.lastOrNull()?.let { lastMsg ->
-                                        chatViewModel.updateMessageContentOnly(lastMsg.id, newContent)
-                                    }
-                                }
-                            )
                         }
+
+                        PipelineBubble(
+                            group = group,
+                            isGenerating = isGeneratingGroup,
+                            status = uiState.status,
+                            streamingContent = uiState.streamingContent,
+                            fontSize = uiState.session?.options?.fontSize ?: 13,
+                            onContentChange = { newContent ->
+                                group.assistantMessages.lastOrNull()?.let { lastMsg ->
+                                    chatViewModel.updateMessageContentOnly(lastMsg.id, newContent)
+                                }
+                            },
+                            onDelete = { chatViewModel.deleteMessage(it) },
+                            onRegenerate = { chatViewModel.regenerateMessage(it) }
+                        )
                     }
 
                     if (compressionState.isCompressing || compressionState.result != null) {
@@ -413,17 +406,14 @@ fun ChatScreen(
                                 findModelSpec(id)?.note ?: id
                             } ?: ""
                         }
+                        val postProcessTasks by chatViewModel.postProcessTasks.collectAsState()
                         ChatInputTopBar(
                             modelName = modelDisplayName,
                             tokenState = tokenState,
+                            postProcessTasks = postProcessTasks,
+                            onRemovePostProcessTask = { chatViewModel.removePostProcessTask(it) },
                             onModelClick = { showModelSettingsSheet = true },
                             onManualSummary = { chatViewModel.summarizeHistory() }
-                        )
-
-                        val postProcessTasks by chatViewModel.postProcessTasks.collectAsState()
-                        PostProcessBar(
-                            tasks = postProcessTasks,
-                            onRemoveTask = { chatViewModel.removePostProcessTask(it) }
                         )
 
                         if (selectedImageUris.isNotEmpty()) {
@@ -625,6 +615,8 @@ fun ContextCircularIndicator(
 private fun ChatInputTopBar(
     modelName: String,
     tokenState: ChatViewModel.TokenIndicatorState,
+    postProcessTasks: List<PostProcessTask>,
+    onRemovePostProcessTask: (String) -> Unit,
     onModelClick: () -> Unit,
     onManualSummary: () -> Unit
 ) {
@@ -655,6 +647,14 @@ private fun ChatInputTopBar(
 
         // Token Indicator
         TokenIndicator(state = tokenState, onManualSummary = onManualSummary)
+
+        // PostProcess Tasks (e.g. Session RAG, Summary)
+        postProcessTasks.forEach { task ->
+            PostProcessChip(
+                task = task,
+                onRemove = { onRemovePostProcessTask(task.id) }
+            )
+        }
 
         Spacer(modifier = Modifier.weight(1f))
     }
