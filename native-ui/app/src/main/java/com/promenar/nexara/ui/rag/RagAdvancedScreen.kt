@@ -159,6 +159,19 @@ fun RagAdvancedScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        ConfigSlider(
+                            label = stringResource(R.string.rag_advanced_kg_timeout),
+                            value = config.kgExtractionTimeoutSeconds.toFloat(),
+                            valueRange = 5f..120f,
+                            onValueChange = { v -> viewModel.updateConfig { c -> c.copy(kgExtractionTimeoutSeconds = v.toInt()) } }
+                        )
+                        Text(
+                            stringResource(R.string.rag_advanced_kg_timeout_desc),
+                            style = NexaraTypography.labelSmall.copy(fontSize = 11.sp),
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+
                         SettingsSectionHeader(stringResource(R.string.rag_advanced_jit_section))
                         SettingsToggle(
                             title = stringResource(R.string.rag_advanced_jit_enable),

@@ -83,6 +83,21 @@ object NexaraLogger {
         val stackTrace = Log.getStackTraceString(throwable)
         Log.e(TAG, "$tag: $stackTrace")
         writeToDisk("ERROR [$tag]: $stackTrace")
+
+        if (com.promenar.nexara.BuildConfig.DEBUG) {
+            try {
+                val json = org.json.JSONObject().apply {
+                    put("tag", tag)
+                    put("message", throwable.message ?: throwable.toString())
+                    // Limit stacktrace to top 15 lines to stay within log length restrictions
+                    val limitedStackTrace = stackTrace.split("\n").take(15).joinToString("\n")
+                    put("stacktrace", limitedStackTrace)
+                }
+                Log.d("NEXARA_METRO", "EVENT_START|ERROR|${json}|EVENT_END")
+            } catch (e: Exception) {
+                // Safeguard against any logging anomalies
+            }
+        }
     }
 
     private fun writeToDisk(content: String) {

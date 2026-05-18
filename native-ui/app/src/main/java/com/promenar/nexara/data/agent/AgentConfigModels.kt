@@ -36,5 +36,6 @@ data class AgentRetrievalConfig(
     val kgFreeMode: Boolean = false,
     val kgDomainAuto: Boolean = false,
     val kgDomainHint: String? = null,
+    val kgExtractionTimeoutSeconds: Int = 120,
     val jitMaxChunks: Int = 0
 )

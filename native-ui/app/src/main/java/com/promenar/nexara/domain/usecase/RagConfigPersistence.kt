@@ -39,6 +39,7 @@ class RagConfigPersistence(
             kgExtractionPrompt = retrieval.kgExtractionPrompt,
             kgFreeMode = retrieval.kgFreeMode,
             kgDomainAuto = retrieval.kgDomainAuto,
+            kgExtractionTimeoutSeconds = retrieval.kgExtractionTimeoutSeconds,
             queryRewriteStrategy = retrieval.queryRewriteStrategy,
             queryRewriteModel = retrieval.queryRewriteModel,
             queryRewriteCount = retrieval.queryRewriteCount,
@@ -93,6 +94,7 @@ class RagConfigPersistence(
             kgFreeMode = prefs.getBoolean(KEY_KG_FREE_MODE, false),
             kgDomainAuto = prefs.getBoolean(KEY_KG_DOMAIN_AUTO, false),
             kgDomainHint = null,
+            kgExtractionTimeoutSeconds = prefs.getInt(KEY_KG_EXTRACTION_TIMEOUT, DEFAULT_KG_EXTRACTION_TIMEOUT),
             jitMaxChunks = prefs.getInt(KEY_JIT_MAX_CHUNKS, 0)
         )
     }
@@ -120,6 +122,7 @@ class RagConfigPersistence(
             .putString(KEY_KG_PROMPT, config.kgExtractionPrompt)
             .putBoolean(KEY_KG_FREE_MODE, config.kgFreeMode)
             .putBoolean(KEY_KG_DOMAIN_AUTO, config.kgDomainAuto)
+            .putInt(KEY_KG_EXTRACTION_TIMEOUT, config.kgExtractionTimeoutSeconds)
             .putInt(KEY_JIT_MAX_CHUNKS, config.jitMaxChunks)
             .apply()
     }
@@ -152,6 +155,7 @@ class RagConfigPersistence(
         const val KEY_KG_PROMPT = "kg_prompt"
         const val KEY_KG_FREE_MODE = "kg_free_mode"
         const val KEY_KG_DOMAIN_AUTO = "kg_domain_auto"
+        const val KEY_KG_EXTRACTION_TIMEOUT = "kg_extraction_timeout"
         const val KEY_JIT_MAX_CHUNKS = "jit_max_chunks"
         const val KEY_ENABLE_INCREMENTAL_HASH = "enable_incremental_hash"
         const val KEY_ENABLE_LOCAL_PREPROCESS = "enable_local_preprocess"
@@ -173,5 +177,6 @@ class RagConfigPersistence(
         const val DEFAULT_QUERY_REWRITE_COUNT = 3
         const val DEFAULT_HYBRID_ALPHA = 0.6f
         const val DEFAULT_HYBRID_BM25_BOOST = 1.0f
+        const val DEFAULT_KG_EXTRACTION_TIMEOUT = 120
     }
 }

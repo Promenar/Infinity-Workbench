@@ -4,6 +4,7 @@ import com.promenar.nexara.data.remote.ThinkingDetector
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.parser.HttpStatusException
 import io.ktor.client.*
+import kotlinx.coroutines.CancellationException
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
@@ -11,7 +12,6 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.*
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -31,6 +31,7 @@ class OpenAIProtocol(
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
         }
     }
 
@@ -125,8 +126,11 @@ class OpenAIProtocol(
                 header("Authorization", "Bearer $apiKey")
                 setBody(buildRequestBody(request, stream = false))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            throw Exception(ErrorNormalizer.normalize(e).message)
+            val normalized = ErrorNormalizer.normalize(e)
+            throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
         val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
@@ -135,7 +139,7 @@ class OpenAIProtocol(
             val normalized = ErrorNormalizer.normalize(
                 HttpStatusException(response.status.value, responseText)
             )
-            throw Exception(normalized.message)
+            throw Exception("[HTTP ${response.status.value}][${normalized.category}] ${responseText.take(300)}")
         }
 
         return parseSyncResponse(responseText)
@@ -147,7 +151,7 @@ class OpenAIProtocol(
             response = httpClient.get(baseUrl.trimEnd('/') + "/models") {
                 header("Authorization", "Bearer $apiKey")
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             return emptyList()
         }
 
@@ -214,7 +218,7 @@ class OpenAIProtocol(
 
                     msg.name?.let { put("name", it) }
 
-                    if (msg.role == "assistant" && msg.toolCalls != null && msg.toolCalls.isNotEmpty()) {
+                    if (msg.role == "assistant" && !msg.toolCalls.isNullOrEmpty()) {
                         put("tool_calls", JsonArray(msg.toolCalls.map { tc ->
                             buildJsonObject {
                                 put("id", tc.id)
@@ -252,7 +256,7 @@ class OpenAIProtocol(
                 put("stream_options", buildJsonObject { put("include_usage", true) })
             }
 
-            if (request.tools != null && request.tools.isNotEmpty()) {
+            if (!request.tools.isNullOrEmpty()) {
                 put("tools", JsonArray(request.tools.map { tool ->
                     buildJsonObject {
                         put("type", tool.type)

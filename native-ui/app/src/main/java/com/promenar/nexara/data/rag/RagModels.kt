@@ -91,6 +91,8 @@ data class RagConfiguration(
     val kgFreeMode: Boolean = false,
     val kgDomainAuto: Boolean = false,
     val kgDomainHint: String? = null,
+    /** 每个 chunk 的 KG 抽取超时（秒），默认 120 秒 */
+    val kgExtractionTimeoutSeconds: Int = 120,
     val costStrategy: String = "on-demand",
     val trackRetrievalMetrics: Boolean = false,
     val showRetrievalProgress: Boolean = true,

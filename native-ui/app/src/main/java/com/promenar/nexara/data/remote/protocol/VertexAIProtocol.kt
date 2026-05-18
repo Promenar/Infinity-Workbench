@@ -36,6 +36,7 @@ class VertexAIProtocol(
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
         }
     }
 
@@ -170,8 +171,11 @@ class VertexAIProtocol(
                 header("Authorization", "Bearer $token")
                 setBody(buildRequestBody(request))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            throw Exception(ErrorNormalizer.normalize(e).message)
+            val normalized = ErrorNormalizer.normalize(e)
+            throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
         val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
@@ -180,7 +184,7 @@ class VertexAIProtocol(
             val normalized = ErrorNormalizer.normalize(
                 HttpStatusException(response.status.value, responseText)
             )
-            throw Exception(normalized.message)
+            throw Exception("[HTTP ${response.status.value}][${normalized.category}] ${responseText.take(300)}")
         }
 
         return parseSyncResponse(responseText)

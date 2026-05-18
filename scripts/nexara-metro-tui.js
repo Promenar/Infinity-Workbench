@@ -57,7 +57,11 @@ function processLine(line) {
         data = { message: rawJson };
     }
 
-    const time = new Date().toLocaleTimeString();
+    let time = new Date().toLocaleTimeString();
+    const timeMatch = line.match(/^(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d{3})?)/);
+    if (timeMatch) {
+        time = timeMatch[1];
+    }
 
     switch (event) {
         case 'LOG':
@@ -101,6 +105,46 @@ function processLine(line) {
             process.stdout.write("\n");
             console.log(`\x1b[32m[${time}] 🏁 [GEN COMPLETED] ──> 🟢 Flow Terminated Safely\x1b[0m`);
             console.log(`   └─ model: \x1b[36m${data.model}\x1b[0m | status: \x1b[32m${data.status}\x1b[0m`);
+            break;
+
+        case 'ERROR':
+            console.log(`\n\x1b[1;31m[${time}] 🚨 [ERROR DETECTED IN PIPELINE] ─────────────────────────────\x1b[0m`);
+            console.log(`\x1b[1;31m ├─ Component:  \x1b[1;37m${data.tag || 'Unknown'}\x1b[0m`);
+            console.log(`\x1b[1;31m ├─ Reason:     \x1b[1;33m${data.message || 'No message provided.'}\x1b[0m`);
+            if (data.stacktrace) {
+                console.log(`\x1b[1;31m ├─ StackTrace Traceback (Top 6 lines): \x1b[0m`);
+                const lines = data.stacktrace.split('\n').filter(l => l.trim().length > 0).slice(0, 6);
+                for (let l of lines) {
+                    console.log(`\x1b[90m     ${l.trim()}\x1b[0m`);
+                }
+            }
+            console.log(`\x1b[1;31m └───────────────────────────────────────────────────────────────────\x1b[0m\n`);
+            break;
+
+        case 'RAG][GRAPHEXTRACTOR':
+        case 'RAG':
+            const msg = data.message || '';
+            // KG extraction progress tracking
+            if (msg.includes('Extracting chunk')) {
+                const chunkMatch = msg.match(/Extracting chunk (\d+)\/(\d+)/);
+                if (chunkMatch) {
+                    console.log(`\x1b[36m[${time}] 🔬 [KG EXTRACT] ──> Chunk ${chunkMatch[1]}/${chunkMatch[2]}\x1b[0m`);
+                }
+            } else if (msg.includes('returned error')) {
+                console.log(`\x1b[33m[${time}] ⚠️  [KG EXTRACT] ──> ❌ ${msg}\x1b[0m`);
+            } else if (msg.includes('Chunk summary')) {
+                console.log(`\x1b[1;36m[${time}] 📊 [KG EXTRACT] ──> ${msg}\x1b[0m`);
+            } else if (msg.includes('TIMEOUT')) {
+                console.log(`\x1b[1;31m[${time}] ⏱️  [KG TIMEOUT] ──> ${msg}\x1b[0m`);
+            } else if (msg.includes('EMPTY')) {
+                console.log(`\x1b[33m[${time}] 📭 [KG EMPTY] ──> ${msg}\x1b[0m`);
+            } else if (msg.includes('LLM response received')) {
+                console.log(`\x1b[32m[${time}] 📨 [KG LLM] ──> ${msg.substring(0, 120)}\x1b[0m`);
+            } else if (msg.includes('Parse result')) {
+                console.log(`\x1b[33m[${time}] 🔧 [KG PARSE] ──> ${msg.substring(0, 150)}\x1b[0m`);
+            } else {
+                console.log(`\x1b[90m[${time}] [LOG] ──> ${msg}\x1b[0m`);
+            }
             break;
 
         case 'DB_QUERY':

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <script src="file:///android_asset/echarts/echarts.min.js"></script>
+    <script src="echarts/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; }
         html, body, #chart { width: 100%; height: 100%; background: transparent; }
@@ -12,92 +12,148 @@
 <body>
 <div id="chart"></div>
 <script>
-    var graphData = __GRAPH_DATA__;
+    try {
+        var graphData = __GRAPH_DATA__;
 
-    var colorMap = {
-        'concept': '#C0C1FF',
-        'document': '#4ADE80',
-        'person': '#60A5FA',
-        'organization': '#FBBF24',
-        'location': '#F472B6',
-        'event': '#A78BFA',
-        'other': '#9E9EA0'
-    };
-
-    var nodeIdToName = {};
-    graphData.nodes.forEach(function(n) { nodeIdToName[n.id] = n.name; });
-
-    var nodes = graphData.nodes.map(function(n) {
-        return {
-            name: n.name,
-            symbolSize: 18,
-            itemStyle: { color: colorMap[n.type] || colorMap.other },
-            label: { show: true, color: '#E5E1E4', fontSize: 10 },
-            category: n.type
+        var colorMap = {
+            'concept': '#C0C1FF',
+            'document': '#4ADE80',
+            'person': '#60A5FA',
+            'organization': '#FBBF24',
+            'location': '#F472B6',
+            'event': '#A78BFA',
+            'other': '#9E9EA0'
         };
-    });
 
-    var links = graphData.edges.map(function(e) {
-        return {
-            source: nodeIdToName[e.sourceId] || e.sourceId,
-            target: nodeIdToName[e.targetId] || e.targetId,
-            label: { show: true, formatter: e.relation, fontSize: 8, color: '#999' },
-            lineStyle: { color: 'rgba(255,255,255,0.12)', curveness: 0.1 }
-        };
-    });
-
-    var categories = Object.keys(colorMap).map(function(k) {
-        return { name: k };
-    });
-
-    var chart = echarts.init(document.getElementById('chart'), 'dark');
-    var option = {
-        backgroundColor: 'transparent',
-        tooltip: {
-            formatter: function(params) {
-                if (params.dataType === 'node') {
-                    return '<b>' + params.name + '</b><br/>Type: ' + (params.data.category || 'unknown');
+        // Create a hash map of all valid node IDs to prevent ECharts crashing on dangling edges
+        var validNodeIds = {};
+        if (graphData && graphData.nodes) {
+            graphData.nodes.forEach(function(n) {
+                if (n && n.id) {
+                    validNodeIds[n.id] = true;
                 }
-                if (params.dataType === 'edge') {
-                    return params.data.label.formatter;
+            });
+        }
+
+        var nodes = [];
+        if (graphData && graphData.nodes) {
+            nodes = graphData.nodes.map(function(n) {
+                return {
+                    id: n.id,
+                    name: n.id, // Use unique ID as name in ECharts to prevent duplicate name crashes
+                    displayName: n.name || n.id, // Display friendly name
+                    symbolSize: 18,
+                    itemStyle: { color: colorMap[n.type] || colorMap.other },
+                    label: { show: true, color: '#E5E1E4', fontSize: 10 },
+                    category: colorMap[n.type] ? n.type : 'other'
+                };
+            });
+        }
+
+        var links = [];
+        if (graphData && graphData.edges) {
+            graphData.edges.forEach(function(e) {
+                if (e && e.sourceId && e.targetId) {
+                    if (validNodeIds[e.sourceId] && validNodeIds[e.targetId]) {
+                        links.push({
+                            source: e.sourceId,
+                            target: e.targetId,
+                            relation: e.relation || '',
+                            label: {
+                                show: !!e.relation,
+                                formatter: function(params) {
+                                    return params.data.relation || '';
+                                },
+                                fontSize: 8,
+                                color: '#999'
+                            },
+                            lineStyle: { color: 'rgba(255,255,255,0.12)', curveness: 0.1 }
+                        });
+                    } else {
+                        console.warn("Dangling edge filtered out: source=" + e.sourceId + ", target=" + e.targetId);
+                    }
                 }
-                return '';
-            }
-        },
-        legend: {
-            data: categories.map(function(c) { return c.name; }),
-            textStyle: { color: '#999', fontSize: 10 },
-            bottom: 10,
-            type: 'scroll'
-        },
-        series: [{
-            type: 'graph',
-            layout: 'force',
-            roam: true,
-            draggable: true,
-            force: {
-                repulsion: 250,
-                edgeLength: [80, 250],
-                gravity: 0.08
-            },
-            data: nodes,
-            links: links,
-            categories: categories,
-            emphasis: {
-                focus: 'adjacency',
-                lineStyle: { width: 3 }
-            },
-            label: {
-                show: true,
-                position: 'bottom',
-                fontSize: 10,
-                color: '#E5E1E4'
-            },
-            autoCurveness: true
-        }]
-    };
-    chart.setOption(option);
-    window.addEventListener('resize', function() { chart.resize(); });
+            });
+        }
+
+        var categories = Object.keys(colorMap).map(function(k) {
+            return { name: k };
+        });
+
+        // Initialize ECharts with error safety
+        var chartDom = document.getElementById('chart');
+        if (!chartDom) {
+            throw new Error("Canvas container element '#chart' not found.");
+        }
+        var chart = echarts.init(chartDom, 'dark');
+        
+        // Handle empty data gracefully
+        if (nodes.length === 0 && links.length === 0) {
+            chartDom.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:14px;">No graph data available</div>';
+        } else {
+            var option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    formatter: function(params) {
+                        if (params.dataType === 'node') {
+                            return '<b>' + (params.data.displayName || params.name) + '</b><br/>Type: ' + (params.data.category || 'unknown');
+                        }
+                        if (params.dataType === 'edge') {
+                            return params.data.relation || '';
+                        }
+                        return '';
+                    }
+                },
+                legend: {
+                    data: categories.map(function(c) { return c.name; }),
+                    textStyle: { color: '#999', fontSize: 10 },
+                    bottom: 10,
+                    type: 'scroll'
+                },
+                series: [{
+                    type: 'graph',
+                    layout: 'force',
+                    roam: true,
+                    draggable: true,
+                    force: {
+                        initLayout: 'circular', // Crucial: Place nodes in a circle initially to prevent coordinates NaN/Infinity overlap explosion
+                        repulsion: 120, // Optimized repulsion for 176+ nodes
+                        edgeLength: [50, 150], // Balanced edge length range
+                        gravity: 0.1, // Stronger center attraction
+                        friction: 0.6
+                    },
+                    data: nodes,
+                    links: links,
+                    categories: categories,
+                    emphasis: {
+                        focus: 'adjacency',
+                        lineStyle: { width: 3 }
+                    },
+                    label: {
+                        show: true,
+                        position: 'bottom',
+                        fontSize: 10,
+                        color: '#E5E1E4',
+                        formatter: function(params) {
+                            return params.data.displayName || params.name;
+                        }
+                    },
+                    autoCurveness: true
+                }]
+            };
+            chart.setOption(option);
+        }
+        window.addEventListener('resize', function() { chart.resize(); });
+    } catch (err) {
+        console.error("ECharts rendering error: ", err);
+        var chartDom = document.getElementById('chart');
+        if (chartDom) {
+            chartDom.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#ef4444;font-size:14px;padding:20px;text-align:center;box-sizing:border-box;">' +
+                '<b style="font-size:16px;">Graph Rendering Failed</b>' +
+                '<span style="font-size:12px;color:#999;margin-top:10px;word-break:break-all;background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;max-width:90%;">' + err.message + '</span>' +
+                '</div>';
+        }
+    }
 </script>
 </body>
 </html>

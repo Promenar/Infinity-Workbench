@@ -36,6 +36,7 @@ class AnthropicProtocol(
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
         }
     }
 
@@ -146,8 +147,11 @@ class AnthropicProtocol(
                 header("anthropic-version", anthropicVersion)
                 setBody(buildRequestBody(request, stream = false))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            throw Exception(ErrorNormalizer.normalize(e).message)
+            val normalized = ErrorNormalizer.normalize(e)
+            throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
         val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
@@ -156,7 +160,7 @@ class AnthropicProtocol(
             val normalized = ErrorNormalizer.normalize(
                 HttpStatusException(response.status.value, responseText)
             )
-            throw Exception(normalized.message)
+            throw Exception("[HTTP ${response.status.value}][${normalized.category}] ${responseText.take(300)}")
         }
 
         return parseSyncResponse(responseText)

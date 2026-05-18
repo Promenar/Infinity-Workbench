@@ -27,6 +27,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -138,6 +141,7 @@ fun KnowledgeGraphScreen(
                 .padding(paddingValues)
         ) {
             if (graphHtml != null) {
+                var lastLoadedHtml by remember { mutableStateOf("") }
                 AndroidView(
                     factory = { ctx ->
                         WebView(ctx).apply {
@@ -145,18 +149,29 @@ fun KnowledgeGraphScreen(
                             settings.domStorageEnabled = true
                             settings.allowFileAccess = true
                             webViewClient = WebViewClient()
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                    consoleMessage?.let {
+                                        com.promenar.nexara.utils.NexaraLogger.log("[WebView Console] ${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}")
+                                    }
+                                    return true
+                                }
+                            }
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         }
                     },
                     update = { wv ->
                         graphHtml?.let { html ->
-                            wv.loadDataWithBaseURL(
-                                "file:///android_asset/",
-                                html,
-                                "text/html",
-                                "UTF-8",
-                                null
-                            )
+                            if (lastLoadedHtml != html) {
+                                lastLoadedHtml = html
+                                wv.loadDataWithBaseURL(
+                                    "file:///android_asset/",
+                                    html,
+                                    "text/html",
+                                    "UTF-8",
+                                    null
+                                )
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxSize()

@@ -164,11 +164,14 @@ class GraphStore(
         val edges = when {
             docIds != null && docIds.isNotEmpty() -> kgEdgeDao.getByDocIds(docIds)
             sessionId != null -> kgEdgeDao.getBySessionId(sessionId)
-            else -> kgEdgeDao.getAllDocEdges() // For global, get all edges with doc_id
+            else -> kgEdgeDao.getAll() // GLOBAL: 获取全部边
         }
 
         val nodeIds = edges.flatMap { listOf(it.sourceId, it.targetId) }.toSet()
-        val nodes = if (nodeIds.isNotEmpty()) {
+        // GLOBAL 模式：返回所有节点（包括无边的孤立节点）
+        val nodes = if (docIds == null && sessionId == null) {
+            kgNodeDao.getAll().map { it.toModel() }
+        } else if (nodeIds.isNotEmpty()) {
             kgNodeDao.getByIds(nodeIds.toList()).map { it.toModel() }
         } else {
             emptyList()

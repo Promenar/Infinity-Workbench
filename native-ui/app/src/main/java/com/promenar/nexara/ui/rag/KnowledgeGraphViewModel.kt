@@ -90,7 +90,13 @@ class KnowledgeGraphViewModel(
             _isLoading.value = true
             try {
                 val data = graphStore.getGraphData(docIds = docIds)
-                NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges")
+                NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges (docIds=$docIds)")
+                if (data.nodes.isEmpty() && data.edges.isEmpty()) {
+                    NexaraLogger.log("[KG] WARNING: No graph data available — KG extraction may not have been completed, or all extractions failed")
+                }
+                if (data.nodes.isNotEmpty() && data.edges.isEmpty()) {
+                    NexaraLogger.log("[KG] INFO: ${data.nodes.size} orphan nodes found (no edges) — these will be displayed as isolated points")
+                }
                 cachedGraphData = data
                 val mappedNodes = data.nodes.map { node ->
                     GraphNode(
@@ -118,7 +124,7 @@ class KnowledgeGraphViewModel(
                 _edges.value = mappedEdges
                 renderFromCache()
             } catch (e: Exception) {
-                e.printStackTrace()
+                NexaraLogger.logError("[KG] loadGraphInternal failed", e)
             } finally {
                 _isLoading.value = false
             }

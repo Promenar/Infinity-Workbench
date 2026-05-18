@@ -513,7 +513,8 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 modelId = effectiveModel,
                 systemPrompt = effectivePrompt,
                 chunkSize = config.docChunkSize.coerceAtLeast(400),
-                chunkOverlap = config.chunkOverlap.coerceAtMost(200)
+                chunkOverlap = config.chunkOverlap.coerceAtMost(200),
+                timeoutMs = (config.kgExtractionTimeoutSeconds.coerceIn(5, 300) * 1000L)
             ).also { _graphExtractor = it }
         }
 

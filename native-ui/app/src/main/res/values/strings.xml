@@ -718,6 +718,8 @@
     <string name="rag_advanced_extract_config">Extraction Configuration</string>
     <string name="rag_advanced_extract_model">Extraction Model</string>
     <string name="rag_advanced_select_model_placeholder">Select Model</string>
+    <string name="rag_advanced_kg_timeout">Extraction Timeout (sec)</string>
+    <string name="rag_advanced_kg_timeout_desc">Per-chunk timeout for KG extraction. Default 120s. Lower values fail faster; higher values accommodate slower models.</string>
     <string name="rag_advanced_jit_section">JIT Micro-Graph</string>
     <string name="rag_advanced_jit_enable">Enable JIT</string>
     <string name="rag_advanced_jit_desc">Dynamically build micro-graphs for each query</string>

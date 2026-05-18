@@ -278,6 +278,7 @@ class RagViewModel(
             kgExtractionPrompt = retrieval.kgExtractionPrompt,
             kgFreeMode = retrieval.kgFreeMode,
             kgDomainAuto = retrieval.kgDomainAuto,
+            kgExtractionTimeoutSeconds = retrieval.kgExtractionTimeoutSeconds,
             costStrategy = prefs.getString(RagConfigPersistence.KEY_COST_STRATEGY, "on-demand") ?: "on-demand",
             jitMaxChunks = retrieval.jitMaxChunks,
             showRetrievalProgress = prefs.getBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_PROGRESS, true),
@@ -326,6 +327,7 @@ class RagViewModel(
                 kgExtractionPrompt = config.kgExtractionPrompt,
                 kgFreeMode = config.kgFreeMode,
                 kgDomainAuto = config.kgDomainAuto,
+                kgExtractionTimeoutSeconds = config.kgExtractionTimeoutSeconds,
                 jitMaxChunks = config.jitMaxChunks
             )
         )

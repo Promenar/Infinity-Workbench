@@ -320,6 +320,7 @@ class ChatViewModel(
         _streamingContent.update { "" }
         _error.update { null }
 
+        try {
         val defaultPhases = listOf(
             RagPhase("embed", "Embedding query", PhaseStatus.PENDING),
             RagPhase("memory", "Searching memory", PhaseStatus.PENDING),
@@ -796,6 +797,12 @@ class ChatViewModel(
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
+            }
+        }
+        } finally {
+            // 保证 isGenerating 在任何退出路径下都被重置
+            if (_isGenerating.value) {
+                _isGenerating.update { false }
             }
         }
     }

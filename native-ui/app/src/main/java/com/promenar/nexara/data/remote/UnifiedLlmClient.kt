@@ -10,7 +10,6 @@ import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.utils.NexaraLogger
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 
@@ -102,6 +101,8 @@ class UnifiedLlmClient(
         }
 
         chain.onRequestEnd(finalParams)
-        awaitClose {}
+        // 不使用 awaitClose {}：底层协议流结束后 channelFlow 自动关闭。
+        // awaitClose {} 会导致 Flow 永不完成，使 ChatViewModel 的 collect {} 永远挂起，
+        // isGenerating 卡在 true 无法恢复。
     }
 }

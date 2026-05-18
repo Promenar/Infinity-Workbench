@@ -714,6 +714,8 @@
     <string name="rag_advanced_extract_config">抽取配置</string>
     <string name="rag_advanced_extract_model">抽取模型</string>
     <string name="rag_advanced_select_model_placeholder">请选择模型</string>
+    <string name="rag_advanced_kg_timeout">抽取超时时间（秒）</string>
+    <string name="rag_advanced_kg_timeout_desc">每个文本块的 KG 抽取超时，默认 120 秒。较小的值失败更快；较大的值可适配较慢的模型。</string>
     <string name="rag_advanced_jit_section">JIT 微图</string>
     <string name="rag_advanced_jit_enable">启用 JIT</string>
     <string name="rag_advanced_jit_desc">为每次查询动态构建微型图谱</string>

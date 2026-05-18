@@ -4,6 +4,7 @@ import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 class GraphExtractor(
@@ -12,7 +13,9 @@ class GraphExtractor(
     private val modelId: String? = null,
     private val systemPrompt: String = DEFAULT_KG_PROMPT,
     private val chunkSize: Int = 1200,
-    private val chunkOverlap: Int = 200
+    private val chunkOverlap: Int = 200,
+    /** 每个 chunk 抽取超时（毫秒），默认 120 秒 */
+    private val timeoutMs: Long = 120_000L
 ) {
     private fun splitText(text: String): List<String> {
         if (text.length <= chunkSize) {
@@ -36,18 +39,29 @@ class GraphExtractor(
     ): ExtractionResult {
         return try {
             val chunks = splitText(text)
-            NexaraLogger.log("GraphExtractor: Splitting text into ${chunks.size} chunks (chunkSize=$chunkSize, overlap=$chunkOverlap) for KG extraction.")
+            NexaraLogger.log("[RAG][GraphExtractor] Splitting text into ${chunks.size} chunks (chunkSize=$chunkSize, overlap=$chunkOverlap) for KG extraction.")
 
             val results = mutableListOf<ExtractionResult>()
+            var failCount = 0
+            var successCount = 0
             for ((index, chunk) in chunks.withIndex()) {
                 try {
-                    NexaraLogger.log("GraphExtractor: Extracting chunk ${index + 1}/${chunks.size} (${chunk.length} chars)")
+                    NexaraLogger.log("[RAG][GraphExtractor] Extracting chunk ${index + 1}/${chunks.size} (${chunk.length} chars)")
                     val res = extractSingleChunk(chunk)
                     results.add(res)
+                    if (res.error != null) {
+                        failCount++
+                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} returned error: ${res.error}")
+                    } else {
+                        successCount++
+                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} OK: ${res.nodes.size} nodes, ${res.edges.size} edges")
+                    }
                 } catch (e: Exception) {
-                    NexaraLogger.log("GraphExtractor: Extraction failed for chunk ${index + 1}: ${e.message?.take(80)}")
+                    failCount++
+                    NexaraLogger.logError("[RAG][GraphExtractor] chunk ${index + 1}/${chunks.size}", e)
                 }
             }
+            NexaraLogger.log("[RAG][GraphExtractor] Chunk summary: total=${chunks.size}, success=$successCount, failed=$failCount")
 
             if (results.isEmpty()) {
                 return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "All chunks failed extraction")
@@ -79,7 +93,7 @@ class GraphExtractor(
                 }
             }
 
-            NexaraLogger.log("GraphExtractor: Merged KG results, unique nodes=${mergedNodes.size}, unique edges=${mergedEdges.size}")
+            NexaraLogger.log("[RAG][GraphExtractor] Merged KG results, unique nodes=${mergedNodes.size}, unique edges=${mergedEdges.size}")
 
             if (mergedNodes.isEmpty() && mergedEdges.isEmpty()) {
                 return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "No nodes or edges extracted")
@@ -91,7 +105,7 @@ class GraphExtractor(
                     val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
                     nameToIdMap[node.name] = id
                 } catch (e: Exception) {
-                    NexaraLogger.log("GraphExtractor: Node upsert failed for '${node.name}': ${e.message?.take(80)}")
+                    NexaraLogger.log("[RAG][GraphExtractor] Node upsert failed for '${node.name}': ${e.message?.take(80)}")
                 }
             }
 
@@ -102,7 +116,7 @@ class GraphExtractor(
                     try {
                         graphStore.createEdge(sourceId, targetId, edge.relation, docId, edge.weight, scope)
                     } catch (e: Exception) {
-                        NexaraLogger.log("GraphExtractor: Edge create failed '${edge.source}->${edge.target}': ${e.message?.take(80)}")
+                        NexaraLogger.log("[RAG][GraphExtractor] Edge create failed '${edge.source}->${edge.target}': ${e.message?.take(80)}")
                     }
                 }
             }
@@ -126,15 +140,25 @@ class GraphExtractor(
             stream = false
         )
 
-        val response = protocol.sendPromptSync(request)
+        val response = withTimeoutOrNull(timeoutMs) {
+            protocol.sendPromptSync(request)
+        }
+        if (response == null) {
+            NexaraLogger.log("[RAG][GraphExtractor] TIMEOUT after ${timeoutMs}ms for model=$effectiveModelId chunk=${chunkText.length}chars")
+            return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "Timeout after ${timeoutMs / 1000}s")
+        }
         val content = response.content
 
         if (content.isBlank()) {
+            NexaraLogger.log("[RAG][GraphExtractor] EMPTY response from model=$effectiveModelId")
             return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "Empty response")
         }
 
+        NexaraLogger.log("[RAG][GraphExtractor] LLM response received: ${content.length} chars, preview: ${content.take(150).replace("\n", "\\n")}")
         val result = parseExtractionResult(content)
         if (result == null || (result.nodes.isEmpty() && result.edges.isEmpty())) {
+            val reason = if (result == null) "Failed to parse JSON" else "No entities extracted"
+            NexaraLogger.log("[RAG][GraphExtractor] Parse result: $reason — raw response (first 300 chars): ${content.take(300).replace("\n", "\\n")}")
             return ExtractionResult(
                 nodes = emptyList(),
                 edges = emptyList(),
@@ -196,7 +220,7 @@ class GraphExtractor(
 
                 ExtractionResult(nodes = nodes, edges = edges)
             } catch (e2: Exception) {
-                NexaraLogger.log("GraphExtractor: JSON fallback parse error: ${e2.message?.take(100)}")
+                NexaraLogger.log("[RAG][GraphExtractor] JSON fallback parse error: ${e2.message?.take(100)}")
                 null
             }
         }

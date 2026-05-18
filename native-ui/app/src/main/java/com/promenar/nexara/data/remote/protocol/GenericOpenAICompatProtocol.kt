@@ -4,6 +4,7 @@ import com.promenar.nexara.data.remote.ThinkingDetector
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.parser.HttpStatusException
 import io.ktor.client.*
+import kotlinx.coroutines.CancellationException
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
@@ -11,7 +12,6 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.*
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -34,6 +34,7 @@ class GenericOpenAICompatProtocol(
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
         }
         // 禁用默认的解压处理器，避免对 SSE 响应进行全量缓存
         expectSuccess = false
@@ -121,8 +122,11 @@ class GenericOpenAICompatProtocol(
                 }
                 setBody(buildRequestBody(request, stream = false))
             }
+        } catch (e: CancellationException) {
+            throw e // 结构化并发：CancellationException 必须透传，否则 withTimeoutOrNull 失效
         } catch (e: Exception) {
-            throw Exception(ErrorNormalizer.normalize(e).message)
+            val normalized = ErrorNormalizer.normalize(e)
+            throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
         val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
@@ -131,7 +135,7 @@ class GenericOpenAICompatProtocol(
             val normalized = ErrorNormalizer.normalize(
                 HttpStatusException(response.status.value, responseText)
             )
-            throw Exception(normalized.message)
+            throw Exception("[HTTP ${response.status.value}][${normalized.category}] ${responseText.take(300)}")
         }
 
         return parseSyncResponse(responseText)
