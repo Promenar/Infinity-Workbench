@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Room 数据库表重建迁移与 Schema 闪退终极根治 — v16 全面统合 (2026-05-19)
+- **🔴 P0 — 根治 Room 数据库升级过程中 Schema 不匹配导致的致命闪退缺陷**：
+  - *问题*：用户合并最新代码后，由于此前测试/开发分支中 sessions、messages、vectors、kg_nodes、kg_edges 和 task_nodes 表结构在本地的早期残留不一致（例如 9e8f2bb 提交中对 task_nodes 表的 sort_order、description、status、is_collapsed 分别新增了 @ColumnInfo(defaultValue = ...) 且在 SQL 层面修改了索引名称为 index_task_nodes_...，而本地老旧 task_nodes 表仍然是没有这些默认值和旧名索引残留的旧状态），导致 Room 进行 Schema 校验时抛出 IllegalStateException: Migration didn't properly handle: sessions/messages/vectors/kg_nodes/task_nodes 致命崩溃。
+  - *修复*：
+    - **重构 MIGRATION_10_11 迁移路径**：废弃原各表增量式 safeAddColumn 的高危做法，全面升级为 100% 健壮的 **表重建迁移 (Recreate Table Migration)** 方案。依据最新 Entity 声明的完美 Schema 全新创建正确表结构，最后执行 INSERT INTO SELECT 从临时表无缝回灌数据并清理临时表。
+    - **新增 MIGRATION_11_12 迁移路径**：升级到 version = 12，实施 sessions 表重建热修复。
+    - **新增 MIGRATION_12_13 迁移路径**：升级到 version = 13，实施对 messages 表的 100% 安全重建迁移（完美对齐所有非空默认值定义，并完美恢复其指向 sessions(id) 的 ON DELETE CASCADE 外键及多字段索引）。
+    - **新增 MIGRATION_13_14 迁移路径**：升级到 version = 14，实施 vectors 表的无损、安全重建热修复，物理消除向量表的默认值不匹配故障。
+    - **新增 MIGRATION_14_15 迁移路径**：升级到 version = 15，提供知识图谱节点表 kg_nodes 与边表 kg_edges 的无损安全重建，根治其 Schema validation 闪退故障。
+    - **新增 MIGRATION_15_16 迁移路径**：升级到 version = 16，提供任务树节点表 task_nodes 的物理无损重建并先期安全清理旧索引残留，彻底解决合并 9e8f2bb 造成的第二次 Schema 闪退病根。
+  - *变更文件 (2)*：
+    - 修改：[NexaraDatabase.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/data/local/db/NexaraDatabase.kt)（升级版本号至 16，重构 MIGRATION_10_11，新增 MIGRATION_11_12/MIGRATION_12_13/MIGRATION_13_14/MIGRATION_14_15/MIGRATION_15_16 物理热重建机制）
+    - 修改: [NexaraApplication.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/NexaraApplication.kt)（在 addMigrations 中注册新增的 MIGRATION_15_16）
+  - *审计与设计方案存档*：[.agent/plans/20260519-room-database-migration-schema-mismatch-fix.md](file:///Users/promenar/Codex/Nexara/.agent/plans/20260519-room-database-migration-schema-mismatch-fix.md)
+
 ### UI 视觉一致性修复与助手模型默认值优化 (2026-05-19)
 - **🟡 P1 — 助手创建时默认使用系统摘要模型**：
   - 修复：`AddAgentDialog` 初始化时自动读取 `ProviderManager.summaryModelId` 作为默认模型

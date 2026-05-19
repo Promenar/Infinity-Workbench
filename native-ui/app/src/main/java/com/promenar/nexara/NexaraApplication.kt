@@ -95,7 +95,12 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 NexaraDatabase.MIGRATION_7_8,
                 NexaraDatabase.MIGRATION_8_9,
                 NexaraDatabase.MIGRATION_9_10,
-                NexaraDatabase.MIGRATION_10_11
+                NexaraDatabase.MIGRATION_10_11,
+                NexaraDatabase.MIGRATION_11_12,
+                NexaraDatabase.MIGRATION_12_13,
+                NexaraDatabase.MIGRATION_13_14,
+                NexaraDatabase.MIGRATION_14_15,
+                NexaraDatabase.MIGRATION_15_16
             )
             .fallbackToDestructiveMigration()
             .setQueryCallback(
