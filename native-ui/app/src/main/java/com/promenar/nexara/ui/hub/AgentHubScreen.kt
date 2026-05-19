@@ -29,6 +29,7 @@ import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.settings.SettingsViewModel
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -303,6 +304,26 @@ private fun AddAgentDialog(
     var model by remember { mutableStateOf(defaultModel) }
     var systemPrompt by remember { mutableStateOf("") }
     var showPromptEditor by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(context.applicationContext as android.app.Application)
+    )
+    val allModels by settingsViewModel.providerModels.collectAsState()
+    val modelItems = remember(allModels) {
+        allModels.filter { it.enabled }.map { info ->
+            ModelItem(
+                id = info.id,
+                name = info.name,
+                providerName = info.providerName,
+                capabilities = info.capabilities.mapNotNull { capStr ->
+                    try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
+                },
+                contextLength = info.contextLength
+            )
+        }
+    }
 
     UnifiedPromptEditor(
         show = showPromptEditor,
@@ -315,6 +336,18 @@ private fun AddAgentDialog(
         initialText = systemPrompt,
         placeholder = stringResource(R.string.agent_edit_prompt_placeholder),
         mode = EditorMode.DIALOG
+    )
+
+    ModelPicker(
+        show = showModelPicker,
+        onDismiss = { showModelPicker = false },
+        filterTag = "chat",
+        models = modelItems,
+        onSelect = { modelId, modelName ->
+            model = modelId
+            showModelPicker = false
+        },
+        currentModelId = model
     )
 
     AlertDialog(
@@ -334,12 +367,45 @@ private fun AddAgentDialog(
                     label = { Text(stringResource(R.string.hub_dialog_label_desc)) },
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    label = { Text(stringResource(R.string.hub_dialog_label_model)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                NexaraGlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showModelPicker = true },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.hub_dialog_label_model),
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.OnSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = model.ifBlank { "请选择模型..." },
+                                style = NexaraTypography.bodyMedium,
+                                color = if (model.isNotBlank()) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            tint = NexaraColors.Outline,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
                 
                 Spacer(modifier = Modifier.height(4.dp))
                 

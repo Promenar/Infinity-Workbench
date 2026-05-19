@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 新建助手模型可视化选择器重构 (2026-05-19)
+- **🟡 P1 — 升级新建助手弹窗，引入 ModelPicker 替换文本输入框**：
+  - *问题*：原“新建助手”弹窗中模型选择为一个普通的 `OutlinedTextField` 输入框，用户必须手动输入模型 ID，缺乏可视化过滤（如过滤出对话、推理、生图模型）、所属提供商和能力标签的直观展示，极易输入错误且体验极不友好。
+  - *修复*：
+    - 在 `AgentHubScreen.kt` 头部导入并对接 `SettingsViewModel`，获取全部可用模型，并过滤转换为 `ModelPicker` 所需的 `ModelItem` 数据列表。
+    - 在 `AddAgentDialog` 中引入 `com.promenar.nexara.ui.common.ModelPicker` 通用底部 Sheet。
+    - 将原本的模型输入框替换为高雅磨砂玻璃卡片 `NexaraGlassCard`。卡片左侧可视化展示当前已选的模型名称（空时显示 "请选择模型..."），右侧配以 Chevron 图标指引，点击即可优雅弹出可视化模型选择器，实现可视化搜索、能力标签分类、提供商选择等高级体验。
+  - *变更文件 (1)*：
+    - 修改: [AgentHubScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentHubScreen.kt)
+
 ### 跨页面 Header 窄版 TopAppBar 一致性重构与对齐 (2026-05-19)
 - **🟡 P1 — 助手会话列表与主会话界面 Header 高度与元素对齐调优**：
   - *问题*：原“助手的会话列表页面”与“主会话界面”采用了不同的 Header 栏组件（前者为自定义大标题 Row，后者为窄版 TopAppBar），导致标题字号不一致（大字号 VS 窄版中字号）、返回按钮在切换时产生高度和左右位置跳跃，违和感强烈。
