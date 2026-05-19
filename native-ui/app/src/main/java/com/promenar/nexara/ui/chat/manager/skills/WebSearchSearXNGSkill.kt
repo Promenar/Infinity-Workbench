@@ -7,6 +7,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import io.ktor.client.*
 import android.content.Context
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
 class WebSearchSearXNGSkill(
     private val context: Context,
@@ -44,11 +45,17 @@ class WebSearchSearXNGSkill(
         val provider = SearXNGProvider(httpClient, url, maxResults, includeDomains, excludeDomains)
         return try {
             val (results, citations) = provider.search(query)
-            val citationData = citations.joinToString("\n") { "${it.title}: ${it.url}" }
+            val citationsJson = if (citations.isNotEmpty()) {
+                try {
+                    Json.encodeToString(citations)
+                } catch (_: Exception) {
+                    citations.joinToString("\n") { "${it.title}: ${it.url}" }
+                }
+            } else null
             ToolResult(
                 id = "search_searxng_${System.currentTimeMillis()}",
                 content = results,
-                data = citationData.ifEmpty { null },
+                data = citationsJson,
                 status = if (results.isNotEmpty() && !results.startsWith("SearXNG Search failed")) "success" else "error"
             )
         } catch (e: Exception) {

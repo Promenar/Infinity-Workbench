@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -48,13 +49,21 @@ class SettingsViewModelTest {
 
         vectorRepo = mockk()
         tokenStatsRepo = mockk()
-        mockApp = mockk(relaxed = true)
+        val mockEditor = mockk<SharedPreferences.Editor>(relaxed = true) {
+            every { putBoolean(any(), any()) } returns this@mockk
+            every { putStringSet(any(), any()) } returns this@mockk
+            every { putInt(any(), any()) } returns this@mockk
+            every { putString(any(), any()) } returns this@mockk
+            every { remove(any()) } returns this@mockk
+        }
         prefs = mockk {
             every { getString(any(), any()) } answers { secondArg() }
             every { getStringSet(any(), any()) } answers { secondArg() }
             every { getInt(any(), any()) } answers { secondArg() }
             every { getBoolean(any(), any()) } answers { secondArg() }
+            every { edit() } returns mockEditor
         }
+        mockApp = mockk(relaxed = true)
         skillRepo = mockk()
 
         every { mockApp.getSharedPreferences("nexara_settings", 0) } returns prefs
@@ -157,5 +166,28 @@ class SettingsViewModelTest {
 
         coVerify { mockMcpRegistry.updateMcpTools("TestServer", any(), "http://localhost:3000") }
         unmockkConstructor(McpClient::class)
+    }
+
+    @Test
+    fun `default loopLimit is 50`() = runTest {
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        assertThat(vm.loopLimit.value).isEqualTo(50)
+    }
+
+    @Test
+    fun `preset_skills_migrated_v3 updates SharedPreferences and enables all preset skills`() = runTest {
+        val mockEditor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { prefs.getBoolean("preset_skills_migrated_v3", false) } returns false
+        every { prefs.edit() } returns mockEditor
+        every { mockEditor.putStringSet("enabled_skills", any()) } returns mockEditor
+        every { mockEditor.putBoolean("preset_skills_migrated_v3", true) } returns mockEditor
+
+        SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+
+        verify {
+            mockEditor.putStringSet("enabled_skills", any())
+            mockEditor.putBoolean("preset_skills_migrated_v3", true)
+            mockEditor.apply()
+        }
     }
 }

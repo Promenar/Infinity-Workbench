@@ -100,38 +100,124 @@ class ContextBuilder(
     private fun cleanSearchQuery(rawQuery: String): String {
         var query = rawQuery.trim()
         
-        // 1. 过滤常见的口语化前缀和后缀指令
-        val prefixes = listOf(
-            "帮我搜索一下", "帮我搜索", "请帮我搜索", "请搜索", "查找关于", 
-            "请查找关于", "帮我看看", "我想知道", "顺便帮我", "顺便", "你可以帮我",
-            "帮我查一下", "查一下", "检索一下", "请检索"
-        )
-        for (prefix in prefixes) {
-            if (query.startsWith(prefix, ignoreCase = true)) {
-                query = query.substring(prefix.length).trim()
-            }
-        }
-        
-        val suffixes = listOf(
-            "顺便写一个摘要", "写一个摘要", "并写个总结", "写个总结", 
-            "并总结一下", "总结一下", "并写一段总结", "写一段总结", "谢谢", "并归纳"
-        )
-        for (suffix in suffixes) {
-            if (query.endsWith(suffix, ignoreCase = true)) {
-                query = query.substring(0, query.length - suffix.length).trim()
-            }
-        }
-        
-        // 2. 替换掉大部分标点符号为空格，让搜索引擎更易处理
+        // 1. 替换大部分标点符号为空格，并合并连续的空白字符
         val punctuation = "[\\p{Punct}\\p{P}&&[^.]]".toRegex()
         query = query.replace(punctuation, " ").replace("\\s+".toRegex(), " ").trim()
         
-        // 3. 如果处理后依然极长，则截取前 36 个字符以保证搜索精度
-        if (query.length > 36) {
-            query = query.take(36).trim()
+        // 2. 剥离中英文最常见的“请求/意图”式前缀（多次循环剥离，确保极度干净）
+        val prefixes = listOf(
+            "帮我搜索一下", "帮我搜索", "请帮我搜索", "请搜索", "查找关于", 
+            "请查找关于", "帮我看看", "我想知道", "顺便帮我", "顺便", "你可以帮我",
+            "帮我查一下", "查一下", "检索一下", "请检索", "请教一下", "你知道",
+            "告诉我关于", "告诉我", "我想了解", "我想了解关于", "我想问", "我想问一下",
+            "请告诉我", "谁能告诉我", "怎么查询", "我想查询", "查询一下", "请问一下", "请问",
+            "能不能帮我", "能不能", "帮我看一下", "帮我检索一下", "帮我检索",
+            "你能帮我", "你能", "帮我科普一下", "科普一下", "科普", "你能科普一下",
+            "please search about", "please search for", "please search", "search for", 
+            "search about", "find out about", "look up", "can you search", "help me search",
+            "tell me about", "tell me", "do you know", "could you tell me", "i want to know about",
+            "i want to know", "find information about", "give me information about"
+        )
+        
+        var oldQuery: String
+        do {
+            oldQuery = query
+            for (prefix in prefixes) {
+                if (query.startsWith(prefix, ignoreCase = true)) {
+                    query = query.substring(prefix.length).trim()
+                }
+                // 处理可能被标点符号替换出的首部空格，例如 " 帮我搜索" 或是 "prefix " 情况
+                val prefixWithSpace = "$prefix "
+                if (query.startsWith(prefixWithSpace, ignoreCase = true)) {
+                    query = query.substring(prefixWithSpace.length).trim()
+                }
+            }
+        } while (query != oldQuery)
+
+        // 3. 剥离中英文常见的“口语提问”疑问/指令式前缀（例如：“什么是”、“how to”）
+        val questionPrefixes = listOf(
+            "什么是", "什么叫", "关于", "介绍一下", "科普一下", "简单说说", 
+            "解释一下", "详细解释", "如何理解", "怎么理解", "怎么做", "为什么", "如何", 
+            "how to", "what is", "what are", "who is", "who are", "why does", "why is",
+            "how does", "define", "definition of", "explain", "briefly explain", "introduction to",
+            "details of", "about", "the difference between", "difference between", "the differences between", 
+            "differences between"
+        )
+        
+        do {
+            oldQuery = query
+            for (qp in questionPrefixes) {
+                if (query.startsWith(qp, ignoreCase = true)) {
+                    query = query.substring(qp.length).trim()
+                }
+                val qpWithSpace = "$qp "
+                if (query.startsWith(qpWithSpace, ignoreCase = true)) {
+                    query = query.substring(qpWithSpace.length).trim()
+                }
+            }
+        } while (query != oldQuery)
+
+        // 4. 剥离中英文常见的口语化/礼貌性或干扰性后缀（多次循环剥离）
+        val suffixes = listOf(
+            "顺便写一个摘要", "写一个摘要", "并写个总结", "写个总结", 
+            "并总结一下", "总结一下", "并写一段总结", "写一段总结", "谢谢你", "谢谢您", "谢谢", "并归纳",
+            "到底是什么意思", "是什么意思", "是什么", "什么意思", "怎么回事", "是怎么回事", 
+            "有哪些", "有什么区别", "的区别", "吗", "呢", "吧", "啊",
+            "thank you very much", "thank you", "thanks", "please", "summarize it", "make a summary",
+            "and write a summary", "and summarize", "mean", "what does it mean",
+            "difference between", "definition", "meaning"
+        )
+        
+        do {
+            oldQuery = query
+            for (suffix in suffixes) {
+                if (query.endsWith(suffix, ignoreCase = true)) {
+                    query = query.substring(0, query.length - suffix.length).trim()
+                }
+                val suffixWithSpace = " $suffix"
+                if (query.endsWith(suffixWithSpace, ignoreCase = true)) {
+                    query = query.substring(0, query.length - suffixWithSpace.length).trim()
+                }
+            }
+        } while (query != oldQuery)
+
+        // 5. 过滤掉单纯的语气助词和高频无关连词（仅针对搜索词最开头或最末尾，去除词网粘连）
+        val grammarParticles = listOf("的", "了", "和", "与", "及", "或", "之", "about", "and", "or", "of", "with")
+        do {
+            oldQuery = query
+            for (gp in grammarParticles) {
+                val gpWithSpaceStart = "$gp "
+                if (query.startsWith(gpWithSpaceStart, ignoreCase = true)) {
+                    query = query.substring(gpWithSpaceStart.length).trim()
+                } else if (query.equals(gp, ignoreCase = true)) {
+                    query = ""
+                }
+                
+                val gpWithSpaceEnd = " $gp"
+                if (query.endsWith(gpWithSpaceEnd, ignoreCase = true)) {
+                    query = query.substring(0, query.length - gpWithSpaceEnd.length).trim()
+                } else if (query.equals(gp, ignoreCase = true)) {
+                    query = ""
+                }
+            }
+        } while (query != oldQuery && query.isNotEmpty())
+
+        // 6. 智能多国语动态长度截断（防止英文单词被拦腰折断）
+        val hasLatin = query.any { it in 'a'..'z' || it in 'A'..'Z' }
+        val maxLen = if (hasLatin) 80 else 36
+        
+        if (query.length > maxLen) {
+            val truncated = query.take(maxLen)
+            query = if (hasLatin && truncated.contains(" ")) {
+                truncated.substringBeforeLast(" ").trim()
+            } else {
+                truncated.trim()
+            }
         }
         
-        return query.ifBlank { rawQuery }
+        // 7. 若清洗后完全为空，则安全降级回退到去除多余空白的最原始查询
+        val finalResult = query.trim()
+        return if (finalResult.isBlank()) rawQuery.trim().replace("\\s+".toRegex(), " ") else finalResult
     }
 
     private suspend fun performClientSideSearch(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {

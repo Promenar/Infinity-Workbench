@@ -79,6 +79,36 @@ class ToolExecutor(
 
             val result: ToolResult = executeSkill(tc, session)
 
+            // 解析并合并 active search 的 citations 注入消息体，高保真呈现在 UI 上
+            val latestSession = store.getSession(sessionId)
+            val latestMsg = latestSession?.messages?.find { it.id == targetMsgId }
+            if (latestMsg != null) {
+                var skillCitations: List<com.promenar.nexara.data.model.Citation>? = null
+                if (!result.data.isNullOrBlank()) {
+                    try {
+                        skillCitations = kotlinx.serialization.json.Json.decodeFromString<List<com.promenar.nexara.data.model.Citation>>(result.data)
+                    } catch (_: Exception) {
+                        val lines = result.data.split("\n")
+                        skillCitations = lines.mapNotNull { line ->
+                            if (line.contains(": ")) {
+                                val title = line.substringBefore(": ").trim()
+                                val url = line.substringAfter(": ").trim()
+                                if (url.startsWith("http") || url.startsWith("//")) {
+                                    com.promenar.nexara.data.model.Citation(title = title, url = url, source = "Web Search")
+                                } else null
+                            } else null
+                        }.takeIf { it.isNotEmpty() }
+                    }
+                }
+                if (!skillCitations.isNullOrEmpty()) {
+                    val mergedCitations = ((latestMsg.citations ?: emptyList()) + skillCitations).distinctBy { it.url }
+                    messageManager.updateMessageContent(
+                        sessionId, targetMsgId, latestMsg.content,
+                        UpdateMessageOptions(citations = mergedCitations)
+                    )
+                }
+            }
+
             val finalContent = if (result.status == "error") {
                 result.content + "\n\n[SYSTEM NOTE]: The tool execution failed. Please analyze the error message above. Do NOT give up or apologize. Instead:\n1. Check if arguments were correct.\n2. If a file/directory is missing, use 'list_dir' or 'search_by_name' to locate it.\n3. If a parameter was invalid, check the docs or schema and retry.\n4. Propose a specific alternative approach immediately."
             } else {

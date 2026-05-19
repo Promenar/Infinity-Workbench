@@ -398,13 +398,10 @@ fun RagProgressCard(
 
     val activePhase = displayPhases.find { it.status == PhaseStatus.ACTIVE }
 
-    // 极端保护：无数据时不展示
-    if (activePhase == null && isComplete == false && hasReferences == false && hasKgPaths == false && hasCitations == false && displayPhases.isEmpty()) return
-
     // 自动匹配当前精细状态描述
     val currentText = when {
         isComplete -> {
-            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 知识与联网审计就绪"
+            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 引用内容就绪"
             else if (hasCitations) "✓ 联网搜索就绪"
             else "✓ 知识检索就绪"
         }
@@ -415,7 +412,7 @@ fun RagProgressCard(
         }
         displayPhases.isNotEmpty() -> "正在准备检索上下文..."
         else -> {
-            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 知识与联网审计就绪"
+            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 引用内容就绪"
             else if (hasCitations) "✓ 联网搜索就绪"
             else "✓ 检索就绪"
         }
@@ -425,7 +422,7 @@ fun RagProgressCard(
         modifier = modifier
             .fillMaxWidth(0.7f)
             .padding(vertical = 4.dp)
-            .clickable(enabled = hasReferences || hasKgPaths || hasCitations) { showDetailsSheet = true },
+            .clickable(enabled = true) { showDetailsSheet = true },
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(

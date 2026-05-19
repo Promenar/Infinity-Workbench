@@ -63,10 +63,10 @@ class RagConfigPersistenceTest {
         every { p.getFloat(RagConfigPersistence.KEY_MEMORY_THRESHOLD, 0.7f) } returns 0.7f
         every { p.getInt(RagConfigPersistence.KEY_DOC_LIMIT, 8) } returns 20
         every { p.getFloat(RagConfigPersistence.KEY_DOC_THRESHOLD, 0.45f) } returns 0.45f
-        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_RERANK, false) } returns true
+        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_RERANK, true) } returns true
         every { p.getInt(RagConfigPersistence.KEY_RERANK_TOP_K, 30) } returns 30
         every { p.getInt(RagConfigPersistence.KEY_RERANK_FINAL_K, 5) } returns 5
-        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_QUERY_REWRITE, false) } returns false
+        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_QUERY_REWRITE, true) } returns false
         every { p.getString(RagConfigPersistence.KEY_QUERY_REWRITE_STRATEGY, "multi-query") } returns "multi-query"
         every { p.getInt(RagConfigPersistence.KEY_QUERY_REWRITE_COUNT, 3) } returns 3
         every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_HYBRID_SEARCH, true) } returns true

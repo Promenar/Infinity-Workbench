@@ -49,7 +49,7 @@ class EmbeddingClientTest {
         val exception = assertThrows<IllegalStateException> {
             client.embedDocuments(listOf("hello"))
         }
-        assertThat(exception.message).contains("base URL")
+        assertThat(exception.message).contains("未配置")
     }
 
     @Test
@@ -67,7 +67,7 @@ class EmbeddingClientTest {
         val exception = assertThrows<IllegalStateException> {
             client.embedDocuments(listOf("hello"))
         }
-        assertThat(exception.message).contains("API key")
+        assertThat(exception.message).contains("API Key 未配置")
     }
 
     @Test

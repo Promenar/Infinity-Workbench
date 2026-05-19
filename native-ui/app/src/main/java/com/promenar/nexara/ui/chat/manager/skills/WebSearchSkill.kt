@@ -10,6 +10,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.ui.chat.manager.WebSearchProvider
 import io.ktor.client.*
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
 class WebSearchSkill(
     private val context: Context,
@@ -43,11 +44,19 @@ class WebSearchSkill(
         return try {
             val (results, citations) = provider.search(query)
             
+            val citationsJson = if (citations.isNotEmpty()) {
+                try {
+                    Json.encodeToString(citations)
+                } catch (_: Exception) {
+                    citations.joinToString("\n") { "${it.title}: ${it.url}" }
+                }
+            } else null
+
             ToolResult(
                 id = "search_${System.currentTimeMillis()}",
                 content = results,
                 status = if (results.isNotEmpty()) "success" else "error",
-                data = if (citations.isNotEmpty()) citations.joinToString("\n") { "${it.title}: ${it.url}" } else null
+                data = citationsJson
             )
         } catch (e: Exception) {
             ToolResult(

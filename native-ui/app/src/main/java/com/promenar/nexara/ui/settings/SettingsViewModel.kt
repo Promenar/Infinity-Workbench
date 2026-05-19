@@ -159,7 +159,7 @@ class SettingsViewModel(
     val embeddingModelId: StateFlow<String> = pm.embeddingModelId
     val rerankModelId: StateFlow<String> = pm.rerankModelId
 
-    private val _loopLimit = MutableStateFlow(prefs.getInt("loop_limit", 15))
+    private val _loopLimit = MutableStateFlow(prefs.getInt("loop_limit", 50))
     val loopLimit: StateFlow<Int> = _loopLimit.asStateFlow()
 
     fun updateLoopLimit(limit: Int) {
@@ -220,7 +220,7 @@ class SettingsViewModel(
         _language.value = prefs.getString("language", "zh") ?: "zh"
         _themeMode.value = prefs.getString("theme_mode", "dark") ?: "dark"
         _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
-        _loopLimit.value = prefs.getInt("loop_limit", 15)
+        _loopLimit.value = prefs.getInt("loop_limit", 50)
     }
 
     fun refreshProviders() {
@@ -402,11 +402,20 @@ class SettingsViewModel(
     }
 
     private fun loadSkills() {
-        val enabledSet = prefs.getStringSet("enabled_skills", setOf(
-            "web_search", "web_fetch", "calculator", "create_tool",
-            "file_read", "file_list", "file_search", "exec_js",
-            "initialize_plan", "update_plan", "get_plan", "drop_plan"
-        ))
+        val allPresetSkills = setOf(
+            "web_search", "web_fetch", "search_tavily", "search_searxng",
+            "calculator", "create_tool", "image_generation",
+            "file_read", "file_write", "file_list", "file_search", "file_diff", "file_patch",
+            "exec_js", "initialize_plan", "update_plan", "get_plan", "drop_plan"
+        )
+        if (!prefs.getBoolean("preset_skills_migrated_v3", false)) {
+            prefs.edit()
+                .putStringSet("enabled_skills", allPresetSkills)
+                .putBoolean("preset_skills_migrated_v3", true)
+                .apply()
+        }
+
+        val enabledSet = prefs.getStringSet("enabled_skills", allPresetSkills)
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
             SkillInfo("web_fetch", app.getString(R.string.skill_web_fetch), app.getString(R.string.skill_web_fetch_desc), enabledSet?.contains("web_fetch") ?: true),

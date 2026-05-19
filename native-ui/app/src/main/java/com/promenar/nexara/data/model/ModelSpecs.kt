@@ -245,14 +245,64 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "Anthropic Generic"
     ),
 
-    // ==================== Google Gemini (2025) ====================
+    // ==================== Google Gemini 阵营 (2025-2026) ====================
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3.1-pro"),
+        contextLength = 2000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, audioOutput = true, videoUnderstanding = true, structuredOutput = true, promptCaching = true),
+        icon = "gemini",
+        note = "Gemini 3.1 Pro (Apr 2026)",
+        maxOutputTokens = 65536,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3.1-flash-lite"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, structuredOutput = true),
+        icon = "gemini",
+        note = "Gemini 3.1 Flash-Lite (Apr 2026)",
+        maxOutputTokens = 65536,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3.1-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, videoUnderstanding = true, structuredOutput = true),
+        icon = "gemini",
+        note = "Gemini 3.1 Flash (Apr 2026)",
+        maxOutputTokens = 65536,
+        knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3-pro"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, videoUnderstanding = true, structuredOutput = true),
+        icon = "gemini",
+        note = "Gemini 3 Pro",
+        maxOutputTokens = 65536,
+        knowledgeCutoff = "202512"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("gemini-3-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, videoUnderstanding = true, structuredOutput = true),
+        icon = "gemini",
+        note = "Gemini 3 Flash",
+        maxOutputTokens = 65536,
+        knowledgeCutoff = "202512"
+    ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("gemini-2.5-pro"),
-        contextLength = 2000000,
+        contextLength = 1000000,
         type = ModelType.CHAT,
         capabilities = ModelCapabilities(vision = true, reasoning = true, structuredOutput = true, audioInput = true, videoUnderstanding = true),
         icon = "gemini",
-        note = "Gemini 2.5 Pro (2M context)"
+        note = "Gemini 2.5 Pro"
     ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("gemini-2.5-flash"),
@@ -326,11 +376,19 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "Gemini 1.0 Pro"
     ),
     ModelSpec(
+        pattern = ModelPattern.RegexPattern(Regex("""gemini-3[.-]""", RegexOption.IGNORE_CASE)),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(vision = true, reasoning = true),
+        icon = "gemini",
+        note = "Gemini 3 Series"
+    ),
+    ModelSpec(
         pattern = ModelPattern.StringPattern("gemini"),
         contextLength = 1000000,
         type = ModelType.CHAT,
         icon = "gemini",
-        note = "Gemini"
+        note = "Gemini Generic"
     ),
     ModelSpec(
         pattern = ModelPattern.StringPattern("google"),
@@ -1363,53 +1421,6 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         note = "Claude Sonnet 4 Series"
     ),
 
-    // ==================== 2026 April — Google Gemini 3 系列 ====================
-    ModelSpec(
-        pattern = ModelPattern.StringPattern("gemini-3.1-pro"),
-        contextLength = 1000000,
-        type = ModelType.CHAT,
-        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, audioOutput = true, videoUnderstanding = true, structuredOutput = true),
-        icon = "gemini",
-        note = "Gemini 3.1 Pro (Apr 2026)",
-        maxOutputTokens = 65536,
-        knowledgeCutoff = "202604"
-    ),
-    ModelSpec(
-        pattern = ModelPattern.StringPattern("gemini-3.1-flash"),
-        contextLength = 1000000,
-        type = ModelType.CHAT,
-        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, videoUnderstanding = true),
-        icon = "gemini",
-        note = "Gemini 3.1 Flash",
-        maxOutputTokens = 65536
-    ),
-    ModelSpec(
-        pattern = ModelPattern.StringPattern("gemini-3-pro"),
-        contextLength = 1000000,
-        type = ModelType.CHAT,
-        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true, videoUnderstanding = true),
-        icon = "gemini",
-        note = "Gemini 3 Pro",
-        maxOutputTokens = 65536
-    ),
-    ModelSpec(
-        pattern = ModelPattern.StringPattern("gemini-3-flash"),
-        contextLength = 1000000,
-        type = ModelType.CHAT,
-        capabilities = ModelCapabilities(vision = true, reasoning = true, audioInput = true),
-        icon = "gemini",
-        note = "Gemini 3 Flash",
-        maxOutputTokens = 65536
-    ),
-    ModelSpec(
-        pattern = ModelPattern.RegexPattern(Regex("""gemini-3[.-]""", RegexOption.IGNORE_CASE)),
-        contextLength = 1000000,
-        type = ModelType.CHAT,
-        capabilities = ModelCapabilities(vision = true, reasoning = true),
-        icon = "gemini",
-        note = "Gemini 3 Series"
-    ),
-
     // ==================== Google Gemma 4 (2026 Apr) ====================
     ModelSpec(
         pattern = ModelPattern.StringPattern("gemma-4-31b"),
@@ -1724,6 +1735,8 @@ private val MODEL_PRICING: List<Pair<ModelPattern, ModelPricing>> = listOf(
     ModelPattern.StringPattern("claude-haiku-4-5") to ModelPricing(1.0, 5.0),
     ModelPattern.StringPattern("gemini-3.1-pro") to ModelPricing(1.875, 7.50),
     ModelPattern.StringPattern("gemini-3.1-flash") to ModelPricing(0.25, 0.75),
+    ModelPattern.StringPattern("gemini-3.1-flash-lite") to ModelPricing(0.25, 1.50),
+    ModelPattern.StringPattern("gemini-3-pro") to ModelPricing(1.25, 5.0),
     ModelPattern.StringPattern("gemini-3-flash") to ModelPricing(0.15, 0.60),
     ModelPattern.StringPattern("deepseek-v4-pro") to ModelPricing(0.60, 2.40),
     ModelPattern.StringPattern("grok-4.1") to ModelPricing(2.50, 10.0),

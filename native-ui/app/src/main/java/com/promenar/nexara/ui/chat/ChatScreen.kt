@@ -311,11 +311,7 @@ fun ChatScreen(
                                 !it.ragReferences.isNullOrEmpty() || !it.citations.isNullOrEmpty() || it.ragReferencesLoading 
                             } ?: group.assistantMessages.lastOrNull()
 
-                            if (ragActiveMsg != null && (
-                                (isGeneratingGroup && ragPhases.isNotEmpty()) || 
-                                !ragActiveMsg.ragReferences.isNullOrEmpty() || 
-                                !ragActiveMsg.citations.isNullOrEmpty()
-                            )) {
+                            if (ragActiveMsg != null) {
                                 val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
                                 val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
                                 val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }

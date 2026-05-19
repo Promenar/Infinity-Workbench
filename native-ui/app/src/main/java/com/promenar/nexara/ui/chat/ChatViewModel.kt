@@ -301,7 +301,7 @@ class ChatViewModel(
     ) {
         val session = store.getSession(sessionId) ?: return
         val prefs = application.getSharedPreferences("nexara_settings", 0)
-        val effectiveLoopLimit = prefs.getInt("loop_limit", 15)
+        val effectiveLoopLimit = prefs.getInt("loop_limit", 50)
         if (loopCount >= effectiveLoopLimit) return
 
         val assistantMsgId = existingAssistantMsgId

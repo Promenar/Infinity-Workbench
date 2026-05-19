@@ -60,7 +60,8 @@ data class GeneratedImageData(
 data class Citation(
     val title: String,
     val url: String,
-    val source: String? = null
+    val source: String? = null,
+    val snippet: String? = null
 )
 
 @Serializable

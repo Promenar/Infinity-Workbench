@@ -220,6 +220,27 @@ class ModelSpecsTest {
         }
 
         @Test
+        @DisplayName("Gemini 3.1 Pro has complete agentic capabilities and 2M context")
+        fun gemini31ProCapabilities() {
+            val spec = findModelSpec("gemini-3.1-pro")!!
+            assertThat(spec.contextLength).isEqualTo(2000000)
+            assertThat(spec.capabilities?.vision).isTrue()
+            assertThat(spec.capabilities?.reasoning).isTrue()
+            assertThat(spec.capabilities?.promptCaching).isTrue()
+            assertThat(spec.capabilities?.audioOutput).isTrue()
+        }
+
+        @Test
+        @DisplayName("Gemini 3 Flash resolves correctly and has vision/reasoning capabilities")
+        fun gemini3FlashCapabilities() {
+            val spec = findModelSpec("gemini-3-flash")!!
+            assertThat(spec.contextLength).isEqualTo(1000000)
+            assertThat(spec.capabilities?.vision).isTrue()
+            assertThat(spec.capabilities?.reasoning).isTrue()
+            assertThat(spec.maxOutputTokens).isEqualTo(65536)
+        }
+
+        @Test
         @DisplayName("GLM Vision matches regex pattern")
         fun glmVision() {
             val spec = findModelSpec("glm-4v")!!

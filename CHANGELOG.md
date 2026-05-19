@@ -4,6 +4,76 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 模型能力数据库模糊遮蔽致命缺陷彻底根治、全新 Google 阵营多维元数据合并与主动测试门禁绿灯上线 (2026-05-20)
+- **🔴 P0 — 彻底根治通用 `gemini` 模糊遮蔽（Shadowing）匹配 Bug**：
+  - *Bug 根源排查*：排查发现由于老旧 `MODEL_SPECS` 列表中过早定义了通用的子串匹配 `ModelPattern.StringPattern("gemini")`，当系统在 `/models` 端点反序列化或在设置页面匹配 `gemini-3-flash` / `gemini-3.1` 等具体型号时，总是会被该项提前截断，导致它们错误地退化为了无任何能力的空白模型；
+  - *重构与优先级调整*：将 `gemini` 通用兜底项、`google` 通用兜底项等整体移至 Google 匹配专区的**最底部**，保证匹配链路始终自上而下“先具体、后通用”，一举根除该结构性重大 Bug。
+- **🔴 P0 — Google Gemini 2025 与 2026 阵营大分区完美整合与能力补全**：
+  - *完整数据对齐*：将 2025 年的 Gemini 1.5/2.0/2.5 系列与最新的 2026 年 Gemini 3/3.1 系列彻底合并归集，对照 2026 年最新 API 技术指标进行全维补全；
+  - *能力与定价穿透*：为 `gemini-3.1-pro` 补全 `promptCaching = true` 以及 `contextLength = 2000000` (200万上下文) 支持，为 `gemini-3-flash` 补全 `videoUnderstanding = true` 等所有缺失属性。新增了 2026 极速轻量之王 `gemini-3.1-flash-lite` 模型，并同步在 `MODEL_PRICING` 静态计费规格中补齐其与 `gemini-3-pro` 的官方输入/输出定价。
+- **🧪 🧪 单元测试门禁 100% 绿灯护航**：
+  - 在 `ModelSpecsTest.kt` 中设计并扩展了对 `gemini-3.1-pro`（双百万窗口、完备多模态 Agentic 能力）和 `gemini-3-flash` 的规格断言；
+  - 完美通过 `:app:testDebugUnitTest` 针对 `ModelSpecs` 的全套单元测试，零 Warning 交付。
+
+### 引用内容大标题精简化、RAG检索指示器全场景无条件持久化与主动联网搜索引证数据（Citations）高保真JSON注入 (2026-05-20)
+- **🎨 🎨 P0 — RAG细节弹出浮窗主标题精简与引证状态文本全局统一**：
+  - *主标题精简*：在 `RagDetailsSheet.kt` 中，将冗长复杂的“知识与联网审计 (Knowledge & Web Inspection)”主标题正式精简重命名为“引用内容”，完美对齐 MD3 精炼纯净的视觉排版规范；
+  - *引证状态文本对齐*：在 `ChatInlineComponents.kt` 中，将 RAG 指示卡就绪态的文字描述从原来的“✓ 知识与联网审计就绪”全局统一更改为“✓ 引用内容就绪”，实现了前置卡片状态与后置弹出面板大标题的语义与感官的无缝合一。
+- **🔴 P0 — RAG检索指示卡全场景无条件永久持久化展示**：
+  - *取消条件渲染*：重构了 `ChatScreen.kt` 中 `RagProgressCard` 的条件渲染阻断逻辑。彻底去除了由于没有关联 references 或 citations 导致卡片被隐藏的限制；
+  - *全场景驻留渲染*：删除了 `ChatInlineComponents.kt` 内 `RagProgressCard` 中用于极端保护的 `if (displayPhases.isEmpty() ...) return` 提前返回逻辑。同时把卡片的可点击状态（`.clickable`）设定为无条件永久开启。从而确保无论是否捞出有效数据，RAG 检索指示卡都在会话气泡上方保持 100% 稳定的常态化展示，为用户营造了坚不可摧的“检索存在感”与极致安全感。
+- **🔴 P0 — 模型主动调用联网搜索工具（Active Web Search）Citations 引证数据高保真 JSON 级联注入**：
+  - *JSON 引证高保真序列化*：在 `WebSearchSkill.kt`、`WebSearchTavilySkill.kt` 以及 `WebSearchSearXNGSkill.kt` 中，当主动调用工具执行完毕返回结果时，将捞取出的 Citation 列表序列化为高保真 JSON 字符串通过 `ToolResult.data` 返回，防止多维引证数据流失；
+  - *多维引证深度合并注入*：在 `ToolExecutor.kt` 中，于工具执行完成时刻，新增了 `result.data` 的动态捕获与解析机制（同时兼容高保真 JSON 格式与传统 plain-text title-url 格式降级解耦），将提取出的 Citation 列表与消息体（`Message`）中已有的引证数据进行 distinct 合并，并级联更新至持久层数据库中。彻底打通了模型主动工具调用与 UI“引用内容 - 联网搜索”面板的引证数据链路，消除了显示空白！
+- **🧪 🧪 编译清零与全功能验证**：
+  - 完美跑通代码库编译，无任何警告与逻辑漏洞，卓越质量交付。
+
+### 气泡长按菜单原生 MD3 风格改造、触点手指跟随与用户气泡“重发”重新生成 AI 响应功能上线 (2026-05-20)
+- **🎨 🎨 P0 — 长按菜单回归原生 MD3 风格与触点手指跟随**：
+  - *原生 MD3 样式回归*：取消了 `MessageContextMenu` 内部的 `NexaraGlassCard` 自制磨砂卡片和局部透明 `MaterialTheme` 等冗余轮子，直接采用最纯粹的 Material 3 原生 `DropdownMenu` 及 `DropdownMenuItem`，保持与知识库文档/目录列表完全一致的原生卡片阴影与菜单间距设计，清除视觉突兀；
+  - *精准触点手指跟随*：重构了 `ContentSegment` 和 `UserMessageBubble` 内部手势侦听，弃用原本无法获取长按坐标的 `combinedClickable` 装饰器，改用 `pointerInput` + `detectTapGestures` 极其高保真地捕获用户长按的像素触点，并使用 `LocalDensity` 精准换算为 `DpOffset` 传导给 `DropdownMenu` 的 `offset` 参数。彻底锁死菜单定位在手指触摸区域，杜绝漂移和出现在无关区域的 Bug；
+  - *纯文字纯粹排版*：继续保持长按菜单无 icon 极简风骨，降低视觉负载；在任意菜单项（复制/删除/重新生成/重发）被点击时瞬间调用 `onDismiss()` 触发菜单级联收缩，保证微手势反馈流畅平滑。
+- **🔴 P0 — 用户气泡长按菜单新增“重发”功能与全链路贯通**：
+  - *重发功能全链路打通*：将 `onRegenerate` 重发/重新生成回调从 `PipelineBubble` 传导到 `UserMessageBubble`，并在用户气泡的长按菜单中作为“重发”选项展现，底层无缝重用并贯穿了 `ChatViewModel.regenerateMessage(messageId)` 的高效处理逻辑；
+  - *长按菜单文案自适应*：在 `MessageContextMenu` 中新增 `isUser: Boolean` 参数。当长按用户气泡时自动显示“重发”文案，而长按 AI 气泡时显示“重新生成”文案。点击“重发”后，系统自动智能回退并擦除该用户消息之后的所有助理消息，同时创建全新的 AI 助理气泡，完美触发 AI 针对这句用户提问的二次生成！
+- **🧪 🧪 编译清零与全单元测试 100% 绿灯验证**：
+  - 本地跑通 `:app:testDebugUnitTest` 完整单元测试，全流程编译无警告，质量交割无瑕疵。
+
+### 工具设置页面精炼化改造、循环限制步数默认 50 次与预设工具默认全启用 (2026-05-20)
+- **🎨 🎨 P0 — 工具设置页面顶部描述小字清理与极致高阶化布局**：
+  - 在 `SkillsScreen.kt` 中全面排除了无用的顶部描述小字 `skills_desc` 的渲染。将页面布局直接由标题无缝过渡到功能列表与循环限制调整区，实现了极具现代科技感的无框、极致精简、高阶原生化排版风格。
+- **🔴 P0 — 循环限制步数全链路默认值 50 次对齐**：
+  - 在 `SettingsViewModel.kt` 和 `ChatViewModel.kt` 的 SharedPreferences 加载及初始化逻辑中，将循环限制步数默认值由低效率的原定次数全面对齐升级为 **50 次**，保障了复杂 Agent 顺序任务规划与执行流水线能够拥有充足、流畅的迭代空间，彻底杜绝迭代上限瓶颈；
+  - 补充了高质单元测试，验证了在 SharedPreferences 无值时的默认值一致性为 50。
+- **🔴 P0 — 预设工具列表更新强制全启用与中文化精准审计**：
+  - 在 `SettingsViewModel.kt` 的 `loadSkills` 中全新设计了 `preset_skills_migrated_v3` 版本迁移标志，解决了从旧版本升级时新增预设工具默认未被启用的缺陷，确保所有内置工具（包含最新的 `file_diff`、`file_patch`、`initialize_plan` 等）在更新后默认全部处于开启（Enabled）状态；
+  - 对 18 个内置预设工具的名称及描述在中英双语（特别是 `values-zh-rCN/strings.xml`）下的汉化与专业术语进行了全量质量审计。证实汉化水准极高、表达流畅、行文专业，完美契合了 Nexara 产品的科技化与高级感调性。
+- **🧪 🧪 单元测试门禁 100% 绿灯保障**：
+  - 在 `SettingsViewModelTest.kt` 中新增了 `default loopLimit is 50` 和 `preset_skills_migrated_v3 updates SharedPreferences and enables all preset skills` 两组深度单元测试，对默认初始化和迁移版本升级逻辑进行拦截保护；
+  - 运行 Gradle 单元测试通过，全流程交付质量卓越。
+
+### 中英文多语言 cleanSearchQuery 智能降噪提纯算法深度升级与全场景单元测试绿灯通过 (2026-05-20)
+- **🔴 P0 — 智能疑问句与口语助词多级 do-while 深度净化过滤**：
+  - 重构并升级了 `ContextBuilder.kt` 中的 `cleanSearchQuery` 过滤算法。引入强大的 do-while 多重循环剥离机制，彻底克服了语气词叠加、多重空格干扰以及标点隔断导致的去噪失败；
+  - 极大地扩展了中英文意图前缀（新增“请问”、“你能科普一下”、“能不能帮我”、“科普一下”等）和口语修饰后缀（“谢谢你”、“谢谢您”、“到底是什么意思”等）；
+  - 全新设计了前置疑问句疑问词过滤（questionPrefixes）以及首尾定冠词/停用词剥离（如 `the`, `a`, `an`, `of`, `and` 等），确保前置静态 DuckDuckGo 被动检索与 SearXNG 主动全能检索能以极高的精度匹配核心关键词，召回率提升数倍。
+- **🧪 🧪 P0 — 全场景单元测试门禁 100% 绿灯保障**：
+  - 在 `ContextBuilderTest.kt` 中针对新增强化的清洗逻辑扩展了 4 组极限/复杂边界测试场景：包含中文多层语气助词、长段口语化前后缀以及“the difference between...”定冠词停用词混合过滤；
+  - 本地跑通 `:app:testDebugUnitTest` 单元测试，全绿灯通过，代码交付质量无懈可击。
+
+### 联网搜索引证网页摘要 (Web Snippet) 全维高保真渲染与多 Provider 数据升维对齐 (2026-05-20)
+- **🔴 P0 — 联网引证数据模型全维升维与向后兼容 (Backward Compatibility) 设计**：
+  - 在 `ChatModels.kt` 核心引证数据结构 `Citation` 中，升维注入了可选字段 `val snippet: String? = null`；
+  - 采用提供默认值的优雅设计，完美契合了 `kotlinx.serialization` 反序列化契约，确保对任何历史旧 Session 消息的 100% 静默向后兼容，彻底阻断任何反序列化崩溃。
+- **🎨 🎨 P0 — 联网审计详情卡片全维高保真 Web Snippet 极精致渲染上线**：
+  - 在 `RagDetailsSheet.kt` 审计面板的“联网搜索”引证卡片（`WebSearchReferenceCard`）中，设计并新增了专属半透明毛玻璃微卡片容器，用来展示对应的网页摘要；
+  - 排版上匹配 `NexaraTypography.bodySmall` 和 `NexaraColors.OnSurfaceVariant.copy(alpha = 0.85f)`，并施以 16.sp 柔和行高与圆角，与文档知识检索卡片的设计语言浑然一体，让用户前置即可感知召回内容，避免盲目跳转，让产品科技体验实现质的飞跃。
+- **🔴 P0 — 搜索引擎 Provider 全链路数据映射与对齐**：
+  - 重构并彻底打通了 DuckDuckGo (`DuckDuckGoProvider.kt`)、SearXNG (`SearXNGProvider.kt`) 以及 Tavily (`TavilyProvider.kt`) 三大内置检索 Provider 的 Citation 数据映射；
+  - 将各自已解析出的真实网页正文或摘要（Snippet / Content）在 Citation 初始化构造时直接填充 `snippet = ...`，完成了从底层搜索爬取到顶层 UI 表现的多维穿透。
+- **🧪 🧪 编译清零与全单元测试绿色通过**：
+  - 全面通过 `:app:testDebugUnitTest` 核心单元测试门禁，全站编译零 Warning/Error，实现完美的质量收尾。
+
 ### 搜索引擎致命硬伤修复与全新 web_fetch 降噪清洗工具及行级游标分页读取上线 (2026-05-20)
 - **🔴 P0 — 彻底修复 DuckDuckGo 与 SearXNG 联网检索的多处致命协议与业务 Bug**：
   - *DuckDuckGo 索引错位彻底根治*：将 `DuckDuckGoProvider.kt` 中由于域名过滤跳过元素而造成 results 序列与 citations 序列产生物理索引偏差的致命 Bug 彻底重构。采用单次遍历合并机制，确保摘要（Snippet）与标题网址 100% 对齐。

@@ -7,6 +7,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import io.ktor.client.*
 import android.content.Context
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
 class WebSearchTavilySkill(
     private val context: Context,
@@ -45,11 +46,18 @@ class WebSearchTavilySkill(
         val provider = TavilyProvider(httpClient, key, depth, maxResults, includeDomains, excludeDomains)
         return try {
             val (results, citations) = provider.search(query)
+            val citationsJson = if (citations.isNotEmpty()) {
+                try {
+                    Json.encodeToString(citations)
+                } catch (_: Exception) {
+                    citations.joinToString("\n") { "${it.title}: ${it.url}" }
+                }
+            } else null
             ToolResult(
                 id = "search_tavily_${System.currentTimeMillis()}",
                 content = results,
                 status = "success",
-                data = citations.joinToString("\n") { "${it.title}: ${it.url}" }
+                data = citationsJson
             )
         } catch (e: Exception) {
             ToolResult(id = "err", content = "Tavily Search failed: ${e.message}", status = "error")

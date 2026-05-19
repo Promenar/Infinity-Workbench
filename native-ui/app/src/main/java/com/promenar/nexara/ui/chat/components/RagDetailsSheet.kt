@@ -77,7 +77,7 @@ fun RagDetailsSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
             Text(
-                text = "知识与联网审计 (Knowledge & Web Inspection)",
+                text = "引用内容",
                 style = NexaraTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = NexaraColors.OnSurface,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -239,6 +239,23 @@ private fun WebSearchReferenceCard(citation: Citation, rank: Int) {
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         style = NexaraTypography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
                         color = NexaraColors.Tertiary
+                    )
+                }
+            }
+
+            // Web snippet / abstract text block
+            if (!citation.snippet.isNullOrBlank()) {
+                Surface(
+                    color = NexaraColors.SurfaceContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = citation.snippet,
+                        style = NexaraTypography.bodySmall.copy(
+                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.85f),
+                            lineHeight = 16.sp
+                        ),
+                        modifier = Modifier.padding(10.dp)
                     )
                 }
             }

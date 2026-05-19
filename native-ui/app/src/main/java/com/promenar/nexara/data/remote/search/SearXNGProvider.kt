@@ -59,7 +59,7 @@ class SearXNGProvider(
                 
                 if (title.isNotEmpty() && url.isNotEmpty()) {
                     if (excludeDomains.any { domain -> url.contains(domain, ignoreCase = true) }) return@forEach
-                    citations.add(Citation(title = title, url = url, source = "SearXNG"))
+                    citations.add(Citation(title = title, url = url, source = "SearXNG", snippet = snippet))
                     contextBuilder.append("[${citations.size}] $title\n$url\n$snippet\n\n")
                 }
             }

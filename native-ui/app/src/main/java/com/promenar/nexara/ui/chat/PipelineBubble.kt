@@ -8,6 +8,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -110,7 +113,8 @@ fun PipelineBubble(
             message = msg,
             fontSize = fontSize,
             onDelete = { onDelete?.invoke(msg.id) },
-            onCopy = { onCopy?.invoke(msg.content) }
+            onCopy = { onCopy?.invoke(msg.content) },
+            onRegenerate = { onRegenerate?.invoke(msg.id) }
         )
         return
     }
@@ -658,16 +662,25 @@ private fun ContentSegment(
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
+    val density = LocalDensity.current
 
     Box {
         Surface(
             color = Color.Transparent,
             modifier = Modifier
                 .fillMaxWidth()
-                .combinedClickable(
-                    onLongClick = { showMenu = true },
-                    onClick = {}
-                )
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = { offset ->
+                            pressOffset = DpOffset(
+                                x = with(density) { offset.x.toDp() },
+                                y = with(density) { offset.y.toDp() }
+                            )
+                            showMenu = true
+                        }
+                    )
+                }
         ) {
             MarkdownText(
                 markdown = content,
@@ -691,7 +704,8 @@ private fun ContentSegment(
             onDelete = {
                 onDelete?.invoke()
                 showMenu = false
-            }
+            },
+            offset = pressOffset
         )
     }
 }
@@ -740,10 +754,13 @@ fun UserMessageBubble(
     fontSize: Int,
     modifier: Modifier = Modifier,
     onDelete: (() -> Unit)? = null,
-    onCopy: (() -> Unit)? = null
+    onCopy: (() -> Unit)? = null,
+    onRegenerate: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
+    val density = LocalDensity.current
     val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
     val timestamp = remember(message.createdAt) { timeFormat.format(java.util.Date(message.createdAt)) }
 
@@ -758,10 +775,17 @@ fun UserMessageBubble(
                 border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
                 modifier = Modifier
                     .widthIn(max = 280.dp)
-                    .combinedClickable(
-                        onLongClick = { showMenu = true },
-                        onClick = {}
-                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = { offset ->
+                                pressOffset = DpOffset(
+                                    x = with(density) { offset.x.toDp() },
+                                    y = with(density) { offset.y.toDp() }
+                                )
+                                showMenu = true
+                            }
+                        )
+                    }
             ) {
                 Column {
                     if (!message.userImages.isNullOrEmpty()) {
@@ -803,11 +827,13 @@ fun UserMessageBubble(
                     onCopy?.invoke() ?: copyToClipboard(context, message.content)
                     showMenu = false
                 },
-                onRegenerate = null,
+                onRegenerate = onRegenerate,
                 onDelete = {
                     onDelete?.invoke()
                     showMenu = false
-                }
+                },
+                isUser = true,
+                offset = pressOffset
             )
         }
         Text(
@@ -852,7 +878,7 @@ private fun StreamingCursor() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  MessageContextMenu — 磨砂玻璃态消息上下文菜单
+//  MessageContextMenu — 原生 MD3 消息上下文菜单
 // ─────────────────────────────────────────────────────────────────
 
 @Composable
@@ -861,65 +887,52 @@ fun MessageContextMenu(
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
     onRegenerate: (() -> Unit)? = null,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    isUser: Boolean = false,
+    offset: DpOffset = DpOffset.Zero
 ) {
-    MaterialTheme(
-        shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(16.dp))
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        offset = offset
     ) {
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = onDismiss,
-            modifier = Modifier
-                .background(Color.Transparent)
-                .width(160.dp)
-        ) {
-            NexaraGlassCard(
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 4.dp)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("复制正文", style = NexaraTypography.labelMedium) },
-                        leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(16.dp)) },
-                        onClick = onCopy
-                    )
-                    
-                    if (onRegenerate != null) {
-                        DropdownMenuItem(
-                            text = { Text("重新生成", style = NexaraTypography.labelMedium) },
-                            leadingIcon = { Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(16.dp)) },
-                            onClick = onRegenerate
-                        )
-                    }
-
-                    HorizontalDivider(
-                        color = NexaraColors.OutlineVariant.copy(alpha = 0.2f),
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-
-                    DropdownMenuItem(
-                        text = { 
-                            Text(
-                                text = "删除消息", 
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Error
-                            ) 
-                        },
-                        leadingIcon = { 
-                            Icon(
-                                imageVector = Icons.Rounded.DeleteOutline, 
-                                contentDescription = null, 
-                                tint = NexaraColors.Error, 
-                                modifier = Modifier.size(16.dp)
-                            ) 
-                        },
-                        onClick = onDelete
-                    )
-                }
+        DropdownMenuItem(
+            text = { Text("复制正文", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+            onClick = {
+                onCopy()
+                onDismiss()
             }
+        )
+        
+        if (onRegenerate != null) {
+            DropdownMenuItem(
+                text = { 
+                    Text(
+                        text = if (isUser) "重发" else "重新生成", 
+                        style = NexaraTypography.labelMedium,
+                        color = NexaraColors.OnSurface
+                    ) 
+                },
+                onClick = {
+                    onRegenerate()
+                    onDismiss()
+                }
+            )
         }
+
+        DropdownMenuItem(
+            text = { 
+                Text(
+                    text = "删除消息", 
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.Error
+                ) 
+            },
+            onClick = {
+                onDelete()
+                onDismiss()
+            }
+        )
     }
 }
 

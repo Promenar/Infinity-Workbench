@@ -135,13 +135,6 @@ fun SkillsScreen(
         scrollable = true
     ) {
         Column(modifier = Modifier.padding(bottom = 32.dp)) {
-            Text(
-                stringResource(R.string.skills_desc),
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant,
-                modifier = Modifier.padding(bottom = 20.dp)
-            )
-
             NexaraGlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = NexaraShapes.large as RoundedCornerShape

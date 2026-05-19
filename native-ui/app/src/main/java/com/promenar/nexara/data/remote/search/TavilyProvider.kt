@@ -52,7 +52,7 @@ class TavilyProvider(
                 val content = obj["content"]?.jsonPrimitive?.content ?: ""
                 
                 if (title.isNotEmpty() && url.isNotEmpty()) {
-                    citations.add(Citation(title = title, url = url, source = "Tavily"))
+                    citations.add(Citation(title = title, url = url, source = "Tavily", snippet = content))
                     contextBuilder.append("[${index + 1}] $title\n$url\n$content\n\n")
                 }
             }
