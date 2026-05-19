@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,7 +37,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AgentSessionsScreen(
     agentId: String,
@@ -65,6 +66,14 @@ fun AgentSessionsScreen(
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         contentWindowInsets = WindowInsets.systemBars,
+        topBar = {
+            AgentSessionHeader(
+                agentName = agentName,
+                sessionCount = sessions.size,
+                onBack = onNavigateBack,
+                onSettings = onNavigateToAgentEdit
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
@@ -99,14 +108,6 @@ fun AgentSessionsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            AgentSessionHeader(
-                agentName = agentName,
-                sessionCount = sessions.size,
-                onBack = onNavigateBack,
-                onSettings = onNavigateToAgentEdit,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-            )
-
             if (sessions.isEmpty() && searchQuery.isEmpty()) {
                 EmptySessionsState(
                     onCreateSession = {
@@ -121,7 +122,7 @@ fun AgentSessionsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 20.dp, end = 20.dp,
-                        top = 0.dp, bottom = 120.dp
+                        top = 8.dp, bottom = 120.dp
                     ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -170,44 +171,45 @@ fun AgentSessionsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AgentSessionHeader(
     agentName: String,
     sessionCount: Int,
     onBack: () -> Unit,
-    onSettings: () -> Unit,
-    modifier: Modifier = Modifier
+    onSettings: () -> Unit
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        NexaraBackButton(onClick = onBack)
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = agentName,
-                style = NexaraTypography.headlineLarge,
-                color = NexaraColors.OnSurface
-            )
-            Text(
-                text = stringResource(R.string.sessions_count_format, sessionCount),
-                style = NexaraTypography.labelMedium.copy(
+    TopAppBar(
+        title = {
+            Column {
+                Text(
+                    text = agentName,
+                    style = NexaraTypography.titleMedium,
+                    color = NexaraColors.OnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(R.string.sessions_count_format, sessionCount),
+                    style = NexaraTypography.labelSmall,
                     color = NexaraColors.OnSurfaceVariant
                 )
-            )
-        }
-
-        IconButton(onClick = onSettings) {
-            Icon(
-                imageVector = Icons.Rounded.Settings,
-                contentDescription = stringResource(R.string.sessions_cd_settings),
-                tint = NexaraColors.OnSurface
-            )
-        }
-    }
+            }
+        },
+        navigationIcon = {
+            NexaraBackButton(onClick = onBack)
+        },
+        actions = {
+            IconButton(onClick = onSettings) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = stringResource(R.string.sessions_cd_settings),
+                    tint = NexaraColors.OnSurface
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+    )
 }
 
 @Composable

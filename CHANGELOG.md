@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 跨页面 Header 窄版 TopAppBar 一致性重构与对齐 (2026-05-19)
+- **🟡 P1 — 助手会话列表与主会话界面 Header 高度与元素对齐调优**：
+  - *问题*：原“助手的会话列表页面”与“主会话界面”采用了不同的 Header 栏组件（前者为自定义大标题 Row，后者为窄版 TopAppBar），导致标题字号不一致（大字号 VS 窄版中字号）、返回按钮在切换时产生高度和左右位置跳跃，违和感强烈。
+  - *修复*：
+    - 将 `AgentSessionsScreen.kt` 的自定义 Row Header 彻底重构为标准的窄版 `TopAppBar` 布局，采用一模一样的字体样式（大标题对应 `NexaraTypography.titleMedium`，副标题“1个会话”对应 `NexaraTypography.labelSmall`）。
+    - 将重构后的 `AgentSessionHeader` 组件挂载在 `Scaffold` 的 `topBar` 参数中，与主会话界面挂载方式 100% 对齐。
+    - 移除原本 `Column` 顶部的 `AgentSessionHeader` 调用，并调整 `LazyColumn` 顶部间距 `top = 8.dp` 以防局促感。
+    - 在切换页面时，实现了返回按钮和标题栏位置、文字大小的像素级完美重合，消除了任何物理跳跃。
+  - *变更文件 (1)*：
+    - 修改: [AgentSessionsScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentSessionsScreen.kt)
+
 ### Room 数据库表重建迁移与 Schema 闪退终极根治 — v16 全面统合 (2026-05-19)
 - **🔴 P0 — 根治 Room 数据库升级过程中 Schema 不匹配导致的致命闪退缺陷**：
   - *问题*：用户合并最新代码后，由于此前测试/开发分支中 sessions、messages、vectors、kg_nodes、kg_edges 和 task_nodes 表结构在本地的早期残留不一致（例如 9e8f2bb 提交中对 task_nodes 表的 sort_order、description、status、is_collapsed 分别新增了 @ColumnInfo(defaultValue = ...) 且在 SQL 层面修改了索引名称为 index_task_nodes_...，而本地老旧 task_nodes 表仍然是没有这些默认值和旧名索引残留的旧状态），导致 Room 进行 Schema 校验时抛出 IllegalStateException: Migration didn't properly handle: sessions/messages/vectors/kg_nodes/task_nodes 致命崩溃。
