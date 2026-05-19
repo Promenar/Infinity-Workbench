@@ -5,15 +5,19 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
 ![Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg)
 ![Version](https://img.shields.io/badge/version-1.0.0-6366F1.svg)
-![Progress](https://img.shields.io/badge/progress-98%25-brightgreen.svg)
+![Stage](https://img.shields.io/badge/stage-early--preview-orange.svg)
 
 > Android 端 BYOK 开源 AI 客户端 — 原生 Kotlin + Jetpack Compose 构建，融合 RAG 知识引擎与知识图谱的智能记忆外脑。
+>
+> ⚠️ **当前为初期预览版本，部分功能可能存在不稳定，持续迭代中。**
 
 ---
 
 ## English
 
-Nexara is a BYOK (Bring Your Own Key) AI client for Android, built natively with Kotlin and Jetpack Compose Material Design 3. It focuses on local-first data privacy, beautiful native UI, and deep integration of RAG + Knowledge Graph for long-form writing and knowledge management.
+Nexara is a BYOK (Bring Your Own Key) AI client for Android, built natively with Kotlin and Jetpack Compose Material Design 3. Similar in category to desktop AI clients, but tailored for mobile — focusing on local-first data privacy, native touch interactions, and deep integration of RAG + Knowledge Graph for long-form writing and knowledge management.
+
+> ⚠️ **Early preview release. Some features may be unstable. Actively iterating.**
 
 ### What Makes Nexara Different
 
@@ -66,7 +70,9 @@ Foreground Service for uninterrupted AI generation when switching apps. Architec
 
 ## 中文
 
-Nexara 是一款 Android 端 BYOK（自带密钥）开源 AI 客户端，采用 Kotlin + Jetpack Compose Material Design 3 原生构建。聚焦本地优先的数据隐私、精美的原生视觉体验，以及 RAG 知识引擎与知识图谱的深度融合，为长篇写作与知识管理提供强大的智能记忆外脑。
+Nexara 是一款 Android 端 BYOK（自带密钥）开源 AI 客户端，采用 Kotlin + Jetpack Compose Material Design 3 原生构建。产品类型与桌面端 AI 客户端近似，但受限于移动端形态，聚焦本地优先的数据隐私、原生触屏交互体验，以及 RAG 知识引擎与知识图谱的深度融合，为长篇写作与知识管理提供智能记忆外脑。
+
+> ⚠️ **当前为初期预览版本，部分功能可能存在不稳定，持续迭代中。**
 
 ### Nexara 的独特之处
 
