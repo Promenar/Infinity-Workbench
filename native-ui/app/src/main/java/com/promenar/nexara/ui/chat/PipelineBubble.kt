@@ -203,7 +203,7 @@ fun PipelineBubble(
         ) {
             val metaStyle = NexaraTypography.labelSmall.copy(
                 color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                fontSize = 11.sp
+                fontSize = (fontSize - 2).coerceAtLeast(9).sp
             )
             if (!lastMsg.modelId.isNullOrBlank()) {
                 Text(
@@ -221,7 +221,7 @@ fun PipelineBubble(
         if (lastMsg.isError && lastMsg.errorMessage != null) {
             Text(
                 text = lastMsg.errorMessage!!,
-                style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
+                style = NexaraTypography.bodyMedium.copy(fontSize = (fontSize - 2).coerceAtLeast(10).sp),
                 color = NexaraColors.Error,
                 modifier = Modifier.padding(top = 6.dp, start = 4.dp)
             )
@@ -439,7 +439,7 @@ private fun InlineThinkingRow(
                 }
                 Text(
                     text = if (isGenerating) "正在思考" else "思考完成",
-                    style = NexaraTypography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                    style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 1).coerceAtLeast(10).sp, fontWeight = FontWeight.Medium),
                     color = NexaraColors.Primary
                 )
                 Spacer(modifier = Modifier.weight(1f))
@@ -559,7 +559,7 @@ private fun InlineToolRow(
                 Text(
                     text = toolName,
                     style = NexaraTypography.labelSmall.copy(
-                        fontSize = 12.sp,
+                        fontSize = (fontSize - 1).coerceAtLeast(10).sp,
                         fontWeight = FontWeight.Medium,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     ),
@@ -568,7 +568,7 @@ private fun InlineToolRow(
                 if (hasError && !isExecuting) {
                     Text(
                         text = "指令有误",
-                        style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
+                        style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 3).coerceAtLeast(9).sp),
                         color = NexaraColors.Error.copy(alpha = 0.8f)
                     )
                 }
@@ -604,7 +604,7 @@ private fun InlineToolRow(
                                     modifier = Modifier.padding(8.dp),
                                     style = NexaraTypography.labelSmall.copy(
                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                        fontSize = 10.sp,
+                                        fontSize = (fontSize - 3).coerceAtLeast(9).sp,
                                         color = NexaraColors.OnSurfaceVariant
                                     )
                                 )
@@ -626,9 +626,9 @@ private fun InlineToolRow(
                                     text = result.content!!.take(300) + if (result.content!!.length > 300) "…" else "",
                                     modifier = Modifier.padding(8.dp),
                                     style = NexaraTypography.labelSmall.copy(
-                                        fontSize = 10.sp,
+                                        fontSize = (fontSize - 3).coerceAtLeast(9).sp,
                                         color = NexaraColors.OnSurfaceVariant,
-                                        lineHeight = 14.sp
+                                        lineHeight = ((fontSize - 3).coerceAtLeast(9) * 1.4).sp
                                     ),
                                     maxLines = 4
                                 )
@@ -814,7 +814,7 @@ fun UserMessageBubble(
             text = timestamp,
             style = NexaraTypography.labelSmall.copy(
                 color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                fontSize = 11.sp
+                fontSize = (fontSize - 2).coerceAtLeast(9).sp
             ),
             modifier = Modifier.padding(top = 4.dp, end = 4.dp)
         )

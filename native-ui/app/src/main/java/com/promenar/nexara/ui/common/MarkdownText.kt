@@ -460,6 +460,7 @@ private fun MarkdownSafe(
             table = { model ->
                 NexaraTableWidget(
                     model = model,
+                    fontSize = fontSize,
                     modifier = Modifier
                         .padding(vertical = 8.dp)
                         .fillMaxWidth()

@@ -78,6 +78,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import com.promenar.nexara.data.manager.ProviderManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -799,6 +800,9 @@ private fun SettingsPanel(
     val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
     val ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
 
+    val presetRerankModel by ProviderManager.getInstance().rerankModelId.collectAsState()
+    val isRerankAvailable = presetRerankModel.isNotBlank()
+
     var currentSummaryThreshold by remember(params.autoSummaryThreshold) { mutableStateOf(params.autoSummaryThreshold.toFloat()) }
     var currentActiveWindow by remember(params.activeContextWindow) { mutableStateOf(params.activeContextWindow) }
     
@@ -894,32 +898,6 @@ private fun SettingsPanel(
         }
 
         item {
-            val compressionState by chatViewModel.compressionState.collectAsState()
-            Button(
-                onClick = { chatViewModel.compressContext() },
-                enabled = !compressionState.isCompressing,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = NexaraColors.Primary,
-                    disabledContainerColor = NexaraColors.Primary.copy(alpha = 0.4f)
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.Compress,
-                    null,
-                    modifier = Modifier.size(16.dp),
-                    tint = if (compressionState.isCompressing) NexaraColors.OnSurfaceVariant else NexaraColors.OnPrimary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (compressionState.isCompressing) compressionState.detail else stringResource(R.string.chat_context_btn_compress),
-                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold)
-                )
-            }
-        }
-
-        item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ToolToggleRow(stringResource(R.string.sheet_settings_memory), Icons.Rounded.History, memoryEnabled) { 
                     memoryEnabled = it
@@ -933,9 +911,22 @@ private fun SettingsPanel(
                     docsEnabled = it
                     chatViewModel.updateRagOptions(chatViewModel.currentRagOptions.value.copy(enableDocs = it))
                 }
-                ToolToggleRow(stringResource(R.string.sheet_tool_rerank), Icons.Rounded.Sync, rerankEnabled) { 
+                ToolToggleRow(
+                    label = stringResource(R.string.sheet_tool_rerank),
+                    icon = Icons.Rounded.Sync,
+                    checked = isRerankAvailable && rerankEnabled,
+                    enabled = isRerankAvailable
+                ) { 
                     rerankEnabled = it
                     chatViewModel.updateRagOptions(chatViewModel.currentRagOptions.value.copy(enableRerank = it))
+                }
+                if (!isRerankAvailable) {
+                    Text(
+                        text = "⚠️ 未配置默认重排模型，重排序已强制静默禁用",
+                        style = NexaraTypography.bodySmall.copy(fontSize = 11.sp),
+                        color = NexaraColors.StatusWarning.copy(alpha = 0.85f),
+                        modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp)
+                    )
                 }
                 ToolToggleRow(stringResource(R.string.sheet_settings_kg), Icons.Rounded.Psychology, kgEnabled) { 
                     kgEnabled = it
@@ -1036,14 +1027,16 @@ private fun ToolToggleRow(
     label: String,
     icon: ImageVector,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val alpha = if (enabled) 1f else 0.4f
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(NexaraColors.SurfaceLow)
-            .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(10.dp))
+            .alpha(alpha)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1052,6 +1045,7 @@ private fun ToolToggleRow(
         Text(label, style = NexaraTypography.bodyMedium.copy(fontSize = 14.sp), color = NexaraColors.OnSurface, modifier = Modifier.weight(1f))
         Switch(
             checked = checked,
+            enabled = enabled,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = NexaraColors.InversePrimary,

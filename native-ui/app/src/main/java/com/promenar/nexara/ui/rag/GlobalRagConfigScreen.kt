@@ -63,6 +63,7 @@ import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.data.rag.RagConfiguration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,17 +76,13 @@ fun GlobalRagConfigScreen(
     val config by viewModel.config.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
     var clearWithGraph by remember { mutableStateOf(true) }
+    var showSummaryTemplateEditor by remember { mutableStateOf(false) }
 
     NexaraPageLayout(
         title = stringResource(R.string.rag_config_title),
         onBack = onNavigateBack
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            Text(
-                text = stringResource(R.string.rag_config_desc),
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
-            )
 
             SettingsSectionHeader(stringResource(R.string.rag_config_presets))
             Row(
@@ -196,7 +193,7 @@ fun GlobalRagConfigScreen(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(stringResource(R.string.rag_config_embed_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+                    Text(stringResource(R.string.rag_config_embed_section), style = NexaraTypography.titleMedium, fontWeight = FontWeight.SemiBold, color = NexaraColors.OnSurface)
 
                     // Embed 维度
                     val dimSlider = @Composable { label: String, value: Float, range: ClosedFloatingPointRange<Float>, steps: Int, onChange: (Float) -> Unit ->
@@ -223,14 +220,6 @@ fun GlobalRagConfigScreen(
                     ) {
                         viewModel.updateConfig { c -> c.copy(embedDimension = it.toInt().takeIf { v -> v > 0 }) }
                     }
-                    Text(
-                        text = stringResource(R.string.rag_config_embed_dimension_desc),
-                        style = NexaraTypography.bodySmall.copy(
-                            fontSize = 11.sp,
-                            lineBreak = LineBreak.Paragraph
-                        ),
-                        color = NexaraColors.OnSurfaceVariant
-                    )
 
                     dimSlider(
                         stringResource(R.string.rag_config_max_embed_tokens),
@@ -240,14 +229,45 @@ fun GlobalRagConfigScreen(
                     ) {
                         viewModel.updateConfig { c -> c.copy(maxEmbedTokensPerCall = it.toInt()) }
                     }
+                }
+            }
+
+            // === 摘要提示词 ===
+            NexaraGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.large as RoundedCornerShape
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Text(
-                        text = stringResource(R.string.rag_config_max_embed_tokens_desc),
-                        style = NexaraTypography.bodySmall.copy(
-                            fontSize = 11.sp,
-                            lineBreak = LineBreak.Paragraph
-                        ),
-                        color = NexaraColors.OnSurfaceVariant
+                        text = stringResource(R.string.rag_config_section_template),
+                        style = NexaraTypography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = NexaraColors.OnSurface
                     )
+                    NexaraGlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showSummaryTemplateEditor = true },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                config.summaryTemplate.take(100) + if (config.summaryTemplate.length > 100) "..." else "",
+                                style = NexaraTypography.bodySmall.copy(fontSize = 12.sp),
+                                color = NexaraColors.OnSurface,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
 
@@ -363,6 +383,14 @@ fun GlobalRagConfigScreen(
         }
     }
 
+    UnifiedPromptEditor(
+        show = showSummaryTemplateEditor,
+        onDismiss = { showSummaryTemplateEditor = false },
+        initialText = config.summaryTemplate,
+        title = stringResource(R.string.rag_advanced_summary_template_title),
+        onSave = { text -> viewModel.updateConfig { it.copy(summaryTemplate = text.ifBlank { RagConfiguration().summaryTemplate }) } },
+        placeholder = stringResource(R.string.rag_config_summary_template_placeholder)
+    )
 }
 
 

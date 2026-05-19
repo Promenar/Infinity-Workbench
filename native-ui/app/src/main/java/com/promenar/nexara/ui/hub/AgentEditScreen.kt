@@ -73,25 +73,11 @@ fun AgentEditScreen(
     val name by viewModel.name.collectAsState()
     val description by viewModel.description.collectAsState()
     val systemPrompt by viewModel.systemPrompt.collectAsState()
-    val selectedModel by viewModel.selectedModel.collectAsState()
     val selectedColor by viewModel.selectedColor.collectAsState()
     val selectedIcon by viewModel.selectedIcon.collectAsState()
-    val temperature by viewModel.temperature.collectAsState()
-    val topP by viewModel.topP.collectAsState()
 
     var showSystemPromptEditor by remember { mutableStateOf(false) }
-    var showModelPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-
-    val currentPresetId by remember(temperature, topP) {
-        derivedStateOf {
-            when {
-                temperature == 0.2f && topP == 0.8f -> "precise"
-                temperature == 1.0f && topP == 0.95f -> "creative"
-                else -> "balanced"
-            }
-        }
-    }
 
     val parsedColor = try {
         Color(android.graphics.Color.parseColor(selectedColor))
@@ -116,37 +102,6 @@ fun AgentEditScreen(
         initialText = systemPrompt,
         placeholder = stringResource(R.string.agent_edit_prompt_placeholder),
         mode = EditorMode.DIALOG
-    )
-
-    val settingsViewModel: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.factory(context.applicationContext as android.app.Application)
-    )
-
-    val allModels by settingsViewModel.providerModels.collectAsState()
-    val modelItems = remember(allModels) {
-        allModels.filter { it.enabled }.map { info ->
-            ModelItem(
-                id = info.id,
-                name = info.name,
-                providerName = "",
-                capabilities = info.capabilities.mapNotNull { capStr ->
-                    try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
-                },
-                contextLength = info.contextLength
-            )
-        }
-    }
-
-    ModelPicker(
-        show = showModelPicker,
-        onDismiss = { showModelPicker = false },
-        filterTag = "chat",
-        models = modelItems,
-        onSelect = { modelId, modelName ->
-            viewModel.setModel(modelId)
-            showModelPicker = false
-        },
-        currentModelId = selectedModel
     )
 
     ConfirmDialog(
@@ -290,7 +245,8 @@ fun AgentEditScreen(
                         ) {
                             Text(
                                 text = stringResource(R.string.agent_edit_label_icon),
-                                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                style = NexaraTypography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
                                 color = NexaraColors.OnSurface
                             )
                             
@@ -397,7 +353,8 @@ fun AgentEditScreen(
                         ) {
                         Text(
                             text = stringResource(R.string.agent_edit_prompt_label),
-                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            style = NexaraTypography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             color = NexaraColors.OnSurface
                         )
                         Box(
@@ -429,61 +386,6 @@ fun AgentEditScreen(
 
             item {
                 Spacer(modifier = Modifier.height(8.dp))
-                SettingsSectionHeader(stringResource(R.string.agent_edit_section_model))
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            item {
-                NexaraGlassCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showModelPicker = true },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.agent_edit_current_model),
-                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = NexaraColors.OnSurface
-                        )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = selectedModel,
-                                style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                                color = NexaraColors.OnSurfaceVariant
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            tint = NexaraColors.Outline
-                        )
-                    }
-                }
-            }
-
-            item {
-                Text(
-                    text = stringResource(R.string.agent_edit_label_presets),
-                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = NexaraColors.OnSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-
-                InferencePresets(
-                    selected = currentPresetId,
-                    onSelect = { preset ->
-                        viewModel.setTemperature(preset.temperature)
-                        viewModel.setTopP(preset.topP)
-                    }
-                )
             }
 
             item {

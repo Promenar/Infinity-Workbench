@@ -33,6 +33,11 @@ class GraphExtractor(
         return chunks
     }
 
+    private val checkpointJson = Json {
+        ignoreUnknownKeys = true
+        prettyPrint = true
+    }
+
     suspend fun extractAndSave(
         text: String,
         docId: String? = null,
@@ -42,32 +47,71 @@ class GraphExtractor(
             val chunks = splitText(text)
             NexaraLogger.log("[RAG][GraphExtractor] Splitting text into ${chunks.size} chunks (chunkSize=$chunkSize, overlap=$chunkOverlap) for KG extraction.")
 
-            // 重新抽取时先清除该文档的旧图谱数据，避免 weight 累加和重复边
-            if (docId != null) {
-                graphStore.clearGraphForDoc(docId)
-            }
+            val checkpointDir = if (docId != null) {
+                val dir = java.io.File(com.promenar.nexara.NexaraApplication.instance.cacheDir, "kg_extraction_checkpoint/$docId")
+                if (!dir.exists()) {
+                    dir.mkdirs()
+                }
+                dir
+            } else null
 
             val results = mutableListOf<ExtractionResult>()
             var failCount = 0
             var successCount = 0
+
             for ((index, chunk) in chunks.withIndex()) {
                 try {
-                    NexaraLogger.log("[RAG][GraphExtractor] Extracting chunk ${index + 1}/${chunks.size} (${chunk.length} chars)")
-                    val res = extractSingleChunk(chunk)
-                    results.add(res)
-                    if (res.error != null) {
+                    var chunkRes: ExtractionResult? = null
+                    val checkpointFile = checkpointDir?.let { java.io.File(it, "chunk_$index.json") }
+
+                    if (checkpointFile != null && checkpointFile.exists()) {
+                        try {
+                            val jsonStr = checkpointFile.readText()
+                            chunkRes = checkpointJson.decodeFromString<ExtractionResult>(jsonStr)
+                            NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} loaded from checkpoint cache.")
+                        } catch (e: Exception) {
+                            NexaraLogger.logError("[RAG][GraphExtractor] Failed to read checkpoint for chunk $index", e)
+                        }
+                    }
+
+                    if (chunkRes == null) {
+                        NexaraLogger.log("[RAG][GraphExtractor] Extracting chunk ${index + 1}/${chunks.size} (${chunk.length} chars)")
+                        chunkRes = extractSingleChunk(chunk)
+
+                        if (chunkRes.error == null && checkpointFile != null) {
+                            try {
+                                val jsonStr = checkpointJson.encodeToString(ExtractionResult.serializer(), chunkRes)
+                                checkpointFile.writeText(jsonStr)
+                                NexaraLogger.log("[RAG][GraphExtractor] Saved checkpoint cache for chunk $index.")
+                            } catch (e: Exception) {
+                                NexaraLogger.logError("[RAG][GraphExtractor] Failed to save checkpoint for chunk $index", e)
+                            }
+                        }
+                    }
+
+                    results.add(chunkRes)
+                    if (chunkRes.error != null) {
                         failCount++
-                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} returned error: ${res.error}")
+                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} returned error: ${chunkRes.error}")
                     } else {
                         successCount++
-                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} OK: ${res.nodes.size} nodes, ${res.edges.size} edges")
+                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} OK: ${chunkRes.nodes.size} nodes, ${chunkRes.edges.size} edges")
                     }
                 } catch (e: Exception) {
                     failCount++
                     NexaraLogger.logError("[RAG][GraphExtractor] chunk ${index + 1}/${chunks.size}", e)
                 }
             }
+
             NexaraLogger.log("[RAG][GraphExtractor] Chunk summary: total=${chunks.size}, success=$successCount, failed=$failCount")
+
+            if (failCount > 0) {
+                return ExtractionResult(
+                    nodes = emptyList(),
+                    edges = emptyList(),
+                    error = "Extraction interrupted: $failCount/${chunks.size} chunks failed. Progressive checkpoint saved. Please retry to resume."
+                )
+            }
 
             if (results.isEmpty()) {
                 return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "All chunks failed extraction")
@@ -105,7 +149,18 @@ class GraphExtractor(
             NexaraLogger.log("[RAG][GraphExtractor] Pruned: $beforePrune → ${mergedNodes.size} nodes, ${mergedEdges.size} edges")
 
             if (mergedNodes.isEmpty() && mergedEdges.isEmpty()) {
+                checkpointDir?.let { dir ->
+                    try {
+                        dir.listFiles()?.forEach { it.delete() }
+                        dir.delete()
+                    } catch (_: Exception) {}
+                }
                 return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "No nodes or edges extracted")
+            }
+
+            // 重新抽取时先清除该文档的旧图谱数据，避免 weight 累加和重复边（事务性原子清空）
+            if (docId != null) {
+                graphStore.clearGraphForDoc(docId)
             }
 
             val nameToIdMap = mutableMapOf<String, String>()
@@ -127,6 +182,17 @@ class GraphExtractor(
                     } catch (e: Exception) {
                         NexaraLogger.log("[RAG][GraphExtractor] Edge create failed '${edge.source}->${edge.target}': ${e.message?.take(80)}")
                     }
+                }
+            }
+
+            // 提取彻底完成后清理该 docId 的 checkpoint 目录
+            checkpointDir?.let { dir ->
+                try {
+                    dir.listFiles()?.forEach { it.delete() }
+                    dir.delete()
+                    NexaraLogger.log("[RAG][GraphExtractor] Cleaned up extraction checkpoints for docId=$docId")
+                } catch (e: Exception) {
+                    NexaraLogger.logError("[RAG][GraphExtractor] Failed to clean up checkpoints for docId=$docId", e)
                 }
             }
 

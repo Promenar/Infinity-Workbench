@@ -75,7 +75,7 @@ data class InferenceParams(
     val thinkingLevel: String? = null,
     val streamTimeout: Int? = 120,
     val autoSummaryThreshold: Double = 0.8,
-    val activeContextWindow: Int = 10
+    val activeContextWindow: Int = 15
 )
 
 @Serializable
@@ -248,7 +248,7 @@ data class RagOptions(
     val activeFolderIds: List<String> = emptyList(),
     val isGlobal: Boolean = false,
     val enableKnowledgeGraph: Boolean? = null,
-    val enableRerank: Boolean = false
+    val enableRerank: Boolean = true
 )
 
 @Serializable

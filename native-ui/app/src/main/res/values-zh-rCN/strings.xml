@@ -708,7 +708,7 @@
     <string name="rag_advanced_kg_section">知识图谱</string>
     <string name="rag_advanced_coming_soon">即将上线</string>
     <string name="rag_advanced_default_prompt">从以下文本中提取命名实体、概念和关系。以 JSON 格式输出，包含 nodes 和 edges 数组。</string>
-    <string name="rag_advanced_summary_template_title">摘要模板编辑器</string>
+    <string name="rag_advanced_summary_template_title">摘要提示词编辑器</string>
     <string name="rag_advanced_kg_enable">启用知识图谱（KG）</string>
     <string name="rag_advanced_kg_desc">从文档中提取实体与关系</string>
     <string name="rag_advanced_extract_config">抽取配置</string>
@@ -742,7 +742,7 @@
     <string name="rag_advanced_edit_prompt">编辑抽取提示词</string>
     <string name="rag_advanced_reset_default">重置默认</string>
     <string name="rag_advanced_extract_prompt_placeholder">请输入 KG 抽取提示词...</string>
-    <string name="rag_config_summary_template_placeholder">请输入摘要模板...</string>
+    <string name="rag_config_summary_template_placeholder">请输入摘要提示词...</string>
 
     <!-- RagDebugScreen -->
     <string name="rag_debug_title">向量统计</string>
@@ -775,7 +775,7 @@
     <string name="rag_config_memory_threshold_hint">越高越精准，越低召回越多</string>
     <string name="rag_config_doc_threshold">文档检索阈值</string>
     <string name="rag_config_doc_threshold_hint">文档检索的相似度门槛</string>
-    <string name="rag_config_section_template">摘要模板</string>
+    <string name="rag_config_section_template">摘要提示词</string>
     <string name="rag_config_template_hint">RAG 提示词模板</string>
     <string name="rag_config_vector_status">向量索引状态</string>
     <string name="rag_config_stats_documents">已索引文档</string>
@@ -789,7 +789,7 @@
     <string name="rag_config_advanced_desc">知识图谱与抽取设置</string>
     <string name="rag_config_details_link">向量统计</string>
     <string name="rag_config_details_desc">调试与诊断</string>
-    <string name="rag_config_embed_section">Embedding 模型</string>
+    <string name="rag_config_embed_section">向量化配置</string>
     <string name="rag_config_embed_dimension">输出向量维度</string>
     <string name="rag_config_embed_dimension_desc">输出向量维度（null = 使用模型默认，如 text&#x200B;-&#x200B;embedding&#x200B;-&#x200B;3&#x200B;-&#x200B;small = 1536）</string>
     <string name="rag_config_max_embed_tokens">单次调用最大 Token</string>
@@ -809,7 +809,7 @@
     <string name="rag_config_clear_only_vectors">仅清除向量</string>
     <string name="rag_config_clear_with_kg">同时清除图谱数据</string>
     <string name="rag_config_clear_all">全部清除</string>
-    <string name="rag_config_edit_template">编辑摘要模板</string>
+    <string name="rag_config_edit_template">编辑摘要提示词</string>
 
     <!-- AdvancedRetrievalScreen -->
     <string name="retrieval_title">检索设置</string>

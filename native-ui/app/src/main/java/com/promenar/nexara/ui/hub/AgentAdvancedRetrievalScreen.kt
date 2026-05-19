@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import com.promenar.nexara.data.manager.ProviderManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +32,9 @@ fun AgentAdvancedRetrievalScreen(
     viewModel: AgentEditViewModel = viewModel(factory = AgentEditViewModel.factory(LocalContext.current.applicationContext as Application)),
     onNavigateBack: () -> Unit
 ) {
+    val presetRerankModel by ProviderManager.getInstance().rerankModelId.collectAsState()
+    val isRerankAvailable = presetRerankModel.isNotBlank()
+
     LaunchedEffect(agentId) {
         viewModel.loadAgent(agentId)
     }
@@ -148,7 +153,8 @@ fun AgentAdvancedRetrievalScreen(
                 ) {
                     Text(
                         text = stringResource(R.string.agent_retrieval_section_memory),
-                        style = NexaraTypography.headlineMedium,
+                        style = NexaraTypography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
                         color = NexaraColors.OnSurface
                     )
                     Box(
@@ -185,7 +191,8 @@ fun AgentAdvancedRetrievalScreen(
                 ) {
                     Text(
                         text = stringResource(R.string.agent_retrieval_section_document),
-                        style = NexaraTypography.headlineMedium,
+                        style = NexaraTypography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
                         color = NexaraColors.OnSurface
                     )
                     Box(
@@ -211,7 +218,9 @@ fun AgentAdvancedRetrievalScreen(
             }
 
             NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (!isRerankAvailable) Modifier.alpha(0.6f) else Modifier),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(
@@ -225,13 +234,34 @@ fun AgentAdvancedRetrievalScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = stringResource(R.string.agent_retrieval_section_rerank),
-                            style = NexaraTypography.headlineMedium,
-                            color = NexaraColors.OnSurface
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.agent_retrieval_section_rerank),
+                                style = NexaraTypography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = NexaraColors.OnSurface
+                            )
+                            if (!isRerankAvailable) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(NexaraColors.StatusWarning.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        "未配置模型",
+                                        style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                                        color = NexaraColors.StatusWarning
+                                    )
+                                }
+                            }
+                        }
                         Switch(
-                            checked = enableRerank,
+                            checked = isRerankAvailable && enableRerank,
+                            enabled = isRerankAvailable,
                             onCheckedChange = { checked ->
                                 viewModel.updateRetrievalConfig { it.copy(enableRerank = checked) }
                             },
@@ -243,7 +273,14 @@ fun AgentAdvancedRetrievalScreen(
                             )
                         )
                     }
-                    if (enableRerank) {
+                    if (!isRerankAvailable) {
+                        Text(
+                            text = "⚠️ 未检测到已配置的重排模型。此开关已自动灰置禁用，请先前往「提供商管理」添加 Rerank 模型并设为默认重排模型。",
+                            style = NexaraTypography.bodySmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
+                            color = NexaraColors.StatusWarning.copy(alpha = 0.9f)
+                        )
+                    }
+                    if (isRerankAvailable && enableRerank) {
                         Box(
                             modifier = Modifier.fillMaxWidth().height(0.5.dp).background(NexaraColors.GlassBorder)
                         )
@@ -284,7 +321,8 @@ fun AgentAdvancedRetrievalScreen(
                     ) {
                         Text(
                             text = stringResource(R.string.agent_retrieval_section_rewrite),
-                            style = NexaraTypography.headlineMedium,
+                            style = NexaraTypography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             color = NexaraColors.OnSurface
                     )
                         Switch(
@@ -367,7 +405,8 @@ fun AgentAdvancedRetrievalScreen(
                     ) {
                         Text(
                             text = stringResource(R.string.agent_retrieval_section_hybrid),
-                            style = NexaraTypography.headlineMedium,
+                            style = NexaraTypography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             color = NexaraColors.OnSurface
                         )
                         Switch(

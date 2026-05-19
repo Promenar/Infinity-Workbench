@@ -74,7 +74,7 @@ class RagConfigPersistence(
             memoryThreshold = prefs.getFloat(KEY_MEMORY_THRESHOLD, DEFAULT_MEMORY_THRESHOLD),
             docLimit = prefs.getInt(KEY_DOC_LIMIT, DEFAULT_DOC_LIMIT),
             docThreshold = prefs.getFloat(KEY_DOC_THRESHOLD, DEFAULT_DOC_THRESHOLD),
-            enableRerank = prefs.getBoolean(KEY_ENABLE_RERANK, false),
+            enableRerank = prefs.getBoolean(KEY_ENABLE_RERANK, true),
             rerankTopK = prefs.getInt(KEY_RERANK_TOP_K, DEFAULT_RERANK_TOP_K),
             rerankFinalK = prefs.getInt(KEY_RERANK_FINAL_K, DEFAULT_RERANK_FINAL_K),
             enableQueryRewrite = prefs.getBoolean(KEY_ENABLE_QUERY_REWRITE, true),

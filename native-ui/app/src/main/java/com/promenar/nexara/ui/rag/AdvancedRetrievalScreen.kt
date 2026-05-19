@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -46,6 +47,7 @@ import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.data.manager.ProviderManager
 
 @Composable
 fun AdvancedRetrievalScreen(
@@ -53,6 +55,8 @@ fun AdvancedRetrievalScreen(
     onNavigateBack: () -> Unit
 ) {
     val config by viewModel.config.collectAsState()
+    val presetRerankModel by ProviderManager.getInstance().rerankModelId.collectAsState()
+    val isRerankAvailable = presetRerankModel.isNotBlank()
 
     NexaraPageLayout(
         title = stringResource(R.string.retrieval_title),
@@ -60,35 +64,6 @@ fun AdvancedRetrievalScreen(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
 
-            Text(
-                stringResource(R.string.retrieval_desc),
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
-            )
-
-            NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.large as RoundedCornerShape
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    SettingsSectionHeader(stringResource(R.string.retrieval_source_section))
-                    SettingsToggle(
-                        title = stringResource(R.string.retrieval_enable_memory),
-                        description = stringResource(R.string.retrieval_enable_memory_desc),
-                        checked = config.enableMemory,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableMemory = enabled) } }
-                    )
-                    SettingsToggle(
-                        title = stringResource(R.string.retrieval_enable_docs),
-                        description = stringResource(R.string.retrieval_enable_docs_desc),
-                        checked = config.enableDocs,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableDocs = enabled) } }
-                    )
-                }
-            }
 
             NexaraGlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -98,18 +73,12 @@ fun AdvancedRetrievalScreen(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(30.dp).background(NexaraColors.SurfaceContainer, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.Memory, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(15.dp))
-                        }
-                        Text(stringResource(R.string.retrieval_memory_section), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                    }
+                    Text(
+                        text = stringResource(R.string.retrieval_memory_section),
+                        style = NexaraTypography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = NexaraColors.OnSurface
+                    )
                     AdaptiveSlider(
                         label = stringResource(R.string.retrieval_memory_limit),
                         value = config.memoryLimit.toFloat(),
@@ -139,7 +108,13 @@ fun AdvancedRetrievalScreen(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    SettingsSectionHeader(stringResource(R.string.retrieval_doc_section))
+                    Text(
+                        text = stringResource(R.string.retrieval_doc_section),
+                        style = NexaraTypography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = NexaraColors.OnSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
                     AdaptiveSlider(
                         label = stringResource(R.string.retrieval_doc_limit),
                         value = config.docLimit.toFloat(),
@@ -167,15 +142,21 @@ fun AdvancedRetrievalScreen(
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    SettingsSectionHeader(stringResource(R.string.retrieval_hybrid_section))
-            SettingsToggle(
-                title = stringResource(R.string.retrieval_hybrid_enable),
-                description = stringResource(R.string.retrieval_hybrid_desc),
-                checked = config.enableHybridSearch,
-                onCheckedChange = { viewModel.updateConfig { c -> c.copy(enableHybridSearch = it) } }
-            )
+                    Text(
+                        text = stringResource(R.string.retrieval_hybrid_section),
+                        style = NexaraTypography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = NexaraColors.OnSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    SettingsToggle(
+                        title = stringResource(R.string.retrieval_hybrid_enable),
+                        description = stringResource(R.string.retrieval_hybrid_desc),
+                        checked = config.enableHybridSearch,
+                        onCheckedChange = { viewModel.updateConfig { c -> c.copy(enableHybridSearch = it) } }
+                    )
                     if (config.enableHybridSearch) {
                         AdaptiveSlider(
                             label = stringResource(R.string.retrieval_vector_weight),
@@ -199,63 +180,77 @@ fun AdvancedRetrievalScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-            HorizontalDivider(
-                thickness = 0.5.dp,
-                color = NexaraColors.OutlineVariant.copy(alpha = 0.2f)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.retrieval_advanced_features),
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-
             NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (!isRerankAvailable) Modifier.alpha(0.6f) else Modifier),
                 shape = NexaraShapes.large as RoundedCornerShape
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    SettingsSectionHeader(stringResource(R.string.retrieval_rerank_section))
-                    SettingsToggle(
-                        title = stringResource(R.string.retrieval_rerank_enable),
-                        description = stringResource(R.string.retrieval_rerank_desc),
-                        checked = config.enableRerank,
-                        onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableRerank = enabled) } }
-                    )
-                    if (config.enableRerank) {
-                        AdaptiveSlider(
-                            label = stringResource(R.string.retrieval_rerank_top_n),
-                            value = config.rerankTopK.toFloat(),
-                            valueRange = 5f..100f,
-                            displayValue = "${config.rerankTopK}",
-                            enabled = true,
-                            rerankBadge = false,
-                            onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankTopK = v.toInt()) } }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.retrieval_rerank_section),
+                            style = NexaraTypography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = NexaraColors.OnSurface
                         )
-                        AdaptiveSlider(
-                            label = stringResource(R.string.retrieval_rerank_final),
-                            value = config.rerankFinalK.toFloat(),
-                            valueRange = 1f..20f,
-                            displayValue = "${config.rerankFinalK}",
-                            enabled = true,
-                            rerankBadge = false,
-                            onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankFinalK = v.toInt()) } }
-                        )
-                        AdaptiveSlider(
-                            label = stringResource(R.string.rag_config_rerank_max_per_call),
-                            value = config.rerankMaxPerCall.toFloat(),
-                            valueRange = 8f..200f,
-                            displayValue = "${config.rerankMaxPerCall}",
-                            enabled = true,
-                            rerankBadge = false,
-                            onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankMaxPerCall = v.toInt()) } }
+                        if (!isRerankAvailable) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(NexaraColors.StatusWarning.copy(alpha = 0.15f))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    "未配置模型",
+                                    style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                                    color = NexaraColors.StatusWarning
+                                )
+                            }
+                        }
+                    }
+                    if (!isRerankAvailable) {
+                        Text(
+                            text = "⚠️ 未检测到已配置的重排模型。重排序是多数据源融合的高性能基石，请先前往「提供商管理」添加 Rerank 服务并设为默认重排模型。",
+                            style = NexaraTypography.bodySmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
+                            color = NexaraColors.StatusWarning.copy(alpha = 0.9f)
                         )
                     }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    AdaptiveSlider(
+                        label = stringResource(R.string.retrieval_rerank_top_n),
+                        value = config.rerankTopK.toFloat(),
+                        valueRange = 5f..100f,
+                        displayValue = "${config.rerankTopK}",
+                        enabled = isRerankAvailable,
+                        rerankBadge = false,
+                        onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankTopK = v.toInt()) } }
+                    )
+                    AdaptiveSlider(
+                        label = stringResource(R.string.retrieval_rerank_final),
+                        value = config.rerankFinalK.toFloat(),
+                        valueRange = 1f..20f,
+                        displayValue = "${config.rerankFinalK}",
+                        enabled = isRerankAvailable,
+                        rerankBadge = false,
+                        onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankFinalK = v.toInt()) } }
+                    )
+                    AdaptiveSlider(
+                        label = stringResource(R.string.rag_config_rerank_max_per_call),
+                        value = config.rerankMaxPerCall.toFloat(),
+                        valueRange = 8f..200f,
+                        displayValue = "${config.rerankMaxPerCall}",
+                        enabled = isRerankAvailable,
+                        rerankBadge = false,
+                        onValueChange = { v -> viewModel.updateConfig { c -> c.copy(rerankMaxPerCall = v.toInt()) } }
+                    )
                 }
             }
 
@@ -265,9 +260,15 @@ fun AdvancedRetrievalScreen(
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    SettingsSectionHeader(stringResource(R.string.retrieval_rewrite_section))
+                    Text(
+                        text = stringResource(R.string.retrieval_rewrite_section),
+                        style = NexaraTypography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = NexaraColors.OnSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
                     SettingsToggle(
                         title = stringResource(R.string.retrieval_rewrite_enable),
                         description = stringResource(R.string.retrieval_rewrite_desc),

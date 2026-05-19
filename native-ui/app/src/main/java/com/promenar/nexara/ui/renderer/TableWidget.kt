@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
@@ -56,6 +57,7 @@ private fun parseTable(model: MarkdownComponentModel): ParsedTable? {
 fun NexaraTableWidget(
     model: MarkdownComponentModel,
     modifier: Modifier = Modifier,
+    fontSize: Int = 13,
     minColumnWidth: Dp = 80.dp,
     maxColumnWidth: Dp = 200.dp,
 ) {
@@ -97,7 +99,8 @@ fun NexaraTableWidget(
                         text = cellText,
                         isHeader = true,
                         columnWidth = if (scrollable) columnWidth else 0.dp,
-                        weight = if (scrollable) 0f else 1f
+                        weight = if (scrollable) 0f else 1f,
+                        fontSize = fontSize
                     )
                 }
             }
@@ -124,7 +127,8 @@ fun NexaraTableWidget(
                             text = cellText,
                             isHeader = false,
                             columnWidth = if (scrollable) columnWidth else 0.dp,
-                            weight = if (scrollable) 0f else 1f
+                            weight = if (scrollable) 0f else 1f,
+                            fontSize = fontSize
                         )
                     }
                 }
@@ -145,7 +149,8 @@ private fun RowScope.TableCell(
     text: String,
     isHeader: Boolean,
     columnWidth: Dp,
-    weight: Float
+    weight: Float,
+    fontSize: Int
 ) {
     Text(
         text = text,
@@ -153,10 +158,14 @@ private fun RowScope.TableCell(
             NexaraTypography.labelMedium.copy(
                 fontWeight = FontWeight.Bold,
                 color = NexaraColors.OnSurface,
+                fontSize = fontSize.sp,
+                lineHeight = (fontSize * 1.4).sp
             )
         } else {
             NexaraTypography.bodySmall.copy(
                 color = NexaraColors.OnSurfaceVariant,
+                fontSize = (fontSize - 1).coerceAtLeast(10).sp,
+                lineHeight = ((fontSize - 1).coerceAtLeast(10) * 1.4).sp
             )
         },
         modifier = Modifier

@@ -17,7 +17,7 @@ data class AgentRetrievalConfig(
     val memoryThreshold: Float = 0.7f,
     val docLimit: Int = 8,
     val docThreshold: Float = 0.45f,
-    val enableRerank: Boolean = false,
+    val enableRerank: Boolean = true,
     val rerankTopK: Int = 30,
     val rerankFinalK: Int = 5,
     val enableQueryRewrite: Boolean = true,

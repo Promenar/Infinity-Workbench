@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -157,35 +161,79 @@ fun UnifiedPromptEditor(
     @Composable
     fun EditorPane(modifier: Modifier = Modifier) {
         val scrollState = rememberScrollState()
-        val lineNumbers = remember(text) {
-            buildAnnotatedString {
-                for (i in 1..lineCount) {
-                    withStyle(SpanStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace)) {
-                        append(String.format("%3d", i))
-                    }
-                    if (i < lineCount) append("\n")
-                }
+        val textMeasurer = rememberTextMeasurer()
+        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
+        val textLines = text.split("\n")
+        val lineOffsets = remember(text) {
+            val offsets = mutableListOf<Int>()
+            var currentOffset = 0
+            for (line in textLines) {
+                offsets.add(currentOffset)
+                currentOffset += line.length + 1
             }
+            offsets
         }
 
         Row(modifier = modifier) {
-            Box(
+            Canvas(
                 modifier = Modifier
                     .width(36.dp)
                     .fillMaxHeight()
                     .background(NexaraColors.SurfaceLowest)
                     .verticalScroll(scrollState)
-                    .padding(end = 4.dp, top = 8.dp),
-                contentAlignment = Alignment.TopEnd
+                    .padding(end = 6.dp, top = 8.dp)
             ) {
-                Text(
-                    text = lineNumbers,
-                    color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                    style = NexaraTypography.bodySmall.copy(
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                )
+                val layout = layoutResult
+                if (layout != null) {
+                    for (i in textLines.indices) {
+                        val startOffset = lineOffsets.getOrNull(i) ?: continue
+                        if (startOffset > text.length) continue
+
+                        val physicalLine = layout.getLineForOffset(startOffset)
+                        val topPx = layout.getLineTop(physicalLine)
+
+                        val lineStr = (i + 1).toString()
+                        val textLayout = textMeasurer.measure(
+                            text = lineStr,
+                            style = NexaraTypography.bodySmall.copy(
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        )
+
+                        val x = size.width - textLayout.size.width
+                        val physicalLineHeight = layout.getLineBottom(physicalLine) - topPx
+                        val y = topPx + (physicalLineHeight - textLayout.size.height) / 2f
+
+                        drawText(
+                            textLayoutResult = textLayout,
+                            topLeft = androidx.compose.ui.geometry.Offset(x, y)
+                        )
+                    }
+                } else {
+                    var currentY = 0f
+                    val lineHeightPx = 20.sp.toPx()
+                    for (i in textLines.indices) {
+                        val lineStr = (i + 1).toString()
+                        val textLayout = textMeasurer.measure(
+                            text = lineStr,
+                            style = NexaraTypography.bodySmall.copy(
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        )
+                        val x = size.width - textLayout.size.width
+                        val y = currentY + (lineHeightPx - textLayout.size.height) / 2f
+                        drawText(
+                            textLayoutResult = textLayout,
+                            topLeft = androidx.compose.ui.geometry.Offset(x, y)
+                        )
+                        currentY += lineHeightPx
+                    }
+                }
             }
 
             Box(
@@ -198,7 +246,9 @@ fun UnifiedPromptEditor(
                     onValueChange = { text = it },
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(scrollState),
+                        .verticalScroll(scrollState)
+                        .padding(top = 8.dp, start = 8.dp, end = 8.dp),
+                    onTextLayout = { layoutResult = it },
                     textStyle = NexaraTypography.bodySmall.copy(
                         color = NexaraColors.OnSurface,
                         fontSize = 14.sp,

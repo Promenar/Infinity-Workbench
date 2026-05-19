@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -32,13 +33,21 @@ fun SettingsToggle(
     description: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    icon: ImageVector? = null
+    icon: ImageVector? = null,
+    enabled: Boolean = true
 ) {
     NexaraGlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(NexaraShapes.large as RoundedCornerShape)
-            .clickable { onCheckedChange(!checked) },
+            .then(
+                if (enabled) {
+                    Modifier.clickable { onCheckedChange(!checked) }
+                } else {
+                    Modifier
+                }
+            )
+            .alpha(if (enabled) 1.0f else 0.4f),
         shape = NexaraShapes.large as RoundedCornerShape
     ) {
         Row(
@@ -75,7 +84,8 @@ fun SettingsToggle(
 
             Switch(
                 checked = checked,
-                onCheckedChange = onCheckedChange,
+                onCheckedChange = if (enabled) onCheckedChange else null,
+                enabled = enabled,
                 colors = SwitchDefaults.colors(
                     checkedTrackColor = NexaraColors.Primary,
                     checkedThumbColor = NexaraColors.OnPrimary,

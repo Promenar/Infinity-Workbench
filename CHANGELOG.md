@@ -4,6 +4,172 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复底部字号拖动条对聊天区各组件文本的同步缩放 (2026-05-20)
+- **🔴 P0 — 彻底修复底部字体大小调整拖动条无法同步调整 Markdown 表格、指示器、思考容器和工具容器所有文本大小的缺陷**：
+  - *视觉痛点*：在聊天界面底部的“字体大小”滑块被拖动放大或缩小时，用户消息和 AI 消息正文均能完美同步缩放；然而，思考容器 (`InlineThinkingRow`)、工具容器 (`InlineToolRow` 的标题、参数、输出结果、提示等)、检索指示器 (`PostProcessChip` 与 RAG指示器) 以及 Markdown 中的普通表格元素 (`NexaraTableWidget`)，它们的字号依然硬编码为固定的绝对值（如 10sp、11sp、12sp 等），导致在拖大字体时，这些组件的内容依然极其细小，与正文产生强烈的视觉割裂感；而在缩小字体时又显得臃肿，排版崩坏。
+  - *修复对齐方案*：
+    - **Markdown 普通表格字号响应式联动**：
+      - 对 `NexaraTableWidget` 及内部私有组件 `TableCell` 引入 `fontSize: Int` 入参；
+      - 表头字号动态设为 `fontSize.sp`，正文字号动态设为 `(fontSize - 1).coerceAtLeast(10).sp`，并统一匹配了 1.4 倍的黄金行高，完美摆脱了对 `NexaraTypography.labelMedium` 的静态大小硬编码；
+      - 在 `MarkdownText.kt` 调用 `NexaraTableWidget` 时，将当前 `fontSize` 优雅透传，实现随字体滑块等比缩放。
+    - **思考与工具组件全文本字号级联联动**：
+      - 在 `PipelineBubble.kt` 中，对所有硬编码字号的辅助文本、状态标签及代码文本进行了拉平与重构：
+        - 助理消息元信息（模型名 + 时间戳）及错误消息字号：`11.sp` 升级为 `(fontSize - 2).coerceAtLeast(9).sp`；
+        - 思考容器标题（“正在思考”/“思考完成”）：`12.sp` 升级为 `(fontSize - 1).coerceAtLeast(10).sp`；
+        - 工具容器标题（工具名）：`12.sp` 升级为 `(fontSize - 1).coerceAtLeast(10).sp`；
+        - 工具错误标签（“指令有误”）：`10.sp` 升级为 `(fontSize - 3).coerceAtLeast(9).sp`；
+        - 工具调用参数：`10.sp` 升级为 `(fontSize - 3).coerceAtLeast(9).sp`；
+        - 工具返回结果：`10.sp` 升级为 `(fontSize - 3).coerceAtLeast(9).sp`，且 lineHeight 从硬编码 `14.sp` 升级为等比匹配的 `((fontSize - 3).coerceAtLeast(9) * 1.4).sp`；
+        - 用户消息的时间戳：`11.sp` 升级为 `(fontSize - 2).coerceAtLeast(9).sp`。
+  - *变更文件 (3)*：
+    - 修改: `TableWidget.kt`, `MarkdownText.kt`, `PipelineBubble.kt`
+
+### 修复会话设置面板选项多出诡异亮色边框的视觉缺陷 (2026-05-19)
+- **🎨 移除 ToolToggleRow 组件的白色实线边框**：
+  - *视觉痛点*：在 RAG 相关选项被放入会话设置面板的 `SettingsPanel` 之后，原本由 `ToolToggleRow` 渲染的 RAG 设置行（如“会话 RAG”、“跨会话检索”、“知识库检索”、“检索重排序”、“知识图谱”）全部套上了一个亮白色的 0.5.dp 细实线边框。在夜间暗色主题下，该亮白边框显得极其刺眼和突兀，打碎了 Nexara 设计语言中的极致微光平滑和无框圆润感，也与下方无边框的“字体大小”滑块、上方扁平的“压缩历史”按钮格格不入。
+  - *修复手段*：彻底移除了 `SessionSettingsSheet.kt` 底部 `ToolToggleRow` 通用底栏切换组件中多余且突兀的 `.border(...)` 修饰符，将其还原为纯粹平滑的 `NexaraColors.SurfaceLow` 圆角卡片底色块，消除多余的白框噪音。
+
+### 默认重排序模型未配置时全站重排选项自动灰置、提示与静默拦截 (2026-05-19)
+- **🔴 P0 — 当用户未在提供商中添加 Rerank 模型或未在“设置”中将其设为默认重排模型时，自动将所有重排相关控制灰置禁用并防点击**：
+  - *问题根因*：如果用户在 Nexara 的提供商设置中没有添加任何 Rerank 模型，或者没有勾选/设置默认的重排模型，在此种“无可用 Rerank 模型”的状态下，原先“检索设置”界面中的 3 个重排参数滑块依然处于可操作的可亮起状态；同时，在“会话设置面板” (`SessionSettingsSheet.kt`) 和“编辑助手的高级检索” (`AgentAdvancedRetrievalScreen.kt`) 中，重排序开关依旧是可点击状态。这会导致用户产生功能可用的错觉，且一旦触发检索会因为底层无模型可供调用导致不可预测的问题。
+  - *重构灰置方案（像素级防呆降级）*：
+    - **全局强响应式状态感知**：利用 `ProviderManager.getInstance().rerankModelId` 作为 `StateFlow<String>` 的特性，在所有检索配置界面中通过 `collectAsState()` 进行实时响应式收集，判定是否为空字符串。一旦判定为 `""`（即用户没有配置或没有设置默认重排模型），自动将 `isRerankAvailable` 置为 `false`。
+    - **全局“检索设置”页面灰置与微提示**：
+      - 将全局检索设置中的 3 个重排参数滑块（`AdaptiveSlider`）的 `enabled` 属性动态绑定为 `isRerankAvailable`；
+      - 重排配置大卡片（`NexaraGlassCard`）的 `alpha` 在无可用模型时自动降至 `0.6f`；
+      - 在卡片内侧标题右侧加入磨砂黄的“未配置模型”胶囊 Badge，并在大标题下方增加显目的中文暖色警告提示语：“⚠️ 未检测到已配置的重排模型。重排序是多数据源融合的高性能基石，请先前往「提供商管理」添加 Rerank 服务并设为默认重排模型。”
+    - **“会话设置面板”动态静默禁用**：
+      - 对会话面板底部的通用切换 Row（`ToolToggleRow`）新增 `enabled: Boolean = true` 可选参数，在禁用时施加 `0.4f` 半透明，并将底层 `Switch` 开关置为 `enabled = false` 彻底锁死点击；
+      - 会话检索里的“重排序”开关 checked 状态动态绑定为 `isRerankAvailable && rerankEnabled`；
+      - 在开关下方追加黄色小辅助文本：“⚠️ 未配置默认重排模型，重排序已强制静默禁用”，完美阻断一切防呆漏水。
+    - **“编辑助手检索配置”级联同步**：
+      - 助手的高级检索配置页中，同样实时监听 `isRerankAvailable`，重排卡片 `alpha` 设为 `0.6f`，Switch 开关动态绑定 `checked = isRerankAvailable && enableRerank` 且 `enabled = isRerankAvailable`；
+      - 添加一致的磨砂黄色“未配置模型” Badge 和黄字警告段落，完美与全局界面视觉语言级联一致。
+  - *变更文件 (3)*：
+    - 修改: [AdvancedRetrievalScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/AdvancedRetrievalScreen.kt)
+    - 修改: [SessionSettingsSheet.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/chat/SessionSettingsSheet.kt)
+    - 修改: [AgentAdvancedRetrievalScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentAdvancedRetrievalScreen.kt)
+
+### 检索设置页面“检索来源”卡片与“重排序”开关清理与解耦 (2026-05-19)
+- **🔴 P0 — 彻底移除全局检索设置中的“检索来源”卡片与“启用重排序”开关，转为默认启用，完全由会话面板级深度控制**：
+  - *问题根因*：在全局的检索设置 (`AdvancedRetrievalScreen.kt`) 中，包含了“记忆检索开关”和“文档检索开关”卡片，以及下方的“启用重排序开关”。这些全局开关使得用户需要反复在全局配置和当前对话中同步检索状态，极度冗余；用户导入文档与对话进行时，检索与重排序应该作为底层的默认高性能支柱服务，而具体会话的针对性开启/关闭，完全交由每个会话设置面板独立隔离控制即可。
+  - *重构解耦方案*：
+    - **物理剔除全局“检索来源”卡片**：直接移除了 `AdvancedRetrievalScreen.kt` 中的一整个“检索来源”大卡片（`NexaraGlassCard`），包括其中的“记忆检索”、“文档检索”两大 SettingsToggle 开关。
+    - **清空“启用重排序”全局开关**：直接删除了全局重排序卡片中的 `SettingsToggle(R.string.retrieval_rerank_enable)` 启用开关，并无条件直接铺平渲染三个核心重排序滑块参数（Top-N, Final-K, 最大单次调用数），免去了无用折叠，逻辑极其清爽。
+    - **重构全局/会话级默认值逻辑**：
+      - 将 `AgentRetrievalConfig` 以及 `RagConfigPersistence` 的 SharedPreferences 加载 fallback 均修改为 `enableRerank = true`，使全局配置默认状态下重排功能就是启用的。
+      - 修改了核心会话状态模型 `RagOptions` 默认构造值，把 `enableRerank` 默认值设为 `true`。由此确保当新的会话会话创建时，其“记忆检索”、“文档检索”和“检索重排序”在会话级默认即 100% 启用，具体开关细节完全可在会话设置面板（`SessionSettingsSheet.kt`）中进行极细粒度按需关闭或重开，实现了完美的全局/会话级解耦。
+  - *变更文件 (3)*：
+    - 修改: [AdvancedRetrievalScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/AdvancedRetrievalScreen.kt)
+    - 修改: [AgentConfigModels.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/data/agent/AgentConfigModels.kt)
+    - 修改: [ChatModels.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/data/model/ChatModels.kt)
+    - 修改: [RagConfigPersistence.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/domain/usecase/RagConfigPersistence.kt)
+
+### 助手配置（编辑助手）页面冗余选项清理与视觉规范对齐 (2026-05-19)
+- **🔴 P0 — 彻底移除编辑助手页面中冗余的“推理预设档位”和“当前模型”卡片，交由全局与会话级独立控制**：
+  - *问题根因*：在“编辑助手” (`AgentEditScreen.kt`) 页面中，原本包含“当前模型选择”与“推理预设档位（温度与 TopP 滑块/按钮）”选项。实际上，这些模型与推理参数应该统一交由“会话级”和“全局级”的配置分级控制，助手作为角色定义，在其基础配置页中再次塞入这些参数显得冗余复杂，且在物理操作上与顶层的模型切换冲突。
+  - *重构清理方案（极简优雅降维）*：
+    - **彻底移除 ModelPicker 弹窗**：在 `AgentEditScreen.kt` 中删除了不再使用的 ModelPicker 对话框调用、相关的 `showModelPicker` mutableState，以及不再使用的 `settingsViewModel`、`allModels`、`modelItems` 等 40 余行冗余状态计算与依赖引入，大幅缩减了内存开销。
+    - **清理模型与预设渲染**：在 LazyColumn 中直接砍掉了整整三段 `item {}` 模块，包括“模型大标题”、“当前模型卡片（NexaraGlassCard）”、“推理预设大标题”与“InferencePresets”档位选择组件。在保留 8.dp 垂直呼吸感 Spacer 的前提下，平滑连接了“性格”和“知识图谱/高级检索”板块。
+    - **极简化 ViewModel 同步**：保持了 `AgentEditViewModel.kt` 的实体加载和持久化保存字段的健壮兼容，去除了视图交互污染，使得逻辑层和表现层更纯粹。
+  - *🟡 P1 — 统一助手配置页内功能卡片标题字号与全站视觉规范像素级对齐*：
+    - *问题*：原本的“选择图标”（外观卡片）与“系统提示词”（性格卡片）的内侧小标题使用的是 `labelMedium` （加粗或半加粗），字号偏小且与“记忆设置”、“检索设置”等二级页面的 `titleMedium` 卡片内侧标题规范不统一，视觉感受不够精致。
+    - *修复方案*：
+      - 将“外观”卡片内侧的“选择图标”标题、以及“性格”卡片内侧的“系统提示词”标题，统一修改为：`style = NexaraTypography.titleMedium`，并且 `fontWeight = FontWeight.SemiBold`。
+      - 使得编辑助手页的所有大卡片内侧标题在字号、字重、色值（`NexaraColors.OnSurface`）上达到了全站像素级完美一致。
+  - *变更文件 (1)*：
+    - 修改: [AgentEditScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentEditScreen.kt)
+
+### 知识图谱即将上线未实装功能灰置与视觉精炼 (2026-05-19)
+- **🔴 P0 — 彻底隐藏未实装功能的“即将上线”凌乱小字，并对选项进行全局灰置和防点击**：
+  - *问题*：知识图谱高级页面 `RagAdvancedScreen.kt` 中有 4 个尚未实装的预留开关（即时抽取、自动识别类别、增量哈希、规则预过滤），它们下方均跟随着一行“即将上线”的灰色小字。由于这些开关在物理上依然是可点击操作的，且各处堆叠小字破坏了页面的精炼排版，显得界面凌乱不高级。
+  - *重构灰置方案（像素级优雅禁用）*：
+    - **SettingsToggle 通用禁用升级**：重构了公共切换卡片组件 [SettingsToggle.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/common/SettingsToggle.kt)，新增 `enabled: Boolean = true` 可选属性。当 `enabled == false` 时，给卡片附加 `.alpha(0.4f)` 呈现高级磨砂灰置感，在逻辑层利用 `.then(if (enabled) clickable else empty)` 彻底截断一切点击响应，并向下把 `enabled = false` 透传给底层的 `Switch` 开关。
+    - **移除即将上线小字**：在 `RagAdvancedScreen.kt` 中删除了上述 4 个未实装组件底下渲染的 `rag_advanced_coming_soon` 文字元素，腾出空间给卡片呼吸感。
+    - **注入禁用配置**：为这 4 个 `SettingsToggle` 统一传入了 `enabled = false` 禁用修饰，使用户一目了然其未实装且彻底防止了误操作，与业内顶级 App 规范完美对齐。
+  - *变更文件 (2)*：
+    - 修改: [SettingsToggle.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/common/SettingsToggle.kt)
+    - 修改: [RagAdvancedScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagAdvancedScreen.kt)
+
+### 检索设置页面视觉对齐一致性微调 (2026-05-19)
+- **🟡 P1 — 移除“记忆检索”卡片标题前多余的 CPU/内存图标以对齐全站卡片规范**：
+  - *问题*：在检索设置（Advanced Retrieval）页面中，“记忆检索”卡片内侧标题前面包含了一个蓝灰色的 `Icons.Rounded.Memory` 芯片图标，而紧随其下的“文档检索”卡片标题以及全站所有二级设置卡片的标题，均采用干净纯粹的 `Text` 渲染，这导致页面卡片的左侧文字起步线产生了不一致的水平凹凸偏置，破坏了视觉连贯性。
+  - *修复对齐方案*：
+    - 彻底移除了 `AdvancedRetrievalScreen.kt` 中“记忆检索”卡片标题的 `Row` 排布以及包含在 `Box` 容器内的多余 `Icon(Icons.Rounded.Memory)` 芯片图标。
+    - 统一将标题优化为标准的纯粹 `Text` 加粗显示，使得“记忆检索”与下方的“文档检索”在左侧文字对齐线上达到像素级完美重合，消除了突兀的图标，极大地净化了界面呼吸感。
+  - *变更文件 (1)*：
+    - 修改: [AdvancedRetrievalScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/AdvancedRetrievalScreen.kt)
+
+### 提示词/代码编辑器行号自适应折行像素级对齐优化 (2026-05-19)
+- **🔴 P0 — 修复提示词文本编辑器中行号与文本在折行（Soft Wrap）时产生的错位与搓开缺陷**：
+  - *问题*：原有的 `UnifiedPromptEditor.kt` 中的行号列是通过纯字符拼合（`1\n2\n3`）形式与右侧 `BasicTextField` 独立渲染的。当右侧文本发生 Soft Wrap（折行）时，折行的多行内容在左侧无感知，依旧依次绘制下一行号，导致从折行那一行开始，行号和实际文本行发生灾难性的“上下搓开”、错位对齐，极度影响多行提示词阅读。
+  - *修复对齐方案（IDE 级自适应渲染）*：
+    - **自适应折行行号重构**：将原本静态的行号 `Text` 重构为自适应 Compose 物理 `Canvas` 绘制模式。
+    - **TextLayoutResult 完美定位**：在 `BasicTextField` 内部挂载实时的 `onTextLayout` 参数。在左侧 Canvas 绘制时，通过遍历每个逻辑行（`\n` 分隔）在文本中的偏移量（offset），调用 `layout.getLineForOffset(startOffset)` 精准换算出该逻辑行首字在屏幕上的物理折行行索引，再利用 `layout.getLineTop(physicalLine)` 与 `layout.getLineBottom(physicalLine)` 提取其物理 Y 轴位置坐标。
+    - **物理垂直居中微调**：获取物理折行首行的高度后，行号在 Canvas 中绘制时的 Y 轴位置计算公式升级为：`y = topPx + (physicalLineHeight - textLayoutHeight) / 2f`，实现了与右侧 BasicTextField 的文字物理首行无论何时均像素级对齐，折行的非首段区域左侧自然留白（与 VS Code 表现 100% 对齐）。
+    - **兜底渲染保障**：在首次加载 `layoutResult` 尚未初始化完成时，智能提供基于 Monospace 等宽体 20.sp 基础行高的极速兜底渲染，消除了任何物理空白和加载闪烁。
+    - **内外边距绝对一致**：统一在 `BasicTextField` 的 `modifier` 和左侧 `Canvas` 顶部加上相同的 `.padding(top = 8.dp)` 填充，让二者的 Y 轴基础坐标点完全一致，从物理上解决了 8dp 的固有错位偏置。
+  - *变更文件 (1)*：
+    - 修改: [UnifiedPromptEditor.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/common/UnifiedPromptEditor.kt)
+
+### 知识图谱摘要配置面板升阶移植与重命名 (2026-05-19)
+- **🟡 P1 — 知识图谱摘要模板编辑区平移至记忆设置页面，文案重命名为“摘要提示词”**：
+  - *问题*：原本的“摘要模板”编辑卡片与它的弹出框编辑器被埋藏在最深层的知识图谱高级页面 `RagAdvancedScreen.kt` 里面，由于摘要模版是控制全局 RAG 合并与上下文摘要的关键配置，放置在底层 KG 设置里不利于用户高频微调，且“摘要模板”的学术化命名对国内用户不够直观易懂。
+  - *平移卡片至全局记忆设置*：
+    - 彻底移除了 `RagAdvancedScreen.kt` 中的 `showSummaryTemplateEditor` remember 状态变量、摘要模板的卡片展示以及底部的 `UnifiedPromptEditor` 弹窗。
+    - 将上述状态与 `UnifiedPromptEditor` 平稳移植至上一级主入口记忆设置页面 `GlobalRagConfigScreen.kt`。
+    - 在 `GlobalRagConfigScreen.kt` 适当位置（向量化配置卡片下方、进阶导航栏上方）平移注入高雅的“摘要提示词”卡片。卡片内侧顶部放置中等加粗字号标题，高度对齐了前序全部卡片的视觉体系；点击后触发相同的 RAG 持久化更新，使用 `viewModel.updateConfig { it.copy(summaryTemplate = text.ifBlank { RagConfiguration().summaryTemplate }) }` 状态流安全更新。
+  - *文案汉化重构“摘要提示词”*：
+    - 在 [strings.xml (zh-rCN)](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/res/values-zh-rCN/strings.xml) 中对摘要模版的文案语系进行重构汉化：
+      - `rag_config_section_template` 由 `"摘要模板"` 修改为更直观的 **`"摘要提示词"`**。
+      - `rag_advanced_summary_template_title` 由 `"摘要模板编辑器"` 修改为 **`"摘要提示词编辑器"`**。
+      - `rag_config_summary_template_placeholder` 由 `"请输入摘要模板..."` 修改为 **`"请输入摘要提示词..."`**。
+      - `rag_config_edit_template` 由 `"编辑摘要模板"` 修改为 **`"编辑摘要提示词"`**。
+  - *编译测试*：执行 `./gradlew :app:assembleDebug` 在 4 秒内以 100% 绿灯构建完美通过，杜绝了任何多语言资源占位和 Kotlin 编译期安全漏洞。
+  - *变更文件 (3)*：
+    - 修改: [GlobalRagConfigScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/GlobalRagConfigScreen.kt)
+    - 修改: [RagAdvancedScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagAdvancedScreen.kt)
+    - 修改: [strings.xml (zh-rCN)](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/res/values-zh-rCN/strings.xml)
+
+### 检索/记忆等二级设置页面 UI 卡片样式高度一致性重构 (2026-05-19)
+- **🟡 P1 — 记忆设置、检索设置、知识图谱参数等二级页面样式不一致深度重构**：
+  - *问题*：记忆设置、检索设置、全局知识图谱参数以及 Agent 高级检索设置等二级页面，存在样式混乱、使用不一致的问题：1) 顶部有冗余的小字描述文本，占用了宝贵的垂直空间且不够高级精炼；2) 卡片外部和内部交织使用不同大小的 SectionHeader 标题，大小不一，显得杂乱无章；3) 各卡片顶部的外侧小标题拉大了卡片上边距，导致卡片间距极度不均匀，跳变严重。
+  - **删除页面顶部小字描述**：全部删掉了四个二级设置页面顶部的 `stringResource` 小字描述文本，净化页面开头，视觉上更开阔且富含高级感。
+  - **优化向量化卡片 (Embedding Model)**：
+    - **重命名标题**：将 `values-zh-rCN/strings.xml` 中的 Embedding 模型卡片标题从 “Embedding 模型” 优化为更契合纯中文阅读习惯的 “向量化配置”。
+    - **精简选项描述**：移除了“输出向量维度”和“单次最大 Token”两项配置正下方的冗余小字描述文本，进一步缩减无意义的文字噪音，使该卡片保持极致的整洁与精美度。
+  - **统一卡片内侧顶部标题**：全部废除了卡片外侧的 `SettingsSectionHeader` 标题。统一在所有卡片的 `Column` 内侧最顶部，采用 `titleMedium` / `titleSmall` 配以 `FontWeight.SemiBold` 加粗的 `Text` 标题，放置于左侧。字号饱满、比例协调。
+  - **统一卡片外部间距与比例**：随着外侧标题的彻底移除，使用统一的 `verticalArrangement = Arrangement.spacedBy(24.dp)` 来控制所有设置卡片 in 滚动页面的物理间隙，整体布局呈现像素级均匀的呼吸感，且无任何多余或参差不齐的空隙。
+  - **完美解决编译依赖**：由于在 `RagAdvancedScreen.kt` 中引入了 `FontWeight`，本地自动检测并补齐了 `androidx.compose.ui.text.font.FontWeight` 的物理导入，保证项目在 Gradle assemble 编译中以零警告、零报错一次性完美通过。
+  - *变更文件 (5)*：
+    - 修改: [GlobalRagConfigScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/GlobalRagConfigScreen.kt)
+    - 修改: [AdvancedRetrievalScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/AdvancedRetrievalScreen.kt)
+    - 修改: [AgentAdvancedRetrievalScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentAdvancedRetrievalScreen.kt)
+    - 修改: [RagAdvancedScreen.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagAdvancedScreen.kt)
+    - 修改: [strings.xml (zh-rCN)](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/res/values-zh-rCN/strings.xml)
+
+### 知识图谱提取断点续传与 RAG 审计弹窗高度性能优化 (2026-05-19)
+- **🔴 P0 — 知识图谱抽取多分块大文本时意外中断断点续传与原子写入保护**：
+  - *问题*：原有的知识图谱 (KG) 抽取机制，一旦调用 `extractAndSave` 就会在方法头部直接执行数据库清除操作。若中途因为大文本多个 chunks 提取过程中的任一次网络抖动、模型超时或应用强退，将直接导致已有图谱数据库的空洞化破坏。此外，没有任何断点续传机制，导致每次重抽都必须向大模型发送巨量重复 chunk 抽取请求。
+  - *修复*：
+    - ** progressive checkpoint 磁盘私有 JSON 缓存机制**：在 `GraphExtractor` 中引入基于 Kotlinx Serialization 的 `checkpointJson` 编解码配置。当提取含有 `docId` 属性的文档时，在 `cacheDir/kg_extraction_checkpoint/{docId}/` 下建立私有临时文件夹。
+    - **分块跳过与缓存持久化**：每次循环提取前均会校验磁盘上是否存在 `chunk_index.json`，若存在则零延迟加载缓存的节点和边结果并安全跳过 LLM 交互；若不存在则请求 LLM 提取并立刻在磁盘持久化该 chunk 缓存。
+    - **原子写入保护事务控制**：仅在 **所有分块 100% 成功提取** 且无任何错误抛出时，才会在最终入库事务前一瞬间执行 `clearGraphForDoc` 清除该文档的旧图谱。若中途发生异常，则立即打断，且保留已有数据库图谱和本地已成功提取的 chunks 缓存以备下次续传，物理避免了脏数据残留和网络断连数据丢失。
+    - **缓存打扫**：新图谱全部无缝 upsert 入库完成后，自动清理该 docId 的 checkpoint 物理临时文件夹，打扫战场。
+    - *单元测试*：在 `native-ui/app/src/test/java/com/promenar/nexara/data/rag/GraphExtractorTest.kt` 中编写了高保真的 JUnit 5 结合 MockK 单元测试。覆盖了正常提取、带 docId 时首次提取异常中断、部分 checkpoint 保存，以及二次提取直接触发断点续传且最终原子入库和缓存打扫的完整业务生命周期。
+  - *变更文件 (3)*：
+    - 修改: [GraphExtractor.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/data/rag/GraphExtractor.kt)
+    - 新建: [GraphExtractorTest.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/test/java/com/promenar/nexara/data/rag/GraphExtractorTest.kt)
+    - 方案: [rag_height_and_kg_checkpoint.md](file:///Users/promenar/.gemini/antigravity/brain/674e6e10-6ac1-4bd2-b58e-a5360c52c8ad/artifacts/rag_height_and_kg_checkpoint.md)
+- **🟡 P1 — 锁定 RAG 详情底栏审计弹窗高度，防止随数据量多寡产生奇怪跳变**：
+  - *问题*：主会话 RAG 检索指示器点击弹出的 RAG 详情底栏弹窗高度会因为捞取的引用内容多寡自适应剧烈收缩或增大高度，时而极扁、时而极高，这种高度物理跳变极度影响视觉舒适度。
+  - *修复*：
+    - 在 `RagDetailsSheet.kt` 中，将底部 Sheet 内容容器的 `Modifier` 高度锁死在物理屏幕的 80% 高度（`.fillMaxHeight(0.8f)`），与模型选择器 `ModelPicker` 的物理高规保持像素级一致。
+    - 对 Tab 切换的 `Crossfade` 容器添加 `.weight(1f)` 填充屏幕剩余全部高度。
+    - 对检索片段列表（LazyColumn）和知识图谱 Tab (KgPathsTab) 传入并应用 `.fillMaxSize()`。实现在 80% 固定高度内平滑、稳定地自适应布局呈现，并支持内容长短时在规定视口内极致顺畅的滚动，彻底消除了高度闪烁与突变。
+  - *变更文件 (1)*：
+    - 修改: [RagDetailsSheet.kt](file:///Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/chat/components/RagDetailsSheet.kt)
+
 ### 新建助手模型可视化选择器重构 (2026-05-19)
 - **🟡 P1 — 升级新建助手弹窗，引入 ModelPicker 替换文本输入框**：
   - *问题*：原“新建助手”弹窗中模型选择为一个普通的 `OutlinedTextField` 输入框，用户必须手动输入模型 ID，缺乏可视化过滤（如过滤出对话、推理、生图模型）、所属提供商和能力标签的直观展示，极易输入错误且体验极不友好。

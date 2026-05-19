@@ -64,7 +64,6 @@ fun RagAdvancedScreen(
     val allModels by settingsViewModel.providerModels.collectAsState()
 
     var showPromptEditor by remember { mutableStateOf(false) }
-    var showSummaryTemplateEditor by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
 
     NexaraPageLayout(
@@ -77,40 +76,6 @@ fun RagAdvancedScreen(
                 style = NexaraTypography.bodyMedium,
                 color = NexaraColors.OnSurfaceVariant
             )
-
-            // === 摘要模板（始终可见） ===
-            NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.large as RoundedCornerShape
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SettingsSectionHeader(stringResource(R.string.rag_config_section_template))
-                    NexaraGlassCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSummaryTemplateEditor = true },
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                config.summaryTemplate.take(100) + if (config.summaryTemplate.length > 100) "..." else "",
-                                style = NexaraTypography.bodySmall.copy(fontSize = 12.sp),
-                                color = NexaraColors.OnSurface,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
 
             // === 知识图谱（全局配置，会话级开关由聊天设置面板控制，默认关闭） ===
 
@@ -179,13 +144,8 @@ fun RagAdvancedScreen(
                             checked = config.jitMaxChunks > 0,
                             onCheckedChange = { enabled ->
                                 viewModel.updateConfig { it.copy(jitMaxChunks = if (enabled) 128 else 0) }
-                            }
-                        )
-                        Text(
-                            stringResource(R.string.rag_advanced_coming_soon),
-                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(start = 4.dp)
+                            },
+                            enabled = false
                         )
 
                         if (config.jitMaxChunks > 0) {
@@ -201,13 +161,8 @@ fun RagAdvancedScreen(
                             title = stringResource(R.string.rag_advanced_jit_domain),
                             description = stringResource(R.string.rag_advanced_jit_domain_desc),
                             checked = config.kgDomainAuto,
-                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(kgDomainAuto = enabled) } }
-                        )
-                        Text(
-                            stringResource(R.string.rag_advanced_coming_soon),
-                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(start = 4.dp)
+                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(kgDomainAuto = enabled) } },
+                            enabled = false
                         )
                     }
                 }
@@ -227,25 +182,15 @@ fun RagAdvancedScreen(
                             title = stringResource(R.string.rag_advanced_incremental_hash),
                             description = stringResource(R.string.rag_advanced_incremental_hash_desc),
                             checked = config.enableIncrementalHash,
-                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableIncrementalHash = enabled) } }
-                        )
-                        Text(
-                            stringResource(R.string.rag_advanced_coming_soon),
-                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(start = 4.dp)
+                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableIncrementalHash = enabled) } },
+                            enabled = false
                         )
                         SettingsToggle(
                             title = stringResource(R.string.rag_advanced_rule_prefilter),
                             description = stringResource(R.string.rag_advanced_rule_prefilter_desc),
                             checked = config.enableLocalPreprocess,
-                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableLocalPreprocess = enabled) } }
-                        )
-                        Text(
-                            stringResource(R.string.rag_advanced_coming_soon),
-                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(start = 4.dp)
+                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableLocalPreprocess = enabled) } },
+                            enabled = false
                         )
                     }
                 }
@@ -384,15 +329,6 @@ fun RagAdvancedScreen(
         title = stringResource(R.string.rag_advanced_edit_prompt),
         onSave = { text -> viewModel.updateConfig { it.copy(kgExtractionPrompt = text.ifBlank { null }) } },
         placeholder = stringResource(R.string.rag_advanced_extract_prompt_placeholder)
-    )
-
-    UnifiedPromptEditor(
-        show = showSummaryTemplateEditor,
-        onDismiss = { showSummaryTemplateEditor = false },
-        initialText = config.summaryTemplate,
-        title = stringResource(R.string.rag_advanced_summary_template_title),
-        onSave = { text -> viewModel.updateConfig { it.copy(summaryTemplate = text.ifBlank { RagConfiguration().summaryTemplate }) } },
-        placeholder = stringResource(R.string.rag_config_summary_template_placeholder)
     )
 }
 

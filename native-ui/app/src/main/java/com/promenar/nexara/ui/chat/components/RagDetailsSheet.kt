@@ -57,6 +57,7 @@ fun RagDetailsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.8f)
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
             Text(
@@ -101,11 +102,16 @@ fun RagDetailsSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Crossfade(targetState = selectedTab, label = "tab-crossfade") { page ->
+            Crossfade(
+                targetState = selectedTab,
+                label = "tab-crossfade",
+                modifier = Modifier.weight(1f)
+            ) { page ->
                 when (page) {
                     0 -> {
                         if (hasReferences) {
                             LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(16.dp),
                                 contentPadding = PaddingValues(bottom = 32.dp)
                             ) {
@@ -122,7 +128,10 @@ fun RagDetailsSheet(
                     }
                     1 -> {
                         if (hasKgPaths) {
-                            KgPathsTab(kgPaths = kgPaths!!)
+                            KgPathsTab(
+                                kgPaths = kgPaths!!,
+                                modifier = Modifier.fillMaxSize()
+                            )
                         } else {
                             EmptyStateText()
                         }
@@ -260,8 +269,9 @@ private fun ScoreBadge(label: String, score: Float, color: androidx.compose.ui.g
 }
 
 @Composable
-private fun KgPathsTab(kgPaths: List<KgPath>) {
+private fun KgPathsTab(kgPaths: List<KgPath>, modifier: Modifier = Modifier) {
     LazyColumn(
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 32.dp)
     ) {
