@@ -294,9 +294,12 @@ private fun AddAgentDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, String, String) -> Unit
 ) {
+    val pm = ProviderManager.getInstance()
+    val defaultModel by pm.summaryModelId.collectAsState()
+    
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("") }
+    var model by remember { mutableStateOf(defaultModel) }
     var systemPrompt by remember { mutableStateOf("") }
     var showPromptEditor by remember { mutableStateOf(false) }
 

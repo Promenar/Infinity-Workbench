@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.SwipeableItem
@@ -181,21 +182,7 @@ private fun AgentSessionHeader(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(NexaraColors.GlassSurface)
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = stringResource(R.string.common_cd_back),
-                tint = NexaraColors.OnSurface,
-                modifier = Modifier.size(20.dp)
-            )
-        }
+        NexaraBackButton(onClick = onBack)
 
         Spacer(modifier = Modifier.width(12.dp))
 

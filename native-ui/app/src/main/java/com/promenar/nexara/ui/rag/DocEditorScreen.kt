@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -167,13 +168,7 @@ fun DocEditorScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back),
-                            tint = NexaraColors.OnSurface
-                        )
-                    }
+                    NexaraBackButton(onClick = onNavigateBack)
                 },
                 actions = {
                     Box(

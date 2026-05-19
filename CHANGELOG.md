@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### UI 视觉一致性修复与助手模型默认值优化 (2026-05-19)
+- **🟡 P1 — 助手创建时默认使用系统摘要模型**：
+  - 修复：`AddAgentDialog` 初始化时自动读取 `ProviderManager.summaryModelId` 作为默认模型
+  - 如果系统未设置摘要模型则保持为空，新会话继承助手的模型设置，用户更改后不再追踪
+  - *变更文件*：`AgentHubScreen.kt`
+- **🟡 P1 — 提示词编辑器 UI 优化**：
+  - 移除"Split"分列视图模式，仅保留"Edit"和"Preview"双模式
+  - 修复右上角确认按钮样式，从自定义 `Box + Background` 改为标准 `IconButton`，与全局 Header 按钮形状一致
+  - *变更文件*：`UnifiedPromptEditor.kt`
+- **🟡 P1 — 全站返回按钮样式统一**：
+  - 新建统一组件 `NexaraBackButton`，使用 `Icons.AutoMirrored.Rounded.ArrowBack`（Rounded 变体），尺寸 48dp，图标 24dp
+  - 更新 8 个页面使用统一组件：`ChatScreen`、`SessionSettingsScreen`、`AgentEditScreen`、`AgentSessionsScreen`、`NexaraPageLayout`、`DeveloperScreen`、`KnowledgeGraphScreen`、`DocEditorScreen`
+  - *变更文件*：`NexaraBackButton.kt`（新建）、`ChatScreen.kt`、`SessionSettingsScreen.kt`、`AgentEditScreen.kt`、`AgentSessionsScreen.kt`、`NexaraPageLayout.kt`、`DeveloperScreen.kt`、`KnowledgeGraphScreen.kt`、`DocEditorScreen.kt`
+
 ### 工具调用链全面审计与 4 项系统性缺陷修复 (2026-05-19)
 - **🔴 P0 — 工具调用参数双重累积 (Double Accumulation)**: 根治 OpenAI/GenericOpenAI 协议层发送完整累积 arguments 导致 ViewModel 二次累积、参数膨胀损坏的致命 Bug
   - *病因*：Protocol 层在 SSE 流中累积 `function.arguments` 片段后发送完整值 → ChatViewModel 执行 `existing.arguments + chunk.arguments` 追加 → JSON 损坏为深层嵌套

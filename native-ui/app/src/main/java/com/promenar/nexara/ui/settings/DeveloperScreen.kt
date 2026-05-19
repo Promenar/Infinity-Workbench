@@ -15,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -33,10 +34,7 @@ fun DeveloperScreen(
             TopAppBar(
                 title = { Text("开发者面板", style = NexaraTypography.headlineLarge) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        @Suppress("DEPRECATION")
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = null)
-                    }
+                    NexaraBackButton(onClick = onNavigateBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = NexaraColors.CanvasBackground,

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -171,13 +172,7 @@ fun AgentEditScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.agent_edit_title), style = NexaraTypography.headlineLarge) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back),
-                            tint = NexaraColors.OnSurface
-                        )
-                    }
+                    NexaraBackButton(onClick = onNavigateBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)

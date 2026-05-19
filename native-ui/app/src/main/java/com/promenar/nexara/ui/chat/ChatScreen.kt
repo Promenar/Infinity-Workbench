@@ -45,7 +45,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
-import androidx.compose.material.icons.rounded.ArrowBack
+import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
@@ -770,10 +770,7 @@ fun ChatTopBar(
             }
         },
         navigationIcon = {
-            IconButton(onClick = onBack) {
-                @Suppress("DEPRECATION")
-                Icon(Icons.Rounded.ArrowBack, null, tint = NexaraColors.OnSurface)
-            }
+            NexaraBackButton(onClick = onBack)
         },
         actions = {
             IconButton(onClick = onWorkspace) {

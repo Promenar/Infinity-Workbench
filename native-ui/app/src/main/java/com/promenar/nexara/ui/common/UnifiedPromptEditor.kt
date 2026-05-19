@@ -54,9 +54,8 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 enum class EditorMode { DIALOG, SHEET }
 
 private enum class EditorTab(val label: String) {
-    EDITOR("Editor"),
-    PREVIEW("Preview"),
-    SPLIT("Split")
+    EDITOR("Edit"),
+    PREVIEW("Preview")
 }
 
 @Composable
@@ -107,22 +106,17 @@ fun UnifiedPromptEditor(
                 modifier = Modifier.weight(1f)
             )
 
-            IconButton(onClick = { onSave(text) }) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(NexaraColors.Primary),
-                    contentAlignment = Alignment.Center
+            IconButton(
+                    onClick = { onSave(text) },
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Check,
                         contentDescription = "Save",
-                        tint = NexaraColors.OnPrimary,
-                        modifier = Modifier.size(20.dp)
+                        tint = NexaraColors.Primary,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
-            }
         }
     }
 
@@ -307,27 +301,6 @@ fun UnifiedPromptEditor(
                         PreviewPane(
                             modifier = Modifier.fillMaxSize()
                         )
-                    }
-                    EditorTab.SPLIT -> {
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            EditorPane(
-                                modifier = Modifier
-                                    .weight(0.5f)
-                                    .fillMaxHeight()
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .fillMaxHeight(),
-                                thickness = 1.dp,
-                                color = NexaraColors.OutlineVariant
-                            )
-                            PreviewPane(
-                                modifier = Modifier
-                                    .weight(0.5f)
-                                    .fillMaxHeight()
-                            )
-                        }
                     }
                 }
             }

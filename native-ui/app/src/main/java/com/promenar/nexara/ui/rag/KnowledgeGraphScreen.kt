@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -90,13 +91,7 @@ fun KnowledgeGraphScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.common_cd_back),
-                                tint = NexaraColors.OnSurface
-                            )
-                        }
+                        NexaraBackButton(onClick = onNavigateBack)
                     },
 
                     colors = TopAppBarDefaults.topAppBarColors(

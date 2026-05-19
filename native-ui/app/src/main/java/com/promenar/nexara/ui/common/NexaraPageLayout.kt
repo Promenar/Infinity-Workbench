@@ -72,14 +72,7 @@ fun NexaraPageLayout(
                 },
                 navigationIcon = {
                     if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.common_cd_back),
-                                tint = NexaraColors.OnSurface,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        NexaraBackButton(onClick = onBack)
                     }
                 },
                 actions = { actions() },

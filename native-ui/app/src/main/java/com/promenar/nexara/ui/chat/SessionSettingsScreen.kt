@@ -13,7 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ArrowBack
+import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -223,10 +223,7 @@ fun SessionSettingsScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        @Suppress("DEPRECATION")
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_cd_back), tint = NexaraColors.OnSurface)
-                    }
+                    NexaraBackButton(onClick = onNavigateBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)
