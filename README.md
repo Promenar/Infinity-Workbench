@@ -4,7 +4,7 @@
 ![Platform](https://img.shields.io/badge/platform-Android-green.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
 ![Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg)
-![Version](https://img.shields.io/badge/version-1.0.0-6366F1.svg)
+![Version](https://img.shields.io/badge/version-0.1-6366F1.svg)
 ![Stage](https://img.shields.io/badge/stage-early--preview-orange.svg)
 
 > Android 端 BYOK 开源 AI 客户端 — 原生 Kotlin + Jetpack Compose 构建，融合 RAG 知识引擎与知识图谱的智能记忆外脑。
@@ -64,7 +64,7 @@ Foreground Service for uninterrupted AI generation when switching apps. Architec
 
 ### Download
 
-[![Download APK](https://img.shields.io/badge/Download-v1.0.0--beta-6366F1?style=for-the-badge&logo=android)](https://github.com/NarcisWL/Nexara/releases/tag/v1.0.0-beta)
+[![Download APK](https://img.shields.io/badge/Download-v0.1--beta-6366F1?style=for-the-badge&logo=android)](https://github.com/NarcisWL/Nexara/releases/tag/v0.1-beta)
 
 ---
 
@@ -119,7 +119,7 @@ HTML/CSS/JS/SVG 代码块 WebView 实时预览，全屏分屏模式，PNG 导出
 
 ### 下载
 
-[![下载 APK](https://img.shields.io/badge/下载-v1.0.0--beta-6366F1?style=for-the-badge&logo=android)](https://github.com/NarcisWL/Nexara/releases/tag/v1.0.0-beta)
+[![下载 APK](https://img.shields.io/badge/下载-v0.1--beta-6366F1?style=for-the-badge&logo=android)](https://github.com/NarcisWL/Nexara/releases/tag/v0.1-beta)
 
 ### 技术栈
 

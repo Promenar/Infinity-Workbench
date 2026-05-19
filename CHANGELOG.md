@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### DIA 文档体系清理与重组、项目文档全面更新至 98% 进度与 GitHub Release v1.0.0-beta 发布 (2026-05-19)
+### DIA 文档体系清理与重组、项目文档全面更新至 98% 进度与 GitHub Release v0.1-beta 发布 (2026-05-19)
 - **📋 DIA 文档治理更新**：
   - *文档重组*：将 `docs/IMPLEMENTATION_PLAN.md`（已完成历史计划）移至 `.agent/plans/archive/`；将 `docs/MARKDOWN_RENDERING_AUDIT.md`（已修复审计）移至 `docs/audit/`；将 `docs/plans/RAG_INDICATOR_MULTI_SESSION_EXECUTION.md` 移至 `.agent/plans/`，统一计划文档位置
   - *清理空目录*：移除 `docs/plans/` 空目录
@@ -19,10 +19,10 @@ All notable changes to this project will be documented in this file.
   - *功能标注*：本地推理标记为 🚧 开发中，后台生成标记为 🚧 计划中
   - *新增运行环境要求*：Android 8.0+ 最低、Android 13+ 推荐、存储/网络/权限说明
   - *减少开发者内容*：移除 Quick Start，增加面向最终用户的 APK 下载引导
-- **🚀 GitHub Release v1.0.0-beta 发布**：
-  - 创建首个 Kotlin 原生公测版 Release 标签 `v1.0.0-beta`
+- **🚀 GitHub Release v0.1-beta 发布**：
+  - 创建首个 Kotlin 原生公测版 Release 标签 `v0.1-beta`
   - 上传 Release APK（`app-release.apk`, 38 MB）至 GitHub Releases
-  - 发布地址: https://github.com/NarcisWL/Nexara/releases/tag/v1.0.0-beta
+  - 发布地址: https://github.com/NarcisWL/Nexara/releases/tag/v0.1-beta
 - **变更文件 (7)**：
   - 移动: `docs/IMPLEMENTATION_PLAN.md` → `.agent/plans/archive/20260512-markdown-rendering-plan.md`
   - 移动: `docs/MARKDOWN_RENDERING_AUDIT.md` → `docs/audit/20260512-markdown-rendering-audit.md`

@@ -544,7 +544,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Tune,
                 title = stringResource(R.string.settings_about_nexara),
-                subtitle = stringResource(R.string.settings_version, "1.0.0"),
+                subtitle = stringResource(R.string.settings_version, "0.1"),
                 onClick = onAboutClick
             )
         }
