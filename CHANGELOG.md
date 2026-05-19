@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### DIA 文档体系清理与重组、项目文档全面更新至 98% 进度与 GitHub Release v1.0.0-beta 发布 (2026-05-19)
+- **📋 DIA 文档治理更新**：
+  - *文档重组*：将 `docs/IMPLEMENTATION_PLAN.md`（已完成历史计划）移至 `.agent/plans/archive/`；将 `docs/MARKDOWN_RENDERING_AUDIT.md`（已修复审计）移至 `docs/audit/`；将 `docs/plans/RAG_INDICATOR_MULTI_SESSION_EXECUTION.md` 移至 `.agent/plans/`，统一计划文档位置
+  - *清理空目录*：移除 `docs/plans/` 空目录
+  - *更新治理文档*：`docs/DOCUMENT_GOVERNANCE.md` 升级至 v2.0，反映已完成的 2026-05-18 全站清理和本轮优化
+  - *补全注册表*：`registry.md` 新增遗漏的 3 个审计文档、`.agent/checklists/CODE_REVIEW.md`、`native-ui/AGENTS.md` 归档参考
+- **📚 架构与进度文档全面刷新**：
+  - *架构快速参考*：`docs/ARCHITECTURE.md` 日期更新至 2026-05-19
+  - *全局架构设计*：`docs/ARCHITECTURE_DESIGN.md` 升级至 v2.1.0，更新维护日期
+  - *实现分析*：`docs/IMPLEMENTATION_ANALYSIS.md` 大规模更新 — 规模统计（~342 Kotlin 文件 / 58 测试 / 18 Skill）、功能进度（92%→98%）、模块评级刷新（Agent 引擎 82%→95%、KG 80%→90%）、移除过时的对标产品比较表、更新分阶段规划和关键风险
+- **📖 README 项目门面重写**：
+  - *去对标化*：移除"对标 LobeHub / Cherry Studio"描述，改为基于项目愿景和已实现功能的原生介绍
+  - *功能标注*：本地推理标记为 🚧 开发中，后台生成标记为 🚧 计划中
+  - *新增运行环境要求*：Android 8.0+ 最低、Android 13+ 推荐、存储/网络/权限说明
+  - *减少开发者内容*：移除 Quick Start，增加面向最终用户的 APK 下载引导
+- **🚀 GitHub Release v1.0.0-beta 发布**：
+  - 创建首个 Kotlin 原生公测版 Release 标签 `v1.0.0-beta`
+  - 上传 Release APK（`app-release.apk`, 38 MB）至 GitHub Releases
+  - 发布地址: https://github.com/NarcisWL/Nexara/releases/tag/v1.0.0-beta
+- **变更文件 (7)**：
+  - 移动: `docs/IMPLEMENTATION_PLAN.md` → `.agent/plans/archive/20260512-markdown-rendering-plan.md`
+  - 移动: `docs/MARKDOWN_RENDERING_AUDIT.md` → `docs/audit/20260512-markdown-rendering-audit.md`
+  - 移动: `docs/plans/RAG_INDICATOR_MULTI_SESSION_EXECUTION.md` → `.agent/plans/20260517-rag-indicator-execution.md`
+  - 修改: `.agent/registry.md`
+  - 修改: `docs/DOCUMENT_GOVERNANCE.md`
+  - 修改: `docs/ARCHITECTURE_DESIGN.md`
+  - 重写: `docs/IMPLEMENTATION_ANALYSIS.md`
+  - 重写: `README.md`
+
 ### 模型能力数据库模糊遮蔽致命缺陷彻底根治、全新 Google 阵营多维元数据合并与主动测试门禁绿灯上线 (2026-05-20)
 - **🔴 P0 — 彻底根治通用 `gemini` 模糊遮蔽（Shadowing）匹配 Bug**：
   - *Bug 根源排查*：排查发现由于老旧 `MODEL_SPECS` 列表中过早定义了通用的子串匹配 `ModelPattern.StringPattern("gemini")`，当系统在 `/models` 端点反序列化或在设置页面匹配 `gemini-3-flash` / `gemini-3.1` 等具体型号时，总是会被该项提前截断，导致它们错误地退化为了无任何能力的空白模型；

@@ -1,5 +1,6 @@
 # Nexara Architecture 全景
 
+> **最后更新**: 2026-05-19
 > **注意**: 本文档为快速参考。完整架构设计见 [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构 + 技术路线择优），实现进度与差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)。
 
 ## 核心架构

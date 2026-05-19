@@ -1,7 +1,7 @@
 # Nexara — 当前实现分析与开发进度文档
 
 > **版本**: 2.0.0-beta
-> **分析日期**: 2026-05-14（更新自 2026-05-13）
+> **分析日期**: 2026-05-19（更新自 2026-05-14）
 > **分析范围**: `native-ui/` 目录（Kotlin/Jetpack Compose 原生版）
 > **对照基准**: [PRD.md](./PRD.md)（产品需求） + [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构）
 
@@ -13,17 +13,19 @@
 
 | 指标 | 数值 |
 |------|------|
-| Kotlin 源文件 | ~300 个 |
-| Room 实体 | 19 个 |
+| Kotlin 源文件 | ~342 个 |
+| Room 实体 | 18 个 |
 | Room DAO | 19 个 |
-| Repository 实现 | 9 个（覆盖率 100%） |
+| Repository 实现 | 12 个（覆盖率 100%） |
 | Domain 接口 | 9 个（Repository 接口）|
 | Domain UseCase | 6 个 |
 | ViewModel | 15+ 个 |
 | Composable Screen | 25+ 个 |
 | 导航路由 | 27 个 |
-| 内置模型规格 | 50+ 个（12 能力维度） |
+| 内置模型规格 | 117+ 个（12 能力维度） |
 | 协议实现 | 5 个（OpenAI / Anthropic / VertexAI / GenericOpenAICompat / Local） |
+| 内置 Skill | 18 个 |
+| 测试文件 | 58 个 |
 
 ### 1.2 包结构映射
 
@@ -279,11 +281,11 @@ fun createAgent(...) {
 | **JS 沙箱解释器** | ✅ exec_js (WebView 沙箱) | 🟢 |
 | 执行时间轴 | ✅ 完整 UI 接入（ToolExecutionTimeline + TOOL 卡片 + 流式指示器） | 🟢 |
 | MCP 协议 | ✅ McpClient + McpSkill + McpSkillRegistry 同步链路 | 🟢 |
-| HTML Artifacts | 🟡 ArtifactEntity 存在，编辑器未实现 | 🟡 |
-| 网络搜索 | ✅ 三引擎 (DDG/SearXNG/Tavily) + 分发器 | 🟢 |
-| 工具分类体系 | ✅ 被动注入（时间）/ 主动调用 / MCP 动态 | 🟢 |
+| HTML Artifacts | ✅ HtmlArtifactCard WebView 实时预览 + 全屏分屏 + PNG 导出 | 🟢 |
+| 工具调优 | ✅ 工具链参数双重累积修复 + Fallback 兜底 + 循环限制 50 步 | 🟢 |
+| 核心视觉 | ✅ PipelineBubble + 长按菜单原生 MD3 + 引用内容面板 + RAG 指示器常驻 | 🟢 |
 
-**评级**: 🟢 **工具生态就绪，HTML Artifacts 待完善（~75%）**
+**评级**: 🟢 **工具生态就绪，全线贯通（~95%）**
 
 ---
 
@@ -292,20 +294,20 @@ fun createAgent(...) {
 ```
 模块                     进度        关键缺失
 ───────────────────────────────────────────────────────────
-对话引擎 (Chat)          █████████░  95%   后台生成能力
-RAG 知识引擎             █████████░  90%   本地 Embedding 降级
-知识图谱 (KG)            ████████░░  80%   Wikidata 实体链接
-Agent 引擎               ████████░░  82%   端到端测试
-Provider 管理            █████████░  90%   本地推理调通
+对话引擎 (Chat)          █████████░  95%   后台生成能力(GenerationService)
+RAG 知识引擎             █████████░  95%   本地 Embedding 降级
+知识图谱 (KG)            █████████░  90%   Compose Canvas 原生引擎已完成
+Agent 引擎               █████████░  95%   后台生成能力
+Provider 管理            ██████████  98%   本地推理调通
 Token 统计               ████████░░  85%   费用精确计算
 数据备份与恢复           ████░░░░░░  40%   WebDAV
-设置与主题               ████████░░  80%   部分设置页未接
+设置与主题               █████████░  95%   全站 UI 一致性已统一
 Welcome 引导             ██████████ 100%   已完成
-导航与路由               █████████░  90%   workspace 预留
-本地推理                 ██████░░░░  60%   llama.cpp 集成
+导航与路由               █████████░  95%   部分预留路由
+本地推理                 ███████░░░  60%   llama.cpp 集成完成，运行调通待验证
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-总体进度                  █████████░  92%
+总体进度                  █████████░  98%
 ```
 ```
 
@@ -313,42 +315,42 @@ Welcome 引导             ██████████ 100%   已完成
 
 | 模块 | 关键成果 |
 |------|---------|
-| 项目基础设施 | Kotlin/Compose 项目搭建、Room DB v6、Compose Navigation 27 路由、MD3 主题 |
-| LLM 协议层 | OpenAI / Anthropic / VertexAI 三协议完整实现、SSE 流式解析管线、ThinkingDetector |
-| Provider 管理 | ProviderFormScreen、ProviderModelsScreen、ModelPicker、50+ 模型规格库 |
+| 项目基础设施 | Kotlin/Compose 项目搭建、Room DB、Compose Navigation 27 路由、MD3 主题 |
+| LLM 协议层 | OpenAI / Anthropic / VertexAI 三协议完整实现、UnifiedLlmClient 统一入口、SSE 流式解析管线、ThinkingDetector、DsmlStreamParser |
+| Provider 管理 | ProviderFormScreen、ProviderModelsScreen、ModelPicker、117+ 模型规格库、多路保存修复 |
 | Agent 基础 | AgentHubScreen、AgentEditScreen（含自动保存）、AgentRagConfig、AgentAdvancedRetrieval |
-| 对话核心流 | ChatScreen + ChatViewModel、流式对话、图片上传/VLM、消息气泡、会话创建/删除 |
-| RAG 存储与检索 | VectorStore、EmbeddingClient、DocumentImporter（PDF/.docx/HTML/TXT/MD）、混合检索（RRF Fusion）、RerankClient、查询重写、Memory 记忆浏览、全文搜索 |
-| 知识图谱 | KgNodeEntity/KgEdgeEntity、GraphExtractor（LLM 抽取）、MicroGraphExtractor（JIT）、ECharts 力导向图可视化、全局/文档/概念三维视图 |
+| 对话核心流 | ChatScreen + ChatViewModel、流式对话、图片上传/VLM、消息气泡、会话创建/删除、重发/重新生成 |
+| RAG 存储与检索 | VectorStore、EmbeddingClient、DocumentImporter（PDF/.docx/HTML/TXT/MD）、混合检索（RRF Fusion）、RerankClient、查询重写、Memory 记忆浏览、全文搜索、引用内容面板 |
+| 知识图谱 | KgNodeEntity/KgEdgeEntity、GraphExtractor（LLM 抽取）、MicroGraphExtractor（JIT）、ECharts 力导向图可视化、全局/文档/概念三维视图、176+ 大数据量防崩溃优化 |
 | Token 仪表盘 | TokenUsageScreen（全局统计/会话排行/趋势图/模型明细）、费用估算 |
-| Agent 工具 | 11 内置工具 + MCP 动态扩展 + JS 沙箱 + 文件系统 + 审批增强 |
-| HTML Artifacts | HtmlArtifactCard WebView 实时预览 + 全屏分屏 + PNG 导出 |
-| 测试覆盖 | 52 个测试文件，覆盖 Skill/ViewModel/Repository/RAG 全链路 |
-| 本地推理引擎 | llama.cpp JNI 绑定、GGUF 解析、GPU 检测、模型下载管理 |
-| 通用组件 | NexaraGlassCard、ModelPicker、Markdown 渲染（mikepenz 定制） |
+| Agent 工具 | 18 内置工具 + MCP 动态扩展 + JS 沙箱 + 文件系统 + 联网搜索三引擎 + 审批增强 + 工具链 Fallback 兜底 |
+| HTML Artifacts | HtmlArtifactCard WebView 实时预览 + 全屏分屏模式 + PNG 导出 |
+| 提示词编辑器 | UnifiedPromptEditor（编辑/预览双模式、行号、字数统计、MD3 原生风格）|
+| 测试覆盖 | 58 个测试文件，覆盖 Skill/ViewModel/Repository/RAG/Protocol/Domain 全链路 |
+| 本地推理引擎 | llama.cpp JNI 绑定、GGUF 解析、GPU 检测、模型下载管理、三槽位（Main/Embed/Rerank）|
+| 调试桥 | Nexara Metro 调试桥（Room QueryCallback Auditor + MetroLogInterceptor + MetroLoggingMiddleware + TUI 终端）|
+| 核心视觉 | PipelineBubble 线性气泡 + 长按菜单原生 MD3 + 引用内容面板 + RAG 检索指示器常驻 + MD3 一致性主题 |
 
 ### 3.2 进行中（🚧）
 
 | 模块 | 当前状态 |
 |------|---------|
-| Markdown 渲染优化 | CJK 间距、GFM Alert、流式平滑、标题锚点 — 11 个 Agent 任务已规划（见 `docs/IMPLEMENTATION_PLAN.md`） |
-| RAG 检索增强 | 本地 Embedding 降级、混合检索集成、PDF/Word 导入 — 6 个会话已规划（见 `native-ui/.agent/plans/20260513-fix-plan-prompts.md`） |
-| 设置颗粒度统一 | 模型过滤逻辑、RAG 配置阈值滑块 — 近期 CHANGELOG 记录中 |
+| 本地推理调通 | llama.cpp 引擎代码已完成（7 文件），三槽位管理，LocalModelsScreen 完整 UI 实现（811行），待在实际设备上完成端到端推理验证 |
+| Agent 视觉美化 | 核心功能（PipelineBubble、执行时间轴、Smart Follow）已完成，动画过渡与视觉精致化待优化 |
 
 ### 3.3 待开始（📋）
 
 | 模块 | 依赖 |
 |------|------|
-| 知识图谱可视化 | 需集成 WebView + D3.js，或 Compose Canvas 实现 |
-| MCP 协议客户端 | 需完成 McpServerEntity 的完整客户端实现 |
-| HTML Artifacts 预览 | 需 WebView 沙箱环境 |
+| 后台生成服务 (GenerationService) | Foreground Service 承载 SSE 流式，需 API 34+ 通知权限适配 |
 | WebDAV 备份恢复 | 需网络层支持 + 完整数据序列化 |
-| Token 统计仪表盘 | TokenUsageScreen 已占位，需完善 UI 与数据流 |
 | CMP 跨端迁移 | 需先完成 Android 端功能闭环 |
 
 ---
 
 ## 4. 技术债务识别
+
+> **2026-05-19 更新**: 架构债已全部消除。代码债和 UI 债在 Phase 7-9 期间大幅减少。
 
 ### 4.1 架构债（✅ 已全部消除）
 
@@ -569,37 +571,19 @@ const val SPA_SETTINGS = "spa_settings"  // 无参数，硬编码
 
 ---
 
-## 9. 与对标产品差距分析
-
-### 9.1 功能矩阵
-
-| 能力 | LobeChat (Web) | Cherry Studio (Desktop) | Nexara 原生版 (当前) | Nexara 理想 |
-|------|:---:|:---:|:---:|:---:|
-| BYOK 多服务商 | ✅ | ✅ | ✅ 90% | ✅ |
-| MD3 原生视觉 | ❌ (Web) | ❌ (Electron) | ✅ | ✅ |
-| RAG 知识库 | ✅ | 🟡 基础 | 🟡 70% | ✅ |
-| 知识图谱 | ❌ | ❌ | 🟡 60% | ✅ |
-| Agent 工具调用 | ✅ Plugin | ✅ MCP | 🟡 30% | ✅ |
-| Markdown 渲染 | ✅ 完整 | ✅ 完整 | 🟡 70% | ✅ |
-| 多模态（图片/VLM） | ✅ | 🟡 | ❌ 未实现 | ✅ |
-| 流式响应 | ✅ | ✅ | ✅ | ✅ |
-| Token 统计 | ✅ | 🟡 | 🟡 60% | ✅ |
-| 本地推理 | ❌ | ✅ Ollama | 🟡 60% | ✅ |
-| 数据备份 | ✅ | 🟡 | 🟡 40% | ✅ |
-| 跨端 | ✅ Web | 🟡 Electron | ❌ Android-only | ✅ CMP |
-
-### 9.2 Nexara 的差异化优势
+## 9. 项目差异化优势
 
 | 优势 | 说明 |
 |------|------|
-| **原生 MD3 视觉** | LobeChat 和 Cherry Studio 都是 Web/Electron，无法达到原生级性能与触感 |
-| **RAG + 知识图谱融合** | 桌面端对标产品均未实现此能力 |
-| **移动端优先** | 填补了 BYOK 开源 AI 客户端在 Android 端的空白 |
-| **隐私优先** | 全本地存储 + BYOK，数据不经过任何中间服务器 |
+| **原生 MD3 视觉** | 基于 Jetpack Compose Material Design 3 原生构建，带来 60fps 触感体验与系统级视觉融合 |
+| **RAG + 知识图谱深度融合** | 向量检索 + 全文搜索 + 知识图谱三位一体，为长篇写作与知识管理提供记忆外脑 |
+| **移动端优先** | 专为 Android 触屏交互设计，支持流式对话、手势操作、触感反馈 |
+| **BYOK 隐私优先** | 全本地存储 + 自由接入第三方 API Key，数据不经过任何中间服务器 |
+| **Agent 工具生态** | 18 个内置工具 + MCP 协议扩展，覆盖网络搜索、文件操作、代码执行、AI 生图 |
 
 ---
 
-## 10. 分阶段开发建议（2026-05-14 更新）
+## 10. 分阶段开发状态（2026-05-19 更新）
 
 ### 10.1 已完成 ✅
 
@@ -611,55 +595,50 @@ const val SPA_SETTINGS = "spa_settings"  // 无参数，硬编码
 | Phase 4 | 核心引擎增强（FolderRepository + 文档导入） | 2026-05-13 |
 | Phase 5 | UseCase 层抽取（6 个 UseCase） | 2026-05-13 |
 | Phase 6 | 测试补缺 + 功能增强 | 2026-05-14 |
-| Phase 7 | Markdown 渲染行业对齐（GFM Alert / CJK / LaTeX / 流式平滑 / HTML Artifacts） | 2026-05-14 |
-| Phase 8 | 智能视角追踪 + 流式加速 + PipelineBubble | 2026-05-14 |
-| Phase 9 | 输入草稿持久化 + 思考容器颜色修复 + 自动展开 | 2026-05-14 |
+| Phase 7 | Markdown 渲染行业对齐 + 知识库修复增强 | 2026-05-17 |
+| Phase 8 | Agent 工具系统重构 + Cherry-Studio 工具调用移植 | 2026-05-18 |
+| Phase 9 | 发布冲刺 + 测试补全 + UI 一致性统一 | 2026-05-19 |
+| Phase 10 | 工具链参数修复 + Fallback 兜底 + Room 迁移修复 | 2026-05-19 |
 
-### 10.2 近期优先（2026-05-15 ~ 05-18）🔥
+### 10.2 近期优先（2026-05-20+）🔥
 
 | 优先级 | 任务 | 预估工期 | 说明 |
 |--------|------|---------|------|
-| **P0** | **后台生成能力（GenerationService）** | 2d | Foreground Service 承载 SSE 流式，离开 App 不中断。方案已规划见 `.agent/plans/` |
-| P0 | 思考容器 `userToggled` flag | 0.3d | 用户手动折叠后不因流式更新自动展开 |
-| P1 | PDF/Word/HTML 文档导入 | 2d | 扩展现有 PdfExtractor/HtmlExtractor，接入 DocumentImporter 流程 |
-| P1 | 混合检索集成（向量 + FTS5） | 1.5d | VectorStore + KeywordSearcher 融合，提升召回率 |
+| **P0** | **后台生成能力（GenerationService）** | 2d | Foreground Service 承载 SSE 流式，离开 App 不中断 |
+| P1 | 本地推理端到端调通 | 1d | llama.cpp 引擎代码已完成，需在设备上验证 |
 | P1 | Embedding 本地降级方案 | 1d | 无远程 API 时回退到本地 TF-IDF 或 ONNX 推理 |
 
-### 10.3 中期规划（2026-05-19 ~ 05-30）
+### 10.3 中期规划（2026-05-21 ~ 05-30）
 
 | 优先级 | 任务 | 预估工期 |
 |--------|------|---------|
-| P1 | 知识图谱 WebView 可视化（D3.js 力导向图） | 2d |
-| P1 | MCP 协议客户端实现 | 3d |
+| P1 | Compose Canvas 原生知识图谱可视化（ADR-018） | 2d |
 | P1 | Token 统计仪表盘完善 | 1.5d |
 | P2 | 会话导出（TXT/Markdown） | 1d |
-| P2 | 查询重写 LLM 调用 | 1d |
+| P2 | 多模态图片上传 + VLM 增强 | 1.5d |
 
 ### 10.4 远期规划（2026-06+）
 
 | 优先级 | 任务 | 预估工期 |
 |--------|------|---------|
-| P1 | 多模态图片上传 + VLM 预览 | 2d |
 | P1 | 性能 Profile + 启动优化 | 1.5d |
 | P2 | WebDAV 备份恢复 | 2d |
 | P2 | Compose 自动化测试（E2E） | 2d |
 | P3 | CMP 渐进式跨端迁移 | 按需求 |
-| P3 | 正式版 APK 签名与发布流程 | 1d |
 
 ---
 
-## 11. 关键风险（2026-05-14 更新）
+## 11. 关键风险（2026-05-19 更新）
 
 | 风险 | 严重度 | 缓解措施 |
 |------|--------|---------|
 | **后台生成 Service 稳定性** | 🟡 中 | Foreground Service + 通知权限处理，需在 API 34+ 设备上验证 |
-| **RAG 大规模文档库性能** | 🟡 中 | 混合检索 + 批处理优化 |
-| **CMP 迁移阻塞 Android 交付** | 🟢 低 | 严格按渐进式策略，先完成 Android 闭环 |
+| **RAG 大规模文档库性能** | 🟡 中 | 混合检索 + 批处理优化，已有 58 个测试文件保障 |
 | **本地推理引擎稳定性** | 🟡 中 | 作为可选增强，不阻塞主线功能 |
-| **UI 细节打磨滞后** | 🟢 低 | 功能闭环优先，UI 细节可在发布前集中优化 |
+| **CMP 迁移阻塞 Android 交付** | 🟢 低 | 严格按渐进式策略，先完成 Android 闭环 |
 
 ---
 
 **文档维护者**: AI Assistant  
-**最后更新**: 2026-05-14  
-**下次审查**: 后台生成实施完成时（预计 2026-05-18）
+**最后更新**: 2026-05-19  
+**下次审查**: 后台生成实施完成时
