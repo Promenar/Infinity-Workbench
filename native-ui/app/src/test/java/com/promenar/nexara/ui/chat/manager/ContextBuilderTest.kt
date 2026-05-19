@@ -5,6 +5,9 @@ import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.model.TaskState
+import com.promenar.nexara.data.model.TaskStep
+import com.promenar.nexara.domain.repository.PlanPatchOp
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -64,7 +67,6 @@ class ContextBuilderTest {
 
     @Test
     fun buildContextWithActiveTask() = testScope.runTest {
-        val builder = ContextBuilder()
         val task = com.promenar.nexara.data.model.TaskState(
             id = "t1",
             title = "Build app",
@@ -74,6 +76,16 @@ class ContextBuilderTest {
             )
         )
         val session = Session(id = "s1", agentId = "a1", activeTask = task)
+        val fakeRepo = object : com.promenar.nexara.domain.repository.ITaskRepository {
+            override fun observeActiveTree(sessionId: String): kotlinx.coroutines.flow.Flow<List<com.promenar.nexara.data.model.TaskStep>> = kotlinx.coroutines.flow.emptyFlow()
+            override suspend fun initializePlan(sessionId: String, goal: String, tree: List<com.promenar.nexara.data.model.TaskStep>): TaskState = task
+            override suspend fun updatePlan(sessionId: String, operations: List<com.promenar.nexara.domain.repository.PlanPatchOp>): TaskState = task
+            override suspend fun getPlan(sessionId: String): TaskState? = task
+            override suspend fun dropPlan(sessionId: String, reason: String) {}
+            override fun deriveParentStatus(children: List<com.promenar.nexara.data.model.TaskStep>): String = "pending"
+            override fun countLeafProgress(steps: List<com.promenar.nexara.data.model.TaskStep>): Pair<Int, Int> = Pair(0, 1)
+        }
+        val builder = ContextBuilder(taskRepository = fakeRepo)
 
         val result = builder.buildContext(ContextBuilderParams(
             sessionId = "s1",
@@ -112,6 +124,8 @@ class ContextBuilderTest {
 
         assertThat(result.searchContext).contains("Search results for: latest news")
         assertThat(result.finalSystemPrompt).contains("Web Search Results")
+        assertThat(result.citations).hasSize(1)
+        assertThat(result.citations.first().title).isEqualTo("Result 1")
     }
 
     @Test

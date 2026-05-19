@@ -543,6 +543,8 @@
 
     <string name="skill_web_search">Web Search</string>
     <string name="skill_web_search_desc">Search using the default search engine</string>
+    <string name="skill_web_fetch">Web Fetch</string>
+    <string name="skill_web_fetch_desc">Fetch and extract clean main text from a web page using pagination</string>
     <string name="skill_tavily">Tavily Search</string>
     <string name="skill_tavily_desc">Deep AI search (Tavily)</string>
     <string name="skill_searxng">SearXNG Search</string>

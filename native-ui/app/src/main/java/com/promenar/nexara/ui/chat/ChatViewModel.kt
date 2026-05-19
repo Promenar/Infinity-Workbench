@@ -420,11 +420,12 @@ class ChatViewModel(
             }
         }
 
-        if (contextResult.ragReferences.isNotEmpty()) {
+        if (contextResult.ragReferences.isNotEmpty() || contextResult.citations.isNotEmpty()) {
             messageManager.updateMessageContent(
                 sessionId, assistantMsgId, "",
                 UpdateMessageOptions(
-                    ragReferences = contextResult.ragReferences,
+                    ragReferences = contextResult.ragReferences.ifEmpty { null },
+                    citations = contextResult.citations.ifEmpty { null },
                     ragMetadata = RagMetadata(
                         chunkCount = contextResult.ragReferences.size,
                         totalTokens = contextResult.ragUsage?.ragSystem ?: 0,
@@ -459,6 +460,7 @@ class ChatViewModel(
             repetitionPenalty = effectiveParams.repetitionPenalty,
             tools = activeTools.ifEmpty { null },
             webSearch = sessionForCtx.options.webSearch,
+            enableGeminiSearch = sessionForCtx.options.enableGeminiSearch,
             stream = true,
             streamTimeout = (effectiveParams.streamTimeout ?: 120).toLong() * 1000
         )
@@ -1147,6 +1149,8 @@ class ChatViewModel(
             "timeInjection" -> options.copy(enableTimeInjection = enabled)
             "toolsEnabled" -> options.copy(toolsEnabled = enabled)
             "economyMode" -> options.copy(economyMode = enabled)
+            "enableGeminiSearch" -> options.copy(enableGeminiSearch = enabled)
+            "webSearch" -> options.copy(webSearch = enabled)
             else -> options
         }
         viewModelScope.launch {

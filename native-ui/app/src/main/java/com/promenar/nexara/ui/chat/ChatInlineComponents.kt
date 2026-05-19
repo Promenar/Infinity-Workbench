@@ -1,4 +1,6 @@
+// UNIT TEST EXEMPTION STATEMENT: 本文件仅涉及 Jetpack Compose 各种聊天辅助组件（进度条、思考框、审批卡等）的 UI 渲染与排版布局逻辑，不包含任何数据模型算法判定，故依全局开发规范 §3.4 予以单元测试豁免。
 package com.promenar.nexara.ui.chat
+
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
+import com.promenar.nexara.data.model.Citation
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.PhaseStatus
@@ -376,6 +379,7 @@ fun RagProgressCard(
     phases: List<RagPhase>,
     references: List<RagReference>?,
     kgPaths: List<KgPath>? = null,
+    citations: List<Citation>? = null,
     isComplete: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -383,6 +387,7 @@ fun RagProgressCard(
 
     val hasReferences = references?.isNullOrEmpty() == false
     val hasKgPaths = kgPaths?.isNullOrEmpty() == false
+    val hasCitations = citations?.isNullOrEmpty() == false
 
     // 如果是历史消息（phases 为空且已完成），自动回退使用默认的 8 步已完成状态填充
     val displayPhases = if (phases.isEmpty() && isComplete) {
@@ -394,25 +399,33 @@ fun RagProgressCard(
     val activePhase = displayPhases.find { it.status == PhaseStatus.ACTIVE }
 
     // 极端保护：无数据时不展示
-    if (activePhase == null && isComplete == false && hasReferences == false && displayPhases.isEmpty()) return
+    if (activePhase == null && isComplete == false && hasReferences == false && hasKgPaths == false && hasCitations == false && displayPhases.isEmpty()) return
 
     // 自动匹配当前精细状态描述
     val currentText = when {
-        isComplete -> "✓ 知识检索就绪"
+        isComplete -> {
+            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 知识与联网审计就绪"
+            else if (hasCitations) "✓ 联网搜索就绪"
+            else "✓ 知识检索就绪"
+        }
         activePhase != null -> {
             val name = activePhase.name
             val detail = activePhase.detail
             if (!detail.isNullOrBlank()) "$name • $detail" else name
         }
         displayPhases.isNotEmpty() -> "正在准备检索上下文..."
-        else -> "✓ 检索就绪"
+        else -> {
+            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 知识与联网审计就绪"
+            else if (hasCitations) "✓ 联网搜索就绪"
+            else "✓ 检索就绪"
+        }
     }
 
     NexaraGlassCard(
         modifier = modifier
             .fillMaxWidth(0.7f)
             .padding(vertical = 4.dp)
-            .clickable(enabled = hasReferences || hasKgPaths) { showDetailsSheet = true },
+            .clickable(enabled = hasReferences || hasKgPaths || hasCitations) { showDetailsSheet = true },
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
@@ -536,6 +549,7 @@ fun RagProgressCard(
         RagDetailsSheet(
             references = references,
             kgPaths = kgPaths,
+            citations = citations,
             onDismissRequest = { showDetailsSheet = false }
         )
     }

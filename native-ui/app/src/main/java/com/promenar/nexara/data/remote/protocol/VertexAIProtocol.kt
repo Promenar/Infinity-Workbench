@@ -395,24 +395,36 @@ class VertexAIProtocol(
                 })
             }
 
-            if (request.tools != null && request.tools.isNotEmpty()) {
-                put("tools", JsonArray(listOf(buildJsonObject {
-                    put("functionDeclarations", JsonArray(request.tools.map { tool ->
-                        buildJsonObject {
-                            put("name", tool.function.name)
-                            put("description", tool.function.description)
-                            val paramsObj = try {
-                                json.parseToJsonElement(tool.function.parameters).jsonObject
-                            } catch (_: Exception) {
+            val shouldAddGeminiSearch = request.enableGeminiSearch != false
+
+            if ((request.tools != null && request.tools.isNotEmpty()) || shouldAddGeminiSearch) {
+                val toolsList = buildJsonArray {
+                    if (shouldAddGeminiSearch) {
+                        add(buildJsonObject {
+                            put("googleSearchRetrieval", buildJsonObject {})
+                        })
+                    }
+                    if (request.tools != null && request.tools.isNotEmpty()) {
+                        add(buildJsonObject {
+                            put("functionDeclarations", JsonArray(request.tools.map { tool ->
                                 buildJsonObject {
-                                    put("type", "object")
-                                    put("properties", buildJsonObject {})
+                                    put("name", tool.function.name)
+                                    put("description", tool.function.description)
+                                    val paramsObj = try {
+                                        json.parseToJsonElement(tool.function.parameters).jsonObject
+                                    } catch (_: Exception) {
+                                        buildJsonObject {
+                                            put("type", "object")
+                                            put("properties", buildJsonObject {})
+                                        }
+                                    }
+                                    put("parameters", paramsObj)
                                 }
-                            }
-                            put("parameters", paramsObj)
-                        }
-                    }))
-                })))
+                            }))
+                        })
+                    }
+                }
+                put("tools", toolsList)
             }
         }
 

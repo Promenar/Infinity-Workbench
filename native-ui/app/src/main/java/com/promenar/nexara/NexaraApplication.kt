@@ -48,6 +48,7 @@ import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSearXNGSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchTavilySkill
+import com.promenar.nexara.ui.chat.manager.skills.WebFetchSkill
 import com.promenar.nexara.ui.chat.manager.skills.CreateToolSkill
 import com.promenar.nexara.ui.chat.manager.skills.ImageGenerationSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileReadSkill
@@ -198,6 +199,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(WebSearchSkill(this@NexaraApplication, httpClient))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient))
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
+            register(WebFetchSkill(httpClient))
             register(CreateToolSkill(database.skillDao()))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
             register(FileReadSkill(fileOperationRepository))

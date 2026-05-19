@@ -92,6 +92,7 @@ fun SkillsScreen(
     val skillIcons = remember {
         mapOf(
             "web_search" to Icons.Rounded.Search,
+            "web_fetch" to Icons.Rounded.Description,
             "search_tavily" to Icons.Rounded.Search,
             "search_searxng" to Icons.Rounded.Search,
             "calculator" to Icons.Rounded.Build,

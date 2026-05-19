@@ -541,6 +541,8 @@
     
     <string name="skill_web_search">Web 搜索</string>
     <string name="skill_web_search_desc">基于配置的默认搜索引擎进行搜索</string>
+    <string name="skill_web_fetch">网页抓取</string>
+    <string name="skill_web_fetch_desc">基于游标分页抓取并提取网页正文的纯文本内容</string>
     <string name="skill_tavily">Tavily 搜索</string>
     <string name="skill_tavily_desc">深度 AI 搜索 (Tavily)</string>
     <string name="skill_searxng">SearXNG 搜索</string>

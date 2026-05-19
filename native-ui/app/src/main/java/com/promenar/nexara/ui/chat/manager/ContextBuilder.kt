@@ -57,9 +57,11 @@ class ContextBuilder(
     private val taskRepository: ITaskRepository? = null
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
-        val searchContext = if (params.session.options.webSearch) {
-            performClientSideSearch(params.content)
-        } else ""
+        val (searchContext, searchCitations) = if (params.session.options.webSearch) {
+            val cleanedQuery = cleanSearchQuery(params.content)
+            NexaraLogger.log("[ContextBuilder] 被动联网搜索 Query 提炼: \"${params.content}\" -> \"$cleanedQuery\"")
+            performClientSideSearch(cleanedQuery)
+        } else "" to emptyList()
         val ragResult = performRagRetrieval(params)
         val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
         val kgEnabled = (params.session.ragOptions ?: tempRagOptions).enableKnowledgeGraph == true
@@ -88,21 +90,57 @@ class ContextBuilder(
         return ContextBuilderResult(
             searchContext = searchContext,
             ragContext = ragResult.first,
-            citations = emptyList(),
+            citations = searchCitations,
             ragReferences = ragResult.second,
             ragUsage = ragResult.third,
             finalSystemPrompt = systemPrompt
         )
     }
 
-    private suspend fun performClientSideSearch(query: String): String {
-        if (webSearchProvider == null) return ""
+    private fun cleanSearchQuery(rawQuery: String): String {
+        var query = rawQuery.trim()
+        
+        // 1. 过滤常见的口语化前缀和后缀指令
+        val prefixes = listOf(
+            "帮我搜索一下", "帮我搜索", "请帮我搜索", "请搜索", "查找关于", 
+            "请查找关于", "帮我看看", "我想知道", "顺便帮我", "顺便", "你可以帮我",
+            "帮我查一下", "查一下", "检索一下", "请检索"
+        )
+        for (prefix in prefixes) {
+            if (query.startsWith(prefix, ignoreCase = true)) {
+                query = query.substring(prefix.length).trim()
+            }
+        }
+        
+        val suffixes = listOf(
+            "顺便写一个摘要", "写一个摘要", "并写个总结", "写个总结", 
+            "并总结一下", "总结一下", "并写一段总结", "写一段总结", "谢谢", "并归纳"
+        )
+        for (suffix in suffixes) {
+            if (query.endsWith(suffix, ignoreCase = true)) {
+                query = query.substring(0, query.length - suffix.length).trim()
+            }
+        }
+        
+        // 2. 替换掉大部分标点符号为空格，让搜索引擎更易处理
+        val punctuation = "[\\p{Punct}\\p{P}&&[^.]]".toRegex()
+        query = query.replace(punctuation, " ").replace("\\s+".toRegex(), " ").trim()
+        
+        // 3. 如果处理后依然极长，则截取前 36 个字符以保证搜索精度
+        if (query.length > 36) {
+            query = query.take(36).trim()
+        }
+        
+        return query.ifBlank { rawQuery }
+    }
+
+    private suspend fun performClientSideSearch(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+        if (webSearchProvider == null) return "" to emptyList()
         return try {
-            val (context, _) = webSearchProvider.search(query)
-            context
+            webSearchProvider.search(query)
         } catch (e: Exception) {
             NexaraLogger.logError("ContextBuilder.WebSearch", e)
-            ""
+            "" to emptyList()
         }
     }
 

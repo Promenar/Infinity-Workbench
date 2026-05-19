@@ -307,9 +307,15 @@ fun ChatScreen(
                         val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
 
                         if (!group.isUser) {
-                            val ragActiveMsg = group.assistantMessages.find { !it.ragReferences.isNullOrEmpty() || it.ragReferencesLoading } ?: group.assistantMessages.lastOrNull()
+                            val ragActiveMsg = group.assistantMessages.find { 
+                                !it.ragReferences.isNullOrEmpty() || !it.citations.isNullOrEmpty() || it.ragReferencesLoading 
+                            } ?: group.assistantMessages.lastOrNull()
 
-                            if (ragActiveMsg != null && ((isGeneratingGroup && ragPhases.isNotEmpty()) || !ragActiveMsg.ragReferences.isNullOrEmpty())) {
+                            if (ragActiveMsg != null && (
+                                (isGeneratingGroup && ragPhases.isNotEmpty()) || 
+                                !ragActiveMsg.ragReferences.isNullOrEmpty() || 
+                                !ragActiveMsg.citations.isNullOrEmpty()
+                            )) {
                                 val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
                                 val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
                                 val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
@@ -317,6 +323,7 @@ fun ChatScreen(
                                     phases = targetPhases,
                                     references = ragActiveMsg.ragReferences,
                                     kgPaths = ragActiveMsg.kgPaths,
+                                    citations = ragActiveMsg.citations,
                                     isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
                                 )
                             }

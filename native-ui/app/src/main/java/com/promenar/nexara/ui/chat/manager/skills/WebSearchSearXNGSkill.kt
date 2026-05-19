@@ -49,7 +49,7 @@ class WebSearchSearXNGSkill(
                 id = "search_searxng_${System.currentTimeMillis()}",
                 content = results,
                 data = citationData.ifEmpty { null },
-                status = "success"
+                status = if (results.isNotEmpty() && !results.startsWith("SearXNG Search failed")) "success" else "error"
             )
         } catch (e: Exception) {
             ToolResult(id = "err", content = "SearXNG Search failed: ${e.message}", status = "error")

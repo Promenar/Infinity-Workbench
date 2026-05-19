@@ -90,6 +90,7 @@ data class PromptRequest(
     val stream: Boolean = true,
     val reasoning: Boolean? = null,
     val webSearch: Boolean? = null,
+    val enableGeminiSearch: Boolean? = null,
     val streamTimeout: Long? = null,
     val images: List<ImageInput>? = null,
     val audio: List<AudioInput>? = null,

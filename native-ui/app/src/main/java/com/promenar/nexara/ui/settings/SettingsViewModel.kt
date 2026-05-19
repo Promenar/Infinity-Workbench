@@ -403,12 +403,13 @@ class SettingsViewModel(
 
     private fun loadSkills() {
         val enabledSet = prefs.getStringSet("enabled_skills", setOf(
-            "web_search", "calculator", "create_tool",
+            "web_search", "web_fetch", "calculator", "create_tool",
             "file_read", "file_list", "file_search", "exec_js",
             "initialize_plan", "update_plan", "get_plan", "drop_plan"
         ))
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
+            SkillInfo("web_fetch", app.getString(R.string.skill_web_fetch), app.getString(R.string.skill_web_fetch_desc), enabledSet?.contains("web_fetch") ?: true),
             SkillInfo("search_tavily", app.getString(R.string.skill_tavily), app.getString(R.string.skill_tavily_desc), enabledSet?.contains("search_tavily") ?: true),
             SkillInfo("search_searxng", app.getString(R.string.skill_searxng), app.getString(R.string.skill_searxng_desc), enabledSet?.contains("search_searxng") ?: true),
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),

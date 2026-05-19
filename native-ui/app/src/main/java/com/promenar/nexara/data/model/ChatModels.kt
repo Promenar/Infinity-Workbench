@@ -258,7 +258,8 @@ data class SessionOptions(
     val webSearch: Boolean = false,  // 降级：默认关闭被动预注入，不影响工具调用
     val ragOptions: RagOptions? = null,
     val fontSize: Int = 13,
-    val economyMode: Boolean = false
+    val economyMode: Boolean = false,
+    val enableGeminiSearch: Boolean = true
 )
 
 @Serializable

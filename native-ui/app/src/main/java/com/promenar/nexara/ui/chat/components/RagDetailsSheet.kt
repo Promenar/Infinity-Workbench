@@ -1,8 +1,11 @@
+// UNIT TEST EXEMPTION STATEMENT: 本文件仅涉及 Jetpack Compose 纯布局、UI 交互展现与跳转逻辑，不包含任何数据转换、判定、图算法或状态流转核心业务逻辑，故依全局开发规范 §3.4 予以单元测试豁免。
 package com.promenar.nexara.ui.chat.components
+
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,8 +32,12 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlin.math.roundToInt
 
+import androidx.compose.ui.platform.LocalUriHandler
+import com.promenar.nexara.data.model.Citation
+
 private enum class InspectionTab(val label: String) {
-    Retrieved("检索结果"),
+    Retrieved("知识检索"),
+    WebSearch("联网搜索"),
     KnowledgeGraph("知识图谱")
 }
 
@@ -39,14 +46,23 @@ private enum class InspectionTab(val label: String) {
 fun RagDetailsSheet(
     references: List<RagReference>?,
     kgPaths: List<KgPath>?,
+    citations: List<Citation>? = null,
     onDismissRequest: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = InspectionTab.entries
-
+    
     val hasReferences = !references.isNullOrEmpty()
     val hasKgPaths = !kgPaths.isNullOrEmpty()
+    val hasCitations = !citations.isNullOrEmpty()
+
+    val initialTab = when {
+        hasReferences -> 0
+        hasCitations -> 1
+        hasKgPaths -> 2
+        else -> 0
+    }
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
+    val tabs = InspectionTab.entries
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -61,7 +77,7 @@ fun RagDetailsSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
             Text(
-                text = "知识审计 (Knowledge Inspection)",
+                text = "知识与联网审计 (Knowledge & Web Inspection)",
                 style = NexaraTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = NexaraColors.OnSurface,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -127,6 +143,24 @@ fun RagDetailsSheet(
                         }
                     }
                     1 -> {
+                        if (hasCitations) {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(bottom = 32.dp)
+                            ) {
+                                item {
+                                    SectionHeader(title = "联网引用 (Web Search Citations)", icon = Icons.Rounded.TravelExplore)
+                                }
+                                itemsIndexed(citations!!) { index, citation ->
+                                    WebSearchReferenceCard(citation = citation, rank = index + 1)
+                                }
+                            }
+                        } else {
+                            EmptyStateText()
+                        }
+                    }
+                    2 -> {
                         if (hasKgPaths) {
                             KgPathsTab(
                                 kgPaths = kgPaths!!,
@@ -137,6 +171,107 @@ fun RagDetailsSheet(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WebSearchReferenceCard(citation: Citation, rank: Int) {
+    val uriHandler = LocalUriHandler.current
+    NexaraGlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                try {
+                    uriHandler.openUri(citation.url)
+                } catch (e: Exception) {
+                    // 防御性崩溃保护
+                }
+            },
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .background(NexaraColors.Primary.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "#$rank",
+                            style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = NexaraColors.Primary
+                        )
+                    }
+                    Text(
+                        text = citation.title.ifBlank { "未知网页" },
+                        style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = NexaraColors.OnSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+
+                // 来源小标签 (Tavily/DuckDuckGo/SearXNG/Google Grounding 等)
+                val source = citation.source ?: "Google"
+                Surface(
+                    color = NexaraColors.Tertiary.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(4.dp),
+                    border = BorderStroke(0.5.dp, NexaraColors.Tertiary.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        text = source,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = NexaraTypography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                        color = NexaraColors.Tertiary
+                    )
+                }
+            }
+
+            // URL 链接展现与新页面打开提示
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Icons.Rounded.Language,
+                    contentDescription = null,
+                    tint = NexaraColors.Primary.copy(alpha = 0.7f),
+                    modifier = Modifier.size(12.dp)
+                )
+                Text(
+                    text = citation.url,
+                    style = NexaraTypography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    ),
+                    color = NexaraColors.Primary.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.Rounded.OpenInNew,
+                    contentDescription = null,
+                    tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(12.dp)
+                )
             }
         }
     }

@@ -271,18 +271,31 @@ class GenericOpenAICompatProtocol(
                 put("stream_options", buildJsonObject { put("include_usage", true) })
             }
 
-            if (request.tools != null && request.tools.isNotEmpty()) {
-                put("tools", JsonArray(request.tools.map { tool ->
-                    buildJsonObject {
-                        put("type", tool.type)
-                        put("function", buildJsonObject {
-                            put("name", tool.function.name)
-                            put("description", tool.function.description)
-                            put("parameters", json.parseToJsonElement(tool.function.parameters))
+            val isGemini = (request.model.ifEmpty { this@GenericOpenAICompatProtocol.model }).contains("gemini", ignoreCase = true)
+            val shouldAddGeminiSearch = isGemini && request.enableGeminiSearch != false
+
+            if ((request.tools != null && request.tools.isNotEmpty()) || shouldAddGeminiSearch) {
+                val toolsArray = buildJsonArray {
+                    request.tools?.forEach { tool ->
+                        add(buildJsonObject {
+                            put("type", tool.type)
+                            put("function", buildJsonObject {
+                                put("name", tool.function.name)
+                                put("description", tool.function.description)
+                                put("parameters", json.parseToJsonElement(tool.function.parameters))
+                            })
                         })
                     }
-                }))
-                put("tool_choice", "auto")
+                    if (shouldAddGeminiSearch) {
+                        add(buildJsonObject {
+                            put("googleSearchRetrieval", buildJsonObject {})
+                        })
+                    }
+                }
+                put("tools", toolsArray)
+                if (request.tools != null && request.tools.isNotEmpty()) {
+                    put("tool_choice", "auto")
+                }
             }
         }
 

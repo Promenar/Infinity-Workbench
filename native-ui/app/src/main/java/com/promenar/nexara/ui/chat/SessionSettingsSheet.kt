@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -738,6 +739,9 @@ private fun ToolsPanel(
         chatViewModel.toggleTool(tool, enabled)
     }
 
+    val isGeminiModel = session?.modelId?.contains("gemini", ignoreCase = true) == true
+    var geminiSearchEnabled by remember(options.enableGeminiSearch) { mutableStateOf(options.enableGeminiSearch) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -754,6 +758,13 @@ private fun ToolsPanel(
         ToolToggleRow("Token 节约模式", Icons.Rounded.Tune, economyMode) {
             economyMode = it
             onToggle("economyMode", it)
+        }
+
+        if (isGeminiModel) {
+            ToolToggleRow("Gemini 联网 Grounding", Icons.Rounded.Language, geminiSearchEnabled) {
+                geminiSearchEnabled = it
+                onToggle("enableGeminiSearch", it)
+            }
         }
 
         Text(stringResource(R.string.sheet_tab_tools), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)

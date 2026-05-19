@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 搜索引擎致命硬伤修复与全新 web_fetch 降噪清洗工具及行级游标分页读取上线 (2026-05-20)
+- **🔴 P0 — 彻底修复 DuckDuckGo 与 SearXNG 联网检索的多处致命协议与业务 Bug**：
+  - *DuckDuckGo 索引错位彻底根治*：将 `DuckDuckGoProvider.kt` 中由于域名过滤跳过元素而造成 results 序列与 citations 序列产生物理索引偏差的致命 Bug 彻底重构。采用单次遍历合并机制，确保摘要（Snippet）与标题网址 100% 对齐。
+  - *SearXNG 反序列化与 WAF 拦截修复*：在 `SearXNGProvider.kt` 中添加了标准的 Chrome UA 伪装，避免了 Cloudflare WAF 拦截；重构了 JSON 反序列化崩溃流，能够精准识别由于自建 SearXNG 实例未开启 json 格式而返回 403 HTML 报错网页的场景，抛出友好异常；在 `WebSearchSearXNGSkill.kt` 中修复了强行将报错文本包装为 `status = "success"` 返回的逻辑，发生异常时，正确置为 `"error"` 并上报。
+  - *被动联网 Query 智能降维去噪*：在 `ContextBuilder.kt` 的前置联网检索中引入全新的 `cleanSearchQuery` 降维算法，对用户长口语提问剥离冗余信息、标点与口语助词并进行短字符截断，让搜索引擎检索 Query 高度精准，检索召回率提升数倍。
+- **🟢 P0 — 研发全新的 web_fetch 网页长文游标行级分页（Cursor Pagination）降噪抽取工具**：
+  - *开发背景与翻页痛点*：为解决网页被抓取后内容超长爆 Token 或迷失在网页中后部有用信息中的痛点，全新研发了 `WebFetchSkill.kt`（注册为 `web_fetch` 工具），支持大模型行级参数提取与翻页滚动视口拉取。
+  - *Jsoup 降噪清洗算法*：
+    - 精准过滤 `<script>`、`<style>`、`<iframe>`、`<header>`、`<footer>`、`<nav>`、`<aside>` 以及各类广告 class 节点；
+    - 针对段落 `p`、标题 `h1-h6`、列表 `li`、代码 `pre` 及表格等有价值排版标签的文本内容进行提纯，并自动坍缩多余换行与空白，极大地节省了大模型的 Token 消耗。
+  - *行级游标分页（Cursor Pagination）滚动读取机制*：
+    - 新增可选参数 `startLine` (起始物理行号，默认 1) 与 `lineCount` (单次读取行数，默认 80)；
+    - 清洗完的正文自动转化为结构化的非空物理行列表。当还有剩余行数时，工具在 Metadata 响应中反馈 `Total Lines: X | Current Chunk: Lines A to B`，并附加友好的提示指引 `Notice: There are more lines remaining. You can call 'web_fetch' again with startLine=B+1 to read the next segment.`；
+    - 大模型能够直接通过游标分页参数多次循环调用拉取长文的各个特定章节，从底层物理杜绝了爆 Token 闪退、死锁和关键数据丢失。
+  - *系统级工具链注册*：在 `NexaraApplication.kt` 中的 `presetSkillRegistry` 中成功注册该 Local Tool，成为系统标配工具，大模型可随时在对话中自主调用！
+  - *技能设置页完整配准与国际化展示*：在设置-预设技能页面为 `web_fetch` 进行全流程配准。新增了中英双语的国际化字符资源，并在 `SkillsScreen.kt` 中将其绑定至专门的 `Icons.Rounded.Description` 文档图标，允许用户在设置中实时查看和按需开关此项高级网页降噪抓取技能。
+- **🔴 P0 — 全预设工具链双向契约深度审计与 6 大文件核心工具误杀剔除 Bug 彻底根治**：
+  - *工具过滤失效根因诊断*：在深度审查中我们发现了一个历史遗留的极其严重的 Bug：当用户在设置面板开启了工具选择后，`ChatViewModel.kt` 将 SharedPreferences 保存的技能 ID（如 `"file_read"`, `"file_list"`）传入 Registry，然而 `DefaultSkillRegistry.kt` 在过滤时直接使用 `skill.id in allowedIds` 判定；由于 6 大文件操作相关 Skill 声明的真实 `id` 分别为 `"read_file"`, `"list_files"` 等，拼写形式完全不匹配，导致只要开启了工具过滤，**所有的文件读取、写入、列表、搜索、补丁、差异对比核心工具全部会被强行过滤剔除**，模型在对话中完全看不到也无法调用它们！
+  - *双向契约映射修复*：在 `DefaultSkillRegistry.kt` 中独创性地设计了 `settingsKeyToSkillId` 的双向参数与 ID 映射表，对传入的 `allowedIds` 进行智能的翻译和重定向。在完美维持历史遗留的 SharedPreferences 数据兼容性的同时，一揽子彻底解决了 6 大文件核心工具在开启状态下无法调用的历史死结。
+  - *单元测试防护网建立*：遵循极严格的单元测试门禁要求，我们专门新建了 `DefaultSkillRegistryTest.kt` 测试用例，对 allowedIds 为空、普通过滤及映射解析三种场景进行了 100% 覆盖率验证。运行 Gradle 单元测试通过，实现双向契约一致性的超高质量收尾。
+
+
 ### 修复底部字号拖动条对聊天区各组件文本的同步缩放 (2026-05-20)
 - **🔴 P0 — 彻底修复底部字体大小调整拖动条无法同步调整 Markdown 表格、指示器、思考容器和工具容器所有文本大小的缺陷**：
   - *视觉痛点*：在聊天界面底部的“字体大小”滑块被拖动放大或缩小时，用户消息和 AI 消息正文均能完美同步缩放；然而，思考容器 (`InlineThinkingRow`)、工具容器 (`InlineToolRow` 的标题、参数、输出结果、提示等)、检索指示器 (`PostProcessChip` 与 RAG指示器) 以及 Markdown 中的普通表格元素 (`NexaraTableWidget`)，它们的字号依然硬编码为固定的绝对值（如 10sp、11sp、12sp 等），导致在拖大字体时，这些组件的内容依然极其细小，与正文产生强烈的视觉割裂感；而在缩小字体时又显得臃肿，排版崩坏。

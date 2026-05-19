@@ -41,13 +41,10 @@ class DuckDuckGoProvider(
                 
                 if (title.isNotEmpty() && url.isNotEmpty()) {
                     if (excludeDomains.any { domain -> url.contains(domain, ignoreCase = true) }) return@forEach
-                    citations.add(Citation(title = title, url = url, source = "DuckDuckGo"))
+                    val citation = Citation(title = title, url = url, source = "DuckDuckGo")
+                    citations.add(citation)
+                    contextBuilder.append("[${citations.size}] ${citation.title}\n${citation.url}\n$snippet\n\n")
                 }
-            }
-
-            citations.forEachIndexed { index, citation ->
-                val snippet = results.getOrNull(index)?.select(".result__snippet")?.text() ?: ""
-                contextBuilder.append("[${index + 1}] ${citation.title}\n${citation.url}\n$snippet\n\n")
             }
             
             if (citations.isEmpty()) {

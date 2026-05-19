@@ -26,11 +26,24 @@ class SearXNGProvider(
             val response = httpClient.get(baseUrl.trimEnd('/') + "/search") {
                 parameter("q", enhancedQuery)
                 parameter("format", "json")
-                header("User-Agent", "Nexara-Native/1.0")
+                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            }
+            
+            if (response.status.value != 200) {
+                throw Exception("HTTP status ${response.status.value}")
             }
             
             val responseText = response.bodyAsText()
-            val root = json.parseToJsonElement(responseText).jsonObject
+            val root = try {
+                json.parseToJsonElement(responseText).jsonObject
+            } catch (e: Exception) {
+                if (responseText.contains("<html", ignoreCase = true) || responseText.contains("<!DOCTYPE html", ignoreCase = true)) {
+                    throw Exception("JSON API is disabled on this SearXNG instance. Please enable format 'json' in settings.yml")
+                } else {
+                    throw Exception("Invalid JSON response: ${e.message}")
+                }
+            }
+            
             val results = root["results"]?.jsonArray ?: emptyList<JsonElement>().toJsonArray()
             
             val citations = mutableListOf<Citation>()
@@ -53,7 +66,7 @@ class SearXNGProvider(
             
             contextBuilder.toString() to citations
         } catch (e: Exception) {
-            "SearXNG Search failed: ${e.message}" to emptyList()
+            throw Exception("SearXNG Search failed: ${e.message}")
         }
     }
     
