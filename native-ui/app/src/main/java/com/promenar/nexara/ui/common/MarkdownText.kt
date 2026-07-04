@@ -45,6 +45,9 @@ import com.mikepenz.markdown.compose.components.MarkdownComponent
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownBlockQuote
+import com.mikepenz.markdown.model.markdownAnnotator
+import com.mikepenz.markdown.model.markdownAnnotatorConfig
+import com.mikepenz.markdown.model.markdownPadding
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
 import com.mikepenz.markdown.compose.elements.MarkdownHighlightedCode
@@ -78,7 +81,7 @@ private fun ASTNode.findLinkDestination(): ASTNode? {
     return null
 }
 
-private sealed class ContentSegment {
+internal sealed class ContentSegment {
     data class Markdown(val content: String) : ContentSegment()
     data class Latex(val content: String) : ContentSegment()
     data class InlineLatex(val content: String) : ContentSegment()
@@ -87,14 +90,14 @@ private sealed class ContentSegment {
     data class PlantUml(val content: String) : ContentSegment()
 }
 
-private class ParseCache {
+internal class ParseCache {
     var text: String = ""
     var segments: List<ContentSegment> = emptyList()
 }
 
 private const val RE_PARSE_THRESHOLD = 100
 
-private fun stripBlockQuoteMarkers(text: String): String {
+internal fun stripBlockQuoteMarkers(text: String): String {
     return text.lineSequence()
         .map { line ->
             val trimmed = line.trimStart()
@@ -108,7 +111,7 @@ private fun stripBlockQuoteMarkers(text: String): String {
         .trim()
 }
 
-private fun splitRichSegments(text: String): List<ContentSegment> {
+internal fun splitRichSegments(text: String): List<ContentSegment> {
     val blockPattern = Regex(
         """(?s)```(mermaid|echarts|plantuml)\s*\n(.*?)\n```""",
         RegexOption.IGNORE_CASE
@@ -165,7 +168,7 @@ private fun splitRichSegments(text: String): List<ContentSegment> {
     return result
 }
 
-private fun replaceCodeInMarkdown(
+internal fun replaceCodeInMarkdown(
     markdown: String,
     language: String?,
     oldCode: String,
@@ -373,7 +376,7 @@ fun MarkdownText(
     }
 }
 
-private fun safeTrimIndent(text: String): String {
+internal fun safeTrimIndent(text: String): String {
     if (text.lines().any { it.startsWith("    ") && it.trimStart().isNotEmpty() }) {
         return text
     }
@@ -541,6 +544,15 @@ private fun MarkdownSafe(
 
     Markdown(
         content = content,
+        annotator = markdownAnnotator(
+            config = markdownAnnotatorConfig(eolAsNewLine = true)
+        ),
+        padding = markdownPadding(
+            block = 8.dp,
+            listItemTop = 4.dp,
+            listItemBottom = 4.dp,
+            listIndent = 12.dp,
+        ),
         colors = nexaraMarkdownColors(textColor = textColor),
         typography = nexaraMarkdownTypography(fontSize, fontStyle = fontStyle),
         components = components,
@@ -548,7 +560,7 @@ private fun MarkdownSafe(
     )
 }
 
-private fun insertCjkSpacing(text: String): String {
+internal fun insertCjkSpacing(text: String): String {
     val protectedMap = mutableMapOf<String, String>()
     var counter = 0
 
@@ -576,7 +588,7 @@ private fun insertCjkSpacing(text: String): String {
     return processed
 }
 
-private fun normalizeLatexDelimiters(text: String): String {
+internal fun normalizeLatexDelimiters(text: String): String {
     return text
         .replace(Regex("""\\\[(.*?)\\]""", RegexOption.DOT_MATCHES_ALL)) {
             "$$\n${it.groupValues[1].trim()}\n$$"
@@ -586,7 +598,7 @@ private fun normalizeLatexDelimiters(text: String): String {
         }
 }
 
-private fun sanitizeStreamingMarkdown(text: String): String {
+internal fun sanitizeStreamingMarkdown(text: String): String {
     var result = text
 
     // Handle code block fences
@@ -641,7 +653,7 @@ private fun StreamingCursor() {
     )
 }
 
-private fun slugify(text: String): String {
+internal fun slugify(text: String): String {
     return text.trim()
         .replace(Regex("\\s+"), "-")
         .replace(Regex("[^\\p{L}\\p{N}-]"), "")

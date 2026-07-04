@@ -147,7 +147,7 @@ dependencies {
     testImplementation("androidx.room:room-testing:$roomVersion")
 
     // ─── Markdown 渲染 ───
-    val markdownRendererVersion = "0.40.2"
+    val markdownRendererVersion = "0.41.0"
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:$markdownRendererVersion")
     implementation("com.mikepenz:multiplatform-markdown-renderer-code:$markdownRendererVersion")

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Markdown 排版根因修复 + mikepenz 0.40.2→0.41.0 升级 + 纯函数测试网建立 (2026-07-05)
+- **🔴 P0 — 修复主会话 Markdown "大段文本挤成一段"根因**：
+  - *根因定位*：`MarkdownText.kt` 调用 mikepenz `Markdown()` 时未传 `annotator`，库默认 `eolAsNewLine = false` 按 CommonMark 规范把段落内单换行（软换行）替换为空格，导致 LLM 单换行排版被压成一段；同时未传 `padding`，库默认 `block = 2.dp` 段落间距过小。
+  - *修复*：新增 `annotator = markdownAnnotator(config = markdownAnnotatorConfig(eolAsNewLine = true))`（保留段内换行）+ `padding = markdownPadding(block = 8.dp, listItemTop = 4.dp, listItemBottom = 4.dp, listIndent = 12.dp)`（增大段间距）。
+  - *效果*：消灭"挤成一段"，段落分明，列表缩进清晰。
+- **📦 mikepenz multiplatform-markdown-renderer 0.40.2 → 0.41.0 升级**：
+  - *版本选择决策*：0.42.0/0.43.0 通过 Gradle metadata 把 `kotlin-stdlib` 硬约束到 2.4.0，超出项目 Kotlin 编译器 2.2.x 的 metadata 读取上限（编译失败）；0.41.0 的 stdlib 约束为 2.3.21，与项目兼容，且 `minCompileSdk=36` 无需改动 compileSdk/JDK。
+  - *收益*：表格内联内容完整渲染修复（#559）、无障碍语义大改（#561）、blockquote 字号崩溃修复（#550）、Compose 1.11 对齐。
+  - *传递依赖提升*：`kotlin-stdlib` 2.3.20→2.3.21、`kotlinx-coroutines` 1.7.3→1.10.x（全量 682 单测验证无回归）。
+- **🧪 建立 Markdown 预处理纯函数单元测试网（54 用例）**：
+  - 将 8 个纯函数（`normalizeLatexDelimiters`/`sanitizeStreamingMarkdown`/`safeTrimIndent`/`insertCjkSpacing`/`stripBlockQuoteMarkers`/`replaceCodeInMarkdown`/`slugify`/`splitRichSegments`）及 `ContentSegment`/`ParseCache` 从 `private` 提升为 `internal`（符合项目既有约定，不使用 `@VisibleForTesting`）。
+  - 新建 `MarkdownTextTest.kt`（54 用例，JUnit5 + Google Truth + `@Nested`），此前 `ui/common/` 目录零测试覆盖。
+  - 全量单测：682 测试，0 失败，0 错误，13 跳过。
+- **变更文件 (3)**：
+  - 修改: `native-ui/app/build.gradle.kts`（版本号 0.40.2→0.41.0）
+  - 修改: `native-ui/app/src/main/java/com/promenar/nexara/ui/common/MarkdownText.kt`（annotator+padding 根因修复 + 可见性调整）
+  - 新增: `native-ui/app/src/test/java/com/promenar/nexara/ui/common/MarkdownTextTest.kt`（54 测试用例）
+
 ### DIA 文档体系清理与重组、项目文档全面更新至 98% 进度与 GitHub Release v0.1-beta 发布 (2026-05-19)
 - **📋 DIA 文档治理更新**：
   - *文档重组*：将 `docs/IMPLEMENTATION_PLAN.md`（已完成历史计划）移至 `.agent/plans/archive/`；将 `docs/MARKDOWN_RENDERING_AUDIT.md`（已修复审计）移至 `docs/audit/`；将 `docs/plans/RAG_INDICATOR_MULTI_SESSION_EXECUTION.md` 移至 `.agent/plans/`，统一计划文档位置
