@@ -4,8 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.Icon
@@ -32,7 +30,13 @@ fun ProtocolSelector(
     onSelect: (ProtocolType) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val options = ProtocolType.entries.filterNotNull().filter { it !is ProtocolType.Local }
+    // Custom 分支只暴露通用兼容协议；具体品牌预设（DeepSeek/Kimi/Gemini 等）已在
+    // 首级下拉菜单提供，此处不再重复。OpenAI_Responses 保留入口给新版 Responses API。
+    val options = listOf(
+        ProtocolType.Generic_OpenAI_Compat,
+        ProtocolType.Anthropic_Messages,
+        ProtocolType.OpenAI_Responses,
+    )
 
     Column(
         modifier = modifier.fillMaxWidth(),
