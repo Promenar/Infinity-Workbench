@@ -21,9 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -40,13 +38,12 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -186,15 +183,17 @@ fun ProviderFormScreen(
             onExpandedChange = { presetMenuExpanded = it }
         ) {
             // 收起态：玻璃风格卡片（图标 + 名称 + 下拉箭头），与 GlassInputField 协调
+            // 注意：不可在此 Box 上再加 .clickable —— menuAnchor() 内部的 expandable 已负责
+            // 点击展开（通过 onExpandedChange 回调），叠加 clickable 会与 expandable 的点击
+            // 处理产生竞争，导致菜单弹不出来。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                     .clip(NexaraShapes.medium)
                     .background(NexaraColors.SurfaceContainer)
                     .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
-                    .clickable { presetMenuExpanded = !presetMenuExpanded }
                     .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -234,11 +233,12 @@ fun ProviderFormScreen(
                 }
             }
 
-            // 展开态：弹出可滚动下拉菜单
-            DropdownMenu(
+            // 展开态：使用 ExposedDropdownMenuBoxScope 的 ExposedDropdownMenu
+            // 它内部用专用的 PositionProvider 锚定到上面的 menuAnchor，并应用 exposedDropdownSize
+            // 约束；自带 scrollState 处理 14 项的滚动，无需手动 verticalScroll
+            ExposedDropdownMenu(
                 expanded = presetMenuExpanded,
-                onDismissRequest = { presetMenuExpanded = false },
-                modifier = Modifier.verticalScroll(rememberScrollState())
+                onDismissRequest = { presetMenuExpanded = false }
             ) {
                 PROVIDER_PRESETS.forEach { preset ->
                     val isSelected = selectedPreset.name == preset.name
