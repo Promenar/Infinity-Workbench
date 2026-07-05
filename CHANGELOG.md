@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 提供商添加界面预设选择器改下拉菜单 (2026-07-05)
+- **🎨 UI 交互优化**：把"添加提供商"表单里 14 个预设的纵向 `Column` 列表（原占约 1000dp / 两屏+）替换为 `ExposedDropdownMenuBox` 下拉菜单，收起态仅约 56dp。
+  - *收起态*：玻璃风格卡片（图标 + 预设名 + 下拉箭头），与表单其他输入框视觉协调。
+  - *展开态*：可滚动的 `DropdownMenu`，每项显示图标 + 名称 + 选中勾。
+  - *影响*：用户不再需要滚动两屏寻找预设，配置输入框（name/baseUrl/apiKey）立即可见，显著降低添加提供商的交互摩擦。
+  - *范围*：仅改 `ProviderFormScreen.kt` 的预设选择器；Custom 分支的 `ProtocolSelector`（二级协议选择）保持不动。
+- **变更文件 (1)**：
+  - 修改: `native-ui/app/src/main/java/com/promenar/nexara/ui/settings/ProviderFormScreen.kt`
+
 ### Markdown 排版根因修复 + mikepenz 0.40.2→0.41.0 升级 + 纯函数测试网建立 (2026-07-05)
 - **🔴 P0 — 修复主会话 Markdown "大段文本挤成一段"根因**：
   - *根因定位*：`MarkdownText.kt` 调用 mikepenz `Markdown()` 时未传 `annotator`，库默认 `eolAsNewLine = false` 按 CommonMark 规范把段落内单换行（软换行）替换为空格，导致 LLM 单换行排版被压成一段；同时未传 `padding`，库默认 `block = 2.dp` 段落间距过小。

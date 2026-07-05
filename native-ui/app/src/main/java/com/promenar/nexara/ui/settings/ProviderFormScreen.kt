@@ -21,10 +21,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -37,8 +40,13 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -96,6 +104,7 @@ val PROVIDER_PRESETS = listOf(
     ProviderPreset("Custom", ProtocolType.Generic_OpenAI_Compat, "", R.drawable.ic_provider_custom)
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProviderFormScreen(
     providerId: String? = null,
@@ -112,6 +121,7 @@ fun ProviderFormScreen(
 
     var name by remember { mutableStateOf("") }
     var selectedPreset by remember { mutableStateOf(PROVIDER_PRESETS[0]) }
+    var presetMenuExpanded by remember { mutableStateOf(false) }
     var baseUrl by remember { mutableStateOf(PROVIDER_PRESETS[0].defaultBaseUrl) }
     var apiKey by remember { mutableStateOf("") }
     var apiKeyVisible by remember { mutableStateOf(false) }
@@ -171,19 +181,115 @@ fun ProviderFormScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            PROVIDER_PRESETS.forEach { preset ->
-                PresetItem(
-                    preset = preset,
-                    isSelected = selectedPreset.name == preset.name,
-                    onClick = {
-                        selectedPreset = preset
-                        if (preset.name != "Custom" && preset.name != "Local") {
-                            name = preset.name
-                            baseUrl = preset.defaultBaseUrl
-                        }
+        ExposedDropdownMenuBox(
+            expanded = presetMenuExpanded,
+            onExpandedChange = { presetMenuExpanded = it }
+        ) {
+            // 收起态：玻璃风格卡片（图标 + 名称 + 下拉箭头），与 GlassInputField 协调
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .clip(NexaraShapes.medium)
+                    .background(NexaraColors.SurfaceContainer)
+                    .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
+                    .clickable { presetMenuExpanded = !presetMenuExpanded }
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    selectedPreset.iconRes?.let { iconId ->
+                        Icon(
+                            painter = painterResource(id = iconId),
+                            contentDescription = null,
+                            tint = NexaraColors.Primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    } ?: run {
+                        Icon(
+                            imageVector = Icons.Rounded.Psychology,
+                            contentDescription = null,
+                            tint = NexaraColors.OnSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                )
+
+                    Text(
+                        text = selectedPreset.name,
+                        style = NexaraTypography.bodyMedium,
+                        color = NexaraColors.OnSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowDropDown,
+                        contentDescription = null,
+                        tint = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .alpha(if (presetMenuExpanded) 1f else 0.6f)
+                    )
+                }
+            }
+
+            // 展开态：弹出可滚动下拉菜单
+            DropdownMenu(
+                expanded = presetMenuExpanded,
+                onDismissRequest = { presetMenuExpanded = false },
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                PROVIDER_PRESETS.forEach { preset ->
+                    val isSelected = selectedPreset.name == preset.name
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                preset.iconRes?.let { iconId ->
+                                    Icon(
+                                        painter = painterResource(id = iconId),
+                                        contentDescription = null,
+                                        tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                } ?: run {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Psychology,
+                                        contentDescription = null,
+                                        tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Text(
+                                    text = preset.name,
+                                    style = NexaraTypography.bodyMedium,
+                                    color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface
+                                )
+                            }
+                        },
+                        trailingIcon = {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = NexaraColors.Primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        onClick = {
+                            selectedPreset = preset
+                            if (preset.name != "Custom" && preset.name != "Local") {
+                                name = preset.name
+                                baseUrl = preset.defaultBaseUrl
+                            }
+                            presetMenuExpanded = false
+                        }
+                    )
+                }
             }
         }
 
