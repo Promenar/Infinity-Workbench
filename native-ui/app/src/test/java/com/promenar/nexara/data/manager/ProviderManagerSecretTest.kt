@@ -111,17 +111,27 @@ class ProviderManagerSecretTest {
         val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
         settingsPrefs.edit()
             .putInt("extra_providers_count", 2)
-            .putString("extra_providers_ids", "extra-central-a,extra-central-b")
+            .putString("extra_providers_ids", "central-a,central-b")
+            .putString("extra_provider_0_name", "Central A")
+            .putString("extra_provider_0_protocol", "OpenAI_ChatCompletions")
+            .putString("extra_provider_0_base_url", "https://central-a.invalid")
+            .putString("extra_provider_0_model", "model-a")
             .putString("extra_provider_0_api_key", "fake-a")
+            .putString("extra_provider_1_name", "Central B")
+            .putString("extra_provider_1_protocol", "Anthropic_Messages")
             .putString("extra_provider_1_api_key", "fake-b")
             .commit()
 
-        ProviderManager.createForTest(app, secrets)
+        val manager = ProviderManager.createForTest(app, secrets)
 
-        assertThat(secrets.text(SecretCatalog.providerApiKey("extra-central-a"))).isEqualTo("fake-a")
-        assertThat(secrets.text(SecretCatalog.providerApiKey("extra-central-b"))).isEqualTo("fake-b")
+        assertThat(secrets.text(SecretCatalog.providerApiKey("central-a"))).isEqualTo("fake-a")
+        assertThat(secrets.text(SecretCatalog.providerApiKey("central-b"))).isEqualTo("fake-b")
         assertThat(settingsPrefs.contains("extra_provider_0_api_key")).isFalse()
         assertThat(settingsPrefs.contains("extra_provider_1_api_key")).isFalse()
+        assertThat(manager.getProviderConfig("central-a")!!.baseUrl).isEqualTo("https://central-a.invalid")
+        assertThat(manager.getProviderConfig("central-a")!!.apiKey).isEqualTo("fake-a")
+        assertThat(manager.getProviderSummary("central-a")!!.name).isEqualTo("Central A")
+        assertThat(manager.getProviderSummary("central-a")!!.hasApiKey).isTrue()
     }
 
     @Test
@@ -178,6 +188,88 @@ class ProviderManagerSecretTest {
 
         manager.updateExtraProvider("extra-vertex", item, CredentialUpdate.Clear)
         assertThat(secrets.contains(SecretCatalog.vertexServiceAccount("extra-vertex"))).isFalse()
+    }
+
+    @Test
+    fun `API Key 到 Vertex 的 Preserve 切换原子拒绝且 Replace 才允许`() {
+        val manager = ProviderManager.createForTest(app, secrets)
+        manager.updateMainProvider(
+            ProtocolType.OpenAI_ChatCompletions,
+            "https://openai.invalid",
+            CredentialUpdate.Replace("fake-api-key"),
+            "openai-model",
+            "OpenAI",
+        )
+
+        val rejected = runCatching {
+            manager.updateMainProvider(
+                ProtocolType.Google_VertexAI,
+                "https://vertex.invalid",
+                CredentialUpdate.Preserve,
+                "vertex-model",
+                "Vertex",
+            )
+        }
+
+        assertThat(rejected.isFailure).isTrue()
+        val unchanged = manager.getMainProviderConfig()!!
+        assertThat(unchanged.protocolType).isEqualTo(ProtocolType.OpenAI_ChatCompletions)
+        assertThat(unchanged.baseUrl).isEqualTo("https://openai.invalid")
+        assertThat(unchanged.model).isEqualTo("openai-model")
+        assertThat(unchanged.name).isEqualTo("OpenAI")
+        assertThat(unchanged.apiKey).isEqualTo("fake-api-key")
+        assertThat(unchanged.vertexServiceAccountJson).isEmpty()
+
+        manager.updateMainProvider(
+            ProtocolType.Google_VertexAI,
+            "https://vertex.invalid",
+            CredentialUpdate.Replace("{\"private_key\":\"fake-vertex\"}"),
+            "vertex-model",
+            "Vertex",
+        )
+        assertThat(manager.getMainProviderConfig()!!.vertexServiceAccountJson).contains("fake-vertex")
+    }
+
+    @Test
+    fun `Vertex 到 API Key 的 Preserve 切换原子拒绝而 Clear 后状态一致`() {
+        val manager = ProviderManager.createForTest(app, secrets)
+        manager.updateMainProvider(
+            ProtocolType.Google_VertexAI,
+            "https://vertex.invalid",
+            CredentialUpdate.Replace("{\"private_key\":\"fake-vertex\"}"),
+            "vertex-model",
+            "Vertex",
+        )
+
+        val rejected = runCatching {
+            manager.updateMainProvider(
+                ProtocolType.Anthropic_Messages,
+                "https://anthropic.invalid",
+                CredentialUpdate.Preserve,
+                "claude-model",
+                "Anthropic",
+            )
+        }
+
+        assertThat(rejected.isFailure).isTrue()
+        val unchanged = manager.getMainProviderConfig()!!
+        assertThat(unchanged.protocolType).isEqualTo(ProtocolType.Google_VertexAI)
+        assertThat(unchanged.baseUrl).isEqualTo("https://vertex.invalid")
+        assertThat(unchanged.vertexServiceAccountJson).contains("fake-vertex")
+
+        manager.updateMainProvider(
+            ProtocolType.Anthropic_Messages,
+            "https://anthropic.invalid",
+            CredentialUpdate.Clear,
+            "claude-model",
+            "Anthropic",
+        )
+        val cleared = manager.getMainProviderConfig()!!
+        assertThat(cleared.protocolType).isEqualTo(ProtocolType.Anthropic_Messages)
+        assertThat(cleared.apiKey).isEmpty()
+        assertThat(cleared.vertexServiceAccountJson).isEmpty()
+        assertThat(manager.getProviderSummary("default")!!.hasApiKey).isFalse()
+        assertThat(manager.getProviderSummary("default")!!.hasVertexCredentials).isFalse()
     }
 
     private class MemorySecretStore(private val failOn: SecretId? = null) : SecretStore {

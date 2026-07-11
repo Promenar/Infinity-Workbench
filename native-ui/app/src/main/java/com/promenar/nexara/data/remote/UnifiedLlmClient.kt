@@ -37,13 +37,8 @@ data class StreamConfig(
 
 class UnifiedLlmClient(
     private val providerConfigResolver: () -> UnifiedProviderConfig?,
-    private val middlewares: List<LlmMiddleware>,
+    private val middlewares: List<LlmMiddleware> = emptyList(),
 ) {
-    constructor(
-        providerConfig: UnifiedProviderConfig,
-        middlewares: List<LlmMiddleware> = emptyList(),
-    ) : this({ providerConfig }, middlewares)
-
     suspend fun sendStream(
         params: StreamTextParams,
         config: StreamConfig

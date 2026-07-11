@@ -84,6 +84,9 @@ class ProviderManager private constructor(
         model: String,
         name: String? = null
     ) {
+        val existingType = providerPrefs.getString("protocol_id", null)
+            ?.let(ProtocolType::fromLegacyName)
+        validateCredentialTransition(existingType, protocolType, credentialUpdate)
         providerPrefs.edit()
             .putString("protocol_id", protocolType::class.simpleName)
             .putString("protocol_id_name", protocolType.displayName) // 新增：人类可读协议名
@@ -152,27 +155,23 @@ class ProviderManager private constructor(
      */
     fun getProviderConfig(providerId: String): ProviderConfig? {
         if (providerId == "default") return getMainProviderConfig()
-        if (providerId.startsWith("extra_")) {
-            val index = providerId.removePrefix("extra_")
-            // 先尝试按索引查找
-            val count = settingsPrefs.getInt("extra_providers_count", 0)
-            for (i in 0 until count) {
-                val prefix = "extra_provider_$i"
-                val storedId = settingsPrefs.getString("${prefix}_id", "extra_$i")
-                if (storedId == providerId || "extra_$i" == providerId) {
-                    val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
-                        ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
-                    return ProviderConfig(
-                        protocolType = ProtocolType.fromLegacyName(protocolName),
-                        baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
-                        apiKey = readSecret(SecretCatalog.providerApiKey(storedId ?: "extra_$i")),
-                        model = settingsPrefs.getString("${prefix}_model", "") ?: "",
-                        name = settingsPrefs.getString("${prefix}_name", null),
-                        vertexServiceAccountJson = readSecret(
-                            SecretCatalog.vertexServiceAccount(storedId ?: "extra_$i")
-                        ),
-                    )
-                }
+        val count = settingsPrefs.getInt("extra_providers_count", 0)
+        for (i in 0 until count) {
+            val prefix = "extra_provider_$i"
+            val resolvedId = resolveExtraProviderId(i)
+            if (resolvedId == providerId) {
+                val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
+                    ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
+                return ProviderConfig(
+                    protocolType = ProtocolType.fromLegacyName(protocolName),
+                    baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
+                    apiKey = readSecret(SecretCatalog.providerApiKey(resolvedId)),
+                    model = settingsPrefs.getString("${prefix}_model", "") ?: "",
+                    name = settingsPrefs.getString("${prefix}_name", null),
+                    vertexServiceAccountJson = readSecret(
+                        SecretCatalog.vertexServiceAccount(resolvedId)
+                    ),
+                )
             }
         }
         return null
@@ -200,17 +199,13 @@ class ProviderManager private constructor(
             _currentModelSummary.value = config.model
         }
         val count = settingsPrefs.getInt("extra_providers_count", 0)
-        val extraIds = settingsPrefs.getString("extra_providers_ids", null)
-            ?.split(",")?.map { it.trim() } ?: emptyList()
         for (i in 0 until count) {
             val prefix = "extra_provider_$i"
             val name = settingsPrefs.getString("${prefix}_name", null) ?: continue
             val protoName = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null) ?: ""
             // 优先使用持久化的真实 ID，回退到索引生成（兼容旧数据）
-            val realId = settingsPrefs.getString("${prefix}_id", null)
-                ?: extraIds.getOrNull(i)
-                ?: "extra_$i"
+            val realId = resolveExtraProviderId(i)
             items.add(
                 ProviderListItem(
                     id = realId,
@@ -243,6 +238,8 @@ class ProviderManager private constructor(
         item: ProviderListItem,
         credentialUpdate: CredentialUpdate = CredentialUpdate.Preserve,
     ) {
+        val existingType = getProviderConfig(id)?.protocolType
+        validateCredentialTransition(existingType, item.protocolType, credentialUpdate)
         if (id != item.id) {
             moveSecret(SecretCatalog.providerApiKey(id), SecretCatalog.providerApiKey(item.id))
             moveSecret(SecretCatalog.vertexServiceAccount(id), SecretCatalog.vertexServiceAccount(item.id))
@@ -301,15 +298,9 @@ class ProviderManager private constructor(
         migratePreference(providerPrefs, "vertex_service_account_json", SecretCatalog.vertexServiceAccount("default"))
 
         val count = settingsPrefs.getInt("extra_providers_count", 0)
-        val centralizedIds = settingsPrefs.getString("extra_providers_ids", null)
-            ?.split(',')
-            ?.map { it.trim() }
-            .orEmpty()
         for (index in 0 until count) {
             val prefix = "extra_provider_$index"
-            val providerId = settingsPrefs.getString("${prefix}_id", null)
-                ?: centralizedIds.getOrNull(index)?.takeIf { it.isNotEmpty() }
-                ?: "extra_$index"
+            val providerId = resolveExtraProviderId(index)
             migratePreference(settingsPrefs, "${prefix}_api_key", SecretCatalog.providerApiKey(providerId))
             migratePreference(
                 settingsPrefs,
@@ -364,6 +355,32 @@ class ProviderManager private constructor(
                 _configurationChanges.tryEmit(Unit)
             }
             is CredentialUpdate.Replace -> writeProviderCredential(providerId, protocolType, update.value)
+        }
+    }
+
+    private fun resolveExtraProviderId(index: Int): String {
+        val prefix = "extra_provider_$index"
+        settingsPrefs.getString("${prefix}_id", null)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+        return settingsPrefs.getString("extra_providers_ids", null)
+            ?.split(',')
+            ?.getOrNull(index)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "extra_$index"
+    }
+
+    private fun validateCredentialTransition(
+        existingType: ProtocolType?,
+        newType: ProtocolType,
+        update: CredentialUpdate,
+    ) {
+        if (update !is CredentialUpdate.Preserve || existingType == null) return
+        val existingUsesVertexJson = existingType is ProtocolType.Google_VertexAI
+        val newUsesVertexJson = newType is ProtocolType.Google_VertexAI
+        require(existingUsesVertexJson == newUsesVertexJson) {
+            "跨凭证类别切换必须 Replace 或 Clear"
         }
     }
 
