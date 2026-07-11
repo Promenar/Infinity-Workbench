@@ -81,25 +81,7 @@ class BackupValidationException(message: String, cause: Throwable? = null) :
 interface BackupDataSource {
     suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot
     suspend fun restore(validated: ValidatedBackup)
-}
-
-/**
- * 偏好存储只向备份层暴露非敏感候选值。实现仍必须接受本层的双重白名单检查，
- * 不能把“旧版本已经迁移过密钥”当作安全前提。
- */
-interface BackupPreferenceStore {
-    suspend fun snapshot(): BackupPreferenceSnapshot
-
-    /**
-     * 返回一个可补偿的原子替换操作。commit 要么完整替换、要么不改变；rollback 必须幂等，
-     * 并能在 commit 成功后恢复 prepare 时的状态。
-     */
-    suspend fun prepareReplace(snapshot: BackupPreferenceSnapshot): PreparedPreferenceRestore
-}
-
-interface PreparedPreferenceRestore {
-    suspend fun commit()
-    suspend fun rollback()
+    suspend fun recoverInterruptedRestore()
 }
 
 @Serializable

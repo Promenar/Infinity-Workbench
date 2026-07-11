@@ -42,6 +42,7 @@ import kotlinx.serialization.json.jsonObject
 class RoomBackupDataSourceTest {
     private lateinit var db: NexaraDatabase
     private lateinit var sourceRoot: Path
+    private lateinit var sourceBase: Path
     private lateinit var restoreParent: Path
     private lateinit var preferences: FakePreferenceStore
     private lateinit var secrets: FakeSecretStore
@@ -52,8 +53,10 @@ class RoomBackupDataSourceTest {
         db = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        sourceRoot = Files.createTempDirectory("nexara-backup-source")
-        restoreParent = Files.createTempDirectory("nexara-backup-restore")
+        val testBase = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".nexara-backup-test")
+        sourceBase = Files.createDirectory(testBase.resolve("source"))
+        sourceRoot = Files.createDirectory(sourceBase.resolve("root-1"))
+        restoreParent = Files.createDirectory(testBase.resolve("restore"))
         preferences = FakePreferenceStore(
             BackupPreferenceSnapshot(
                 entries = listOf(
@@ -76,8 +79,7 @@ class RoomBackupDataSourceTest {
     @After
     fun tearDown() {
         db.close()
-        sourceRoot.toFile().deleteRecursively()
-        restoreParent.toFile().deleteRecursively()
+        sourceBase.parent.toFile().deleteRecursively()
     }
 
     @Test
@@ -166,7 +168,7 @@ class RoomBackupDataSourceTest {
         runBlocking {
             seedCompleteGraph()
 
-            val snapshot = newDataSource().snapshot(setOf(BackupContent.DATABASE, BackupContent.FILES))
+            val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
             val text = snapshot.database.toString(Charsets.UTF_8)
 
             listOf(
@@ -189,6 +191,24 @@ class RoomBackupDataSourceTest {
             assertThat(db.messageDao().getById("message-1")!!.vectorizationStatus).isNull()
             assertThat(db.fileEntryDao().getByUuid("file-1")!!.vectorizedAt).isNull()
             assertThat(db.fileEntryDao().getByUuid("file-1")!!.kgExtractedAt).isNull()
+            assertThat(Path.of(db.artifactDao().getById("artifact-1")!!.workspacePath!!).startsWith(restoreParent))
+                .isTrue()
+        }
+    }
+
+    @Test
+    fun `restore clears every excluded derived and runtime table`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            seedDerivedRows()
+
+            newDataSource().restore(validated(backup))
+
+            listOf(
+                "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
+                "vectorization_tasks", "audit_logs", "tool_execution_ledger", "file_versions",
+            ).forEach { table -> assertThat(rowCount(table)).isEqualTo(0) }
         }
     }
 
@@ -197,7 +217,7 @@ class RoomBackupDataSourceTest {
         runBlocking {
             val seeded = seedCompleteGraph()
             Files.delete(seeded.filePath)
-            assertFails { newDataSource().snapshot(setOf(BackupContent.DATABASE, BackupContent.FILES)) }
+            assertFails { newDataSource().snapshot(CANONICAL_CONTENT) }
 
             db.clearAllTables()
             val second = seedCompleteGraph()
@@ -205,10 +225,78 @@ class RoomBackupDataSourceTest {
             Files.delete(second.filePath)
             Files.createSymbolicLink(second.filePath, outside)
             try {
-                assertFails { newDataSource().snapshot(setOf(BackupContent.DATABASE, BackupContent.FILES)) }
+                assertFails { newDataSource().snapshot(CANONICAL_CONTENT) }
             } finally {
                 Files.deleteIfExists(outside)
             }
+        }
+    }
+
+    @Test
+    fun `snapshot streams files within package limits and materializes an empty hash`() {
+        runBlocking {
+            seedCompleteGraph()
+            val file = db.fileEntryDao().getByUuid("file-1")!!
+            db.fileEntryDao().update(file.copy(hash = ""))
+
+            val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+
+            val databaseJson = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+            val rows = databaseJson.getValue("tables").jsonObject.getValue("workspace_files").jsonArray
+            val restoredHash = rows.single { it.jsonObject["uuid"]?.toString() == "\"file-1\"" }
+                .jsonObject.getValue("hash").toString().trim('"')
+            assertThat(restoredHash).isEqualTo(sha256(snapshot.files.getValue("file-1")))
+        }
+    }
+
+    @Test
+    fun `snapshot rejects a file replaced while its channel is being read`() {
+        runBlocking {
+            val seeded = seedCompleteGraph()
+
+            assertFails {
+                newDataSource(snapshotReadHook = { path ->
+                    if (path == seeded.filePath) Files.write(path, "changed-after-read".toByteArray())
+                }).snapshot(CANONICAL_CONTENT)
+            }
+        }
+    }
+
+    @Test
+    fun `snapshot rejects oversized declarations before opening a source file`() {
+        runBlocking {
+            seedCompleteGraph()
+            val file = db.fileEntryDao().getByUuid("file-1")!!
+            db.fileEntryDao().update(file.copy(sizeBytes = BackupPackageLimits.MAX_ENTRY_BYTES + 1))
+            var opened = false
+
+            assertFails {
+                newDataSource(snapshotReadHook = { opened = true }).snapshot(CANONICAL_CONTENT)
+            }
+
+            assertThat(opened).isFalse()
+        }
+    }
+
+    @Test
+    fun `only canonical full content packages are accepted before any file or external write`() {
+        runBlocking {
+            seedCompleteGraph()
+            var opened = false
+            assertFails {
+                newDataSource(snapshotReadHook = { opened = true })
+                    .snapshot(setOf(BackupContent.DATABASE, BackupContent.FILES))
+            }
+            assertThat(opened).isFalse()
+
+            val full = newDataSource().snapshot(CANONICAL_CONTENT)
+            val invalidManifest = validated(full).copy(
+                manifest = validated(full).manifest.copy(
+                    entries = validated(full).manifest.entries.filterNot { it.path == "preferences.json" }
+                )
+            )
+            assertFails { newDataSource().restore(invalidManifest) }
+            assertThat(preferences.prepareCalls).isEqualTo(0)
         }
     }
 
@@ -235,6 +323,20 @@ class RoomBackupDataSourceTest {
                     JsonArray(rows.map { row ->
                         if (row.jsonObject["uuid"]?.toString() == "\"file-1\"") {
                             JsonObject(row.jsonObject + ("materialized_path" to JsonPrimitive("/../escape.bin")))
+                        } else row
+                    })
+                },
+                mutateRows(source, "workspace_files") { rows ->
+                    JsonArray(rows.map { row ->
+                        if (row.jsonObject["uuid"]?.toString() == "\"file-1\"") {
+                            JsonObject(row.jsonObject + ("hash" to JsonPrimitive("")))
+                        } else row
+                    })
+                },
+                mutateRows(source, "workspace_files") { rows ->
+                    JsonArray(rows.map { row ->
+                        if (row.jsonObject["uuid"]?.toString() == "\"file-1\"") {
+                            JsonObject(row.jsonObject + ("workspace_root_uuid" to JsonPrimitive("missing-root")))
                         } else row
                     })
                 },
@@ -268,6 +370,7 @@ class RoomBackupDataSourceTest {
 
             assertThat(db.agentDao().getAll()).containsExactly(sentinel)
             assertThat(Files.list(restoreParent).use { it.count() }).isEqualTo(0)
+            assertThat(preferences.prepareCalls).isEqualTo(0)
         }
     }
 
@@ -296,21 +399,199 @@ class RoomBackupDataSourceTest {
         }
     }
 
-    private fun newDataSource(): RoomBackupDataSource = RoomBackupDataSource(
+    @Test
+    fun `interrupted restore recovers to exactly old or new state after datasource recreation`() {
+        runBlocking {
+            RestoreCrashPoint.entries.forEach { point ->
+                db.clearAllTables()
+                if (!Files.exists(sourceRoot)) Files.createDirectories(sourceRoot)
+                seedCompleteGraph()
+                preferences.snapshot = BackupPreferenceSnapshot(
+                    listOf(BackupPreferenceEntry("settings", "language", "zh")), setOf("p1")
+                )
+                val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+
+                db.clearAllTables()
+                val sentinel = AgentEntity("sentinel", "old", createdAt = 1)
+                db.agentDao().insert(sentinel)
+                preferences.snapshot = BackupPreferenceSnapshot(
+                    listOf(BackupPreferenceEntry("settings", "language", "en")), emptySet()
+                )
+
+                var interrupted = false
+                try {
+                    newDataSource(point).restore(validated(backup))
+                } catch (_: SimulatedRestoreProcessDeath) {
+                    interrupted = true
+                }
+                assertThat(interrupted).isTrue()
+
+                newDataSource().recoverInterruptedRestore()
+
+                val committed = point == RestoreCrashPoint.ROOM_COMMITTED ||
+                    point == RestoreCrashPoint.JOURNAL_COMMITTED
+                if (committed) {
+                    assertThat(db.agentDao().getAll().map { it.id }).containsExactly("agent-1")
+                    assertThat(preferences.snapshot.entries.single().value).isEqualTo("zh")
+                } else {
+                    assertThat(db.agentDao().getAll()).containsExactly(sentinel)
+                    assertThat(preferences.snapshot.entries.single().value).isEqualTo("en")
+                }
+                assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+            }
+        }
+    }
+
+    @Test
+    fun `recovery refuses a symlink-swapped restore root and keeps its journal`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            db.clearAllTables()
+            db.agentDao().insert(AgentEntity("sentinel", "old", createdAt = 1))
+
+            try {
+                newDataSource(RestoreCrashPoint.FILES_MOVED).restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                // 模拟进程已退出。
+            }
+            val record = FileRestoreJournal(restoreParent).read()!!
+            val finalRoot = restoreParent.resolve(record.newRootIdentity)
+            finalRoot.toFile().deleteRecursively()
+            val outside = Files.createDirectory(sourceBase.parent.resolve("outside-keep"))
+            Files.write(outside.resolve("sentinel"), "keep".toByteArray())
+            Files.createSymbolicLink(finalRoot, outside)
+
+            assertFails { newDataSource().recoverInterruptedRestore() }
+
+            assertThat(Files.exists(outside.resolve("sentinel"))).isTrue()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
+            Files.delete(finalRoot)
+            newDataSource().recoverInterruptedRestore()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        }
+    }
+
+    @Test
+    fun `restore replaces the complete eligible secret set and never touches automatic password`() {
+        runBlocking {
+            seedCompleteGraph()
+            val providerId = SecretCatalog.providerApiKey("p1")
+            val removedProviderId = SecretCatalog.providerApiKey("removed-provider")
+            secrets.put(providerId, "new-provider".toByteArray())
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+
+            preferences.snapshot = preferences.snapshot.copy(providerIds = setOf("removed-provider"))
+            secrets.put(providerId, "old-provider".toByteArray())
+            secrets.put(removedProviderId, "stale-removed-provider".toByteArray())
+            secrets.put(SecretCatalog.tavilyApiKey, "stale-tavily".toByteArray())
+            secrets.put(SecretCatalog.embeddingApiKey, "stale-embedding".toByteArray())
+            secrets.put(SecretCatalog.automaticBackupPassword, "keep-local".toByteArray())
+
+            newDataSource().restore(validated(backup))
+
+            assertThat(secrets.get(providerId)!!.toString(Charsets.UTF_8)).isEqualTo("new-provider")
+            assertThat(secrets.get(removedProviderId)).isNull()
+            assertThat(secrets.get(SecretCatalog.tavilyApiKey)).isNull()
+            assertThat(secrets.get(SecretCatalog.embeddingApiKey)).isNull()
+            assertThat(secrets.get(SecretCatalog.automaticBackupPassword)!!.toString(Charsets.UTF_8))
+                .isEqualTo("keep-local")
+            assertThat(secrets.receivedPlaintextRefs.flatten().all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+        }
+    }
+
+    @Test
+    fun `secret second write remove and rollback failures preserve a recoverable journal`() {
+        runBlocking {
+            seedCompleteGraph()
+            val providerId = SecretCatalog.providerApiKey("p1")
+            secrets.put(providerId, "new-provider".toByteArray())
+            secrets.put(SecretCatalog.tavilyApiKey, "new-tavily".toByteArray())
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+
+            db.clearAllTables()
+            val sentinel = AgentEntity("sentinel", "old", createdAt = 1)
+            db.agentDao().insert(sentinel)
+            secrets.put(providerId, "old-provider".toByteArray())
+            secrets.put(SecretCatalog.tavilyApiKey, "old-tavily".toByteArray())
+            secrets.failWriteAt = 1
+            secrets.failRollback = true
+
+            assertFails { newDataSource().restore(validated(backup)) }
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
+
+            secrets.failWriteAt = null
+            secrets.failRollback = false
+            newDataSource().recoverInterruptedRestore()
+            assertThat(db.agentDao().getAll()).containsExactly(sentinel)
+            assertThat(secrets.get(providerId)!!.toString(Charsets.UTF_8)).isEqualTo("old-provider")
+            assertThat(secrets.get(SecretCatalog.tavilyApiKey)!!.toString(Charsets.UTF_8)).isEqualTo("old-tavily")
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        }
+    }
+
+    @Test
+    fun `secret second write or remove failure compensates to the complete old set`() {
+        runBlocking {
+            seedCompleteGraph()
+            val providerId = SecretCatalog.providerApiKey("p1")
+            secrets.put(providerId, "new-provider".toByteArray())
+            secrets.put(SecretCatalog.tavilyApiKey, "new-tavily".toByteArray())
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+
+            listOf("second-write", "remove").forEach { failure ->
+                db.clearAllTables()
+                db.agentDao().insert(AgentEntity("sentinel", "old", createdAt = 1))
+                secrets.put(providerId, "old-provider".toByteArray())
+                secrets.put(SecretCatalog.tavilyApiKey, "old-tavily".toByteArray())
+                secrets.failWriteAt = if (failure == "second-write") 1 else null
+                secrets.failRemove = failure == "remove"
+
+                assertFails { newDataSource().restore(validated(backup)) }
+
+                assertThat(secrets.get(providerId)!!.toString(Charsets.UTF_8)).isEqualTo("old-provider")
+                assertThat(secrets.get(SecretCatalog.tavilyApiKey)!!.toString(Charsets.UTF_8)).isEqualTo("old-tavily")
+                assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+                secrets.failWriteAt = null
+                secrets.failRemove = false
+            }
+        }
+    }
+
+    private fun newDataSource(
+        crashPoint: RestoreCrashPoint? = null,
+        snapshotReadHook: (Path) -> Unit = {},
+    ): RoomBackupDataSource = RoomBackupDataSource(
         database = db,
         preferences = preferences,
-        secretStore = secrets,
-        restoreParent = restoreParent,
+        secrets = secrets,
+        trustedSourceBases = setOf(sourceBase),
+        trustedRestoreBase = restoreParent,
         appVersion = "test",
+        crashHook = RestoreCrashHook { point ->
+            if (point == crashPoint) throw SimulatedRestoreProcessDeath(point)
+        },
+        snapshotReadHook = snapshotReadHook,
     )
 
-    private fun validated(snapshot: BackupSnapshot): ValidatedBackup = ValidatedBackup(
+    private fun validated(snapshot: BackupSnapshot): ValidatedBackup {
+        val manifestEntries = buildList {
+            add(BackupManifestEntry("database.json", snapshot.database.size.toLong(), sha256(snapshot.database)))
+            add(BackupManifestEntry("preferences.json", snapshot.preferences.size.toLong(), sha256(snapshot.preferences)))
+            snapshot.files.forEach { (id, bytes) ->
+                add(BackupManifestEntry("files/$id", bytes.size.toLong(), sha256(bytes)))
+            }
+            if (snapshot.secrets.isNotEmpty()) {
+                add(BackupManifestEntry("secrets.json", 0, "0".repeat(64)))
+            }
+        }
+        return ValidatedBackup(
         manifest = BackupManifest(
             formatVersion = 1,
             databaseSchemaVersion = snapshot.databaseSchemaVersion,
             appVersion = snapshot.appVersion,
             createdAt = snapshot.createdAt,
-            entries = emptyList(),
+            entries = manifestEntries,
             encrypted = false,
             containsSecrets = snapshot.secrets.isNotEmpty(),
         ),
@@ -319,6 +600,7 @@ class RoomBackupDataSourceTest {
         files = snapshot.files,
         secrets = snapshot.secrets,
     )
+    }
 
     private fun restoredRoot(): Path {
         val roots = Files.list(restoreParent).use { it.toList() }
@@ -359,7 +641,12 @@ class RoomBackupDataSourceTest {
         db.sessionDao().insert(session)
         db.messageDao().insert(message)
         db.attachmentDao().insert(AttachmentEntity("attachment-1", message.id, "text", "content://a"))
-        db.artifactDao().insert(ArtifactEntity("artifact-1", "text", "Title", "Body", sessionId = session.id, messageId = message.id, createdAt = now, updatedAt = now))
+        db.artifactDao().insert(
+            ArtifactEntity(
+                "artifact-1", "text", "Title", "Body", sessionId = session.id, messageId = message.id,
+                workspacePath = filePath.toString(), createdAt = now, updatedAt = now,
+            )
+        )
         db.contextSummaryDao().insert(ContextSummaryEntity("summary-1", session.id, message.id, message.id, "summary", now))
         db.tagDao().insert(TagEntity("tag-1", "Tag", createdAt = now))
         db.fileEntryDao().insert(root)
@@ -370,6 +657,47 @@ class RoomBackupDataSourceTest {
         db.skillDao().insertMcpServer(McpServerEntity("mcp-1", "MCP", "https://example.invalid", createdAt = now))
         db.workspaceSeqDao().getNextSeqForDate("20260712")
         return SeededGraph(filePath)
+    }
+
+    private fun seedDerivedRows() {
+        val sqlite = db.openHelper.writableDatabase
+        sqlite.execSQL(
+            "INSERT INTO vectors(id, session_id, content, embedding, created_at, stale, version) VALUES(?,?,?,?,?,?,?)",
+            arrayOf<Any?>("vector-1", "session-1", "derived", byteArrayOf(1, 2), 100L, 0, 1),
+        )
+        sqlite.execSQL("INSERT INTO vectors_fts(rowid, content) VALUES(?,?)", arrayOf<Any?>(99, "derived fts"))
+        sqlite.execSQL(
+            "INSERT INTO kg_nodes(id,name,type,source_type,created_at,stale) VALUES(?,?,?,?,?,?)",
+            arrayOf<Any?>("node-1", "Node 1", "concept", "full", 100L, 0),
+        )
+        sqlite.execSQL(
+            "INSERT INTO kg_nodes(id,name,type,source_type,created_at,stale) VALUES(?,?,?,?,?,?)",
+            arrayOf<Any?>("node-2", "Node 2", "concept", "full", 100L, 0),
+        )
+        sqlite.execSQL(
+            "INSERT INTO kg_edges(id,source_id,target_id,relation,weight,source_type,created_at,stale) VALUES(?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>("edge-1", "node-1", "node-2", "rel", 1.0, "full", 100L, 0),
+        )
+        sqlite.execSQL(
+            "INSERT INTO kg_jit_cache(cache_key,query_hash,chunk_ids_hash,result_json,created_at,expires_at) VALUES(?,?,?,?,?,?)",
+            arrayOf<Any?>("cache-1", "q", "c", "{}", 100L, 200L),
+        )
+        sqlite.execSQL(
+            "INSERT INTO vectorization_tasks(id,type,status,last_chunk_index,progress,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            arrayOf<Any?>("vt-1", "doc", "pending", 0, 0.0, 100L, 100L),
+        )
+        sqlite.execSQL(
+            "INSERT INTO audit_logs(id,action,resource_type,status,created_at) VALUES(?,?,?,?,?)",
+            arrayOf<Any?>("audit-1", "read", "file", "ok", 100L),
+        )
+        sqlite.execSQL(
+            "INSERT INTO tool_execution_ledger(session_id,assistant_message_id,tool_call_id,tool_name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            arrayOf<Any?>("session-1", "message-1", "call-1", "tool", "done", 100L, 100L),
+        )
+        sqlite.execSQL(
+            "INSERT INTO file_versions(id,file_uuid,workspace_root_uuid,hash,content_path,created_at) VALUES(?,?,?,?,?,?)",
+            arrayOf<Any?>("version-1", "file-1", "root-1", "hash", "/version", 100L),
+        )
     }
 
     private fun mutateRows(
@@ -401,40 +729,96 @@ class RoomBackupDataSourceTest {
         }
 
     private data class SeededGraph(val filePath: Path)
+
+    private companion object {
+        val CANONICAL_CONTENT = setOf(
+            BackupContent.DATABASE,
+            BackupContent.PREFERENCES,
+            BackupContent.FILES,
+            BackupContent.SECRETS,
+        )
+    }
 }
 
 private class FakePreferenceStore(
     var snapshot: BackupPreferenceSnapshot,
-) : BackupPreferenceStore {
+) : TransactionalBackupPreferenceStore {
     var failCommit: Boolean = false
+    var failRollback: Boolean = false
+    var prepareCalls: Int = 0
+    private val prepared = mutableMapOf<String, Pair<BackupPreferenceSnapshot, BackupPreferenceSnapshot>>()
 
     override suspend fun snapshot(): BackupPreferenceSnapshot = snapshot
 
-    override suspend fun prepareReplace(snapshot: BackupPreferenceSnapshot): PreparedPreferenceRestore {
-        val before = this.snapshot
-        return object : PreparedPreferenceRestore {
-            override suspend fun commit() {
-                if (failCommit) throw IllegalStateException("injected preference failure")
-                this@FakePreferenceStore.snapshot = snapshot
-            }
+    override suspend fun prepare(txId: String, before: BackupPreferenceSnapshot, after: BackupPreferenceSnapshot) {
+        prepareCalls++
+        prepared[txId] = before to after
+    }
 
-            override suspend fun rollback() {
-                this@FakePreferenceStore.snapshot = before
-            }
-        }
+    override suspend fun commitPrepared(txId: String) {
+        if (failCommit) throw IllegalStateException("injected preference failure")
+        prepared[txId]?.let { snapshot = it.second }
+    }
+
+    override suspend fun rollbackPrepared(txId: String) {
+        if (failRollback) throw IllegalStateException("injected preference rollback failure")
+        prepared[txId]?.let { snapshot = it.first }
+    }
+
+    override suspend fun finalizePrepared(txId: String) {
+        prepared.remove(txId)
     }
 }
 
-private class FakeSecretStore : SecretStore {
+private class FakeSecretStore : TransactionalBackupSecretStore {
     private val values = linkedMapOf<SecretId, ByteArray>()
+    private val prepared = linkedMapOf<String, Pair<Map<SecretId, ByteArray>, Map<SecretId, ByteArray>>>()
+    var failWriteAt: Int? = null
+    var failRemove: Boolean = false
+    var failRollback: Boolean = false
+    val receivedPlaintextRefs = mutableListOf<List<ByteArray>>()
 
-    override fun put(id: SecretId, value: ByteArray) {
+    fun put(id: SecretId, value: ByteArray) {
         values[id] = value.copyOf()
     }
 
-    override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
-    override fun contains(id: SecretId): Boolean = id in values
-    override fun remove(id: SecretId) {
-        values.remove(id)?.fill(0)
+    fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
+
+    override suspend fun snapshot(ids: Set<SecretId>): Map<SecretId, ByteArray> =
+        values.filterKeys { it in ids }.mapValues { it.value.copyOf() }
+
+    override suspend fun prepare(
+        txId: String,
+        before: Map<SecretId, ByteArray>,
+        after: Map<SecretId, ByteArray>,
+    ) {
+        receivedPlaintextRefs += before.values.toList()
+        receivedPlaintextRefs += after.values.toList()
+        prepared[txId] = before.mapValues { it.value.copyOf() } to after.mapValues { it.value.copyOf() }
+    }
+
+    override suspend fun commitPrepared(txId: String) {
+        val (before, after) = prepared[txId] ?: return
+        val eligible = before.keys + after.keys
+        eligible.forEach { values.remove(it)?.fill(0) }
+        after.entries.forEachIndexed { index, (id, value) ->
+            if (failWriteAt == index) throw IllegalStateException("injected secret write failure")
+            values[id] = value.copyOf()
+        }
+        if (failRemove) throw IllegalStateException("injected secret remove failure")
+    }
+
+    override suspend fun rollbackPrepared(txId: String) {
+        if (failRollback) throw IllegalStateException("injected secret rollback failure")
+        val (before, after) = prepared[txId] ?: return
+        (before.keys + after.keys).forEach { values.remove(it)?.fill(0) }
+        before.forEach { (id, value) -> values[id] = value.copyOf() }
+    }
+
+    override suspend fun finalizePrepared(txId: String) {
+        prepared.remove(txId)?.let { (before, after) ->
+            before.values.forEach { it.fill(0) }
+            after.values.forEach { it.fill(0) }
+        }
     }
 }
