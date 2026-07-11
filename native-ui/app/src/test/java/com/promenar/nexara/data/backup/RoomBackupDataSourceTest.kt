@@ -263,6 +263,46 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `restore rejects a pure directory swap before move`() {
+        runBlocking {
+            seedCompleteGraph()
+            db.fileEntryDao().insert(
+                FileEntry(
+                    uuid = "empty-dir", workspaceRootUuid = "root-1", parentUuid = "root-1",
+                    name = "empty", hash = "", isDirectory = true, physicalRootPath = sourceRoot.toString(),
+                    materializedPath = "/empty", createdAt = 100L, updatedAt = 100L,
+                )
+            )
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            val outside = Files.createDirectory(sourceBase.parent.resolve("outside-directory"))
+            Files.write(outside.resolve("sentinel"), byteArrayOf(1))
+
+            assertFails {
+                newDataSource(fileOperations = SwappingRestoreFileOperations(SwapMode.DIRECTORY, outside))
+                    .restore(validated(backup))
+            }
+
+            assertThat(Files.exists(outside.resolve("sentinel"))).isTrue()
+        }
+    }
+
+    @Test
+    fun `restore rejects a final file swap after the last write`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            val outside = Files.write(sourceBase.parent.resolve("outside-file"), "unchanged".toByteArray())
+
+            assertFails {
+                newDataSource(fileOperations = SwappingRestoreFileOperations(SwapMode.FILE, outside))
+                    .restore(validated(backup))
+            }
+
+            assertThat(Files.readAllBytes(outside).toString(Charsets.UTF_8)).isEqualTo("unchanged")
+        }
+    }
+
+    @Test
     fun `snapshot rejects oversized declarations before opening a source file`() {
         runBlocking {
             seedCompleteGraph()
@@ -275,6 +315,26 @@ class RoomBackupDataSourceTest {
             }
 
             assertThat(opened).isFalse()
+        }
+    }
+
+    @Test
+    fun `snapshot enforces the conservative Android materialization budget near its boundary`() {
+        runBlocking {
+            val seeded = seedCompleteGraph()
+            val nearLimit = ByteArray(3 * 1024 * 1024) { (it % 251).toByte() }
+            Files.write(seeded.filePath, nearLimit)
+            val file = db.fileEntryDao().getByUuid("file-1")!!
+            db.fileEntryDao().update(file.copy(sizeBytes = nearLimit.size.toLong(), hash = sha256(nearLimit)))
+            val accepted = newDataSource().snapshot(CANONICAL_CONTENT)
+            assertThat(accepted.files.getValue("file-1").size).isEqualTo(nearLimit.size)
+
+            val overBudget = ByteArray(BackupPackageLimits.MAX_IN_MEMORY_BYTES.toInt())
+            Files.write(seeded.filePath, overBudget)
+            db.fileEntryDao().update(
+                file.copy(sizeBytes = overBudget.size.toLong(), hash = sha256(overBudget))
+            )
+            assertFails { newDataSource().snapshot(CANONICAL_CONTENT) }
         }
     }
 
@@ -297,6 +357,21 @@ class RoomBackupDataSourceTest {
             )
             assertFails { newDataSource().restore(invalidManifest) }
             assertThat(preferences.prepareCalls).isEqualTo(0)
+        }
+    }
+
+    @Test
+    fun `restore consumes and wipes every validated backup byte array on success and failure`() {
+        runBlocking {
+            seedCompleteGraph()
+            val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+            val success = validated(snapshot)
+            newDataSource().restore(success)
+            assertValidatedBackupWiped(success)
+
+            val failure = validated(snapshot).copy(database = "not-json".toByteArray())
+            assertFails { newDataSource().restore(failure) }
+            assertValidatedBackupWiped(failure)
         }
     }
 
@@ -529,6 +604,61 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `cleanup keeps owner marker until deep deletion succeeds and retry completes after reopen`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            db.clearAllTables()
+            db.agentDao().insert(AgentEntity("sentinel", "old", createdAt = 1L))
+            val fileOps = TestRestoreFileOperations()
+            try {
+                newDataSource(RestoreCrashPoint.FILES_MOVED, fileOperations = fileOps).restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                // 模拟进程退出。
+            }
+            val record = FileRestoreJournal(restoreParent, TestRestoreJournalAuthenticator).read()!!
+            fileOps.failDeleteAt = 1
+
+            assertFails { newDataSource(fileOperations = fileOps).recoverInterruptedRestore() }
+
+            val finalRoot = restoreParent.resolve(record.newRootIdentity)
+            assertThat(Files.exists(finalRoot.resolve(".restore-owner"))).isTrue()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
+
+            preferences = preferences.reopen()
+            secrets = secrets.reopen()
+            fileOps.clearDeleteFailure()
+            newDataSource(fileOperations = fileOps).recoverInterruptedRestore()
+            assertThat(Files.exists(finalRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        }
+    }
+
+    @Test
+    fun `committed recovery preserves journal and old root when unmanaged sentinel appears`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            val fileOps = TestRestoreFileOperations()
+            try {
+                newDataSource(RestoreCrashPoint.JOURNAL_COMMITTED, fileOperations = fileOps)
+                    .restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                // 模拟进程退出。
+            }
+            val sentinel = Files.write(sourceRoot.resolve("unmanaged-sentinel"), byteArrayOf(7))
+
+            assertFails { newDataSource(fileOperations = fileOps).recoverInterruptedRestore() }
+
+            assertThat(Files.exists(sentinel)).isTrue()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
+            Files.delete(sentinel)
+            newDataSource(fileOperations = fileOps).recoverInterruptedRestore()
+            assertThat(Files.exists(sourceRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse()
+        }
+    }
+
+    @Test
     fun `restore replaces the complete eligible secret set and never touches automatic password`() {
         runBlocking {
             seedCompleteGraph()
@@ -619,6 +749,7 @@ class RoomBackupDataSourceTest {
         snapshotReadHook: (Path) -> Unit = {},
         preferenceStore: FakePreferenceStore = preferences,
         secretStore: FakeSecretStore = secrets,
+        fileOperations: RestoreFileOperations = TestRestoreFileOperations(),
     ): RoomBackupDataSource = RoomBackupDataSource(
         database = db,
         preferences = preferenceStore,
@@ -631,7 +762,7 @@ class RoomBackupDataSourceTest {
         },
         snapshotReadHook = snapshotReadHook,
         journalAuthenticator = TestRestoreJournalAuthenticator,
-        restoreFileOperations = TestRestoreFileOperations,
+        restoreFileOperations = fileOperations,
     )
 
     private suspend fun emptyWorkspaceBackup(): BackupSnapshot {
@@ -661,11 +792,17 @@ class RoomBackupDataSourceTest {
             encrypted = false,
             containsSecrets = snapshot.secrets.isNotEmpty(),
         ),
-        database = snapshot.database,
-        preferences = snapshot.preferences,
-        files = snapshot.files,
-        secrets = snapshot.secrets,
+        database = snapshot.database.copyOf(),
+        preferences = snapshot.preferences.copyOf(),
+        files = snapshot.files.mapValues { it.value.copyOf() },
+        secrets = snapshot.secrets.mapValues { it.value.copyOf() },
     )
+    }
+
+    private fun assertValidatedBackupWiped(backup: ValidatedBackup) {
+        val arrays = listOf(backup.database, backup.preferences) + backup.files.values + backup.secrets.values
+        assertThat(arrays).isNotEmpty()
+        assertThat(arrays.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
     }
 
     private fun restoredRoot(): Path {
@@ -950,7 +1087,23 @@ private class FakeSecretStore private constructor(private val state: State) : Tr
     )
 }
 
-private object TestRestoreFileOperations : RestoreFileOperations {
+private class TestRestoreFileOperations : RestoreFileOperations {
+    var failDeleteAt: Int? = null
+    private var deleteCount = 0
+
+    fun clearDeleteFailure() {
+        failDeleteAt = null
+        deleteCount = 0
+    }
+
+    override fun createTransactionRoot(parent: Path, name: String) {
+        Files.createDirectory(parent.resolve(name))
+    }
+
+    override fun createDirectory(root: Path, relative: List<String>) {
+        Files.createDirectory(relative.fold(root) { current, segment -> current.resolve(segment) })
+    }
+
     override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) {
         val target = relative.fold(root) { current, segment -> current.resolve(segment) }
         Files.createDirectories(target.parent)
@@ -974,6 +1127,76 @@ private object TestRestoreFileOperations : RestoreFileOperations {
         val root = parent.resolve(childName)
         if (!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
         if (Files.isSymbolicLink(root)) throw BackupValidationException("测试恢复目录为符号链接")
-        root.toFile().deleteRecursively()
+        val markerName = marker?.first
+        Files.walk(root).use { stream ->
+            val paths = stream.sorted(Comparator.reverseOrder()).toList()
+            val ordered = paths.filter { it != root && it.fileName?.toString() != markerName } +
+                paths.filter { it.fileName?.toString() == markerName } + listOf(root)
+            ordered.forEach { path ->
+                if (failDeleteAt == deleteCount++) throw java.io.IOException("injected deep delete failure")
+                Files.deleteIfExists(path)
+            }
+        }
+    }
+
+    override fun moveTree(parent: Path, sourceName: String, targetName: String) {
+        Files.move(
+            parent.resolve(sourceName), parent.resolve(targetName),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+        )
+    }
+
+    override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> {
+        val root = parent.resolve(childName)
+        return Files.walk(root).use { stream ->
+            stream.filter { it != root }.map { path ->
+                if (Files.isSymbolicLink(path)) throw BackupValidationException("测试 inventory 包含符号链接")
+                RestoreTreeEntry(
+                    root.relativize(path).joinToString("/") { it.toString() },
+                    Files.isDirectory(path, java.nio.file.LinkOption.NOFOLLOW_LINKS),
+                )
+            }.toList().toSet()
+        }
+    }
+
+    override fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>) {
+        if (inventory(root.parent, root.fileName.toString()) != expected) {
+            throw BackupValidationException("测试 staging inventory 不一致")
+        }
+        Files.walk(root).use { stream ->
+            stream.filter { Files.isDirectory(it, java.nio.file.LinkOption.NOFOLLOW_LINKS) }
+                .forEach(FileRestoreJournal::syncDirectory)
+        }
+    }
+}
+
+private enum class SwapMode { DIRECTORY, FILE }
+
+private class SwappingRestoreFileOperations(
+    private val mode: SwapMode,
+    private val outside: Path,
+) : RestoreFileOperations {
+    private val delegate = TestRestoreFileOperations()
+    private var swapped = false
+
+    override fun createTransactionRoot(parent: Path, name: String) = delegate.createTransactionRoot(parent, name)
+    override fun createDirectory(root: Path, relative: List<String>) = delegate.createDirectory(root, relative)
+    override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) = delegate.writeNew(root, relative, bytes)
+    override fun moveTree(parent: Path, sourceName: String, targetName: String) =
+        delegate.moveTree(parent, sourceName, targetName)
+    override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> = delegate.inventory(parent, childName)
+    override fun deleteTree(parent: Path, childName: String, expectedFileKey: String, marker: Pair<String, String>?) =
+        delegate.deleteTree(parent, childName, expectedFileKey, marker)
+
+    override fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>) {
+        if (!swapped) {
+            swapped = true
+            val suffix = if (mode == SwapMode.DIRECTORY) "/empty" else "/docs/a.txt"
+            val entry = expected.single { it.path.endsWith(suffix) }
+            val target = entry.path.split('/').fold(root) { current, segment -> current.resolve(segment) }
+            if (mode == SwapMode.DIRECTORY) Files.delete(target) else Files.delete(target)
+            Files.createSymbolicLink(target, outside)
+        }
+        delegate.verifyAndSync(root, expected)
     }
 }

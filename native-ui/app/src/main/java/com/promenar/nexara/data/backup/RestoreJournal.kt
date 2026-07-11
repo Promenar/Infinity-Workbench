@@ -26,11 +26,9 @@ data class RestoreJournalRecord(
     val phase: RestoreJournalPhase,
 )
 
-fun interface RestoreJournalAuthenticator {
+interface RestoreJournalAuthenticator {
     fun sign(payload: ByteArray): ByteArray
-
-    fun verify(payload: ByteArray, signature: ByteArray): Boolean =
-        java.security.MessageDigest.isEqual(sign(payload), signature)
+    fun verify(payload: ByteArray, signature: ByteArray): Boolean
 }
 
 @Serializable
@@ -141,7 +139,9 @@ internal class FileRestoreJournal(
 
     private fun validateRecord(record: RestoreJournalRecord) {
         if (!TX_ID.matches(record.txId) || !ROOT_ID.matches(record.newRootIdentity) ||
-            !SHA_256.matches(record.expectedDatabaseFingerprint) || record.oldRootIdentity.length > 4096 ||
+            !SHA_256.matches(record.expectedDatabaseFingerprint) ||
+            record.oldRootIdentity.toByteArray().size > MAX_OLD_ROOT_IDENTITY_BYTES ||
+            record.oldRootIdentity.split(',').count(String::isNotBlank) > MAX_MANAGED_ROOTS ||
             record.oldRootIdentity.split(',').filter(String::isNotBlank).any { !OLD_ROOT_ID.matches(it) } ||
             record.newRootFileKey?.length.orZero() > 512
         ) throw BackupValidationException("恢复 journal 元数据无效")
@@ -188,11 +188,13 @@ internal class FileRestoreJournal(
 
     companion object {
         const val FILE_NAME = ".restore-journal.json"
-        private const val MAX_JOURNAL_BYTES = 16L * 1024
+        private const val MAX_JOURNAL_BYTES = 2L * 1024 * 1024
+        private const val MAX_OLD_ROOT_IDENTITY_BYTES = 1024 * 1024
+        private const val MAX_MANAGED_ROOTS = 1024
         private val TX_ID = Regex("[A-Za-z0-9-]{1,64}")
         private val ROOT_ID = Regex("restore-[A-Za-z0-9-]{1,72}")
         private val SHA_256 = Regex("[0-9a-f]{64}")
-        private val OLD_ROOT_ID = Regex("-?[0-9]+:[A-Za-z0-9_-]{1,768}")
+        private val OLD_ROOT_ID = Regex("-?[0-9]+:[A-Za-z0-9_-]{1,768}:(?:-|[0-9a-f]{64}(?:\\.[0-9a-f]{64})*)")
 
         fun requireTrustedDirectory(path: Path): Path {
             val absolute = path.toAbsolutePath().normalize()

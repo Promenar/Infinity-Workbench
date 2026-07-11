@@ -9,7 +9,10 @@ internal object BackupPreferencePolicy {
     )
 
     private val exactAllowed = mapOf(
-        "provider" to setOf("protocol_id", "protocol_id_name", "base_url", "model", "provider_name"),
+        "provider" to setOf(
+            "protocol_id", "protocol_id_name", "base_url", "model", "provider_name", "last_local_model",
+            "embedding_base_url", "embedding_model",
+        ),
         "settings" to setOf(
             "language", "theme_mode", "haptic_enabled", "loop_limit", "user_name", "user_avatar",
             "extra_providers_count", "extra_providers_ids", "all_models", "enabled_models", "all_models_order",

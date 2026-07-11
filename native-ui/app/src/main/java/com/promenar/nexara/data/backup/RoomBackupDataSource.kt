@@ -96,7 +96,10 @@ class RoomBackupDataSource(
         }
     }
 
-    override suspend fun restore(validated: ValidatedBackup) = withContext(Dispatchers.IO) {
+    override suspend fun restore(validated: ValidatedBackup) {
+        validated.beginConsumption()
+        try {
+            withContext(Dispatchers.IO) {
         requireCanonicalRestoreContent(validated)
         if (journal.read() != null) throw BackupValidationException("存在未恢复的 restore journal，请先执行 recoverInterruptedRestore")
         val payload = parseDatabase(validated.database)
@@ -128,8 +131,9 @@ class RoomBackupDataSource(
             preferences.prepare(restoreId, beforePreferences, preferenceSnapshot)
             secrets.prepare(restoreId, beforeSecrets, afterSecrets)
             crashHook.hit(RestoreCrashPoint.JOURNAL_PREPARED)
-            stageFiles(stagingRoot, transformed, validated.files)
+            val expectedTree = stageFiles(stagingRoot, transformed, validated.files)
             moveAtomically(stagingRoot, finalRoot)
+            restoreFileOperations.verifyAndSync(finalRoot, expectedTree)
             record = record.copy(newRootFileKey = fileKey(finalRoot))
             journal.write(record)
             crashHook.hit(RestoreCrashPoint.FILES_MOVED)
@@ -157,6 +161,10 @@ class RoomBackupDataSource(
         } finally {
             beforeSecrets.values.forEach { it.fill(0) }
             afterSecrets.values.forEach { it.fill(0) }
+        }
+            }
+        } finally {
+            validated.close()
         }
     }
 
@@ -664,47 +672,54 @@ class RoomBackupDataSource(
         stagingRoot: Path,
         transformed: DatabaseBackupPayload,
         files: Map<String, ByteArray>,
-    ) {
+    ): Set<RestoreTreeEntry> {
         if (Files.exists(stagingRoot, LinkOption.NOFOLLOW_LINKS)) {
             throw BackupValidationException("staging 目录已存在")
         }
-        Files.createDirectory(stagingRoot)
+        restoreFileOperations.createTransactionRoot(restoreParent, stagingRoot.fileName.toString())
         val txId = stagingRoot.fileName.toString().removePrefix(".restore-").removeSuffix(".tmp")
         restoreFileOperations.writeNew(stagingRoot, listOf(OWNER_MARKER), txId.toByteArray())
-        val seen = mutableSetOf<Path>()
+        val seen = mutableSetOf<String>()
+        val directories = linkedSetOf<List<String>>()
         val pendingFiles = mutableListOf<Pair<List<String>, ByteArray>>()
         transformed.rows(FILE_TABLE).forEach { row ->
             val finalPhysicalRoot = Path.of(row.requiredString("physical_root_path"))
             val rootToken = finalPhysicalRoot.fileName.toString()
-            val stagingPhysicalRoot = stagingRoot.resolve(rootToken)
-            Files.createDirectories(stagingPhysicalRoot)
             val relative = normalizeMaterializedPath(row.requiredString("materialized_path"))
-            val destination = relative.fold(stagingPhysicalRoot) { current, part -> current.resolve(part) }.normalize()
-            if (!destination.startsWith(stagingPhysicalRoot) || !seen.add(destination)) {
+            val treePath = listOf(rootToken) + relative
+            val identity = treePath.joinToString("/")
+            if (!seen.add(identity)) {
                 throw BackupValidationException("恢复文件路径重复或越界")
             }
+            (1..treePath.size).forEach { depth ->
+                if (depth < treePath.size || row.requiredBoolean("is_directory")) {
+                    directories += treePath.take(depth)
+                }
+            }
             if (row.requiredBoolean("is_directory")) {
-                Files.createDirectories(destination)
+                // 目录统一在 descriptor-relative mkdir 阶段创建。
             } else {
-                Files.createDirectories(destination.parent)
-                pendingFiles += (listOf(rootToken) + relative) to files.getValue(row.requiredString("uuid"))
+                pendingFiles += treePath to files.getValue(row.requiredString("uuid"))
             }
         }
+        directories.sortedBy { it.size }.forEach { restoreFileOperations.createDirectory(stagingRoot, it) }
         pendingFiles.forEach { (relative, bytes) -> restoreFileOperations.writeNew(stagingRoot, relative, bytes) }
-        syncDirectoryTree(stagingRoot)
-    }
-
-    private fun syncDirectoryTree(root: Path) {
-        Files.walk(root).use { stream ->
-            stream.filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) }
-                .sorted(Comparator.reverseOrder())
-                .forEach(FileRestoreJournal::syncDirectory)
+        val expected = buildSet {
+            add(RestoreTreeEntry(OWNER_MARKER, false))
+            directories.forEach { add(RestoreTreeEntry(it.joinToString("/"), true)) }
+            pendingFiles.forEach { (path, _) -> add(RestoreTreeEntry(path.joinToString("/"), false)) }
         }
+        restoreFileOperations.verifyAndSync(stagingRoot, expected)
+        return expected
     }
 
     private fun moveAtomically(source: Path, target: Path) {
         try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+            restoreFileOperations.moveTree(
+                target.parent,
+                source.fileName.toString(),
+                target.fileName.toString(),
+            )
         } catch (error: AtomicMoveNotSupportedException) {
             throw BackupValidationException("恢复目录所在文件系统不支持原子移动", error)
         }
@@ -836,20 +851,26 @@ class RoomBackupDataSource(
         LinkOption.NOFOLLOW_LINKS,
     ).fileKey()?.toString() ?: throw BackupValidationException("文件系统未提供稳定 fileKey")
 
-    private fun currentOldRootIdentity(): String = readDatabasePayload().rows(FILE_TABLE)
-        .map { managedContainer(requireTrustedSourceRoot(it.requiredString("physical_root_path"))) }
-        .distinct()
-        .joinToString(",") { managed ->
+    private fun currentOldRootIdentity(): String {
+        val rows = readDatabasePayload().rows(FILE_TABLE)
+        val groups = rows.groupBy { row ->
+            managedContainer(requireTrustedSourceRoot(row.requiredString("physical_root_path")))
+        }
+        return groups.entries.joinToString(",") { (managed, managedRows) ->
+            val expected = expectedManagedInventory(managed, managedRows)
+            val actual = restoreFileOperations.inventory(managed.path.parent, managed.path.fileName.toString())
+            if (actual != expected) throw BackupValidationException("旧 managed root 包含未登记、缺失或异常内容")
             val encodedKey = java.util.Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(fileKey(managed.path).toByteArray())
-            "${managed.baseIndex}:$encodedKey"
+            "${managed.baseIndex}:$encodedKey:${inventoryToken(expected)}"
         }
+    }
 
     private suspend fun finishCommitted(record: RestoreJournalRecord) {
         requireOwnedRestoreRoot(restoreParent.resolve(record.newRootIdentity), record)
         preferences.finalizePrepared(record.txId)
         secrets.finalizePrepared(record.txId)
-        deleteOldRoots(record.oldRootIdentity)
+        deleteOldRoots(record)
         deleteDatabaseCommitMarker(record.txId)
         journal.delete()
     }
@@ -889,11 +910,12 @@ class RoomBackupDataSource(
 
     private fun databaseMarkerId(txId: String): String = "__nexara_restore_$txId"
 
-    private fun deleteOldRoots(identity: String) {
+    private fun deleteOldRoots(record: RestoreJournalRecord) {
+        val identity = record.oldRootIdentity
         if (identity.isBlank()) return
         identity.split(',').forEach { encoded ->
-            val parts = encoded.split(':', limit = 2)
-            if (parts.size != 2) throw BackupValidationException("旧 root identity 无效")
+            val parts = encoded.split(':', limit = 3)
+            if (parts.size != 3) throw BackupValidationException("旧 root identity 无效")
             val baseIndex = parts[0].toIntOrNull() ?: throw BackupValidationException("旧 root base identity 无效")
             val base = if (baseIndex == RESTORE_BASE_INDEX) restoreParent else {
                 trustedSourceBases.getOrNull(baseIndex) ?: throw BackupValidationException("旧 root base identity 无效")
@@ -911,10 +933,24 @@ class RoomBackupDataSource(
             }
             if (matches.size > 1) throw BackupValidationException("旧 root fileKey 匹配不唯一")
             val root = matches.singleOrNull() ?: return@forEach
-            val marker = if (baseIndex == RESTORE_BASE_INDEX) {
-                OWNER_MARKER to root.fileName.toString().removePrefix("restore-")
-            } else null
-            restoreFileOperations.deleteTree(base, root.fileName.toString(), expectedKey, marker)
+            val actualInventory = restoreFileOperations.inventory(base, root.fileName.toString())
+            val expectedHashes = if (parts[2] == "-") emptySet() else parts[2].split('.').toSet()
+            val cleanupMarker = root.resolve(OLD_CLEANUP_MARKER)
+            val markerPresent = Files.exists(cleanupMarker, LinkOption.NOFOLLOW_LINKS) &&
+                runCatching { readSmallNoFollow(cleanupMarker, 128).toString(Charsets.UTF_8) == record.txId }
+                    .getOrDefault(false)
+            val actualHashes = inventoryEntryHashes(actualInventory.filterNot { it.path == OLD_CLEANUP_MARKER }.toSet())
+            if ((!markerPresent && actualHashes != expectedHashes) ||
+                (markerPresent && !expectedHashes.containsAll(actualHashes))
+            ) {
+                throw BackupValidationException("旧 managed root inventory 已变化，拒绝整根删除")
+            }
+            if (!markerPresent) {
+                restoreFileOperations.writeNew(root, listOf(OLD_CLEANUP_MARKER), record.txId.toByteArray())
+            }
+            restoreFileOperations.deleteTree(
+                base, root.fileName.toString(), expectedKey, OLD_CLEANUP_MARKER to record.txId
+            )
             FileRestoreJournal.syncDirectory(base)
         }
     }
@@ -928,6 +964,31 @@ class RoomBackupDataSource(
         ) return ManagedContainer(container, RESTORE_BASE_INDEX)
         throw BackupValidationException("无法确定 workspace root 的受信容器")
     }
+
+    private fun expectedManagedInventory(
+        managed: ManagedContainer,
+        rows: List<JsonObject>,
+    ): Set<RestoreTreeEntry> = buildSet {
+        if (managed.baseIndex == RESTORE_BASE_INDEX) add(RestoreTreeEntry(OWNER_MARKER, false))
+        rows.forEach { row ->
+            val physicalRoot = requireTrustedSourceRoot(row.requiredString("physical_root_path"))
+            val prefix = if (physicalRoot == managed.path) emptyList() else listOf(physicalRoot.fileName.toString())
+            val relative = prefix + normalizeMaterializedPath(row.requiredString("materialized_path"))
+            val isDirectory = row.requiredBoolean("is_directory")
+            val ancestorLimit = if (isDirectory) relative.size else relative.size - 1
+            (1..ancestorLimit.coerceAtLeast(0)).forEach { depth ->
+                add(RestoreTreeEntry(relative.take(depth).joinToString("/"), true))
+            }
+            if (!isDirectory) add(RestoreTreeEntry(relative.joinToString("/"), false))
+        }
+    }
+
+    private fun inventoryEntryHashes(entries: Set<RestoreTreeEntry>): Set<String> = entries.mapTo(linkedSetOf()) {
+        sha256("${if (it.directory) 'd' else 'f'}:${it.path}".toByteArray())
+    }
+
+    private fun inventoryToken(entries: Set<RestoreTreeEntry>): String =
+        inventoryEntryHashes(entries).sorted().joinToString(".").ifEmpty { "-" }
 
     private fun isOwnedRestoreContainer(container: Path): Boolean {
         val txId = container.fileName.toString().removePrefix("restore-")
@@ -1075,6 +1136,7 @@ class RoomBackupDataSource(
         const val ROOM_SCHEMA_V1_IDENTITY_HASH = "c9a3019357d00e515f226e279da18e8d"
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"
+        const val OLD_CLEANUP_MARKER = ".restore-cleanup-owner"
         const val DATABASE_MARKER_ACTION = "__nexara_restore_commit"
         val SAFE_TOKEN = Regex("[A-Za-z0-9._-]{1,128}")
         val RESTORE_ROOT = Regex("restore-[A-Za-z0-9-]{1,72}")

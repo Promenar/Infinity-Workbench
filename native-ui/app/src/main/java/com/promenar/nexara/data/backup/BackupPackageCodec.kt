@@ -471,10 +471,7 @@ class DefaultBackupPackageCodec private constructor(
     }
 
     private fun wipeValidatedResult(result: ValidatedBackup) {
-        result.database.fill(0)
-        result.preferences.fill(0)
-        result.files.values.forEach { it.fill(0) }
-        result.secrets.values.forEach { it.fill(0) }
+        result.close()
     }
 
     private data class BackupLimits(

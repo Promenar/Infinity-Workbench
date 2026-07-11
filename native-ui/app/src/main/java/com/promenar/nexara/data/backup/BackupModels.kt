@@ -33,7 +33,22 @@ data class ValidatedBackup(
     val preferences: ByteArray = ByteArray(0),
     val files: Map<String, ByteArray> = emptyMap(),
     val secrets: Map<SecretId, ByteArray> = emptyMap(),
-)
+) : AutoCloseable {
+    private val consumed = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    internal fun beginConsumption() {
+        if (!consumed.compareAndSet(false, true)) throw BackupValidationException("ValidatedBackup 已被消费")
+    }
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        database.fill(0)
+        preferences.fill(0)
+        files.values.forEach { it.fill(0) }
+        secrets.values.forEach { it.fill(0) }
+    }
+}
 
 @Serializable
 data class BackupManifest(
@@ -73,8 +88,9 @@ object BackupPackageLimits {
     const val MAX_ENTRY_BYTES: Long = 128L * 1024 * 1024
     const val MAX_ENTRIES: Int = 10_000
     internal const val MAX_MANIFEST_BYTES: Long = 4L * 1024 * 1024
-    // 当前 API 物化 ByteArray；必须显著低于常见 Android heap，512 MiB 仅是归档协议硬上限。
-    const val MAX_IN_MEMORY_BYTES: Long = 64L * 1024 * 1024
+    // 当前 API 同时持有 JSON AST/String/UTF-8/文件/codec 副本；按最坏约 8 倍放大将峰值压在 32 MiB 内。
+    // 512 MiB 只保留为归档协议上限，不代表 Android 物化 datasource 可接受该体积。
+    const val MAX_IN_MEMORY_BYTES: Long = 4L * 1024 * 1024
 }
 
 class BackupValidationException(message: String, cause: Throwable? = null) :

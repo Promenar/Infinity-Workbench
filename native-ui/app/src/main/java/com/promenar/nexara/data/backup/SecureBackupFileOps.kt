@@ -12,11 +12,27 @@ import java.nio.file.StandardOpenOption
 
 /** Descriptor-relative operations for restore-owned trees. Unsupported providers fail closed. */
 interface RestoreFileOperations {
+    fun createTransactionRoot(parent: Path, name: String)
+    fun createDirectory(root: Path, relative: List<String>)
     fun writeNew(root: Path, relative: List<String>, bytes: ByteArray)
+    fun moveTree(parent: Path, sourceName: String, targetName: String)
+    fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry>
+    fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>)
     fun deleteTree(parent: Path, childName: String, expectedFileKey: String, marker: Pair<String, String>? = null)
 }
 
+data class RestoreTreeEntry(val path: String, val directory: Boolean)
+
 internal object SecureBackupFileOps : RestoreFileOperations {
+    override fun createTransactionRoot(parent: Path, name: String) {
+        createDirectoryByDescriptorMove(parent, emptyList(), name)
+    }
+
+    override fun createDirectory(root: Path, relative: List<String>) {
+        require(relative.isNotEmpty())
+        createDirectoryByDescriptorMove(root, relative.dropLast(1), relative.last())
+    }
+
     override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) {
         require(relative.isNotEmpty()) { "恢复文件相对路径不能为空" }
         openSecure(root).use { rootStream ->
@@ -74,21 +90,102 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                         bytes.fill(0)
                     }
                 }
-                deleteChildren(it)
+                deleteChildren(it, marker?.first)
+                marker?.let { itMarker -> it.deleteFile(Path.of(itMarker.first)) }
             }
             parentStream.deleteDirectory(childPath)
         }
     }
 
-    private fun deleteChildren(directory: SecureDirectoryStream<Path>) {
+    override fun moveTree(parent: Path, sourceName: String, targetName: String) {
+        openSecure(parent).use { secure ->
+            secure.move(Path.of(sourceName), secure, Path.of(targetName))
+        }
+    }
+
+    override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> =
+        openSecure(parent).use { secure ->
+            secure.newDirectoryStream(Path.of(childName), LinkOption.NOFOLLOW_LINKS).use { child ->
+                buildSet { collectInventory(child, "", this) }
+            }
+        }
+
+    override fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>) {
+        val parent = root.parent ?: throw BackupValidationException("恢复 root 缺少父目录")
+        if (inventory(parent, root.fileName.toString()) != expected) {
+            throw BackupValidationException("恢复 staging inventory 与预期不一致")
+        }
+        Files.walk(root).use { stream ->
+            stream.filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) }
+                .sorted(Comparator.reverseOrder())
+                .forEach(FileRestoreJournal::syncDirectory)
+        }
+        if (inventory(parent, root.fileName.toString()) != expected) {
+            throw BackupValidationException("恢复 staging 在 fsync 期间发生变化")
+        }
+    }
+
+    private fun createDirectoryByDescriptorMove(root: Path, parents: List<String>, name: String) {
+        val temporaryName = ".mkdir-${java.util.UUID.randomUUID()}"
+        val temporary = root.resolve(temporaryName)
+        Files.createDirectory(temporary)
+        try {
+            openSecure(root).use { rootStream ->
+                var current = rootStream
+                val opened = mutableListOf<SecureDirectoryStream<Path>>()
+                try {
+                    parents.forEach { segment ->
+                        current = current.newDirectoryStream(Path.of(segment), LinkOption.NOFOLLOW_LINKS)
+                            .also(opened::add)
+                    }
+                    rootStream.newDirectoryStream(Path.of(temporaryName), LinkOption.NOFOLLOW_LINKS).use { }
+                    rootStream.move(Path.of(temporaryName), current, Path.of(name))
+                } finally {
+                    opened.asReversed().forEach { runCatching { it.close() } }
+                }
+            }
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
+    }
+
+    private fun deleteChildren(directory: SecureDirectoryStream<Path>, markerName: String? = null) {
         directory.toList().forEach { entry ->
             val name = entry.fileName
+            if (markerName != null && name.toString() == markerName) return@forEach
             val child = runCatching { directory.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS) }.getOrNull()
             if (child == null) {
                 directory.deleteFile(name)
             } else {
-                child.use(::deleteChildren)
+                child.use { deleteChildren(it) }
                 directory.deleteDirectory(name)
+            }
+        }
+    }
+
+    private fun collectInventory(
+        directory: SecureDirectoryStream<Path>,
+        prefix: String,
+        result: MutableSet<RestoreTreeEntry>,
+    ) {
+        directory.toList().forEach { entry ->
+            val name = entry.fileName
+            val relative = if (prefix.isEmpty()) name.toString() else "$prefix/${name}"
+            val attributes = directory.getFileAttributeView(
+                name,
+                java.nio.file.attribute.BasicFileAttributeView::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            ).readAttributes()
+            if (attributes.isSymbolicLink) throw BackupValidationException("恢复树 inventory 包含符号链接")
+            if (attributes.isDirectory) {
+                result += RestoreTreeEntry(relative, true)
+                directory.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS).use {
+                    collectInventory(it, relative, result)
+                }
+            } else if (attributes.isRegularFile) {
+                result += RestoreTreeEntry(relative, false)
+            } else {
+                throw BackupValidationException("恢复树 inventory 包含非普通节点")
             }
         }
     }

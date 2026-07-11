@@ -42,7 +42,7 @@ class RestoreJournalTest {
                     txId = "tx-1",
                     expectedDatabaseFingerprint = "a".repeat(64),
                     oldRootIdentity = "0:" + java.util.Base64.getUrlEncoder().withoutPadding()
-                        .encodeToString("file-key".toByteArray()),
+                        .encodeToString("file-key".toByteArray()) + ":" + "b".repeat(64),
                     newRootIdentity = "restore-tx-1",
                     newRootFileKey = null,
                     phase = RestoreJournalPhase.PREPARED,
