@@ -172,13 +172,9 @@ class ProtocolParamTest {
             )
         }
         
-        // Mock service account key for auth
-        val tempKey = java.io.File.createTempFile("sa_key", ".json")
-        tempKey.writeText("{\"client_email\":\"test@test.com\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDE...\\n-----END PRIVATE KEY-----\"}")
-        
         val client = HttpClient(mockEngine)
         val protocol = VertexAIProtocol(
-            serviceAccountKeyPath = tempKey.absolutePath,
+            serviceAccountJson = "{\"client_email\":\"fake@example.invalid\",\"private_key\":\"fake-private-key\"}",
             projectId = "test-project",
             model = "gemini-1.5",
             httpClient = client

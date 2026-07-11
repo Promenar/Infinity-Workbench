@@ -4,12 +4,15 @@ import android.content.Context
 import com.promenar.nexara.data.remote.search.DuckDuckGoProvider
 import com.promenar.nexara.data.remote.search.SearXNGProvider
 import com.promenar.nexara.data.remote.search.TavilyProvider
+import com.promenar.nexara.data.security.SecretCatalog
+import com.promenar.nexara.data.security.SecretStore
 import io.ktor.client.HttpClient
 import kotlinx.serialization.json.Json
 
 class WebSearchContextProvider(
     private val context: Context,
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val secretStore: SecretStore,
 ) : WebSearchProvider {
 
     private val prefs get() = context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
@@ -31,7 +34,7 @@ class WebSearchContextProvider(
                 SearXNGProvider(httpClient, url, maxResults, includeDomains, excludeDomains)
             }
             "tavily" -> {
-                val key = prefs.getString("tavily_api_key", "") ?: ""
+                val key = secretStore.get(SecretCatalog.tavilyApiKey)?.toString(Charsets.UTF_8).orEmpty()
                 val depth = prefs.getString("search_depth", "advanced") ?: "advanced"
                 TavilyProvider(httpClient, key, depth, maxResults, includeDomains, excludeDomains)
             }

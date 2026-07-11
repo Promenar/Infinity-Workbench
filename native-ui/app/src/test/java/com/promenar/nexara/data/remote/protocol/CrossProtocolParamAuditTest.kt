@@ -83,10 +83,8 @@ class CrossProtocolParamAuditTest {
                 status = HttpStatusCode.OK,
                 headers = headersOf(HttpHeaders.ContentType, "application/json"))
         }
-        val tempKey = java.io.File.createTempFile("sa_key", ".json")
-        tempKey.writeText("{\"client_email\":\"test@test.com\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDE...\\n-----END PRIVATE KEY-----\"}")
         val protocol = VertexAIProtocol(
-            serviceAccountKeyPath = tempKey.absolutePath,
+            serviceAccountJson = "{\"client_email\":\"fake@example.invalid\",\"private_key\":\"fake-private-key\"}",
             projectId = "test-project", model = "gemini-1.5",
             httpClient = HttpClient(mockEngine)
         )

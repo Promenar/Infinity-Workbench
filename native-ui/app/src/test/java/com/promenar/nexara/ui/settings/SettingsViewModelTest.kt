@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.SharedPreferences
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.security.SecretId
+import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.remote.mcp.McpClient
@@ -75,7 +77,7 @@ class SettingsViewModelTest {
 
         val initApp = mockk<Application>(relaxed = true)
         every { initApp.applicationContext } returns initApp
-        ProviderManager.init(initApp)
+        ProviderManager.init(initApp, MemorySecretStore())
     }
 
     @AfterEach
@@ -189,5 +191,13 @@ class SettingsViewModelTest {
             mockEditor.putBoolean("preset_skills_migrated_v3", true)
             mockEditor.apply()
         }
+    }
+
+    private class MemorySecretStore : SecretStore {
+        private val values = mutableMapOf<SecretId, ByteArray>()
+        override fun put(id: SecretId, value: ByteArray) { values[id] = value.copyOf() }
+        override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
+        override fun contains(id: SecretId): Boolean = id in values
+        override fun remove(id: SecretId) { values.remove(id) }
     }
 }

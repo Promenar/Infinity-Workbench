@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
-import java.io.File
 import java.security.KeyFactory
 import java.security.Signature
 import java.security.interfaces.RSAPrivateCrtKey
@@ -24,7 +23,7 @@ import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
 
 class VertexAIProtocol(
-    private val serviceAccountKeyPath: String,
+    private val serviceAccountJson: String,
     private val projectId: String,
     private val location: String = "us-central1",
     private val model: String = "",
@@ -70,7 +69,7 @@ class VertexAIProtocol(
             throw e
         } catch (e: Exception) {
             send(StreamChunk.Error(
-                message = "Vertex AI Authentication Failed: ${e.message}",
+                message = "Vertex AI Authentication Failed: ${safeCredentialError(e)}",
                 retryable = false,
                 category = "AUTH"
             ))
@@ -171,7 +170,7 @@ class VertexAIProtocol(
         try {
             token = getAccessToken()
         } catch (e: Exception) {
-            throw Exception("Vertex AI Authentication Failed: ${e.message}")
+            throw Exception("Vertex AI Authentication Failed: ${safeCredentialError(e)}")
         }
 
         val response: HttpResponse
@@ -224,14 +223,14 @@ class VertexAIProtocol(
     private fun loadServiceAccountKey(): ServiceAccountKey {
         serviceAccountKeyData?.let { return it }
 
-        val keyFile = File(serviceAccountKeyPath)
-        if (!keyFile.exists()) {
-            throw IllegalStateException(
-                "Service account key file not found: $serviceAccountKeyPath"
-            )
+        if (serviceAccountJson.isBlank()) {
+            throw IllegalStateException("Missing service account JSON")
         }
-
-        val keyJson = json.parseToJsonElement(keyFile.readText()).jsonObject
+        val keyJson = try {
+            json.parseToJsonElement(serviceAccountJson).jsonObject
+        } catch (_: Exception) {
+            throw IllegalStateException("Invalid service account JSON")
+        }
         val key = ServiceAccountKey(
             clientEmail = keyJson["client_email"]?.jsonPrimitive?.content
                 ?: throw IllegalStateException("Missing client_email in service account key"),
@@ -241,6 +240,14 @@ class VertexAIProtocol(
 
         serviceAccountKeyData = key
         return key
+    }
+
+    private fun safeCredentialError(error: Exception): String = when {
+        error.message?.contains("client_email", ignoreCase = true) == true -> "Missing client_email in service account"
+        error.message?.contains("service account", ignoreCase = true) == true -> error.message!!
+        error.message?.contains("private key", ignoreCase = true) == true ||
+            error.message?.contains("private_key", ignoreCase = true) == true -> "Invalid service account private key"
+        else -> "Invalid service account credentials"
     }
 
     private fun createJwt(keyData: ServiceAccountKey): String {

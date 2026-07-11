@@ -37,15 +37,8 @@ class VertexAIProtocolTest {
             "VertexAI project ID not configured"
         )
 
-        val keyPath = config.serviceAccountKeyPath.ifBlank { "test-resources/vertexai/test.json" }
-        val keyFile = File(keyPath)
-        Assumptions.assumeTrue(
-            keyFile.exists(),
-            "VertexAI service account key not found at $keyPath"
-        )
-
         protocol = VertexAIProtocol(
-            serviceAccountKeyPath = keyPath,
+            serviceAccountJson = FAKE_SERVICE_ACCOUNT_JSON,
             projectId = config.projectId,
             location = config.location.ifEmpty { "us-central1" },
             model = config.modelId.ifEmpty { "gemini-3-flash-preview" }
@@ -213,7 +206,7 @@ class VertexAIProtocolTest {
         fun invalidProjectProducesError() {
             runBlocking<Unit> {
                 val badProtocol = VertexAIProtocol(
-                    serviceAccountKeyPath = config.serviceAccountKeyPath.ifBlank { "test-resources/vertexai/test.json" },
+                    serviceAccountJson = FAKE_SERVICE_ACCOUNT_JSON,
                     projectId = "nonexistent-project-12345",
                     location = config.location.ifEmpty { "us-central1" },
                     model = config.modelId.ifEmpty { "gemini-3-flash-preview" }
@@ -231,5 +224,10 @@ class VertexAIProtocolTest {
                 assertThat(errorChunks).isNotEmpty()
             }
         }
+    }
+
+    companion object {
+        private const val FAKE_SERVICE_ACCOUNT_JSON =
+            "{\"client_email\":\"fake@example.invalid\",\"private_key\":\"fake-private-key\"}"
     }
 }

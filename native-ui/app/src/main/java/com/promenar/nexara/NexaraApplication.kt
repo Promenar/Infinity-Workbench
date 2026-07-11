@@ -26,6 +26,10 @@ import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
+import com.promenar.nexara.data.security.SecretCatalog
+import com.promenar.nexara.data.security.SecretId
+import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.provider.LlmProvider
@@ -83,11 +87,13 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
 
-class NexaraApplication : Application(), SingletonImageLoader.Factory {
+open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     companion object {
         lateinit var instance: NexaraApplication
             private set
     }
+
+    open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
@@ -197,8 +203,8 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val presetSkillRegistry: DefaultSkillRegistry by lazy {
         DefaultSkillRegistry().apply {
             register(CalculatorSkill())
-            register(WebSearchSkill(this@NexaraApplication, httpClient))
-            register(WebSearchTavilySkill(this@NexaraApplication, httpClient))
+            register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
+            register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
             register(WebFetchSkill(httpClient))
             register(CreateToolSkill(database.skillDao()))
@@ -271,9 +277,18 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         }
 
         // 初始化统一数据源（必须在 buildProviderFromPrefs 之前）
-        ProviderManager.init(this)
+        val providerManager = ProviderManager.init(this, secretStore)
 
         _llmProvider = MutableStateFlow(buildProviderFromPrefs())
+
+        CoroutineScope(Dispatchers.Default).launch {
+            providerManager.configurationChanges.collect {
+                rebuildEmbeddingClient()
+                rebuildRerankClient()
+                _vectorizationQueue = null
+                _unifiedLlmClient = null
+            }
+        }
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
@@ -312,7 +327,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
         // 1. 优先读取显式手动配置的 embedding_base_url (nexara_provider)
         var baseUrl = prefs.getString("embedding_base_url", "") ?: ""
-        var apiKey = prefs.getString("embedding_api_key", "") ?: ""
+        var apiKey = readSecret(SecretCatalog.embeddingApiKey)
         var resolvedBy = if (baseUrl.isNotBlank()) "manual" else ""
         
         // 2. 如果手动配置为空，则根据预设模型自动查找所属提供商配置
@@ -348,7 +363,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     private fun buildRerankClient(): RerankClient {
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
         var baseUrl = prefs.getString("embedding_base_url", "") ?: ""
-        var apiKey = prefs.getString("embedding_api_key", "") ?: ""
+        var apiKey = readSecret(SecretCatalog.embeddingApiKey)
         
         val presetModel = settingsPrefs.getString("preset_rerank_model", "") ?: ""
         if (baseUrl.isBlank() && presetModel.isNotBlank()) {
@@ -361,7 +376,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         
         if (baseUrl.isBlank()) {
             baseUrl = prefs.getString("base_url", "") ?: ""
-            apiKey = prefs.getString("api_key", "") ?: ""
+            apiKey = getSavedProviderConfig()?.apiKey.orEmpty()
         }
         
         val savedConfig = getSavedProviderConfig()
@@ -385,7 +400,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     private val providerListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "base_url" || key == "api_key" || key == "embedding_base_url" || key == "embedding_api_key") {
+        if (key == "base_url" || key == "embedding_base_url") {
             rebuildEmbeddingClient()
             rebuildRerankClient()
             _vectorizationQueue = null
@@ -404,8 +419,8 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         if (key == "preset_rerank_model" || key == "all_models") {
             rebuildRerankClient()
         }
-        // 额外提供商配置变更（extra_provider_N_base_url/api_key 等）也需要重建客户端
-        if (key?.startsWith("extra_provider_") == true && (key.endsWith("_base_url") || key.endsWith("_api_key"))) {
+        // 非敏感额外提供商地址变化仍由 prefs 监听；凭证变化走 ProviderManager.configurationChanges。
+        if (key?.startsWith("extra_provider_") == true && key.endsWith("_base_url")) {
             rebuildEmbeddingClient()
             rebuildRerankClient()
             _vectorizationQueue = null
@@ -479,7 +494,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         get() = _kgProvider ?: MicroGraphKgAdapter(microGraphExtractor).also { _kgProvider = it }
 
     val webSearchContextProvider: WebSearchProvider by lazy {
-        WebSearchContextProvider(this, httpClient)
+        WebSearchContextProvider(this, httpClient, secretStore)
     }
 
     private var _graphExtractor: com.promenar.nexara.data.rag.GraphExtractor? = null
@@ -541,6 +556,12 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
         // 重建 LlmProvider
         _llmProvider.value = when (protocolType) {
             is ProtocolType.Local -> LlmProvider.local(localInferenceEngine, model)
+            is ProtocolType.Google_VertexAI -> LlmProvider.builder()
+                .protocolType(protocolType)
+                .serviceAccountJson(apiKey)
+                .projectId(extractVertexProjectId(apiKey))
+                .model(model)
+                .build()
             else -> LlmProvider.builder()
                 .protocolType(protocolType)
                 .baseUrl(baseUrl)
@@ -565,12 +586,14 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private fun buildUnifiedLlmClient(): com.promenar.nexara.data.remote.UnifiedLlmClient? {
         val config = getSavedProviderConfig() ?: return null
-        if (config.apiKey.isBlank() && config.protocolType !is ProtocolType.Local) return null
+        if (config.apiKey.isBlank() && config.vertexServiceAccountJson.isBlank() && config.protocolType !is ProtocolType.Local) return null
         val uConfig = com.promenar.nexara.data.remote.UnifiedProviderConfig(
             protocolType = config.protocolType,
             baseUrl = config.baseUrl,
             apiKey = config.apiKey,
-            defaultModel = config.model
+            defaultModel = config.model,
+            serviceAccountJson = config.vertexServiceAccountJson,
+            projectId = extractVertexProjectId(config.vertexServiceAccountJson),
         )
         val middlewares = if (com.promenar.nexara.BuildConfig.DEBUG) {
             listOf(com.promenar.nexara.data.remote.middleware.MetroLoggingMiddleware())
@@ -582,9 +605,20 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private fun buildProviderFromPrefs(): LlmProvider {
         val config = getSavedProviderConfig()
-        return if (config != null && config.apiKey.isNotBlank()) {
+        return if (config != null && (
+                config.apiKey.isNotBlank() ||
+                    config.vertexServiceAccountJson.isNotBlank() ||
+                    config.protocolType is ProtocolType.Local
+                )) {
             if (config.protocolType is ProtocolType.Local) {
                 LlmProvider.local(localInferenceEngine, config.model)
+            } else if (config.protocolType is ProtocolType.Google_VertexAI) {
+                LlmProvider.builder()
+                    .protocolType(config.protocolType)
+                    .serviceAccountJson(config.vertexServiceAccountJson)
+                    .projectId(extractVertexProjectId(config.vertexServiceAccountJson))
+                    .model(config.model)
+                    .build()
             } else {
                 LlmProvider.builder()
                     .protocolType(config.protocolType)
@@ -602,6 +636,13 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 .build()
         }
     }
+
+    private fun readSecret(id: SecretId): String =
+        secretStore.get(id)?.toString(Charsets.UTF_8).orEmpty()
+
+    private fun extractVertexProjectId(serviceAccountJson: String): String =
+        Regex("\\\"project_id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+            .find(serviceAccountJson)?.groupValues?.get(1).orEmpty()
 
     @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {

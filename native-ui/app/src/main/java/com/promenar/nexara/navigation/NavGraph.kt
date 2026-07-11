@@ -19,6 +19,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.chat.ChatScreen
 import com.promenar.nexara.ui.chat.SessionSettingsScreen
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
@@ -365,9 +366,11 @@ fun NexaraNavGraph(
                                 baseUrl = baseUrl,
                                 model = model,
                                 protocolType = protocolType,
-                                apiKey = apiKey
+                                hasApiKey = apiKey.isNotBlank() && protocolType !is ProtocolType.Google_VertexAI,
+                                hasVertexCredentials = apiKey.isNotBlank() && protocolType is ProtocolType.Google_VertexAI,
                             )
-                            viewModel.addProvider(item)
+                            com.promenar.nexara.data.manager.ProviderManager.getInstance()
+                                .addProvider(item, apiKey = apiKey)
                         }
                     } else if (providerId == "default") {
                         // 编辑主提供商
@@ -381,9 +384,11 @@ fun NexaraNavGraph(
                             baseUrl = baseUrl,
                             model = model,
                             protocolType = protocolType,
-                            apiKey = apiKey
+                            hasApiKey = apiKey.isNotBlank() && protocolType !is ProtocolType.Google_VertexAI,
+                            hasVertexCredentials = apiKey.isNotBlank() && protocolType is ProtocolType.Google_VertexAI,
                         )
-                        viewModel.updateExtraProvider(providerId, item)
+                        com.promenar.nexara.data.manager.ProviderManager.getInstance()
+                            .updateExtraProvider(providerId, item, apiKey = apiKey)
                     }
                 }
             )

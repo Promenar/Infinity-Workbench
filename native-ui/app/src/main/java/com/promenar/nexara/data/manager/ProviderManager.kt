@@ -4,9 +4,16 @@ import android.app.Application
 import android.content.SharedPreferences
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.ProviderSummary
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
+import com.promenar.nexara.data.security.SecretCatalog
+import com.promenar.nexara.data.security.SecretId
+import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.ui.settings.ModelInfo
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -17,7 +24,10 @@ import kotlinx.coroutines.flow.update
  * 替代原先散落在 SettingsViewModel 和 NexaraApplication 中的提供商
  * CRUD、模型持久化、预设模型管理逻辑。
  */
-class ProviderManager private constructor(private val app: Application) {
+class ProviderManager private constructor(
+    private val app: Application,
+    private val secretStore: SecretStore,
+) {
 
     // ── SharedPreferences ────────────────────────────────────────────
     private val providerPrefs: SharedPreferences =
@@ -28,6 +38,9 @@ class ProviderManager private constructor(private val app: Application) {
     // ── StateFlow: 提供商列表 ────────────────────────────────────────
     private val _providers = MutableStateFlow<List<ProviderListItem>>(emptyList())
     val providers: StateFlow<List<ProviderListItem>> = _providers.asStateFlow()
+
+    private val _configurationChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val configurationChanges: SharedFlow<Unit> = _configurationChanges
 
     // ── StateFlow: 模型列表 ──────────────────────────────────────────
     private val _providerModels = MutableStateFlow<List<ModelInfo>>(emptyList())
@@ -52,6 +65,7 @@ class ProviderManager private constructor(private val app: Application) {
 
     // ── 初始化 ───────────────────────────────────────────────────────
     init {
+        migrateLegacySecrets()
         loadProviders()
         loadModels()
         loadPresetModels()
@@ -73,9 +87,9 @@ class ProviderManager private constructor(private val app: Application) {
             .putString("protocol_id", protocolType::class.simpleName)
             .putString("protocol_id_name", protocolType.displayName) // 新增：人类可读协议名
             .putString("base_url", baseUrl)
-            .putString("api_key", apiKey)
             .putString("model", model)
             .apply()
+        writeProviderCredential("default", protocolType, apiKey)
         if (name != null) {
             providerPrefs.edit().putString("provider_name", name).apply()
         }
@@ -92,9 +106,10 @@ class ProviderManager private constructor(private val app: Application) {
         return ProviderConfig(
             protocolType = protocolType,
             baseUrl = providerPrefs.getString("base_url", "") ?: "",
-            apiKey = providerPrefs.getString("api_key", "") ?: "",
+            apiKey = readSecret(SecretCatalog.providerApiKey("default")),
             model = providerPrefs.getString("model", "") ?: "",
-            name = providerPrefs.getString("provider_name", null)
+            name = providerPrefs.getString("provider_name", null),
+            vertexServiceAccountJson = readSecret(SecretCatalog.vertexServiceAccount("default")),
         )
     }
 
@@ -149,9 +164,12 @@ class ProviderManager private constructor(private val app: Application) {
                     return ProviderConfig(
                         protocolType = ProtocolType.fromLegacyName(protocolName),
                         baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
-                        apiKey = settingsPrefs.getString("${prefix}_api_key", "") ?: "",
+                        apiKey = readSecret(SecretCatalog.providerApiKey(storedId ?: "extra_$i")),
                         model = settingsPrefs.getString("${prefix}_model", "") ?: "",
-                        name = settingsPrefs.getString("${prefix}_name", null)
+                        name = settingsPrefs.getString("${prefix}_name", null),
+                        vertexServiceAccountJson = readSecret(
+                            SecretCatalog.vertexServiceAccount(storedId ?: "extra_$i")
+                        ),
                     )
                 }
             }
@@ -164,7 +182,7 @@ class ProviderManager private constructor(private val app: Application) {
     fun loadProviders() {
         val items = mutableListOf<ProviderListItem>()
         val config = getMainProviderConfig()
-        if (config != null && config.apiKey.isNotBlank()) {
+        if (config != null && (config.apiKey.isNotBlank() || config.vertexServiceAccountJson.isNotBlank() || config.protocolType is ProtocolType.Local)) {
             val typeName = config.protocolType.displayName
             items.add(
                 ProviderListItem(
@@ -174,7 +192,8 @@ class ProviderManager private constructor(private val app: Application) {
                     baseUrl = config.baseUrl,
                     model = config.model,
                     protocolType = config.protocolType,
-                    apiKey = config.apiKey
+                    hasApiKey = config.apiKey.isNotBlank(),
+                    hasVertexCredentials = config.vertexServiceAccountJson.isNotBlank(),
                 )
             )
             _currentModelSummary.value = config.model
@@ -199,28 +218,54 @@ class ProviderManager private constructor(private val app: Application) {
                     baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
                     model = settingsPrefs.getString("${prefix}_model", "") ?: "",
                     protocolType = ProtocolType.fromLegacyName(protoName),
-                    apiKey = settingsPrefs.getString("${prefix}_api_key", "") ?: ""
+                    hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(realId)),
+                    hasVertexCredentials = secretStore.contains(SecretCatalog.vertexServiceAccount(realId)),
                 )
             )
         }
         _providers.value = items
     }
 
-    fun addProvider(item: ProviderListItem) {
+    fun addProvider(item: ProviderListItem, apiKey: String = "", vertexServiceAccountJson: String = "") {
+        writeProviderCredential(
+            item.id,
+            item.protocolType,
+            vertexServiceAccountJson.ifBlank { apiKey },
+        )
         _providers.update { it + item }
         persistExtraProviders()
+        loadProviders()
+        _configurationChanges.tryEmit(Unit)
     }
 
-    fun updateExtraProvider(id: String, item: ProviderListItem) {
+    fun updateExtraProvider(
+        id: String,
+        item: ProviderListItem,
+        apiKey: String = "",
+        vertexServiceAccountJson: String = "",
+    ) {
+        if (id != item.id) {
+            moveSecret(SecretCatalog.providerApiKey(id), SecretCatalog.providerApiKey(item.id))
+            moveSecret(SecretCatalog.vertexServiceAccount(id), SecretCatalog.vertexServiceAccount(item.id))
+        }
+        val credential = vertexServiceAccountJson.ifBlank { apiKey }
+        if (credential.isNotBlank()) {
+            writeProviderCredential(item.id, item.protocolType, credential)
+        }
         _providers.update { list ->
             list.map { if (it.id == id) item else it }
         }
         persistExtraProviders()
+        loadProviders()
+        _configurationChanges.tryEmit(Unit)
     }
 
     fun deleteProvider(providerId: String) {
+        secretStore.remove(SecretCatalog.providerApiKey(providerId))
+        secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
         _providers.update { it.filter { p -> p.id != providerId } }
         persistExtraProviders()
+        _configurationChanges.tryEmit(Unit)
     }
 
     private fun persistExtraProviders() {
@@ -236,9 +281,78 @@ class ProviderManager private constructor(private val app: Application) {
                 .putString("${prefix}_protocol", item.protocolType::class.simpleName)
                 .putString("${prefix}_base_url", item.baseUrl)
                 .putString("${prefix}_model", item.model)
-                .putString("${prefix}_api_key", item.apiKey)
                 .putString("${prefix}_id", item.id)
                 .apply()
+        }
+    }
+
+    fun getProviderSummary(providerId: String): ProviderSummary? {
+        val config = getProviderConfig(providerId) ?: return null
+        return ProviderSummary(
+            id = providerId,
+            name = config.name ?: config.protocolType.displayName,
+            protocolType = config.protocolType,
+            baseUrl = config.baseUrl,
+            model = config.model,
+            hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(providerId)),
+            hasVertexCredentials = secretStore.contains(SecretCatalog.vertexServiceAccount(providerId)),
+        )
+    }
+
+    private fun migrateLegacySecrets() {
+        migratePreference(providerPrefs, "api_key", SecretCatalog.providerApiKey("default"))
+        migratePreference(providerPrefs, "embedding_api_key", SecretCatalog.embeddingApiKey)
+        migratePreference(providerPrefs, "vertex_service_account_json", SecretCatalog.vertexServiceAccount("default"))
+
+        val count = settingsPrefs.getInt("extra_providers_count", 0)
+        for (index in 0 until count) {
+            val prefix = "extra_provider_$index"
+            val providerId = settingsPrefs.getString("${prefix}_id", null) ?: "extra_$index"
+            migratePreference(settingsPrefs, "${prefix}_api_key", SecretCatalog.providerApiKey(providerId))
+            migratePreference(
+                settingsPrefs,
+                "${prefix}_vertex_service_account_json",
+                SecretCatalog.vertexServiceAccount(providerId),
+            )
+        }
+
+        val searchPrefs = app.getSharedPreferences("nexara_search", 0)
+        migratePreference(searchPrefs, "tavily_api_key", SecretCatalog.tavilyApiKey)
+        val backupPrefs = app.getSharedPreferences("nexara_backup_settings", 0)
+        migratePreference(backupPrefs, "webdav_pass", SecretCatalog.webDavPassword)
+        migratePreference(backupPrefs, "automatic_backup_password", SecretCatalog.automaticBackupPassword)
+    }
+
+    private fun migratePreference(prefs: SharedPreferences, key: String, secretId: SecretId) {
+        if (!prefs.contains(key)) return
+        val plaintext = prefs.getString(key, null) ?: return
+        if (plaintext.isNotEmpty()) secretStore.put(secretId, plaintext.toByteArray(Charsets.UTF_8))
+        check(prefs.edit().remove(key).commit()) { "旧明文凭证删除失败" }
+    }
+
+    private fun readSecret(id: SecretId): String =
+        secretStore.get(id)?.toString(Charsets.UTF_8).orEmpty()
+
+    private fun writeSecret(id: SecretId, value: String) {
+        if (value.isBlank()) secretStore.remove(id)
+        else secretStore.put(id, value.toByteArray(Charsets.UTF_8))
+        _configurationChanges.tryEmit(Unit)
+    }
+
+    private fun writeProviderCredential(providerId: String, protocolType: ProtocolType, credential: String) {
+        if (protocolType is ProtocolType.Google_VertexAI) {
+            writeSecret(SecretCatalog.vertexServiceAccount(providerId), credential)
+            secretStore.remove(SecretCatalog.providerApiKey(providerId))
+        } else {
+            writeSecret(SecretCatalog.providerApiKey(providerId), credential)
+            secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
+        }
+    }
+
+    private fun moveSecret(from: SecretId, to: SecretId) {
+        secretStore.get(from)?.let { value ->
+            secretStore.put(to, value)
+            secretStore.remove(from)
         }
     }
 
@@ -527,13 +641,19 @@ class ProviderManager private constructor(private val app: Application) {
         @Volatile
         private var INSTANCE: ProviderManager? = null
 
-        fun init(app: Application): ProviderManager {
+        fun init(app: Application): ProviderManager =
+            INSTANCE ?: init(app, AndroidKeystoreSecretStore(app))
+
+        fun init(app: Application, secretStore: SecretStore): ProviderManager {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: ProviderManager(app.applicationContext as Application).also {
+                INSTANCE ?: ProviderManager(app.applicationContext as Application, secretStore).also {
                     INSTANCE = it
                 }
             }
         }
+
+        internal fun createForTest(app: Application, secretStore: SecretStore): ProviderManager =
+            ProviderManager(app, secretStore)
 
         fun getInstance(): ProviderManager {
             return INSTANCE ?: throw IllegalStateException(

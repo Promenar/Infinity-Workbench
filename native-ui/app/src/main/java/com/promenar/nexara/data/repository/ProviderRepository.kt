@@ -85,9 +85,10 @@ class ProviderRepository(
                 baseUrl = config.baseUrl,
                 model = config.defaultModel,
                 protocolType = dataProtocolType,
-                apiKey = config.apiKey
+                hasApiKey = config.apiKey.isNotBlank() && dataProtocolType !is ProtocolType.Google_VertexAI,
+                hasVertexCredentials = config.apiKey.isNotBlank() && dataProtocolType is ProtocolType.Google_VertexAI,
             )
-            providerManager.addProvider(item)
+            providerManager.addProvider(item, apiKey = config.apiKey)
         }
     }
 
@@ -95,15 +96,17 @@ class ProviderRepository(
         providerManager.deleteProvider(id)
     }
 
-    private fun ProviderListItem.toDomain(): ProviderConfig = ProviderConfig(
+    private fun ProviderListItem.toDomain(): ProviderConfig {
+        return ProviderConfig(
         id = id,
         name = name,
         protocolType = protocolType.toDomain(),
         baseUrl = baseUrl,
-        apiKey = apiKey,
+        apiKey = "",
         defaultModel = model,
-        isEnabled = apiKey.isNotBlank()
-    )
+        isEnabled = hasApiKey || hasVertexCredentials,
+        )
+    }
 
     private fun ProtocolType.toDomain(): com.promenar.nexara.domain.model.ProtocolType = when (this) {
         is ProtocolType.Anthropic_Messages -> com.promenar.nexara.domain.model.ProtocolType.ANTHROPIC

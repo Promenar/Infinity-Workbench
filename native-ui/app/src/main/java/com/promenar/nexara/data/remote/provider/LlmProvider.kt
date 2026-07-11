@@ -35,7 +35,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
         private var baseUrl: String = ""
         private var apiKey: String = ""
         private var model: String = ""
-        private var serviceAccountKeyPath: String = ""
+        private var serviceAccountJson: String = ""
         private var projectId: String = ""
         private var location: String = "us-central1"
 
@@ -44,14 +44,14 @@ class LlmProvider(internal val protocol: LlmProtocol) {
         fun baseUrl(url: String) = apply { this.baseUrl = url }
         fun apiKey(key: String) = apply { this.apiKey = key }
         fun model(model: String) = apply { this.model = model }
-        fun serviceAccountKeyPath(path: String) = apply { this.serviceAccountKeyPath = path }
+        fun serviceAccountJson(json: String) = apply { this.serviceAccountJson = json }
         fun projectId(id: String) = apply { this.projectId = id }
         fun location(loc: String) = apply { this.location = loc }
 
         fun build(): LlmProvider {
             val protocol = createProtocol(
                 protocolType, baseUrl, apiKey, model,
-                serviceAccountKeyPath, projectId, location
+                serviceAccountJson, projectId, location
             )
             return LlmProvider(protocol)
         }
@@ -65,7 +65,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
             baseUrl: String,
             apiKey: String,
             model: String,
-            serviceAccountKeyPath: String = "",
+            serviceAccountJson: String = "",
             projectId: String = "",
             location: String = "us-central1"
         ): LlmProtocol = when (type) {
@@ -73,7 +73,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
             is ProtocolType.OpenAI_Responses -> OpenAIResponsesProtocol(baseUrl, apiKey, model)
             is ProtocolType.Anthropic_Messages -> AnthropicProtocol(baseUrl, apiKey, model)
             is ProtocolType.Google_VertexAI -> VertexAIProtocol(
-                serviceAccountKeyPath = serviceAccountKeyPath,
+                serviceAccountJson = serviceAccountJson,
                 projectId = projectId,
                 location = location,
                 model = model

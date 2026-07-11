@@ -7,6 +7,8 @@ import com.promenar.nexara.data.remote.protocol.*
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.data.security.SecretId
+import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
@@ -31,7 +33,7 @@ import androidx.test.core.app.ApplicationProvider
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(application = NexaraApplication::class)
+@Config(application = TestNexaraApplication::class)
 class ChatViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 
@@ -403,4 +405,16 @@ class ChatViewModelTest {
 
         assertThat(stubAgentRepo.lastGetByIdId).isEqualTo("a1")
     }
+}
+
+class TestNexaraApplication : NexaraApplication() {
+    override val secretStore: SecretStore = MemorySecretStore()
+}
+
+private class MemorySecretStore : SecretStore {
+    private val values = mutableMapOf<SecretId, ByteArray>()
+    override fun put(id: SecretId, value: ByteArray) { values[id] = value.copyOf() }
+    override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
+    override fun contains(id: SecretId): Boolean = id in values
+    override fun remove(id: SecretId) { values.remove(id) }
 }

@@ -39,7 +39,7 @@ class LlmProviderTest {
         fun `builder with vertex AI protocol`() {
             val provider = LlmProvider.builder()
                 .protocolId(ProtocolId.VERTEX_AI)
-                .serviceAccountKeyPath("/dummy/path.json")
+                .serviceAccountJson("{\"client_email\":\"fake@example.invalid\",\"private_key\":\"fake-private-key\"}")
                 .projectId("test-project")
                 .location("us-central1")
                 .model("gemini-3-flash-preview")
@@ -84,7 +84,7 @@ class LlmProviderTest {
 
             val vertexai = LlmProvider.builder()
                 .protocolId(ProtocolId.VERTEX_AI)
-                .serviceAccountKeyPath("/dummy/path.json")
+                .serviceAccountJson("{\"client_email\":\"fake@example.invalid\",\"private_key\":\"fake-private-key\"}")
                 .projectId("test-project")
                 .model("gemini-3-flash-preview")
                 .build()

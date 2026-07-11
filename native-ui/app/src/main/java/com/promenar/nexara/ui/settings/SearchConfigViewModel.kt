@@ -3,6 +3,10 @@ package com.promenar.nexara.ui.settings
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
+import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
+import com.promenar.nexara.data.security.SecretCatalog
+import com.promenar.nexara.data.security.SecretStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,14 +14,28 @@ import kotlinx.coroutines.flow.update
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class SearchConfigViewModel(application: Application) : AndroidViewModel(application) {
+class SearchConfigViewModel(
+    application: Application,
+    private val secretStore: SecretStore =
+        (application as? NexaraApplication)?.secretStore ?: AndroidKeystoreSecretStore(application),
+) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
 
     private val _uiState = MutableStateFlow(SearchConfigState())
     val uiState: StateFlow<SearchConfigState> = _uiState.asStateFlow()
 
     init {
+        migrateLegacyTavilyKey()
         loadSettings()
+    }
+
+    private fun migrateLegacyTavilyKey() {
+        if (!prefs.contains("tavily_api_key")) return
+        val legacy = prefs.getString("tavily_api_key", null) ?: return
+        if (legacy.isNotEmpty()) {
+            secretStore.put(SecretCatalog.tavilyApiKey, legacy.toByteArray(Charsets.UTF_8))
+        }
+        check(prefs.edit().remove("tavily_api_key").commit()) { "旧 Tavily 明文凭证删除失败" }
     }
 
     private fun loadSettings() {
@@ -29,7 +47,8 @@ class SearchConfigViewModel(application: Application) : AndroidViewModel(applica
                 webSearchEnabled = prefs.getBoolean("web_search_enabled", true),
                 searchEngine = prefs.getString("search_engine", "duckduckgo") ?: "duckduckgo",
                 searXngUrl = prefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be",
-                tavilyApiKey = prefs.getString("tavily_api_key", "") ?: "",
+                tavilyApiKey = "",
+                hasTavilyApiKey = secretStore.contains(SecretCatalog.tavilyApiKey),
                 searchDepth = prefs.getString("search_depth", "advanced") ?: "advanced",
                 resultCount = prefs.getInt("result_count", 5),
                 includeDomains = try { Json.decodeFromString(includeJson) } catch (_: Exception) { emptyList() },
@@ -54,8 +73,9 @@ class SearchConfigViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun updateTavilyApiKey(key: String) {
-        _uiState.update { it.copy(tavilyApiKey = key) }
-        prefs.edit().putString("tavily_api_key", key).apply()
+        if (key.isBlank()) secretStore.remove(SecretCatalog.tavilyApiKey)
+        else secretStore.put(SecretCatalog.tavilyApiKey, key.toByteArray(Charsets.UTF_8))
+        _uiState.update { it.copy(tavilyApiKey = "", hasTavilyApiKey = key.isNotBlank()) }
     }
 
     fun updateSearchDepth(depth: String) {
@@ -98,6 +118,7 @@ data class SearchConfigState(
     val searchEngine: String = "duckduckgo",
     val searXngUrl: String = "https://searx.be",
     val tavilyApiKey: String = "",
+    val hasTavilyApiKey: Boolean = false,
     val searchDepth: String = "advanced",
     val resultCount: Int = 5,
     val includeDomains: List<String> = emptyList(),

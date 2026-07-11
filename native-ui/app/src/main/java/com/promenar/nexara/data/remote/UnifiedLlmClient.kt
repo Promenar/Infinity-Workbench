@@ -18,7 +18,7 @@ data class UnifiedProviderConfig(
     val baseUrl: String,
     val apiKey: String,
     val defaultModel: String,
-    val serviceAccountKeyPath: String = "",
+    val serviceAccountJson: String = "",
     val projectId: String = "",
     val location: String = "us-central1"
 )
@@ -48,7 +48,7 @@ class UnifiedLlmClient(
             baseUrl = providerConfig.baseUrl,
             apiKey = providerConfig.apiKey,
             model = providerConfig.defaultModel,
-            serviceAccountKeyPath = providerConfig.serviceAccountKeyPath,
+            serviceAccountJson = providerConfig.serviceAccountJson,
             projectId = providerConfig.projectId,
             location = providerConfig.location
         )

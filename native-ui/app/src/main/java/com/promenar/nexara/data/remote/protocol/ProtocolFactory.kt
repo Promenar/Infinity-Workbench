@@ -11,7 +11,7 @@ object ProtocolFactory {
         baseUrl: String = "",
         apiKey: String = "",
         model: String = "",
-        serviceAccountKeyPath: String = "",
+        serviceAccountJson: String = "",
         projectId: String = "",
         location: String = "us-central1",
         localEngine: LocalInferenceEngine? = null
@@ -23,7 +23,7 @@ object ProtocolFactory {
             ProtocolType.Anthropic_Messages -> AnthropicProtocol(baseUrl, apiKey, model)
             
             ProtocolType.Google_VertexAI -> VertexAIProtocol(
-                serviceAccountKeyPath = serviceAccountKeyPath,
+                serviceAccountJson = serviceAccountJson,
                 projectId = projectId,
                 location = location,
                 model = model

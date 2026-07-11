@@ -8,13 +8,16 @@ import com.promenar.nexara.data.remote.search.TavilyProvider
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.ui.chat.manager.WebSearchProvider
+import com.promenar.nexara.data.security.SecretCatalog
+import com.promenar.nexara.data.security.SecretStore
 import io.ktor.client.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
 class WebSearchSkill(
     private val context: Context,
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val secretStore: SecretStore,
 ) : SkillDefinition {
     override val id = "web_search"
     override val name = "web_search"
@@ -80,7 +83,7 @@ class WebSearchSkill(
                 SearXNGProvider(httpClient, url, maxResults, includeDomains, excludeDomains)
             }
             "tavily" -> {
-                val key = prefs.getString("tavily_api_key", "") ?: ""
+                val key = secretStore.get(SecretCatalog.tavilyApiKey)?.toString(Charsets.UTF_8).orEmpty()
                 val depth = prefs.getString("search_depth", "advanced") ?: "advanced"
                 TavilyProvider(httpClient, key, depth, maxResults, includeDomains, excludeDomains)
             }

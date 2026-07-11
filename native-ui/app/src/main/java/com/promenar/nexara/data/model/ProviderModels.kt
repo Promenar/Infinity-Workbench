@@ -4,7 +4,7 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 
 /**
  * 提供商列表项 — 从 SettingsViewModel 提取为共享数据模型。
- * 扩展了 protocolType 和 apiKey 字段以支持完整的编辑回填。
+ * 只暴露凭证存在性，完整凭证必须按 providerId 从 SecretStore 获取。
  */
 data class ProviderListItem(
     val id: String = "",
@@ -13,7 +13,18 @@ data class ProviderListItem(
     val baseUrl: String = "",
     val model: String = "",
     val protocolType: ProtocolType = ProtocolType.Generic_OpenAI_Compat,
-    val apiKey: String = ""
+    val hasApiKey: Boolean = false,
+    val hasVertexCredentials: Boolean = false,
+)
+
+data class ProviderSummary(
+    val id: String,
+    val name: String,
+    val protocolType: ProtocolType,
+    val baseUrl: String,
+    val model: String,
+    val hasApiKey: Boolean,
+    val hasVertexCredentials: Boolean,
 )
 
 /**
@@ -24,5 +35,6 @@ data class ProviderConfig(
     val baseUrl: String = "",
     val apiKey: String = "",
     val model: String = "",
-    val name: String? = null
+    val name: String? = null,
+    val vertexServiceAccountJson: String = "",
 )
