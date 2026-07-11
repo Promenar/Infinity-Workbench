@@ -19,6 +19,7 @@ import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.rag.MicroGraphExtractor
 import com.promenar.nexara.data.rag.MicroGraphKgAdapter
+import com.promenar.nexara.data.rag.QueryRewriter
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.RerankClient
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
@@ -179,7 +180,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val taskRepository: com.promenar.nexara.domain.repository.ITaskRepository by lazy {
-        TaskRepository(database.taskNodeDao())
+        TaskRepository(database.taskNodeDao(), database)
     }
 
     val httpClient: HttpClient by lazy {
@@ -325,27 +326,6 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             }
         }
         
-        // 3. 兜底：回退到主 LLM 提供商配置
-        if (baseUrl.isBlank()) {
-            baseUrl = prefs.getString("base_url", "") ?: ""
-            apiKey = prefs.getString("api_key", "") ?: ""
-            if (baseUrl.isNotBlank()) resolvedBy = "main-provider"
-        }
-        
-        // 4. 二次兜底：遍历所有已配置提供商（覆盖纯额外提供商场景）
-        if (baseUrl.isBlank()) {
-            val pm = ProviderManager.getInstance()
-            for (provider in pm.providers.value) {
-                val config = pm.getProviderConfig(provider.id)
-                if (config != null && config.baseUrl.isNotBlank() && config.apiKey.isNotBlank()) {
-                    baseUrl = config.baseUrl
-                    apiKey = config.apiKey
-                    resolvedBy = "any-provider-fallback(${provider.id})"
-                    break
-                }
-            }
-        }
-        
         val model = prefs.getString("embedding_model", "")?.ifBlank { presetModel } ?: presetModel
         NexaraLogger.log("[EmbeddingClient] 构建: model=$model resolvedBy=$resolvedBy baseUrlSet=${baseUrl.isNotBlank()} apiKeySet=${apiKey.isNotBlank()} baseUrl=${if (baseUrl.isNotBlank()) baseUrl.take(50) + "..." else "(empty)"}")
         return EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model, localEngine = localInferenceEngine)
@@ -473,6 +453,7 @@ class NexaraApplication : Application(), SingletonImageLoader.Factory {
             graphStore = graphStore,
             embeddingClient = embeddingClient,
             rerankClient = rerankClient,
+            queryRewriter = QueryRewriter(llmProvider.protocol, modelId = getSavedProviderConfig()?.model),
             ragConfig = ragConfigPersistence.loadFullConfig()  // P0: 从用户保存的配置读取，不再硬编码默认值
         ).also { _memoryManager = it }
 

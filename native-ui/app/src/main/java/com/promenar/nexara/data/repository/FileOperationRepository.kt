@@ -15,6 +15,10 @@ import com.promenar.nexara.infra.util.Sha256Utils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class FileOperationRepository(
     private val dao: FileEntryDao
@@ -38,8 +42,8 @@ class FileOperationRepository(
 
         val newHash = Sha256Utils.hash(newContent)
 
-        val physicalFile = File(entry.physicalRootPath, entry.materializedPath)
-        physicalFile.writeText(newContent)
+        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
+        writeTextAtomically(physicalFile, newContent)
 
         val now = System.currentTimeMillis()
         dao.update(
@@ -65,7 +69,7 @@ class FileOperationRepository(
     ): ReadResult = withContext(Dispatchers.IO) {
         val entry = dao.getByUuid(uuid) ?: throw NoSuchElementException("File not found: $uuid")
 
-        val physicalFile = File(entry.physicalRootPath, entry.materializedPath)
+        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
         val allLines = if (physicalFile.exists()) physicalFile.readLines() else emptyList()
         val totalLines = allLines.size
 
@@ -97,7 +101,7 @@ class FileOperationRepository(
     ): DiffResult = withContext(Dispatchers.IO) {
         val entry = dao.getByUuid(uuid) ?: throw NoSuchElementException("File not found: $uuid")
 
-        val physicalFile = File(entry.physicalRootPath, entry.materializedPath)
+        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
         val currentContent = if (physicalFile.exists()) physicalFile.readText() else ""
         val currentLines = currentContent.lines()
 
@@ -157,7 +161,7 @@ class FileOperationRepository(
             )
         }
 
-        val physicalFile = File(entry.physicalRootPath, entry.materializedPath)
+        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
         val currentContent = if (physicalFile.exists()) physicalFile.readText() else ""
         val lines = currentContent.lines().toMutableList()
         val totalLines = lines.size
@@ -245,7 +249,7 @@ class FileOperationRepository(
         val newContent = lines.joinToString("\n")
         val newHash = Sha256Utils.hash(newContent)
 
-        physicalFile.writeText(newContent)
+        writeTextAtomically(physicalFile, newContent)
 
         val now = System.currentTimeMillis()
         dao.update(
@@ -274,5 +278,48 @@ class FileOperationRepository(
             return currentContent
         }
         return ""
+    }
+
+    private fun resolveRootedFile(rootPath: String, materializedPath: String): File {
+        val root = File(rootPath).canonicalFile
+        val relativePath = materializedPath.trimStart('/', '\\')
+        val target = File(root, relativePath).canonicalFile
+        val rootPrefix = root.path + File.separator
+        if (target.path != root.path && !target.path.startsWith(rootPrefix)) {
+            throw SecurityException("File path escapes workspace root: $materializedPath")
+        }
+        return target
+    }
+
+    private fun writeTextAtomically(target: File, content: String) {
+        val parent = target.parentFile ?: throw IllegalStateException("File has no parent: ${target.path}")
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw IllegalStateException("Failed to create parent directory: ${parent.path}")
+        }
+
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        val temp = File.createTempFile("${target.name}.", ".tmp", parent)
+        try {
+            FileOutputStream(temp).use { stream ->
+                stream.write(bytes)
+                stream.fd.sync()
+            }
+            try {
+                Files.move(
+                    temp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    temp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
     }
 }

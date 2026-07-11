@@ -6,6 +6,7 @@ import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.LocalProtocol
 import com.promenar.nexara.data.remote.protocol.GenericOpenAICompatProtocol
 import com.promenar.nexara.data.remote.protocol.OpenAIProtocol
+import com.promenar.nexara.data.remote.protocol.OpenAIResponsesProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
 import com.promenar.nexara.data.remote.protocol.ProtocolType
@@ -69,7 +70,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
             location: String = "us-central1"
         ): LlmProtocol = when (type) {
             is ProtocolType.OpenAI_ChatCompletions -> OpenAIProtocol(baseUrl, apiKey, model)
-            is ProtocolType.OpenAI_Responses -> OpenAIProtocol(baseUrl, apiKey, model)
+            is ProtocolType.OpenAI_Responses -> OpenAIResponsesProtocol(baseUrl, apiKey, model)
             is ProtocolType.Anthropic_Messages -> AnthropicProtocol(baseUrl, apiKey, model)
             is ProtocolType.Google_VertexAI -> VertexAIProtocol(
                 serviceAccountKeyPath = serviceAccountKeyPath,

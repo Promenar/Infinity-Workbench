@@ -65,6 +65,7 @@
     <string name="shared_btn_add">Add</string>
     <string name="shared_btn_reset">Reset</string>
     <string name="shared_btn_close">Close</string>
+    <string name="common_dismiss">Dismiss</string>
     <string name="shared_btn_done">Done</string>
     <string name="shared_btn_retry">Retry</string>
     <string name="shared_confirm_delete_title">Confirm Delete</string>
@@ -284,7 +285,9 @@
     <string name="chat_tool_selecting">Selecting tools…</string>
     <string name="chat_approval_required">Approval Required</string>
     <string name="chat_approval_executed">Executed</string>
+    <string name="chat_approval_unknown_tool">Tool request</string>
     <string name="chat_approval_desc_tool">The agent is requesting permission to execute a tool, which may affect system state or incur external costs.</string>
+    <string name="chat_copy_success">Copied to clipboard</string>
     <string name="common_decline">Decline</string>
     <string name="common_approve">Approve</string>
 

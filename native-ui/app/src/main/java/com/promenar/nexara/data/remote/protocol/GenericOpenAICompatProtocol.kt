@@ -109,7 +109,7 @@ class GenericOpenAICompatProtocol(
                     }
 
                     val data = extractSseData(line) ?: continue
-                    if (data == "[DONE]") break
+                    if (data.trim() == "[DONE]") break
 
                     try {
                         val chunkJson = json.parseToJsonElement(data).jsonObject
@@ -441,8 +441,8 @@ class GenericOpenAICompatProtocol(
     }
 
     private fun extractSseData(line: String): String? {
-        if (line.startsWith("data: ")) return line.substring(6).trim()
-        if (line.startsWith("data:")) return line.substring(5).trim()
+        if (line.startsWith("data: ")) return line.substring(6)
+        if (line.startsWith("data:")) return line.substring(5)
         return null
     }
 
@@ -452,7 +452,6 @@ class GenericOpenAICompatProtocol(
             .replace("<|end_of_thinking|>", "")
             .replace("< | end__of__thinking | >", "")
             .replace("<|endofthinking|>", "")
-            .trim()
     }
 
     private fun normalizeError(e: Exception): StreamChunk.Error {

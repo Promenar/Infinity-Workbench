@@ -445,22 +445,21 @@ class RagViewModel(
     fun deleteCollection(id: String) {
         viewModelScope.launch {
             try {
-                // 获取文件夹条目以获取其路径（用于级联删除子内容）
                 val entry = workspaceRepository.getByUuid(id)
-                if (entry != null && entry.isDirectory) {
-                    // 先递归删除子树中的子文件（permanentDelete 内部已处理子树）
-                    val childList = try {
-                        workspaceRepository.observeChildren(id).first()
-                    } catch (_: Exception) { emptyList() }
-                    for (child in childList) {
-                        try {
-                            workspaceRepository.permanentDelete(child.uuid)
-                        } catch (_: Exception) { }
-                    }
+                val entriesToClean = if (entry != null && entry.isDirectory) {
+                    app.database.fileEntryDao().getSubtree(entry.materializedPath)
+                } else {
+                    listOfNotNull(entry)
                 }
+                entriesToClean
+                    .filter { !it.isDirectory }
+                    .forEach { cleanupDocumentArtifacts(it.uuid) }
+
                 workspaceRepository.permanentDelete(id)
                 loadStats()
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                NexaraLogger.logError("RagViewModel.deleteCollection", e)
+            }
         }
     }
 
@@ -492,10 +491,13 @@ class RagViewModel(
         viewModelScope.launch {
             try {
                 for (id in ids) {
+                    cleanupDocumentArtifacts(id)
                     workspaceRepository.permanentDelete(id)
                 }
                 loadStats()
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                NexaraLogger.logError("RagViewModel.deleteDocuments", e)
+            }
         }
     }
 
@@ -758,6 +760,20 @@ class RagViewModel(
                 _memoryVectors.value = _memoryVectors.value.filter { it.id != id }
                 loadStats()
             } catch (_: Exception) { }
+        }
+    }
+
+    private suspend fun cleanupDocumentArtifacts(docId: String) {
+        try {
+            app.vectorizationQueue.cancel(docId)
+            vectorRepository.deleteByDocument(docId)
+            app.graphStore.clearGraphForDoc(docId)
+            _indexingDocIds.update { ids -> ids - docId }
+            _kgExtractionStates.update { states -> states - docId }
+            _kgExtractingIds.remove(docId)
+        } catch (e: Exception) {
+            NexaraLogger.logError("RagViewModel.cleanupDocumentArtifacts($docId)", e)
+            throw e
         }
     }
 

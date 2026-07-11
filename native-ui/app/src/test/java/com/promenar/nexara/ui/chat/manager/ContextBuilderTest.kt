@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagUsage
@@ -159,6 +160,89 @@ class ContextBuilderTest {
         assertThat(result.ragReferences).hasSize(1)
         assertThat(result.ragUsage).isNotNull()
         assertThat(result.ragUsage!!.ragSystem).isEqualTo(100)
+    }
+
+    @Test
+    fun buildContextAppliesAgentRetrievalConfigToRagOptions() = testScope.runTest {
+        var capturedOptions: RagOptions? = null
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                capturedOptions = options
+                return Triple("RAG context", emptyList(), null)
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider)
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = true, enableDocs = true))
+
+        builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "tell me about X",
+            assistantMsgId = "m1",
+            session = session,
+            agentRetrievalConfig = AgentRetrievalConfig(
+                memoryLimit = 2,
+                memoryThreshold = 0.25f,
+                docLimit = 3,
+                docThreshold = 0.2f,
+                rerankTopK = 9,
+                rerankFinalK = 4,
+                enableQueryRewrite = false,
+                enableHybridSearch = false,
+                hybridAlpha = 0.3f,
+                hybridBM25Boost = 1.7f
+            )
+        ))
+
+        val options = capturedOptions!!
+        assertThat(options.memoryLimit).isEqualTo(2)
+        assertThat(options.memoryThreshold).isEqualTo(0.25f)
+        assertThat(options.docLimit).isEqualTo(3)
+        assertThat(options.docThreshold).isEqualTo(0.2f)
+        assertThat(options.rerankTopK).isEqualTo(9)
+        assertThat(options.rerankFinalK).isEqualTo(4)
+        assertThat(options.enableQueryRewrite).isFalse()
+        assertThat(options.enableHybridSearch).isFalse()
+        assertThat(options.hybridAlpha).isEqualTo(0.3f)
+        assertThat(options.hybridBM25Boost).isEqualTo(1.7f)
+    }
+
+    @Test
+    fun buildContextInjectsFullRagContextIntoSystemPrompt() = testScope.runTest {
+        val longTail = "TAIL_CONTEXT_AFTER_400_CHARS"
+        val longContext = "A".repeat(450) + longTail
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    longContext,
+                    listOf(RagReference(id = "r1", content = "short ref", source = "doc1")),
+                    RagUsage(ragSystem = 120, isEstimated = true)
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider)
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableDocs = true))
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "find the tail",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        assertThat(result.finalSystemPrompt).contains("## Retrieved Context")
+        assertThat(result.finalSystemPrompt).contains(longTail)
     }
 
     @Test
@@ -406,5 +490,3 @@ class ContextBuilderTest {
         assertThat(capturedQuery).isEqualTo("什么是")
     }
 }
-
-

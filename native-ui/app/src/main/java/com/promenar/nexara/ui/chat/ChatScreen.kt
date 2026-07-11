@@ -20,6 +20,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +43,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import com.promenar.nexara.ui.common.NexaraBackButton
@@ -67,6 +70,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -92,6 +96,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -114,12 +121,12 @@ import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
+import com.promenar.nexara.ui.common.SnackbarType
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -140,6 +147,7 @@ fun ChatScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarData by remember { mutableStateOf<NexaraSnackbarData?>(null) }
+    var snackbarAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     val listState = rememberLazyListState()
     var showWorkspaceSheet by remember { mutableStateOf(false) }
@@ -170,24 +178,26 @@ fun ChatScreen(
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
 
     val density = LocalDensity.current
-    val isUserScrolledAway by remember(pipelineGroups.size) {
+    val isUserScrolledAway by remember(pipelineGroups.size, uiState.isGenerating) {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
             val visibleItems = layoutInfo.visibleItemsInfo
             if (visibleItems.isEmpty()) return@derivedStateOf false
 
             val totalItemsCount = layoutInfo.totalItemsCount
-
-            // 最后一项（bottom_spacer）不可见 → 用户已离开底部
-            if (visibleItems.none { it.index == totalItemsCount - 1 }) return@derivedStateOf true
-
-            // 底部判定：spacer 底部超出视口底部即代表用户已滚离底部
-            val spacerItem = visibleItems.first { it.index == totalItemsCount - 1 }
-            val spacerBottom = spacerItem.offset + spacerItem.size
-            val viewportBottom = layoutInfo.viewportEndOffset
-            // 阈值 = contentPadding bottom(48dp) + 12dp 缓冲区
             val threshold = with(density) { 60.dp.toPx() }
-            spacerBottom > viewportBottom + threshold
+            val viewportBottom = layoutInfo.viewportEndOffset
+
+            val targetIndex = if (uiState.isGenerating && pipelineGroups.isNotEmpty()) {
+                pipelineGroups.lastIndex
+            } else {
+                totalItemsCount - 1
+            }
+
+            val targetItem = visibleItems.firstOrNull { it.index == targetIndex }
+                ?: return@derivedStateOf true
+            val targetBottom = targetItem.offset + targetItem.size
+            targetBottom > viewportBottom + threshold
         }
     }
 
@@ -210,6 +220,25 @@ fun ChatScreen(
         chatViewModel.loadSession(sessionId)
     }
 
+    val dismissLabel = stringResource(R.string.common_dismiss)
+    val copiedLabel = stringResource(R.string.chat_copy_success)
+    LaunchedEffect(uiState.error) {
+        val errorMessage = uiState.error ?: return@LaunchedEffect
+        snackbarAction = { chatViewModel.clearError() }
+        snackbarData = NexaraSnackbarData(
+            message = errorMessage,
+            type = SnackbarType.ERROR,
+            actionLabel = dismissLabel
+        )
+        snackbarHostState.currentSnackbarData?.dismiss()
+        snackbarHostState.showSnackbar(
+            message = errorMessage,
+            actionLabel = dismissLabel,
+            duration = SnackbarDuration.Long
+        )
+        chatViewModel.clearError()
+    }
+
     // ═══════════════════════════════════════════════════════════
     //  智能视角追踪 — Pin to Bottom
     //  新消息发送 → 滚到底部开启追踪 → 流式输出时跟随最新行 →
@@ -218,9 +247,36 @@ fun ChatScreen(
 
     var autoFollowEnabled by remember { mutableStateOf(true) }
 
-    // 用户手势介入 → 切断追踪
-    LaunchedEffect(isUserScrolledAway) {
-        if (isUserScrolledAway) autoFollowEnabled = false
+    val userScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f) {
+                    autoFollowEnabled = false
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
+    suspend fun scrollToStreamingTail() {
+        val activeIndex = pipelineGroups.lastIndex
+        if (activeIndex < 0) return
+
+        val layoutInfo = listState.layoutInfo
+        val activeItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+        val inputOverlapPx = with(density) { 180.dp.roundToPx() }
+        val targetBottom = layoutInfo.viewportEndOffset - inputOverlapPx
+
+        if (activeItem == null) {
+            listState.scrollToItem(activeIndex, 100_000)
+            return
+        }
+
+        val activeBottom = activeItem.offset + activeItem.size
+        val overflow = activeBottom - targetBottom
+        if (overflow > 0) {
+            listState.scrollBy(overflow.toFloat())
+        }
     }
 
     // 新用户消息 → 恢复追踪 + 滚到底部
@@ -228,29 +284,28 @@ fun ChatScreen(
     LaunchedEffect(latestUserMsgId) {
         if (latestUserMsgId.isNotEmpty()) {
             autoFollowEnabled = true
-            val groups = buildPipelineGroups(uiState.messages)
-            listState.animateScrollToItem(groups.size) // 滚到最底部
+            delay(32)
+            scrollToStreamingTail()
         }
     }
 
-    // 生成中自动跟随：旗舰级 120Hz 频率物理帧率级像素实时追踪，确保流畅吐字不跟丢
-    LaunchedEffect(uiState.isGenerating, autoFollowEnabled) {
+    val latestAssistantMsg = uiState.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+    val followContentLength = (latestAssistantMsg?.content?.length ?: 0) +
+        (latestAssistantMsg?.reasoning?.length ?: 0) +
+        uiState.streamingContent.length
+
+    // 生成中跟随当前 AI item 的尾部。不能锚定 bottom_spacer：超长思考块生成时
+    // spacer 往往不在 LazyColumn 组成窗口内，bringIntoView 会退化成 no-op。
+    LaunchedEffect(
+        uiState.isGenerating,
+        autoFollowEnabled,
+        latestAssistantMsg?.id,
+        followContentLength,
+        ragPhases.size
+    ) {
         if (uiState.isGenerating && autoFollowEnabled) {
-            while (isActive) {
-                val layoutInfo = listState.layoutInfo
-                val totalItems = layoutInfo.totalItemsCount
-                if (totalItems > 0) {
-                    val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()
-                    // 仅当：用户可以继续向下滚动 + 最后一项不完全在视口内 时才推
-                    val canScroll = listState.canScrollForward
-                    val lastItemInView = lastVisible != null &&
-                        (lastVisible.offset + lastVisible.size) < layoutInfo.viewportEndOffset
-                    if (canScroll && !lastItemInView) {
-                        listState.scrollToItem(totalItems - 1)
-                    }
-                }
-                delay(8)
-            }
+            delay(16)
+            scrollToStreamingTail()
         }
     }
 
@@ -261,7 +316,8 @@ fun ChatScreen(
             val groups = buildPipelineGroups(uiState.messages)
             val lastIdx = groups.size - 1
             if (lastIdx >= 0) {
-                listState.animateScrollToItem(lastIdx)
+                delay(32)
+                scrollToStreamingTail()
             }
         }
     }
@@ -288,7 +344,7 @@ fun ChatScreen(
                 hostState = snackbarHostState,
                 snackbarData = snackbarData,
                 onAction = {
-                    chatViewModel.undoLastDeletion()
+                    snackbarAction?.invoke()
                     snackbarHostState.currentSnackbarData?.dismiss()
                 }
             )
@@ -297,7 +353,9 @@ fun ChatScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(userScrollConnection),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 150.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -313,15 +371,20 @@ fun ChatScreen(
 
                             if (ragActiveMsg != null) {
                                 val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
+                                val hasRagArtifacts = !ragActiveMsg.ragReferences.isNullOrEmpty() ||
+                                    !ragActiveMsg.citations.isNullOrEmpty() ||
+                                    ragActiveMsg.ragReferencesLoading
                                 val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
                                 val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
-                                RagProgressCard(
-                                    phases = targetPhases,
-                                    references = ragActiveMsg.ragReferences,
-                                    kgPaths = ragActiveMsg.kgPaths,
-                                    citations = ragActiveMsg.citations,
-                                    isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
-                                )
+                                if (targetPhases.isNotEmpty() || hasRagArtifacts) {
+                                    RagProgressCard(
+                                        phases = targetPhases,
+                                        references = ragActiveMsg.ragReferences,
+                                        kgPaths = ragActiveMsg.kgPaths,
+                                        citations = ragActiveMsg.citations,
+                                        isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
+                                    )
+                                }
                             }
                         }
 
@@ -336,6 +399,21 @@ fun ChatScreen(
                                     chatViewModel.updateMessageContentOnly(lastMsg.id, newContent)
                                 }
                             },
+                            onCopy = { text ->
+                                copyToClipboard(context, text)
+                                snackbarAction = null
+                                snackbarData = NexaraSnackbarData(
+                                    message = copiedLabel,
+                                    type = SnackbarType.SUCCESS
+                                )
+                                scope.launch {
+                                    snackbarHostState.currentSnackbarData?.dismiss()
+                                    snackbarHostState.showSnackbar(
+                                        message = copiedLabel,
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            },
                             onDelete = { chatViewModel.deleteMessage(it) },
                             onRegenerate = { chatViewModel.regenerateMessage(it) }
                         )
@@ -348,6 +426,17 @@ fun ChatScreen(
                                 progress = compressionState.progress,
                                 detail = compressionState.detail,
                                 result = compressionState.result
+                            )
+                        }
+                    }
+
+                    uiState.approvalRequest?.let { request ->
+                        item(key = "approval_request") {
+                            ApprovalCard(
+                                toolName = request.toolName ?: stringResource(R.string.chat_approval_unknown_tool),
+                                description = approvalDescription(request),
+                                onApprove = { chatViewModel.approveRequest() },
+                                onDecline = { chatViewModel.rejectRequest() }
                             )
                         }
                     }
@@ -499,7 +588,7 @@ fun ChatScreen(
                 }
             
                 AnimatedVisibility(
-                    visible = isUserScrolledAway,
+                    visible = isUserScrolledAway && (!uiState.isGenerating || !autoFollowEnabled),
                     enter = fadeIn(),
                     exit = fadeOut(),
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)
@@ -508,8 +597,7 @@ fun ChatScreen(
                         onClick = {
                             autoFollowEnabled = true
                             scope.launch {
-                                val groups = buildPipelineGroups(uiState.messages)
-                                listState.animateScrollToItem(groups.size)
+                                scrollToStreamingTail()
                             }
                         },
                         containerColor = NexaraColors.SurfaceHigh,
@@ -586,6 +674,21 @@ fun ChatScreen(
         placeholder = "Add session-specific instructions...",
         mode = EditorMode.DIALOG
     )
+}
+
+private fun approvalDescription(request: com.promenar.nexara.data.model.ApprovalRequest): String {
+    val reason = request.reason?.takeIf { it.isNotBlank() }
+    val args = request.args
+        ?.takeIf { it.isNotBlank() }
+        ?.replace(Regex("\\s+"), " ")
+        ?.let { if (it.length > 180) it.take(177) + "..." else it }
+
+    return listOfNotNull(
+        reason,
+        args?.let { "Arguments: $it" }
+    ).joinToString("\n").ifBlank {
+        "This tool call is waiting for your approval."
+    }
 }
 
 @Composable

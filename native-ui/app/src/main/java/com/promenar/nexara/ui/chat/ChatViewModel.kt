@@ -24,6 +24,7 @@ import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.model.RagProgress
+import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
@@ -54,6 +55,7 @@ import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
@@ -65,6 +67,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -250,44 +253,72 @@ class ChatViewModel(
         if (text.isBlank() && imageUris.isEmpty()) return
 
         val session = store.getSession(sessionId) ?: return
-        val userMsgId = IdGenerator.message("user")
-        val assistantMsgId = IdGenerator.message("ai")
-
-        _inputText.update { "" }
-        _error.update { null }
-        viewModelScope.launch { sessionManager.updateSessionDraft(sessionId, null) }
-
-        val imageDataUrls = imageUris.mapNotNull { uri ->
-            try {
-                val bytes = application.contentResolver.openInputStream(uri)?.readBytes()
-                val mimeType = application.contentResolver.getType(uri) ?: "image/jpeg"
-                bytes?.let { "data:$mimeType;base64,${Base64.encodeToString(it, Base64.NO_WRAP)}" }
-            } catch (_: Exception) { null }
-        }
 
         cancelActiveGeneration()
         generationJob = viewModelScope.launch {
-            val userMessage = Message(
-                id = userMsgId,
-                role = MessageRole.USER,
-                content = text,
-                userImages = imageDataUrls.ifEmpty { null },
-                createdAt = System.currentTimeMillis()
-            )
+            _generationStatus.update { GenerationStatus.UPLOADING }
+            _isGenerating.update { true }
+            _error.update { null }
 
-            messageManager.addMessage(sessionId, userMessage)
+            val imageDataUrls = if (imageUris.isNotEmpty()) {
+                val converted = withContext(Dispatchers.IO) {
+                    imageUris.map { uri -> uriToDataUrl(uri) }
+                }
+                if (converted.any { it == null }) {
+                    _error.update { "Image read failed. Please remove the failed attachment and try again." }
+                    _generationStatus.update { GenerationStatus.ERROR }
+                    _isGenerating.update { false }
+                    return@launch
+                }
+                converted.filterNotNull()
+            } else {
+                emptyList()
+            }
 
-            val assistantMessage = Message(
-                id = assistantMsgId,
-                role = MessageRole.ASSISTANT,
-                content = "",
-                modelId = session.modelId,
-                createdAt = System.currentTimeMillis()
-            )
-            messageManager.addMessage(sessionId, assistantMessage)
-
-            generateMessage(sessionId, "", false, assistantMsgId, userMsgId, text)
+            _inputText.update { "" }
+            sessionManager.updateSessionDraft(sessionId, null)
+            enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls)
         }
+    }
+
+    private fun uriToDataUrl(uri: Uri): String? {
+        return try {
+            val bytes = application.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+            val mimeType = application.contentResolver.getType(uri) ?: "image/jpeg"
+            "data:$mimeType;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private suspend fun enqueuePreparedUserTurn(
+        sessionId: String,
+        session: Session,
+        text: String,
+        imageDataUrls: List<String>
+    ) {
+        val userMsgId = IdGenerator.message("user")
+        val assistantMsgId = IdGenerator.message("ai")
+
+        val userMessage = Message(
+            id = userMsgId,
+            role = MessageRole.USER,
+            content = text,
+            userImages = imageDataUrls.ifEmpty { null },
+            createdAt = System.currentTimeMillis()
+        )
+        messageManager.addMessage(sessionId, userMessage)
+
+        val assistantMessage = Message(
+            id = assistantMsgId,
+            role = MessageRole.ASSISTANT,
+            content = "",
+            modelId = session.modelId,
+            createdAt = System.currentTimeMillis()
+        )
+        messageManager.addMessage(sessionId, assistantMessage)
+
+        generateMessage(sessionId, "", false, assistantMsgId, userMsgId, text)
     }
 
     private suspend fun generateMessage(
@@ -389,7 +420,8 @@ class ChatViewModel(
                 }
             },
             agentSystemPrompt = agentConfig.systemPrompt,
-            sessionCustomPrompt = sessionForCtx.customPrompt
+            sessionCustomPrompt = sessionForCtx.customPrompt,
+            agentRetrievalConfig = agentConfig.retrievalConfig
         )
 
         val contextResult = try {
@@ -406,16 +438,26 @@ class ChatViewModel(
             return
         }
 
-        // P0 修复: 仅将真正执行过的 ACTIVE 阶段标记为 DONE；未触发的 PENDING 阶段保持原状
-        // 原逻辑: phases.map { if (p.status != DONE) p.copy(status = DONE) } — 批量假完成
-        _ragPhases.update { phases ->
-            val executedPhaseIds = phases.filter { it.status == PhaseStatus.ACTIVE || it.status == PhaseStatus.DONE }.map { it.id }.toSet()
-            phases.map { p ->
-                when {
-                    // 已执行 (ACTIVE→DONE) 或已完成的保持 DONE
-                    p.id in executedPhaseIds && p.status != PhaseStatus.DONE -> p.copy(status = PhaseStatus.DONE)
-                    // 未执行 (PENDING) 保持 PENDING，不批量升级
-                    else -> p
+        val hasRagContext = contextResult.ragContext.isNotBlank() ||
+            contextResult.ragReferences.isNotEmpty() ||
+            contextResult.citations.isNotEmpty() ||
+            contextResult.ragUsage != null
+
+        if (!hasRagContext) {
+            _ragPhases.update { emptyList() }
+            messageManager.clearMessageRagState(sessionId, assistantMsgId)
+        } else {
+            // P0 修复: 仅将真正执行过的 ACTIVE 阶段标记为 DONE；未触发的 PENDING 阶段保持原状
+            // 原逻辑: phases.map { if (p.status != DONE) p.copy(status = DONE) } — 批量假完成
+            _ragPhases.update { phases ->
+                val executedPhaseIds = phases.filter { it.status == PhaseStatus.ACTIVE || it.status == PhaseStatus.DONE }.map { it.id }.toSet()
+                phases.map { p ->
+                    when {
+                        // 已执行 (ACTIVE→DONE) 或已完成的保持 DONE
+                        p.id in executedPhaseIds && p.status != PhaseStatus.DONE -> p.copy(status = PhaseStatus.DONE)
+                        // 未执行 (PENDING) 保持 PENDING，不批量升级
+                        else -> p
+                    }
                 }
             }
         }
@@ -481,6 +523,12 @@ class ChatViewModel(
                     temperature = request.temperature,
                     topP = request.topP,
                     maxOutputTokens = request.maxTokens,
+                    frequencyPenalty = request.frequencyPenalty,
+                    presencePenalty = request.presencePenalty,
+                    topK = request.topK,
+                    repetitionPenalty = request.repetitionPenalty,
+                    streamTimeout = request.streamTimeout,
+                    enableGeminiSearch = request.enableGeminiSearch,
                     tools = activeTools.associateBy { it.function.name },
                     enableWebSearch = sessionForCtx.options.webSearch == true
                 )
@@ -908,9 +956,14 @@ class ChatViewModel(
             }.absolutePath
             
             val defaultOptions = getDefaultRagOptions()
+            val agent = agentRepository.getById(agentId)
+            val defaultModelId = agent?.modelId
+                ?.takeIf { it.isNotBlank() }
+                ?: resolveDefaultModelId()
             val session = Session(
                 id = sessionId,
                 agentId = agentId,
+                modelId = defaultModelId,
                 workspacePath = workspacePath,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
@@ -920,6 +973,14 @@ class ChatViewModel(
             _currentSessionId.update { sessionId }
             updateAgentName(agentId)
         }
+    }
+
+    private fun resolveDefaultModelId(): String? {
+        return runCatching {
+            val providerManager = ProviderManager.getInstance()
+            providerManager.summaryModelId.value.takeIf { it.isNotBlank() }
+                ?: providerManager.getMainProviderConfig()?.model?.takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 
     private fun updateAgentName(agentId: String?) {
@@ -964,7 +1025,15 @@ class ChatViewModel(
             }
         }
 
-        sendMessage(lastUserMsg.content)
+        cancelActiveGeneration()
+        generationJob = viewModelScope.launch {
+            enqueuePreparedUserTurn(
+                sessionId = sessionId,
+                session = session,
+                text = lastUserMsg.content,
+                imageDataUrls = lastUserMsg.userImages.orEmpty()
+            )
+        }
     }
 
     fun approveRequest(intervention: String? = null) {
@@ -1366,11 +1435,18 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value ?: return
         val session = store.getSession(sessionId) ?: return
         val message = session.messages.find { it.id == messageId } ?: return
+        val userMessage = if (message.role == MessageRole.USER) {
+            message
+        } else {
+            session.messages
+                .filter { it.role == MessageRole.USER && it.createdAt < message.createdAt }
+                .maxByOrNull { it.createdAt }
+        } ?: return
         
         cancelActiveGeneration()
         generationJob = viewModelScope.launch {
             // Delete all messages strictly after this one with backup
-            backupAndTruncate(sessionId, message.createdAt + 1)
+            backupAndTruncate(sessionId, userMessage.createdAt + 1)
             
             // Create a new assistant message
             val assistantMsgId = IdGenerator.message("ai")
@@ -1384,7 +1460,7 @@ class ChatViewModel(
             messageManager.addMessage(sessionId, assistantMessage)
             
             // Trigger regeneration
-            generateMessage(sessionId, "", false, assistantMsgId, messageId, message.content)
+            generateMessage(sessionId, "", false, assistantMsgId, userMessage.id, userMessage.content)
         }
     }
 
@@ -1703,7 +1779,15 @@ class ChatViewModel(
     }
 
     private val highRiskToolNames = setOf(
-        "write_file", "exec_js", "generate_image", "create_tool"
+        "write_file",
+        "patch_file",
+        "create_file",
+        "delete_file",
+        "exec_js",
+        "web_fetch",
+        "generate_image",
+        "create_tool",
+        "drop_plan"
     )
 
     private fun determinePendingToolIds(
@@ -1844,4 +1928,3 @@ class ChatViewModel(
         return -1
     }
 }
-

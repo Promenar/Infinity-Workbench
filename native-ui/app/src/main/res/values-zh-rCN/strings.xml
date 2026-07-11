@@ -65,6 +65,7 @@
     <string name="shared_btn_add">添加</string>
     <string name="shared_btn_reset">重置</string>
     <string name="shared_btn_close">关闭</string>
+    <string name="common_dismiss">关闭</string>
     <string name="shared_btn_done">完成</string>
     <string name="shared_btn_retry">重试</string>
     <string name="shared_confirm_delete_title">确认删除</string>
@@ -289,7 +290,9 @@
     <string name="chat_tool_selecting">正在选择工具…</string>
     <string name="chat_approval_required">需要审批</string>
     <string name="chat_approval_executed">已执行</string>
+    <string name="chat_approval_unknown_tool">工具请求</string>
     <string name="chat_approval_desc_tool">Agent 请求执行工具权限，这可能会改变系统状态或产生外部影响。</string>
+    <string name="chat_copy_success">已复制到剪贴板</string>
     <string name="common_decline">拒绝</string>
     <string name="common_approve">批准</string>
 

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -84,11 +85,14 @@ class SessionListViewModel(
     fun createSession(agentId: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
             val agent = try { agentRepository.observeById(agentId).first() } catch (_: Exception) { null }
+            val defaultModelId = agent?.modelId
+                ?.takeIf { it.isNotBlank() }
+                ?: resolveDefaultModelId()
             val sessionId = IdGenerator.session()
             val session = Session(
                 id = sessionId,
                 agentId = agentId,
-                modelId = agent?.modelId,
+                modelId = defaultModelId,
                 inferenceParams = if (agent != null) {
                     com.promenar.nexara.data.model.InferenceParams(
                         temperature = agent.temperature,
@@ -124,6 +128,14 @@ class SessionListViewModel(
         store.update { state ->
             state.copy()
         }
+    }
+
+    private fun resolveDefaultModelId(): String? {
+        return runCatching {
+            val providerManager = ProviderManager.getInstance()
+            providerManager.summaryModelId.value.takeIf { it.isNotBlank() }
+                ?: providerManager.getMainProviderConfig()?.model?.takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 
     companion object {

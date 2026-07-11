@@ -118,6 +118,20 @@ class MarkdownTextTest {
         }
 
         @Test
+        fun `temporarily closes unbalanced bold marker while streaming`() {
+            val input = "1. **预"
+            val result = sanitizeStreamingMarkdown(input)
+            assertThat(result).isEqualTo("1. **预**")
+        }
+
+        @Test
+        fun `ignores bold markers inside inline code and code fences`() {
+            val input = "`**not bold**`\n```kotlin\nval text = \"**raw**\"\n```"
+            val result = sanitizeStreamingMarkdown(input)
+            assertThat(result).isEqualTo(input)
+        }
+
+        @Test
         fun `returns empty string unchanged`() {
             val result = sanitizeStreamingMarkdown("")
             assertThat(result).isEqualTo("")
@@ -170,6 +184,67 @@ class MarkdownTextTest {
             // so trimIndent applies and trims the leading blank line.
             val result = safeTrimIndent("    \nrest")
             assertThat(result).isEqualTo("rest")
+        }
+    }
+
+    @Nested
+    inner class RepairCompressedMarkdownBoundaries {
+
+        @Test
+        fun `separates compressed cjk headings into block headings`() {
+            val input = "前言 #一级标题##二级标题###三级标题正文"
+            val result = repairCompressedMarkdownBoundaries(input)
+
+            assertThat(result).contains("前言\n\n# 一级标题")
+            assertThat(result).contains("\n\n## 二级标题")
+            assertThat(result).contains("\n\n### 三级标题正文")
+        }
+
+        @Test
+        fun `separates horizontal rule followed by heading`() {
+            val input = "排版效果： ---###列表测试"
+            val result = repairCompressedMarkdownBoundaries(input)
+
+            assertThat(result).contains("排版效果：\n\n---\n\n### 列表测试")
+        }
+
+        @Test
+        fun `separates compressed ordered list markers`() {
+            val input = "有序列表： **1.第一步 2.第二步 3.第三步###代码块测试"
+            val result = repairCompressedMarkdownBoundaries(input)
+
+            assertThat(result).contains("有序列表：\n1. 第一步")
+            assertThat(result).doesNotContain("**\n1.")
+            assertThat(result).contains("\n2. 第二步")
+            assertThat(result).contains("\n3. 第三步")
+            assertThat(result).contains("\n\n### 代码块测试")
+        }
+
+        @Test
+        fun `separates compressed markdown table rows`() {
+            val input = "###表格测试|功能|状态|备注||---|---|---||粗体|✅|正常工作||斜体|✅|正常工作"
+            val result = repairCompressedMarkdownBoundaries(input)
+
+            assertThat(result).contains("### 表格测试\n|功能|状态|备注|")
+            assertThat(result).contains("\n|---|---|---|")
+            assertThat(result).contains("\n|粗体|✅|正常工作|")
+            assertThat(result).contains("\n|斜体|✅|正常工作|")
+        }
+
+        @Test
+        fun `does not alter inline code and links`() {
+            val input = "保留 `#标签##值 1.不是列表` 和 [标题#一](https://example.com/a#b)"
+            val result = repairCompressedMarkdownBoundaries(input)
+
+            assertThat(result).isEqualTo(input)
+        }
+
+        @Test
+        fun `does not trim protected indented code block`() {
+            val input = "    val x = 1\n    val y = 2"
+            val result = repairCompressedMarkdownBoundaries(input)
+
+            assertThat(result).isEqualTo(input)
         }
     }
 

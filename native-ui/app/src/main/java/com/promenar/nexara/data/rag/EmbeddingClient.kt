@@ -31,7 +31,7 @@ class EmbeddingClient(
 
     /** 是否有本地引擎可用作降级 */
     val hasLocalFallback: Boolean
-        get() = localEngine != null
+        get() = localEngine?.embeddingSlot?.value?.isLoaded == true
 
     /** 诊断信息：用于向用户解释当前配置状态 */
     fun diagnosticMessage(): String = buildString {

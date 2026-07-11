@@ -6,7 +6,13 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
+import java.net.URI
 
 class WebFetchSkill(
     private val httpClient: HttpClient
@@ -46,6 +52,11 @@ class WebFetchSkill(
             "https://$rawUrl"
         } else {
             rawUrl
+        }
+
+        val validationError = validatePublicHttpUrl(url)
+        if (validationError != null) {
+            return ToolResult(id = "err", content = validationError, status = "error")
         }
 
         // 解析并校验 startLine 和 lineCount 分页参数
@@ -168,5 +179,47 @@ class WebFetchSkill(
                 status = "error"
             )
         }
+    }
+
+    private suspend fun validatePublicHttpUrl(url: String): String? {
+        val uri = try {
+            URI(url)
+        } catch (_: Exception) {
+            return "Invalid URL"
+        }
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") {
+            return "Unsupported URL scheme: ${uri.scheme}"
+        }
+        val host = uri.host ?: return "Invalid URL: missing host"
+        val addresses = try {
+            withContext(Dispatchers.IO) { InetAddress.getAllByName(host) }
+        } catch (e: Exception) {
+            return "Unable to resolve host: ${e.localizedMessage ?: e.message}"
+        }
+        if (addresses.any { it.isPrivateOrLocalAddress() }) {
+            return "Blocked URL: web_fetch cannot access localhost, private network, link-local, or multicast addresses."
+        }
+        return null
+    }
+
+    private fun InetAddress.isPrivateOrLocalAddress(): Boolean {
+        if (isAnyLocalAddress || isLoopbackAddress || isLinkLocalAddress || isSiteLocalAddress || isMulticastAddress) {
+            return true
+        }
+        if (this is Inet4Address) {
+            val bytes = address.map { it.toInt() and 0xff }
+            return bytes[0] == 10 ||
+                (bytes[0] == 172 && bytes[1] in 16..31) ||
+                (bytes[0] == 192 && bytes[1] == 168) ||
+                (bytes[0] == 169 && bytes[1] == 254) ||
+                bytes[0] == 127 ||
+                bytes[0] == 0
+        }
+        if (this is Inet6Address) {
+            val first = address[0].toInt() and 0xff
+            return first == 0xfc || first == 0xfd || first == 0xfe
+        }
+        return false
     }
 }

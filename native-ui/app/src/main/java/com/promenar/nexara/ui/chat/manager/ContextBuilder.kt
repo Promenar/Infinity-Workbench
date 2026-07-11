@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.manager
 
+import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
@@ -26,7 +27,8 @@ data class ContextBuilderParams(
     val ragOptions: com.promenar.nexara.data.model.RagOptions? = null,
     val onRagProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null,
     val agentSystemPrompt: String? = null,
-    val sessionCustomPrompt: String? = null
+    val sessionCustomPrompt: String? = null,
+    val agentRetrievalConfig: AgentRetrievalConfig? = null
 )
 
 interface WebSearchProvider {
@@ -85,7 +87,14 @@ class ContextBuilder(
             null
         }
 
-        val systemPrompt = buildSystemPrompt(params, ragResult.second, searchContext, kgContext, activePlan)
+        val systemPrompt = buildSystemPrompt(
+            params = params,
+            ragContext = ragResult.first,
+            ragReferences = ragResult.second,
+            searchContext = searchContext,
+            kgContext = kgContext,
+            activePlan = activePlan
+        )
 
         return ContextBuilderResult(
             searchContext = searchContext,
@@ -239,7 +248,7 @@ class ContextBuilder(
         val sessionRagOptions = params.session.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
         val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
 
-        val finalRagOptions = com.promenar.nexara.data.model.RagOptions(
+        val mergedRagOptions = com.promenar.nexara.data.model.RagOptions(
             enableMemory = tempRagOptions.enableMemory && sessionRagOptions.enableMemory,
             enableDocs = tempRagOptions.enableDocs && sessionRagOptions.enableDocs,
             activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
@@ -248,6 +257,7 @@ class ContextBuilder(
             enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
             enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
         )
+        val finalRagOptions = applyAgentRetrievalConfig(mergedRagOptions, params.agentRetrievalConfig)
 
         NexaraLogger.log("[ContextBuilder] ragOptions: session=${sessionRagOptions.enableDocs}/${sessionRagOptions.enableMemory}, temp=${tempRagOptions.enableDocs}/${tempRagOptions.enableMemory}, final=${finalRagOptions.enableDocs}/${finalRagOptions.enableMemory}, isGlobal=${finalRagOptions.isGlobal}, rerank=${finalRagOptions.enableRerank}")
 
@@ -265,8 +275,34 @@ class ContextBuilder(
         }
     }
 
+    private fun applyAgentRetrievalConfig(
+        base: com.promenar.nexara.data.model.RagOptions,
+        agentConfig: AgentRetrievalConfig?
+    ): com.promenar.nexara.data.model.RagOptions {
+        if (agentConfig == null) return base
+        return base.copy(
+            enableMemory = base.enableMemory && agentConfig.enableMemory,
+            enableDocs = base.enableDocs && agentConfig.enableDocs,
+            enableKnowledgeGraph = base.enableKnowledgeGraph ?: agentConfig.enableKnowledgeGraph,
+            enableRerank = base.enableRerank && agentConfig.enableRerank,
+            memoryLimit = agentConfig.memoryLimit,
+            memoryThreshold = agentConfig.memoryThreshold,
+            docLimit = agentConfig.docLimit,
+            docThreshold = agentConfig.docThreshold,
+            rerankTopK = agentConfig.rerankTopK,
+            rerankFinalK = agentConfig.rerankFinalK,
+            enableQueryRewrite = agentConfig.enableQueryRewrite,
+            queryRewriteStrategy = agentConfig.queryRewriteStrategy,
+            queryRewriteCount = agentConfig.queryRewriteCount,
+            enableHybridSearch = agentConfig.enableHybridSearch,
+            hybridAlpha = agentConfig.hybridAlpha,
+            hybridBM25Boost = agentConfig.hybridBM25Boost
+        )
+    }
+
     private fun buildSystemPrompt(
         params: ContextBuilderParams,
+        ragContext: String,
         ragReferences: List<RagReference>,
         searchContext: String,
         kgContext: String = "",
@@ -336,11 +372,15 @@ class ContextBuilder(
         }
 
         // 6. RAG Context (Memory & Docs)
-        if (ragReferences.isNotEmpty()) {
+        if (ragContext.isNotBlank()) {
+            sb.appendLine()
+            sb.appendLine("## Retrieved Context")
+            sb.appendLine(ragContext)
+        } else if (ragReferences.isNotEmpty()) {
             sb.appendLine()
             sb.appendLine("## Retrieved Context")
             ragReferences.forEach { ref ->
-                sb.appendLine("- [${ref.source}] ${ref.content.take(400)}") // Increased preview slightly
+                sb.appendLine("- [${ref.source}] ${ref.content.take(400)}")
             }
         }
 
@@ -439,9 +479,9 @@ class ContextBuilder(
         val prefix = "  ".repeat(indent)
         for (step in steps) {
             val icon = when (step.status) {
-                "completed" -> "✅"
-                "in_progress" -> "⟳"
-                "failed" -> "✕"
+                "completed", "done" -> "✅"
+                "in_progress", "doing" -> "⟳"
+                "failed", "error" -> "✕"
                 "dropped" -> "⊗"
                 else -> "○"
             }
@@ -465,7 +505,7 @@ class ContextBuilder(
 
     private fun findDoingLeaf(steps: List<TaskStep>): TaskStep? {
         for (step in steps) {
-            if (step.status == "in_progress" && step.children.isEmpty()) return step
+            if (step.status in setOf("in_progress", "doing") && step.children.isEmpty()) return step
             findDoingLeaf(step.children)?.let { return it }
         }
         return null
@@ -475,7 +515,7 @@ class ContextBuilder(
         val result = mutableListOf<TaskStep>()
         for (step in steps) {
             if (result.size >= maxCount) break
-            if (step.status == "pending" && step.children.isEmpty()) {
+            if (step.status in setOf("pending", "todo") && step.children.isEmpty()) {
                 result.add(step)
             }
             if (step.children.isNotEmpty()) {
@@ -491,7 +531,7 @@ class ContextBuilder(
         for (step in steps) {
             if (step.children.isEmpty()) {
                 total++
-                if (step.status == "completed") completed++
+                if (step.status in setOf("completed", "done")) completed++
             } else {
                 val (c, t) = countLeaves(step.children)
                 completed += c

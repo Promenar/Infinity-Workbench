@@ -4,6 +4,89 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Qwen 本地模型中文流式排版与思考块追踪二次收口 (2026-07-06)
+- **思考块长内容追踪收口**：生成中的思考块不再渲染完整超长 `<think>`，改为展示最近尾部预览；完成后仍可手动展开完整思考内容，避免 Qwen 这类本地模型长思考持续撑高同一 Lazy item，导致镜头在思考首段、正文尾部之间来回拉扯。
+- **中文正文紧凑渲染**：正文 Markdown 启用紧凑 block/list padding，中文编号列表的段距、行距和序号字号在模拟器中更接近聊天阅读密度。
+- **流式半截加粗修复**：`sanitizeStreamingMarkdown()` 对未闭合的 `**加粗` 标记临时补闭合，避免流式中间帧短暂裸露 `**预` 这类 Markdown 符号；最终内容仍由真实 Markdown 标记决定。
+- **Qwen 真实验收**：在模拟器把内网 provider 切到 `QWEN3.6-VL-128K-Q4KV`，发送简体中文 Markdown 30 项编号列表；连续截图显示轨迹从 1-4 → 3-20 → 17-30 后稳定，无此前 24-30 ↔ 1-2 的往返闪烁；中文加粗渲染正常，最终正文无裸 `**`。
+- **验证命令**：`:app:testDebugUnitTest --tests MarkdownTextTest --tests PipelineBubbleTest`、`:app:assembleDebug` 均通过。
+- **变更文件**：`PipelineBubble.kt`、`PipelineBubbleTest.kt`、`MarkdownText.kt`、`MarkdownTextTest.kt`。
+
+### 会话生成滚动抢镜修复与思考块列表排版优化 (2026-07-06)
+- **生成中滚动跟随修复**：会话流式生成时不再用 8ms 循环强制锚定 `bottom_spacer`，改为按当前 AI pipeline item 的尾部跟随；修复思考区块增长时画面在消息首行与最新输出之间高频来回跳动的问题。
+- **用户手势尊重**：通过 `nestedScroll` 捕捉真实用户滚动并切断自动跟随，FAB 点击后再恢复跟随；自动跟随生成中隐藏“向下”悬浮按钮，避免按钮在长思考块中误抢视线。
+- **思考块 Markdown 列表排版优化**：补齐 Markdown 主题的 `ordered` / `bullet` / `list` typography，序号和正文统一字号与行高；思考块启用紧凑列表间距，避免序号过大和列表行距过松。
+- **真实 UI 验收**：使用内网真实 MiniMax-M3 API 在模拟器发送长思考/长 Markdown 输出；连续截图确认视口从思考尾部稳定推进到正文末段，不再回跳消息首行；思考块编号列表字号对齐。
+- **验证命令**：`:app:compileDebugKotlin`、`:app:testDebugUnitTest`、`:app:assembleDebug` 均通过。
+- **变更文件**：`ChatScreen.kt`、`PipelineBubble.kt`、`MarkdownText.kt`、`NexaraMarkdownTheme.kt`。
+
+### APP 业务链路第二批收口修复与最终模拟器验收 (2026-07-06)
+- **新会话默认模型修复**：会话列表 FAB 与聊天页直接新建两条路径均会优先继承 Agent 模型，其次使用全局/主提供商模型；修复新建会话底部显示“未配置模型”、无法直接发送的问题。
+- **RAG 假就绪收口**：Embedding 未配置时检索链路提前跳过并清理消息 RAG 状态，UI 不再把空检索包装成“知识检索就绪”；日志显示 `embedding unavailable, skip retrieval`，不再出现聊天模型被误当 embedding 调用的 `Missing data array`。
+- **RAG / KG 生命周期修复**：文档和集合删除会取消向量化、删除向量、清理图谱节点/边与索引状态，避免删除后仍被检索或图谱复现。
+- **OpenAI Responses 协议修复**：新增 `/responses` 协议实现，修正 endpoint、input body、同步/流式文本解析和最小工具声明，避免 Responses 入口名义存在但实际走错协议。
+- **工作区与任务安全修复**：`WorkspaceRepository` 增加 root containment、移动/删除失败显式报错、回收站恢复查询修复；`TaskRepository` 增加事务化 `updatePlan()`、父子防环和跨会话父节点校验。
+- **工具安全修复**：`web_fetch` 阻断 localhost、私网、链路本地和组播地址；`exec_js` WebView 禁用网络加载、DOM storage 和桥接接口并在回调后销毁。
+- **真实 UI 验收**：模拟器干净新会话自动显示 `MiniMax-M3`，使用内网真实 API 生成两条 Markdown bullet，界面分行渲染且无“知识检索就绪”误报；证据文件 `/tmp/nexara-final-real-send.png` 与 `/tmp/nexara-final-real-send-logcat.txt`。
+- **验证命令**：`:app:testDebugUnitTest`、`:app:assembleDebug` 均通过。
+- **变更文件**：`SessionListViewModel.kt`、`ChatViewModel.kt`、`MemoryManager.kt`、`RagViewModel.kt`、`WorkspaceRepository.kt`、`TaskRepository.kt`、`WebFetchSkill.kt`、`ExecJsSkill.kt`、`OpenAIResponsesProtocol.kt` 与相关测试。
+
+### APP 业务链路第一批修复与真实 API 模拟器验收 (2026-07-06)
+- **信任链修复**：接入 `ChatUiState.error` snackbar、审批卡片、复制成功反馈；补齐 `patch_file`、`web_fetch` 等高风险工具审批名单。
+- **Markdown / 协议修复**：OpenAI / Generic OpenAI-compatible 流式 delta 不再 trim 普通空白，避免标题、列表、代码缩进和表格边界被客户端破坏。
+- **RAG 修复**：完整 `ragContext` 注入最终 system prompt；指定文档/非全局文档检索不再被错误关闭；无 RAG 结果时不再展示“知识检索就绪”的假完成状态。
+- **多模态修复**：图片 URI 读取移到 IO 线程；图片读取失败不再静默降级纯文本；重试/重新生成保留原用户图片；工具生成图片在工具结果卡内可见。
+- **Provider / 配置修复**：自定义 HTTP Provider 通过 network security config 支持内网聚合站；Provider 表单“测试连接”改为真实 `listModels()` 探测。
+- **工作区安全修复**：`FileOperationRepository` 增加 canonical root containment，`writeFileAtomic()` / `patchFile()` 改为同目录临时文件 + fsync + 原子替换。
+- **模拟器验收**：使用内网 MiniMax-M3 OpenAI-compatible API 完成文本 Markdown 和图片多模态真实生成；长按复制菜单与复制反馈通过 UI 验收。
+- **验证命令**：`:app:compileDebugKotlin`、`:app:assembleDebug`、`:app:testDebugUnitTest` 均通过。
+- **变更文件**：`ChatScreen.kt`、`ChatViewModel.kt`、`PipelineBubble.kt`、`ContextBuilder.kt`、`MemoryManager.kt`、协议层、Provider 表单、文件仓储、Manifest/network config、字符串与测试。
+
+### APP 业务流程终版交叉审计报告落盘 (2026-07-06)
+- **终版报告**：新增 `docs/audit/20260706-final-business-flow-cross-audit.md`，完整整合 GLM-5.2 并行审计主报告、A-G 模块原始报告与 Codex 原业务流程审计报告。
+- **交叉取舍**：采纳错误 UI 未消费、审批 UI 未接线、配置死链、QueryRewriter 死链、RAG 生命周期污染、工作区数据安全、任务状态错配、首次启动引导和渲染稳定性等高价值结论；对额外 Provider、MCP schema、ParseCache 串味、Provider fallback 等静态证据不足项降级为运行时验证。
+- **后续入口**：终版以 FA-01~FA-13 编号，作为后续修复排期和回归验证主入口；GLM 原始主报告 `docs/audit/20260706-fullstack-business-audit.md` 与模块报告继续保留为证据链。
+- **变更文件 (4)**：
+  - 新增: `docs/audit/20260706-final-business-flow-cross-audit.md`
+  - 修改: `.agent/registry.md`
+  - 修改: `.agent/handover.md`
+  - 修改: `CHANGELOG.md`
+
+### APP 业务流程完整代码审计报告落盘 (2026-07-06)
+- **📋 审计报告**：新增 `docs/audit/20260706-business-flow-full-code-audit.md`，覆盖基础文本消息、多模态、Prompt 拼接、协议 API、连接保持、错误捕获、fallback、返回渲染、RAG/KG、知识库文档、配置载入、工具/Skill、工作区文件操作、任务管理和 UI/UX 可观测性。
+- **🧾 原始材料**：保留本轮模块级原始审计材料到 `.agent/tmp-agent-reports/tmp-audit-module-a.md` 至 `.agent/tmp-agent-reports/tmp-audit-module-g.md`，方便后续交叉验证。
+- **🔎 核心结论**：当前主链路骨架完整，但存在多处“用户以为开启/选择/执行，实际未稳定进入生成链路”的信任断点，重点集中在 RAG 文档选择、RAG Prompt 注入、流式 delta 空白保真、多模态重试、本地视觉协议、工具产物渲染、工作区文件一致性和任务计划事务/防环。
+- **📌 后续入口**：报告已按 BF-01~BF-32 编号列出问题、用户体验影响、代码证据和建议修复顺序，供后续交叉审计与分批修复使用。
+- **变更文件 (5)**：
+  - 新增: `docs/audit/20260706-business-flow-full-code-audit.md`
+  - 新增: `.agent/tmp-agent-reports/tmp-audit-module-*.md`
+  - 修改: `.agent/registry.md`
+  - 修改: `.agent/handover.md`
+  - 修改: `CHANGELOG.md`
+
+### 会话气泡长按复制兜底修复 + Markdown 排障规则沉淀 (2026-07-05)
+- **🔴 P0 — 修复消息气泡长按菜单“复制正文”不写入剪贴板**：
+  - *根因定位*：`PipelineBubble` 在父级 `onCopy` 为空时仍向用户/AI 子气泡传入一层空 lambda，导致子气泡的 `onCopy?.invoke() ?: copyToClipboard(...)` 误判为“外部已处理复制”，从而跳过系统剪贴板兜底。
+  - *修复*：新增 `messageCopyOverride()`，只有父级真实提供复制处理器时才下传包装回调；父级为空时保持 `null`，让子气泡执行本地 `ClipboardManager` 复制。
+  - *覆盖范围*：用户消息气泡与 AI 正文气泡共享修复。
+- **📌 长期规则沉淀**：根据用户授权，将 Markdown 渲染排障分层规则写入项目 `AGENTS.md`，要求先区分“已有换行被库吞掉”和“上游原始输出无换行”两类根因。
+- **🧪 回归测试**：`ChatLogicTest.kt` 新增 2 个用例覆盖父级复制处理器为空/存在两种分支。
+- **变更文件 (4)**：
+  - 修改: `AGENTS.md`
+  - 修改: `native-ui/app/src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt`
+  - 修改: `native-ui/app/src/test/java/com/promenar/nexara/ui/chat/ChatLogicTest.kt`
+  - 修改: `CHANGELOG.md`
+
+### 本地模型压行 Markdown 边界修复 (2026-07-05)
+- **🔴 P0 — 修复本地模型输出 Markdown 标记但整体堆成一坨的问题**：
+  - *根因定位*：部分本地 OpenAI-Compatible 模型会把标题、分隔线、序号列表、代码围栏语言、表格行等块级 Markdown 边界压到同一行，例如 `#一级标题##二级标题`、`---###列表`、`1.第一步 2.第二步`、`||---|---|---||`；这类输入已经没有真实换行，单靠 `eolAsNewLine = true` 无法恢复排版。
+  - *修复*：在 `MarkdownText` 预处理链路新增 `repairCompressedMarkdownBoundaries()`，对明显压行的标题、水平分隔线、有序/无序列表、常见代码围栏语言、表格行和引用边界补回块级换行，同时保护行内代码与 Markdown 链接不被误拆。
+  - *效果*：本地模型即使输出较粗糙，也能在会话正文里恢复接近 Cherry Studio 的块级 Markdown 阅读结构；云端模型已有正常换行时不受影响。
+- **🧪 回归测试**：`MarkdownTextTest.kt` 新增 6 个用例覆盖压行标题、分隔线、序号列表、表格、inline code/link 保护和四空格缩进代码块保护；全量 `:app:testDebugUnitTest` 通过。
+- **变更文件 (2)**：
+  - 修改: `native-ui/app/src/main/java/com/promenar/nexara/ui/common/MarkdownText.kt`
+  - 修改: `native-ui/app/src/test/java/com/promenar/nexara/ui/common/MarkdownTextTest.kt`
+
 ### 提供商添加界面预设选择器改下拉菜单 (2026-07-05)
 - **🎨 UI 交互优化**：把"添加提供商"表单里 14 个预设的纵向 `Column` 列表（原占约 1000dp / 两屏+）替换为 `ExposedDropdownMenuBox` 下拉菜单，收起态仅约 56dp。
   - *收起态*：玻璃风格卡片（图标 + 预设名 + 下拉箭头），与表单其他输入框视觉协调。

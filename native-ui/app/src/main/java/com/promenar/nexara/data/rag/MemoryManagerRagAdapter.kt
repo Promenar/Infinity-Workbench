@@ -21,7 +21,8 @@ class MemoryManagerRagAdapter(
             activeDocIds = options.activeDocIds,
             isGlobal = options.isGlobal,
             sessionId = sessionId,
-            enableRerank = options.enableRerank  // 传递用户重排开关
+            enableRerank = options.enableRerank,  // 传递用户重排开关
+            configOverride = buildConfigOverride(options)
         )
 
         val result = memoryManager.retrieveContext(query, sessionId, retrieveOptions, onProgress)
@@ -39,5 +40,27 @@ class MemoryManagerRagAdapter(
         }
 
         return Triple(result.context, result.references, usage)
+    }
+
+    private fun buildConfigOverride(options: RagOptions): RagConfiguration {
+        val base = memoryManager.ragConfig
+        return base.copy(
+            enableMemory = options.enableMemory,
+            enableDocs = options.enableDocs,
+            enableKnowledgeGraph = options.enableKnowledgeGraph ?: base.enableKnowledgeGraph,
+            enableRerank = options.enableRerank,
+            enableQueryRewrite = options.enableQueryRewrite ?: base.enableQueryRewrite,
+            enableHybridSearch = options.enableHybridSearch ?: base.enableHybridSearch,
+            memoryLimit = options.memoryLimit ?: base.memoryLimit,
+            memoryThreshold = options.memoryThreshold ?: base.memoryThreshold,
+            docLimit = options.docLimit ?: base.docLimit,
+            docThreshold = options.docThreshold ?: base.docThreshold,
+            rerankTopK = options.rerankTopK ?: base.rerankTopK,
+            rerankFinalK = options.rerankFinalK ?: base.rerankFinalK,
+            queryRewriteStrategy = options.queryRewriteStrategy ?: base.queryRewriteStrategy,
+            queryRewriteCount = options.queryRewriteCount ?: base.queryRewriteCount,
+            hybridAlpha = options.hybridAlpha ?: base.hybridAlpha,
+            hybridBM25Boost = options.hybridBM25Boost ?: base.hybridBM25Boost
+        )
     }
 }

@@ -347,6 +347,33 @@ class MessageManager(
         }
     }
 
+    fun clearMessageRagState(sessionId: String, messageId: String) {
+        scope.launch {
+            try {
+                messageRepository.updatePartial(
+                    messageId,
+                    mapOf(
+                        "ragProgress" to null,
+                        "ragReferences" to null,
+                        "ragMetadata" to null,
+                        "citations" to null,
+                        "ragReferencesLoading" to false
+                    )
+                )
+            } catch (_: Exception) {
+            }
+        }
+        store.updateMessageInSession(sessionId, messageId) { m ->
+            m.copy(
+                ragProgress = null,
+                ragReferences = null,
+                ragMetadata = null,
+                citations = null,
+                ragReferencesLoading = false
+            )
+        }
+    }
+
     fun updateMessageLayout(sessionId: String, messageId: String, height: Double) {
         val session = store.getSession(sessionId) ?: return
         val message = session.messages.find { it.id == messageId } ?: return

@@ -11,13 +11,16 @@ class QueryRewriter(
 ) {
     suspend fun rewrite(
         query: String,
-        count: Int = 3
+        count: Int = 3,
+        strategyOverride: RewriteStrategy? = null,
+        modelIdOverride: String? = null
     ): RewriteResult {
         val queries = linkedSetOf(query)
         var totalUsage: RewriteUsage? = null
 
         try {
-            val prompt = when (strategy) {
+            val effectiveStrategy = strategyOverride ?: strategy
+            val prompt = when (effectiveStrategy) {
                 RewriteStrategy.HYDE -> hydePrompt(query)
                 RewriteStrategy.MULTI_QUERY -> multiQueryPrompt(query, count)
                 RewriteStrategy.EXPANSION -> expansionPrompt(query)
@@ -25,7 +28,7 @@ class QueryRewriter(
 
             val request = PromptRequest(
                 messages = listOf(ProtocolMessage(role = "user", content = prompt)),
-                model = modelId ?: "default",
+                model = modelIdOverride ?: modelId ?: "default",
                 temperature = 0.7,
                 stream = false
             )
@@ -38,7 +41,7 @@ class QueryRewriter(
             }
 
             if (content.isNotEmpty()) {
-                when (strategy) {
+                when (effectiveStrategy) {
                     RewriteStrategy.MULTI_QUERY -> {
                         content.lines().forEach { line ->
                             val clean = line.replace(Regex("^\\d+[\\.、\\)]\\s*"), "").trim()

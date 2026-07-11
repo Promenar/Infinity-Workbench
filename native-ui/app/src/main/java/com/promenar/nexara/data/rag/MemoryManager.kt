@@ -11,6 +11,7 @@ class MemoryManager(
     private val graphStore: GraphStore,
     private val embeddingClient: EmbeddingClient,
     private val rerankClient: RerankClient? = null,
+    private val queryRewriter: QueryRewriter? = null,
     val ragConfig: RagConfiguration = RagConfiguration()  // 改为 public 以支持 ContextBuilder 读取全局 KG 开关
 ) {
     data class RetrieveOptions(
@@ -19,7 +20,8 @@ class MemoryManager(
         val activeDocIds: List<String> = emptyList(),
         val isGlobal: Boolean = false,
         val sessionId: String = "",
-        val enableRerank: Boolean = false  // 从 RagOptions 传递，结合 ragConfig.enableRerank 共同决定
+        val enableRerank: Boolean = false,  // 从 RagOptions 传递，结合 ragConfig.enableRerank 共同决定
+        val configOverride: RagConfiguration? = null
     )
 
     data class RetrieveResult(
@@ -52,19 +54,15 @@ class MemoryManager(
             "enableMemory=${options.enableMemory}, enableDocs=${options.enableDocs}, isGlobal=${options.isGlobal}, " +
             "enableRerank=${options.enableRerank}, activeDocIds=${options.activeDocIds.size}")
 
-        onProgress?.invoke("Embedding query", 10, "Sending query to embedding model")
         val startTime = System.currentTimeMillis()
-        val effectiveConfig = ragConfig
+        val effectiveConfig = options.configOverride ?: ragConfig
 
-        // Q1 修复: 当 enableDocs=true 且未指定特定文档时，视为全局文档检索
-        // 原逻辑: isGlobal=false + activeDocIds 为空 → 静默跳过文档检索 (bug)
         val hasSpecificDocs = options.activeDocIds.isNotEmpty()
-        val canSearchAllDocs = options.enableDocs && (options.isGlobal || !hasSpecificDocs)
         val authorizedDocIds = if (options.enableDocs && !options.isGlobal && hasSpecificDocs) {
             options.activeDocIds.toSet()
         } else null
 
-        val canSearchDocs = canSearchAllDocs
+        val canSearchDocs = options.enableDocs
         val canSearchMemory = options.enableMemory
         // Rerank 决策: 用户开关 (RagOptions.enableRerank) AND 配置门 (ragConfig.enableRerank) 两者都开才执行
         val canRerank = options.enableRerank && effectiveConfig.enableRerank && rerankClient != null
@@ -77,6 +75,13 @@ class MemoryManager(
             return emptyResult(0)
         }
 
+        if (!embeddingClient.isConfigured && !embeddingClient.hasLocalFallback) {
+            NexaraLogger.log("[$TAG] embedding unavailable, skip retrieval: ${embeddingClient.diagnosticMessage().lineSequence().firstOrNull().orEmpty()}")
+            return emptyResult(System.currentTimeMillis() - startTime)
+        }
+
+        onProgress?.invoke("Embedding query", 10, "Sending query to embedding model")
+
         // P0 诊断日志: 记录 vectors 表状态，帮助定位 "0 results" 的根本原因
         try {
             val totalVecCount = vectorStore.getTotalVectorCount()
@@ -86,19 +91,26 @@ class MemoryManager(
             NexaraLogger.log("[$TAG] vectors DB state query failed: ${e.message?.take(80)}")
         }
 
-        val queryEmbedding = try {
-            val startEmbed = System.currentTimeMillis()
-            val emb = embeddingClient.embedQuery(query).first
-            val embedMs = System.currentTimeMillis() - startEmbed
-            // P0 诊断: 记录查询向量维度 + 可用于跨检存储向量维度
-            val storedDim = try { vectorStore.getFirstStoredDimension() } catch (_: Exception) { null }
-            NexaraLogger.log("[$TAG] embedQuery success: dim=${emb.size}, time=${embedMs}ms, storedDim=${storedDim ?: "N/A (DB empty?)"}")
-            onProgress?.invoke("Embedding done", 25, "${emb.size}d vector in ${embedMs}ms")
-            emb
-        } catch (e: Exception) {
-            NexaraLogger.logError("[$TAG] embedQuery failed", e)
+        val queryVariants = buildQueryVariants(query, effectiveConfig)
+        val queryEmbeddings = mutableListOf<Pair<String, FloatArray>>()
+        var firstEmbedMs = 0L
+        for ((index, searchQuery) in queryVariants.withIndex()) {
+            try {
+                val startEmbed = System.currentTimeMillis()
+                val emb = embeddingClient.embedQuery(searchQuery).first
+                val embedMs = System.currentTimeMillis() - startEmbed
+                if (index == 0) firstEmbedMs = embedMs
+                val storedDim = try { vectorStore.getFirstStoredDimension() } catch (_: Exception) { null }
+                NexaraLogger.log("[$TAG] embedQuery success: variant=${index + 1}/${queryVariants.size}, dim=${emb.size}, time=${embedMs}ms, storedDim=${storedDim ?: "N/A (DB empty?)"}")
+                queryEmbeddings.add(searchQuery to emb)
+            } catch (e: Exception) {
+                NexaraLogger.logError("[$TAG] embedQuery failed for variant=${index + 1}", e)
+            }
+        }
+        if (queryEmbeddings.isEmpty()) {
             return emptyResult(System.currentTimeMillis() - startTime)
         }
+        onProgress?.invoke("Embedding done", 25, "${queryEmbeddings.first().second.size}d vector in ${firstEmbedMs}ms")
 
         onProgress?.invoke("Searching memory", 30, "Retrieving from vector DB")
         val results = mutableListOf<SearchResult>()
@@ -106,16 +118,18 @@ class MemoryManager(
         if (canSearchMemory) {
             try {
                 val startMem = System.currentTimeMillis()
-                val memoryResults = vectorStore.search(
-                    queryEmbedding = queryEmbedding,
-                    limit = effectiveConfig.rerankTopK,
-                    threshold = effectiveConfig.memoryThreshold,
-                    filter = VectorStore.SearchFilter(
-                        sessionId = if (options.isGlobal) null else sessionId,
-                        type = "memory"
-                    ),
-                    onWarning = { warn -> NexaraLogger.log("[$TAG] memory search warning: $warn") }
-                )
+                val memoryResults = queryEmbeddings.flatMap { (_, queryEmbedding) ->
+                    vectorStore.search(
+                        queryEmbedding = queryEmbedding,
+                        limit = effectiveConfig.rerankTopK,
+                        threshold = effectiveConfig.memoryThreshold,
+                        filter = VectorStore.SearchFilter(
+                            sessionId = if (options.isGlobal) null else sessionId,
+                            type = "memory"
+                        ),
+                        onWarning = { warn -> NexaraLogger.log("[$TAG] memory search warning: $warn") }
+                    )
+                }
                 val memMs = System.currentTimeMillis() - startMem
                 NexaraLogger.log("[$TAG] memory search: ${memoryResults.size} results, time=${memMs}ms, threshold=${effectiveConfig.memoryThreshold}${if (memoryResults.isEmpty()) " ⚠️ 0 results — check: session has vectors? dimensions match? similarity ≥ threshold?" else ""}")
                 results.addAll(memoryResults)
@@ -124,16 +138,18 @@ class MemoryManager(
             }
 
             try {
-                val summaryResults = vectorStore.search(
-                    queryEmbedding = queryEmbedding,
-                    limit = if (effectiveConfig.enableRerank) 10 else 5,
-                    threshold = effectiveConfig.memoryThreshold - 0.05f,
-                    filter = VectorStore.SearchFilter(
-                        sessionId = if (options.isGlobal) null else sessionId,
-                        type = "summary"
-                    ),
-                    onWarning = { warn -> NexaraLogger.log("[$TAG] summary search warning: $warn") }
-                )
+                val summaryResults = queryEmbeddings.flatMap { (_, queryEmbedding) ->
+                    vectorStore.search(
+                        queryEmbedding = queryEmbedding,
+                        limit = if (effectiveConfig.enableRerank) 10 else 5,
+                        threshold = effectiveConfig.memoryThreshold - 0.05f,
+                        filter = VectorStore.SearchFilter(
+                            sessionId = if (options.isGlobal) null else sessionId,
+                            type = "summary"
+                        ),
+                        onWarning = { warn -> NexaraLogger.log("[$TAG] summary search warning: $warn") }
+                    )
+                }
                 NexaraLogger.log("[$TAG] summary search: ${summaryResults.size} results, threshold=${effectiveConfig.memoryThreshold - 0.05f}")
                 results.addAll(summaryResults)
             } catch (e: Exception) {
@@ -145,15 +161,17 @@ class MemoryManager(
             onProgress?.invoke("Searching documents", 50, "Scanning all indexed documents")
             try {
                 val startDocs = System.currentTimeMillis()
-                val docResults = vectorStore.search(
-                    queryEmbedding = queryEmbedding,
-                    limit = effectiveConfig.rerankTopK,
-                    threshold = effectiveConfig.docThreshold,
-                    filter = VectorStore.SearchFilter(
-                        type = "document",
-                        docIds = authorizedDocIds?.toList()
+                val docResults = queryEmbeddings.flatMap { (_, queryEmbedding) ->
+                    vectorStore.search(
+                        queryEmbedding = queryEmbedding,
+                        limit = effectiveConfig.rerankTopK,
+                        threshold = effectiveConfig.docThreshold,
+                        filter = VectorStore.SearchFilter(
+                            type = "document",
+                            docIds = authorizedDocIds?.toList()
+                        )
                     )
-                )
+                }
                 val docsMs = System.currentTimeMillis() - startDocs
                 NexaraLogger.log("[$TAG] document search: ${docResults.size} results, time=${docsMs}ms, threshold=${effectiveConfig.docThreshold}")
                 results.addAll(docResults)
@@ -168,15 +186,17 @@ class MemoryManager(
         onProgress?.invoke("Hybrid fusion", 70, "Merging vector + keyword results")
         val finalResults = if (effectiveConfig.enableHybridSearch) {
             try {
-                val keywordResults = keywordSearcher.search(
-                    query = query,
-                    limit = effectiveConfig.rerankTopK,
-                    options = KeywordSearcher.SearchOptions(
-                        sessionId = if (options.isGlobal) null else sessionId,
-                        docIds = authorizedDocIds,
-                        excludeDocs = !options.enableDocs
+                val keywordResults = queryVariants.flatMap { searchQuery ->
+                    keywordSearcher.search(
+                        query = searchQuery,
+                        limit = effectiveConfig.rerankTopK,
+                        options = KeywordSearcher.SearchOptions(
+                            sessionId = if (options.isGlobal) null else sessionId,
+                            docIds = authorizedDocIds,
+                            excludeDocs = !options.enableDocs
+                        )
                     )
-                )
+                }
                 val fused = rrfFusion(results, keywordResults, effectiveConfig)
                 NexaraLogger.log("[$TAG] hybrid fusion: ${results.size} vector + ${keywordResults.size} keyword → ${fused.size} fused")
                 fused
@@ -362,6 +382,42 @@ class MemoryManager(
         }
 
         return fusedResults.sortedByDescending { it.similarity }
+    }
+
+    private suspend fun buildQueryVariants(query: String, config: RagConfiguration): List<String> {
+        val normalizedCount = config.queryRewriteCount.coerceIn(0, 5)
+        if (!config.enableQueryRewrite || normalizedCount == 0 || queryRewriter == null) {
+            return listOf(query)
+        }
+        return try {
+            val strategy = parseRewriteStrategy(config.queryRewriteStrategy)
+            val result = queryRewriter.rewrite(
+                query = query,
+                count = normalizedCount,
+                strategyOverride = strategy,
+                modelIdOverride = config.queryRewriteModel
+            )
+            result.variants
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .take(normalizedCount + 1)
+                .ifEmpty { listOf(query) }
+                .also { variants ->
+                    NexaraLogger.log("[MemoryManager] query rewrite: enabled strategy=${config.queryRewriteStrategy}, variants=${variants.size}")
+                }
+        } catch (e: Exception) {
+            NexaraLogger.logError("[MemoryManager] query rewrite failed, fallback to original query", e)
+            listOf(query)
+        }
+    }
+
+    private fun parseRewriteStrategy(raw: String): RewriteStrategy {
+        return when (raw.trim().lowercase()) {
+            "hyde" -> RewriteStrategy.HYDE
+            "expansion", "expand" -> RewriteStrategy.EXPANSION
+            else -> RewriteStrategy.MULTI_QUERY
+        }
     }
 
     private fun sanitizeContent(text: String): String {

@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,12 +71,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import kotlinx.coroutines.launch
 
 data class ProviderPreset(
     val name: String,
@@ -123,6 +126,7 @@ fun ProviderFormScreen(
     var apiKey by remember { mutableStateOf("") }
     var apiKeyVisible by remember { mutableStateOf(false) }
     var localProto by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(providerId) {
         if (providerId != null) {
@@ -450,20 +454,23 @@ fun ProviderFormScreen(
                     .clickable(enabled = !isTesting) {
                         isTesting = true
                         testStatus = null
-                        // Simulate network test
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        scope.launch {
+                            val protocolType = if (selectedPreset.name == "Custom") localProto else selectedPreset.protocolType
+                            testStatus = runCatching {
+                                if (protocolType is ProtocolType.Local) {
+                                    true
+                                } else {
+                                    val protocol = ProtocolFactory.create(
+                                        type = protocolType,
+                                        baseUrl = baseUrl,
+                                        apiKey = apiKey,
+                                        model = ""
+                                    )
+                                    protocol.listModels().isNotEmpty()
+                                }
+                            }.getOrDefault(false)
                             isTesting = false
-                            if (baseUrl.isNotBlank() && apiKey.isNotBlank()) {
-                                testStatus = true
-                            } else {
-                                testStatus = false
-                            }
-                            
-                            // Reset test status after 2 seconds
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                testStatus = null
-                            }, 2000)
-                        }, 1500)
+                        }
                     }
                     .padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center

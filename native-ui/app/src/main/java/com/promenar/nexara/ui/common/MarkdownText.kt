@@ -199,13 +199,15 @@ fun MarkdownText(
     smoothingCps: Int = StreamSpeed.BALANCED.cps,
     overrideColor: androidx.compose.ui.graphics.Color? = null,
     onContentChange: ((String) -> Unit)? = null,
-    fontStyle: androidx.compose.ui.text.font.FontStyle? = null
+    fontStyle: androidx.compose.ui.text.font.FontStyle? = null,
+    compactSpacing: Boolean = false
 ) {
     val processed = remember(markdown, isStreaming) {
         val normalized = normalizeLatexDelimiters(markdown)
         val raw = if (isStreaming) sanitizeStreamingMarkdown(normalized) else normalized
         val safeTrimmed = safeTrimIndent(raw)
-        insertCjkSpacing(safeTrimmed)
+        val repaired = repairCompressedMarkdownBoundaries(safeTrimmed)
+        insertCjkSpacing(repaired)
     }
 
     val smoothed = rememberSmoothStreamContent(
@@ -346,7 +348,8 @@ fun MarkdownText(
                                     markdown = markdown,
                                     onContentChange = onContentChange,
                                     textColor = effectiveColor,
-                                    fontStyle = fontStyle
+                                    fontStyle = fontStyle,
+                                    compactSpacing = compactSpacing
                                 )
                             }
                         }
@@ -383,6 +386,77 @@ internal fun safeTrimIndent(text: String): String {
     return text.trimIndent()
 }
 
+internal fun repairCompressedMarkdownBoundaries(text: String): String {
+    if (text.isBlank()) return text
+
+    val protectedMap = mutableMapOf<String, String>()
+    var counter = 0
+
+    fun protect(pattern: Regex, input: String): String =
+        pattern.replace(input) { match ->
+            val key = "\u0000MD${counter++}\u0000"
+            protectedMap[key] = match.value
+            key
+        }
+
+    var processed = text
+    processed = protect(Regex("""`[^`]*`"""), processed)
+    processed = protect(Regex("""\[[^\]]+]\([^)]+\)"""), processed)
+
+    processed = processed.replace(Regex("""[ \t]+---(?=#{1,6}(?!#))""")) {
+        "\n\n---\n\n"
+    }
+
+    processed = processed.replace(Regex("""(?m)(^|[^\S\n])\*\*(?=\d{1,2}\.[^\s])""")) { match ->
+        match.groupValues[1]
+    }
+
+    processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9#]))[ \t]*(#{1,6})(?!#)[ \t]*([^\s#])""")) { match ->
+        val needsBreak = match.range.first > 0 && processed[match.range.first - 1] != '\n'
+        val prefix = if (needsBreak) "\n\n" else ""
+        "$prefix${match.groupValues[2]} ${match.groupValues[3]}"
+    }
+
+    processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9]))[ \t]*(\d{1,2})\.[ \t]*([^\s])""")) { match ->
+        val needsBreak = match.range.first > 0 && processed[match.range.first - 1] != '\n'
+        val prefix = if (needsBreak) "\n" else ""
+        "$prefix${match.groupValues[2]}. ${match.groupValues[3]}"
+    }
+
+    processed = processed.replace(Regex("""(?m)(?<!\n)[ \t]+([-*+])[ \t]+(?=\S)""")) { match ->
+        "\n${match.groupValues[1]} "
+    }
+
+    processed = processed.replace(Regex("""```(javascript|js|typescript|ts|kotlin|java|python|swift|go|rust|json|html|css)(?=(function|fun|class|const|let|var|import|def|public|private|val|return|\{|\[))""")) { match ->
+        "```${match.groupValues[1]}\n"
+    }
+
+    processed = processed.replace(Regex("""(#{1,6} [^|\n]+)(\|)""")) { match ->
+        "${match.groupValues[1]}\n${match.groupValues[2]}"
+    }
+    if (processed.contains(Regex("""\|\|[-:\s]*\|""")) || processed.contains(Regex("""\|\|[^|\n]+\|"""))) {
+        processed = processed.replace("||", "|\n|")
+        processed = processed.lines().joinToString("\n") { line ->
+            if (line.startsWith("|") && line.count { it == '|' } >= 2 && !line.endsWith("|")) {
+                "$line|"
+            } else {
+                line
+            }
+        }
+    }
+
+    processed = processed.replace(Regex("""(?m)(?<![\n<>=-])[ \t]*(>)[ \t]*([^\s])""")) { match ->
+        val prefix = if (match.range.first > 0) "\n" else ""
+        "$prefix> ${match.groupValues[2]}"
+    }
+
+    for ((key, value) in protectedMap) {
+        processed = processed.replace(key, value)
+    }
+
+    return processed
+}
+
 @Composable
 private fun MarkdownSafe(
     content: String,
@@ -391,6 +465,7 @@ private fun MarkdownSafe(
     onContentChange: ((String) -> Unit)?,
     textColor: Color = NexaraColors.OnBackground,
     fontStyle: androidx.compose.ui.text.font.FontStyle? = null,
+    compactSpacing: Boolean = false
 ) {
     var renderError by remember(content) { mutableStateOf(false) }
     // 使用 rememberUpdatedState 避免回调变化导致 components 重建
@@ -548,10 +623,11 @@ private fun MarkdownSafe(
             config = markdownAnnotatorConfig(eolAsNewLine = true)
         ),
         padding = markdownPadding(
-            block = 8.dp,
-            listItemTop = 4.dp,
-            listItemBottom = 4.dp,
-            listIndent = 12.dp,
+            block = if (compactSpacing) 3.dp else 8.dp,
+            list = if (compactSpacing) 0.dp else 8.dp,
+            listItemTop = if (compactSpacing) 1.dp else 4.dp,
+            listItemBottom = if (compactSpacing) 1.dp else 4.dp,
+            listIndent = if (compactSpacing) 8.dp else 12.dp,
         ),
         colors = nexaraMarkdownColors(textColor = textColor),
         typography = nexaraMarkdownTypography(fontSize, fontStyle = fontStyle),
@@ -623,6 +699,13 @@ internal fun sanitizeStreamingMarkdown(text: String): String {
         if (lastIdx >= 0) {
             result = result.substring(0, lastIdx)
         }
+    }
+
+    // Handle streaming bold spans such as "**预" before the closing marker arrives.
+    val emphasisScan = Regex("""```[\s\S]*?```|`[^`]*`""").replace(result, "")
+    val boldMarkerCount = Regex("""(?<!\*)\*\*(?!\*)""").findAll(emphasisScan).count()
+    if (boldMarkerCount % 2 != 0) {
+        result += "**"
     }
 
     return result

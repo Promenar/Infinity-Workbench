@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.repository
 
+import androidx.room.RoomDatabase
+import androidx.room.withTransaction
 import com.promenar.nexara.data.local.db.dao.TaskNodeDao
 import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
 import com.promenar.nexara.data.model.TaskState
@@ -13,7 +15,8 @@ import kotlinx.serialization.decodeFromString
 import org.json.JSONArray
 
 class TaskRepository(
-    private val dao: TaskNodeDao
+    private val dao: TaskNodeDao,
+    private val database: RoomDatabase? = null
 ) : ITaskRepository {
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -69,7 +72,18 @@ class TaskRepository(
     }
 
     override suspend fun updatePlan(sessionId: String, operations: List<PlanPatchOp>): TaskState {
-        val allNodes = dao.getAllActiveBySession(sessionId)
+        if (database != null) {
+            return database.withTransaction {
+                applyPlanOperations(sessionId, operations)
+                getPlan(sessionId)!!
+            }
+        }
+
+        applyPlanOperations(sessionId, operations)
+        return getPlan(sessionId)!!
+    }
+
+    private suspend fun applyPlanOperations(sessionId: String, operations: List<PlanPatchOp>) {
         val now = System.currentTimeMillis()
 
         for (op in operations) {
@@ -125,6 +139,7 @@ class TaskRepository(
                         ?: throw IllegalArgumentException("move_step requires stepId")
                     val node = dao.getById(stepId) ?: continue
                     val newParentId = op.payload?.get("newParentId") ?: op.parentId
+                    validateMoveTarget(sessionId, node, newParentId)
                     val newSortOrder = op.payload?.get("newSortOrder")?.toIntOrNull() ?: node.sortOrder
                     val updated = node.copy(
                         parentId = newParentId,
@@ -151,8 +166,6 @@ class TaskRepository(
                 }
             }
         }
-
-        return getPlan(sessionId)!!
     }
 
     override suspend fun getPlan(sessionId: String): TaskState? {
@@ -304,6 +317,30 @@ class TaskRepository(
         return result
     }
 
+    private suspend fun validateMoveTarget(
+        sessionId: String,
+        node: TaskNodeEntity,
+        newParentId: String?
+    ) {
+        if (node.sessionId != sessionId) {
+            throw IllegalArgumentException("move_step target does not belong to session")
+        }
+        if (newParentId == null) return
+        if (newParentId == node.id) {
+            throw TaskCycleException(node.id, newParentId)
+        }
+
+        val allNodes = dao.getAllActiveBySession(sessionId)
+        val newParent = allNodes.firstOrNull { it.id == newParentId }
+            ?: throw IllegalArgumentException("move_step newParentId not found in active plan: $newParentId")
+        if (newParent.sessionId != sessionId) {
+            throw IllegalArgumentException("move_step newParentId does not belong to session")
+        }
+        if (newParentId in collectDescendants(node.id, allNodes)) {
+            throw TaskCycleException(node.id, newParentId)
+        }
+    }
+
     private fun deriveRootStatus(steps: List<TaskStep>): String {
         if (steps.isEmpty()) return "idle"
         val (done, total) = countLeafProgress(steps)
@@ -331,4 +368,9 @@ class TaskRepository(
         val title: String,
         val childCount: Int
     ) : Exception("步骤 '$title' 是父节点（含 $childCount 个子步骤），其状态由子节点自动派生，不可直接设置。")
+
+    class TaskCycleException(
+        val stepId: String,
+        val newParentId: String
+    ) : Exception("不能把任务步骤移动到自身或自己的子步骤下。")
 }

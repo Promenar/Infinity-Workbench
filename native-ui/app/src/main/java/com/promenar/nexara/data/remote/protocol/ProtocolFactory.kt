@@ -17,8 +17,8 @@ object ProtocolFactory {
         localEngine: LocalInferenceEngine? = null
     ): LlmProtocol {
         return when (type) {
-            ProtocolType.OpenAI_ChatCompletions,
-            ProtocolType.OpenAI_Responses -> OpenAIProtocol(baseUrl, apiKey, model)
+            ProtocolType.OpenAI_ChatCompletions -> OpenAIProtocol(baseUrl, apiKey, model)
+            ProtocolType.OpenAI_Responses -> OpenAIResponsesProtocol(baseUrl, apiKey, model)
             
             ProtocolType.Anthropic_Messages -> AnthropicProtocol(baseUrl, apiKey, model)
             

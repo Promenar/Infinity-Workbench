@@ -66,9 +66,15 @@ class UnifiedLlmClient(
             temperature = finalParams.temperature,
             topP = finalParams.topP,
             maxTokens = finalParams.maxOutputTokens,
+            frequencyPenalty = finalParams.frequencyPenalty,
+            presencePenalty = finalParams.presencePenalty,
+            topK = finalParams.topK,
+            repetitionPenalty = finalParams.repetitionPenalty,
             tools = allTools.ifEmpty { null },
             stream = true,
-            webSearch = finalParams.enableWebSearch || config.enableWebSearch
+            webSearch = finalParams.enableWebSearch || config.enableWebSearch,
+            enableGeminiSearch = finalParams.enableGeminiSearch,
+            streamTimeout = finalParams.streamTimeout
         )
 
         val lifecycleHandler = ToolCallLifecycleHandler(

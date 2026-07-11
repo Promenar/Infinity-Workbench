@@ -36,7 +36,7 @@ class TaskRepositoryTest {
             .build()
         dao = db.taskNodeDao()
         sessionDao = db.sessionDao()
-        repo = TaskRepository(dao)
+        repo = TaskRepository(dao, db)
 
         runBlocking {
             sessionDao.insert(
@@ -335,6 +335,58 @@ class TaskRepositoryTest {
         ))
 
         assertThat(result.steps[0].children[0].note).isEqualTo("已完成阅读")
+    }
+
+    @Test
+    fun `updatePlan rejects moving parent under its descendant`() = runBlocking {
+        repo.initializePlan(sessionId, "测试", buildNestedTree())
+
+        var caught = false
+        try {
+            repo.updatePlan(sessionId, listOf(
+                PlanPatchOp(
+                    action = "move_step",
+                    stepId = "s1",
+                    payload = mapOf("newParentId" to "s1a")
+                )
+            ))
+        } catch (e: TaskRepository.TaskCycleException) {
+            caught = true
+            assertThat(e.stepId).isEqualTo("s1")
+            assertThat(e.newParentId).isEqualTo("s1a")
+        }
+
+        assertThat(caught).isTrue()
+        val plan = repo.getPlan(sessionId)!!
+        assertThat(plan.steps.map { it.id }).containsExactly("s1", "s2").inOrder()
+        assertThat(plan.steps[0].children.map { it.id }).containsExactly("s1a", "s1b").inOrder()
+    }
+
+    @Test
+    fun `updatePlan rolls back earlier operations when later operation is invalid`() = runBlocking {
+        repo.initializePlan(sessionId, "测试", buildNestedTree())
+
+        var caught = false
+        try {
+            repo.updatePlan(sessionId, listOf(
+                PlanPatchOp(
+                    action = "update_title",
+                    stepId = "s1a",
+                    payload = mapOf("title" to "不应保留")
+                ),
+                PlanPatchOp(
+                    action = "move_step",
+                    stepId = "s1",
+                    payload = mapOf("newParentId" to "s1a")
+                )
+            ))
+        } catch (_: TaskRepository.TaskCycleException) {
+            caught = true
+        }
+
+        assertThat(caught).isTrue()
+        val plan = repo.getPlan(sessionId)!!
+        assertThat(plan.steps[0].children[0].title).isEqualTo("阅读文档")
     }
 
     @Test

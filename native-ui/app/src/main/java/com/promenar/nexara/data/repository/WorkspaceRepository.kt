@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class WorkspaceRepository(
     private val dao: FileEntryDao,
@@ -47,7 +50,8 @@ class WorkspaceRepository(
         materializedPath: String
     ): FileEntry = withContext(Dispatchers.IO) {
         val hash = Sha256Utils.hash(content)
-        val physicalFile = File(physicalRootPath, materializedPath)
+        val normalizedPath = normalizeMaterializedPath(materializedPath)
+        val physicalFile = resolveRootedFile(physicalRootPath, normalizedPath)
         physicalFile.parentFile?.mkdirs()
         physicalFile.writeText(content)
         val now = System.currentTimeMillis()
@@ -59,7 +63,7 @@ class WorkspaceRepository(
             sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
             isDirectory = false,
             physicalRootPath = physicalRootPath,
-            materializedPath = materializedPath,
+            materializedPath = normalizedPath,
             createdAt = now,
             updatedAt = now
         )
@@ -74,8 +78,11 @@ class WorkspaceRepository(
         physicalRootPath: String,
         materializedPath: String
     ): FileEntry = withContext(Dispatchers.IO) {
-        val physicalDir = File(physicalRootPath, materializedPath)
-        physicalDir.mkdirs()
+        val normalizedPath = normalizeMaterializedPath(materializedPath)
+        val physicalDir = resolveRootedFile(physicalRootPath, normalizedPath)
+        if (!physicalDir.mkdirs() && !physicalDir.isDirectory) {
+            throw IllegalStateException("无法创建工作区目录: $normalizedPath")
+        }
         val now = System.currentTimeMillis()
         val entry = FileEntry(
             uuid = uuid,
@@ -84,7 +91,7 @@ class WorkspaceRepository(
             hash = "",
             isDirectory = true,
             physicalRootPath = physicalRootPath,
-            materializedPath = materializedPath,
+            materializedPath = normalizedPath,
             createdAt = now,
             updatedAt = now
         )
@@ -99,10 +106,9 @@ class WorkspaceRepository(
         val originalMatPath = entry.materializedPath
         val recycleMatPath = buildRecycleBinPath(originalMatPath)
 
-        val srcFile = File(entry.physicalRootPath, originalMatPath)
-        val dstFile = File(entry.physicalRootPath, recycleMatPath)
-        dstFile.parentFile?.mkdirs()
-        srcFile.renameTo(dstFile)
+        val srcFile = resolveRootedFile(entry.physicalRootPath, originalMatPath)
+        val dstFile = resolveRootedFile(entry.physicalRootPath, recycleMatPath)
+        moveFileOrThrow(srcFile, dstFile)
 
         val recycleBinDirUuid = resolveOrCreateRecycleBinDir(entry)
         val now = System.currentTimeMillis()
@@ -131,10 +137,9 @@ class WorkspaceRepository(
         val originalMatPath = entry.originalMaterializedPath ?: return@withContext
         val originalParentUuid = entry.originalParentUuid
 
-        val srcFile = File(entry.physicalRootPath, entry.materializedPath)
-        val dstFile = File(entry.physicalRootPath, originalMatPath)
-        dstFile.parentFile?.mkdirs()
-        srcFile.renameTo(dstFile)
+        val srcFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
+        val dstFile = resolveRootedFile(entry.physicalRootPath, originalMatPath)
+        moveFileOrThrow(srcFile, dstFile)
 
         val now = System.currentTimeMillis()
         dao.update(
@@ -160,20 +165,14 @@ class WorkspaceRepository(
         if (entry.isDirectory) {
             val subtree = dao.getSubtree(entry.materializedPath)
             subtree.filter { it.uuid != uuid }.forEach { child ->
-                val childFile = File(child.physicalRootPath, child.materializedPath)
-                if (childFile.exists()) {
-                    if (child.isDirectory) childFile.deleteRecursively()
-                    else childFile.delete()
-                }
+                val childFile = resolveRootedFile(child.physicalRootPath, child.materializedPath)
+                deleteIfExistsOrThrow(child, childFile)
                 dao.deleteByUuid(child.uuid)
             }
         }
 
-        val physicalFile = File(entry.physicalRootPath, entry.materializedPath)
-        if (physicalFile.exists()) {
-            if (entry.isDirectory) physicalFile.deleteRecursively()
-            else physicalFile.delete()
-        }
+        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
+        deleteIfExistsOrThrow(entry, physicalFile)
         dao.deleteByUuid(uuid)
     }
 
@@ -191,15 +190,14 @@ class WorkspaceRepository(
 
             val newParent = dao.getByUuid(newParentUuid)
             val newMatPath = if (newParent != null) {
-                "${newParent.materializedPath}/${entry.name}"
+                joinMaterializedPath(newParent.materializedPath, entry.name)
             } else {
                 "/${entry.name}"
             }
 
-            val srcFile = File(entry.physicalRootPath, entry.materializedPath)
-            val dstFile = File(entry.physicalRootPath, newMatPath)
-            dstFile.parentFile?.mkdirs()
-            srcFile.renameTo(dstFile)
+            val srcFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
+            val dstFile = resolveRootedFile(entry.physicalRootPath, newMatPath)
+            moveFileOrThrow(srcFile, dstFile)
 
             val now = System.currentTimeMillis()
             dao.update(
@@ -217,11 +215,6 @@ class WorkspaceRepository(
                     val childRelativePath = child.materializedPath.removePrefix(oldPrefix)
                     val childNewMatPath = "$newMatPath$childRelativePath"
 
-                    val childSrcFile = File(child.physicalRootPath, child.materializedPath)
-                    val childDstFile = File(child.physicalRootPath, childNewMatPath)
-                    childDstFile.parentFile?.mkdirs()
-                    childSrcFile.renameTo(childDstFile)
-
                     dao.update(
                         child.copy(
                             materializedPath = childNewMatPath,
@@ -237,13 +230,15 @@ class WorkspaceRepository(
 
     private suspend fun resolveOrCreateRecycleBinDir(entry: FileEntry): String {
         val recycleMatPath = "/.recycle_bin"
-        val existing = dao.getByMaterializedPath(entry.physicalRootPath + recycleMatPath)
+        val existing = dao.getByRootAndMaterializedPath(entry.physicalRootPath, recycleMatPath)
         if (existing != null) return existing.uuid
 
         val dirUuid = java.util.UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val dir = File(entry.physicalRootPath, recycleMatPath)
-        dir.mkdirs()
+        val dir = resolveRootedFile(entry.physicalRootPath, recycleMatPath)
+        if (!dir.mkdirs() && !dir.isDirectory) {
+            throw IllegalStateException("无法创建回收站目录")
+        }
         dao.insert(
             FileEntry(
                 uuid = dirUuid,
@@ -276,11 +271,6 @@ class WorkspaceRepository(
             val childRelativePath = child.materializedPath.removePrefix(oldPrefix)
             val childNewMatPath = "$newPrefix$childRelativePath"
 
-            val srcFile = File(child.physicalRootPath, child.materializedPath)
-            val dstFile = File(child.physicalRootPath, childNewMatPath)
-            dstFile.parentFile?.mkdirs()
-            srcFile.renameTo(dstFile)
-
             dao.update(
                 child.copy(
                     inRecycleBin = true,
@@ -302,10 +292,6 @@ class WorkspaceRepository(
         val subtree = dao.getSubtree(parentEntry.materializedPath)
         subtree.forEach { child ->
             val original = child.originalMaterializedPath ?: return@forEach
-            val srcFile = File(child.physicalRootPath, child.materializedPath)
-            val dstFile = File(child.physicalRootPath, original)
-            dstFile.parentFile?.mkdirs()
-            srcFile.renameTo(dstFile)
 
             dao.update(
                 child.copy(
@@ -322,5 +308,57 @@ class WorkspaceRepository(
 
     override suspend fun resetAllRAGStatus() = withContext(Dispatchers.IO) {
         dao.resetAllRAGStatus()
+    }
+
+    private fun normalizeMaterializedPath(path: String): String {
+        val trimmed = path.trim()
+        return if (trimmed.startsWith("/")) trimmed else "/$trimmed"
+    }
+
+    private fun resolveRootedFile(rootPath: String, materializedPath: String): File {
+        val root = File(rootPath).canonicalFile
+        val relativePath = normalizeMaterializedPath(materializedPath)
+            .trimStart('/', '\\')
+        val target = File(root, relativePath).canonicalFile
+        if (target != root && !target.path.startsWith(root.path + File.separator)) {
+            throw SecurityException("工作区路径越界: $materializedPath")
+        }
+        return target
+    }
+
+    private fun joinMaterializedPath(parentPath: String, name: String): String {
+        val cleanParent = normalizeMaterializedPath(parentPath).trimEnd('/')
+        return if (cleanParent.isEmpty()) "/$name" else "$cleanParent/$name"
+    }
+
+    private fun moveFileOrThrow(srcFile: File, dstFile: File) {
+        if (!srcFile.exists()) {
+            throw IllegalStateException("源文件不存在: ${srcFile.path}")
+        }
+        if (dstFile.exists()) {
+            throw IllegalStateException("目标路径已存在: ${dstFile.path}")
+        }
+        dstFile.parentFile?.let { parent ->
+            if (!parent.mkdirs() && !parent.isDirectory) {
+                throw IllegalStateException("无法创建目标目录: ${parent.path}")
+            }
+        }
+        try {
+            Files.move(srcFile.toPath(), dstFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(srcFile.toPath(), dstFile.toPath())
+        }
+    }
+
+    private fun deleteIfExistsOrThrow(entry: FileEntry, physicalFile: File) {
+        if (!physicalFile.exists()) return
+        val deleted = if (entry.isDirectory) {
+            physicalFile.deleteRecursively()
+        } else {
+            physicalFile.delete()
+        }
+        if (!deleted) {
+            throw IllegalStateException("无法删除工作区文件: ${entry.materializedPath}")
+        }
     }
 }

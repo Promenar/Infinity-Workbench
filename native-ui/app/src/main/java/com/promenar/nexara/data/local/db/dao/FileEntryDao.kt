@@ -39,6 +39,9 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE materialized_path = :path")
     suspend fun getByMaterializedPath(path: String): FileEntry?
 
+    @Query("SELECT * FROM workspace_files WHERE physical_root_path = :physicalRootPath AND materialized_path = :path LIMIT 1")
+    suspend fun getByRootAndMaterializedPath(physicalRootPath: String, path: String): FileEntry?
+
     @Query("SELECT * FROM workspace_files WHERE name LIKE '%' || :query || '%' AND in_recycle_bin = 0")
     fun searchByName(query: String): Flow<List<FileEntry>>
 

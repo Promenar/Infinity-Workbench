@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,5 +45,22 @@ class ChatLogicTest {
         
         val state = store.state.first()
         assertEquals(16, state.sessions.find { it.id == sessionId }?.options?.fontSize)
+    }
+
+    @Test
+    fun messageCopyOverrideReturnsNullWhenParentHandlerIsAbsent() {
+        val callback = messageCopyOverride(null, "hello")
+
+        assertNull(callback)
+    }
+
+    @Test
+    fun messageCopyOverrideInvokesParentHandlerWhenPresent() {
+        var copied: String? = null
+        val callback = messageCopyOverride({ copied = it }, "hello")
+
+        assertNotNull(callback)
+        callback!!.invoke()
+        assertEquals("hello", copied)
     }
 }

@@ -60,9 +60,16 @@ class ExecJsSkill(
                             it.settings.javaScriptEnabled = true
                             it.settings.allowFileAccess = false
                             it.settings.allowContentAccess = false
+                            it.settings.blockNetworkLoads = true
+                            it.settings.loadsImagesAutomatically = false
+                            it.settings.domStorageEnabled = false
+                            it.removeJavascriptInterface("searchBoxJavaBridge_")
+                            it.removeJavascriptInterface("accessibility")
+                            it.removeJavascriptInterface("accessibilityTraversal")
                         }
                         wv.evaluateJavascript(wrappedCode) { result ->
                             cont.resume(result ?: "null")
+                            wv.destroy()
                         }
                         cont.invokeOnCancellation { wv.destroy() }
                     }

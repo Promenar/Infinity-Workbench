@@ -8,8 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -44,6 +42,7 @@ import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
+import org.json.JSONArray
 import org.json.JSONObject
 
 // ─────────────────────────────────────────────────────────────────
@@ -85,6 +84,37 @@ fun buildPipelineGroups(messages: List<Message>): List<PipelineGroup> {
     return groups
 }
 
+internal fun messageCopyOverride(
+    onCopy: ((String) -> Unit)?,
+    content: String
+): (() -> Unit)? = onCopy?.let { copyHandler ->
+    { copyHandler(content) }
+}
+
+internal fun streamingReasoningPreview(
+    reasoning: String,
+    maxChars: Int = 1200,
+    maxLines: Int = 18
+): String {
+    if (reasoning.length <= maxChars && reasoning.lineSequence().count() <= maxLines) {
+        return reasoning
+    }
+
+    val tailByChars = reasoning.takeLast(maxChars)
+    val lineAligned = tailByChars.substringAfter('\n', tailByChars)
+    val tailLines = lineAligned
+        .lines()
+        .takeLast(maxLines)
+        .joinToString("\n")
+        .trimStart()
+
+    return if (tailLines.isBlank()) {
+        "...\n${reasoning.takeLast(maxChars).trimStart()}"
+    } else {
+        "...\n$tailLines"
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  PipelineBubble — 单轮 AI 对话的线性格局
 // ─────────────────────────────────────────────────────────────────
@@ -113,7 +143,7 @@ fun PipelineBubble(
             message = msg,
             fontSize = fontSize,
             onDelete = { onDelete?.invoke(msg.id) },
-            onCopy = { onCopy?.invoke(msg.content) },
+            onCopy = messageCopyOverride(onCopy, msg.content),
             onRegenerate = { onRegenerate?.invoke(msg.id) }
         )
         return
@@ -164,12 +194,13 @@ fun PipelineBubble(
                             step.content
                         }
                         val lastMsg = group.assistantMessages.lastOrNull()
+                        val copySource = lastMsg?.content ?: displayContent
                         ContentSegment(
                             content = displayContent,
                             isStreaming = isLastInGroup && isGenerating,
                             fontSize = fontSize,
                             onContentChange = onContentChange,
-                            onCopy = { lastMsg?.let { onCopy?.invoke(it.content) } },
+                            onCopy = messageCopyOverride(onCopy, copySource),
                             onRegenerate = { lastMsg?.let { onRegenerate?.invoke(it.id) } },
                             onDelete = { lastMsg?.let { onDelete?.invoke(it.id) } }
                         )
@@ -481,13 +512,17 @@ private fun InlineThinkingRow(
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     ) {
+                        val visibleReasoning = remember(reasoning, isGenerating) {
+                            if (isGenerating) streamingReasoningPreview(reasoning) else reasoning
+                        }
                         MarkdownText(
-                            markdown = reasoning,
+                            markdown = visibleReasoning,
                             isStreaming = isGenerating,
                             fontSize = targetFontSize,
                             showCursor = false,
                             overrideColor = dimmedColor,
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            compactSpacing = true,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
@@ -617,6 +652,28 @@ private fun InlineToolRow(
                     }
                 }
                 resultSteps.forEach { result ->
+                    val toolImages = remember(result.data) { extractToolImageModels(result.data) }
+                    if (toolImages.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            toolImages.take(4).forEach { imageModel ->
+                                coil3.compose.AsyncImage(
+                                    model = imageModel,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 120.dp, max = 220.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(NexaraColors.SurfaceLow),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+                    }
                     if (!result.content.isNullOrBlank()) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Surface(
@@ -663,30 +720,26 @@ private fun ContentSegment(
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
     var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
-    val density = LocalDensity.current
 
     Box {
         Surface(
             color = Color.Transparent,
             modifier = Modifier
                 .fillMaxWidth()
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onLongPress = { offset ->
-                            pressOffset = DpOffset(
-                                x = with(density) { offset.x.toDp() },
-                                y = with(density) { offset.y.toDp() }
-                            )
-                            showMenu = true
-                        }
-                    )
-                }
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        pressOffset = DpOffset.Zero
+                        showMenu = true
+                    }
+                )
         ) {
             MarkdownText(
                 markdown = content,
                 isStreaming = isStreaming,
                 fontSize = fontSize,
                 onContentChange = onContentChange,
+                compactSpacing = true,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
@@ -743,6 +796,32 @@ private fun PipelineConnector(
     }
 }
 
+private fun extractToolImageModels(data: String?): List<String> {
+    if (data.isNullOrBlank()) return emptyList()
+    val raw = data.trim()
+    if (raw.startsWith("data:image/") || raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("/")) {
+        return listOf(raw)
+    }
+
+    fun JSONObject.imageModel(): String? {
+        val localPath = optString("localPath").takeIf { it.isNotBlank() && it != "null" }
+        val url = optString("url").takeIf { it.isNotBlank() && it != "null" }
+        val b64 = optString("b64Json").takeIf { it.isNotBlank() && it != "null" }
+        return localPath ?: url ?: b64?.let { "data:image/png;base64,$it" }
+    }
+
+    return runCatching {
+        if (raw.startsWith("[")) {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                array.optJSONObject(index)?.imageModel()
+            }
+        } else {
+            listOfNotNull(JSONObject(raw).imageModel())
+        }
+    }.getOrDefault(emptyList())
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  UserMessageBubble — 用户消息（从 ChatBubble 抽取）
 // ─────────────────────────────────────────────────────────────────
@@ -760,7 +839,6 @@ fun UserMessageBubble(
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
     var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
-    val density = LocalDensity.current
     val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
     val timestamp = remember(message.createdAt) { timeFormat.format(java.util.Date(message.createdAt)) }
 
@@ -775,17 +853,13 @@ fun UserMessageBubble(
                 border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
                 modifier = Modifier
                     .widthIn(max = 280.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onLongPress = { offset ->
-                                pressOffset = DpOffset(
-                                    x = with(density) { offset.x.toDp() },
-                                    y = with(density) { offset.y.toDp() }
-                                )
-                                showMenu = true
-                            }
-                        )
-                    }
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = {
+                            pressOffset = DpOffset.Zero
+                            showMenu = true
+                        }
+                    )
             ) {
                 Column {
                     if (!message.userImages.isNullOrEmpty()) {

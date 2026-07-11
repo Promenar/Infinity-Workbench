@@ -141,6 +141,41 @@ class CrossProtocolParamAuditTest {
     }
 
     @Test
+    fun `OpenAIResponsesProtocol uses responses endpoint and input payload`() = runTest {
+        var capturedUrl: String? = null
+        var capturedBody: String? = null
+        val mockEngine = MockEngine { request ->
+            capturedUrl = request.url.encodedPath
+            capturedBody = request.body.toByteReadPacket().readText()
+            respond(
+                content = """{"output_text":"pong","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        }
+        val protocol = OpenAIResponsesProtocol(
+            baseUrl = "https://api.openai.com/v1",
+            apiKey = "test-key",
+            model = "gpt-4.1",
+            httpClient = HttpClient(mockEngine)
+        )
+
+        val response = protocol.sendPromptSync(PromptRequest(
+            messages = listOf(ProtocolMessage(role = "user", content = "ping")),
+            model = "gpt-4.1",
+            maxTokens = 100,
+            stream = false
+        ))
+
+        assertThat(capturedUrl).isEqualTo("/v1/responses")
+        val body = json.parseToJsonElement(capturedBody!!).jsonObject
+        assertThat(body["input"]?.jsonArray?.first()?.jsonObject?.get("content")?.jsonPrimitive?.content).isEqualTo("ping")
+        assertThat(body["max_output_tokens"]?.jsonPrimitive?.int).isEqualTo(100)
+        assertThat(response.content).isEqualTo("pong")
+        assertThat(response.usage?.total).isEqualTo(3)
+    }
+
+    @Test
     fun `PromptRequest serialization carries images and all advanced params`() {
         val request = PromptRequest(
             messages = listOf(ProtocolMessage(

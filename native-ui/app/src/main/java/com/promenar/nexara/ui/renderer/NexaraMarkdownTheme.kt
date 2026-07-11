@@ -95,6 +95,21 @@ fun nexaraMarkdownTypography(
             lineHeight = (baseFontSize * 1.6).sp,
             fontStyle = fontStyle,
         ),
+        ordered = NexaraTypography.bodyMedium.copy(
+            fontSize = base,
+            lineHeight = (baseFontSize * 1.6).sp,
+            fontStyle = fontStyle,
+        ),
+        bullet = NexaraTypography.bodyMedium.copy(
+            fontSize = base,
+            lineHeight = (baseFontSize * 1.6).sp,
+            fontStyle = fontStyle,
+        ),
+        list = NexaraTypography.bodyMedium.copy(
+            fontSize = base,
+            lineHeight = (baseFontSize * 1.6).sp,
+            fontStyle = fontStyle,
+        ),
         quote = NexaraTypography.bodyMedium.copy(
             fontSize = base,
             lineHeight = (baseFontSize * 1.5).sp,

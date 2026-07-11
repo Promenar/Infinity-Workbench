@@ -249,7 +249,19 @@ data class RagOptions(
     val activeFolderIds: List<String> = emptyList(),
     val isGlobal: Boolean = false,
     val enableKnowledgeGraph: Boolean? = null,
-    val enableRerank: Boolean = true
+    val enableRerank: Boolean = true,
+    val memoryLimit: Int? = null,
+    val memoryThreshold: Float? = null,
+    val docLimit: Int? = null,
+    val docThreshold: Float? = null,
+    val rerankTopK: Int? = null,
+    val rerankFinalK: Int? = null,
+    val enableQueryRewrite: Boolean? = null,
+    val queryRewriteStrategy: String? = null,
+    val queryRewriteCount: Int? = null,
+    val enableHybridSearch: Boolean? = null,
+    val hybridAlpha: Float? = null,
+    val hybridBM25Boost: Float? = null
 )
 
 @Serializable
