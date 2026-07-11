@@ -31,4 +31,7 @@ secure_env/
 .worktrees/
 worktrees/
 worktree/
+
+# === Superpowers SDD scratch ===
+.superpowers/
 # native-ui/.agent/
