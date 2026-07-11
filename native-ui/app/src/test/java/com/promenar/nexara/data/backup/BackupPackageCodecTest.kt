@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -150,6 +152,182 @@ class BackupPackageCodecTest {
             codec.decode(rawZip(listOf("manifest.json" to Json.encodeToString(oversizedManifest.copy(entries = emptyList())).toByteArray()) + tooMany), null)
         }
     }
+
+    @Test
+    fun `manifest must be first and unknown entry is rejected before its content is read`() {
+        val manifest = manifest(entries = emptyList())
+        val notFirst = rawZip(
+            listOf("database.json" to byteArrayOf(1), "manifest.json" to Json.encodeToString(manifest).toByteArray()),
+        )
+        val smallLimitsCodec = DefaultBackupPackageCodec(
+            limits = BackupLimits(maxTotalBytes = 32, maxEntryBytes = 32, maxEntries = 8, maxManifestBytes = 4096),
+        )
+        val unknownLargeEntry = rawZip(
+            listOf(
+                "manifest.json" to Json.encodeToString(manifest).toByteArray(),
+                "files/not-declared" to ByteArray(1024 * 1024),
+            ),
+        )
+
+        assertThat(assertThrows<BackupValidationException> { codec.decode(notFirst, null) })
+            .hasMessageThat().contains("manifest.json 必须是第一项")
+        assertThat(assertThrows<BackupValidationException> { smallLimitsCodec.decode(unknownLargeEntry, null) })
+            .hasMessageThat().contains("未声明")
+    }
+
+    @Test
+    fun `manifest limit is independent and total limit counts only declared content`() {
+        val limits = BackupLimits(maxTotalBytes = 10, maxEntryBytes = 10, maxEntries = 8, maxManifestBytes = 4096)
+        val limitedCodec: BackupPackageCodec = DefaultBackupPackageCodec(limits = limits)
+        val exact = fixture().copy(database = ByteArray(6), preferences = ByteArray(4), files = emptyMap())
+
+        val exactEncoded = limitedCodec.encode(
+            exact,
+            BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES)),
+        )
+        val emptyEncoded = DefaultBackupPackageCodec(
+            limits = limits.copy(maxTotalBytes = 1),
+        ).encode(exact, BackupOptions(emptySet()))
+
+        assertThat(limitedCodec.decode(exactEncoded, null).database).hasLength(6)
+        assertThat(DefaultBackupPackageCodec(limits = limits.copy(maxTotalBytes = 1)).decode(emptyEncoded, null).manifest)
+            .isNotNull()
+        assertThrows<BackupValidationException> {
+            limitedCodec.encode(exact.copy(preferences = ByteArray(5)), BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES)))
+        }
+
+        val oversized = ByteArray(11)
+        val oversizedManifest = manifest(entries = listOf(entry("database.json", oversized)))
+        assertThrows<BackupValidationException> {
+            limitedCodec.decode(
+                rawZip(listOf("manifest.json" to Json.encodeToString(oversizedManifest).toByteArray(), "database.json" to oversized)),
+                null,
+            )
+        }
+    }
+
+    @Test
+    fun `caller passwords remain unchanged after codec success and failure`() {
+        val encodePassword = "passphrase".toCharArray()
+        val encoded = codec.encode(
+            fixture(),
+            BackupOptions(setOf(BackupContent.SECRETS), includeSecrets = true, password = encodePassword),
+        )
+        assertThat(encodePassword.concatToString()).isEqualTo("passphrase")
+
+        val decodePassword = "passphrase".toCharArray()
+        codec.decode(encoded, decodePassword)
+        assertThat(decodePassword.concatToString()).isEqualTo("passphrase")
+
+        val wrongPassword = "wrong".toCharArray()
+        assertThrows<BackupValidationException> { codec.decode(encoded, wrongPassword) }
+        assertThat(wrongPassword.concatToString()).isEqualTo("wrong")
+
+        val invalidEncodePassword = "still-owned".toCharArray()
+        assertThrows<BackupValidationException> {
+            codec.encode(
+                fixture(),
+                BackupOptions(setOf(BackupContent.DATABASE), includeSecrets = true, password = invalidEncodePassword),
+            )
+        }
+        assertThat(invalidEncodePassword.concatToString()).isEqualTo("still-owned")
+    }
+
+    @Test
+    fun `manifest KDF metadata must exactly match authenticated envelope parameters`() {
+        val crypto = BackupCrypto()
+        val parameters = BackupCrypto.Parameters(ByteArray(16) { 1 }, ByteArray(12) { 2 })
+        val actual = BackupKdfMetadata(
+            BackupCrypto.KDF_ALGORITHM,
+            Base64.getEncoder().encodeToString(parameters.salt),
+            BackupCrypto.PBKDF2_ITERATIONS,
+            BackupCrypto.KEY_SIZE_BITS,
+        )
+        val mismatches = listOf(
+            actual.copy(algorithm = "PBKDF2WithHmacSHA1"),
+            actual.copy(iterations = actual.iterations - 1),
+            actual.copy(keySizeBits = 128),
+            actual.copy(saltBase64 = Base64.getEncoder().encodeToString(ByteArray(16) { 9 })),
+        )
+
+        mismatches.forEach { mismatchedKdf ->
+            val mismatchedManifest = manifest(encrypted = true, kdf = mismatchedKdf)
+            val encrypted = crypto.encrypt(
+                rawZip(listOf("manifest.json" to Json.encodeToString(mismatchedManifest).toByteArray())),
+                "passphrase".toCharArray(),
+                parameters,
+            )
+            assertThat(assertThrows<BackupValidationException> { codec.decode(encrypted, "passphrase".toCharArray()) })
+                .hasMessageThat().contains("envelope")
+        }
+    }
+
+    @Test
+    fun `temporary plaintext arrays are wiped when failure happens after secrets were read`() {
+        val observed = mutableListOf<ByteArray>()
+        val observingCodec = DefaultBackupPackageCodec(
+            temporaryBytesObserver = { _, bytes -> observed += bytes },
+        )
+        val crypto = BackupCrypto()
+        val parameters = BackupCrypto.Parameters(ByteArray(16) { 3 }, ByteArray(12) { 4 })
+        val secretBytes = "[{\"id\":\"provider\",\"valueBase64\":\"${Base64.getEncoder().encodeToString("top-secret".toByteArray())}\"}]".toByteArray()
+        val database = byteArrayOf(7)
+        val packageManifest = manifest(
+            entries = listOf(entry("secrets.json", secretBytes), entry("database.json", database)),
+            encrypted = true,
+            containsSecrets = true,
+            kdf = BackupKdfMetadata(
+                BackupCrypto.KDF_ALGORITHM,
+                Base64.getEncoder().encodeToString(parameters.salt),
+                BackupCrypto.PBKDF2_ITERATIONS,
+                BackupCrypto.KEY_SIZE_BITS,
+            ),
+        )
+        val duplicateZip = replaceAscii(
+            rawZip(
+                listOf(
+                    "manifest.json" to Json.encodeToString(packageManifest).toByteArray(),
+                    "secrets.json" to secretBytes,
+                    "database.json" to database,
+                    "databaso.json" to database,
+                ),
+            ),
+            "databaso.json",
+            "database.json",
+        )
+        val encrypted = crypto.encrypt(duplicateZip, "passphrase".toCharArray(), parameters)
+
+        val error = assertThrows<BackupValidationException> {
+            observingCodec.decode(encrypted, "passphrase".toCharArray())
+        }
+
+        assertThat(error.toString()).doesNotContain("top-secret")
+        assertThat(observed).isNotEmpty()
+        assertThat(observed.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+    }
+
+    private fun manifest(
+        entries: List<BackupManifestEntry> = emptyList(),
+        encrypted: Boolean = false,
+        containsSecrets: Boolean = false,
+        kdf: BackupKdfMetadata? = null,
+    ) = BackupManifest(
+        formatVersion = 1,
+        databaseSchemaVersion = 1,
+        appVersion = "test",
+        createdAt = 1,
+        entries = entries,
+        encrypted = encrypted,
+        containsSecrets = containsSecrets,
+        kdf = kdf,
+    )
+
+    private fun entry(path: String, bytes: ByteArray) = BackupManifestEntry(
+        path = path,
+        sizeBytes = bytes.size.toLong(),
+        sha256 = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) },
+    )
 
     private fun fixture() = BackupSnapshot(
         database = "{\"sessions\":[1]}".toByteArray(),
