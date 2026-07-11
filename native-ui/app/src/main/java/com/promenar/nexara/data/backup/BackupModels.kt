@@ -74,17 +74,5 @@ object BackupPackageLimits {
     internal const val MAX_MANIFEST_BYTES: Long = 4L * 1024 * 1024
 }
 
-data class BackupLimits(
-    val maxTotalBytes: Long = BackupPackageLimits.MAX_TOTAL_BYTES,
-    val maxEntryBytes: Long = BackupPackageLimits.MAX_ENTRY_BYTES,
-    val maxEntries: Int = BackupPackageLimits.MAX_ENTRIES,
-    val maxManifestBytes: Long = BackupPackageLimits.MAX_MANIFEST_BYTES,
-) {
-    init {
-        require(maxTotalBytes >= 0 && maxEntryBytes >= 0 && maxEntries >= 0 && maxManifestBytes > 0)
-        require(maxManifestBytes <= Int.MAX_VALUE)
-    }
-}
-
 class BackupValidationException(message: String, cause: Throwable? = null) :
     IllegalArgumentException(message, cause)

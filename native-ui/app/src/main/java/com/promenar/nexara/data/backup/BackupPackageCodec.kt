@@ -22,11 +22,13 @@ interface BackupPackageCodec {
     fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup
 }
 
-class DefaultBackupPackageCodec(
-    private val crypto: BackupCrypto = BackupCrypto(),
-    private val limits: BackupLimits = BackupLimits(),
-    internal val temporaryBytesObserver: ((String, ByteArray) -> Unit)? = null,
+class DefaultBackupPackageCodec private constructor(
+    private val crypto: BackupCrypto,
+    private val limits: BackupLimits,
+    private val temporaryBytesObserver: ((String, ByteArray) -> Unit)?,
 ) : BackupPackageCodec {
+    constructor() : this(BackupCrypto(), BackupLimits(), null)
+
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
     override fun encode(snapshot: BackupSnapshot, options: BackupOptions): ByteArray {
@@ -67,7 +69,7 @@ class DefaultBackupPackageCodec(
             }
             if (!includeSecrets) return zip
             return try {
-                crypto.encrypt(zip, ownedPassword!!, parameters!!)
+                crypto.encryptWithParameters(zip, ownedPassword!!, parameters!!)
             } finally {
                 wipe("encode-zip", zip)
             }
@@ -391,14 +393,34 @@ class DefaultBackupPackageCodec(
 
     private fun wipe(label: String, bytes: ByteArray) {
         bytes.fill(0)
-        temporaryBytesObserver?.invoke(label, bytes)
+        notifyObserver(label, bytes)
     }
 
     private inner class WipingByteArrayOutputStream(private val label: String) : ByteArrayOutputStream() {
         fun wipe() {
             buf.fill(0)
-            temporaryBytesObserver?.invoke("partial:$label", buf)
+            notifyObserver("partial:$label", buf)
             reset()
+        }
+    }
+
+    private fun notifyObserver(label: String, bytes: ByteArray) {
+        try {
+            temporaryBytesObserver?.invoke(label, bytes)
+        } catch (_: Throwable) {
+            // 测试观察器不是安全控制流的一部分，任何异常都必须隔离。
+        }
+    }
+
+    private data class BackupLimits(
+        val maxTotalBytes: Long = BackupPackageLimits.MAX_TOTAL_BYTES,
+        val maxEntryBytes: Long = BackupPackageLimits.MAX_ENTRY_BYTES,
+        val maxEntries: Int = BackupPackageLimits.MAX_ENTRIES,
+        val maxManifestBytes: Long = BackupPackageLimits.MAX_MANIFEST_BYTES,
+    ) {
+        init {
+            require(maxTotalBytes >= 0 && maxEntryBytes >= 0 && maxEntries >= 0 && maxManifestBytes > 0)
+            require(maxManifestBytes <= Int.MAX_VALUE)
         }
     }
 
@@ -411,5 +433,18 @@ class DefaultBackupPackageCodec(
         private const val FILES_PREFIX = "files/"
         private const val FIXED_ZIP_TIME = 0L
         private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
+
+        @JvmSynthetic
+        internal fun forTest(
+            maxTotalBytes: Long = BackupPackageLimits.MAX_TOTAL_BYTES,
+            maxEntryBytes: Long = BackupPackageLimits.MAX_ENTRY_BYTES,
+            maxEntries: Int = BackupPackageLimits.MAX_ENTRIES,
+            maxManifestBytes: Long = BackupPackageLimits.MAX_MANIFEST_BYTES,
+            temporaryBytesObserver: ((String, ByteArray) -> Unit)? = null,
+        ): DefaultBackupPackageCodec = DefaultBackupPackageCodec(
+            crypto = BackupCrypto(),
+            limits = BackupLimits(maxTotalBytes, maxEntryBytes, maxEntries, maxManifestBytes),
+            temporaryBytesObserver = temporaryBytesObserver,
+        )
     }
 }

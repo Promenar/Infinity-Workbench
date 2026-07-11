@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.nio.ByteBuffer
 import java.security.GeneralSecurityException
+import java.lang.reflect.Modifier
 
 class BackupCryptoTest {
     @Test
@@ -78,6 +79,31 @@ class BackupCryptoTest {
         val wrongPassword = "wrong".toCharArray()
         assertThrows<GeneralSecurityException> { crypto.decrypt(encrypted, wrongPassword) }
         assertThat(wrongPassword.concatToString()).isEqualTo("wrong")
+    }
+
+    @Test
+    fun `production crypto API cannot inject random source nonce or inspect envelope`() {
+        val publicConstructors = BackupCrypto::class.java.declaredConstructors
+            .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
+        val publicMethods = BackupCrypto::class.java.declaredMethods
+            .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
+        val publicEncrypts = publicMethods.filter { it.name == "encrypt" }
+        val nested = BackupCrypto::class.java.declaredClasses.associateBy { it.simpleName }
+
+        assertThat(publicConstructors.map { it.parameterCount }).containsExactly(0)
+        assertThat(publicEncrypts).hasSize(1)
+        assertThat(publicEncrypts.single().parameterCount).isEqualTo(2)
+        assertThat(publicMethods.map { it.name }).doesNotContain("inspectEnvelope")
+        assertThat(BackupCrypto::class.java.declaredMethods
+            .filter { method -> listOf("newParameters", "encryptWithParameters", "encryptForTest", "decryptEnvelope", "inspectEnvelope")
+                .any(method.name::startsWith) }
+            .all { it.isSynthetic }).isTrue()
+        assertThat(nested.getValue("Parameters").declaredConstructors.none {
+            Modifier.isPublic(it.modifiers) && !it.isSynthetic
+        }).isTrue()
+        assertThat(nested.getValue("EnvelopeMetadata").declaredConstructors.none {
+            Modifier.isPublic(it.modifiers) && !it.isSynthetic
+        }).isTrue()
     }
 
     private fun mutateFirst(source: ByteArray, needle: ByteArray): ByteArray {

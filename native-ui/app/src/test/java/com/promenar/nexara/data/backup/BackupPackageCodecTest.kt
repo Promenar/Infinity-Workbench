@@ -11,6 +11,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.Base64
+import java.lang.reflect.Modifier
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -159,8 +160,11 @@ class BackupPackageCodecTest {
         val notFirst = rawZip(
             listOf("database.json" to byteArrayOf(1), "manifest.json" to Json.encodeToString(manifest).toByteArray()),
         )
-        val smallLimitsCodec = DefaultBackupPackageCodec(
-            limits = BackupLimits(maxTotalBytes = 32, maxEntryBytes = 32, maxEntries = 8, maxManifestBytes = 4096),
+        val smallLimitsCodec = DefaultBackupPackageCodec.forTest(
+            maxTotalBytes = 32,
+            maxEntryBytes = 32,
+            maxEntries = 8,
+            maxManifestBytes = 4096,
         )
         val unknownLargeEntry = rawZip(
             listOf(
@@ -177,21 +181,28 @@ class BackupPackageCodecTest {
 
     @Test
     fun `manifest limit is independent and total limit counts only declared content`() {
-        val limits = BackupLimits(maxTotalBytes = 10, maxEntryBytes = 10, maxEntries = 8, maxManifestBytes = 4096)
-        val limitedCodec: BackupPackageCodec = DefaultBackupPackageCodec(limits = limits)
+        val limitedCodec: BackupPackageCodec = DefaultBackupPackageCodec.forTest(
+            maxTotalBytes = 10,
+            maxEntryBytes = 10,
+            maxEntries = 8,
+            maxManifestBytes = 4096,
+        )
         val exact = fixture().copy(database = ByteArray(6), preferences = ByteArray(4), files = emptyMap())
 
         val exactEncoded = limitedCodec.encode(
             exact,
             BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES)),
         )
-        val emptyEncoded = DefaultBackupPackageCodec(
-            limits = limits.copy(maxTotalBytes = 1),
-        ).encode(exact, BackupOptions(emptySet()))
+        val oneByteCodec = DefaultBackupPackageCodec.forTest(
+            maxTotalBytes = 1,
+            maxEntryBytes = 10,
+            maxEntries = 8,
+            maxManifestBytes = 4096,
+        )
+        val emptyEncoded = oneByteCodec.encode(exact, BackupOptions(emptySet()))
 
         assertThat(limitedCodec.decode(exactEncoded, null).database).hasLength(6)
-        assertThat(DefaultBackupPackageCodec(limits = limits.copy(maxTotalBytes = 1)).decode(emptyEncoded, null).manifest)
-            .isNotNull()
+        assertThat(oneByteCodec.decode(emptyEncoded, null).manifest).isNotNull()
         assertThrows<BackupValidationException> {
             limitedCodec.encode(exact.copy(preferences = ByteArray(5)), BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES)))
         }
@@ -236,10 +247,11 @@ class BackupPackageCodecTest {
     @Test
     fun `manifest KDF metadata must exactly match authenticated envelope parameters`() {
         val crypto = BackupCrypto()
-        val parameters = BackupCrypto.Parameters(ByteArray(16) { 1 }, ByteArray(12) { 2 })
+        val salt = ByteArray(16) { 1 }
+        val iv = ByteArray(12) { 2 }
         val actual = BackupKdfMetadata(
             BackupCrypto.KDF_ALGORITHM,
-            Base64.getEncoder().encodeToString(parameters.salt),
+            Base64.getEncoder().encodeToString(salt),
             BackupCrypto.PBKDF2_ITERATIONS,
             BackupCrypto.KEY_SIZE_BITS,
         )
@@ -252,10 +264,11 @@ class BackupPackageCodecTest {
 
         mismatches.forEach { mismatchedKdf ->
             val mismatchedManifest = manifest(encrypted = true, kdf = mismatchedKdf)
-            val encrypted = crypto.encrypt(
+            val encrypted = crypto.encryptForTest(
                 rawZip(listOf("manifest.json" to Json.encodeToString(mismatchedManifest).toByteArray())),
                 "passphrase".toCharArray(),
-                parameters,
+                salt,
+                iv,
             )
             assertThat(assertThrows<BackupValidationException> { codec.decode(encrypted, "passphrase".toCharArray()) })
                 .hasMessageThat().contains("envelope")
@@ -265,11 +278,12 @@ class BackupPackageCodecTest {
     @Test
     fun `temporary plaintext arrays are wiped when failure happens after secrets were read`() {
         val observed = mutableListOf<ByteArray>()
-        val observingCodec = DefaultBackupPackageCodec(
+        val observingCodec = DefaultBackupPackageCodec.forTest(
             temporaryBytesObserver = { _, bytes -> observed += bytes },
         )
         val crypto = BackupCrypto()
-        val parameters = BackupCrypto.Parameters(ByteArray(16) { 3 }, ByteArray(12) { 4 })
+        val salt = ByteArray(16) { 3 }
+        val iv = ByteArray(12) { 4 }
         val secretBytes = "[{\"id\":\"provider\",\"valueBase64\":\"${Base64.getEncoder().encodeToString("top-secret".toByteArray())}\"}]".toByteArray()
         val database = byteArrayOf(7)
         val packageManifest = manifest(
@@ -278,7 +292,7 @@ class BackupPackageCodecTest {
             containsSecrets = true,
             kdf = BackupKdfMetadata(
                 BackupCrypto.KDF_ALGORITHM,
-                Base64.getEncoder().encodeToString(parameters.salt),
+                Base64.getEncoder().encodeToString(salt),
                 BackupCrypto.PBKDF2_ITERATIONS,
                 BackupCrypto.KEY_SIZE_BITS,
             ),
@@ -295,7 +309,7 @@ class BackupPackageCodecTest {
             "databaso.json",
             "database.json",
         )
-        val encrypted = crypto.encrypt(duplicateZip, "passphrase".toCharArray(), parameters)
+        val encrypted = crypto.encryptForTest(duplicateZip, "passphrase".toCharArray(), salt, iv)
 
         val error = assertThrows<BackupValidationException> {
             observingCodec.decode(encrypted, "passphrase".toCharArray())
@@ -303,6 +317,52 @@ class BackupPackageCodecTest {
 
         assertThat(error.toString()).doesNotContain("top-secret")
         assertThat(observed).isNotEmpty()
+        assertThat(observed.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+    }
+
+    @Test
+    fun `production codec API exposes only safe default constructor`() {
+        val publicConstructors = DefaultBackupPackageCodec::class.java.declaredConstructors
+            .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
+        val publicMethods = DefaultBackupPackageCodec::class.java.declaredMethods
+            .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
+        val limitsClass = runCatching {
+            Class.forName("com.promenar.nexara.data.backup.BackupLimits")
+        }.getOrNull()
+
+        assertThat(publicConstructors.map { it.parameterCount }).containsExactly(0)
+        assertThat(publicMethods.map { it.name }).doesNotContain("forTest")
+        assertThat(DefaultBackupPackageCodec.Companion::class.java.declaredMethods
+            .filter { it.name.startsWith("forTest") }
+            .all { it.isSynthetic }).isTrue()
+        assertThat(limitsClass == null || !Modifier.isPublic(limitsClass.modifiers) ||
+            limitsClass.declaredConstructors.none { Modifier.isPublic(it.modifiers) && !it.isSynthetic }).isTrue()
+    }
+
+    @Test
+    fun `throwing observer cannot replace validation failure or stop remaining wipes`() {
+        val observed = mutableListOf<ByteArray>()
+        val codecWithHostileObserver = DefaultBackupPackageCodec.forTest(
+            temporaryBytesObserver = { _, bytes ->
+                observed += bytes
+                throw IllegalStateException("observer-controlled")
+            },
+        )
+        val encoded = codec.encode(
+            fixture(),
+            BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES)),
+        )
+        val tampered = rewriteZip(encoded) { name, bytes ->
+            if (name == "preferences.json") "corrupt".toByteArray() else bytes
+        }
+
+        val error = assertThrows<BackupValidationException> {
+            codecWithHostileObserver.decode(tampered, null)
+        }
+
+        assertThat(error.message).contains("完整性校验失败")
+        assertThat(error.toString()).doesNotContain("observer-controlled")
+        assertThat(observed.size).isAtLeast(2)
         assertThat(observed.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
     }
 
