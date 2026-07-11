@@ -426,6 +426,8 @@ class RoomBackupDataSourceTest {
                 }
                 assertThat(interrupted).isTrue()
 
+                preferences = preferences.reopen()
+                secrets = secrets.reopen()
                 newDataSource().recoverInterruptedRestore()
 
                 val committed = point == RestoreCrashPoint.ROOM_COMMITTED ||
@@ -443,6 +445,60 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `prepared journal without a moved root always rolls back even when database fingerprint matches`() {
+        runBlocking {
+            val backup = emptyWorkspaceBackup()
+            try {
+                newDataSource(RestoreCrashPoint.JOURNAL_PREPARED).restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                // 模拟进程退出。
+            }
+
+            newDataSource().recoverInterruptedRestore()
+
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+            assertThat(Files.list(restoreParent).use { it.count() }).isEqualTo(0)
+        }
+    }
+
+    @Test
+    fun `committed journal rolls forward after ordinary database changes`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            try {
+                newDataSource(RestoreCrashPoint.JOURNAL_COMMITTED).restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                // 模拟进程退出。
+            }
+            db.messageDao().insert(
+                MessageEntity("post-commit", "session-1", "user", "later", createdAt = 200L)
+            )
+
+            newDataSource().recoverInterruptedRestore()
+
+            assertThat(db.messageDao().getById("post-commit")).isNotNull()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+            assertThat(Files.exists(Path.of(db.fileEntryDao().getByUuid("file-1")!!.physicalRootPath))).isTrue()
+        }
+    }
+
+    @Test
+    fun `a restored workspace can be snapshotted and restored again with the same trusted bases`() {
+        runBlocking {
+            seedCompleteGraph()
+            val first = newDataSource().snapshot(CANONICAL_CONTENT)
+            newDataSource().restore(validated(first))
+
+            val second = newDataSource().snapshot(CANONICAL_CONTENT)
+            newDataSource().restore(validated(second))
+
+            assertThat(db.fileEntryDao().getByUuid("file-1")).isNotNull()
+            assertThat(second.files.getValue("file-1").toString(Charsets.UTF_8)).isEqualTo("complete-graph")
+        }
+    }
+
+    @Test
     fun `recovery refuses a symlink-swapped restore root and keeps its journal`() {
         runBlocking {
             seedCompleteGraph()
@@ -455,7 +511,7 @@ class RoomBackupDataSourceTest {
             } catch (_: SimulatedRestoreProcessDeath) {
                 // 模拟进程已退出。
             }
-            val record = FileRestoreJournal(restoreParent).read()!!
+            val record = FileRestoreJournal(restoreParent, TestRestoreJournalAuthenticator).read()!!
             val finalRoot = restoreParent.resolve(record.newRootIdentity)
             finalRoot.toFile().deleteRecursively()
             val outside = Files.createDirectory(sourceBase.parent.resolve("outside-keep"))
@@ -561,10 +617,12 @@ class RoomBackupDataSourceTest {
     private fun newDataSource(
         crashPoint: RestoreCrashPoint? = null,
         snapshotReadHook: (Path) -> Unit = {},
+        preferenceStore: FakePreferenceStore = preferences,
+        secretStore: FakeSecretStore = secrets,
     ): RoomBackupDataSource = RoomBackupDataSource(
         database = db,
-        preferences = preferences,
-        secrets = secrets,
+        preferences = preferenceStore,
+        secrets = secretStore,
         trustedSourceBases = setOf(sourceBase),
         trustedRestoreBase = restoreParent,
         appVersion = "test",
@@ -572,7 +630,15 @@ class RoomBackupDataSourceTest {
             if (point == crashPoint) throw SimulatedRestoreProcessDeath(point)
         },
         snapshotReadHook = snapshotReadHook,
+        journalAuthenticator = TestRestoreJournalAuthenticator,
+        restoreFileOperations = TestRestoreFileOperations,
     )
+
+    private suspend fun emptyWorkspaceBackup(): BackupSnapshot {
+        db.clearAllTables()
+        db.agentDao().insert(AgentEntity("agent-empty", "Empty", createdAt = 1L))
+        return newDataSource().snapshot(CANONICAL_CONTENT)
+    }
 
     private fun validated(snapshot: BackupSnapshot): ValidatedBackup {
         val manifestEntries = buildList {
@@ -604,7 +670,10 @@ class RoomBackupDataSourceTest {
 
     private fun restoredRoot(): Path {
         val roots = Files.list(restoreParent).use { it.toList() }
-        return roots.single().resolve("root-1")
+        val container = roots.single()
+        return Files.list(container).use { children ->
+            children.filter { Files.isDirectory(it) }.toList().single()
+        }
     }
 
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
@@ -740,15 +809,34 @@ class RoomBackupDataSourceTest {
     }
 }
 
-private class FakePreferenceStore(
-    var snapshot: BackupPreferenceSnapshot,
+private class FakePreferenceStore private constructor(
+    private val state: State,
 ) : TransactionalBackupPreferenceStore {
-    var failCommit: Boolean = false
-    var failRollback: Boolean = false
-    var prepareCalls: Int = 0
-    private val prepared = mutableMapOf<String, Pair<BackupPreferenceSnapshot, BackupPreferenceSnapshot>>()
+    constructor(snapshot: BackupPreferenceSnapshot) : this(State(snapshot))
 
-    override suspend fun snapshot(): BackupPreferenceSnapshot = snapshot
+    var snapshot: BackupPreferenceSnapshot
+        get() = state.snapshot
+        set(value) { state.snapshot = value }
+    var failCommit: Boolean
+        get() = state.failCommit
+        set(value) { state.failCommit = value }
+    var failRollback: Boolean
+        get() = state.failRollback
+        set(value) { state.failRollback = value }
+    var prepareCalls: Int = 0
+    private val prepared get() = state.prepared
+
+    fun reopen(): FakePreferenceStore = FakePreferenceStore(
+        state.copy(prepared = state.prepared.toMutableMap())
+    )
+
+    override suspend fun snapshot(maxTotalBytes: Long): BackupPreferenceSnapshot {
+        val encodedSize = kotlinx.serialization.json.Json.encodeToString(
+            BackupPreferenceSnapshot.serializer(), snapshot
+        ).toByteArray().size.toLong()
+        if (encodedSize > maxTotalBytes) throw BackupValidationException("偏好快照超过内存预算")
+        return snapshot
+    }
 
     override suspend fun prepare(txId: String, before: BackupPreferenceSnapshot, after: BackupPreferenceSnapshot) {
         prepareCalls++
@@ -768,15 +856,39 @@ private class FakePreferenceStore(
     override suspend fun finalizePrepared(txId: String) {
         prepared.remove(txId)
     }
+
+    private data class State(
+        var snapshot: BackupPreferenceSnapshot,
+        var failCommit: Boolean = false,
+        var failRollback: Boolean = false,
+        val prepared: MutableMap<String, Pair<BackupPreferenceSnapshot, BackupPreferenceSnapshot>> = mutableMapOf(),
+    )
 }
 
-private class FakeSecretStore : TransactionalBackupSecretStore {
-    private val values = linkedMapOf<SecretId, ByteArray>()
-    private val prepared = linkedMapOf<String, Pair<Map<SecretId, ByteArray>, Map<SecretId, ByteArray>>>()
-    var failWriteAt: Int? = null
-    var failRemove: Boolean = false
-    var failRollback: Boolean = false
-    val receivedPlaintextRefs = mutableListOf<List<ByteArray>>()
+private class FakeSecretStore private constructor(private val state: State) : TransactionalBackupSecretStore {
+    constructor() : this(State())
+    private val values get() = state.values
+    private val prepared get() = state.prepared
+    var failWriteAt: Int?
+        get() = state.failWriteAt
+        set(value) { state.failWriteAt = value }
+    var failRemove: Boolean
+        get() = state.failRemove
+        set(value) { state.failRemove = value }
+    var failRollback: Boolean
+        get() = state.failRollback
+        set(value) { state.failRollback = value }
+    val receivedPlaintextRefs get() = state.receivedPlaintextRefs
+
+    fun reopen(): FakeSecretStore = FakeSecretStore(
+        state.copy(
+            values = state.values.mapValuesTo(linkedMapOf()) { it.value.copyOf() },
+            prepared = state.prepared.mapValuesTo(linkedMapOf()) { (_, pair) ->
+                pair.first.mapValues { it.value.copyOf() } to pair.second.mapValues { it.value.copyOf() }
+            },
+            receivedPlaintextRefs = state.receivedPlaintextRefs.toMutableList(),
+        )
+    )
 
     fun put(id: SecretId, value: ByteArray) {
         values[id] = value.copyOf()
@@ -784,8 +896,14 @@ private class FakeSecretStore : TransactionalBackupSecretStore {
 
     fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
 
-    override suspend fun snapshot(ids: Set<SecretId>): Map<SecretId, ByteArray> =
-        values.filterKeys { it in ids }.mapValues { it.value.copyOf() }
+    override suspend fun snapshot(ids: Set<SecretId>, maxTotalBytes: Long): Map<SecretId, ByteArray> {
+        val result = values.filterKeys { it in ids }.mapValues { it.value.copyOf() }
+        if (result.values.sumOf { it.size.toLong() } > maxTotalBytes) {
+            result.values.forEach { it.fill(0) }
+            throw BackupValidationException("密钥快照超过内存预算")
+        }
+        return result
+    }
 
     override suspend fun prepare(
         txId: String,
@@ -820,5 +938,42 @@ private class FakeSecretStore : TransactionalBackupSecretStore {
             before.values.forEach { it.fill(0) }
             after.values.forEach { it.fill(0) }
         }
+    }
+
+    private data class State(
+        val values: LinkedHashMap<SecretId, ByteArray> = linkedMapOf(),
+        val prepared: LinkedHashMap<String, Pair<Map<SecretId, ByteArray>, Map<SecretId, ByteArray>>> = linkedMapOf(),
+        var failWriteAt: Int? = null,
+        var failRemove: Boolean = false,
+        var failRollback: Boolean = false,
+        val receivedPlaintextRefs: MutableList<List<ByteArray>> = mutableListOf(),
+    )
+}
+
+private object TestRestoreFileOperations : RestoreFileOperations {
+    override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) {
+        val target = relative.fold(root) { current, segment -> current.resolve(segment) }
+        Files.createDirectories(target.parent)
+        java.nio.channels.FileChannel.open(
+            target,
+            java.nio.file.StandardOpenOption.CREATE_NEW,
+            java.nio.file.StandardOpenOption.WRITE,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        ).use { channel ->
+            channel.write(java.nio.ByteBuffer.wrap(bytes))
+            channel.force(true)
+        }
+    }
+
+    override fun deleteTree(
+        parent: Path,
+        childName: String,
+        expectedFileKey: String,
+        marker: Pair<String, String>?,
+    ) {
+        val root = parent.resolve(childName)
+        if (!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
+        if (Files.isSymbolicLink(root)) throw BackupValidationException("测试恢复目录为符号链接")
+        root.toFile().deleteRecursively()
     }
 }

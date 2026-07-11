@@ -20,7 +20,6 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
-import java.io.FileOutputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -38,10 +37,12 @@ class RoomBackupDataSource(
     private val appVersion: String,
     private val crashHook: RestoreCrashHook = RestoreCrashHook {},
     private val snapshotReadHook: (Path) -> Unit = {},
+    journalAuthenticator: RestoreJournalAuthenticator,
+    private val restoreFileOperations: RestoreFileOperations = SecureBackupFileOps,
 ) : BackupDataSource {
     private val trustedSourceBases = trustedSourceBases.map(FileRestoreJournal::requireTrustedDirectory)
     private val restoreParent = FileRestoreJournal.requireTrustedDirectory(trustedRestoreBase)
-    private val journal: RestoreJournal = FileRestoreJournal(restoreParent)
+    private val journal: RestoreJournal = FileRestoreJournal(restoreParent, journalAuthenticator)
     private val json = Json {
         encodeDefaults = true
         explicitNulls = true
@@ -50,22 +51,35 @@ class RoomBackupDataSource(
 
     override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = withContext(Dispatchers.IO) {
         requireCanonicalSnapshotContent(content)
-        val safePreferences = sanitizePreferences(preferences.snapshot())
+        val safePreferences = sanitizePreferences(preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES))
+        val preferenceBytes = json.encodeToString(safePreferences).toByteArray(Charsets.UTF_8)
+        if (preferenceBytes.size.toLong() > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
+            throw BackupValidationException("偏好数据超过内存安全限制")
+        }
         var files: Map<String, ByteArray> = emptyMap()
         var secretSnapshot: Map<SecretId, ByteArray> = emptyMap()
         try {
+            secretSnapshot = if (BackupContent.SECRETS in content) {
+                snapshotSecrets(
+                    safePreferences.providerIds,
+                    BackupPackageLimits.MAX_IN_MEMORY_BYTES - preferenceBytes.size,
+                )
+            } else emptyMap()
+            val secretBytes = secretSnapshot.values.sumOf { it.size.toLong() }
             val databaseAndFiles =
             database.withTransaction {
                 val payload = readDatabasePayload()
-                val result = snapshotFiles(payload)
+                val preliminaryDatabase = json.encodeToString(payload).toByteArray(Charsets.UTF_8)
+                val nonDirectoryCount = payload.rows(FILE_TABLE).count { !it.requiredBoolean("is_directory") }
+                val remaining = BackupPackageLimits.MAX_IN_MEMORY_BYTES - preferenceBytes.size - secretBytes -
+                    preliminaryDatabase.size - nonDirectoryCount * 64L
+                preliminaryDatabase.fill(0)
+                if (remaining < 0) throw BackupValidationException("数据库与偏好已超过内存安全限制")
+                val result = snapshotFiles(payload, remaining)
                 result.payload to result.files
             }
             files = databaseAndFiles.second
-            secretSnapshot = if (BackupContent.SECRETS in content) {
-                snapshotSecrets(safePreferences.providerIds)
-            } else emptyMap()
             val databaseBytes = json.encodeToString(databaseAndFiles.first).toByteArray(Charsets.UTF_8)
-            val preferenceBytes = json.encodeToString(safePreferences).toByteArray(Charsets.UTF_8)
             validateSnapshotLimits(databaseBytes, preferenceBytes, files, secretSnapshot)
             BackupSnapshot(
                 database = databaseBytes,
@@ -96,9 +110,9 @@ class RoomBackupDataSource(
         val transformed = transformPaths(payload, finalRoot)
         validatePayload(transformed, validated.files)
         val expectedFingerprint = fingerprint(transformed)
-        val beforePreferences = preferences.snapshot()
+        val beforePreferences = preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         val eligibleIds = eligibleSecretIds(preferenceSnapshot.providerIds + beforePreferences.providerIds)
-        val beforeSecrets = secrets.snapshot(eligibleIds)
+        val beforeSecrets = secrets.snapshot(eligibleIds, BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         val afterSecrets = validated.secrets.mapValues { it.value.copyOf() }
         var record = RestoreJournalRecord(
             txId = restoreId,
@@ -126,6 +140,7 @@ class RoomBackupDataSource(
                 preferences.commitPrepared(restoreId)
                 secrets.commitPrepared(restoreId)
                 crashHook.hit(RestoreCrashPoint.EXTERNAL_COMMITTED)
+                writeDatabaseCommitMarker(record)
             }
             crashHook.hit(RestoreCrashPoint.ROOM_COMMITTED)
             record = record.copy(phase = RestoreJournalPhase.COMMITTED)
@@ -148,15 +163,12 @@ class RoomBackupDataSource(
     override suspend fun recoverInterruptedRestore() = withContext(Dispatchers.IO + NonCancellable) {
         val record = journal.read() ?: return@withContext
         val failures = mutableListOf<Throwable>()
-        val fingerprintResult = runCatching {
-            fingerprint(readDatabasePayload()) == record.expectedDatabaseFingerprint
+        val databaseCommitted = when (record.phase) {
+            RestoreJournalPhase.COMMITTED -> true
+            RestoreJournalPhase.PREPARED -> {
+                if (record.newRootFileKey == null) false else hasDatabaseCommitMarker(record)
+            }
         }
-        if (fingerprintResult.isFailure) {
-            val composite = BackupValidationException("无法判定中断恢复的数据库状态，journal 已保留")
-            composite.addSuppressed(fingerprintResult.exceptionOrNull()!!)
-            throw composite
-        }
-        val databaseCommitted = fingerprintResult.getOrThrow()
 
         if (databaseCommitted) {
             runCatching { preferences.commitPrepared(record.txId) }.onFailure(failures::add)
@@ -184,30 +196,33 @@ class RoomBackupDataSource(
 
     private fun readDatabasePayload(): DatabaseBackupPayload {
         val sqlite = database.openHelper.writableDatabase
+        val budget = MaterializationBudget(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         val tables = INSERT_ORDER.associateWith { table ->
-            sqlite.query("SELECT * FROM `$table`").use(::cursorRows)
+            sqlite.query("SELECT * FROM `$table`").use { cursor -> cursorRows(cursor, budget) }
         }
         return DatabaseBackupPayload(DATABASE_SCHEMA_VERSION, tables)
     }
 
-    private fun cursorRows(cursor: Cursor): List<JsonObject> = buildList {
+    private fun cursorRows(cursor: Cursor, budget: MaterializationBudget): List<JsonObject> = buildList {
         while (cursor.moveToNext()) {
             add(JsonObject(buildMap {
                 cursor.columnNames.forEachIndexed { index, name ->
-                    put(name, when (cursor.getType(index)) {
+                    val value = when (cursor.getType(index)) {
                         Cursor.FIELD_TYPE_NULL -> JsonNull
                         Cursor.FIELD_TYPE_INTEGER -> JsonPrimitive(cursor.getLong(index))
                         Cursor.FIELD_TYPE_FLOAT -> JsonPrimitive(cursor.getDouble(index))
                         Cursor.FIELD_TYPE_STRING -> JsonPrimitive(cursor.getString(index))
                         Cursor.FIELD_TYPE_BLOB -> throw BackupValidationException("用户源表不允许未声明的 BLOB 字段: $name")
                         else -> throw BackupValidationException("无法备份数据库字段: $name")
-                    })
+                    }
+                    budget.consume(name.toByteArray().size.toLong() + value.toString().toByteArray().size + 32L)
+                    put(name, value)
                 }
             }))
         }
     }
 
-    private fun snapshotFiles(payload: DatabaseBackupPayload): SnapshotFilesResult {
+    private fun snapshotFiles(payload: DatabaseBackupPayload, memoryBudget: Long): SnapshotFilesResult {
         val rows = payload.rows(FILE_TABLE)
         val fileRows = rows.filterNot { it.requiredBoolean("is_directory") }
         if (fileRows.size > BackupPackageLimits.MAX_ENTRIES - 2) throw BackupValidationException("备份文件项过多")
@@ -218,7 +233,9 @@ class RoomBackupDataSource(
                 throw BackupValidationException("文件声明大小超过备份限制")
             }
             declaredTotal = Math.addExact(declaredTotal, size)
-            if (declaredTotal > BackupPackageLimits.MAX_TOTAL_BYTES) throw BackupValidationException("文件声明总大小超过备份限制")
+            if (declaredTotal > BackupPackageLimits.MAX_TOTAL_BYTES || declaredTotal > memoryBudget) {
+                throw BackupValidationException("文件声明总大小超过备份或内存安全限制")
+            }
         }
         val result = linkedMapOf<String, ByteArray>()
         val hashes = linkedMapOf<String, String>()
@@ -363,8 +380,8 @@ class RoomBackupDataSource(
         return real
     }
 
-    private suspend fun snapshotSecrets(providerIds: Set<String>): Map<SecretId, ByteArray> =
-        secrets.snapshot(eligibleSecretIds(providerIds))
+    private suspend fun snapshotSecrets(providerIds: Set<String>, maxTotalBytes: Long): Map<SecretId, ByteArray> =
+        secrets.snapshot(eligibleSecretIds(providerIds), maxTotalBytes)
 
     private fun parseDatabase(bytes: ByteArray): DatabaseBackupPayload {
         if (bytes.isEmpty()) throw BackupValidationException("恢复包缺少 database.json")
@@ -513,6 +530,12 @@ class RoomBackupDataSource(
 
     private fun validateRowsAgainstRoomSchema(payload: DatabaseBackupPayload) {
         val sqlite = database.openHelper.writableDatabase
+        val identityHash = sqlite.query(
+            "SELECT identity_hash FROM room_master_table WHERE id = 42"
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        if (identityHash != ROOM_SCHEMA_V1_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v1")
+        }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
                 buildList {
@@ -594,6 +617,9 @@ class RoomBackupDataSource(
             val logicalRoot = logicalRoot(row)
             rootTokens.getOrPut(logicalRoot) { safeRootToken(logicalRoot) }
         }
+        if (rootTokens.values.size != rootTokens.values.toSet().size) {
+            throw BackupValidationException("workspace root token 冲突")
+        }
         val transformedTables = payload.tables.toMutableMap()
         transformedTables[FILE_TABLE] = payload.rows(FILE_TABLE).map { row ->
             val token = rootTokens.getValue(logicalRoot(row))
@@ -644,8 +670,9 @@ class RoomBackupDataSource(
         }
         Files.createDirectory(stagingRoot)
         val txId = stagingRoot.fileName.toString().removePrefix(".restore-").removeSuffix(".tmp")
-        writeAndSync(stagingRoot.resolve(OWNER_MARKER), txId.toByteArray())
+        restoreFileOperations.writeNew(stagingRoot, listOf(OWNER_MARKER), txId.toByteArray())
         val seen = mutableSetOf<Path>()
+        val pendingFiles = mutableListOf<Pair<List<String>, ByteArray>>()
         transformed.rows(FILE_TABLE).forEach { row ->
             val finalPhysicalRoot = Path.of(row.requiredString("physical_root_path"))
             val rootToken = finalPhysicalRoot.fileName.toString()
@@ -660,17 +687,11 @@ class RoomBackupDataSource(
                 Files.createDirectories(destination)
             } else {
                 Files.createDirectories(destination.parent)
-                writeAndSync(destination, files.getValue(row.requiredString("uuid")))
+                pendingFiles += (listOf(rootToken) + relative) to files.getValue(row.requiredString("uuid"))
             }
         }
+        pendingFiles.forEach { (relative, bytes) -> restoreFileOperations.writeNew(stagingRoot, relative, bytes) }
         syncDirectoryTree(stagingRoot)
-    }
-
-    private fun writeAndSync(path: Path, bytes: ByteArray) {
-        FileOutputStream(path.toFile()).use { output ->
-            output.write(bytes)
-            output.fd.sync()
-        }
     }
 
     private fun syncDirectoryTree(root: Path) {
@@ -761,6 +782,9 @@ class RoomBackupDataSource(
             total = Math.addExact(total, bytes.size.toLong())
             if (total > BackupPackageLimits.MAX_TOTAL_BYTES) throw BackupValidationException("snapshot 超过总大小限制")
         }
+        if (total > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
+            throw BackupValidationException("snapshot 超过 Android 内存安全限制")
+        }
     }
 
     private fun requireCanonicalRestoreContent(validated: ValidatedBackup) {
@@ -772,13 +796,23 @@ class RoomBackupDataSource(
             (("secrets.json" in paths) != validated.manifest.containsSecrets) ||
             (validated.secrets.isNotEmpty() && "secrets.json" !in paths)
         ) throw BackupValidationException("恢复包不是规范全量包")
+        val materializedTotal = validated.database.size.toLong() + validated.preferences.size +
+            validated.files.values.sumOf { it.size.toLong() } + validated.secrets.values.sumOf { it.size.toLong() }
+        if (materializedTotal > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
+            throw BackupValidationException("恢复包超过 Android 内存安全限制")
+        }
     }
 
     private fun requireTrustedSourceRoot(value: String): Path {
         val root = Path.of(value).toAbsolutePath().normalize()
         FileRestoreJournal.rejectSymlinkAncestors(root)
         val real = root.toRealPath(LinkOption.NOFOLLOW_LINKS)
-        if (trustedSourceBases.count { real.parent == it } != 1 || !SAFE_TOKEN.matches(real.fileName.toString())) {
+        val directSource = trustedSourceBases.count { real.parent == it } == 1
+        val restoredContainer = real.parent?.takeIf { container ->
+            container.parent == restoreParent && RESTORE_ROOT.matches(container.fileName.toString()) &&
+                isOwnedRestoreContainer(container)
+        }
+        if ((!directSource && restoredContainer == null) || !SAFE_TOKEN.matches(real.fileName.toString())) {
             throw BackupValidationException("文件根目录不属于受信 app-private base 的直接子目录")
         }
         return real
@@ -803,13 +837,12 @@ class RoomBackupDataSource(
     ).fileKey()?.toString() ?: throw BackupValidationException("文件系统未提供稳定 fileKey")
 
     private fun currentOldRootIdentity(): String = readDatabasePayload().rows(FILE_TABLE)
-        .map { requireTrustedSourceRoot(it.requiredString("physical_root_path")) }
+        .map { managedContainer(requireTrustedSourceRoot(it.requiredString("physical_root_path"))) }
         .distinct()
-        .joinToString(",") { root ->
-            val baseIndex = trustedSourceBases.indexOf(root.parent)
+        .joinToString(",") { managed ->
             val encodedKey = java.util.Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(fileKey(root).toByteArray())
-            "$baseIndex:${root.fileName}:$encodedKey"
+                .encodeToString(fileKey(managed.path).toByteArray())
+            "${managed.baseIndex}:$encodedKey"
         }
 
     private suspend fun finishCommitted(record: RestoreJournalRecord) {
@@ -817,27 +850,89 @@ class RoomBackupDataSource(
         preferences.finalizePrepared(record.txId)
         secrets.finalizePrepared(record.txId)
         deleteOldRoots(record.oldRootIdentity)
+        deleteDatabaseCommitMarker(record.txId)
         journal.delete()
     }
+
+    private fun writeDatabaseCommitMarker(record: RestoreJournalRecord) {
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO audit_logs(id,action,resource_type,status,metadata,created_at) VALUES(?,?,?,?,?,?)",
+            arrayOf<Any?>(
+                databaseMarkerId(record.txId),
+                DATABASE_MARKER_ACTION,
+                "restore_transaction",
+                "committed",
+                record.expectedDatabaseFingerprint,
+                System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    private fun hasDatabaseCommitMarker(record: RestoreJournalRecord): Boolean =
+        database.openHelper.writableDatabase.query(
+            "SELECT metadata FROM audit_logs WHERE id = ? AND action = ? AND status = ?",
+            arrayOf(databaseMarkerId(record.txId), DATABASE_MARKER_ACTION, "committed"),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return@use false
+            if (cursor.getString(0) != record.expectedDatabaseFingerprint) {
+                throw BackupValidationException("Room restore marker 与 journal 不一致")
+            }
+            true
+        }
+
+    private fun deleteDatabaseCommitMarker(txId: String) {
+        database.openHelper.writableDatabase.execSQL(
+            "DELETE FROM audit_logs WHERE id = ? AND action = ?",
+            arrayOf(databaseMarkerId(txId), DATABASE_MARKER_ACTION),
+        )
+    }
+
+    private fun databaseMarkerId(txId: String): String = "__nexara_restore_$txId"
 
     private fun deleteOldRoots(identity: String) {
         if (identity.isBlank()) return
         identity.split(',').forEach { encoded ->
-            val parts = encoded.split(':', limit = 3)
-            if (parts.size != 3) throw BackupValidationException("旧 root identity 无效")
-            val base = trustedSourceBases.getOrNull(parts[0].toIntOrNull() ?: -1)
-                ?: throw BackupValidationException("旧 root base identity 无效")
-            val name = parts[1]
-            if (!SAFE_TOKEN.matches(name)) throw BackupValidationException("旧 root 名称无效")
-            val root = base.resolve(name).normalize()
-            if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return@forEach
-            val expectedKey = String(java.util.Base64.getUrlDecoder().decode(parts[2]))
-            if (Files.isSymbolicLink(root) || fileKey(root) != expectedKey) {
-                throw BackupValidationException("旧 root 身份已变化，拒绝删除")
+            val parts = encoded.split(':', limit = 2)
+            if (parts.size != 2) throw BackupValidationException("旧 root identity 无效")
+            val baseIndex = parts[0].toIntOrNull() ?: throw BackupValidationException("旧 root base identity 无效")
+            val base = if (baseIndex == RESTORE_BASE_INDEX) restoreParent else {
+                trustedSourceBases.getOrNull(baseIndex) ?: throw BackupValidationException("旧 root base identity 无效")
             }
-            deleteRecursivelyNoFollow(root)
+            val expectedKey = try {
+                String(java.util.Base64.getUrlDecoder().decode(parts[1]))
+            } catch (error: IllegalArgumentException) {
+                throw BackupValidationException("旧 root identity 编码无效", error)
+            }
+            val matches = Files.newDirectoryStream(base).use { stream ->
+                stream.filter { child ->
+                    !Files.isSymbolicLink(child) && Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS) &&
+                        runCatching { fileKey(child) == expectedKey }.getOrDefault(false)
+                }.toList()
+            }
+            if (matches.size > 1) throw BackupValidationException("旧 root fileKey 匹配不唯一")
+            val root = matches.singleOrNull() ?: return@forEach
+            val marker = if (baseIndex == RESTORE_BASE_INDEX) {
+                OWNER_MARKER to root.fileName.toString().removePrefix("restore-")
+            } else null
+            restoreFileOperations.deleteTree(base, root.fileName.toString(), expectedKey, marker)
             FileRestoreJournal.syncDirectory(base)
         }
+    }
+
+    private fun managedContainer(root: Path): ManagedContainer {
+        val directIndex = trustedSourceBases.indexOf(root.parent)
+        if (directIndex >= 0) return ManagedContainer(root, directIndex)
+        val container = root.parent
+        if (container?.parent == restoreParent && RESTORE_ROOT.matches(container.fileName.toString()) &&
+            isOwnedRestoreContainer(container)
+        ) return ManagedContainer(container, RESTORE_BASE_INDEX)
+        throw BackupValidationException("无法确定 workspace root 的受信容器")
+    }
+
+    private fun isOwnedRestoreContainer(container: Path): Boolean {
+        val txId = container.fileName.toString().removePrefix("restore-")
+        return runCatching { readSmallNoFollow(container.resolve(OWNER_MARKER), 128).toString(Charsets.UTF_8) == txId }
+            .getOrDefault(false)
     }
 
     private fun deleteOwnedRestoreRoots(record: RestoreJournalRecord) {
@@ -845,7 +940,15 @@ class RoomBackupDataSource(
             .forEach { root ->
                 if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return@forEach
                 requireOwnedRestoreRoot(root, record)
-                deleteRecursivelyNoFollow(root)
+                val expectedKey = if (root.fileName.toString() == record.newRootIdentity) {
+                    record.newRootFileKey ?: fileKey(root)
+                } else fileKey(root)
+                restoreFileOperations.deleteTree(
+                    restoreParent,
+                    root.fileName.toString(),
+                    expectedKey,
+                    OWNER_MARKER to record.txId,
+                )
             }
         FileRestoreJournal.syncDirectory(restoreParent)
     }
@@ -859,10 +962,28 @@ class RoomBackupDataSource(
                 throw BackupValidationException("恢复 root fileKey 已变化")
             }
         }
-        val marker = root.resolve(OWNER_MARKER)
-        if (Files.isSymbolicLink(marker) || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS) ||
-            Files.size(marker) > 128 || Files.readAllBytes(marker).toString(Charsets.UTF_8) != record.txId
-        ) throw BackupValidationException("恢复 root owner marker 无效")
+        val markerValue = readSmallNoFollow(root.resolve(OWNER_MARKER), 128).toString(Charsets.UTF_8)
+        if (markerValue != record.txId) throw BackupValidationException("恢复 root owner marker 无效")
+    }
+
+    private fun readSmallNoFollow(path: Path, limit: Long): ByteArray {
+        java.nio.channels.FileChannel.open(path, java.nio.file.StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
+            val attributes = Files.readAttributes(
+                path, java.nio.file.attribute.BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS
+            )
+            if (!attributes.isRegularFile || attributes.isSymbolicLink || attributes.size() > limit) {
+                throw BackupValidationException("受信元数据文件无效")
+            }
+            val buffer = java.nio.ByteBuffer.allocate((limit + 1).toInt())
+            var total = 0
+            while (true) {
+                val count = channel.read(buffer)
+                if (count < 0) break
+                total += count
+                if (total > limit) throw BackupValidationException("受信元数据文件超过限制")
+            }
+            return buffer.array().copyOf(total)
+        }
     }
 
     private fun logicalRoot(row: JsonObject): String =
@@ -870,8 +991,7 @@ class RoomBackupDataSource(
             ?: "path:${row.requiredString("physical_root_path")}"
 
     private fun safeRootToken(logicalRoot: String): String {
-        if (SAFE_TOKEN.matches(logicalRoot)) return logicalRoot
-        return "root-${sha256(logicalRoot.toByteArray()).take(24)}"
+        return "root-${sha256(logicalRoot.toByteArray())}"
     }
 
     private fun normalizeMaterializedPath(value: String): List<String> {
@@ -880,14 +1000,6 @@ class RoomBackupDataSource(
         val parts = normalizedSeparators.split('/').filter(String::isNotEmpty)
         if (parts.any { it == "." || it == ".." }) throw BackupValidationException("文件路径越界")
         return parts
-    }
-
-    private fun deleteRecursivelyNoFollow(path: Path) {
-        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return
-        if (Files.isSymbolicLink(path)) throw BackupValidationException("拒绝跟随符号链接删除恢复目录")
-        Files.walk(path).use { stream ->
-            stream.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
-        }
     }
 
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
@@ -936,6 +1048,16 @@ class RoomBackupDataSource(
         val primaryKeyOrder: Int,
     )
 
+    private data class ManagedContainer(val path: Path, val baseIndex: Int)
+
+    private class MaterializationBudget(private val limit: Long) {
+        private var used = 0L
+        fun consume(bytes: Long) {
+            used = Math.addExact(used, bytes)
+            if (used > limit) throw BackupValidationException("数据库快照超过 Android 内存安全限制")
+        }
+    }
+
     private class ClosingSeekableByteChannel(
         private val delegate: java.nio.channels.SeekableByteChannel,
         private val directory: java.nio.file.DirectoryStream<Path>,
@@ -950,9 +1072,13 @@ class RoomBackupDataSource(
 
     private companion object {
         const val DATABASE_SCHEMA_VERSION = 1
+        const val ROOM_SCHEMA_V1_IDENTITY_HASH = "c9a3019357d00e515f226e279da18e8d"
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"
+        const val DATABASE_MARKER_ACTION = "__nexara_restore_commit"
         val SAFE_TOKEN = Regex("[A-Za-z0-9._-]{1,128}")
+        val RESTORE_ROOT = Regex("restore-[A-Za-z0-9-]{1,72}")
+        const val RESTORE_BASE_INDEX = -1
 
         // 用户源数据。明确排除 vectors/FTS/KG/JIT/vectorization_tasks/audit_logs/
         // tool_execution_ledger/file_versions，它们均为可重建派生数据、运行态账本或版本缓存。

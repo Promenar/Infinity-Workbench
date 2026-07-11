@@ -9,38 +9,44 @@ class BackupPreferenceInventoryTest {
     @Test
     fun `all literal production preference keys are explicitly allowed or denied`() {
         val sourceRoot = Path.of("app/src/main/java/com/promenar/nexara")
-        val files = listOf(
-            "NexaraApplication.kt",
-            "MainActivity.kt",
-            "data/manager/ProviderManager.kt",
-            "domain/usecase/RagConfigPersistence.kt",
-            "util/LocaleHelper.kt",
-            "ui/chat/ChatViewModel.kt",
-            "ui/chat/manager/WebSearchContextProvider.kt",
-            "ui/chat/manager/skills/WebSearchSkill.kt",
-            "ui/chat/manager/skills/WebSearchTavilySkill.kt",
-            "ui/chat/manager/skills/WebSearchSearXNGSkill.kt",
-            "ui/rag/RagViewModel.kt",
-            "ui/settings/SearchConfigViewModel.kt",
-            "ui/settings/SettingsViewModel.kt",
-            "ui/settings/LocalModelsViewModel.kt",
-            "ui/settings/BackupViewModel.kt",
+        val files = Files.walk(sourceRoot).use { stream ->
+            stream.filter { Files.isRegularFile(it) && it.toString().endsWith(".kt") }.toList()
+        }
+        val preferenceDeclaration = Regex(
+            "(?:val|var)\\s+(\\w+)[^=]*=?[\\s\\S]{0,160}?getSharedPreferences\\(\\s*\"([^\"]+)\""
         )
-        val pattern = Regex("(?:get|put)(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")
-        val namespaces = listOf("provider", "settings", "rag", "search", "ui", "backup")
+        val keyCall = Regex(
+            "(\\w+)(?:\\.edit\\(\\))?\\.(?:(?:get|put)(?:String|StringSet|Boolean|Int|Long|Float)|contains|remove)" +
+                "\\(\\s*\"([^\"]+)\""
+        )
+        val injectedNamespaces = mapOf(
+            "domain/usecase/AgentConfigResolver.kt#globalPrefs" to "nexara_settings",
+            "domain/usecase/RagConfigPersistence.kt#prefs" to "rag_settings",
+        )
 
-        files.forEach { relative ->
-            val text = Files.readAllBytes(sourceRoot.resolve(relative)).toString(Charsets.UTF_8)
-            pattern.findAll(text).map { it.groupValues[1] }.toSet().forEach { key ->
+        files.forEach { file ->
+            val text = Files.readAllBytes(file).toString(Charsets.UTF_8)
+            val receiverNamespaces = preferenceDeclaration.findAll(text).associate {
+                it.groupValues[1] to it.groupValues[2]
+            }
+            keyCall.findAll(text).forEach { match ->
+                val receiver = match.groupValues[1]
+                val key = match.groupValues[2]
                 val representatives = listOf("extra_provider_0", "model_info_sample").map { prefix ->
                     key.replace("\${prefix}", prefix)
                         .replace("\${id}", "sample")
                         .replace("\${modelId}", "sample")
                 }
+                val relative = sourceRoot.relativize(file).toString()
+                val declaredNamespace = receiverNamespaces[receiver]
+                    ?: injectedNamespaces["$relative#$receiver"]
+                    ?: return@forEach
+                val namespaces = setOf(declaredNamespace)
                 val known = representatives.any { representative ->
                     namespaces.any { BackupPreferencePolicy.isKnown(it, representative) }
                 }
-                assertWithMessage("未知生产偏好 key: $relative -> $key").that(known).isTrue()
+                assertWithMessage("未知或 namespace 不匹配的生产偏好 key: $file -> $receiver.$key")
+                    .that(known).isTrue()
             }
         }
     }

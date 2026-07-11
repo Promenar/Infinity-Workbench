@@ -11,6 +11,7 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.util.Base64
 
 @Serializable
 enum class RestoreJournalPhase { PREPARED, COMMITTED }
@@ -25,13 +26,29 @@ data class RestoreJournalRecord(
     val phase: RestoreJournalPhase,
 )
 
+fun interface RestoreJournalAuthenticator {
+    fun sign(payload: ByteArray): ByteArray
+
+    fun verify(payload: ByteArray, signature: ByteArray): Boolean =
+        java.security.MessageDigest.isEqual(sign(payload), signature)
+}
+
+@Serializable
+private data class AuthenticatedRestoreJournal(
+    val payloadBase64: String,
+    val signatureBase64: String,
+)
+
 internal interface RestoreJournal {
     fun read(): RestoreJournalRecord?
     fun write(record: RestoreJournalRecord)
     fun delete()
 }
 
-internal class FileRestoreJournal(base: Path) : RestoreJournal {
+internal class FileRestoreJournal(
+    base: Path,
+    private val authenticator: RestoreJournalAuthenticator,
+) : RestoreJournal {
     private val trustedBase = requireTrustedDirectory(base)
     private val journalPath = trustedBase.resolve(FILE_NAME)
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = false }
@@ -39,14 +56,25 @@ internal class FileRestoreJournal(base: Path) : RestoreJournal {
     override fun read(): RestoreJournalRecord? {
         cleanupTemporaryFiles()
         if (!Files.exists(journalPath, LinkOption.NOFOLLOW_LINKS)) return null
-        if (Files.isSymbolicLink(journalPath) || !Files.isRegularFile(journalPath, LinkOption.NOFOLLOW_LINKS)) {
-            throw BackupValidationException("恢复 journal 不是受信普通文件")
-        }
-        if (Files.size(journalPath) > MAX_JOURNAL_BYTES) throw BackupValidationException("恢复 journal 超过大小限制")
+        val bytes = readBoundedNoFollow(journalPath, MAX_JOURNAL_BYTES, "恢复 journal")
         return try {
-            json.decodeFromString(Files.readAllBytes(journalPath).toString(Charsets.UTF_8))
+            val envelope = json.decodeFromString<AuthenticatedRestoreJournal>(bytes.toString(Charsets.UTF_8))
+            val payload = Base64.getDecoder().decode(envelope.payloadBase64)
+            val signature = Base64.getDecoder().decode(envelope.signatureBase64)
+            try {
+                if (!authenticator.verify(payload, signature)) {
+                    throw BackupValidationException("恢复 journal 认证失败")
+                }
+                json.decodeFromString<RestoreJournalRecord>(payload.toString(Charsets.UTF_8)).also(::validateRecord)
+            } finally {
+                payload.fill(0)
+                signature.fill(0)
+            }
         } catch (error: Exception) {
+            if (error is BackupValidationException) throw error
             throw BackupValidationException("恢复 journal 损坏，拒绝继续恢复", error)
+        } finally {
+            bytes.fill(0)
         }
     }
 
@@ -56,7 +84,14 @@ internal class FileRestoreJournal(base: Path) : RestoreJournal {
         if (Files.exists(temporary, LinkOption.NOFOLLOW_LINKS)) {
             throw BackupValidationException("恢复 journal 临时文件已存在")
         }
-        val bytes = json.encodeToString(record).toByteArray(Charsets.UTF_8)
+        val payload = json.encodeToString(record).toByteArray(Charsets.UTF_8)
+        val signature = authenticator.sign(payload)
+        val bytes = json.encodeToString(
+            AuthenticatedRestoreJournal(
+                payloadBase64 = Base64.getEncoder().encodeToString(payload),
+                signatureBase64 = Base64.getEncoder().encodeToString(signature),
+            )
+        ).toByteArray(Charsets.UTF_8)
         try {
             FileChannel.open(
                 temporary,
@@ -80,6 +115,8 @@ internal class FileRestoreJournal(base: Path) : RestoreJournal {
             syncDirectory(trustedBase)
         } finally {
             bytes.fill(0)
+            payload.fill(0)
+            signature.fill(0)
             Files.deleteIfExists(temporary)
         }
     }
@@ -105,8 +142,48 @@ internal class FileRestoreJournal(base: Path) : RestoreJournal {
     private fun validateRecord(record: RestoreJournalRecord) {
         if (!TX_ID.matches(record.txId) || !ROOT_ID.matches(record.newRootIdentity) ||
             !SHA_256.matches(record.expectedDatabaseFingerprint) || record.oldRootIdentity.length > 4096 ||
+            record.oldRootIdentity.split(',').filter(String::isNotBlank).any { !OLD_ROOT_ID.matches(it) } ||
             record.newRootFileKey?.length.orZero() > 512
         ) throw BackupValidationException("恢复 journal 元数据无效")
+    }
+
+    private fun readBoundedNoFollow(path: Path, limit: Long, label: String): ByteArray {
+        try {
+            FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
+                val before = Files.readAttributes(
+                    path,
+                    java.nio.file.attribute.BasicFileAttributes::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                )
+                if (!before.isRegularFile || before.isSymbolicLink || before.size() > limit) {
+                    throw BackupValidationException("$label 不是受信的有界普通文件")
+                }
+                val output = java.io.ByteArrayOutputStream(before.size().toInt())
+                val buffer = java.nio.ByteBuffer.allocate(4096)
+                var total = 0L
+                while (true) {
+                    buffer.clear()
+                    val count = channel.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > limit) throw BackupValidationException("$label 超过大小限制")
+                    output.write(buffer.array(), 0, count)
+                }
+                val after = Files.readAttributes(
+                    path,
+                    java.nio.file.attribute.BasicFileAttributes::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                )
+                if (before.fileKey() != after.fileKey() || before.size() != after.size() || total != after.size()) {
+                    throw BackupValidationException("$label 读取期间身份发生变化")
+                }
+                return output.toByteArray()
+            }
+        } catch (error: BackupValidationException) {
+            throw error
+        } catch (error: Exception) {
+            throw BackupValidationException("无法安全读取$label", error)
+        }
     }
 
     companion object {
@@ -115,6 +192,7 @@ internal class FileRestoreJournal(base: Path) : RestoreJournal {
         private val TX_ID = Regex("[A-Za-z0-9-]{1,64}")
         private val ROOT_ID = Regex("restore-[A-Za-z0-9-]{1,72}")
         private val SHA_256 = Regex("[0-9a-f]{64}")
+        private val OLD_ROOT_ID = Regex("-?[0-9]+:[A-Za-z0-9_-]{1,768}")
 
         fun requireTrustedDirectory(path: Path): Path {
             val absolute = path.toAbsolutePath().normalize()

@@ -16,6 +16,7 @@ internal object BackupPreferencePolicy {
             "preset_summary_model", "preset_image_model", "preset_embedding_model", "preset_rerank_model",
             "local_models_enabled", "local_auto_load", "last_local_model", "preset_skills_migrated_v3",
             "enabled_skills",
+            "default_model", "default_temperature", "default_top_p", "default_max_tokens",
         ),
         "search" to setOf(
             "web_search_enabled", "search_engine", "searxng_url", "search_depth", "result_count",

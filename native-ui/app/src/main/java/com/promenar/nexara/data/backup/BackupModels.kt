@@ -73,6 +73,8 @@ object BackupPackageLimits {
     const val MAX_ENTRY_BYTES: Long = 128L * 1024 * 1024
     const val MAX_ENTRIES: Int = 10_000
     internal const val MAX_MANIFEST_BYTES: Long = 4L * 1024 * 1024
+    // 当前 API 物化 ByteArray；必须显著低于常见 Android heap，512 MiB 仅是归档协议硬上限。
+    const val MAX_IN_MEMORY_BYTES: Long = 64L * 1024 * 1024
 }
 
 class BackupValidationException(message: String, cause: Throwable? = null) :

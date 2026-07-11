@@ -7,7 +7,7 @@ import com.promenar.nexara.data.security.SecretId
  * prepare/commit/rollback/finalize 都必须幂等。
  */
 interface TransactionalBackupPreferenceStore {
-    suspend fun snapshot(): BackupPreferenceSnapshot
+    suspend fun snapshot(maxTotalBytes: Long): BackupPreferenceSnapshot
     suspend fun prepare(txId: String, before: BackupPreferenceSnapshot, after: BackupPreferenceSnapshot)
     suspend fun commitPrepared(txId: String)
     suspend fun rollbackPrepared(txId: String)
@@ -19,7 +19,7 @@ interface TransactionalBackupPreferenceStore {
  * snapshot 返回调用方拥有的 ByteArray；所有操作必须支持进程重启后按 txId 幂等恢复。
  */
 interface TransactionalBackupSecretStore {
-    suspend fun snapshot(ids: Set<SecretId>): Map<SecretId, ByteArray>
+    suspend fun snapshot(ids: Set<SecretId>, maxTotalBytes: Long): Map<SecretId, ByteArray>
     suspend fun prepare(txId: String, before: Map<SecretId, ByteArray>, after: Map<SecretId, ByteArray>)
     suspend fun commitPrepared(txId: String)
     suspend fun rollbackPrepared(txId: String)
