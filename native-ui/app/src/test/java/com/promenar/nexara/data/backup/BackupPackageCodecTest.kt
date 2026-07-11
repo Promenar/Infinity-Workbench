@@ -163,6 +163,44 @@ class BackupPackageCodecTest {
     }
 
     @Test
+    fun `small compressed package that expands beyond the Android budget fails while streaming`() {
+        val declaredSize = BackupPackageLimits.MAX_IN_MEMORY_BYTES
+        val packageManifest = manifest(
+            entries = listOf(
+                BackupManifestEntry("database.json", declaredSize, "0".repeat(64)),
+            ),
+        )
+        val compressedBomb = rawZip(
+            listOf(
+                "manifest.json" to Json.encodeToString(packageManifest).toByteArray(),
+                "database.json" to ByteArray(declaredSize.toInt() + 1),
+            ),
+        )
+        assertThat(compressedBomb.size).isLessThan(64 * 1024)
+
+        assertThat(assertThrows<BackupValidationException> { codec.decode(compressedBomb, null) })
+            .hasMessageThat().contains("解压后超过")
+    }
+
+    @Test
+    fun `production codec accepts a reasonable payload above four MiB within the sixteen MiB budget`() {
+        val database = ByteArray(5 * 1024 * 1024) { index -> (index % 251).toByte() }
+        val encoded = codec.encode(
+            fixture().copy(database = database, files = emptyMap()),
+            BackupOptions(setOf(BackupContent.DATABASE)),
+        )
+
+        val decoded = codec.decode(encoded, null)
+        try {
+            assertThat(decoded.database).isEqualTo(database)
+        } finally {
+            decoded.close()
+            database.fill(0)
+            encoded.fill(0)
+        }
+    }
+
+    @Test
     fun `manifest must be first and unknown entry is rejected before its content is read`() {
         val manifest = manifest(entries = emptyList())
         val notFirst = rawZip(

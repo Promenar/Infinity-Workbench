@@ -18,7 +18,13 @@ interface RestoreFileOperations {
     fun moveTree(parent: Path, sourceName: String, targetName: String)
     fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry>
     fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>)
-    fun deleteTree(parent: Path, childName: String, expectedFileKey: String, marker: Pair<String, String>? = null)
+    fun deleteTree(
+        parent: Path,
+        childName: String,
+        expectedFileKey: String,
+        marker: Pair<String, String>? = null,
+        expectedInventory: Set<RestoreTreeEntry>? = null,
+    )
 }
 
 data class RestoreTreeEntry(val path: String, val directory: Boolean)
@@ -63,7 +69,13 @@ internal object SecureBackupFileOps : RestoreFileOperations {
         }
     }
 
-    override fun deleteTree(parent: Path, childName: String, expectedFileKey: String, marker: Pair<String, String>?) {
+    override fun deleteTree(
+        parent: Path,
+        childName: String,
+        expectedFileKey: String,
+        marker: Pair<String, String>?,
+        expectedInventory: Set<RestoreTreeEntry>?,
+    ) {
         openSecure(parent).use { parentStream ->
             val childPath = Path.of(childName)
             val child = try {
@@ -79,6 +91,10 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                 ).readAttributes()
                 if (attributes.fileKey()?.toString() != expectedFileKey) {
                     throw BackupValidationException("待删除恢复目录 fileKey 已变化")
+                }
+                expectedInventory?.let { expected ->
+                    val actual = buildSet { collectInventory(it, "", this) }
+                    if (actual != expected) throw BackupValidationException("待删除目录 descriptor inventory 已变化")
                 }
                 marker?.let { (name, expected) ->
                     val bytes = readBounded(it, Path.of(name), 128)

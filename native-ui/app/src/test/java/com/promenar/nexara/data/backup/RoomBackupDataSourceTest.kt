@@ -22,6 +22,9 @@ import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -350,11 +353,15 @@ class RoomBackupDataSourceTest {
             assertThat(opened).isFalse()
 
             val full = newDataSource().snapshot(CANONICAL_CONTENT)
-            val invalidManifest = validated(full).copy(
-                manifest = validated(full).manifest.copy(
-                    entries = validated(full).manifest.entries.filterNot { it.path == "preferences.json" }
-                )
+            val manifestOwner = validated(full)
+            val validManifest = manifestOwner.manifest
+            val invalidManifest = validated(
+                full,
+                manifest = validManifest.copy(
+                    entries = validManifest.entries.filterNot { it.path == "preferences.json" }
+                ),
             )
+            manifestOwner.close()
             assertFails { newDataSource().restore(invalidManifest) }
             assertThat(preferences.prepareCalls).isEqualTo(0)
         }
@@ -369,7 +376,7 @@ class RoomBackupDataSourceTest {
             newDataSource().restore(success)
             assertValidatedBackupWiped(success)
 
-            val failure = validated(snapshot).copy(database = "not-json".toByteArray())
+            val failure = validated(snapshot, database = "not-json".toByteArray())
             assertFails { newDataSource().restore(failure) }
             assertValidatedBackupWiped(failure)
         }
@@ -386,8 +393,8 @@ class RoomBackupDataSourceTest {
             val originalAgent = db.agentDao().getAll()
 
             val failures = listOf(
-                validated(source).copy(database = "not-json".toByteArray()),
-                validated(source).copy(files = source.files + ("file-1" to byteArrayOf(9))),
+                validated(source, database = "not-json".toByteArray()),
+                validated(source, files = source.files + ("file-1" to byteArrayOf(9))),
                 mutateRows(source, "agents") { rows -> JsonArray(rows + rows.first()) },
                 mutateRows(source, "messages") { rows ->
                     JsonArray(rows.map { row ->
@@ -559,6 +566,31 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `descriptor delete rejects a sentinel added after the old-root precheck and retains journal`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            try {
+                newDataSource(RestoreCrashPoint.JOURNAL_COMMITTED).restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                // 模拟进程退出。
+            }
+            val fileOps = TestRestoreFileOperations().apply {
+                beforeDelete = { root ->
+                    if (root.startsWith(sourceBase)) Files.write(root.resolve("late-sentinel"), byteArrayOf(1))
+                }
+            }
+
+            assertFails { newDataSource(fileOperations = fileOps).recoverInterruptedRestore() }
+
+            assertThat(Files.newDirectoryStream(sourceBase).use { roots ->
+                roots.any { Files.exists(it.resolve("late-sentinel")) }
+            }).isTrue()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
+        }
+    }
+
+    @Test
     fun `a restored workspace can be snapshotted and restored again with the same trusted bases`() {
         runBlocking {
             seedCompleteGraph()
@@ -570,6 +602,22 @@ class RoomBackupDataSourceTest {
 
             assertThat(db.fileEntryDao().getByUuid("file-1")).isNotNull()
             assertThat(second.files.getValue("file-1").toString(Charsets.UTF_8)).isEqualTo("complete-graph")
+        }
+    }
+
+    @Test
+    fun `one datasource serializes concurrent restore calls and leaves no journal`() {
+        runBlocking {
+            seedCompleteGraph()
+            val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+            val dataSource = newDataSource()
+
+            listOf(validated(snapshot), validated(snapshot)).map { backup ->
+                async(Dispatchers.Default) { dataSource.restore(backup) }
+            }.awaitAll()
+
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+            assertThat(db.agentDao().getAll().map { it.id }).containsExactly("agent-1")
         }
     }
 
@@ -621,15 +669,46 @@ class RoomBackupDataSourceTest {
 
             assertFails { newDataSource(fileOperations = fileOps).recoverInterruptedRestore() }
 
-            val finalRoot = restoreParent.resolve(record.newRootIdentity)
-            assertThat(Files.exists(finalRoot.resolve(".restore-owner"))).isTrue()
+            val cleanupRoot = Files.list(restoreParent).use { entries ->
+                entries.filter { it.fileName.toString().startsWith(".restore-delete-${record.txId}-new") }
+                    .findFirst().orElseThrow()
+            }
+            assertThat(Files.exists(cleanupRoot.resolve(".restore-owner"))).isTrue()
             assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
 
             preferences = preferences.reopen()
             secrets = secrets.reopen()
             fileOps.clearDeleteFailure()
             newDataSource(fileOperations = fileOps).recoverInterruptedRestore()
-            assertThat(Files.exists(finalRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse()
+            assertThat(Files.exists(cleanupRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        }
+    }
+
+    @Test
+    fun `cleanup retries an empty markerless tombstone after final directory deletion fails`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            db.clearAllTables()
+            db.agentDao().insert(AgentEntity("sentinel", "old", createdAt = 1L))
+            val fileOps = TestRestoreFileOperations().apply { failFinalRmdirOnce = true }
+            try {
+                newDataSource(RestoreCrashPoint.FILES_MOVED, fileOperations = fileOps).restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                // 模拟进程退出。
+            }
+
+            assertFails { newDataSource(fileOperations = fileOps).recoverInterruptedRestore() }
+            val record = FileRestoreJournal(restoreParent, TestRestoreJournalAuthenticator).read()!!
+            val tombstone = restoreParent.resolve(".restore-delete-${record.txId}-new")
+            assertThat(Files.isDirectory(tombstone)).isTrue()
+            assertThat(Files.list(tombstone).use { it.count() }).isEqualTo(0)
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
+
+            newDataSource(fileOperations = fileOps).recoverInterruptedRestore()
+
+            assertThat(Files.exists(tombstone)).isFalse()
             assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
         }
     }
@@ -771,7 +850,14 @@ class RoomBackupDataSourceTest {
         return newDataSource().snapshot(CANONICAL_CONTENT)
     }
 
-    private fun validated(snapshot: BackupSnapshot): ValidatedBackup {
+    private fun validated(
+        snapshot: BackupSnapshot,
+        manifest: BackupManifest? = null,
+        database: ByteArray = snapshot.database,
+        preferencesBytes: ByteArray = snapshot.preferences,
+        files: Map<String, ByteArray> = snapshot.files,
+        secrets: Map<SecretId, ByteArray> = snapshot.secrets,
+    ): ValidatedBackup {
         val manifestEntries = buildList {
             add(BackupManifestEntry("database.json", snapshot.database.size.toLong(), sha256(snapshot.database)))
             add(BackupManifestEntry("preferences.json", snapshot.preferences.size.toLong(), sha256(snapshot.preferences)))
@@ -783,7 +869,7 @@ class RoomBackupDataSourceTest {
             }
         }
         return ValidatedBackup(
-        manifest = BackupManifest(
+        manifest = manifest ?: BackupManifest(
             formatVersion = 1,
             databaseSchemaVersion = snapshot.databaseSchemaVersion,
             appVersion = snapshot.appVersion,
@@ -792,10 +878,10 @@ class RoomBackupDataSourceTest {
             encrypted = false,
             containsSecrets = snapshot.secrets.isNotEmpty(),
         ),
-        database = snapshot.database.copyOf(),
-        preferences = snapshot.preferences.copyOf(),
-        files = snapshot.files.mapValues { it.value.copyOf() },
-        secrets = snapshot.secrets.mapValues { it.value.copyOf() },
+        database = database.copyOf(),
+        preferences = preferencesBytes.copyOf(),
+        files = files.mapValues { it.value.copyOf() },
+        secrets = secrets.mapValues { it.value.copyOf() },
     )
     }
 
@@ -915,7 +1001,7 @@ class RoomBackupDataSourceTest {
         val tables = root.getValue("tables").jsonObject
         val changedTables = JsonObject(tables + (table to transform(tables.getValue(table).jsonArray)))
         val changedRoot = JsonObject(root + ("tables" to changedTables))
-        return validated(snapshot).copy(database = changedRoot.toString().toByteArray())
+        return validated(snapshot, database = changedRoot.toString().toByteArray())
     }
 
     private suspend fun assertFails(block: suspend () -> Unit) {
@@ -1089,6 +1175,8 @@ private class FakeSecretStore private constructor(private val state: State) : Tr
 
 private class TestRestoreFileOperations : RestoreFileOperations {
     var failDeleteAt: Int? = null
+    var failFinalRmdirOnce: Boolean = false
+    var beforeDelete: ((Path) -> Unit)? = null
     private var deleteCount = 0
 
     fun clearDeleteFailure() {
@@ -1123,10 +1211,28 @@ private class TestRestoreFileOperations : RestoreFileOperations {
         childName: String,
         expectedFileKey: String,
         marker: Pair<String, String>?,
+        expectedInventory: Set<RestoreTreeEntry>?,
     ) {
         val root = parent.resolve(childName)
         if (!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
         if (Files.isSymbolicLink(root)) throw BackupValidationException("测试恢复目录为符号链接")
+        beforeDelete?.also { beforeDelete = null }?.invoke(root)
+        val actualKey = Files.readAttributes(
+            root,
+            java.nio.file.attribute.BasicFileAttributes::class.java,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()?.toString() ?: throw BackupValidationException("测试恢复目录缺少 fileKey")
+        if (actualKey != expectedFileKey) throw BackupValidationException("测试恢复目录 fileKey 已变化")
+        expectedInventory?.let { expected ->
+            if (inventory(parent, childName) != expected) {
+                throw BackupValidationException("测试待删除目录 descriptor inventory 已变化")
+            }
+        }
+        marker?.let { (name, value) ->
+            if (Files.readAllBytes(root.resolve(name)).toString(Charsets.UTF_8) != value) {
+                throw BackupValidationException("测试恢复目录 owner marker 无效")
+            }
+        }
         val markerName = marker?.first
         Files.walk(root).use { stream ->
             val paths = stream.sorted(Comparator.reverseOrder()).toList()
@@ -1134,6 +1240,10 @@ private class TestRestoreFileOperations : RestoreFileOperations {
                 paths.filter { it.fileName?.toString() == markerName } + listOf(root)
             ordered.forEach { path ->
                 if (failDeleteAt == deleteCount++) throw java.io.IOException("injected deep delete failure")
+                if (path == root && failFinalRmdirOnce) {
+                    failFinalRmdirOnce = false
+                    throw java.io.IOException("injected final rmdir failure")
+                }
                 Files.deleteIfExists(path)
             }
         }
@@ -1185,8 +1295,10 @@ private class SwappingRestoreFileOperations(
     override fun moveTree(parent: Path, sourceName: String, targetName: String) =
         delegate.moveTree(parent, sourceName, targetName)
     override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> = delegate.inventory(parent, childName)
-    override fun deleteTree(parent: Path, childName: String, expectedFileKey: String, marker: Pair<String, String>?) =
-        delegate.deleteTree(parent, childName, expectedFileKey, marker)
+    override fun deleteTree(
+        parent: Path, childName: String, expectedFileKey: String, marker: Pair<String, String>?,
+        expectedInventory: Set<RestoreTreeEntry>?,
+    ) = delegate.deleteTree(parent, childName, expectedFileKey, marker, expectedInventory)
 
     override fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>) {
         if (!swapped) {

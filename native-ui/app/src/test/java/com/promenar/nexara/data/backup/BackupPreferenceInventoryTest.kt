@@ -42,12 +42,20 @@ class BackupPreferenceInventoryTest {
         )
         val editorChain = Regex("(\\w+)\\s*\\.edit\\(\\)([\\s\\S]{0,2000}?)\\.apply\\(\\)")
         val editorPut = Regex("\\.put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")
+        val editorScope = Regex("(\\w+)\\s*\\.edit\\(\\)\\s*\\.apply\\s*\\{([\\s\\S]{0,2000}?)\\}")
+        val scopePut = Regex("(?:^|[;\\s])put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")
+        val directCall = Regex(
+            "getSharedPreferences\\(\\s*\"([^\"]+)\"[^)]*\\)\\s*(?:\\.edit\\(\\))?\\s*\\." +
+                "(?:(?:get|put)(?:String|StringSet|Boolean|Int|Long|Float)|contains|remove)\\(\\s*\"([^\"]+)\""
+        )
 
         files.forEach { file ->
             val text = Files.readAllBytes(file).toString(Charsets.UTF_8)
             val receiverNamespaces = preferenceDeclaration.findAll(text).associate {
                 it.groupValues[1] to it.groupValues[2]
             }
+            val typedPreferenceReceivers = Regex("(\\w+)\\s*:\\s*(?:android\\.content\\.)?SharedPreferences\\b")
+                .findAll(text).map { it.groupValues[1] }.toSet()
             keyCall.findAll(text).forEach { match ->
                 val receiver = match.groupValues[1]
                 val key = match.groupValues[2]
@@ -59,8 +67,10 @@ class BackupPreferenceInventoryTest {
                 val relative = sourceRoot.relativize(file).toString()
                 val declaredNamespace = receiverNamespaces[receiver] ?: injectedNamespaces["$relative#$receiver"]
                 if (declaredNamespace == null) {
-                    assertWithMessage("疑似 SharedPreferences receiver 未解析，必须显式登记: $file -> $receiver")
-                        .that(receiver.contains("pref", ignoreCase = true)).isFalse()
+                    if (receiver.contains("pref", ignoreCase = true) || receiver in typedPreferenceReceivers) {
+                        assertWithMessage("疑似 SharedPreferences receiver 未解析，必须显式登记: $file -> $receiver")
+                            .fail()
+                    }
                     return@forEach
                 }
                 val namespaces = setOf(declaredNamespace)
@@ -87,6 +97,21 @@ class BackupPreferenceInventoryTest {
                         .that(representatives.any { BackupPreferencePolicy.isKnown(namespace!!, it) }).isTrue()
                 }
             }
+            editorScope.findAll(text).forEach { scope ->
+                val receiver = scope.groupValues[1]
+                val relative = sourceRoot.relativize(file).toString()
+                val namespace = receiverNamespaces[receiver] ?: injectedNamespaces["$relative#$receiver"]
+                assertWithMessage("edit().apply scope receiver 未解析，必须显式登记: $file -> $receiver")
+                    .that(namespace).isNotNull()
+                scopePut.findAll(scope.groupValues[2]).forEach { put ->
+                    assertWithMessage("未知 edit().apply scope 偏好 key: $file -> $receiver.${put.groupValues[1]}")
+                        .that(BackupPreferencePolicy.isKnown(namespace!!, put.groupValues[1])).isTrue()
+                }
+            }
+            directCall.findAll(text).forEach { call ->
+                assertWithMessage("未知直接 SharedPreferences 偏好 key: $file -> ${call.groupValues[1]}.${call.groupValues[2]}")
+                    .that(BackupPreferencePolicy.isKnown(call.groupValues[1], call.groupValues[2])).isTrue()
+            }
         }
     }
 
@@ -101,6 +126,12 @@ class BackupPreferenceInventoryTest {
         )
         val editorChain = Regex("(\\w+)\\s*\\.edit\\(\\)([\\s\\S]{0,2000}?)\\.apply\\(\\)")
         val editorPut = Regex("\\.put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")
+        val editorScope = Regex("(\\w+)\\s*\\.edit\\(\\)\\s*\\.apply\\s*\\{([\\s\\S]{0,2000}?)\\}")
+        val scopePut = Regex("(?:^|[;\\s])put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")
+        val directCall = Regex(
+            "getSharedPreferences\\(\\s*\"([^\"]+)\"[^)]*\\)\\s*(?:\\.edit\\(\\))?\\s*\\." +
+                "(?:(?:get|put)(?:String|StringSet|Boolean|Int|Long|Float)|contains|remove)\\(\\s*\"([^\"]+)\""
+        )
         val fixture = """
             val prefs = context.getSharedPreferences("nexara_settings", 0)
             prefs.edit()
@@ -108,6 +139,10 @@ class BackupPreferenceInventoryTest {
                 .putBoolean("haptic_enabled", true)
                 .apply()
             injectedPrefs.getString("default_model", null)
+            prefs.edit().apply {
+                putString("theme_mode", "dark")
+            }
+            context.getSharedPreferences("nexara_settings", 0).getBoolean("haptic_enabled", true)
         """.trimIndent()
 
         assertWithMessage("应解析声明 receiver").that(declaration.find(fixture)?.groupValues?.get(1)).isEqualTo("prefs")
@@ -116,9 +151,18 @@ class BackupPreferenceInventoryTest {
             editorChain.findAll(fixture).forEach { chain ->
                 editorPut.findAll(chain.groupValues[2]).forEach { add(chain.groupValues[1] to it.groupValues[1]) }
             }
+            editorScope.findAll(fixture).forEach { scope ->
+                scopePut.findAll(scope.groupValues[2]).forEach { add(scope.groupValues[1] to it.groupValues[1]) }
+            }
         }
         assertWithMessage("应覆盖跨行 edit/apply 链").that(found)
-            .containsAtLeast("prefs" to "language", "prefs" to "haptic_enabled", "injectedPrefs" to "default_model")
+            .containsAtLeast(
+                "prefs" to "language", "prefs" to "haptic_enabled", "injectedPrefs" to "default_model",
+                "prefs" to "theme_mode",
+            )
+        assertWithMessage("应覆盖直接 getSharedPreferences 调用")
+            .that(directCall.find(fixture)?.groupValues?.drop(1))
+            .isEqualTo(listOf("nexara_settings", "haptic_enabled"))
         assertWithMessage("注入 receiver 必须由显式 namespace hint 解析")
             .that(mapOf<String, String>()["fixture#injectedPrefs"]).isNull()
     }

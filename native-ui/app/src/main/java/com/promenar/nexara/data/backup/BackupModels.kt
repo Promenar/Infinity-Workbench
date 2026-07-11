@@ -27,7 +27,7 @@ data class BackupSnapshot(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
-data class ValidatedBackup(
+class ValidatedBackup(
     val manifest: BackupManifest,
     val database: ByteArray = ByteArray(0),
     val preferences: ByteArray = ByteArray(0),
@@ -88,9 +88,9 @@ object BackupPackageLimits {
     const val MAX_ENTRY_BYTES: Long = 128L * 1024 * 1024
     const val MAX_ENTRIES: Int = 10_000
     internal const val MAX_MANIFEST_BYTES: Long = 4L * 1024 * 1024
-    // 当前 API 同时持有 JSON AST/String/UTF-8/文件/codec 副本；按最坏约 8 倍放大将峰值压在 32 MiB 内。
-    // 512 MiB 只保留为归档协议上限，不代表 Android 物化 datasource 可接受该体积。
-    const val MAX_IN_MEMORY_BYTES: Long = 4L * 1024 * 1024
+    // ByteArray 初版按 16 MiB 限制内容物化；已考虑加密输入、解密 ZIP、JSON/文件结果等多副本峰值。
+    // 512 MiB 只保留为归档协议上限；未来支持更大包时必须升级为流式 spool，不能放宽此常量硬扛。
+    const val MAX_IN_MEMORY_BYTES: Long = 16L * 1024 * 1024
 }
 
 class BackupValidationException(message: String, cause: Throwable? = null) :

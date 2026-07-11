@@ -419,9 +419,10 @@ class DefaultBackupPackageCodec private constructor(
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     private fun maxInputBytes(): Long {
-        val overhead = 16L * 1024 * 1024
-        return limits.maxTotalBytes.coerceAtMost(Long.MAX_VALUE - limits.maxManifestBytes - overhead) +
-            limits.maxManifestBytes + overhead
+        // ZIP/envelope 本身也会在解码期间常驻；只给固定协议头与压缩元数据留少量余量，
+        // 避免“压缩输入 + 解密副本 + 解压内容”绕过统一 Android 物化预算。
+        val overhead = limits.maxManifestBytes.coerceAtMost(Long.MAX_VALUE - 64L * 1024) + 64L * 1024
+        return limits.maxTotalBytes.coerceAtMost(Long.MAX_VALUE - overhead) + overhead
     }
 
     private fun wipe(label: String, bytes: ByteArray) {
@@ -475,8 +476,8 @@ class DefaultBackupPackageCodec private constructor(
     }
 
     private data class BackupLimits(
-        val maxTotalBytes: Long = BackupPackageLimits.MAX_TOTAL_BYTES,
-        val maxEntryBytes: Long = BackupPackageLimits.MAX_ENTRY_BYTES,
+        val maxTotalBytes: Long = BackupPackageLimits.MAX_IN_MEMORY_BYTES,
+        val maxEntryBytes: Long = BackupPackageLimits.MAX_IN_MEMORY_BYTES,
         val maxEntries: Int = BackupPackageLimits.MAX_ENTRIES,
         val maxManifestBytes: Long = BackupPackageLimits.MAX_MANIFEST_BYTES,
     ) {

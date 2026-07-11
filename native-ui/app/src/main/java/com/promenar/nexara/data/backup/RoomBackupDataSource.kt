@@ -9,6 +9,8 @@ import com.promenar.nexara.data.security.SecretId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -48,6 +50,7 @@ class RoomBackupDataSource(
         explicitNulls = true
         ignoreUnknownKeys = false
     }
+    private val restoreMutex = Mutex()
 
     override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = withContext(Dispatchers.IO) {
         requireCanonicalSnapshotContent(content)
@@ -98,7 +101,10 @@ class RoomBackupDataSource(
 
     override suspend fun restore(validated: ValidatedBackup) {
         validated.beginConsumption()
+        var lockAcquired = false
         try {
+            restoreMutex.lock()
+            lockAcquired = true
             withContext(Dispatchers.IO) {
         requireCanonicalRestoreContent(validated)
         if (journal.read() != null) throw BackupValidationException("存在未恢复的 restore journal，请先执行 recoverInterruptedRestore")
@@ -138,6 +144,8 @@ class RoomBackupDataSource(
             journal.write(record)
             crashHook.hit(RestoreCrashPoint.FILES_MOVED)
 
+            // Task 8 仍须在应用层冻结其它 DB/文件 writer；本地 mutex 只串行化 restore/recovery。
+            restoreFileOperations.verifyAndSync(finalRoot, expectedTree)
             database.withTransaction {
                 clearAllRestorableTables()
                 insertPayload(transformed)
@@ -154,7 +162,7 @@ class RoomBackupDataSource(
         } catch (error: Throwable) {
             if (error is SimulatedRestoreProcessDeath) throw error
             val recoveryFailure = runCatching {
-                withContext(NonCancellable) { recoverInterruptedRestore() }
+                withContext(NonCancellable) { recoverInterruptedRestoreLocked() }
             }.exceptionOrNull()
             recoveryFailure?.let { error.addSuppressed(it) }
             throw error
@@ -164,11 +172,14 @@ class RoomBackupDataSource(
         }
             }
         } finally {
+            if (lockAcquired) restoreMutex.unlock()
             validated.close()
         }
     }
 
-    override suspend fun recoverInterruptedRestore() = withContext(Dispatchers.IO + NonCancellable) {
+    override suspend fun recoverInterruptedRestore() = restoreMutex.withLock { recoverInterruptedRestoreLocked() }
+
+    private suspend fun recoverInterruptedRestoreLocked() = withContext(Dispatchers.IO + NonCancellable) {
         val record = journal.read() ?: return@withContext
         val failures = mutableListOf<Throwable>()
         val databaseCommitted = when (record.phase) {
@@ -940,16 +951,31 @@ class RoomBackupDataSource(
                 runCatching { readSmallNoFollow(cleanupMarker, 128).toString(Charsets.UTF_8) == record.txId }
                     .getOrDefault(false)
             val actualHashes = inventoryEntryHashes(actualInventory.filterNot { it.path == OLD_CLEANUP_MARKER }.toSet())
-            if ((!markerPresent && actualHashes != expectedHashes) ||
+            val tombstoneName = ".restore-delete-${record.txId}-${sha256(expectedKey.toByteArray()).take(12)}"
+            val terminalPartial = root.fileName.toString() == tombstoneName && actualInventory.isEmpty()
+            if (!terminalPartial && ((!markerPresent && actualHashes != expectedHashes) ||
                 (markerPresent && !expectedHashes.containsAll(actualHashes))
-            ) {
+            )) {
                 throw BackupValidationException("旧 managed root inventory 已变化，拒绝整根删除")
             }
-            if (!markerPresent) {
+            if (!terminalPartial && !markerPresent) {
                 restoreFileOperations.writeNew(root, listOf(OLD_CLEANUP_MARKER), record.txId.toByteArray())
             }
+            val expectedDeleteInventory = when {
+                terminalPartial -> emptySet()
+                markerPresent -> actualInventory
+                else -> actualInventory + RestoreTreeEntry(OLD_CLEANUP_MARKER, false)
+            }
+            val deleteRoot = if (root.fileName.toString() == tombstoneName) root else {
+                restoreFileOperations.moveTree(base, root.fileName.toString(), tombstoneName)
+                FileRestoreJournal.syncDirectory(base)
+                base.resolve(tombstoneName)
+            }
+            val deleteMarker = if (expectedDeleteInventory.any { it.path == OLD_CLEANUP_MARKER }) {
+                OLD_CLEANUP_MARKER to record.txId
+            } else null
             restoreFileOperations.deleteTree(
-                base, root.fileName.toString(), expectedKey, OLD_CLEANUP_MARKER to record.txId
+                base, deleteRoot.fileName.toString(), expectedKey, deleteMarker, expectedDeleteInventory
             )
             FileRestoreJournal.syncDirectory(base)
         }
@@ -997,18 +1023,34 @@ class RoomBackupDataSource(
     }
 
     private fun deleteOwnedRestoreRoots(record: RestoreJournalRecord) {
-        listOf(restoreParent.resolve(".restore-${record.txId}.tmp"), restoreParent.resolve(record.newRootIdentity))
-            .forEach { root ->
-                if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return@forEach
-                requireOwnedRestoreRoot(root, record)
+        listOf("staging" to ".restore-${record.txId}.tmp", "new" to record.newRootIdentity)
+            .forEach { (kind, originalName) ->
+                val tombstoneName = ".restore-delete-${record.txId}-$kind"
+                var root = listOf(restoreParent.resolve(originalName), restoreParent.resolve(tombstoneName))
+                    .firstOrNull { Files.exists(it, LinkOption.NOFOLLOW_LINKS) } ?: return@forEach
+                val terminalPartial = root.fileName.toString() == tombstoneName &&
+                    restoreFileOperations.inventory(restoreParent, tombstoneName).isEmpty()
+                if (!terminalPartial) {
+                    requireOwnedRestoreRoot(root, record)
+                }
+                val expectedInventory = if (terminalPartial) emptySet() else {
+                    restoreFileOperations.inventory(restoreParent, root.fileName.toString())
+                }
                 val expectedKey = if (root.fileName.toString() == record.newRootIdentity) {
                     record.newRootFileKey ?: fileKey(root)
                 } else fileKey(root)
+                if (root.fileName.toString() != tombstoneName) {
+                    restoreFileOperations.moveTree(restoreParent, root.fileName.toString(), tombstoneName)
+                    FileRestoreJournal.syncDirectory(restoreParent)
+                    root = restoreParent.resolve(tombstoneName)
+                }
+                val marker = if (expectedInventory.any { it.path == OWNER_MARKER }) OWNER_MARKER to record.txId else null
                 restoreFileOperations.deleteTree(
                     restoreParent,
-                    root.fileName.toString(),
+                    tombstoneName,
                     expectedKey,
-                    OWNER_MARKER to record.txId,
+                    marker,
+                    expectedInventory,
                 )
             }
         FileRestoreJournal.syncDirectory(restoreParent)
