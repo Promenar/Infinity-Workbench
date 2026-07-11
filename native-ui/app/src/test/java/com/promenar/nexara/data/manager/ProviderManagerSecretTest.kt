@@ -272,6 +272,33 @@ class ProviderManagerSecretTest {
         assertThat(manager.getProviderSummary("default")!!.hasVertexCredentials).isFalse()
     }
 
+    @Test
+    fun `重复 ID add 在任何写入前拒绝且状态完全不变`() {
+        val manager = ProviderManager.createForTest(app, secrets)
+        val original = com.promenar.nexara.data.model.ProviderListItem(
+            id = "duplicate-id",
+            name = "Original",
+            protocolType = ProtocolType.OpenAI_ChatCompletions,
+        )
+        manager.addProvider(original, CredentialUpdate.Replace("fake-original-key"))
+        val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
+        val providersBefore = manager.providers.value.toList()
+        val prefsBefore = settingsPrefs.all.toMap()
+        val secretsBefore = secrets.snapshot()
+
+        val result = runCatching {
+            manager.addProvider(
+                original.copy(name = "Duplicate", protocolType = ProtocolType.Google_VertexAI),
+                CredentialUpdate.Replace("{\"private_key\":\"fake-overwrite\"}"),
+            )
+        }
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(manager.providers.value).containsExactlyElementsIn(providersBefore).inOrder()
+        assertThat(settingsPrefs.all).isEqualTo(prefsBefore)
+        assertThat(secrets.snapshot()).isEqualTo(secretsBefore)
+    }
+
     private class MemorySecretStore(private val failOn: SecretId? = null) : SecretStore {
         private val values = mutableMapOf<SecretId, ByteArray>()
         override fun put(id: SecretId, value: ByteArray) {
@@ -282,5 +309,6 @@ class ProviderManagerSecretTest {
         override fun contains(id: SecretId): Boolean = id in values
         override fun remove(id: SecretId) { values.remove(id) }
         fun text(id: SecretId): String? = get(id)?.toString(Charsets.UTF_8)
+        fun snapshot(): Map<SecretId, String> = values.mapValues { (_, value) -> value.toString(Charsets.UTF_8) }
     }
 }

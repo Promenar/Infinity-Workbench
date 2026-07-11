@@ -89,10 +89,12 @@ class ProviderRepository(
                 hasApiKey = config.apiKey.isNotBlank() && dataProtocolType !is ProtocolType.Google_VertexAI,
                 hasVertexCredentials = config.apiKey.isNotBlank() && dataProtocolType is ProtocolType.Google_VertexAI,
             )
-            providerManager.addProvider(
-                item,
-                config.apiKey.toCredentialUpdate(),
-            )
+            val credentialUpdate = config.apiKey.toCredentialUpdate()
+            if (providerManager.getProviderConfig(config.id) != null) {
+                providerManager.updateExtraProvider(config.id, item, credentialUpdate)
+            } else {
+                providerManager.addProvider(item, credentialUpdate)
+            }
         }
     }
 

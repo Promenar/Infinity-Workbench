@@ -226,6 +226,9 @@ class ProviderManager private constructor(
         item: ProviderListItem,
         credentialUpdate: CredentialUpdate = CredentialUpdate.Preserve,
     ) {
+        require(item.id != "default" && getProviderConfig(item.id) == null && _providers.value.none { it.id == item.id }) {
+            "Provider ID 已存在: ${item.id}"
+        }
         applyCredentialUpdate(item.id, item.protocolType, credentialUpdate)
         _providers.update { it + item }
         persistExtraProviders()
