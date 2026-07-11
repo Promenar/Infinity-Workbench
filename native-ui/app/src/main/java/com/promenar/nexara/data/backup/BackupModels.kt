@@ -2,6 +2,7 @@ package com.promenar.nexara.data.backup
 
 import com.promenar.nexara.data.security.SecretId
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 enum class BackupContent {
     DATABASE,
@@ -76,3 +77,46 @@ object BackupPackageLimits {
 
 class BackupValidationException(message: String, cause: Throwable? = null) :
     IllegalArgumentException(message, cause)
+
+interface BackupDataSource {
+    suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot
+    suspend fun restore(validated: ValidatedBackup)
+}
+
+/**
+ * 偏好存储只向备份层暴露非敏感候选值。实现仍必须接受本层的双重白名单检查，
+ * 不能把“旧版本已经迁移过密钥”当作安全前提。
+ */
+interface BackupPreferenceStore {
+    suspend fun snapshot(): BackupPreferenceSnapshot
+
+    /**
+     * 返回一个可补偿的原子替换操作。commit 要么完整替换、要么不改变；rollback 必须幂等，
+     * 并能在 commit 成功后恢复 prepare 时的状态。
+     */
+    suspend fun prepareReplace(snapshot: BackupPreferenceSnapshot): PreparedPreferenceRestore
+}
+
+interface PreparedPreferenceRestore {
+    suspend fun commit()
+    suspend fun rollback()
+}
+
+@Serializable
+data class BackupPreferenceSnapshot(
+    val entries: List<BackupPreferenceEntry>,
+    val providerIds: Set<String>,
+)
+
+@Serializable
+data class BackupPreferenceEntry(
+    val namespace: String,
+    val key: String,
+    val value: String,
+)
+
+@Serializable
+internal data class DatabaseBackupPayload(
+    val schemaVersion: Int,
+    val tables: Map<String, List<JsonObject>>,
+)
