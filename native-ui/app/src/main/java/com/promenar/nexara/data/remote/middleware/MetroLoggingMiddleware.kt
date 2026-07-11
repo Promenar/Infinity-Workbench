@@ -1,9 +1,7 @@
 package com.promenar.nexara.data.remote.middleware
 
 import android.util.Log
-import com.promenar.nexara.data.remote.protocol.StreamChunk
 import org.json.JSONObject
-import org.json.JSONArray
 
 class MetroLoggingMiddleware : LlmMiddleware {
     override val name: String = "MetroLoggingMiddleware"
@@ -19,17 +17,8 @@ class MetroLoggingMiddleware : LlmMiddleware {
                 put("enableWebSearch", params.enableWebSearch)
                 put("enableKnowledgeSearch", params.enableKnowledgeSearch)
                 put("enableMemorySearch", params.enableMemorySearch)
-                put("system", params.system ?: "none")
-
-                val msgArray = JSONArray()
-                params.messages.forEach { msg ->
-                    val msgObj = JSONObject().apply {
-                        put("role", msg.role)
-                        put("content", msg.content.take(1000)) // Abbreviate to avoid huge logs
-                    }
-                    msgArray.put(msgObj)
-                }
-                put("messages", msgArray)
+                put("messageCount", params.messages.size)
+                put("inputChars", params.messages.sumOf { it.content.length } + (params.system?.length ?: 0))
             }
             Log.d("NEXARA_METRO", "EVENT_START|CONTEXT_ASSEMBLY|${json}|EVENT_END")
         } catch (e: Exception) {

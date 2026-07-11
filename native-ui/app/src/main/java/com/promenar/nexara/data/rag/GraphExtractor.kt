@@ -92,7 +92,7 @@ class GraphExtractor(
                     results.add(chunkRes)
                     if (chunkRes.error != null) {
                         failCount++
-                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} returned error: ${chunkRes.error}")
+                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} returned an extraction error")
                     } else {
                         successCount++
                         NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} OK: ${chunkRes.nodes.size} nodes, ${chunkRes.edges.size} edges")
@@ -169,7 +169,7 @@ class GraphExtractor(
                     val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
                     nameToIdMap[node.name] = id
                 } catch (e: Exception) {
-                    NexaraLogger.log("[RAG][GraphExtractor] Node upsert failed for '${node.name}': ${e.message?.take(80)}")
+                    NexaraLogger.logError("[RAG][GraphExtractor] Node upsert failed", e)
                 }
             }
 
@@ -180,7 +180,7 @@ class GraphExtractor(
                     try {
                         graphStore.createEdge(sourceId, targetId, edge.relation, docId, edge.weight, scope)
                     } catch (e: Exception) {
-                        NexaraLogger.log("[RAG][GraphExtractor] Edge create failed '${edge.source}->${edge.target}': ${e.message?.take(80)}")
+                        NexaraLogger.logError("[RAG][GraphExtractor] Edge create failed", e)
                     }
                 }
             }
@@ -190,9 +190,9 @@ class GraphExtractor(
                 try {
                     dir.listFiles()?.forEach { it.delete() }
                     dir.delete()
-                    NexaraLogger.log("[RAG][GraphExtractor] Cleaned up extraction checkpoints for docId=$docId")
+                    NexaraLogger.log("[RAG][GraphExtractor] Cleaned up extraction checkpoints")
                 } catch (e: Exception) {
-                    NexaraLogger.logError("[RAG][GraphExtractor] Failed to clean up checkpoints for docId=$docId", e)
+                    NexaraLogger.logError("[RAG][GraphExtractor] Failed to clean up checkpoints", e)
                 }
             }
 
@@ -229,11 +229,11 @@ class GraphExtractor(
             return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "Empty response")
         }
 
-        NexaraLogger.log("[RAG][GraphExtractor] LLM response received: ${content.length} chars, preview: ${content.take(150).replace("\n", "\\n")}")
+        NexaraLogger.log("[RAG][GraphExtractor] LLM response received: ${content.length} chars")
         val result = parseExtractionResult(content)
         if (result == null || (result.nodes.isEmpty() && result.edges.isEmpty())) {
             val reason = if (result == null) "Failed to parse JSON" else "No entities extracted"
-            NexaraLogger.log("[RAG][GraphExtractor] Parse result: $reason — raw response (first 300 chars): ${content.take(300).replace("\n", "\\n")}")
+            NexaraLogger.log("[RAG][GraphExtractor] Parse result: $reason")
             return ExtractionResult(
                 nodes = emptyList(),
                 edges = emptyList(),
@@ -295,7 +295,7 @@ class GraphExtractor(
 
                 ExtractionResult(nodes = nodes, edges = edges)
             } catch (e2: Exception) {
-                NexaraLogger.log("[RAG][GraphExtractor] JSON fallback parse error: ${e2.message?.take(100)}")
+                NexaraLogger.logError("[RAG][GraphExtractor] JSON fallback parse error", e2)
                 null
             }
         }

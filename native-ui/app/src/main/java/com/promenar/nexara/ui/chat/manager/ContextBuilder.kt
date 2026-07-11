@@ -61,7 +61,7 @@ class ContextBuilder(
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
         val (searchContext, searchCitations) = if (params.session.options.webSearch) {
             val cleanedQuery = cleanSearchQuery(params.content)
-            NexaraLogger.log("[ContextBuilder] 被动联网搜索 Query 提炼: \"${params.content}\" -> \"$cleanedQuery\"")
+            NexaraLogger.log("[ContextBuilder] 被动联网搜索 Query 已提炼: inputChars=${params.content.length}, outputChars=${cleanedQuery.length}")
             performClientSideSearch(cleanedQuery)
         } else "" to emptyList()
         val ragResult = performRagRetrieval(params)
@@ -83,7 +83,7 @@ class ContextBuilder(
         val activePlan: TaskState? = try {
             taskRepository?.getPlan(params.sessionId)
         } catch (e: Exception) {
-            NexaraLogger.log("ContextBuilder: Task plan fetch error: ${e.message?.take(80)}")
+            NexaraLogger.logError("ContextBuilder.TaskPlanFetch", e)
             null
         }
 

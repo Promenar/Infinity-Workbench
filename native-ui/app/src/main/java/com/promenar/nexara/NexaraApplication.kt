@@ -121,10 +121,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                                 sqlQuery.contains("Session", ignoreCase = true)
                             ) {
                                 val json = org.json.JSONObject().apply {
-                                    put("sql", sqlQuery)
-                                    val argsArray = org.json.JSONArray()
-                                    bindArgs.forEach { argsArray.put(it?.toString() ?: "null") }
-                                    put("bindArgs", argsArray)
+                                    put("operation", sqlQuery.trimStart().substringBefore(' ').uppercase())
+                                    put("argumentCount", bindArgs.size)
                                 }
                                 android.util.Log.d("NEXARA_METRO", "EVENT_START|DB_QUERY|${json}|EVENT_END")
                             }
@@ -343,7 +341,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         }
         
         val model = prefs.getString("embedding_model", "")?.ifBlank { presetModel } ?: presetModel
-        NexaraLogger.log("[EmbeddingClient] 构建: model=$model resolvedBy=$resolvedBy baseUrlSet=${baseUrl.isNotBlank()} apiKeySet=${apiKey.isNotBlank()} baseUrl=${if (baseUrl.isNotBlank()) baseUrl.take(50) + "..." else "(empty)"}")
+        NexaraLogger.log("[EmbeddingClient] 构建: model=$model resolvedBy=$resolvedBy baseUrlSet=${baseUrl.isNotBlank()} apiKeySet=${apiKey.isNotBlank()}")
         return EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model, localEngine = localInferenceEngine)
     }
 
