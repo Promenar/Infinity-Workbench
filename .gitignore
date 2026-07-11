@@ -28,6 +28,7 @@
 secure_env/
 
 # === Git Worktrees ===
+.worktrees/
 worktrees/
 worktree/
 # native-ui/.agent/
