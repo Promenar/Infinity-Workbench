@@ -22,6 +22,11 @@ class SecretStoreTest {
     }
 
     @Test
+    fun `生产 Keystore alias 固定为绑定规格值`() {
+        assertThat(AndroidKeystoreSecretStore.KEY_ALIAS).isEqualTo("nexara.secrets.v1")
+    }
+
+    @Test
     fun `普通 SharedPreferences 只保存 envelope 不保存明文`() {
         val prefsName = "secret_store_${System.nanoTime()}"
         val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)

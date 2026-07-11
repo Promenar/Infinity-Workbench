@@ -16,13 +16,12 @@ class AndroidKeystoreSecretStore internal constructor(
     constructor(
         context: Context,
         preferencesName: String = DEFAULT_PREFERENCES_NAME,
-        keyAlias: String = DEFAULT_KEY_ALIAS,
     ) : this(
         preferences = context.applicationContext.getSharedPreferences(
             preferencesName,
             Context.MODE_PRIVATE,
         ),
-        key = getOrCreateKey(keyAlias),
+        key = getOrCreateKey(KEY_ALIAS),
     )
 
     override fun put(id: SecretId, value: ByteArray) {
@@ -43,13 +42,14 @@ class AndroidKeystoreSecretStore internal constructor(
         }
     }
 
-    private companion object {
-        const val DEFAULT_PREFERENCES_NAME = "nexara_encrypted_secrets"
-        const val DEFAULT_KEY_ALIAS = "nexara_secret_store_v1"
-        const val ANDROID_KEY_STORE = "AndroidKeyStore"
+    companion object {
+        internal const val KEY_ALIAS = "nexara.secrets.v1"
+
+        private const val DEFAULT_PREFERENCES_NAME = "nexara_encrypted_secrets"
+        private const val ANDROID_KEY_STORE = "AndroidKeyStore"
 
         @Synchronized
-        fun getOrCreateKey(alias: String): SecretKey {
+        private fun getOrCreateKey(alias: String): SecretKey {
             val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
             (keyStore.getKey(alias, null) as? SecretKey)?.let { return it }
 
