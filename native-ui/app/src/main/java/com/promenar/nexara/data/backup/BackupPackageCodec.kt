@@ -85,8 +85,9 @@ class DefaultBackupPackageCodec private constructor(
         }
     }
 
-    override fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup =
-        withWipeSession(resultWiper = ::wipeValidatedResult) {
+    override fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup {
+        if (bytes.size.toLong() > maxInputBytes()) throw BackupValidationException("备份包超过允许大小")
+        return withWipeSession(resultWiper = ::wipeValidatedResult) {
             val inputSnapshot = bytes.copyOf()
             try {
                 decodeInternal(inputSnapshot, password)
@@ -94,9 +95,9 @@ class DefaultBackupPackageCodec private constructor(
                 wipe("decode-input-snapshot", inputSnapshot)
             }
         }
+    }
 
     private fun decodeInternal(bytes: ByteArray, password: CharArray?): ValidatedBackup {
-        if (bytes.size.toLong() > maxInputBytes()) throw BackupValidationException("备份包超过允许大小")
         val encrypted = crypto.isEncrypted(bytes)
         if (encrypted && (password == null || password.isEmpty())) {
             throw BackupValidationException("加密备份包需要密码")

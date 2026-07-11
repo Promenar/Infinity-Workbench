@@ -494,6 +494,29 @@ class BackupPackageCodecTest {
         assertThat(observed.values.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
     }
 
+    @Test
+    fun `oversized input is rejected before snapshot observer and crypto work`() {
+        var observerCalls = 0
+        val limitedCodec = codecForTest(
+            maxTotalBytes = 0,
+            maxEntryBytes = 0,
+            maxEntries = 0,
+            maxManifestBytes = 1,
+            temporaryBytesObserver = { _, _ -> observerCalls++ },
+        )
+        val maxInputMethod = DefaultBackupPackageCodec::class.java.getDeclaredMethod("maxInputBytes")
+            .apply { isAccessible = true }
+        val maxInputBytes = maxInputMethod.invoke(limitedCodec) as Long
+        val callerBytes = ByteArray((maxInputBytes + 1).toInt()) { 0x5a.toByte() }
+
+        val error = assertThrows<BackupValidationException> { limitedCodec.decode(callerBytes, null) }
+
+        assertThat(error.message).contains("超过允许大小")
+        assertThat(observerCalls).isEqualTo(0)
+        assertThat(callerBytes.first()).isEqualTo(0x5a.toByte())
+        assertThat(callerBytes.last()).isEqualTo(0x5a.toByte())
+    }
+
     private fun manifest(
         entries: List<BackupManifestEntry> = emptyList(),
         encrypted: Boolean = false,
