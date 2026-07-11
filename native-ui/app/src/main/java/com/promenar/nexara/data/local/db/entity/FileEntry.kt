@@ -19,6 +19,9 @@ data class FileEntry(
     @PrimaryKey
     val uuid: String,
 
+    @ColumnInfo(name = "workspace_root_uuid")
+    val workspaceRootUuid: String = "",
+
     @ColumnInfo(name = "parent_uuid")
     val parentUuid: String?,
 

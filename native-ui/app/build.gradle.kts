@@ -95,6 +95,10 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // ─── Jetpack Compose BOM ───
     val composeBom = platform("androidx.compose:compose-bom:2026.05.00")

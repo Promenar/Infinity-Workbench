@@ -97,21 +97,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
 
     val database: NexaraDatabase by lazy {
-        Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara.db")
-            .addMigrations(
-                NexaraDatabase.MIGRATION_4_5,
-                NexaraDatabase.MIGRATION_6_7,
-                NexaraDatabase.MIGRATION_7_8,
-                NexaraDatabase.MIGRATION_8_9,
-                NexaraDatabase.MIGRATION_9_10,
-                NexaraDatabase.MIGRATION_10_11,
-                NexaraDatabase.MIGRATION_11_12,
-                NexaraDatabase.MIGRATION_12_13,
-                NexaraDatabase.MIGRATION_13_14,
-                NexaraDatabase.MIGRATION_14_15,
-                NexaraDatabase.MIGRATION_15_16
-            )
-            .fallbackToDestructiveMigration()
+        Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
