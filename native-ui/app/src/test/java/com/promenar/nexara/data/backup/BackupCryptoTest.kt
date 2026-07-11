@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.lang.reflect.Modifier
 
@@ -47,7 +48,7 @@ class BackupCryptoTest {
         val crypto = BackupCrypto()
         val password = "right".toCharArray()
         val encrypted = crypto.encrypt("private".toByteArray(), password)
-        val metadata = crypto.inspectEnvelope(encrypted)
+        val metadata = inspectEnvelopeForTest(encrypted)
         val mutations = listOf(
             encrypted.copyOf().also { it[0] = (it[0].toInt() xor 1).toByte() },
             encrypted.copyOf().also { it[4] = (it[4].toInt() xor 1).toByte() },
@@ -94,16 +95,13 @@ class BackupCryptoTest {
         assertThat(publicEncrypts).hasSize(1)
         assertThat(publicEncrypts.single().parameterCount).isEqualTo(2)
         assertThat(publicMethods.map { it.name }).doesNotContain("inspectEnvelope")
-        assertThat(BackupCrypto::class.java.declaredMethods
-            .filter { method -> listOf("newParameters", "encryptWithParameters", "encryptForTest", "decryptEnvelope", "inspectEnvelope")
-                .any(method.name::startsWith) }
-            .all { it.isSynthetic }).isTrue()
-        assertThat(nested.getValue("Parameters").declaredConstructors.none {
-            Modifier.isPublic(it.modifiers) && !it.isSynthetic
-        }).isTrue()
-        assertThat(nested.getValue("EnvelopeMetadata").declaredConstructors.none {
-            Modifier.isPublic(it.modifiers) && !it.isSynthetic
-        }).isTrue()
+        val forbiddenHelpers = listOf(
+            "newParameters", "encryptWithParameters", "encryptForTest", "decryptEnvelope", "inspectEnvelope",
+        )
+        assertThat(BackupCrypto::class.java.declaredMethods.map { it.name.substringBefore('$') })
+            .containsNoneIn(forbiddenHelpers)
+        assertThat(Modifier.isPublic(nested.getValue("Parameters").modifiers)).isFalse()
+        assertThat(Modifier.isPublic(nested.getValue("EnvelopeMetadata").modifiers)).isFalse()
     }
 
     private fun mutateFirst(source: ByteArray, needle: ByteArray): ByteArray {
@@ -114,4 +112,25 @@ class BackupCryptoTest {
         result[index] = (result[index].toInt() xor 1).toByte()
         return result
     }
+
+    private fun inspectEnvelopeForTest(envelope: ByteArray): TestEnvelopeMetadata {
+        val buffer = ByteBuffer.wrap(envelope)
+        buffer.position(4)
+        buffer.get()
+        val algorithmSize = buffer.short.toInt() and 0xffff
+        val algorithm = ByteArray(algorithmSize).also(buffer::get).toString(StandardCharsets.UTF_8)
+        val iterations = buffer.int
+        val keySizeBits = buffer.int
+        val salt = ByteArray(buffer.get().toInt() and 0xff).also(buffer::get)
+        val iv = ByteArray(buffer.get().toInt() and 0xff).also(buffer::get)
+        return TestEnvelopeMetadata(algorithm, iterations, keySizeBits, salt, iv)
+    }
+
+    private data class TestEnvelopeMetadata(
+        val algorithm: String,
+        val iterations: Int,
+        val keySizeBits: Int,
+        val salt: ByteArray,
+        val iv: ByteArray,
+    )
 }

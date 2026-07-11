@@ -9,9 +9,12 @@ import kotlinx.serialization.json.Json
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
@@ -41,43 +44,38 @@ class DefaultBackupPackageCodec private constructor(
         }
 
         val ownedPassword = options.password?.copyOf()
-        val parameters = if (includeSecrets) crypto.newParameters() else null
         var entries: List<Pair<String, ByteArray>> = emptyList()
         try {
             entries = buildContentEntries(snapshot, options)
             validateEncodeEntries(entries)
-            val manifest = BackupManifest(
-                formatVersion = FORMAT_VERSION,
-                databaseSchemaVersion = snapshot.databaseSchemaVersion,
-                appVersion = snapshot.appVersion,
-                createdAt = snapshot.createdAt,
-                entries = entries.map { (path, content) ->
-                    BackupManifestEntry(path, content.size.toLong(), sha256(content))
-                },
-                encrypted = includeSecrets,
-                containsSecrets = entries.any { it.first == SECRETS_PATH },
-                kdf = parameters?.toKdfMetadata(),
-            )
-            val manifestBytes = json.encodeToString(manifest).toByteArray()
-            val zip = try {
-                if (manifestBytes.size.toLong() > limits.maxManifestBytes) {
-                    throw BackupValidationException("manifest 超过允许大小")
+            val createZipPackage: (BackupKdfMetadata?) -> ByteArray = { kdf ->
+                val manifest = BackupManifest(
+                    formatVersion = FORMAT_VERSION,
+                    databaseSchemaVersion = snapshot.databaseSchemaVersion,
+                    appVersion = snapshot.appVersion,
+                    createdAt = snapshot.createdAt,
+                    entries = entries.map { (path, content) ->
+                        BackupManifestEntry(path, content.size.toLong(), sha256(content))
+                    },
+                    encrypted = kdf != null,
+                    containsSecrets = entries.any { it.first == SECRETS_PATH },
+                    kdf = kdf,
+                )
+                val manifestBytes = json.encodeToString(manifest).toByteArray()
+                try {
+                    if (manifestBytes.size.toLong() > limits.maxManifestBytes) {
+                        throw BackupValidationException("manifest 超过允许大小")
+                    }
+                    createZip(manifestBytes, entries)
+                } finally {
+                    wipe("encode-manifest", manifestBytes)
                 }
-                createZip(manifestBytes, entries)
-            } finally {
-                wipe("encode-manifest", manifestBytes)
             }
-            if (!includeSecrets) return zip
-            return try {
-                crypto.encryptWithParameters(zip, ownedPassword!!, parameters!!)
-            } finally {
-                wipe("encode-zip", zip)
-            }
+            if (!includeSecrets) return createZipPackage(null)
+            return crypto.encryptPackage(ownedPassword!!) { kdf -> createZipPackage(kdf) }
         } finally {
-            entries.forEach { (path, content) -> wipe("encode:$path", content) }
+            wipeAll(entries.map { (path, content) -> "encode:$path" to content })
             ownedPassword?.fill('\u0000')
-            parameters?.salt?.fill(0)
-            parameters?.iv?.fill(0)
         }
     }
 
@@ -90,16 +88,15 @@ class DefaultBackupPackageCodec private constructor(
 
         val ownedPassword = password?.copyOf()
         var zipBytes: ByteArray? = null
+        var envelopeMetadata: AuthenticatedEnvelopeKdf? = null
         return try {
-            val envelopeMetadata: BackupCrypto.EnvelopeMetadata?
             if (encrypted) {
-                val decrypted = try {
-                    crypto.decryptEnvelope(bytes, ownedPassword!!)
+                zipBytes = try {
+                    crypto.decrypt(bytes, ownedPassword!!)
                 } catch (error: GeneralSecurityException) {
                     throw BackupValidationException("备份密码错误或备份包认证失败")
                 }
-                zipBytes = decrypted.plaintext
-                envelopeMetadata = decrypted.metadata
+                envelopeMetadata = parseAuthenticatedEnvelopeKdf(bytes)
             } else {
                 zipBytes = bytes
                 envelopeMetadata = null
@@ -107,6 +104,7 @@ class DefaultBackupPackageCodec private constructor(
             readValidatedZip(zipBytes!!, envelopeMetadata)
         } finally {
             ownedPassword?.fill('\u0000')
+            envelopeMetadata?.salt?.fill(0)
             if (encrypted) zipBytes?.let { wipe("decoded-zip", it) }
         }
     }
@@ -134,7 +132,7 @@ class DefaultBackupPackageCodec private constructor(
             }
             return result
         } catch (error: RuntimeException) {
-            result.forEach { (path, content) -> wipe("invalid-encode:$path", content) }
+            wipeAll(result.map { (path, content) -> "invalid-encode:$path" to content })
             throw error
         }
     }
@@ -169,7 +167,7 @@ class DefaultBackupPackageCodec private constructor(
 
     private fun readValidatedZip(
         zipBytes: ByteArray,
-        envelopeMetadata: BackupCrypto.EnvelopeMetadata?,
+        envelopeMetadata: AuthenticatedEnvelopeKdf?,
     ): ValidatedBackup {
         val contents = linkedMapOf<String, ByteArray>()
         try {
@@ -234,13 +232,13 @@ class DefaultBackupPackageCodec private constructor(
         } catch (error: IOException) {
             throw BackupValidationException("无法读取 ZIP 备份包")
         } finally {
-            contents.forEach { (path, content) -> wipe("decode:$path", content) }
+            wipeAll(contents.map { (path, content) -> "decode:$path" to content })
         }
     }
 
     private fun parseAndValidateManifest(
         bytes: ByteArray,
-        envelopeMetadata: BackupCrypto.EnvelopeMetadata?,
+        envelopeMetadata: AuthenticatedEnvelopeKdf?,
     ): BackupManifest {
         val manifest = try {
             json.decodeFromString<BackupManifest>(bytes.toString(Charsets.UTF_8))
@@ -277,7 +275,7 @@ class DefaultBackupPackageCodec private constructor(
 
     private fun validateKdf(
         kdf: BackupKdfMetadata?,
-        envelope: BackupCrypto.EnvelopeMetadata?,
+        envelope: AuthenticatedEnvelopeKdf?,
     ) {
         if (envelope == null) {
             if (kdf != null) throw BackupValidationException("未加密备份不应包含 KDF 元数据")
@@ -297,6 +295,30 @@ class DefaultBackupPackageCodec private constructor(
             ) throw BackupValidationException("manifest KDF 与加密 envelope 不一致")
         } finally {
             manifestSalt.fill(0)
+        }
+    }
+
+    private fun parseAuthenticatedEnvelopeKdf(envelope: ByteArray): AuthenticatedEnvelopeKdf {
+        try {
+            val buffer = ByteBuffer.wrap(envelope)
+            buffer.position(4)
+            val version = buffer.get().toInt() and 0xff
+            val algorithmSize = buffer.short.toInt() and 0xffff
+            val algorithm = ByteArray(algorithmSize).also(buffer::get).toString(StandardCharsets.UTF_8)
+            val iterations = buffer.int
+            val keySizeBits = buffer.int
+            val salt = ByteArray(buffer.get().toInt() and 0xff).also(buffer::get)
+            val ivSize = buffer.get().toInt() and 0xff
+            buffer.position(buffer.position() + ivSize)
+            if (version != ENVELOPE_VERSION || algorithm != BackupCrypto.KDF_ALGORITHM ||
+                iterations != BackupCrypto.PBKDF2_ITERATIONS || keySizeBits != BackupCrypto.KEY_SIZE_BITS ||
+                salt.size != BackupCrypto.SALT_SIZE_BYTES || ivSize != BackupCrypto.IV_SIZE_BYTES
+            ) throw BackupValidationException("已认证 envelope KDF 无效")
+            return AuthenticatedEnvelopeKdf(algorithm, iterations, keySizeBits, salt)
+        } catch (error: BackupValidationException) {
+            throw error
+        } catch (error: RuntimeException) {
+            throw BackupValidationException("已认证 envelope KDF 无效")
         }
     }
 
@@ -322,7 +344,7 @@ class DefaultBackupPackageCodec private constructor(
             }
             return result
         } catch (error: RuntimeException) {
-            result.forEach { (id, value) -> wipe("invalid-secret:${id.value}", value) }
+            wipeAll(result.map { (id, value) -> "invalid-secret:${id.value}" to value })
             throw error
         }
     }
@@ -374,13 +396,6 @@ class DefaultBackupPackageCodec private constructor(
         }
     }
 
-    private fun BackupCrypto.Parameters.toKdfMetadata() = BackupKdfMetadata(
-        algorithm = BackupCrypto.KDF_ALGORITHM,
-        saltBase64 = Base64.getEncoder().encodeToString(salt),
-        iterations = BackupCrypto.PBKDF2_ITERATIONS,
-        keySizeBits = BackupCrypto.KEY_SIZE_BITS,
-    )
-
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
@@ -396,6 +411,11 @@ class DefaultBackupPackageCodec private constructor(
         notifyObserver(label, bytes)
     }
 
+    private fun wipeAll(values: Collection<Pair<String, ByteArray>>) {
+        values.forEach { (_, bytes) -> bytes.fill(0) }
+        values.forEach { (label, bytes) -> notifyObserver(label, bytes) }
+    }
+
     private inner class WipingByteArrayOutputStream(private val label: String) : ByteArrayOutputStream() {
         fun wipe() {
             buf.fill(0)
@@ -407,8 +427,12 @@ class DefaultBackupPackageCodec private constructor(
     private fun notifyObserver(label: String, bytes: ByteArray) {
         try {
             temporaryBytesObserver?.invoke(label, bytes)
-        } catch (_: Throwable) {
-            // 测试观察器不是安全控制流的一部分，任何异常都必须隔离。
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Error) {
+            throw error
+        } catch (_: Exception) {
+            // 普通测试观察异常不能覆盖安全校验结果。
         }
     }
 
@@ -424,6 +448,13 @@ class DefaultBackupPackageCodec private constructor(
         }
     }
 
+    private data class AuthenticatedEnvelopeKdf(
+        val algorithm: String,
+        val iterations: Int,
+        val keySizeBits: Int,
+        val salt: ByteArray,
+    )
+
     companion object {
         const val FORMAT_VERSION = 1
         private const val MANIFEST_PATH = "manifest.json"
@@ -432,19 +463,7 @@ class DefaultBackupPackageCodec private constructor(
         private const val SECRETS_PATH = "secrets.json"
         private const val FILES_PREFIX = "files/"
         private const val FIXED_ZIP_TIME = 0L
+        private const val ENVELOPE_VERSION = 1
         private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
-
-        @JvmSynthetic
-        internal fun forTest(
-            maxTotalBytes: Long = BackupPackageLimits.MAX_TOTAL_BYTES,
-            maxEntryBytes: Long = BackupPackageLimits.MAX_ENTRY_BYTES,
-            maxEntries: Int = BackupPackageLimits.MAX_ENTRIES,
-            maxManifestBytes: Long = BackupPackageLimits.MAX_MANIFEST_BYTES,
-            temporaryBytesObserver: ((String, ByteArray) -> Unit)? = null,
-        ): DefaultBackupPackageCodec = DefaultBackupPackageCodec(
-            crypto = BackupCrypto(),
-            limits = BackupLimits(maxTotalBytes, maxEntryBytes, maxEntries, maxManifestBytes),
-            temporaryBytesObserver = temporaryBytesObserver,
-        )
     }
 }

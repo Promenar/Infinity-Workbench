@@ -4,6 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -15,63 +16,52 @@ class BackupCrypto private constructor(
 ) {
     constructor() : this(SecureRandom())
 
-    internal class Parameters private constructor(
-        val salt: ByteArray,
-        val iv: ByteArray,
-    ) {
-        companion object {
-            @JvmSynthetic
-            internal fun random(secureRandom: SecureRandom): Parameters = Parameters(
-                ByteArray(SALT_SIZE_BYTES).also(secureRandom::nextBytes),
-                ByteArray(IV_SIZE_BYTES).also(secureRandom::nextBytes),
-            )
-
-            @JvmSynthetic
-            internal fun fixed(salt: ByteArray, iv: ByteArray): Parameters =
-                Parameters(salt.copyOf(), iv.copyOf())
-        }
-    }
-
-    internal class EnvelopeMetadata private constructor(
-        val version: Int,
-        val algorithm: String,
-        val iterations: Int,
-        val keySizeBits: Int,
-        val salt: ByteArray,
-        val iv: ByteArray,
-        val headerSize: Int,
-    ) {
-        companion object {
-            @JvmSynthetic
-            internal fun create(
-                version: Int,
-                algorithm: String,
-                iterations: Int,
-                keySizeBits: Int,
-                salt: ByteArray,
-                iv: ByteArray,
-                headerSize: Int,
-            ): EnvelopeMetadata = EnvelopeMetadata(
-                version, algorithm, iterations, keySizeBits, salt, iv, headerSize,
-            )
-        }
-    }
-
-    internal data class DecryptedEnvelope(
-        val plaintext: ByteArray,
-        val metadata: EnvelopeMetadata,
-    )
-
-    @JvmSynthetic
-    internal fun newParameters(): Parameters = Parameters.random(secureRandom)
-
     fun encrypt(plaintext: ByteArray, password: CharArray): ByteArray =
-        encryptWithParameters(plaintext, password, newParameters())
+        encryptInternal(plaintext, password, Parameters.random(secureRandom))
 
-    @JvmSynthetic
-    internal fun encryptWithParameters(plaintext: ByteArray, password: CharArray, parameters: Parameters): ByteArray {
-        require(parameters.salt.size == SALT_SIZE_BYTES) { "无效的备份加密参数" }
-        require(parameters.iv.size == IV_SIZE_BYTES) { "无效的备份加密参数" }
+    fun encryptPackage(
+        password: CharArray,
+        plaintextFactory: (BackupKdfMetadata) -> ByteArray,
+    ): ByteArray {
+        val parameters = Parameters.random(secureRandom)
+        var plaintext: ByteArray? = null
+        return try {
+            plaintext = plaintextFactory(parameters.toKdfMetadata())
+            encryptInternal(plaintext, password, parameters)
+        } finally {
+            plaintext?.fill(0)
+            parameters.wipe()
+        }
+    }
+
+    @Throws(GeneralSecurityException::class)
+    fun decrypt(envelope: ByteArray, password: CharArray): ByteArray {
+        val metadata = parseEnvelope(envelope)
+        val ownedPassword = password.copyOf()
+        var keyBytes: ByteArray? = null
+        return try {
+            keyBytes = deriveKey(ownedPassword, metadata.salt)
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                SecretKeySpec(keyBytes, "AES"),
+                GCMParameterSpec(TAG_SIZE_BITS, metadata.iv),
+            )
+            cipher.updateAAD(envelope, 0, metadata.headerSize)
+            cipher.doFinal(envelope, metadata.headerSize, envelope.size - metadata.headerSize)
+        } catch (error: GeneralSecurityException) {
+            throw GeneralSecurityException("备份密码错误或备份包认证失败", error)
+        } finally {
+            keyBytes?.fill(0)
+            ownedPassword.fill('\u0000')
+            metadata.wipe()
+        }
+    }
+
+    fun isEncrypted(bytes: ByteArray): Boolean =
+        bytes.size >= MAGIC.size && bytes.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)
+
+    private fun encryptInternal(plaintext: ByteArray, password: CharArray, parameters: Parameters): ByteArray {
         val ownedPassword = password.copyOf()
         val header = encodeHeader(parameters)
         var keyBytes: ByteArray? = null
@@ -94,64 +84,9 @@ class BackupCrypto private constructor(
             keyBytes?.fill(0)
             ownedPassword.fill('\u0000')
             header.fill(0)
+            parameters.wipe()
         }
     }
-
-    @JvmSynthetic
-    internal fun encryptForTest(
-        plaintext: ByteArray,
-        password: CharArray,
-        salt: ByteArray,
-        iv: ByteArray,
-    ): ByteArray {
-        val parameters = Parameters.fixed(salt, iv)
-        return try {
-            encryptWithParameters(plaintext, password, parameters)
-        } finally {
-            parameters.salt.fill(0)
-            parameters.iv.fill(0)
-        }
-    }
-
-    @Throws(GeneralSecurityException::class)
-    fun decrypt(envelope: ByteArray, password: CharArray): ByteArray =
-        decryptEnvelope(envelope, password).plaintext
-
-    @Throws(GeneralSecurityException::class)
-    @JvmSynthetic
-    internal fun decryptEnvelope(envelope: ByteArray, password: CharArray): DecryptedEnvelope {
-        val parsed = parseEnvelope(envelope)
-        val ownedPassword = password.copyOf()
-        var keyBytes: ByteArray? = null
-        return try {
-            keyBytes = deriveKey(ownedPassword, parsed.metadata.salt)
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                SecretKeySpec(keyBytes, "AES"),
-                GCMParameterSpec(TAG_SIZE_BITS, parsed.metadata.iv),
-            )
-            cipher.updateAAD(envelope, 0, parsed.metadata.headerSize)
-            val plaintext = cipher.doFinal(
-                envelope,
-                parsed.metadata.headerSize,
-                envelope.size - parsed.metadata.headerSize,
-            )
-            DecryptedEnvelope(plaintext, parsed.metadata)
-        } catch (error: GeneralSecurityException) {
-            throw GeneralSecurityException("备份密码错误或备份包认证失败", error)
-        } finally {
-            keyBytes?.fill(0)
-            ownedPassword.fill('\u0000')
-        }
-    }
-
-    @Throws(GeneralSecurityException::class)
-    @JvmSynthetic
-    internal fun inspectEnvelope(envelope: ByteArray): EnvelopeMetadata = parseEnvelope(envelope).metadata
-
-    fun isEncrypted(bytes: ByteArray): Boolean =
-        bytes.size >= MAGIC.size && bytes.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)
 
     private fun encodeHeader(parameters: Parameters): ByteArray {
         val algorithmBytes = KDF_ALGORITHM.toByteArray(StandardCharsets.UTF_8)
@@ -172,7 +107,7 @@ class BackupCrypto private constructor(
             .array()
     }
 
-    private fun parseEnvelope(envelope: ByteArray): ParsedEnvelope {
+    private fun parseEnvelope(envelope: ByteArray): EnvelopeMetadata {
         try {
             val buffer = ByteBuffer.wrap(envelope)
             val magic = ByteArray(MAGIC.size).also(buffer::get)
@@ -181,8 +116,7 @@ class BackupCrypto private constructor(
             if (!magic.contentEquals(MAGIC) || version != ENVELOPE_VERSION || algorithmSize !in 1..MAX_ALGORITHM_BYTES) {
                 throw GeneralSecurityException("不支持的加密备份包 header")
             }
-            val algorithmBytes = ByteArray(algorithmSize).also(buffer::get)
-            val algorithm = algorithmBytes.toString(StandardCharsets.UTF_8)
+            val algorithm = ByteArray(algorithmSize).also(buffer::get).toString(StandardCharsets.UTF_8)
             val iterations = buffer.int
             val keySizeBits = buffer.int
             val saltSize = buffer.get().toInt() and 0xff
@@ -195,9 +129,7 @@ class BackupCrypto private constructor(
             if (algorithm != KDF_ALGORITHM || iterations != PBKDF2_ITERATIONS || keySizeBits != KEY_SIZE_BITS ||
                 envelope.size - headerSize < TAG_SIZE_BYTES
             ) throw GeneralSecurityException("不支持的加密备份包 header")
-            return ParsedEnvelope(
-                EnvelopeMetadata.create(version, algorithm, iterations, keySizeBits, salt, iv, headerSize),
-            )
+            return EnvelopeMetadata(salt, iv, headerSize)
         } catch (error: GeneralSecurityException) {
             throw error
         } catch (error: RuntimeException) {
@@ -214,7 +146,37 @@ class BackupCrypto private constructor(
         }
     }
 
-    private data class ParsedEnvelope(val metadata: EnvelopeMetadata)
+    private data class Parameters(val salt: ByteArray, val iv: ByteArray) {
+        fun toKdfMetadata() = BackupKdfMetadata(
+            algorithm = KDF_ALGORITHM,
+            saltBase64 = Base64.getEncoder().encodeToString(salt),
+            iterations = PBKDF2_ITERATIONS,
+            keySizeBits = KEY_SIZE_BITS,
+        )
+
+        fun wipe() {
+            salt.fill(0)
+            iv.fill(0)
+        }
+
+        companion object {
+            fun random(secureRandom: SecureRandom) = Parameters(
+                ByteArray(SALT_SIZE_BYTES).also(secureRandom::nextBytes),
+                ByteArray(IV_SIZE_BYTES).also(secureRandom::nextBytes),
+            )
+        }
+    }
+
+    private data class EnvelopeMetadata(
+        val salt: ByteArray,
+        val iv: ByteArray,
+        val headerSize: Int,
+    ) {
+        fun wipe() {
+            salt.fill(0)
+            iv.fill(0)
+        }
+    }
 
     companion object {
         const val KDF_ALGORITHM = "PBKDF2WithHmacSHA256"

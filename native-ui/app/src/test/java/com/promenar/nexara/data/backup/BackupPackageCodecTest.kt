@@ -12,6 +12,14 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.Base64
 import java.lang.reflect.Modifier
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+import javax.crypto.Cipher
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.CancellationException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -160,7 +168,7 @@ class BackupPackageCodecTest {
         val notFirst = rawZip(
             listOf("database.json" to byteArrayOf(1), "manifest.json" to Json.encodeToString(manifest).toByteArray()),
         )
-        val smallLimitsCodec = DefaultBackupPackageCodec.forTest(
+        val smallLimitsCodec = codecForTest(
             maxTotalBytes = 32,
             maxEntryBytes = 32,
             maxEntries = 8,
@@ -181,7 +189,7 @@ class BackupPackageCodecTest {
 
     @Test
     fun `manifest limit is independent and total limit counts only declared content`() {
-        val limitedCodec: BackupPackageCodec = DefaultBackupPackageCodec.forTest(
+        val limitedCodec: BackupPackageCodec = codecForTest(
             maxTotalBytes = 10,
             maxEntryBytes = 10,
             maxEntries = 8,
@@ -193,7 +201,7 @@ class BackupPackageCodecTest {
             exact,
             BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES)),
         )
-        val oneByteCodec = DefaultBackupPackageCodec.forTest(
+        val oneByteCodec = codecForTest(
             maxTotalBytes = 1,
             maxEntryBytes = 10,
             maxEntries = 8,
@@ -264,7 +272,7 @@ class BackupPackageCodecTest {
 
         mismatches.forEach { mismatchedKdf ->
             val mismatchedManifest = manifest(encrypted = true, kdf = mismatchedKdf)
-            val encrypted = crypto.encryptForTest(
+            val encrypted = encryptWithFixedParametersForTest(
                 rawZip(listOf("manifest.json" to Json.encodeToString(mismatchedManifest).toByteArray())),
                 "passphrase".toCharArray(),
                 salt,
@@ -278,7 +286,7 @@ class BackupPackageCodecTest {
     @Test
     fun `temporary plaintext arrays are wiped when failure happens after secrets were read`() {
         val observed = mutableListOf<ByteArray>()
-        val observingCodec = DefaultBackupPackageCodec.forTest(
+        val observingCodec = codecForTest(
             temporaryBytesObserver = { _, bytes -> observed += bytes },
         )
         val crypto = BackupCrypto()
@@ -309,7 +317,7 @@ class BackupPackageCodecTest {
             "databaso.json",
             "database.json",
         )
-        val encrypted = crypto.encryptForTest(duplicateZip, "passphrase".toCharArray(), salt, iv)
+        val encrypted = encryptWithFixedParametersForTest(duplicateZip, "passphrase".toCharArray(), salt, iv)
 
         val error = assertThrows<BackupValidationException> {
             observingCodec.decode(encrypted, "passphrase".toCharArray())
@@ -332,9 +340,8 @@ class BackupPackageCodecTest {
 
         assertThat(publicConstructors.map { it.parameterCount }).containsExactly(0)
         assertThat(publicMethods.map { it.name }).doesNotContain("forTest")
-        assertThat(DefaultBackupPackageCodec.Companion::class.java.declaredMethods
-            .filter { it.name.startsWith("forTest") }
-            .all { it.isSynthetic }).isTrue()
+        assertThat(DefaultBackupPackageCodec::class.java.declaredMethods.any { it.name.contains("forTest") }).isFalse()
+        assertThat(DefaultBackupPackageCodec.Companion::class.java.declaredMethods.any { it.name.contains("forTest") }).isFalse()
         assertThat(limitsClass == null || !Modifier.isPublic(limitsClass.modifiers) ||
             limitsClass.declaredConstructors.none { Modifier.isPublic(it.modifiers) && !it.isSynthetic }).isTrue()
     }
@@ -342,7 +349,7 @@ class BackupPackageCodecTest {
     @Test
     fun `throwing observer cannot replace validation failure or stop remaining wipes`() {
         val observed = mutableListOf<ByteArray>()
-        val codecWithHostileObserver = DefaultBackupPackageCodec.forTest(
+        val codecWithHostileObserver = codecForTest(
             temporaryBytesObserver = { _, bytes ->
                 observed += bytes
                 throw IllegalStateException("observer-controlled")
@@ -364,6 +371,37 @@ class BackupPackageCodecTest {
         assertThat(error.toString()).doesNotContain("observer-controlled")
         assertThat(observed.size).isAtLeast(2)
         assertThat(observed.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+    }
+
+    @Test
+    fun `cancellation and fatal observer failures propagate only after accumulated arrays are wiped`() {
+        val failures = listOf<() -> Throwable>(
+            { CancellationException("cancel-observer") },
+            { TestVirtualMachineError() },
+        )
+
+        failures.forEach { failureFactory ->
+            val observed = mutableListOf<ByteArray>()
+            val codecWithFatalObserver = codecForTest(
+                temporaryBytesObserver = { label, bytes ->
+                    observed += bytes
+                    if (label.startsWith("decode:")) throw failureFactory()
+                },
+            )
+            val encoded = codec.encode(
+                fixture(),
+                BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES)),
+            )
+            val tampered = rewriteZip(encoded) { name, bytes ->
+                if (name == "preferences.json") "corrupt".toByteArray() else bytes
+            }
+
+            val thrown = assertThrows<Throwable> { codecWithFatalObserver.decode(tampered, null) }
+
+            assertThat(thrown).isInstanceOf(failureFactory()::class.java)
+            assertThat(observed).isNotEmpty()
+            assertThat(observed.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+        }
     }
 
     private fun manifest(
@@ -401,6 +439,65 @@ class BackupPackageCodecTest {
         appVersion = "0.2-test",
         createdAt = 1234,
     )
+
+    private fun codecForTest(
+        maxTotalBytes: Long = BackupPackageLimits.MAX_TOTAL_BYTES,
+        maxEntryBytes: Long = BackupPackageLimits.MAX_ENTRY_BYTES,
+        maxEntries: Int = BackupPackageLimits.MAX_ENTRIES,
+        maxManifestBytes: Long = 4L * 1024 * 1024,
+        temporaryBytesObserver: ((String, ByteArray) -> Unit)? = null,
+    ): DefaultBackupPackageCodec {
+        val limitsClass = DefaultBackupPackageCodec::class.java.declaredClasses
+            .single { it.simpleName == "BackupLimits" }
+        val limitsConstructor = limitsClass.declaredConstructors.single { it.parameterCount == 4 }
+            .apply { isAccessible = true }
+        val limits = limitsConstructor.newInstance(maxTotalBytes, maxEntryBytes, maxEntries, maxManifestBytes)
+        val codecConstructor = DefaultBackupPackageCodec::class.java.declaredConstructors
+            .single { constructor ->
+                constructor.parameterCount == 3 && constructor.parameterTypes[0] == BackupCrypto::class.java
+            }
+            .apply { isAccessible = true }
+        return codecConstructor.newInstance(BackupCrypto(), limits, temporaryBytesObserver) as DefaultBackupPackageCodec
+    }
+
+    private fun encryptWithFixedParametersForTest(
+        plaintext: ByteArray,
+        password: CharArray,
+        salt: ByteArray,
+        iv: ByteArray,
+    ): ByteArray {
+        val algorithmBytes = BackupCrypto.KDF_ALGORITHM.toByteArray(StandardCharsets.UTF_8)
+        val header = ByteBuffer.allocate(
+            4 + 1 + Short.SIZE_BYTES + algorithmBytes.size + Int.SIZE_BYTES + Int.SIZE_BYTES +
+                1 + salt.size + 1 + iv.size,
+        )
+            .put(byteArrayOf('N'.code.toByte(), 'X'.code.toByte(), 'B'.code.toByte(), 'K'.code.toByte()))
+            .put(1)
+            .putShort(algorithmBytes.size.toShort())
+            .put(algorithmBytes)
+            .putInt(BackupCrypto.PBKDF2_ITERATIONS)
+            .putInt(BackupCrypto.KEY_SIZE_BITS)
+            .put(salt.size.toByte())
+            .put(salt)
+            .put(iv.size.toByte())
+            .put(iv)
+            .array()
+        val spec = PBEKeySpec(password, salt, BackupCrypto.PBKDF2_ITERATIONS, BackupCrypto.KEY_SIZE_BITS)
+        val keyBytes = try {
+            SecretKeyFactory.getInstance(BackupCrypto.KDF_ALGORITHM).generateSecret(spec).encoded
+        } finally {
+            spec.clearPassword()
+        }
+        return try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
+            cipher.updateAAD(header)
+            header + cipher.doFinal(plaintext)
+        } finally {
+            keyBytes.fill(0)
+            header.fill(0)
+        }
+    }
 
     private fun zipEntries(bytes: ByteArray): List<String> = buildList {
         ZipInputStream(ByteArrayInputStream(bytes)).use { input ->
@@ -446,4 +543,6 @@ class BackupPackageCodecTest {
         }
         return result
     }
+
+    private class TestVirtualMachineError : VirtualMachineError()
 }
