@@ -92,7 +92,7 @@ class WebDavBackupClientTest {
     }
 
     @Test
-    fun `failed PUT never sends MOVE`() = runTest {
+    fun `failed PUT never sends MOVE and attempts temporary cleanup`() = runTest {
         val methods = mutableListOf<String>()
         val engine = MockEngine { request ->
             methods += request.method.value
@@ -101,7 +101,7 @@ class WebDavBackupClientTest {
 
         val error = runCatching { client(engine).uploadAtomic(config, backupName(1000), byteArrayOf(1)) }.exceptionOrNull()
 
-        assertThat(methods).containsExactly("PUT")
+        assertThat(methods).containsExactly("PUT", "DELETE").inOrder()
         assertThat(error).isInstanceOf(WebDavException::class.java)
     }
 

@@ -16,20 +16,15 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
-import org.w3c.dom.Element
-import org.xml.sax.InputSource
-import org.xml.sax.SAXParseException
-import org.xml.sax.helpers.DefaultHandler
-import java.io.ByteArrayInputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
 import java.net.URI
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.Base64
-import java.util.Locale
 import java.util.UUID
-import javax.xml.XMLConstants
-import javax.xml.parsers.DocumentBuilderFactory
 
 data class WebDavConfig(
     val baseUrl: String,
@@ -46,9 +41,43 @@ data class RemoteBackup(
     val lastModifiedEpochMillis: Long,
 )
 
+data class WebDavTimeouts(
+    val testMillis: Long = 15_000,
+    val propfindMillis: Long = 30_000,
+    val getMillis: Long = 120_000,
+    val putMillis: Long = 120_000,
+    val moveMillis: Long = 30_000,
+    val deleteMillis: Long = 30_000,
+    val cleanupMillis: Long = 5_000,
+) {
+    init {
+        require(listOf(testMillis, propfindMillis, getMillis, putMillis, moveMillis, deleteMillis, cleanupMillis).all { it > 0 })
+    }
+}
+
+data class WebDavPruneWarning(
+    val message: String,
+    val failedFileNames: List<String> = emptyList(),
+)
+
+sealed interface UploadAndPruneResult {
+    val fileName: String
+
+    data class Committed(
+        override val fileName: String,
+        val pruneWarning: WebDavPruneWarning? = null,
+    ) : UploadAndPruneResult
+}
+
 interface WebDavBackupClient {
     suspend fun test(config: WebDavConfig): Result<Unit>
     suspend fun uploadAtomic(config: WebDavConfig, fileName: String, bytes: ByteArray)
+    suspend fun uploadAndPrune(
+        config: WebDavConfig,
+        fileName: String,
+        bytes: ByteArray,
+        keep: Int = 5,
+    ): UploadAndPruneResult
     suspend fun list(config: WebDavConfig): List<RemoteBackup>
     suspend fun download(config: WebDavConfig, fileName: String): ByteArray
     suspend fun prune(config: WebDavConfig, keep: Int = 5)
@@ -63,12 +92,14 @@ class WebDavPruneException(
 class KtorWebDavBackupClient(
     private val httpClient: HttpClient = HttpClient(OkHttp),
     private val uuidFactory: () -> UUID = UUID::randomUUID,
+    private val timeouts: WebDavTimeouts = WebDavTimeouts(),
+    private val parser: DavMultiStatusParser = DavMultiStatusParser(),
 ) : WebDavBackupClient {
     override suspend fun test(config: WebDavConfig): Result<Unit> {
         return try {
-            val endpoint = validatedCollection(config)
-            val response = execute("连接测试") {
-                httpClient.request(endpoint.toASCIIString()) {
+            val collection = validatedCollection(config)
+            val response = timedRequest("连接测试", timeouts.testMillis) {
+                httpClient.request(collection.toASCIIString()) {
                     method = PROPFIND
                     authenticated(config)
                     header(DEPTH, "0")
@@ -76,7 +107,11 @@ class KtorWebDavBackupClient(
                     setBody(PROPFIND_BODY)
                 }
             }
-            requireStatus("连接测试", response, setOf(HttpStatusCode.MultiStatus))
+            requireExactStatus("连接测试", response, PROPFIND_STATUSES)
+            val body = readLimited(response, LIST_RESPONSE_LIMIT, "WebDAV 列表响应")
+            if (!parser.parse(body, collection).containsTargetCollection) {
+                throw WebDavException("WebDAV 连接测试失败：目标目录未确认")
+            }
             Result.success(Unit)
         } catch (error: CancellationException) {
             throw error
@@ -91,22 +126,21 @@ class KtorWebDavBackupClient(
         val collection = validatedCollection(config)
         val safeName = validatedBackupFileName(fileName)
         requirePayloadSize(bytes.size.toLong(), "上传")
-        val temporaryName = "$safeName.tmp-${uuidFactory()}"
-        val temporaryUrl = childUri(collection, temporaryName)
+        val temporaryUrl = childUri(collection, "$safeName.tmp-${uuidFactory()}")
         val finalUrl = childUri(collection, safeName)
 
-        val putResponse = execute("上传") {
-            httpClient.request(temporaryUrl.toASCIIString()) {
-                method = HttpMethod.Put
-                authenticated(config)
-                contentType(ContentType.Application.OctetStream)
-                setBody(bytes)
-            }
-        }
-        requireSuccess("上传", putResponse)
-
         try {
-            val moveResponse = execute("提交上传") {
+            val putResponse = timedRequest("上传", timeouts.putMillis) {
+                httpClient.request(temporaryUrl.toASCIIString()) {
+                    method = HttpMethod.Put
+                    authenticated(config)
+                    contentType(ContentType.Application.OctetStream)
+                    setBody(bytes)
+                }
+            }
+            requireAndDiscard("上传", putResponse, PUT_STATUSES)
+
+            val moveResponse = timedRequest("提交上传", timeouts.moveMillis) {
                 httpClient.request(temporaryUrl.toASCIIString()) {
                     method = MOVE
                     authenticated(config)
@@ -114,25 +148,54 @@ class KtorWebDavBackupClient(
                     header(OVERWRITE, "F")
                 }
             }
-            if (moveResponse.status == HttpStatusCode.PreconditionFailed || moveResponse.status == HttpStatusCode.Conflict) {
-                throw WebDavException("远程备份文件已存在，未覆盖现有文件")
+            try {
+                when (moveResponse.status) {
+                    HttpStatusCode.PreconditionFailed, HttpStatusCode.Conflict ->
+                        throw WebDavException("远程备份文件已存在，未覆盖现有文件")
+                    HttpStatusCode.MethodNotAllowed ->
+                        throw WebDavException("WebDAV 服务端不支持原子 MOVE，无法安全提交备份")
+                    !in MOVE_STATUSES ->
+                        throw WebDavException("WebDAV 提交上传失败（HTTP ${moveResponse.status.value}）")
+                }
+            } finally {
+                discard(moveResponse)
             }
-            requireSuccess("提交上传", moveResponse)
         } catch (error: CancellationException) {
-            cleanupTemporary(config, temporaryUrl)
+            cleanupTemporary(config, temporaryUrl)?.let(error::addSuppressed)
             throw error
         } catch (error: WebDavException) {
-            cleanupTemporary(config, temporaryUrl)
+            cleanupTemporary(config, temporaryUrl)?.let(error::addSuppressed)
             throw error
         } catch (_: Exception) {
-            cleanupTemporary(config, temporaryUrl)
-            throw WebDavException("远程备份提交失败，临时文件已尝试清理")
+            val safe = WebDavException("远程备份提交失败，临时文件已尝试清理")
+            cleanupTemporary(config, temporaryUrl)?.let(safe::addSuppressed)
+            throw safe
         }
+    }
+
+    override suspend fun uploadAndPrune(
+        config: WebDavConfig,
+        fileName: String,
+        bytes: ByteArray,
+        keep: Int,
+    ): UploadAndPruneResult {
+        uploadAtomic(config, fileName, bytes)
+        val warning = try {
+            prune(config, keep)
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: WebDavPruneException) {
+            WebDavPruneWarning("备份已提交，但部分旧备份清理失败", error.failedFileNames)
+        } catch (_: WebDavException) {
+            WebDavPruneWarning("备份已提交，但远程保留策略未完成")
+        }
+        return UploadAndPruneResult.Committed(fileName, warning)
     }
 
     override suspend fun list(config: WebDavConfig): List<RemoteBackup> {
         val collection = validatedCollection(config)
-        val response = execute("列出备份") {
+        val response = timedRequest("列出备份", timeouts.propfindMillis) {
             httpClient.request(collection.toASCIIString()) {
                 method = PROPFIND
                 authenticated(config)
@@ -141,43 +204,43 @@ class KtorWebDavBackupClient(
                 setBody(PROPFIND_BODY)
             }
         }
-        requireStatus("列出备份", response, setOf(HttpStatusCode.MultiStatus))
-        val xmlBytes = readLimited(response, LIST_RESPONSE_LIMIT, "WebDAV 列表响应")
-        return parseMultistatus(xmlBytes, collection)
-            .sortedWith(
-                compareByDescending<RemoteBackup> { it.lastModifiedEpochMillis }
-                    .thenByDescending { backupTimestamp(it.fileName) }
-                    .thenByDescending { it.fileName },
-            )
+        requireExactStatus("列出备份", response, PROPFIND_STATUSES)
+        val parsed = parser.parse(readLimited(response, LIST_RESPONSE_LIMIT, "WebDAV 列表响应"), collection)
+        return parsed.backups.sortedWith(
+            compareByDescending<RemoteBackup> { it.lastModifiedEpochMillis }
+                .thenByDescending { backupTimestamp(it.fileName) }
+                .thenByDescending { it.fileName },
+        )
     }
 
     override suspend fun download(config: WebDavConfig, fileName: String): ByteArray {
         val collection = validatedCollection(config)
         val safeName = validatedBackupFileName(fileName)
-        val response = execute("下载") {
+        val response = timedRequest("下载", timeouts.getMillis) {
             httpClient.request(childUri(collection, safeName).toASCIIString()) {
                 method = HttpMethod.Get
                 authenticated(config)
             }
         }
-        requireSuccess("下载", response)
+        requireExactStatus("下载", response, GET_STATUSES)
         return readLimited(response, BackupPackageLimits.MAX_IN_MEMORY_BYTES, "远程备份")
     }
 
     override suspend fun prune(config: WebDavConfig, keep: Int) {
         if (keep < 1) throw WebDavException("远程备份保留数量必须至少为 1")
         val collection = validatedCollection(config)
-        val expired = list(config).drop(keep)
         val failures = mutableListOf<String>()
-        for (backup in expired) {
+        for (backup in list(config).drop(keep)) {
             try {
-                val response = execute("删除旧备份") {
+                val response = timedRequest("删除旧备份", timeouts.deleteMillis) {
                     httpClient.delete(childUri(collection, validatedBackupFileName(backup.fileName)).toASCIIString()) {
                         authenticated(config)
                     }
                 }
-                if (!response.status.isSuccessStatus() && response.status != HttpStatusCode.NotFound) {
-                    failures += backup.fileName
+                try {
+                    if (response.status !in DELETE_STATUSES) failures += backup.fileName
+                } finally {
+                    discard(response)
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -185,170 +248,126 @@ class KtorWebDavBackupClient(
                 failures += backup.fileName
             }
         }
-        if (failures.isNotEmpty()) throw WebDavPruneException(failures.toList())
+        if (failures.isNotEmpty()) throw WebDavPruneException(failures)
     }
 
-    private suspend fun cleanupTemporary(config: WebDavConfig, temporaryUrl: URI) {
-        try {
-            httpClient.delete(temporaryUrl.toASCIIString()) {
-                authenticated(config)
+    private suspend fun cleanupTemporary(config: WebDavConfig, temporaryUrl: URI): WebDavException? =
+        withContext(NonCancellable + Dispatchers.IO) {
+            try {
+                withTimeout(timeouts.cleanupMillis) {
+                    val response = httpClient.delete(temporaryUrl.toASCIIString()) { authenticated(config) }
+                    try {
+                        if (response.status !in DELETE_STATUSES) {
+                            return@withTimeout WebDavException("WebDAV 临时文件清理未完成（HTTP ${response.status.value}）")
+                        }
+                    } finally {
+                        discard(response)
+                    }
+                    null
+                }
+            } catch (_: TimeoutCancellationException) {
+                WebDavException("WebDAV 临时文件清理超时")
+            } catch (_: Exception) {
+                WebDavException("WebDAV 临时文件清理失败")
             }
-        } catch (error: CancellationException) {
-            // 清理是尽力而为；不得用清理取消覆盖原始 MOVE 结果。
-        } catch (_: Exception) {
-            // 清理是尽力而为；调用方仍收到脱敏后的原始提交错误。
         }
+
+    private suspend fun timedRequest(
+        operation: String,
+        timeoutMillis: Long,
+        block: suspend () -> HttpResponse,
+    ): HttpResponse = try {
+        withContext(Dispatchers.IO) { withTimeout(timeoutMillis) { block() } }
+    } catch (_: TimeoutCancellationException) {
+        throw WebDavException("WebDAV $operation 超时")
+    } catch (error: CancellationException) {
+        if (error.hasTimeoutCause()) throw WebDavException("WebDAV $operation 超时")
+        throw error
+    } catch (_: Exception) {
+        throw WebDavException("WebDAV $operation 失败")
     }
 
-    private suspend fun execute(operation: String, block: suspend () -> HttpResponse): HttpResponse {
-        return try {
-            block()
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: WebDavException) {
-            throw error
-        } catch (_: Exception) {
-            throw WebDavException("WebDAV $operation 失败")
+    private fun Throwable.hasTimeoutCause(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is TimeoutCancellationException) return true
+            current = current.cause
         }
+        return false
     }
 
-    private fun requireSuccess(operation: String, response: HttpResponse) {
-        if (!response.status.isSuccessStatus()) {
+    private suspend fun requireExactStatus(operation: String, response: HttpResponse, allowed: Set<HttpStatusCode>) {
+        if (response.status !in allowed) {
+            discard(response)
             throw WebDavException("WebDAV $operation 失败（HTTP ${response.status.value}）")
         }
     }
 
-    private fun requireStatus(operation: String, response: HttpResponse, allowed: Set<HttpStatusCode>) {
-        if (!response.status.isSuccessStatus() && response.status !in allowed) {
-            throw WebDavException("WebDAV $operation 失败（HTTP ${response.status.value}）")
+    private suspend fun requireAndDiscard(operation: String, response: HttpResponse, allowed: Set<HttpStatusCode>) {
+        try {
+            if (response.status !in allowed) {
+                throw WebDavException("WebDAV $operation 失败（HTTP ${response.status.value}）")
+            }
+        } finally {
+            discard(response)
         }
+    }
+
+    private suspend fun discard(response: HttpResponse) {
+        response.bodyAsChannel().cancel(null)
     }
 
     private suspend fun readLimited(response: HttpResponse, limit: Long, label: String): ByteArray {
-        val declaredLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-        if (declaredLength != null && (declaredLength < 0 || declaredLength > limit)) {
-            throw WebDavException("$label 过大，已在读取前拒绝")
-        }
-
         val channel = response.bodyAsChannel()
-        val output = ByteArrayOutputStream((declaredLength ?: 0L).coerceAtMost(64L * 1024).toInt())
-        val buffer = ByteArray(8 * 1024)
-        var total = 0L
-        while (true) {
-            val read = channel.readAvailable(buffer, 0, buffer.size)
-            if (read < 0) break
-            if (read == 0) continue
-            total += read
-            if (total > limit) throw WebDavException("$label 过大，已停止读取")
-            output.write(buffer, 0, read)
-        }
-        return output.toByteArray()
-    }
-
-    private fun parseMultistatus(bytes: ByteArray, collection: URI): List<RemoteBackup> {
-        val document = try {
-            val factory = secureDocumentBuilderFactory()
-            factory.newDocumentBuilder().apply {
-                setErrorHandler(object : DefaultHandler() {
-                    override fun warning(error: SAXParseException) = throw error
-                    override fun error(error: SAXParseException) = throw error
-                    override fun fatalError(error: SAXParseException) = throw error
-                })
-            }.parse(InputSource(ByteArrayInputStream(bytes)))
-        } catch (_: Exception) {
-            throw WebDavException("WebDAV 列表响应格式不安全或无效")
-        }
-
-        val responses = document.getElementsByTagNameNS(DAV_NAMESPACE, "response")
-        return buildList {
-            for (index in 0 until responses.length) {
-                val response = responses.item(index) as? Element ?: continue
-                val propStatus = response.firstDavText("status") ?: continue
-                if (!propStatus.contains(" 200 ")) continue
-                if (response.getElementsByTagNameNS(DAV_NAMESPACE, "collection").length > 0) continue
-                val href = response.firstDavText("href") ?: continue
-                val fileName = sameCollectionFileName(collection, href) ?: continue
-                if (!BACKUP_FILE.matches(fileName)) continue
-                val size = response.firstDavText("getcontentlength")?.toLongOrNull() ?: 0L
-                if (size < 0 || size > BackupPackageLimits.MAX_IN_MEMORY_BYTES) continue
-                val modified = parseServerTime(response.firstDavText("getlastmodified"))
-                add(RemoteBackup(fileName, size, modified))
+        try {
+            val rawLength = response.headers[HttpHeaders.ContentLength]
+            val declaredLength = rawLength?.toLongOrNull()
+            if (rawLength != null && (declaredLength == null || declaredLength < 0 || declaredLength > limit)) {
+                throw WebDavException("$label 过大或长度无效，已在读取前拒绝")
             }
-        }.distinctBy { it.fileName }
-    }
-
-    private fun secureDocumentBuilderFactory(): DocumentBuilderFactory =
-        DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = true
-            isXIncludeAware = false
-            isExpandEntityReferences = false
-            setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-            runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "") }
-            runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalSchema", "") }
+            val output = ByteArrayOutputStream((declaredLength ?: 0L).coerceAtMost(64L * 1024).toInt())
+            val buffer = ByteArray(8 * 1024)
+            var total = 0L
+            while (true) {
+                val read = channel.readAvailable(buffer, 0, buffer.size)
+                if (read < 0) break
+                if (read == 0) continue
+                total += read
+                if (total > limit) throw WebDavException("$label 过大，已停止读取")
+                output.write(buffer, 0, read)
+            }
+            return output.toByteArray()
+        } finally {
+            channel.cancel(null)
         }
-
-    private fun Element.firstDavText(localName: String): String? {
-        val nodes = getElementsByTagNameNS(DAV_NAMESPACE, localName)
-        return if (nodes.length == 0) null else nodes.item(0).textContent?.trim()
-    }
-
-    private fun sameCollectionFileName(collection: URI, href: String): String? {
-        if (href.any { it == '\r' || it == '\n' || it.code < 0x20 }) return null
-        val resolved = try {
-            collection.resolve(URI(href)).normalize()
-        } catch (_: Exception) {
-            return null
-        }
-        if (!sameOrigin(collection, resolved) || resolved.rawUserInfo != null ||
-            resolved.rawQuery != null || resolved.rawFragment != null
-        ) return null
-        val decodedPath = resolved.path ?: return null
-        val basePath = collection.path
-        if (!decodedPath.startsWith(basePath)) return null
-        val tail = decodedPath.removePrefix(basePath)
-        if (tail.isEmpty() || tail.contains('/')) return null
-        return tail
     }
 
     private fun validatedCollection(config: WebDavConfig): URI {
         if (config.username.any { it == ':' || it == '\r' || it == '\n' || it.code < 0x20 } ||
             config.password.any { it == '\r' || it == '\n' || it.code < 0x20 }
-        ) {
-            throw WebDavException("WebDAV 认证信息格式无效")
-        }
-        val raw = config.baseUrl.trim()
+        ) throw WebDavException("WebDAV 认证信息格式无效")
+
         val parsed = try {
-            URI(raw)
+            URI(config.baseUrl.trim())
         } catch (_: Exception) {
             throw WebDavException("WebDAV 地址格式无效")
         }
-        if (!parsed.scheme.equals("https", ignoreCase = true)) {
-            throw WebDavException("WebDAV 地址必须使用 HTTPS")
-        }
+        if (!parsed.scheme.equals("https", ignoreCase = true)) throw WebDavException("WebDAV 地址必须使用 HTTPS")
         if (parsed.host.isNullOrBlank() || parsed.rawUserInfo != null || parsed.rawQuery != null || parsed.rawFragment != null) {
             throw WebDavException("WebDAV 地址格式无效，不得包含凭证、查询参数或片段")
         }
         val decodedPath = parsed.path ?: "/"
         if (decodedPath.split('/').any { it == "." || it == ".." } ||
             decodedPath.any { it == '\r' || it == '\n' || it.code < 0x20 }
-        ) {
-            throw WebDavException("WebDAV 地址路径无效")
-        }
-        val normalized = parsed.normalize()
-        val safePath = normalized.rawPath?.let { if (it.endsWith('/')) it else "$it/" } ?: "/"
-        return URI(normalized.scheme, null, normalized.host, normalized.port, safePath, null, null)
+        ) throw WebDavException("WebDAV 地址路径无效")
+
+        val ascii = parsed.normalize().toASCIIString()
+        return URI(ascii + if (parsed.rawPath.isNullOrEmpty() || !ascii.endsWith('/')) "/" else "")
     }
 
-    private fun validatedBackupFileName(fileName: String): String {
-        if (!BACKUP_FILE.matches(fileName)) {
-            throw WebDavException("远程备份文件名格式无效")
-        }
-        return fileName
-    }
+    private fun validatedBackupFileName(fileName: String): String =
+        fileName.takeIf(NEXARA_BACKUP_FILE::matches)
+            ?: throw WebDavException("远程备份文件名格式无效")
 
     private fun childUri(collection: URI, fileName: String): URI {
         if (!SAFE_CHILD.matches(fileName)) throw WebDavException("远程文件名格式无效")
@@ -366,23 +385,12 @@ class KtorWebDavBackupClient(
 
     private fun effectivePort(uri: URI): Int = if (uri.port >= 0) uri.port else 443
 
-    private fun parseServerTime(value: String?): Long = try {
-        if (value == null) 0L
-        else ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.US)).toInstant().toEpochMilli()
-    } catch (_: Exception) {
-        0L
-    }
-
     private fun backupTimestamp(fileName: String): Long =
-        BACKUP_FILE.matchEntire(fileName)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        NEXARA_BACKUP_FILE.matchEntire(fileName)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
 
     private fun requirePayloadSize(size: Long, operation: String) {
-        if (size > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
-            throw WebDavException("WebDAV $operation 内容过大")
-        }
+        if (size > BackupPackageLimits.MAX_IN_MEMORY_BYTES) throw WebDavException("WebDAV $operation 内容过大")
     }
-
-    private fun HttpStatusCode.isSuccessStatus(): Boolean = value in 200..299
 
     private fun io.ktor.client.request.HttpRequestBuilder.authenticated(config: WebDavConfig) {
         val token = Base64.getEncoder().encodeToString("${config.username}:${config.password}".toByteArray(Charsets.UTF_8))
@@ -392,12 +400,15 @@ class KtorWebDavBackupClient(
     private companion object {
         val PROPFIND = HttpMethod("PROPFIND")
         val MOVE = HttpMethod("MOVE")
+        val PROPFIND_STATUSES = setOf(HttpStatusCode.MultiStatus)
+        val GET_STATUSES = setOf(HttpStatusCode.OK)
+        val PUT_STATUSES = setOf(HttpStatusCode.OK, HttpStatusCode.Created, HttpStatusCode.NoContent)
+        val MOVE_STATUSES = setOf(HttpStatusCode.Created, HttpStatusCode.NoContent)
+        val DELETE_STATUSES = setOf(HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.NoContent, HttpStatusCode.NotFound)
         const val DEPTH = "Depth"
         const val DESTINATION = "Destination"
         const val OVERWRITE = "Overwrite"
-        const val DAV_NAMESPACE = "DAV:"
         const val LIST_RESPONSE_LIMIT = 4L * 1024 * 1024
-        val BACKUP_FILE = Regex("nexara_backup_([0-9]{13})\\.nexara")
         val SAFE_CHILD = Regex("[A-Za-z0-9._-]{1,220}")
         const val PROPFIND_BODY =
             """<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>"""
