@@ -33,8 +33,14 @@ class DefaultBackupPackageCodec private constructor(
     constructor() : this(BackupCrypto(), BackupLimits(), null)
 
     private val json = Json { encodeDefaults = true; explicitNulls = false }
+    private val activeWipeSession = ThreadLocal<WipeSession?>()
 
-    override fun encode(snapshot: BackupSnapshot, options: BackupOptions): ByteArray {
+    override fun encode(snapshot: BackupSnapshot, options: BackupOptions): ByteArray =
+        withWipeSession(resultWiper = { it.fill(0) }) {
+            encodeInternal(snapshot, options)
+        }
+
+    private fun encodeInternal(snapshot: BackupSnapshot, options: BackupOptions): ByteArray {
         val includeSecrets = options.includeSecrets
         if (includeSecrets && BackupContent.SECRETS !in options.content) {
             throw BackupValidationException("包含密钥时必须选择密钥内容")
@@ -79,7 +85,17 @@ class DefaultBackupPackageCodec private constructor(
         }
     }
 
-    override fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup {
+    override fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup =
+        withWipeSession(resultWiper = ::wipeValidatedResult) {
+            val inputSnapshot = bytes.copyOf()
+            try {
+                decodeInternal(inputSnapshot, password)
+            } finally {
+                wipe("decode-input-snapshot", inputSnapshot)
+            }
+        }
+
+    private fun decodeInternal(bytes: ByteArray, password: CharArray?): ValidatedBackup {
         if (bytes.size.toLong() > maxInputBytes()) throw BackupValidationException("备份包超过允许大小")
         val encrypted = crypto.isEncrypted(bytes)
         if (encrypted && (password == null || password.isEmpty())) {
@@ -96,6 +112,7 @@ class DefaultBackupPackageCodec private constructor(
                 } catch (error: GeneralSecurityException) {
                     throw BackupValidationException("备份密码错误或备份包认证失败")
                 }
+                notifyObserver("after-authentication", ByteArray(0))
                 envelopeMetadata = parseAuthenticatedEnvelopeKdf(bytes)
             } else {
                 zipBytes = bytes
@@ -425,15 +442,38 @@ class DefaultBackupPackageCodec private constructor(
     }
 
     private fun notifyObserver(label: String, bytes: ByteArray) {
+        activeWipeSession.get()?.notify(label, bytes)
+            ?: error("清零观察只能在 codec 操作作用域内执行")
+    }
+
+    private inline fun <T> withWipeSession(
+        crossinline resultWiper: (T) -> Unit,
+        block: () -> T,
+    ): T {
+        check(activeWipeSession.get() == null) { "不支持同线程嵌套 codec 操作" }
+        val session = WipeSession(temporaryBytesObserver)
+        activeWipeSession.set(session)
         try {
-            temporaryBytesObserver?.invoke(label, bytes)
-        } catch (error: CancellationException) {
+            val result = block()
+            val deferred = session.deferredFailure
+            if (deferred != null) {
+                resultWiper(result)
+                throw deferred
+            }
+            return result
+        } catch (error: Throwable) {
+            session.deferredFailure?.takeIf { it !== error }?.let(error::addSuppressed)
             throw error
-        } catch (error: Error) {
-            throw error
-        } catch (_: Exception) {
-            // 普通测试观察异常不能覆盖安全校验结果。
+        } finally {
+            activeWipeSession.remove()
         }
+    }
+
+    private fun wipeValidatedResult(result: ValidatedBackup) {
+        result.database.fill(0)
+        result.preferences.fill(0)
+        result.files.values.forEach { it.fill(0) }
+        result.secrets.values.forEach { it.fill(0) }
     }
 
     private data class BackupLimits(
@@ -454,6 +494,30 @@ class DefaultBackupPackageCodec private constructor(
         val keySizeBits: Int,
         val salt: ByteArray,
     )
+
+    private class WipeSession(
+        private val observer: ((String, ByteArray) -> Unit)?,
+    ) {
+        var deferredFailure: Throwable? = null
+            private set
+
+        fun notify(label: String, bytes: ByteArray) {
+            try {
+                observer?.invoke(label, bytes)
+            } catch (error: CancellationException) {
+                record(error)
+            } catch (error: Error) {
+                record(error)
+            } catch (_: Exception) {
+                // 普通观察异常不进入安全控制流。
+            }
+        }
+
+        private fun record(error: Throwable) {
+            val current = deferredFailure
+            if (current == null) deferredFailure = error else if (current !== error) current.addSuppressed(error)
+        }
+    }
 
     companion object {
         const val FORMAT_VERSION = 1

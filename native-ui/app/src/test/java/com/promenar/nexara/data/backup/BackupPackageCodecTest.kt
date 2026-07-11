@@ -396,12 +396,102 @@ class BackupPackageCodecTest {
                 if (name == "preferences.json") "corrupt".toByteArray() else bytes
             }
 
-            val thrown = assertThrows<Throwable> { codecWithFatalObserver.decode(tampered, null) }
+            val thrown = assertThrows<BackupValidationException> { codecWithFatalObserver.decode(tampered, null) }
 
-            assertThat(thrown).isInstanceOf(failureFactory()::class.java)
+            assertThat(thrown.suppressed.single()).isInstanceOf(failureFactory()::class.java)
             assertThat(observed).isNotEmpty()
             assertThat(observed.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
         }
+    }
+
+    @Test
+    fun `decode authenticates and parses metadata from one input snapshot despite caller mutation`() {
+        val password = "passphrase".toCharArray()
+        val encoded = codec.encode(
+            fixture(),
+            BackupOptions(setOf(BackupContent.SECRETS), includeSecrets = true, password = password),
+        )
+        var mutationTriggered = false
+        val snapshotCodec = codecForTest(
+            temporaryBytesObserver = { label, _ ->
+                if (label == "after-authentication") {
+                    encoded[encoded.lastIndex] = (encoded.last().toInt() xor 1).toByte()
+                    mutationTriggered = true
+                }
+            },
+        )
+
+        val decoded = snapshotCodec.decode(encoded, "passphrase".toCharArray())
+
+        assertThat(mutationTriggered).isTrue()
+        assertThat(decoded.secrets[SecretId("provider")]).isEqualTo("api-key".toByteArray())
+    }
+
+    @Test
+    fun `encode cancellation or fatal propagates after all temporary arrays are wiped`() {
+        val cases = listOf<() -> Throwable>(
+            { CancellationException("cancel-encode") },
+            { TestVirtualMachineError() },
+        )
+
+        cases.forEachIndexed { index, failureFactory ->
+            val observed = mutableMapOf<String, ByteArray>()
+            val failingCodec = codecForTest(
+                temporaryBytesObserver = { label, bytes ->
+                    observed[label] = bytes
+                    if (label == "encode:database.json") throw failureFactory()
+                },
+            )
+            val callerPassword = "passphrase".toCharArray()
+            val options = if (index == 0) {
+                BackupOptions(setOf(BackupContent.DATABASE, BackupContent.PREFERENCES))
+            } else {
+                BackupOptions(
+                    setOf(BackupContent.DATABASE, BackupContent.PREFERENCES, BackupContent.SECRETS),
+                    includeSecrets = true,
+                    password = callerPassword,
+                )
+            }
+
+            val thrown = assertThrows<Throwable> { failingCodec.encode(fixture(), options) }
+
+            assertThat(thrown).isInstanceOf(failureFactory()::class.java)
+            assertThat(callerPassword.concatToString()).isEqualTo("passphrase")
+            assertThat(observed.keys).containsAtLeast("encode:database.json", "encode:preferences.json")
+            assertThat(observed.values.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+        }
+    }
+
+    @Test
+    fun `encrypted decode fatal propagates only after input snapshot zip entries and password cleanup`() {
+        val callerPassword = "passphrase".toCharArray()
+        val encoded = codec.encode(
+            fixture(),
+            BackupOptions(
+                setOf(BackupContent.DATABASE, BackupContent.PREFERENCES, BackupContent.SECRETS),
+                includeSecrets = true,
+                password = callerPassword,
+            ),
+        )
+        val observed = mutableMapOf<String, ByteArray>()
+        val failingCodec = codecForTest(
+            temporaryBytesObserver = { label, bytes ->
+                observed[label] = bytes
+                if (label == "decode:database.json") throw TestVirtualMachineError()
+            },
+        )
+        val decodePassword = "passphrase".toCharArray()
+
+        assertThrows<TestVirtualMachineError> { failingCodec.decode(encoded, decodePassword) }
+
+        assertThat(decodePassword.concatToString()).isEqualTo("passphrase")
+        assertThat(observed.keys).containsAtLeast(
+            "decode:database.json",
+            "decode:preferences.json",
+            "decoded-zip",
+            "decode-input-snapshot",
+        )
+        assertThat(observed.values.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
     }
 
     private fun manifest(
