@@ -6,6 +6,8 @@ import java.net.URI
 
 object SensitiveDataRedactor {
     private const val REDACTED = "[REDACTED]"
+    private const val SENSITIVE_KEY_PATTERN =
+        "authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-auth-token|api[_-]?key|access[_-]?token|refresh[_-]?token|token|prompt|response|body|bindArgs"
     private val sensitiveHeaders = setOf(
         "authorization",
         "cookie",
@@ -16,8 +18,11 @@ object SensitiveDataRedactor {
     )
     private val urlPattern = Regex("""https?://[^\s\"'<>]+""", RegexOption.IGNORE_CASE)
     private val bearerPattern = Regex("""(?i)(bearer\s+)[^\s,;\"]+""")
-    private val sensitiveValuePattern = Regex(
-        """(?i)(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-auth-token|api[_-]?key|access[_-]?token|refresh[_-]?token|token|prompt|response|body|bindArgs)\s*[:=]\s*(?:\"(?:\\.|[^\"])*\"|\[[^\]\r\n]*\]|[^\r\n,}]+)"""
+    private val jsonSensitiveValuePattern = Regex(
+        """(?i)(\")($SENSITIVE_KEY_PATTERN)\1(\s*:\s*)(\"(?:\\.|[^\"\\])*\")"""
+    )
+    private val unquotedSensitiveValuePattern = Regex(
+        """(?i)(?<![\"'\w])($SENSITIVE_KEY_PATTERN)(\s*[:=]\s*)(?:\"(?:\\.|[^\"\\])*\"|\[[^\]\r\n]*\]|[^\r\n,}]+)"""
     )
 
     fun redactHeaders(headers: Headers): Map<String, String> = buildMap {
@@ -46,8 +51,12 @@ object SensitiveDataRedactor {
     fun redactMessage(message: String): String {
         val withoutUrlSecrets = urlPattern.replace(message) { redactUrl(it.value) }
         val withoutBearerTokens = bearerPattern.replace(withoutUrlSecrets, "$1$REDACTED")
-        return sensitiveValuePattern.replace(withoutBearerTokens) { match ->
-            "${match.groupValues[1]}=$REDACTED"
+        val withoutJsonSecrets = jsonSensitiveValuePattern.replace(withoutBearerTokens) { match ->
+            "${match.groupValues[1]}${match.groupValues[2]}${match.groupValues[1]}" +
+                "${match.groupValues[3]}\"$REDACTED\""
+        }
+        return unquotedSensitiveValuePattern.replace(withoutJsonSecrets) { match ->
+            "${match.groupValues[1]}${match.groupValues[2]}$REDACTED"
         }
     }
 

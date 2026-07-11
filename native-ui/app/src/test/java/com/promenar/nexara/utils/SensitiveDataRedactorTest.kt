@@ -1,6 +1,9 @@
 package com.promenar.nexara.utils
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Headers.Companion.toHeaders
 import org.junit.jupiter.api.Test
 
@@ -49,6 +52,38 @@ class SensitiveDataRedactorTest {
         assertThat(redacted).doesNotContain("obviously-fake")
         assertThat(redacted).doesNotContain("?token=")
         assertThat(redacted).contains("[REDACTED]")
+    }
+
+    @Test
+    fun `redactMessage redacts JSON keys while preserving non-sensitive structure`() {
+        val message = """
+            {
+              "event": "request_complete",
+              "prompt": "obviously-fake-prompt with \"escaped quotes\"",
+              "response" : "obviously-fake-response",
+              "body": "obviously-fake-body",
+              "apiKey": "obviously-fake-camel-key",
+              "api_key" : "obviously-fake-snake-key",
+              "authorization": "Bearer obviously-fake-token",
+              "token" : "obviously-fake-token",
+              "nested": {"count": 2, "label": "keep-me"}
+            }
+        """.trimIndent()
+
+        val redacted = SensitiveDataRedactor.redactMessage(message)
+        val parsed = Json.parseToJsonElement(redacted).jsonObject
+
+        assertThat(redacted).doesNotContain("obviously-fake")
+        assertThat(parsed["event"]!!.jsonPrimitive.content).isEqualTo("request_complete")
+        assertThat(parsed["prompt"]!!.jsonPrimitive.content).isEqualTo("[REDACTED]")
+        assertThat(parsed["response"]!!.jsonPrimitive.content).isEqualTo("[REDACTED]")
+        assertThat(parsed["body"]!!.jsonPrimitive.content).isEqualTo("[REDACTED]")
+        assertThat(parsed["apiKey"]!!.jsonPrimitive.content).isEqualTo("[REDACTED]")
+        assertThat(parsed["api_key"]!!.jsonPrimitive.content).isEqualTo("[REDACTED]")
+        assertThat(parsed["authorization"]!!.jsonPrimitive.content).isEqualTo("[REDACTED]")
+        assertThat(parsed["token"]!!.jsonPrimitive.content).isEqualTo("[REDACTED]")
+        assertThat(parsed["nested"]!!.jsonObject["count"]!!.jsonPrimitive.content).isEqualTo("2")
+        assertThat(parsed["nested"]!!.jsonObject["label"]!!.jsonPrimitive.content).isEqualTo("keep-me")
     }
 
     @Test
