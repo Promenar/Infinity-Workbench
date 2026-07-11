@@ -242,12 +242,12 @@ class VertexAIProtocol(
         return key
     }
 
-    private fun safeCredentialError(error: Exception): String = when {
-        error.message?.contains("client_email", ignoreCase = true) == true -> "Missing client_email in service account"
-        error.message?.contains("service account", ignoreCase = true) == true -> error.message!!
-        error.message?.contains("private key", ignoreCase = true) == true ||
-            error.message?.contains("private_key", ignoreCase = true) == true -> "Invalid service account private key"
-        else -> "Invalid service account credentials"
+    private fun safeCredentialError(error: Exception): String = when (error.message) {
+        "Missing service account JSON" -> "Service account credentials are missing"
+        "Invalid service account JSON" -> "Service account credentials are invalid"
+        "Missing client_email in service account key",
+        "Missing private_key in service account key" -> "Service account credentials are incomplete"
+        else -> "Service account private key is invalid"
     }
 
     private fun createJwt(keyData: ServiceAccountKey): String {

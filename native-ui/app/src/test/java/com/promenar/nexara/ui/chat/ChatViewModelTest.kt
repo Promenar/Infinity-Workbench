@@ -39,6 +39,12 @@ class ChatViewModelTest {
 
     private lateinit var viewModel: ChatViewModel
 
+    @Test
+    fun applicationDoesNotKeepCredentialBearingProviderStateFlow() {
+        assertThat(NexaraApplication::class.java.declaredFields.map { it.name })
+            .doesNotContain("_llmProvider")
+    }
+
     private val savedSessions = mutableListOf<Session>()
     private val savedMessages = mutableListOf<Pair<Message, String>>()
     private val deletedMessages = mutableListOf<String>()

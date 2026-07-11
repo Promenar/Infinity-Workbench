@@ -31,6 +31,7 @@ import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.model.ProviderConfig
+import com.promenar.nexara.data.model.toCredentialUpdate
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.FileOperationRepository
@@ -241,9 +242,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         getSharedPreferences("nexara_provider", MODE_PRIVATE)
     }
 
-    private lateinit var _llmProvider: MutableStateFlow<LlmProvider>
-    val llmProvider: LlmProvider get() = _llmProvider.value
-    val llmProviderFlow: StateFlow<LlmProvider> get() = _llmProvider
+    private val _providerConfigurationVersion = MutableStateFlow(0L)
+    val providerConfigurationVersion: StateFlow<Long> = _providerConfigurationVersion
+    private var localProviderOverride: String? = null
+    val llmProvider: LlmProvider get() = buildCredentialResolvingProvider()
 
     private var _unifiedLlmClient: com.promenar.nexara.data.remote.UnifiedLlmClient? = null
     val unifiedLlmClient: com.promenar.nexara.data.remote.UnifiedLlmClient?
@@ -279,10 +281,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         // 初始化统一数据源（必须在 buildProviderFromPrefs 之前）
         val providerManager = ProviderManager.init(this, secretStore)
 
-        _llmProvider = MutableStateFlow(buildProviderFromPrefs())
-
         CoroutineScope(Dispatchers.Default).launch {
             providerManager.configurationChanges.collect {
+                _providerConfigurationVersion.value += 1
                 rebuildEmbeddingClient()
                 rebuildRerankClient()
                 _vectorizationQueue = null
@@ -552,23 +553,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         name: String? = null
     ) {
         // 委托 ProviderManager 持久化
-        ProviderManager.getInstance().updateMainProvider(protocolType, baseUrl, apiKey, model, name)
-        // 重建 LlmProvider
-        _llmProvider.value = when (protocolType) {
-            is ProtocolType.Local -> LlmProvider.local(localInferenceEngine, model)
-            is ProtocolType.Google_VertexAI -> LlmProvider.builder()
-                .protocolType(protocolType)
-                .serviceAccountJson(apiKey)
-                .projectId(extractVertexProjectId(apiKey))
-                .model(model)
-                .build()
-            else -> LlmProvider.builder()
-                .protocolType(protocolType)
-                .baseUrl(baseUrl)
-                .apiKey(apiKey)
-                .model(model)
-                .build()
-        }
+        ProviderManager.getInstance().updateMainProvider(
+            protocolType,
+            baseUrl,
+            apiKey.toCredentialUpdate(),
+            model,
+            name,
+        )
+        localProviderOverride = null
+        _providerConfigurationVersion.value += 1
         // 同步重建 Embedding / Rerank 客户端（使用最新的 baseUrl/apiKey）
         rebuildEmbeddingClient()
         rebuildRerankClient()
@@ -577,7 +570,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     fun switchToLocalProvider(modelName: String = "") {
-        _llmProvider.value = LlmProvider.local(localInferenceEngine, modelName)
+        localProviderOverride = modelName
+        _providerConfigurationVersion.value += 1
     }
 
     fun getSavedProviderConfig(): ProviderConfig? {
@@ -585,9 +579,23 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     private fun buildUnifiedLlmClient(): com.promenar.nexara.data.remote.UnifiedLlmClient? {
+        val summary = ProviderManager.getInstance().getProviderSummary("default") ?: return null
+        if (!summary.hasApiKey && !summary.hasVertexCredentials && summary.protocolType !is ProtocolType.Local) return null
+        val middlewares = if (com.promenar.nexara.BuildConfig.DEBUG) {
+            listOf(com.promenar.nexara.data.remote.middleware.MetroLoggingMiddleware())
+        } else {
+            emptyList()
+        }
+        return com.promenar.nexara.data.remote.UnifiedLlmClient(
+            providerConfigResolver = { buildUnifiedProviderConfig() },
+            middlewares = middlewares,
+        )
+    }
+
+    private fun buildUnifiedProviderConfig(): com.promenar.nexara.data.remote.UnifiedProviderConfig? {
         val config = getSavedProviderConfig() ?: return null
         if (config.apiKey.isBlank() && config.vertexServiceAccountJson.isBlank() && config.protocolType !is ProtocolType.Local) return null
-        val uConfig = com.promenar.nexara.data.remote.UnifiedProviderConfig(
+        return com.promenar.nexara.data.remote.UnifiedProviderConfig(
             protocolType = config.protocolType,
             baseUrl = config.baseUrl,
             apiKey = config.apiKey,
@@ -595,12 +603,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             serviceAccountJson = config.vertexServiceAccountJson,
             projectId = extractVertexProjectId(config.vertexServiceAccountJson),
         )
-        val middlewares = if (com.promenar.nexara.BuildConfig.DEBUG) {
-            listOf(com.promenar.nexara.data.remote.middleware.MetroLoggingMiddleware())
-        } else {
-            emptyList()
+    }
+
+    private fun buildCredentialResolvingProvider(): LlmProvider {
+        localProviderOverride?.let { return LlmProvider.local(localInferenceEngine, it) }
+        val summary = ProviderManager.getInstance().getProviderSummary("default")
+        if (summary?.protocolType is ProtocolType.Local) {
+            return LlmProvider.local(localInferenceEngine, summary.model)
         }
-        return com.promenar.nexara.data.remote.UnifiedLlmClient(uConfig, middlewares)
+        val protocolType = summary?.protocolType ?: ProtocolType.OpenAI_ChatCompletions
+        return LlmProvider.resolving(protocolType) { buildProviderFromPrefs().protocol }
     }
 
     private fun buildProviderFromPrefs(): LlmProvider {

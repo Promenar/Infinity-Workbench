@@ -2,6 +2,7 @@ package com.promenar.nexara.data.repository
 
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.toCredentialUpdate
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.domain.model.ConnectionResult
@@ -73,7 +74,7 @@ class ProviderRepository(
             providerManager.updateMainProvider(
                 protocolType = dataProtocolType,
                 baseUrl = config.baseUrl,
-                apiKey = config.apiKey,
+                credentialUpdate = config.apiKey.toCredentialUpdate(),
                 model = config.defaultModel,
                 name = config.name
             )
@@ -88,7 +89,10 @@ class ProviderRepository(
                 hasApiKey = config.apiKey.isNotBlank() && dataProtocolType !is ProtocolType.Google_VertexAI,
                 hasVertexCredentials = config.apiKey.isNotBlank() && dataProtocolType is ProtocolType.Google_VertexAI,
             )
-            providerManager.addProvider(item, apiKey = config.apiKey)
+            providerManager.addProvider(
+                item,
+                config.apiKey.toCredentialUpdate(),
+            )
         }
     }
 

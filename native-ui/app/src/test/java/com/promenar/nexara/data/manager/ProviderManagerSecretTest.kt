@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
@@ -74,7 +75,7 @@ class ProviderManagerSecretTest {
         manager.updateMainProvider(
             protocolType = ProtocolType.OpenAI_ChatCompletions,
             baseUrl = "https://example.invalid",
-            apiKey = "fake-secret-key",
+            credentialUpdate = CredentialUpdate.Replace("fake-secret-key"),
             model = "fake-model",
         )
 
@@ -95,7 +96,7 @@ class ProviderManagerSecretTest {
         manager.updateMainProvider(
             protocolType = ProtocolType.Google_VertexAI,
             baseUrl = "https://vertex.example.invalid",
-            apiKey = credentialJson,
+            credentialUpdate = CredentialUpdate.Replace(credentialJson),
             model = "fake-gemini-model",
         )
 
@@ -105,9 +106,86 @@ class ProviderManagerSecretTest {
         assertThat(manager.getProviderSummary("default")!!.hasVertexCredentials).isTrue()
     }
 
-    private class MemorySecretStore : SecretStore {
+    @Test
+    fun `集中式 ID 列表按顺序迁移多个额外 Provider`() {
+        val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
+        settingsPrefs.edit()
+            .putInt("extra_providers_count", 2)
+            .putString("extra_providers_ids", "extra-central-a,extra-central-b")
+            .putString("extra_provider_0_api_key", "fake-a")
+            .putString("extra_provider_1_api_key", "fake-b")
+            .commit()
+
+        ProviderManager.createForTest(app, secrets)
+
+        assertThat(secrets.text(SecretCatalog.providerApiKey("extra-central-a"))).isEqualTo("fake-a")
+        assertThat(secrets.text(SecretCatalog.providerApiKey("extra-central-b"))).isEqualTo("fake-b")
+        assertThat(settingsPrefs.contains("extra_provider_0_api_key")).isFalse()
+        assertThat(settingsPrefs.contains("extra_provider_1_api_key")).isFalse()
+    }
+
+    @Test
+    fun `迁移写入失败时保留对应旧明文字段`() {
+        val providerPrefs = app.getSharedPreferences("nexara_provider", 0)
+        providerPrefs.edit().putString("api_key", "fake-must-survive").commit()
+        val failing = MemorySecretStore(failOn = SecretCatalog.providerApiKey("default"))
+
+        val result = runCatching { ProviderManager.createForTest(app, failing) }
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(providerPrefs.getString("api_key", null)).isEqualTo("fake-must-survive")
+    }
+
+    @Test
+    fun `脱敏主配置保存时保留凭证而明确清除才删除`() {
+        val manager = ProviderManager.createForTest(app, secrets)
+        manager.updateMainProvider(
+            ProtocolType.OpenAI_ChatCompletions,
+            "https://before.invalid",
+            CredentialUpdate.Replace("fake-preserved"),
+            "model-a",
+        )
+
+        manager.updateMainProvider(
+            ProtocolType.OpenAI_ChatCompletions,
+            "https://after.invalid",
+            CredentialUpdate.Preserve,
+            "model-b",
+        )
+        assertThat(manager.getMainProviderConfig()!!.apiKey).isEqualTo("fake-preserved")
+
+        manager.updateMainProvider(
+            ProtocolType.OpenAI_ChatCompletions,
+            "https://after.invalid",
+            CredentialUpdate.Clear,
+            "model-b",
+        )
+        assertThat(manager.getMainProviderConfig()!!.apiKey).isEmpty()
+    }
+
+    @Test
+    fun `脱敏额外 Provider 编辑保留 Vertex JSON 而明确清除才删除`() {
+        val manager = ProviderManager.createForTest(app, secrets)
+        val item = com.promenar.nexara.data.model.ProviderListItem(
+            id = "extra-vertex",
+            name = "Vertex",
+            protocolType = ProtocolType.Google_VertexAI,
+        )
+        manager.addProvider(item, CredentialUpdate.Replace("{\"private_key\":\"fake\"}"))
+
+        manager.updateExtraProvider("extra-vertex", item.copy(name = "Vertex Renamed"), CredentialUpdate.Preserve)
+        assertThat(secrets.contains(SecretCatalog.vertexServiceAccount("extra-vertex"))).isTrue()
+
+        manager.updateExtraProvider("extra-vertex", item, CredentialUpdate.Clear)
+        assertThat(secrets.contains(SecretCatalog.vertexServiceAccount("extra-vertex"))).isFalse()
+    }
+
+    private class MemorySecretStore(private val failOn: SecretId? = null) : SecretStore {
         private val values = mutableMapOf<SecretId, ByteArray>()
-        override fun put(id: SecretId, value: ByteArray) { values[id] = value.copyOf() }
+        override fun put(id: SecretId, value: ByteArray) {
+            if (id == failOn) error("fake write failure")
+            values[id] = value.copyOf()
+        }
         override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
         override fun contains(id: SecretId): Boolean = id in values
         override fun remove(id: SecretId) { values.remove(id) }

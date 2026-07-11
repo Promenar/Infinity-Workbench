@@ -2,11 +2,40 @@ package com.promenar.nexara.data.remote.provider
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.remote.protocol.ProtocolId
+import com.promenar.nexara.data.remote.protocol.LlmProtocol
+import com.promenar.nexara.data.remote.protocol.PromptRequest
+import com.promenar.nexara.data.remote.protocol.StreamChunk
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
 class LlmProviderTest {
+
+    @Test
+    fun `resolving provider only resolves real protocol at each request boundary`() = runTest {
+        var resolveCount = 0
+        val delegate = mockk<LlmProtocol> {
+            every { protocolType } returns ProtocolId.OPENAI
+            coEvery { sendPrompt(any()) } returns flowOf(StreamChunk.Done)
+            every { cancel() } returns Unit
+        }
+        val provider = LlmProvider.resolving(ProtocolId.OPENAI) {
+            resolveCount++
+            delegate
+        }
+
+        assertThat(resolveCount).isEqualTo(0)
+        provider.sendPrompt(PromptRequest(emptyList(), "fake-model")).toList()
+        provider.sendPrompt(PromptRequest(emptyList(), "fake-model")).toList()
+
+        assertThat(resolveCount).isEqualTo(2)
+    }
 
     @Nested
     @DisplayName("Builder")

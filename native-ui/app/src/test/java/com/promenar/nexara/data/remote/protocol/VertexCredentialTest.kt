@@ -37,7 +37,25 @@ class VertexCredentialTest {
         val error = protocol.sendPrompt(PromptRequest(messages = emptyList(), model = "fake-model"))
             .toList().filterIsInstance<StreamChunk.Error>().single()
 
-        assertThat(error.message).contains("service account")
+        assertThat(error.message).isEqualTo("Vertex AI Authentication Failed: Service account credentials are missing")
         assertThat(error.message).doesNotContain("private_key")
+    }
+
+    @Test
+    fun `缺少 private_key 时只返回固定白名单错误`() = runTest {
+        val credentialJson = """{"client_email":"fake@example.invalid","path":"/fake/secret.json"}"""
+        val protocol = VertexAIProtocol(
+            serviceAccountJson = credentialJson,
+            projectId = "fake-project",
+            httpClient = HttpClient(MockEngine { error("不应发出网络请求") }),
+        )
+
+        val error = protocol.sendPrompt(PromptRequest(messages = emptyList(), model = "fake-model"))
+            .toList().filterIsInstance<StreamChunk.Error>().single()
+
+        assertThat(error.message).isEqualTo("Vertex AI Authentication Failed: Service account credentials are incomplete")
+        assertThat(error.message).doesNotContain("private_key")
+        assertThat(error.message).doesNotContain("/fake/secret.json")
+        assertThat(error.message).doesNotContain(credentialJson)
     }
 }

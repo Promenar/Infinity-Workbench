@@ -20,6 +20,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.model.toCredentialUpdate
 import com.promenar.nexara.ui.chat.ChatScreen
 import com.promenar.nexara.ui.chat.SessionSettingsScreen
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
@@ -370,7 +371,10 @@ fun NexaraNavGraph(
                                 hasVertexCredentials = apiKey.isNotBlank() && protocolType is ProtocolType.Google_VertexAI,
                             )
                             com.promenar.nexara.data.manager.ProviderManager.getInstance()
-                                .addProvider(item, apiKey = apiKey)
+                                .addProvider(
+                                    item,
+                                    apiKey.toCredentialUpdate(),
+                                )
                         }
                     } else if (providerId == "default") {
                         // 编辑主提供商
@@ -388,7 +392,11 @@ fun NexaraNavGraph(
                             hasVertexCredentials = apiKey.isNotBlank() && protocolType is ProtocolType.Google_VertexAI,
                         )
                         com.promenar.nexara.data.manager.ProviderManager.getInstance()
-                            .updateExtraProvider(providerId, item, apiKey = apiKey)
+                            .updateExtraProvider(
+                                providerId,
+                                item,
+                                apiKey.toCredentialUpdate(),
+                            )
                     }
                 }
             )

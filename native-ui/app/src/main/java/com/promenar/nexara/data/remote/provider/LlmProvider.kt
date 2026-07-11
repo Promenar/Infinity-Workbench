@@ -13,6 +13,8 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.protocol.VertexAIProtocol
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 
 class LlmProvider(internal val protocol: LlmProtocol) {
 
@@ -60,6 +62,11 @@ class LlmProvider(internal val protocol: LlmProtocol) {
     companion object {
         fun builder(): Builder = Builder()
 
+        fun resolving(
+            protocolType: ProtocolType,
+            resolver: () -> LlmProtocol,
+        ): LlmProvider = LlmProvider(ResolvingLlmProtocol(protocolType, resolver))
+
         private fun createProtocol(
             type: ProtocolType,
             baseUrl: String,
@@ -96,5 +103,47 @@ class LlmProvider(internal val protocol: LlmProtocol) {
         fun local(engine: LocalInferenceEngine, modelName: String = ""): LlmProvider {
             return LlmProvider(LocalProtocol(engine, modelName))
         }
+    }
+}
+
+private class ResolvingLlmProtocol(
+    override val protocolType: ProtocolType,
+    private val resolver: () -> LlmProtocol,
+) : LlmProtocol {
+    @Volatile
+    private var active: LlmProtocol? = null
+
+    override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = flow {
+        val delegate = resolver()
+        active = delegate
+        try {
+            emitAll(delegate.sendPrompt(request))
+        } finally {
+            if (active === delegate) active = null
+        }
+    }
+
+    override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
+        val delegate = resolver()
+        active = delegate
+        return try {
+            delegate.sendPromptSync(request)
+        } finally {
+            if (active === delegate) active = null
+        }
+    }
+
+    override suspend fun listModels(): List<String> {
+        val delegate = resolver()
+        active = delegate
+        return try {
+            delegate.listModels()
+        } finally {
+            if (active === delegate) active = null
+        }
+    }
+
+    override fun cancel() {
+        active?.cancel()
     }
 }

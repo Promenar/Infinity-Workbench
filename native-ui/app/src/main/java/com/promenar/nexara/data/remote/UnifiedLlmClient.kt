@@ -36,13 +36,20 @@ data class StreamConfig(
 )
 
 class UnifiedLlmClient(
-    private val providerConfig: UnifiedProviderConfig,
-    private val middlewares: List<LlmMiddleware> = emptyList()
+    private val providerConfigResolver: () -> UnifiedProviderConfig?,
+    private val middlewares: List<LlmMiddleware>,
 ) {
+    constructor(
+        providerConfig: UnifiedProviderConfig,
+        middlewares: List<LlmMiddleware> = emptyList(),
+    ) : this({ providerConfig }, middlewares)
+
     suspend fun sendStream(
         params: StreamTextParams,
         config: StreamConfig
     ): Flow<StreamChunk> = channelFlow {
+        val providerConfig = providerConfigResolver()
+            ?: throw IllegalStateException("Provider configuration is unavailable")
         val protocol = ProtocolFactory.create(
             type = providerConfig.protocolType,
             baseUrl = providerConfig.baseUrl,

@@ -3,6 +3,7 @@ package com.promenar.nexara.data.manager
 import android.app.Application
 import android.content.SharedPreferences
 import com.promenar.nexara.data.model.ProviderConfig
+import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.ProviderSummary
 import com.promenar.nexara.data.remote.protocol.ProtocolType
@@ -79,7 +80,7 @@ class ProviderManager private constructor(
     fun updateMainProvider(
         protocolType: ProtocolType,
         baseUrl: String,
-        apiKey: String,
+        credentialUpdate: CredentialUpdate,
         model: String,
         name: String? = null
     ) {
@@ -89,7 +90,7 @@ class ProviderManager private constructor(
             .putString("base_url", baseUrl)
             .putString("model", model)
             .apply()
-        writeProviderCredential("default", protocolType, apiKey)
+        applyCredentialUpdate("default", protocolType, credentialUpdate)
         if (name != null) {
             providerPrefs.edit().putString("provider_name", name).apply()
         }
@@ -226,12 +227,11 @@ class ProviderManager private constructor(
         _providers.value = items
     }
 
-    fun addProvider(item: ProviderListItem, apiKey: String = "", vertexServiceAccountJson: String = "") {
-        writeProviderCredential(
-            item.id,
-            item.protocolType,
-            vertexServiceAccountJson.ifBlank { apiKey },
-        )
+    fun addProvider(
+        item: ProviderListItem,
+        credentialUpdate: CredentialUpdate = CredentialUpdate.Preserve,
+    ) {
+        applyCredentialUpdate(item.id, item.protocolType, credentialUpdate)
         _providers.update { it + item }
         persistExtraProviders()
         loadProviders()
@@ -241,17 +241,13 @@ class ProviderManager private constructor(
     fun updateExtraProvider(
         id: String,
         item: ProviderListItem,
-        apiKey: String = "",
-        vertexServiceAccountJson: String = "",
+        credentialUpdate: CredentialUpdate = CredentialUpdate.Preserve,
     ) {
         if (id != item.id) {
             moveSecret(SecretCatalog.providerApiKey(id), SecretCatalog.providerApiKey(item.id))
             moveSecret(SecretCatalog.vertexServiceAccount(id), SecretCatalog.vertexServiceAccount(item.id))
         }
-        val credential = vertexServiceAccountJson.ifBlank { apiKey }
-        if (credential.isNotBlank()) {
-            writeProviderCredential(item.id, item.protocolType, credential)
-        }
+        applyCredentialUpdate(item.id, item.protocolType, credentialUpdate)
         _providers.update { list ->
             list.map { if (it.id == id) item else it }
         }
@@ -305,9 +301,15 @@ class ProviderManager private constructor(
         migratePreference(providerPrefs, "vertex_service_account_json", SecretCatalog.vertexServiceAccount("default"))
 
         val count = settingsPrefs.getInt("extra_providers_count", 0)
+        val centralizedIds = settingsPrefs.getString("extra_providers_ids", null)
+            ?.split(',')
+            ?.map { it.trim() }
+            .orEmpty()
         for (index in 0 until count) {
             val prefix = "extra_provider_$index"
-            val providerId = settingsPrefs.getString("${prefix}_id", null) ?: "extra_$index"
+            val providerId = settingsPrefs.getString("${prefix}_id", null)
+                ?: centralizedIds.getOrNull(index)?.takeIf { it.isNotEmpty() }
+                ?: "extra_$index"
             migratePreference(settingsPrefs, "${prefix}_api_key", SecretCatalog.providerApiKey(providerId))
             migratePreference(
                 settingsPrefs,
@@ -346,6 +348,22 @@ class ProviderManager private constructor(
         } else {
             writeSecret(SecretCatalog.providerApiKey(providerId), credential)
             secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
+        }
+    }
+
+    private fun applyCredentialUpdate(
+        providerId: String,
+        protocolType: ProtocolType,
+        update: CredentialUpdate,
+    ) {
+        when (update) {
+            CredentialUpdate.Preserve -> Unit
+            CredentialUpdate.Clear -> {
+                secretStore.remove(SecretCatalog.providerApiKey(providerId))
+                secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
+                _configurationChanges.tryEmit(Unit)
+            }
+            is CredentialUpdate.Replace -> writeProviderCredential(providerId, protocolType, update.value)
         }
     }
 
