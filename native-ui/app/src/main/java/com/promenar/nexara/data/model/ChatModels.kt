@@ -110,14 +110,16 @@ data class RagReference(
 data class KgNode(
     val id: String,
     val label: String,
-    val type: String
+    val type: String,
+    val metadata: String? = null
 )
 
 @Serializable
 data class KgEdge(
     val sourceId: String,
     val targetId: String,
-    val relation: String
+    val relation: String,
+    val weight: Double = 1.0
 )
 
 @Serializable

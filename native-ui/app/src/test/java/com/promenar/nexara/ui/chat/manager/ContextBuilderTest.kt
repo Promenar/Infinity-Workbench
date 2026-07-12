@@ -2,6 +2,9 @@ package com.promenar.nexara.ui.chat.manager
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.model.KgEdge
+import com.promenar.nexara.data.model.KgNode
+import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagUsage
@@ -13,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import kotlin.coroutines.cancellation.CancellationException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ContextBuilderTest {
@@ -281,9 +285,9 @@ class ContextBuilderTest {
                 query: String,
                 sessionId: String,
                 topKResults: List<RagReference>
-            ): String? {
+            ): KgContextResult {
                 kgCalled = true
-                return "KG context"
+                return KgContextResult(context = "KG context", paths = emptyList())
             }
         }
         val ragProvider = object : RagProvider {
@@ -317,6 +321,7 @@ class ContextBuilderTest {
 
         assertThat(kgCalled).isFalse()
         assertThat(result.finalSystemPrompt).doesNotContain("Knowledge Graph Relations")
+        assertThat(result.kgPaths).isEmpty()
     }
 
     @Test
@@ -326,8 +331,11 @@ class ContextBuilderTest {
                 query: String,
                 sessionId: String,
                 topKResults: List<RagReference>
-            ): String? {
-                return "entity A -> related_to -> entity B"
+            ): KgContextResult {
+                return KgContextResult(
+                    context = "entity A -> related_to -> entity B",
+                    paths = emptyList()
+                )
             }
         }
         val ragProvider = object : RagProvider {
@@ -371,9 +379,9 @@ class ContextBuilderTest {
                 query: String,
                 sessionId: String,
                 topKResults: List<RagReference>
-            ): String? {
+            ): KgContextResult {
                 kgCalled = true
-                return "KG context"
+                return KgContextResult(context = "KG context", paths = emptyList())
             }
         }
         val ragProvider = object : RagProvider {
@@ -406,6 +414,146 @@ class ContextBuilderTest {
         ))
 
         assertThat(kgCalled).isFalse()
+    }
+
+    @Test
+    fun kgPathsPassedThroughToResultWhenProviderReturnsPaths() = testScope.runTest {
+        val kgPath = KgPath(
+            nodes = listOf(
+                KgNode(id = "A", label = "A", type = "concept"),
+                KgNode(id = "B", label = "B", type = "concept")
+            ),
+            edges = listOf(KgEdge(sourceId = "A", targetId = "B", relation = "related_to"))
+        )
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult {
+                return KgContextResult(
+                    context = "A --[related_to]--> B",
+                    paths = listOf(kgPath)
+                )
+            }
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        assertThat(result.kgPaths).hasSize(1)
+        assertThat(result.kgPaths.first().edges).hasSize(1)
+        assertThat(result.kgPaths.first().edges.first().relation).isEqualTo("related_to")
+        assertThat(result.finalSystemPrompt).contains("Knowledge Graph Relations")
+    }
+
+    @Test
+    fun kgPathsEmptyWhenProviderReturnsNull() = testScope.runTest {
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult? = null
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        assertThat(result.kgPaths).isEmpty()
+        assertThat(result.finalSystemPrompt).doesNotContain("Knowledge Graph Relations")
+    }
+
+    @Test
+    fun kgContextSwallowsProviderExceptionKeepingEmptyPathsAndPromptCompatible() = testScope.runTest {
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult = throw RuntimeException("boom")
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        assertThat(result.kgPaths).isEmpty()
+        assertThat(result.finalSystemPrompt).doesNotContain("Knowledge Graph Relations")
     }
 
     @Test
@@ -488,5 +636,209 @@ class ContextBuilderTest {
             session = session
         ))
         assertThat(capturedQuery).isEqualTo("什么是")
+    }
+
+    @Test
+    fun kgSkippedWhenAgentRetrievalConfigOverridesSessionKnowledgeGraphTrue() = testScope.runTest {
+        var kgCalled = false
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult {
+                kgCalled = true
+                return KgContextResult(context = "KG", paths = emptyList())
+            }
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        // session 显式开启 KG，但 agent 配置强制关闭，必须以 agent 为准阻止 KG
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session,
+            agentRetrievalConfig = AgentRetrievalConfig(enableKnowledgeGraph = false)
+        ))
+
+        assertThat(kgCalled).isFalse()
+        assertThat(result.kgPaths).isEmpty()
+        assertThat(result.finalSystemPrompt).doesNotContain("Knowledge Graph Relations")
+    }
+
+    @Test
+    fun kgCancellationExceptionIsRethrownNotSwallowed() = testScope.runTest {
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult = throw CancellationException("parent cancelled")
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        var caught: Throwable? = null
+        try {
+            builder.buildContext(ContextBuilderParams(
+                sessionId = "s1",
+                content = "hello",
+                assistantMsgId = "m1",
+                session = session
+            ))
+        } catch (e: Throwable) {
+            caught = e
+        }
+
+        assertThat(caught).isInstanceOf(CancellationException::class.java)
+    }
+
+    @Test
+    fun kgProviderPathMutationAfterBuildDoesNotLeakIntoResult() = testScope.runTest {
+        val mutableNodes = mutableListOf(
+            KgNode(id = "A", label = "A", type = "concept"),
+            KgNode(id = "B", label = "B", type = "concept")
+        )
+        val mutableEdges = mutableListOf(
+            KgEdge(sourceId = "A", targetId = "B", relation = "related_to")
+        )
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult = KgContextResult(
+                context = "A --[related_to]--> B",
+                paths = listOf(KgPath(nodes = mutableNodes, edges = mutableEdges))
+            )
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        val result = builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session
+        ))
+
+        // 构建完成后 provider 侧继续修改内部可变集合，结果必须不受影响（防御性快照）
+        mutableNodes.clear()
+        mutableEdges.clear()
+
+        assertThat(result.kgPaths).hasSize(1)
+        assertThat(result.kgPaths.first().nodes).hasSize(2)
+        assertThat(result.kgPaths.first().edges).hasSize(1)
+    }
+
+    @Test
+    fun ragAndKgShareSingleEffectiveRagOptions() = testScope.runTest {
+        var capturedRagOptions: RagOptions? = null
+        var kgCaptured = false
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                capturedRagOptions = options
+                return Triple(
+                    "RAG context",
+                    listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
+                    null
+                )
+            }
+        }
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult {
+                kgCaptured = true
+                return KgContextResult(context = "KG", paths = emptyList())
+            }
+        }
+
+        val builder = ContextBuilder(ragProvider = ragProvider, kgProvider = kgProvider)
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)
+        )
+
+        builder.buildContext(ContextBuilderParams(
+            sessionId = "s1",
+            content = "hello",
+            assistantMsgId = "m1",
+            session = session,
+            agentRetrievalConfig = AgentRetrievalConfig(enableKnowledgeGraph = true, memoryLimit = 7)
+        ))
+
+        // RAG 收到的 effective 配置带 agent 覆盖
+        assertThat(capturedRagOptions).isNotNull()
+        assertThat(capturedRagOptions!!.memoryLimit).isEqualTo(7)
+        // KG 用的是同一份 effective 配置 → 开启 → 被调用
+        assertThat(kgCaptured).isTrue()
     }
 }

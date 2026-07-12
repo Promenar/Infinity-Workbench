@@ -15,7 +15,8 @@ data class ContextBuilderResult(
     val citations: List<com.promenar.nexara.data.model.Citation>,
     val ragReferences: List<RagReference>,
     val ragUsage: RagUsage?,
-    val finalSystemPrompt: String
+    val finalSystemPrompt: String,
+    val kgPaths: List<com.promenar.nexara.data.model.KgPath> = emptyList()
 )
 
 data class ContextBuilderParams(
@@ -44,12 +45,17 @@ interface RagProvider {
     ): Triple<String, List<RagReference>, RagUsage?>
 }
 
+data class KgContextResult(
+    val context: String,
+    val paths: List<com.promenar.nexara.data.model.KgPath> = emptyList()
+)
+
 interface KgProvider {
     suspend fun extractContext(
         query: String,
         sessionId: String,
         topKResults: List<RagReference>
-    ): String?
+    ): KgContextResult?
 }
 
 class ContextBuilder(
@@ -64,24 +70,33 @@ class ContextBuilder(
             NexaraLogger.log("[ContextBuilder] 被动联网搜索 Query 已提炼: inputChars=${params.content.length}, outputChars=${cleanedQuery.length}")
             performClientSideSearch(cleanedQuery)
         } else "" to emptyList()
-        val ragResult = performRagRetrieval(params)
-        val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
-        val kgEnabled = (params.session.ragOptions ?: tempRagOptions).enableKnowledgeGraph == true
-        val kgContext = if (kgProvider != null && ragResult.second.isNotEmpty() && kgEnabled) {
+
+        // effective RagOptions 只计算一次：RAG 与 KG 共享同一份配置（含 agent 覆盖）
+        val effectiveRagOptions = computeEffectiveRagOptions(params)
+
+        val ragResult = performRagRetrieval(params, effectiveRagOptions)
+
+        // KG 启用判定与 RAG 共享 effective 配置：agent enableKnowledgeGraph=false 可覆盖 session true
+        val kgEnabled = effectiveRagOptions.enableKnowledgeGraph == true
+        val (kgContext, kgPaths) = if (kgProvider != null && ragResult.second.isNotEmpty() && kgEnabled) {
             try {
                 params.onRagProgress?.invoke("KG retrieval", 95, null)
-                val result = kgProvider.extractContext(params.content, params.sessionId, ragResult.second) ?: ""
+                val kgResult = kgProvider.extractContext(params.content, params.sessionId, ragResult.second)
                 params.onRagProgress?.invoke("Context ready", 100, null)
-                result
+                (kgResult?.context ?: "") to snapshotKgPaths(kgResult?.paths)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 NexaraLogger.logError("ContextBuilder.KGExtract", e)
-                ""
+                "" to emptyList<com.promenar.nexara.data.model.KgPath>()
             }
-        } else ""
+        } else "" to emptyList<com.promenar.nexara.data.model.KgPath>()
 
         // 预取任务计划（suspend 调用）
         val activePlan: TaskState? = try {
             taskRepository?.getPlan(params.sessionId)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (e: Exception) {
             NexaraLogger.logError("ContextBuilder.TaskPlanFetch", e)
             null
@@ -102,8 +117,46 @@ class ContextBuilder(
             citations = searchCitations,
             ragReferences = ragResult.second,
             ragUsage = ragResult.third,
-            finalSystemPrompt = systemPrompt
+            finalSystemPrompt = systemPrompt,
+            kgPaths = kgPaths
         )
+    }
+
+    /**
+     * 合并 session/temp RagOptions 后应用 agent 检索配置，作为 RAG 与 KG 共用的唯一 effective 配置。
+     * agent.enableKnowledgeGraph=false 可强制关闭 KG（覆盖 session 的 true）。
+     */
+    private fun computeEffectiveRagOptions(params: ContextBuilderParams): com.promenar.nexara.data.model.RagOptions {
+        val sessionRagOptions = params.session.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
+        val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
+
+        val mergedRagOptions = com.promenar.nexara.data.model.RagOptions(
+            enableMemory = tempRagOptions.enableMemory && sessionRagOptions.enableMemory,
+            enableDocs = tempRagOptions.enableDocs && sessionRagOptions.enableDocs,
+            activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
+            activeFolderIds = tempRagOptions.activeFolderIds.ifEmpty { sessionRagOptions.activeFolderIds },
+            isGlobal = tempRagOptions.isGlobal,
+            enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
+            enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
+        )
+        return applyAgentRetrievalConfig(mergedRagOptions, params.agentRetrievalConfig)
+    }
+
+    /**
+     * 对 provider 返回的 paths 做嵌套防御性快照：复制每条 path 及其内部列表，
+     * 使 provider 后续对内部可变集合的修改不影响 [ContextBuilderResult]。
+     */
+    private fun snapshotKgPaths(
+        paths: List<com.promenar.nexara.data.model.KgPath>?
+    ): List<com.promenar.nexara.data.model.KgPath> {
+        if (paths.isNullOrEmpty()) return emptyList()
+        return paths.map { path ->
+            path.copy(
+                queryKeywords = path.queryKeywords.toList(),
+                nodes = path.nodes.toList(),
+                edges = path.edges.toList()
+            )
+        }
     }
 
     private fun cleanSearchQuery(rawQuery: String): String {
@@ -239,36 +292,27 @@ class ContextBuilder(
         }
     }
 
-    private suspend fun performRagRetrieval(params: ContextBuilderParams): Triple<String, List<RagReference>, RagUsage?> {
+    private suspend fun performRagRetrieval(
+        params: ContextBuilderParams,
+        effectiveRagOptions: com.promenar.nexara.data.model.RagOptions
+    ): Triple<String, List<RagReference>, RagUsage?> {
         if (ragProvider == null) {
             NexaraLogger.log("[ContextBuilder] ragProvider is null, skipping retrieval")
             return Triple("", emptyList(), null)
         }
 
-        val sessionRagOptions = params.session.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
-        val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
+        NexaraLogger.log("[ContextBuilder] effective ragOptions: docs=${effectiveRagOptions.enableDocs}/memory=${effectiveRagOptions.enableMemory}, isGlobal=${effectiveRagOptions.isGlobal}, rerank=${effectiveRagOptions.enableRerank}, kg=${effectiveRagOptions.enableKnowledgeGraph}")
 
-        val mergedRagOptions = com.promenar.nexara.data.model.RagOptions(
-            enableMemory = tempRagOptions.enableMemory && sessionRagOptions.enableMemory,
-            enableDocs = tempRagOptions.enableDocs && sessionRagOptions.enableDocs,
-            activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
-            activeFolderIds = tempRagOptions.activeFolderIds.ifEmpty { sessionRagOptions.activeFolderIds },
-            isGlobal = tempRagOptions.isGlobal,
-            enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
-            enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
-        )
-        val finalRagOptions = applyAgentRetrievalConfig(mergedRagOptions, params.agentRetrievalConfig)
-
-        NexaraLogger.log("[ContextBuilder] ragOptions: session=${sessionRagOptions.enableDocs}/${sessionRagOptions.enableMemory}, temp=${tempRagOptions.enableDocs}/${tempRagOptions.enableMemory}, final=${finalRagOptions.enableDocs}/${finalRagOptions.enableMemory}, isGlobal=${finalRagOptions.isGlobal}, rerank=${finalRagOptions.enableRerank}")
-
-        val isRagEnabled = finalRagOptions.enableMemory || finalRagOptions.enableDocs
+        val isRagEnabled = effectiveRagOptions.enableMemory || effectiveRagOptions.enableDocs
         if (!isRagEnabled) return Triple("", emptyList(), null)
 
         return try {
             val (context, references, usage) = ragProvider.retrieveContext(
-                params.content, params.sessionId, finalRagOptions, params.onRagProgress
+                params.content, params.sessionId, effectiveRagOptions, params.onRagProgress
             )
             Triple(context, references, usage)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (e: Exception) {
             NexaraLogger.logError("ContextBuilder.RAGRetrieval", e)
             Triple("", emptyList(), null)
@@ -283,7 +327,8 @@ class ContextBuilder(
         return base.copy(
             enableMemory = base.enableMemory && agentConfig.enableMemory,
             enableDocs = base.enableDocs && agentConfig.enableDocs,
-            enableKnowledgeGraph = base.enableKnowledgeGraph ?: agentConfig.enableKnowledgeGraph,
+            // agent 的 KG 关闭可强制覆盖 session 的开启；session 未显式开启时仍保持关闭
+            enableKnowledgeGraph = base.enableKnowledgeGraph == true && agentConfig.enableKnowledgeGraph,
             enableRerank = base.enableRerank && agentConfig.enableRerank,
             memoryLimit = agentConfig.memoryLimit,
             memoryThreshold = agentConfig.memoryThreshold,
