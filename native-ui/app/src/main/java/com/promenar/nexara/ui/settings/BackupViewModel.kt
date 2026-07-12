@@ -19,8 +19,10 @@ import com.promenar.nexara.data.security.SecretStore
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.CharBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,6 +65,7 @@ data class BackupUiState(
     val lastBackupTime: Long = 0,
     val remoteBackups: List<RemoteBackup> = emptyList(),
     val selectedRemote: RemoteBackup? = null,
+    val remoteConfigRevision: Long? = null,
     val operation: BackupOperation = BackupOperation.Idle,
 ) {
     val keysChecked: Boolean get() = includeKeys
@@ -110,6 +113,34 @@ fun interface BackupRestartRequester {
     fun requestRestart()
 }
 
+private data class BoundWebDavConfig(val revision: Long, val config: WebDavConfig)
+private data class SelectedRemote(val remote: RemoteBackup, val bound: BoundWebDavConfig)
+
+private class OnceCleanup(private val action: () -> Unit) {
+    private val completed = AtomicBoolean(false)
+    fun run() {
+        if (completed.compareAndSet(false, true)) action()
+    }
+}
+
+private sealed interface OperationCancellation {
+    fun run()
+
+    data object None : OperationCancellation {
+        override fun run() = Unit
+    }
+
+    class Active(
+        private val job: Job?,
+        private val cleanup: OnceCleanup?,
+    ) : OperationCancellation {
+        override fun run() {
+            job?.cancel()
+            cleanup?.run()
+        }
+    }
+}
+
 class BackupViewModel internal constructor(
     private val operations: BackupOperations,
     private val settings: BackupSettingsStore,
@@ -118,8 +149,11 @@ class BackupViewModel internal constructor(
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val generation = AtomicLong(0)
+    private val configRevision = AtomicLong(0)
     private val operationLock = Any()
     private var currentJob: Job? = null
+    private var currentCleanup: OnceCleanup? = null
+    private var activeWebDavRevision: Long? = null
 
     private val _uiState = MutableStateFlow(loadInitialState())
     val uiState: StateFlow<BackupUiState> = _uiState.asStateFlow()
@@ -139,8 +173,15 @@ class BackupViewModel internal constructor(
     }
 
     fun setWebdavEnabled(enabled: Boolean) {
-        settings.webDavEnabled = enabled
-        _uiState.update { it.copy(webdavEnabled = enabled) }
+        val cancellation = synchronized(operationLock) {
+            if (_uiState.value.webdavEnabled == enabled) {
+                OperationCancellation.None
+            } else {
+                settings.webDavEnabled = enabled
+                invalidateWebDavLocked { it.copy(webdavEnabled = enabled) }
+            }
+        }
+        cancellation.run()
     }
 
     fun setAutoBackup(enabled: Boolean) {
@@ -154,74 +195,98 @@ class BackupViewModel internal constructor(
 
     /** password 非空时由本方法取得所有权，并在返回前清零；null 表示保留既有密码。 */
     fun saveWebDavConfig(url: String, user: String, password: CharArray?) {
+        val cancellation: OperationCancellation
         try {
-            if (password != null) {
-                if (password.isEmpty()) {
-                    secrets.remove(SecretCatalog.webDavPassword)
-                } else {
-                    val encoded = encodeUtf8(password)
-                    try {
-                        secrets.put(SecretCatalog.webDavPassword, encoded)
-                    } finally {
-                        encoded.fill(0)
+            cancellation = synchronized(operationLock) {
+                val changed = url != _uiState.value.webdavUrl || user != _uiState.value.webdavUser || password != null
+                if (password != null) {
+                    if (password.isEmpty()) {
+                        secrets.remove(SecretCatalog.webDavPassword)
+                    } else {
+                        val encoded = encodeUtf8(password)
+                        try {
+                            secrets.put(SecretCatalog.webDavPassword, encoded)
+                        } finally {
+                            encoded.fill(0)
+                        }
                     }
+                    settings.webDavPasswordPlaintext = null
                 }
-                settings.webDavPasswordPlaintext = null
+                settings.webDavUrl = url
+                settings.webDavUser = user
+                val update: (BackupUiState) -> BackupUiState = {
+                    it.copy(
+                        webdavUrl = url,
+                        webdavUser = user,
+                        hasWebDavPassword = secrets.contains(SecretCatalog.webDavPassword),
+                    )
+                }
+                if (changed) invalidateWebDavLocked(update) else OperationCancellation.None.also {
+                    _uiState.update(update)
+                }
             }
-            settings.webDavUrl = url
-            settings.webDavUser = user
         } finally {
             password?.fill('\u0000')
         }
-        _uiState.update {
-            it.copy(
-                webdavUrl = url,
-                webdavUser = user,
-                hasWebDavPassword = secrets.contains(SecretCatalog.webDavPassword),
-            )
-        }
+        cancellation.run()
     }
 
     fun deleteWebDavPassword() {
-        secrets.remove(SecretCatalog.webDavPassword)
-        settings.webDavPasswordPlaintext = null
-        _uiState.update { it.copy(hasWebDavPassword = false) }
-    }
-
-    fun testConnection(): Boolean = startOperation(BackupOperation.Testing) { token ->
-        withWebDavConfig { config ->
-            val result = operations.testRemote(config)
-            result.getOrThrow()
+        val cancellation = synchronized(operationLock) {
+            secrets.remove(SecretCatalog.webDavPassword)
+            settings.webDavPasswordPlaintext = null
+            invalidateWebDavLocked { it.copy(hasWebDavPassword = false) }
         }
-        complete(token, BackupOperation.Success("连接测试成功"))
+        cancellation.run()
     }
 
-    fun listRemote(): Boolean = startOperation(BackupOperation.ListingRemote) { token ->
-        val backups = withWebDavConfig { operations.listRemote(it) }
-        if (isCurrent(token)) {
-            _uiState.update {
-                it.copy(
-                    remoteBackups = backups,
-                    selectedRemote = null,
-                    operation = BackupOperation.Success("已读取 ${backups.size} 个远程备份"),
-                )
+    fun testConnection(): Boolean {
+        val bound = captureWebDavConfig()
+        return startOperation(BackupOperation.Testing, webDavRevision = bound.revision) { token ->
+            operations.testRemote(bound.config).getOrThrow()
+            complete(token, BackupOperation.Success("连接测试成功"), bound.revision)
+        }
+    }
+
+    fun listRemote(): Boolean {
+        val bound = captureWebDavConfig()
+        return startOperation(BackupOperation.ListingRemote, webDavRevision = bound.revision) { token ->
+            val backups = operations.listRemote(bound.config)
+            if (isCurrent(token, bound.revision)) {
+                _uiState.update {
+                    it.copy(
+                        remoteBackups = backups,
+                        selectedRemote = null,
+                        remoteConfigRevision = bound.revision,
+                        operation = BackupOperation.Success("已读取 ${backups.size} 个远程备份"),
+                    )
+                }
             }
         }
     }
 
     fun selectRemote(remote: RemoteBackup): Boolean {
-        if (isBusy()) return false
-        val accepted = _uiState.value.remoteBackups.singleOrNull { it == remote } ?: return false
-        _uiState.update { it.copy(selectedRemote = accepted) }
-        return true
+        synchronized(operationLock) {
+            if (currentJob?.isActive == true) return false
+            val state = _uiState.value
+            if (state.remoteConfigRevision != configRevision.get()) return false
+            val accepted = state.remoteBackups.singleOrNull { it == remote } ?: return false
+            _uiState.update { it.copy(selectedRemote = accepted) }
+            return true
+        }
     }
 
     /** password 由本方法取得所有权并清零。 */
     fun export(output: OutputStream, password: CharArray?, confirmation: CharArray?): Boolean =
-        startPasswordOperation(BackupOperation.Exporting, password, confirmation) { token, options ->
+        startPasswordOperation(
+            BackupOperation.Exporting,
+            password,
+            confirmation,
+            externalCleanup = { output.close() },
+        ) { token, options ->
             val bytes = operations.export(options)
             try {
-                output.use { it.write(bytes) }
+                output.write(bytes)
             } finally {
                 bytes.fill(0)
             }
@@ -229,48 +294,65 @@ class BackupViewModel internal constructor(
         }
 
     /** password/confirmation 由本方法取得所有权并清零。 */
-    fun upload(password: CharArray?, confirmation: CharArray?): Boolean =
-        startPasswordOperation(BackupOperation.Uploading, password, confirmation) { token, options ->
-            val receipt = withWebDavConfig { operations.upload(it, options) }
+    fun upload(password: CharArray?, confirmation: CharArray?): Boolean {
+        val bound = captureWebDavConfig()
+        return startPasswordOperation(
+            BackupOperation.Uploading,
+            password,
+            confirmation,
+            webDavRevision = bound.revision,
+        ) { token, options ->
+            val receipt = operations.upload(bound.config, options)
             recordBackupSuccess(
                 token,
                 if (receipt.pruneWarning == null) "云端上传成功" else "云端上传成功，但旧备份清理不完整",
                 cleanupWarning = receipt.pruneWarning != null,
+                webDavRevision = bound.revision,
             )
         }
+    }
 
     /** password 由本方法取得所有权并清零。 */
     fun restoreLocal(input: InputStream, password: CharArray?): Boolean =
-        startRestore(password, completion = { runCatching { input.close() } }) { owned ->
+        startRestore(password, completion = { input.close() }) { owned ->
             operations.stageLocalRestore(input, owned)
         }
 
     /** 必须先 list 并按完整 RemoteBackup 对象选中；password 由本方法取得所有权并清零。 */
     fun restoreSelectedRemote(password: CharArray?): Boolean {
-        if (isBusy()) {
-            password?.fill('\u0000')
-            return false
+        var rejectedAsBusy = false
+        val selection = synchronized(operationLock) {
+            if (currentJob?.isActive == true) {
+                rejectedAsBusy = true
+                null
+            } else {
+                val state = _uiState.value
+                val revision = state.remoteConfigRevision
+                val selected = state.selectedRemote
+                if (revision == null || revision != configRevision.get() || selected !in state.remoteBackups) null
+                else SelectedRemote(selected!!, captureWebDavConfigLocked(revision))
+            }
         }
-        val selected = _uiState.value.selectedRemote
-        if (selected == null || selected !in _uiState.value.remoteBackups) {
+        if (selection == null) {
             password?.fill('\u0000')
+            if (rejectedAsBusy) return false
             _uiState.update {
                 it.copy(operation = BackupOperation.Error(BackupErrorCode.STALE_SELECTION, "远程备份选择已失效，请刷新后重试"))
             }
             return false
         }
-        return startRestore(password) { owned ->
-            withWebDavConfig { operations.stageRemoteRestore(it, selected, owned) }
+        return startRestore(password, webDavRevision = selection.bound.revision) { owned ->
+            operations.stageRemoteRestore(selection.bound.config, selection.remote, owned)
         }
     }
 
     fun cancelOperation() {
-        val job = synchronized(operationLock) {
+        val cancellation = synchronized(operationLock) {
             generation.incrementAndGet()
-            currentJob.also { currentJob = null }
+            takeCurrentOperationLocked()
         }
-        job?.cancel()
         _uiState.update { it.copy(operation = BackupOperation.Idle) }
+        cancellation.run()
     }
 
     override fun onCleared() {
@@ -281,6 +363,7 @@ class BackupViewModel internal constructor(
     private fun startRestore(
         password: CharArray?,
         completion: () -> Unit = {},
+        webDavRevision: Long? = null,
         stage: suspend (CharArray?) -> PendingRestoreMetadata,
     ): Boolean {
         val owned = password?.copyOf()
@@ -291,16 +374,17 @@ class BackupViewModel internal constructor(
                 owned?.fill('\u0000')
                 completion()
             },
+            webDavRevision = webDavRevision,
         ) { token ->
             stage(owned)
-            if (!isCurrent(token)) return@startOperation
+            if (!isCurrent(token, webDavRevision)) return@startOperation
             try {
                 restartRequester.requestRestart()
             } catch (_: Exception) {
                 fail(token, BackupErrorCode.RESTART_FAILED, "恢复包已暂存，但安全重启请求失败")
                 return@startOperation
             }
-            complete(token, BackupOperation.Restarting)
+            complete(token, BackupOperation.Restarting, webDavRevision)
         }
         if (!started) {
             owned?.fill('\u0000')
@@ -313,11 +397,14 @@ class BackupViewModel internal constructor(
         phase: BackupOperation,
         password: CharArray?,
         confirmation: CharArray?,
+        externalCleanup: () -> Unit = {},
+        webDavRevision: Long? = null,
         block: suspend (Long, BackupExportOptions) -> Unit,
     ): Boolean {
         if (isBusy()) {
             password?.fill('\u0000')
             confirmation?.fill('\u0000')
+            externalCleanup()
             return false
         }
         val include = _uiState.value.includeKeys
@@ -332,6 +419,7 @@ class BackupViewModel internal constructor(
             _uiState.update {
                 it.copy(operation = BackupOperation.Error(BackupErrorCode.PASSWORD_REQUIRED, "包含密钥时必须输入并确认备份密码"))
             }
+            externalCleanup()
             return false
         }
         if (include && !constantTimeEquals(ownedPassword!!, ownedConfirmation!!)) {
@@ -340,6 +428,7 @@ class BackupViewModel internal constructor(
             _uiState.update {
                 it.copy(operation = BackupOperation.Error(BackupErrorCode.PASSWORD_MISMATCH, "两次输入的备份密码不一致"))
             }
+            externalCleanup()
             return false
         }
         val started = startOperation(
@@ -347,7 +436,9 @@ class BackupViewModel internal constructor(
             onCompletion = {
                 ownedPassword?.fill('\u0000')
                 ownedConfirmation?.fill('\u0000')
+                externalCleanup()
             },
+            webDavRevision = webDavRevision,
         ) { token ->
             block(
                 token,
@@ -361,6 +452,7 @@ class BackupViewModel internal constructor(
         if (!started) {
             ownedPassword?.fill('\u0000')
             ownedConfirmation?.fill('\u0000')
+            externalCleanup()
         }
         return started
     }
@@ -368,34 +460,53 @@ class BackupViewModel internal constructor(
     private fun startOperation(
         phase: BackupOperation,
         onCompletion: () -> Unit = {},
+        webDavRevision: Long? = null,
         block: suspend (Long) -> Unit,
     ): Boolean {
         val token: Long
-        synchronized(operationLock) {
+        val cleanup = OnceCleanup(onCompletion)
+        val launched = synchronized(operationLock) {
             if (currentJob?.isActive == true) return false
+            if (webDavRevision != null && webDavRevision != configRevision.get()) return false
             token = generation.incrementAndGet()
             _uiState.update { it.copy(operation = phase) }
-            val launched = viewModelScope.launch {
+            viewModelScope.launch(start = CoroutineStart.LAZY) {
                 try {
-                    block(token)
+                    try {
+                        block(token)
+                    } finally {
+                        cleanup.run()
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
                     fail(token, errorCodeFor(phase), errorMessageFor(phase))
                 } finally {
                     synchronized(operationLock) {
-                        if (generation.get() == token) currentJob = null
+                        if (generation.get() == token) {
+                            currentJob = null
+                            currentCleanup = null
+                            activeWebDavRevision = null
+                        }
                     }
                 }
+            }.also {
+                currentJob = it
+                currentCleanup = cleanup
+                activeWebDavRevision = webDavRevision
             }
-            launched.invokeOnCompletion { onCompletion() }
-            currentJob = launched
         }
+        launched.start()
         return true
     }
 
-    private fun recordBackupSuccess(token: Long, message: String, cleanupWarning: Boolean = false) {
-        if (!isCurrent(token)) return
+    private fun recordBackupSuccess(
+        token: Long,
+        message: String,
+        cleanupWarning: Boolean = false,
+        webDavRevision: Long? = null,
+    ) {
+        if (!isCurrent(token, webDavRevision)) return
         val now = clock()
         settings.lastBackupTime = now
         _uiState.update {
@@ -403,26 +514,59 @@ class BackupViewModel internal constructor(
         }
     }
 
-    private fun complete(token: Long, operation: BackupOperation) {
-        if (isCurrent(token)) _uiState.update { it.copy(operation = operation) }
+    private fun complete(token: Long, operation: BackupOperation, webDavRevision: Long? = null) {
+        if (isCurrent(token, webDavRevision)) _uiState.update { it.copy(operation = operation) }
     }
 
     private fun fail(token: Long, code: BackupErrorCode, message: String) {
         if (isCurrent(token)) _uiState.update { it.copy(operation = BackupOperation.Error(code, message)) }
     }
 
-    private fun isCurrent(token: Long): Boolean = generation.get() == token
+    private fun isCurrent(token: Long, webDavRevision: Long? = null): Boolean =
+        generation.get() == token && (webDavRevision == null || configRevision.get() == webDavRevision)
     private fun isBusy(): Boolean = synchronized(operationLock) { currentJob?.isActive == true }
 
-    private inline fun <T> withWebDavConfig(block: (WebDavConfig) -> T): T {
+    private fun captureWebDavConfig(): BoundWebDavConfig = synchronized(operationLock) {
+        captureWebDavConfigLocked(configRevision.get())
+    }
+
+    private fun captureWebDavConfigLocked(expectedRevision: Long): BoundWebDavConfig {
+        check(configRevision.get() == expectedRevision) { "WebDAV 配置已变化" }
         val state = _uiState.value
         val secretBytes = secrets.get(SecretCatalog.webDavPassword)
         try {
             val password = secretBytes?.toString(Charsets.UTF_8).orEmpty()
-            return block(WebDavConfig(state.webdavUrl, state.webdavUser, password))
+            return BoundWebDavConfig(expectedRevision, WebDavConfig(state.webdavUrl, state.webdavUser, password))
         } finally {
             secretBytes?.fill(0)
         }
+    }
+
+    private fun invalidateWebDavLocked(update: (BackupUiState) -> BackupUiState): OperationCancellation {
+        configRevision.incrementAndGet()
+        val cancellation = if (activeWebDavRevision != null) {
+            generation.incrementAndGet()
+            takeCurrentOperationLocked()
+        } else {
+            OperationCancellation.None
+        }
+        _uiState.update {
+            update(it).copy(
+                remoteBackups = emptyList(),
+                selectedRemote = null,
+                remoteConfigRevision = null,
+                operation = if (currentJob?.isActive == true) it.operation else BackupOperation.Idle,
+            )
+        }
+        return cancellation
+    }
+
+    private fun takeCurrentOperationLocked(): OperationCancellation {
+        val cancellation = OperationCancellation.Active(currentJob, currentCleanup)
+        currentJob = null
+        currentCleanup = null
+        activeWebDavRevision = null
+        return cancellation
     }
 
     private fun migratePlaintextPassword() {

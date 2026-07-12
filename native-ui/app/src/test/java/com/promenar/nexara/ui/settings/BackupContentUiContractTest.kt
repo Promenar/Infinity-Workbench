@@ -30,4 +30,16 @@ class BackupContentUiContractTest {
         assertThat(source).contains("setIncludeKeys(it)")
         assertThat(source).contains("backup_core_content_fixed")
     }
+
+    @Test
+    fun `unfinished cloud restore and key export cannot act as fake entry points`() {
+        val source = String(
+            Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/ui/settings/BackupSettingsScreen.kt")),
+            Charsets.UTF_8,
+        )
+
+        assertThat(source).doesNotContain("stringResource(R.string.backup_restore_cloud)")
+        assertThat(source).contains("if (!uiState.includeKeys) {")
+        assertThat(source).doesNotContain("viewModel.listRemote()")
+    }
 }

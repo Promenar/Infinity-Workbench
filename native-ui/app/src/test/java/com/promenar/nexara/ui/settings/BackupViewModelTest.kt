@@ -14,7 +14,10 @@ import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import java.security.MessageDigest
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -164,6 +167,50 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `changing WebDAV endpoint or password invalidates listed selection`() = runTest(dispatcher) {
+        val remote = RemoteBackup("a.nexara", 42, 1234, "etag-a")
+        val operations = FakeOperations(remote = listOf(remote))
+        val restart = FakeRestart()
+        val vm = newViewModel(operations = operations, restart = restart)
+        vm.saveWebDavConfig("https://a.invalid/", "a", "a-pass".toCharArray())
+        vm.listRemote(); advanceUntilIdle(); assertThat(vm.selectRemote(remote)).isTrue()
+
+        vm.saveWebDavConfig("https://b.invalid/", "b", "b-pass".toCharArray())
+
+        assertThat(vm.uiState.value.remoteBackups).isEmpty()
+        assertThat(vm.uiState.value.selectedRemote).isNull()
+        assertThat(vm.restoreSelectedRemote(null)).isFalse()
+        assertThat(operations.stageRemoteCalls).isEqualTo(0)
+        assertThat(restart.calls).isEqualTo(0)
+
+        operations.remote = listOf(remote)
+        vm.listRemote(); advanceUntilIdle(); assertThat(vm.selectRemote(remote)).isTrue()
+        vm.deleteWebDavPassword()
+        assertThat(vm.uiState.value.remoteBackups).isEmpty()
+        assertThat(vm.uiState.value.selectedRemote).isNull()
+    }
+
+    @Test
+    fun `listing result from old config cannot repopulate state after config change`() = runTest(dispatcher) {
+        val stale = RemoteBackup("stale.nexara", 42, 1234, "etag-a")
+        val listGate = CompletableDeferred<List<RemoteBackup>>()
+        val operations = FakeOperations(listGate = listGate)
+        val vm = newViewModel(operations = operations)
+        vm.saveWebDavConfig("https://a.invalid/", "a", null)
+        vm.listRemote()
+        runCurrent()
+
+        vm.saveWebDavConfig("https://b.invalid/", "b", null)
+        listGate.complete(listOf(stale))
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.webdavUrl).isEqualTo("https://b.invalid/")
+        assertThat(vm.uiState.value.remoteBackups).isEmpty()
+        assertThat(vm.uiState.value.selectedRemote).isNull()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Idle)
+    }
+
+    @Test
     fun `remote restore stages exact selected object and stale selection cannot restart`() = runTest(dispatcher) {
         val remote = RemoteBackup("one.nexara", 42, 1234, "etag")
         val operations = FakeOperations(remote = listOf(remote))
@@ -265,6 +312,88 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `busy remote restore rejection preserves active phase and local close Error propagates`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Result<Unit>>()
+        val vm = newViewModel(operations = FakeOperations(testGate = gate))
+        vm.testConnection(); runCurrent()
+
+        assertThat(vm.restoreSelectedRemote(null)).isFalse()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Testing)
+
+        val input = CloseTrackingInputStream(byteArrayOf(1), closeError = AssertionError("input-close"))
+        val thrown = org.junit.jupiter.api.assertThrows<AssertionError> {
+            vm.restoreLocal(input, null)
+        }
+        assertThat(thrown).hasMessageThat().isEqualTo("input-close")
+        vm.cancelOperation()
+    }
+
+    @Test
+    fun `export owns and closes output on busy and password validation rejection`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Result<Unit>>()
+        val vm = newViewModel(operations = FakeOperations(testGate = gate))
+        vm.testConnection(); runCurrent()
+        val busyOutput = TrackingOutputStream()
+        assertThat(vm.export(busyOutput, null, null)).isFalse()
+        assertThat(busyOutput.closeCount).isEqualTo(1)
+        vm.cancelOperation()
+
+        vm.setIncludeKeys(true)
+        val missingOutput = TrackingOutputStream()
+        assertThat(vm.export(missingOutput, null, null)).isFalse()
+        assertThat(missingOutput.closeCount).isEqualTo(1)
+
+        val mismatchOutput = TrackingOutputStream()
+        assertThat(vm.export(mismatchOutput, "one".toCharArray(), "two".toCharArray())).isFalse()
+        assertThat(mismatchOutput.closeCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `export closes output exactly once on success failure and prelaunch cancellation`() = runTest(dispatcher) {
+        val successOutput = TrackingOutputStream()
+        val successVm = newViewModel()
+        successVm.export(successOutput, null, null); advanceUntilIdle()
+        assertThat(successOutput.closeCount).isEqualTo(1)
+
+        val failedOutput = TrackingOutputStream()
+        val failedVm = newViewModel(operations = FakeOperations(exportFailure = true))
+        failedVm.export(failedOutput, null, null); advanceUntilIdle()
+        assertThat(failedOutput.closeCount).isEqualTo(1)
+        assertThat(failedVm.uiState.value.operation).isInstanceOf(BackupOperation.Error::class.java)
+
+        val exportGate = CompletableDeferred<Unit>()
+        val cancelledOutput = TrackingOutputStream()
+        val cancelledVm = newViewModel(operations = FakeOperations(exportGate = exportGate))
+        cancelledVm.export(cancelledOutput, null, null)
+        cancelledVm.cancelOperation()
+        advanceUntilIdle()
+        assertThat(cancelledOutput.closeCount).isEqualTo(1)
+
+        val clearGate = CompletableDeferred<Unit>()
+        val clearedOutput = TrackingOutputStream()
+        val clearedVm = newViewModel(operations = FakeOperations(exportGate = clearGate))
+        val store = ViewModelStore().apply { put("export", clearedVm) }
+        clearedVm.export(clearedOutput, null, null)
+        store.clear()
+        advanceUntilIdle()
+        assertThat(clearedOutput.closeCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `export close Error is not swallowed on synchronous rejection`() {
+        val vm = newViewModel()
+        vm.setIncludeKeys(true)
+        val output = TrackingOutputStream(closeError = AssertionError("close-error"))
+
+        val thrown = org.junit.jupiter.api.assertThrows<AssertionError> {
+            vm.export(output, null, null)
+        }
+
+        assertThat(thrown).hasMessageThat().isEqualTo("close-error")
+        assertThat(output.closeCount).isEqualTo(1)
+    }
+
+    @Test
     fun `clearing ViewModel cancels in flight work`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Result<Unit>>()
         val operations = FakeOperations(testGate = gate)
@@ -305,11 +434,26 @@ class BackupViewModelTest {
         fun text(id: SecretId) = values[id]?.toString(Charsets.UTF_8)
     }
 
-    private class CloseTrackingInputStream(bytes: ByteArray) : ByteArrayInputStream(bytes) {
+    private class CloseTrackingInputStream(
+        bytes: ByteArray,
+        private val closeError: Error? = null,
+    ) : ByteArrayInputStream(bytes) {
         var closed = false
         override fun close() {
             closed = true
+            closeError?.let { throw it }
             super.close()
+        }
+    }
+
+    private class TrackingOutputStream(
+        private val closeError: Error? = null,
+    ) : OutputStream() {
+        var closeCount = 0
+        override fun write(value: Int) = Unit
+        override fun close() {
+            closeCount++
+            closeError?.let { throw it }
         }
     }
 
@@ -323,6 +467,9 @@ class BackupViewModelTest {
         var stageFailure: Boolean = false,
         private val warning: WebDavPruneWarning? = null,
         private val testGate: CompletableDeferred<Result<Unit>>? = null,
+        private val listGate: CompletableDeferred<List<RemoteBackup>>? = null,
+        private val exportGate: CompletableDeferred<Unit>? = null,
+        private val exportFailure: Boolean = false,
     ) : BackupOperations {
         var exportCalls = 0
         var stageRemoteCalls = 0
@@ -335,6 +482,8 @@ class BackupViewModelTest {
             exportCalls++
             observedPassword = options.password
             observedConfirmation = options.passwordConfirmation
+            exportGate?.await()
+            if (exportFailure) error("export failed")
             return byteArrayOf(1, 2, 3)
         }
         override suspend fun upload(config: WebDavConfig, options: BackupExportOptions): BackupUploadReceipt {
@@ -350,7 +499,10 @@ class BackupViewModelTest {
                 throw error
             }
         }
-        override suspend fun listRemote(config: WebDavConfig): List<RemoteBackup> { lastConfig = config; return remote }
+        override suspend fun listRemote(config: WebDavConfig): List<RemoteBackup> {
+            lastConfig = config
+            return listGate?.let { withContext(NonCancellable) { it.await() } } ?: remote
+        }
         override suspend fun stageLocalRestore(input: java.io.InputStream, password: CharArray?): PendingRestoreMetadata {
             if (stageFailure) error("failure")
             return metadata()

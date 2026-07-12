@@ -228,13 +228,15 @@ fun BackupSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ExportButton(
-                        icon = Icons.Rounded.Download,
-                        title = stringResource(R.string.backup_export_title),
-                        subtitle = if (uiState.isExporting) "Exporting..." else stringResource(R.string.backup_export_subtitle),
-                        modifier = Modifier.weight(1f),
-                        onClick = { exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara") }
-                    )
+                    if (!uiState.includeKeys) {
+                        ExportButton(
+                            icon = Icons.Rounded.Download,
+                            title = stringResource(R.string.backup_export_title),
+                            subtitle = if (uiState.isExporting) "Exporting..." else stringResource(R.string.backup_export_subtitle),
+                            modifier = Modifier.weight(1f),
+                            onClick = { exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara") }
+                        )
+                    }
                     ExportButton(
                         icon = Icons.Rounded.Upload,
                         title = stringResource(R.string.backup_import_title),
@@ -308,25 +310,12 @@ fun BackupSettingsScreen(
                         AnimatedVisibility(visible = uiState.webdavEnabled) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SettingsToggle(stringResource(R.string.backup_auto_backup), checked = uiState.autoBackup, onCheckedChange = { viewModel.setAutoBackup(it) })
-                                Row(
+                                ActionButton(
+                                    label = stringResource(R.string.backup_upload_cloud),
+                                    icon = Icons.Rounded.Upload,
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    ActionButton(
-                                        label = stringResource(R.string.backup_upload_cloud),
-                                        icon = Icons.Rounded.Upload,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { viewModel.upload(null, null) }
-                                    )
-                                    ActionButton(
-                                        label = stringResource(R.string.backup_restore_cloud),
-                                        icon = Icons.Rounded.Download,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { 
-                                            viewModel.listRemote()
-                                        }
-                                    )
-                                }
+                                    onClick = { viewModel.upload(null, null) }
+                                )
                                 ActionButton(
                                     label = stringResource(R.string.backup_config_webdav),
                                     icon = Icons.Rounded.Link,
