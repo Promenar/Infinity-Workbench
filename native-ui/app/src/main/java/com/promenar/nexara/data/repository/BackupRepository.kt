@@ -1,174 +1,203 @@
 package com.promenar.nexara.data.repository
 
 import android.content.Context
+import androidx.core.content.ContextCompat
+import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.local.db.entity.*
-import com.promenar.nexara.ui.settings.BackupUiState
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import kotlinx.coroutines.flow.first
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.io.ByteArrayOutputStream
+import com.promenar.nexara.data.backup.AndroidPendingRestoreStore
+import com.promenar.nexara.data.backup.AndroidRestoreJournalAuthenticator
+import com.promenar.nexara.data.backup.AndroidTransactionalBackupPreferenceStore
+import com.promenar.nexara.data.backup.AndroidTransactionalBackupSecretStore
+import com.promenar.nexara.data.backup.BackupContent
+import com.promenar.nexara.data.backup.BackupDataSource
+import com.promenar.nexara.data.backup.BackupExportOptions
+import com.promenar.nexara.data.backup.BackupOptions
+import com.promenar.nexara.data.backup.BackupPackageCodec
+import com.promenar.nexara.data.backup.BackupPackageLimits
+import com.promenar.nexara.data.backup.BackupValidationException
+import com.promenar.nexara.data.backup.DefaultBackupPackageCodec
+import com.promenar.nexara.data.backup.PendingRestoreMetadata
+import com.promenar.nexara.data.backup.PendingRestoreStore
+import com.promenar.nexara.data.backup.RoomBackupDataSource
+import com.promenar.nexara.data.backup.wipe
+import com.promenar.nexara.data.backup.WipeableByteArrayOutputStream
+import com.promenar.nexara.data.remote.webdav.KtorWebDavBackupClient
+import com.promenar.nexara.data.remote.webdav.RemoteBackup
+import com.promenar.nexara.data.remote.webdav.UploadAndPruneResult
+import com.promenar.nexara.data.remote.webdav.WebDavBackupClient
+import com.promenar.nexara.data.remote.webdav.WebDavConfig
+import com.promenar.nexara.data.remote.webdav.WebDavPruneWarning
 import java.io.InputStream
-import java.io.OutputStream
-import java.util.zip.GZIPInputStream
-import java.util.zip.GZIPOutputStream
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-@Serializable
-data class BackupFileEntry(
-    val uuid: String,
-    val parentUuid: String? = null,
-    val name: String,
-    val hash: String,
-    val sizeBytes: Long = 0,
-    val isDirectory: Boolean = false,
-    val materializedPath: String,
-    val createdAt: Long,
-    val updatedAt: Long
+data class BackupUploadReceipt(
+    val fileName: String,
+    val pruneWarning: WebDavPruneWarning?,
 )
 
-@Serializable
-data class BackupDataPackage(
-    val version: Int = 1,
-    val timestamp: Long = System.currentTimeMillis(),
-    val agents: List<AgentEntity> = emptyList(),
-    val sessions: List<SessionEntity> = emptyList(),
-    val messages: List<MessageEntity> = emptyList(),
-    val skills: List<CustomSkillEntity> = emptyList(),
-    val mcpServers: List<McpServerEntity> = emptyList(),
-    val documents: List<BackupFileEntry> = emptyList()
-)
+/**
+ * 备份用例边界。只接受 typed 参数，并委托 Task 5/6/7 的安全实现；不感知 UI 状态或 DAO。
+ * 返回的包字节由调用方拥有，调用方使用完毕后负责擦除。
+ */
+class BackupRepository(
+    private val dataSource: BackupDataSource,
+    private val codec: BackupPackageCodec,
+    private val webDav: WebDavBackupClient,
+    private val pendingStore: PendingRestoreStore,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    constructor(context: Context) : this(
+        dataSource = createDataSource(context),
+        codec = DefaultBackupPackageCodec(),
+        webDav = KtorWebDavBackupClient(),
+        pendingStore = AndroidPendingRestoreStore(context),
+    )
 
-class BackupRepository(private val context: Context) {
-    private val app = context.applicationContext as NexaraApplication
-    private val json = Json { 
-        ignoreUnknownKeys = true 
-        encodeDefaults = true
-        prettyPrint = false
+    suspend fun export(options: BackupExportOptions = BackupExportOptions()): ByteArray = withContext(Dispatchers.IO) {
+        val password = validatedPassword(options)
+        val content = CANONICAL_CONTENT + if (options.includeSecrets) setOf(BackupContent.SECRETS) else emptySet()
+        var snapshot: com.promenar.nexara.data.backup.BackupSnapshot? = null
+        try {
+            val captured = dataSource.snapshot(content)
+            snapshot = captured
+            codec.encode(captured, BackupOptions(content, options.includeSecrets, password))
+                .also(::requireBoundedPackage)
+        } finally {
+            snapshot?.wipe()
+            password?.fill('\u0000')
+        }
     }
 
-    suspend fun prepareBackupPackage(state: BackupUiState, onProgress: (Float, String) -> Unit = { _, _ -> }): ByteArray {
-        onProgress(0.1f, "Fetching Agents...")
-        val agents = if (state.settingsChecked) app.database.agentDao().getAll() else emptyList()
-        
-        onProgress(0.3f, "Fetching Sessions...")
-        val sessions = if (state.sessionsChecked) app.database.sessionDao().getAll() else emptyList()
-        
-        onProgress(0.5f, "Fetching Messages...")
-        val messages = if (state.sessionsChecked) {
-            sessions.flatMap { app.database.messageDao().getBySession(it.id) }
-        } else emptyList()
-
-        onProgress(0.7f, "Fetching Skills & MCP...")
-        val skills = if (state.keysChecked) app.database.skillDao().getAllCustomSkills().first() else emptyList()
-        val mcpServers = if (state.keysChecked) app.database.skillDao().getAllMcpServers().first() else emptyList()
-        
-        onProgress(0.8f, "Fetching Library Documents...")
-        val fileEntries = if (state.libraryChecked) app.database.fileEntryDao().observeRoots().first() else emptyList()
-        val documents = fileEntries.map { BackupFileEntry(it.uuid, it.parentUuid, it.name, it.hash, it.sizeBytes, it.isDirectory, it.materializedPath, it.createdAt, it.updatedAt) }
-
-        val pkg = BackupDataPackage(
-            agents = agents,
-            sessions = sessions,
-            messages = messages,
-            skills = skills,
-            mcpServers = mcpServers,
-            documents = documents
-        )
-
-        onProgress(0.9f, "Compressing Data...")
-        val jsonString = json.encodeToString(pkg)
-        return compress(jsonString)
-    }
-
-    @OptIn(ExperimentalEncodingApi::class)
-    suspend fun uploadToWebDav(state: BackupUiState, onProgress: (Float, String) -> Unit = { _, _ -> }): Boolean {
-        val data = prepareBackupPackage(state, onProgress)
-        onProgress(0.95f, "Uploading to WebDAV...")
-        val fileName = "nexara_backup_${System.currentTimeMillis()}.nexara"
-        val url = if (state.webdavUrl.endsWith("/")) "${state.webdavUrl}$fileName" else "${state.webdavUrl}/$fileName"
-        
-        val auth = Base64.encode("${state.webdavUser}:${state.webdavPass}".toByteArray())
-        
-        return try {
-            val response: HttpResponse = app.httpClient.put(url) {
-                header(HttpHeaders.Authorization, "Basic $auth")
-                setBody(data)
+    suspend fun upload(config: WebDavConfig, options: BackupExportOptions = BackupExportOptions()): BackupUploadReceipt {
+        val bytes = export(options)
+        try {
+            val fileName = backupFileName(clock())
+            val result = webDav.uploadAndPrune(config, fileName, bytes, keep = REMOTE_KEEP)
+            return when (result) {
+                is UploadAndPruneResult.Committed -> BackupUploadReceipt(result.fileName, result.pruneWarning)
             }
-            response.status.isSuccess()
-        } catch (e: Exception) {
-            false
+        } finally {
+            bytes.fill(0)
         }
     }
 
-    @OptIn(ExperimentalEncodingApi::class)
-    suspend fun restoreFromWebDav(state: BackupUiState, remoteFileName: String, onProgress: (Float, String) -> Unit = { _, _ -> }): Boolean {
-        val url = if (state.webdavUrl.endsWith("/")) "${state.webdavUrl}$remoteFileName" else "${state.webdavUrl}/$remoteFileName"
-        val auth = Base64.encode("${state.webdavUser}:${state.webdavPass}".toByteArray())
+    suspend fun testRemote(config: WebDavConfig): Result<Unit> = webDav.test(config)
 
-        return try {
-            onProgress(0.1f, "Downloading from WebDAV...")
-            val response: HttpResponse = app.httpClient.get(url) {
-                header(HttpHeaders.Authorization, "Basic $auth")
+    suspend fun listRemote(config: WebDavConfig): List<RemoteBackup> = webDav.list(config)
+
+    suspend fun downloadRemote(config: WebDavConfig, selected: RemoteBackup): ByteArray {
+        val current = webDav.list(config).singleOrNull { it == selected }
+            ?: throw BackupValidationException("所选远程备份已变化，请刷新列表后重试")
+        return webDav.download(config, current.fileName).also(::requireBoundedPackage)
+    }
+
+    suspend fun stageLocalRestore(input: InputStream, password: CharArray? = null): PendingRestoreMetadata =
+        withContext(Dispatchers.IO) {
+            val bytes = readBounded(input)
+            try {
+                stageValidated(bytes, password)
+            } finally {
+                bytes.fill(0)
             }
-            if (response.status.isSuccess()) {
-                restoreFromPackage(response.bodyAsText().byteInputStream(), onProgress)
-                true
-            } else false
-        } catch (e: Exception) {
-            false
+        }
+
+    suspend fun stageRemoteRestore(
+        config: WebDavConfig,
+        selected: RemoteBackup,
+        password: CharArray? = null,
+    ): PendingRestoreMetadata {
+        val bytes = downloadRemote(config, selected)
+        return try {
+            stageValidated(bytes, password)
+        } finally {
+            bytes.fill(0)
         }
     }
 
-    suspend fun restoreFromPackage(inputStream: InputStream, onProgress: (Float, String) -> Unit = { _, _ -> }) {
-        onProgress(0.2f, "Reading Package...")
-        val compressedData = inputStream.readBytes()
-        onProgress(0.3f, "Decompressing...")
-        val jsonString = decompress(compressedData)
-        onProgress(0.4f, "Parsing JSON...")
-        val pkg = json.decodeFromString<BackupDataPackage>(jsonString)
-
-        onProgress(0.5f, "Restoring Agents...")
-        pkg.agents.forEach { app.database.agentDao().insert(it) }
-        
-        onProgress(0.6f, "Restoring Sessions...")
-        pkg.sessions.forEach { app.database.sessionDao().insert(it) }
-        
-        onProgress(0.8f, "Restoring Messages (${pkg.messages.size})...")
-        pkg.messages.forEach { app.database.messageDao().insert(it) }
-        
-        onProgress(0.9f, "Restoring Skills & Documents...")
-        pkg.skills.forEach { app.database.skillDao().insertCustomSkill(it) }
-        pkg.mcpServers.forEach { app.database.skillDao().insertMcpServer(it) }
-        pkg.documents.forEach { backup ->
-            app.database.fileEntryDao().insert(FileEntry(
-                uuid = backup.uuid,
-                parentUuid = backup.parentUuid,
-                name = backup.name,
-                hash = backup.hash,
-                sizeBytes = backup.sizeBytes,
-                isDirectory = backup.isDirectory,
-                physicalRootPath = backup.materializedPath.substringBeforeLast("/").ifBlank { "/" },
-                materializedPath = backup.materializedPath,
-                createdAt = backup.createdAt,
-                updatedAt = backup.updatedAt
-            ))
+    fun stageValidated(packageBytes: ByteArray, password: CharArray? = null): PendingRestoreMetadata {
+        requireBoundedPackage(packageBytes)
+        val ownedPassword = password?.copyOf()
+        try {
+            codec.decode(packageBytes, ownedPassword).use { /* 验证先行，运行中绝不写 Operational 数据 */ }
+            return pendingStore.stage(packageBytes, ownedPassword)
+        } finally {
+            ownedPassword?.fill('\u0000')
         }
-        onProgress(1.0f, "Restore Complete")
     }
 
-    private fun compress(data: String): ByteArray {
-        val bos = ByteArrayOutputStream()
-        GZIPOutputStream(bos).use { it.write(data.toByteArray()) }
-        return bos.toByteArray()
+    private fun validatedPassword(options: BackupExportOptions): CharArray? {
+        if (!options.includeSecrets) return null
+        val password = options.password ?: throw BackupValidationException("包含密钥时必须设置备份密码")
+        val confirmation = options.passwordConfirmation ?: throw BackupValidationException("包含密钥时必须确认备份密码")
+        if (password.isEmpty() || confirmation.isEmpty()) throw BackupValidationException("备份密码不能为空")
+        var difference = password.size xor confirmation.size
+        val length = maxOf(password.size, confirmation.size)
+        for (index in 0 until length) {
+            difference = difference or ((password.getOrNull(index)?.code ?: 0) xor
+                (confirmation.getOrNull(index)?.code ?: 0))
+        }
+        if (difference != 0) throw BackupValidationException("两次输入的备份密码不一致")
+        return password.copyOf()
     }
 
-    private fun decompress(data: ByteArray): String {
-        return GZIPInputStream(data.inputStream()).bufferedReader().use { it.readText() }
+    private fun readBounded(input: InputStream): ByteArray {
+        val output = WipeableByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        try {
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                if (output.size().toLong() + count > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
+                    throw BackupValidationException("本地备份包超过 16 MiB 安全限制")
+                }
+                output.write(buffer, 0, count)
+            }
+            val result = output.toByteArray()
+            try {
+                requireBoundedPackage(result)
+                return result
+            } catch (error: Throwable) {
+                result.fill(0)
+                throw error
+            }
+        } finally {
+            buffer.fill(0)
+            output.wipe()
+        }
+    }
+
+    private fun requireBoundedPackage(bytes: ByteArray) {
+        if (bytes.isEmpty() || bytes.size.toLong() > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
+            throw BackupValidationException("备份包大小无效")
+        }
+    }
+
+    private fun backupFileName(timestamp: Long): String =
+        "nexara_backup_${timestamp.toString().padStart(13, '0')}.nexara"
+
+    companion object {
+        val CANONICAL_CONTENT = setOf(BackupContent.DATABASE, BackupContent.PREFERENCES, BackupContent.FILES)
+        const val REMOTE_KEEP = 5
+
+        private fun createDataSource(context: Context): BackupDataSource {
+            val app = context.applicationContext as NexaraApplication
+            val restoreBase = requireNotNull(ContextCompat.getNoBackupFilesDir(app))
+                .resolve("backup-restore-runtime-v1").also { it.mkdirs() }.toPath()
+            return RoomBackupDataSource(
+                database = app.database,
+                preferences = AndroidTransactionalBackupPreferenceStore(app),
+                secrets = AndroidTransactionalBackupSecretStore(app, app.secretStore),
+                trustedSourceBases = linkedSetOf(
+                    app.filesDir.toPath(),
+                    app.filesDir.resolve("WorkSpace").also { it.mkdirs() }.toPath(),
+                    app.filesDir.resolve("workspaces").also { it.mkdirs() }.toPath(),
+                ),
+                trustedRestoreBase = restoreBase,
+                appVersion = BuildConfig.VERSION_NAME,
+                journalAuthenticator = AndroidRestoreJournalAuthenticator(),
+            )
+        }
     }
 }

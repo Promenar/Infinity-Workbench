@@ -210,8 +210,28 @@ class RoomBackupDataSourceTest {
 
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
-                "vectorization_tasks", "audit_logs", "tool_execution_ledger", "file_versions",
+                "vectorization_tasks", "tool_execution_ledger", "file_versions",
             ).forEach { table -> assertThat(rowCount(table)).isEqualTo(0) }
+            assertThat(rowCount("audit_logs")).isEqualTo(1)
+        }
+    }
+
+    @Test
+    fun `stable operation id leaves a completed receipt and duplicate restore is a no-op`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            val operationId = "123e4567-e89b-12d3-a456-426614174000"
+            val source = newDataSource()
+
+            source.restore(validated(backup), operationId)
+            assertThat(source.hasCompletedRestore(operationId)).isTrue()
+
+            db.agentDao().insert(AgentEntity("after-receipt", "must-survive", createdAt = 2))
+            source.restore(validated(backup), operationId)
+
+            assertThat(db.agentDao().getAll().map { it.id }).contains("after-receipt")
+            assertThat(source.hasCompletedRestore(operationId)).isTrue()
         }
     }
 
@@ -571,7 +591,8 @@ class RoomBackupDataSourceTest {
                 newDataSource().recoverInterruptedRestore()
 
                 val committed = point == RestoreCrashPoint.ROOM_COMMITTED ||
-                    point == RestoreCrashPoint.JOURNAL_COMMITTED
+                    point == RestoreCrashPoint.JOURNAL_COMMITTED ||
+                    point == RestoreCrashPoint.RECEIPT_PERSISTED
                 if (committed) {
                     assertThat(db.agentDao().getAll().map { it.id }).containsExactly("agent-1")
                     assertThat(preferences.snapshot.entries.single().value).isEqualTo("zh")

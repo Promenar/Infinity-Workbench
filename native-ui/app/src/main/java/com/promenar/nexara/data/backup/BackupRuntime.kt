@@ -24,6 +24,8 @@ sealed interface BackupStartupState {
 /** 启动期安全恢复闸门；只有 recovery 成功后才允许业务 writer 启动。 */
 class BackupRuntime internal constructor(
     private val dataSource: BackupDataSource,
+    private val pendingStore: PendingRestoreStore? = null,
+    private val codec: BackupPackageCodec? = null,
 ) {
     private val _state = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
     val state: StateFlow<BackupStartupState> = _state.asStateFlow()
@@ -48,7 +50,7 @@ class BackupRuntime internal constructor(
 
         return withContext(NonCancellable) {
             val result = try {
-                withContext(Dispatchers.IO) { dataSource.recoverInterruptedRestore() }
+                withContext(Dispatchers.IO) { recoverAll() }
                 BackupStartupState.Ready
             } catch (_: Exception) {
                 BackupStartupState.Blocked
@@ -66,6 +68,27 @@ class BackupRuntime internal constructor(
         if (!isWriterGateOpen) throw BackupStartupException()
     }
 
+    private suspend fun recoverAll() {
+        // journal 始终优先；它可能是 pending 对应 restore 在上次崩溃后留下的事务。
+        dataSource.recoverInterruptedRestore()
+        val store = pendingStore ?: return
+        val packageCodec = codec ?: throw BackupValidationException("恢复编解码器不可用")
+        val pending = store.read() ?: return
+        pending.use { payload ->
+            val txId = payload.metadata.txId
+            if (dataSource.hasCompletedRestore(txId)) {
+                store.clear(txId)
+                return
+            }
+            val validated = packageCodec.decode(payload.packageBytes, payload.password)
+            dataSource.restore(validated, txId)
+            if (!dataSource.hasCompletedRestore(txId)) {
+                throw BackupValidationException("恢复完成回执缺失，待恢复记录已保留")
+            }
+            store.clear(txId)
+        }
+    }
+
     companion object {
         fun createAndroid(
             context: Context,
@@ -81,8 +104,7 @@ class BackupRuntime internal constructor(
                 .also { it.mkdirs() }.toPath()
             val preferenceStore = AndroidTransactionalBackupPreferenceStore(appContext)
             val secretStore = AndroidTransactionalBackupSecretStore(appContext, liveSecretStore)
-            return BackupRuntime(
-                RoomBackupDataSource(
+            val dataSource = RoomBackupDataSource(
                     database = database,
                     preferences = preferenceStore,
                     secrets = secretStore,
@@ -95,6 +117,10 @@ class BackupRuntime internal constructor(
                     appVersion = BuildConfig.VERSION_NAME,
                     journalAuthenticator = AndroidRestoreJournalAuthenticator(),
                 )
+            return BackupRuntime(
+                dataSource = dataSource,
+                pendingStore = AndroidPendingRestoreStore(appContext),
+                codec = DefaultBackupPackageCodec(),
             )
         }
     }

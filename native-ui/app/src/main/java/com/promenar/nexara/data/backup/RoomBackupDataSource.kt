@@ -99,13 +99,18 @@ class RoomBackupDataSource(
         }
     }
 
-    override suspend fun restore(validated: ValidatedBackup) {
+    override suspend fun restore(validated: ValidatedBackup) =
+        restore(validated, UUID.randomUUID().toString())
+
+    override suspend fun restore(validated: ValidatedBackup, operationId: String) {
+        requireOperationId(operationId)
         validated.beginConsumption()
         var lockAcquired = false
         try {
             restoreMutex.lock()
             lockAcquired = true
             withContext(Dispatchers.IO) {
+        if (hasCompletedRestoreLocked(operationId)) return@withContext
         requireCanonicalRestoreContent(validated)
         if (journal.read() != null) throw BackupValidationException("存在未恢复的 restore journal，请先执行 recoverInterruptedRestore")
         val payload = parseDatabase(validated.database)
@@ -113,7 +118,7 @@ class RoomBackupDataSource(
         validatePayload(payload, validated.files)
         validateSecrets(validated.secrets, preferenceSnapshot.providerIds)
 
-        val restoreId = UUID.randomUUID().toString()
+        val restoreId = operationId
         val stagingRoot = restoreParent.resolve(".restore-$restoreId.tmp")
         val finalRoot = restoreParent.resolve("restore-$restoreId")
         val transformed = transformPaths(payload, finalRoot)
@@ -179,6 +184,11 @@ class RoomBackupDataSource(
     }
 
     override suspend fun recoverInterruptedRestore() = restoreMutex.withLock { recoverInterruptedRestoreLocked() }
+
+    override suspend fun hasCompletedRestore(operationId: String): Boolean = withContext(Dispatchers.IO) {
+        requireOperationId(operationId)
+        hasCompletedRestoreLocked(operationId)
+    }
 
     private suspend fun recoverInterruptedRestoreLocked() = withContext(Dispatchers.IO + NonCancellable) {
         val record = journal.read() ?: return@withContext
@@ -883,7 +893,8 @@ class RoomBackupDataSource(
         preferences.finalizePrepared(record.txId)
         secrets.finalizePrepared(record.txId)
         deleteOldRoots(record)
-        deleteDatabaseCommitMarker(record.txId)
+        writeCompletedReceipt(record)
+        crashHook.hit(RestoreCrashPoint.RECEIPT_PERSISTED)
         journal.delete()
     }
 
@@ -913,11 +924,44 @@ class RoomBackupDataSource(
             true
         }
 
-    private fun deleteDatabaseCommitMarker(txId: String) {
+    private fun writeCompletedReceipt(record: RestoreJournalRecord) {
         database.openHelper.writableDatabase.execSQL(
-            "DELETE FROM audit_logs WHERE id = ? AND action = ?",
-            arrayOf(databaseMarkerId(txId), DATABASE_MARKER_ACTION),
+            "UPDATE audit_logs SET status = ?, metadata = ?, created_at = ? WHERE id = ? AND action = ?",
+            arrayOf<Any?>(
+                "completed",
+                record.expectedDatabaseFingerprint,
+                System.currentTimeMillis(),
+                databaseMarkerId(record.txId),
+                DATABASE_MARKER_ACTION,
+            ),
         )
+        if (!hasCompletedRestoreLocked(record.txId)) {
+            throw BackupValidationException("恢复完成回执持久化失败")
+        }
+        database.openHelper.writableDatabase.execSQL(
+            "DELETE FROM audit_logs WHERE action = ? AND status = ? AND id NOT IN " +
+                "(SELECT id FROM audit_logs WHERE action = ? AND status = ? AND id != ? " +
+                "ORDER BY created_at DESC, id DESC LIMIT ?) AND id != ?",
+            arrayOf<Any?>(
+                DATABASE_MARKER_ACTION,
+                "completed",
+                DATABASE_MARKER_ACTION,
+                "completed",
+                databaseMarkerId(record.txId),
+                MAX_COMPLETED_RECEIPTS - 1,
+                databaseMarkerId(record.txId),
+            ),
+        )
+    }
+
+    private fun hasCompletedRestoreLocked(operationId: String): Boolean =
+        database.openHelper.writableDatabase.query(
+            "SELECT 1 FROM audit_logs WHERE id = ? AND action = ? AND status = ? LIMIT 1",
+            arrayOf(databaseMarkerId(operationId), DATABASE_MARKER_ACTION, "completed"),
+        ).use { it.moveToFirst() }
+
+    private fun requireOperationId(operationId: String) {
+        if (!OPERATION_ID.matches(operationId)) throw BackupValidationException("恢复 operationId 无效")
     }
 
     private fun databaseMarkerId(txId: String): String = "__nexara_restore_$txId"
@@ -1184,6 +1228,8 @@ class RoomBackupDataSource(
         val SAFE_TOKEN = Regex("[A-Za-z0-9._-]{1,128}")
         val RESTORE_ROOT = Regex("restore-[A-Za-z0-9-]{1,72}")
         const val RESTORE_BASE_INDEX = -1
+        const val MAX_COMPLETED_RECEIPTS = 64
+        val OPERATION_ID = Regex("[A-Za-z0-9-]{1,64}")
 
         // 用户源数据。明确排除 vectors/FTS/KG/JIT/vectorization_tasks/audit_logs/
         // tool_execution_ledger/file_versions，它们均为可重建派生数据、运行态账本或版本缓存。

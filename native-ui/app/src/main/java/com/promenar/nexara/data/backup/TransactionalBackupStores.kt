@@ -38,6 +38,7 @@ enum class RestoreCrashPoint {
     EXTERNAL_COMMITTED,
     ROOM_COMMITTED,
     JOURNAL_COMMITTED,
+    RECEIPT_PERSISTED,
 }
 
 fun interface RestoreCrashHook {

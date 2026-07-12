@@ -10,6 +10,7 @@ import org.junit.Test
 import org.junit.Assume.assumeTrue
 import java.security.KeyStore
 import java.util.Base64
+import android.util.AtomicFile
 
 /** 使用两次独立 am instrument invocation 的 backupPhase 参数，以证明进程重建持久性。 */
 class AndroidBackupProcessRecreationTest {
@@ -28,6 +29,8 @@ class AndroidBackupProcessRecreationTest {
         deleteAlias(LIVE_ALIAS)
         deleteAlias(STAGING_ALIAS)
         deleteAlias(HMAC_ALIAS)
+        deleteAlias(PENDING_ALIAS)
+        AtomicFile(context.noBackupFilesDir.resolve(PENDING_FILE)).delete()
         val id = SecretId("provider_api_key:process-proof")
         val live = AndroidKeystoreSecretStore(context, LIVE_PREFS, LIVE_ALIAS)
         val staging = AndroidKeystoreSecretStore(context, STAGING_PREFS, STAGING_ALIAS)
@@ -43,6 +46,7 @@ class AndroidBackupProcessRecreationTest {
             .putString("signature", Base64.getEncoder().encodeToString(signature))
             .commit()
         signature.fill(0)
+        pendingStore(context).stage("pending-process-package".toByteArray(), "pending-process-password".toCharArray())
     }
 
     private suspend fun commitPhase() {
@@ -69,9 +73,16 @@ class AndroidBackupProcessRecreationTest {
             signature.fill(0)
         }
         store(context, live, staging).finalizePrepared(TX_ID)
+        pendingStore(context).read()!!.use { pending ->
+            assertThat(pending.metadata.txId).isEqualTo(PENDING_TX_ID)
+            assertThat(pending.packageBytes.toString(Charsets.UTF_8)).isEqualTo("pending-process-package")
+            assertThat(pending.password!!.concatToString()).isEqualTo("pending-process-password")
+        }
+        pendingStore(context).clear(PENDING_TX_ID)
         deleteAlias(LIVE_ALIAS)
         deleteAlias(STAGING_ALIAS)
         deleteAlias(HMAC_ALIAS)
+        deleteAlias(PENDING_ALIAS)
     }
 
     private fun store(
@@ -86,6 +97,11 @@ class AndroidBackupProcessRecreationTest {
 
     private fun context(): Context = InstrumentationRegistry.getInstrumentation().targetContext
 
+    private fun pendingStore(context: Context) = AndroidPendingRestoreStore(
+        AtomicFile(context.noBackupFilesDir.resolve(PENDING_FILE)),
+        AndroidKeystorePendingRestoreCryptor(PENDING_ALIAS),
+    ) { PENDING_TX_ID }
+
     private fun deleteAlias(alias: String) {
         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias)
     }
@@ -99,5 +115,8 @@ class AndroidBackupProcessRecreationTest {
         const val LIVE_ALIAS = "nexara.test.process.live"
         const val STAGING_ALIAS = "nexara.test.process.staging"
         const val HMAC_ALIAS = "nexara.test.process.hmac"
+        const val PENDING_ALIAS = "nexara.test.process.pending"
+        const val PENDING_FILE = "pending-process-proof.bin"
+        const val PENDING_TX_ID = "123e4567-e89b-12d3-a456-426614174000"
     }
 }

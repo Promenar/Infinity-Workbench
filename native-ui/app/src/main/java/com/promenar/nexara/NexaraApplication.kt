@@ -1,6 +1,7 @@
 package com.promenar.nexara
 
 import android.app.Application
+import android.util.Log
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.SharedPreferences
@@ -13,6 +14,7 @@ import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.data.backup.BackupStartupState
+import com.promenar.nexara.data.backup.RestoreRelayActivity
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.GraphStore
@@ -112,6 +114,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
 
     private lateinit var backupRuntime: BackupRuntime
+    var restoreRelayEarlyExit: Boolean = false
+        private set
     private val _startupState = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
     val startupState: StateFlow<BackupStartupState> = _startupState.asStateFlow()
 
@@ -286,8 +290,22 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         instance = this
         com.promenar.nexara.utils.NexaraLogger.init(this)
 
+        // 独立 relay 进程不得打开 Room、pending payload 或注册任何业务 writer。
+        if (currentProcessName().endsWith(RestoreRelayActivity.PROCESS_SUFFIX)) {
+            restoreRelayEarlyExit = true
+            Log.i("NexaraRestoreRelay", "application_early_exit_before_runtime_and_writers")
+            return
+        }
+
         backupRuntime = createBackupRuntime()
         startBackupRecovery()
+    }
+
+    private fun currentProcessName(): String = try {
+        Application.getProcessName()
+    } catch (_: NoSuchMethodError) {
+        // 旧 Robolectric shadow 不提供该静态方法；真实 minSdk 31 设备始终走上支。
+        packageName
     }
 
     fun retryStartupRecovery() {

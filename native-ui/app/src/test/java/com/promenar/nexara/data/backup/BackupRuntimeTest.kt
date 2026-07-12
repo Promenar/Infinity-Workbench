@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import java.security.MessageDigest
 
 class BackupRuntimeTest {
     @Test
@@ -72,11 +73,95 @@ class BackupRuntimeTest {
         assertThat(thrown!!.message).isEqualTo("安全恢复未完成，应用写入已禁用")
     }
 
+    @Test
+    fun `pending restore uses stable operation id and is applied at most once across runtime recreation`() = runBlocking {
+        val txId = "123e4567-e89b-12d3-a456-426614174000"
+        val store = FakePendingStore(txId, byteArrayOf(7, 8), "pw".toCharArray())
+        val source = ReceiptDataSource()
+        val codec = object : BackupPackageCodec {
+            override fun encode(snapshot: BackupSnapshot, options: BackupOptions) = error("unused")
+            override fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup {
+                assertThat(bytes).isEqualTo(byteArrayOf(7, 8))
+                assertThat(password).isEqualTo("pw".toCharArray())
+                return ValidatedBackup(
+                    BackupManifest(1, 1, "test", 1, emptyList(), false, false),
+                )
+            }
+        }
+
+        assertThat(BackupRuntime(source, store, codec).recoverBeforeWriters()).isEqualTo(BackupStartupState.Ready)
+        assertThat(BackupRuntime(source, store, codec).recoverBeforeWriters()).isEqualTo(BackupStartupState.Ready)
+
+        assertThat(source.restoreIds).containsExactly(txId)
+        assertThat(store.clearCount).isEqualTo(1)
+        assertThat(store.isPresent).isFalse()
+    }
+
+    @Test
+    fun `receipt prevents reapply when pending cleanup crashes and retry only clears pending`() = runBlocking {
+        val txId = "123e4567-e89b-12d3-a456-426614174001"
+        val store = FakePendingStore(txId, byteArrayOf(7), null).apply { failNextClear = true }
+        val source = ReceiptDataSource()
+        val codec = object : BackupPackageCodec {
+            override fun encode(snapshot: BackupSnapshot, options: BackupOptions) = error("unused")
+            override fun decode(bytes: ByteArray, password: CharArray?) = ValidatedBackup(
+                BackupManifest(1, 1, "test", 1, emptyList(), false, false),
+            )
+        }
+
+        assertThat(BackupRuntime(source, store, codec).recoverBeforeWriters()).isEqualTo(BackupStartupState.Blocked)
+        assertThat(source.restoreIds).containsExactly(txId)
+        assertThat(store.isPresent).isTrue()
+
+        assertThat(BackupRuntime(source, store, codec).recoverBeforeWriters()).isEqualTo(BackupStartupState.Ready)
+        assertThat(source.restoreIds).containsExactly(txId)
+        assertThat(store.isPresent).isFalse()
+    }
+
     private class FakeDataSource(
         private val recover: suspend () -> Unit,
     ) : BackupDataSource {
         override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = error("unused")
         override suspend fun restore(validated: ValidatedBackup) = error("unused")
         override suspend fun recoverInterruptedRestore() = recover()
+    }
+
+    private class ReceiptDataSource : BackupDataSource {
+        val restoreIds = mutableListOf<String>()
+        private val receipts = mutableSetOf<String>()
+        override suspend fun snapshot(content: Set<BackupContent>) = error("unused")
+        override suspend fun restore(validated: ValidatedBackup) = error("stable operation id required")
+        override suspend fun restore(validated: ValidatedBackup, operationId: String) {
+            validated.close()
+            restoreIds += operationId
+            receipts += operationId
+        }
+        override suspend fun hasCompletedRestore(operationId: String) = operationId in receipts
+        override suspend fun recoverInterruptedRestore() = Unit
+    }
+
+    private class FakePendingStore(
+        private val txId: String,
+        private val bytes: ByteArray,
+        private val chars: CharArray?,
+    ) : PendingRestoreStore {
+        var isPresent = true
+        var clearCount = 0
+        var failNextClear = false
+        override fun stage(packageBytes: ByteArray, password: CharArray?) = error("unused")
+        override fun read(): PendingRestorePayload? = if (!isPresent) null else PendingRestorePayload(
+            PendingRestoreMetadata(txId, MessageDigest.getInstance("SHA-256").digest(bytes), PendingRestorePhase.STAGED),
+            bytes.copyOf(),
+            chars?.copyOf(),
+        )
+        override fun clear(expectedTxId: String) {
+            assertThat(expectedTxId).isEqualTo(txId)
+            if (failNextClear) {
+                failNextClear = false
+                error("simulated pending cleanup crash")
+            }
+            isPresent = false
+            clearCount++
+        }
     }
 }

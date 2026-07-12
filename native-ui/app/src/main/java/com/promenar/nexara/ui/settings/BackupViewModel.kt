@@ -8,6 +8,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.repository.BackupRepository
+import com.promenar.nexara.data.backup.BackupExportOptions
+import com.promenar.nexara.data.backup.BackupValidationException
+import com.promenar.nexara.data.backup.RestoreRelayActivity
+import com.promenar.nexara.data.remote.webdav.WebDavConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +25,7 @@ data class BackupUiState(
     val libraryChecked: Boolean = true,
     val filesChecked: Boolean = true,
     val settingsChecked: Boolean = true,
-    val keysChecked: Boolean = true,
+    val keysChecked: Boolean = false,
     val webdavEnabled: Boolean = false,
     val autoBackup: Boolean = false,
     val webdavUrl: String = "",
@@ -97,10 +101,12 @@ class BackupViewModel(application: Application) : ViewModel() {
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isExporting = true, error = null, progress = 0f, statusMessage = "Starting Export...") }
-                val data = repository.prepareBackupPackage(_uiState.value) { p, m ->
-                    _uiState.update { it.copy(progress = p, statusMessage = m) }
+                val data = repository.export(exportOptions(_uiState.value))
+                try {
+                    outputStream.use { it.write(data) }
+                } finally {
+                    data.fill(0)
                 }
-                outputStream.use { it.write(data) }
                 _uiState.update { it.copy(isExporting = false, lastBackupTime = System.currentTimeMillis(), statusMessage = "Export Success") }
                 prefs.edit().putLong("last_backup_time", System.currentTimeMillis()).apply()
             } catch (e: Exception) {
@@ -113,10 +119,9 @@ class BackupViewModel(application: Application) : ViewModel() {
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isImporting = true, error = null, progress = 0f, statusMessage = "Starting Import...") }
-                repository.restoreFromPackage(inputStream) { p, m ->
-                    _uiState.update { it.copy(progress = p, statusMessage = m) }
-                }
-                _uiState.update { it.copy(isImporting = false, statusMessage = "Import Success") }
+                repository.stageLocalRestore(inputStream)
+                _uiState.update { it.copy(statusMessage = "Restore staged; restarting safely") }
+                RestoreRelayActivity.requestRestart(app)
             } catch (e: Exception) {
                 _uiState.update { it.copy(isImporting = false, error = e.message, statusMessage = "Import Failed") }
             }
@@ -127,15 +132,10 @@ class BackupViewModel(application: Application) : ViewModel() {
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isExporting = true, error = null, progress = 0f, statusMessage = "Preparing Upload...") }
-                val success = repository.uploadToWebDav(_uiState.value) { p, m ->
-                    _uiState.update { it.copy(progress = p, statusMessage = m) }
-                }
-                if (success) {
-                    _uiState.update { it.copy(isExporting = false, lastBackupTime = System.currentTimeMillis(), statusMessage = "Cloud Upload Success") }
-                    prefs.edit().putLong("last_backup_time", System.currentTimeMillis()).apply()
-                } else {
-                    _uiState.update { it.copy(isExporting = false, error = "WebDAV Upload Failed", statusMessage = null) }
-                }
+                val receipt = repository.upload(webDavConfig(_uiState.value), exportOptions(_uiState.value))
+                val status = if (receipt.pruneWarning == null) "Cloud Upload Success" else "Cloud Upload Success (cleanup warning)"
+                _uiState.update { it.copy(isExporting = false, lastBackupTime = System.currentTimeMillis(), statusMessage = status) }
+                prefs.edit().putLong("last_backup_time", System.currentTimeMillis()).apply()
             } catch (e: Exception) {
                 _uiState.update { it.copy(isExporting = false, error = e.message, statusMessage = null) }
             }
@@ -146,19 +146,30 @@ class BackupViewModel(application: Application) : ViewModel() {
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isImporting = true, error = null, progress = 0f, statusMessage = "Connecting to Cloud...") }
-                val success = repository.restoreFromWebDav(_uiState.value, remoteFileName) { p, m ->
-                    _uiState.update { it.copy(progress = p, statusMessage = m) }
-                }
-                if (success) {
-                    _uiState.update { it.copy(isImporting = false, statusMessage = "Cloud Restore Success") }
-                } else {
-                    _uiState.update { it.copy(isImporting = false, error = "WebDAV Restore Failed", statusMessage = null) }
-                }
+                val config = webDavConfig(_uiState.value)
+                val selected = repository.listRemote(config).singleOrNull { it.fileName == remoteFileName }
+                    ?: throw BackupValidationException("Remote backup selection is stale; refresh and retry")
+                repository.stageRemoteRestore(config, selected)
+                _uiState.update { it.copy(statusMessage = "Restore staged; restarting safely") }
+                RestoreRelayActivity.requestRestart(app)
             } catch (e: Exception) {
                 _uiState.update { it.copy(isImporting = false, error = e.message, statusMessage = null) }
             }
         }
     }
+
+    private fun exportOptions(state: BackupUiState): BackupExportOptions {
+        if (state.keysChecked) {
+            throw BackupValidationException("Including API keys requires a backup password and confirmation; this UI will support it in the next step")
+        }
+        return BackupExportOptions()
+    }
+
+    private fun webDavConfig(state: BackupUiState) = WebDavConfig(
+        baseUrl = state.webdavUrl,
+        username = state.webdavUser,
+        password = state.webdavPass,
+    )
 
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =

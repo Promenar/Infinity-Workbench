@@ -5,5 +5,12 @@
             android:name=".StartupGateTestActivity"
             android:exported="true"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
+        <receiver
+            android:name=".data.backup.RestoreRelayDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.promenar.nexara.debug.TEST_RESTORE_RELAY" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

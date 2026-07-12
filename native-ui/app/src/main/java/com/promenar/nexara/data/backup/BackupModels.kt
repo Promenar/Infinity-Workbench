@@ -17,6 +17,13 @@ data class BackupOptions(
     val password: CharArray? = null,
 )
 
+/** 面向 UI/CLI 的规范全量导出选项；密钥默认关闭且必须双次确认密码。 */
+data class BackupExportOptions(
+    val includeSecrets: Boolean = false,
+    val password: CharArray? = null,
+    val passwordConfirmation: CharArray? = null,
+)
+
 data class BackupSnapshot(
     val database: ByteArray = ByteArray(0),
     val preferences: ByteArray = ByteArray(0),
@@ -99,7 +106,16 @@ class BackupValidationException(message: String, cause: Throwable? = null) :
 interface BackupDataSource {
     suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot
     suspend fun restore(validated: ValidatedBackup)
+    suspend fun restore(validated: ValidatedBackup, operationId: String) = restore(validated)
+    suspend fun hasCompletedRestore(operationId: String): Boolean = false
     suspend fun recoverInterruptedRestore()
+}
+
+internal fun BackupSnapshot.wipe() {
+    database.fill(0)
+    preferences.fill(0)
+    files.values.forEach { it.fill(0) }
+    secrets.values.forEach { it.fill(0) }
 }
 
 @Serializable
