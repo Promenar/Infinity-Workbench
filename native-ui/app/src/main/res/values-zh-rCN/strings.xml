@@ -68,6 +68,13 @@
     <string name="common_dismiss">关闭</string>
     <string name="shared_btn_done">完成</string>
     <string name="shared_btn_retry">重试</string>
+    <string name="startup_recovering_title">正在安全恢复数据</string>
+    <string name="startup_recovering_message">Nexara 正在检查未完成的本地数据操作。恢复完成前请保持此页面开启。</string>
+    <string name="startup_blocked_title">安全恢复需要处理</string>
+    <string name="startup_blocked_message">Nexara 暂时无法完成本地数据恢复。你的数据仍受保护，应用功能保持锁定。</string>
+    <string name="startup_blocked_icon_description">安全恢复已阻塞</string>
+    <string name="startup_retry">重试安全恢复</string>
+    <string name="startup_importing_files">正在导入 %1$d 个文件</string>
     <string name="shared_confirm_delete_title">确认删除</string>
     <string name="shared_action_cannot_undo">此操作无法撤销。</string>
     <string name="shared_btn_copy">复制</string>

@@ -3,6 +3,9 @@ package com.promenar.nexara.data.backup
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.NexaraApplication
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -104,7 +107,11 @@ class AndroidSecureBackupFileOpsTest {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as NexaraApplication
         val restoreRoot = app.noBackupFilesDir.toPath().resolve("backup-restore-runtime-v1")
 
-        assertThat(app.backupRuntime.isWriterGateOpen).isTrue()
+        runBlocking {
+            withTimeout(5_000) {
+                app.startupState.first { it == BackupStartupState.Ready }
+            }
+        }
         Files.newDirectoryStream(restoreRoot).use { stream ->
             assertThat(stream).isInstanceOf(SecureDirectoryStream::class.java)
         }

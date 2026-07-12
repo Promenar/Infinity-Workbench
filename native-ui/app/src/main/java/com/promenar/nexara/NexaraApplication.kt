@@ -12,6 +12,7 @@ import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.backup.BackupRuntime
+import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.GraphStore
@@ -82,8 +83,11 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -97,8 +101,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
 
-    lateinit var backupRuntime: BackupRuntime
-        private set
+    private lateinit var backupRuntime: BackupRuntime
+    private val _startupState = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
+    val startupState: StateFlow<BackupStartupState> = _startupState.asStateFlow()
+
+    private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var startupRecoveryJob: Job? = null
+    private var writersInitialized = false
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
@@ -260,29 +269,52 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         instance = this
         com.promenar.nexara.utils.NexaraLogger.init(this)
 
-        // 初始化应用级别的 WorkSpace 物理目录
+        backupRuntime = createBackupRuntime()
+        startBackupRecovery()
+    }
+
+    fun retryStartupRecovery() {
+        startBackupRecovery()
+    }
+
+    private fun startBackupRecovery() {
+        if (startupRecoveryJob?.isActive == true || _startupState.value == BackupStartupState.Ready) return
+        _startupState.value = BackupStartupState.Recovering
+        startupRecoveryJob = startupScope.launch {
+            if (backupRuntime.recoverBeforeWriters() == BackupStartupState.Ready) {
+                _startupState.value = runCatching {
+                    initializeAfterRecoveryOnce()
+                    BackupStartupState.Ready
+                }.getOrElse { BackupStartupState.Blocked }
+            } else {
+                _startupState.value = BackupStartupState.Blocked
+            }
+        }
+    }
+
+    private fun initializeAfterRecoveryOnce() {
+        if (writersInitialized) return
+        initializeAfterRecovery()
+        writersInitialized = true
+    }
+
+    private fun initializeAfterRecovery() {
+        backupRuntime.requireWriterGate()
+        // 恢复成功后才允许创建业务目录并启动任何持久化 writer/listener。
         val workSpaceDir = java.io.File(filesDir, "WorkSpace")
         if (!workSpaceDir.exists()) {
             workSpaceDir.mkdirs()
         }
 
-        // 安全恢复必须在 ProviderManager、listener、本地模型与向量化等 writer 启动前同步完成。
-        // recovery 在当前启动调用链同步等待，完成前绝不开放 writer；失败抛出脱敏异常并中止初始化。
-        backupRuntime = createBackupRuntime()
-        backupRuntime.recoverBeforeWriters()
-
         // 初始化统一数据源（必须在 buildProviderFromPrefs 之前）
         val providerManager = ProviderManager.init(this, secretStore)
 
-        CoroutineScope(Dispatchers.Default).launch {
-            providerManager.configurationChanges.collect {
-                _providerConfigurationVersion.value += 1
-                rebuildEmbeddingClient()
-                rebuildRerankClient()
-                _vectorizationQueue = null
-                _unifiedLlmClient = null
-            }
-        }
+        val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
+        hapticEnabled = settingsPrefs.getBoolean("haptic_enabled", true)
+        val lastModelToLoad = if (
+            settingsPrefs.getBoolean("local_models_enabled", false) &&
+            settingsPrefs.getBoolean("local_auto_load", false)
+        ) prefs.getString("last_local_model", null) else null
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
@@ -292,25 +324,26 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 }
             }
         })
-
-        val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        hapticEnabled = settingsPrefs.getBoolean("haptic_enabled", true)
-        if (settingsPrefs.getBoolean("local_models_enabled", false) &&
-            settingsPrefs.getBoolean("local_auto_load", false)) {
-            val lastModel = prefs.getString("last_local_model", null)
-            if (lastModel != null) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    localInferenceEngine.loadModel(SlotType.MAIN, lastModel)
-                }
-            }
-        }
-        
-        CoroutineScope(Dispatchers.IO).launch {
-            vectorizationQueue.resumeInterruptedTasks()
-        }
-
         prefs.registerOnSharedPreferenceChangeListener(providerListener)
         settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
+
+        startupScope.launch(Dispatchers.Default) {
+            providerManager.configurationChanges.collect {
+                _providerConfigurationVersion.value += 1
+                rebuildEmbeddingClient()
+                rebuildRerankClient()
+                _vectorizationQueue = null
+                _unifiedLlmClient = null
+            }
+        }
+        if (lastModelToLoad != null) {
+            startupScope.launch(Dispatchers.IO) {
+                localInferenceEngine.loadModel(SlotType.MAIN, lastModelToLoad)
+            }
+        }
+        startupScope.launch(Dispatchers.IO) {
+            vectorizationQueue.resumeInterruptedTasks()
+        }
     }
 
     /** 仅供测试应用替换 AndroidKeyStore/真实文件系统依赖；生产始终使用安全 runtime。 */

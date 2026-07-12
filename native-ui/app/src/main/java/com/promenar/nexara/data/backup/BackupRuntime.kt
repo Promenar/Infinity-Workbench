@@ -5,39 +5,66 @@ import androidx.core.content.ContextCompat
 import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.security.SecretStore
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+sealed interface BackupStartupState {
+    data object Recovering : BackupStartupState
+    data object Ready : BackupStartupState
+    data object Blocked : BackupStartupState
+}
 
 /** 启动期安全恢复闸门；只有 recovery 成功后才允许业务 writer 启动。 */
 class BackupRuntime internal constructor(
     private val dataSource: BackupDataSource,
 ) {
-    @Volatile
-    private var state: State = State.NEW
+    private val _state = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
+    val state: StateFlow<BackupStartupState> = _state.asStateFlow()
+
+    private val attemptMutex = Mutex()
+    private var activeAttempt: CompletableDeferred<BackupStartupState>? = null
 
     val isWriterGateOpen: Boolean
-        get() = state == State.READY
+        get() = state.value == BackupStartupState.Ready
 
-    fun recoverBeforeWriters() = synchronized(lock) {
-        if (state == State.READY) return@synchronized
-        if (state == State.BLOCKED) throw BackupStartupException()
-        state = State.RECOVERING
-        try {
-            runBlocking { dataSource.recoverInterruptedRestore() }
-            state = State.READY
-        } catch (error: Throwable) {
-            state = State.BLOCKED
-            if (error is Error) throw error
-            throw BackupStartupException()
+    suspend fun recoverBeforeWriters(): BackupStartupState {
+        var ownsAttempt = false
+        val attempt = attemptMutex.withLock {
+            if (_state.value == BackupStartupState.Ready) return BackupStartupState.Ready
+            activeAttempt ?: CompletableDeferred<BackupStartupState>().also {
+                activeAttempt = it
+                _state.value = BackupStartupState.Recovering
+                ownsAttempt = true
+            }
+        }
+        if (!ownsAttempt) return attempt.await()
+
+        return withContext(NonCancellable) {
+            val result = try {
+                withContext(Dispatchers.IO) { dataSource.recoverInterruptedRestore() }
+                BackupStartupState.Ready
+            } catch (_: Exception) {
+                BackupStartupState.Blocked
+            }
+            attemptMutex.withLock {
+                _state.value = result
+                activeAttempt = null
+                attempt.complete(result)
+            }
+            result
         }
     }
 
     fun requireWriterGate() {
         if (!isWriterGateOpen) throw BackupStartupException()
     }
-
-    private val lock = Any()
-
-    private enum class State { NEW, RECOVERING, READY, BLOCKED }
 
     companion object {
         fun createAndroid(
