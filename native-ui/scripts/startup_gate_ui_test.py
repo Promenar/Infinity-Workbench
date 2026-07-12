@@ -14,6 +14,7 @@ RECOVERING = {"Safe recovery in progress", "正在安全恢复数据"}
 BLOCKED = {"Safe recovery needs attention", "安全恢复需要处理"}
 RETRY = {"Retry safe recovery", "重试安全恢复"}
 READY_PREFIX = "STARTUP_READY_MARKER_WRITERS_"
+RETRY_RECOVERY_MILLIS = 5_000
 
 
 class StartupGateDeviceTest:
@@ -35,11 +36,13 @@ class StartupGateDeviceTest:
         self.adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
         self.adb("shell", "wm", "dismiss-keyguard")
 
-    def launch(self, mode: str | None = None) -> None:
+    def launch(self, mode: str | None = None, retry_delay_ms: int | None = None) -> None:
         self.adb("shell", "am", "force-stop", PACKAGE)
         command = ["shell", "am", "start", "-W", "-n", COMPONENT]
         if mode:
             command += ["--es", "startup_mode", mode]
+        if retry_delay_ms is not None:
+            command += ["--el", "retry_recovery_millis", str(retry_delay_ms)]
         self.adb(*command)
 
     def tree(self) -> ET.Element:
@@ -129,12 +132,13 @@ class StartupGateDeviceTest:
         assert self.has_prefix(root, f"{READY_PREFIX}1")
 
     def test_failure_retry(self) -> None:
-        self.launch("failure_retry")
+        self.launch("failure_retry", retry_delay_ms=RETRY_RECOVERY_MILLIS)
         root = self.wait_tree(lambda tree: self.has_any(tree, BLOCKED))
         retry = self.find_clickable_with_text(root, RETRY)
         self.click(retry)
-        self.wait_tree(lambda tree: self.has_any(tree, RECOVERING))
-        root = self.wait_tree(lambda tree: self.has_prefix(tree, f"{READY_PREFIX}1"), timeout=8)
+        recovering = self.wait_tree(lambda tree: self.has_any(tree, RECOVERING), timeout=4)
+        assert not self.has_prefix(recovering, READY_PREFIX)
+        root = self.wait_tree(lambda tree: self.has_prefix(tree, f"{READY_PREFIX}1"), timeout=10)
         assert self.has_prefix(root, f"{READY_PREFIX}1")
 
     def run(self) -> None:

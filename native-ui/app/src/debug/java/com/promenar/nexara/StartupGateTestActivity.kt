@@ -43,9 +43,13 @@ class StartupGateTestActivity : ComponentActivity() {
             }
             MODE_FAILURE_RETRY -> {
                 val attempts = AtomicInteger()
+                val retryDelayMillis = intent.getLongExtra(
+                    EXTRA_RETRY_DELAY_MILLIS,
+                    DEFAULT_RETRY_RECOVERY_MILLIS,
+                ).coerceIn(MIN_RETRY_RECOVERY_MILLIS, MAX_RETRY_RECOVERY_MILLIS)
                 runtime = BackupRuntime(FakeDataSource {
                     if (attempts.incrementAndGet() == 1) error("debug injected recovery failure")
-                    withContext(NonCancellable) { delay(RETRY_RECOVERY_MILLIS) }
+                    withContext(NonCancellable) { delay(retryDelayMillis) }
                 })
                 launchRecovery()
             }
@@ -88,11 +92,14 @@ class StartupGateTestActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_MODE = "startup_mode"
+        const val EXTRA_RETRY_DELAY_MILLIS = "retry_recovery_millis"
         const val MODE_BLOCKED = "blocked"
         const val MODE_READY = "ready"
         const val MODE_LONG = "long"
         const val MODE_FAILURE_RETRY = "failure_retry"
         private const val LONG_RECOVERY_MILLIS = 8_000L
-        private const val RETRY_RECOVERY_MILLIS = 1_500L
+        private const val DEFAULT_RETRY_RECOVERY_MILLIS = 5_000L
+        private const val MIN_RETRY_RECOVERY_MILLIS = 2_000L
+        private const val MAX_RETRY_RECOVERY_MILLIS = 10_000L
     }
 }
