@@ -42,6 +42,11 @@
     <string name="common_cd_pin">置顶</string>
     <string name="common_cd_unpin">取消置顶</string>
     <string name="common_cd_selected">已选中</string>
+    <string name="secret_field_placeholder">输入新密钥</string>
+    <string name="secret_field_show">临时显示完整密钥</string>
+    <string name="secret_field_hide">隐藏密钥</string>
+    <string name="secret_field_clear">清除已保存密钥</string>
+    <string name="provider_form_https_required">云端提供商地址必须是有效的 HTTPS URL。</string>
     <string name="workbench_refresh">刷新</string>
 
     <!-- ============ Navigation ============ -->
@@ -462,6 +467,39 @@
     <string name="backup_test_connection">测试连接</string>
     <string name="backup_save_config">保存配置</string>
     <string name="backup_reset_webdav_security">重置 WebDAV 安全配置</string>
+    <string name="backup_remote_refresh">刷新远程备份</string>
+    <string name="backup_remote_empty">暂无远程备份，请配置 WebDAV 后刷新。</string>
+    <string name="backup_remote_metadata">%1$d 字节 · %2$d</string>
+    <string name="backup_password_export_title">保护导出的完整密钥</string>
+    <string name="backup_password_upload_title">上传前保护完整密钥</string>
+    <string name="backup_password_restore_title">恢复本地备份</string>
+    <string name="backup_password_remote_restore_title">恢复选中的远程备份</string>
+    <string name="backup_password_label">备份密码</string>
+    <string name="backup_password_hint">输入密码</string>
+    <string name="backup_password_confirm_label">确认密码</string>
+    <string name="backup_password_confirm_hint">再次输入相同密码</string>
+    <string name="backup_password_mismatch">两次输入的密码不一致</string>
+    <string name="backup_restore_password_optional">无加密密钥的备份可留空。</string>
+    <string name="backup_status_initializing">正在安全读取备份配置…</string>
+    <string name="backup_status_saving_config">正在安全保存 WebDAV 配置…</string>
+    <string name="backup_status_testing">正在测试连接…</string>
+    <string name="backup_status_listing">正在读取远程备份…</string>
+    <string name="backup_status_uploading">正在上传备份…</string>
+    <string name="backup_status_staging_restore">正在验证并暂存恢复包…</string>
+    <string name="backup_status_cancelling">正在安全清理已取消的恢复事务…</string>
+    <string name="backup_status_restarting">恢复包已暂存，正在安全重启…</string>
+    <string name="backup_status_success">操作已完成</string>
+    <string name="backup_status_success_cleanup_warning">备份已上传，但部分旧远程备份未能清理。</string>
+    <string name="backup_error_password_required">包含完整密钥时必须输入并确认相同密码。</string>
+    <string name="backup_error_configuration_missing">请先完成 WebDAV 安全配置。</string>
+    <string name="backup_error_connection">WebDAV 连接失败，请检查安全配置。</string>
+    <string name="backup_error_remote_list">无法读取远程备份。</string>
+    <string name="backup_error_stale_selection">远程选择已失效，请刷新后重新选择。</string>
+    <string name="backup_error_export">导出备份失败。</string>
+    <string name="backup_error_upload">上传备份失败。</string>
+    <string name="backup_error_restore">备份校验或恢复暂存失败。</string>
+    <string name="backup_error_restart">安全重启失败，请重试或取消待恢复事务。</string>
+    <string name="backup_error_cleanup">待恢复事务清理失败，为保护数据已继续阻止数据操作。</string>
 
     <!-- LocalModelsScreen -->
     <string name="local_models_title">本地模型</string>
@@ -876,6 +914,10 @@
     <string name="search_config_engine_duckduckgo">DuckDuckGo (本地解析/免费)</string>
     <string name="search_config_engine_searxng">SearXNG (元搜索/公共节点)</string>
     <string name="search_config_engine_tavily">Tavily (AI 优化/API Key)</string>
+    <string name="search_sheet_web_title">Web 搜索全局配置</string>
+    <string name="search_sheet_tavily_title">Tavily 搜索配置</string>
+    <string name="search_sheet_searxng_title">SearXNG 搜索配置</string>
+    <string name="search_sheet_title">搜索配置</string>
     <string name="chat_status_thinking">思考中...</string>
     <string name="chat_status_thought">已完成思考</string>
     <string name="chat_menu_clear_history">清除历史</string>

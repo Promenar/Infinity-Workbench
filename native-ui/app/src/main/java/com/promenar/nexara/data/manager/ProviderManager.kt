@@ -177,6 +177,21 @@ class ProviderManager private constructor(
         return null
     }
 
+    /** 仅供当前可见配置页临时显示；调用方取得数组所有权并负责及时清零。 */
+    fun revealCredential(providerId: String, vertex: Boolean): CharArray? {
+        val id = if (vertex) {
+            SecretCatalog.vertexServiceAccount(providerId)
+        } else {
+            SecretCatalog.providerApiKey(providerId)
+        }
+        val bytes = secretStore.get(id) ?: return null
+        return try {
+            bytes.toString(Charsets.UTF_8).toCharArray()
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
     // ── 提供商列表 ───────────────────────────────────────────────────
 
     fun loadProviders() {

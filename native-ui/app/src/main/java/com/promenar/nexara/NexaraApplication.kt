@@ -762,6 +762,24 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         _unifiedLlmClient = null
     }
 
+    fun updateProvider(
+        protocolType: ProtocolType,
+        baseUrl: String,
+        credentialUpdate: com.promenar.nexara.data.model.CredentialUpdate,
+        model: String,
+        name: String? = null,
+    ) {
+        ProviderManager.getInstance().updateMainProvider(
+            protocolType, baseUrl, credentialUpdate, model, name,
+        )
+        localProviderOverride = null
+        _providerConfigurationVersion.value += 1
+        rebuildEmbeddingClient()
+        rebuildRerankClient()
+        _vectorizationQueue = null
+        _unifiedLlmClient = null
+    }
+
     fun switchToLocalProvider(modelName: String = "") {
         localProviderOverride = modelName
         _providerConfigurationVersion.value += 1

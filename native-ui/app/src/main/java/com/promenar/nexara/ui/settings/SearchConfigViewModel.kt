@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class SearchConfigViewModel(
     application: Application,
@@ -47,7 +49,6 @@ class SearchConfigViewModel(
                 webSearchEnabled = prefs.getBoolean("web_search_enabled", true),
                 searchEngine = prefs.getString("search_engine", "duckduckgo") ?: "duckduckgo",
                 searXngUrl = prefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be",
-                tavilyApiKey = "",
                 hasTavilyApiKey = secretStore.contains(SecretCatalog.tavilyApiKey),
                 searchDepth = prefs.getString("search_depth", "advanced") ?: "advanced",
                 resultCount = prefs.getInt("result_count", 5),
@@ -75,7 +76,17 @@ class SearchConfigViewModel(
     fun updateTavilyApiKey(key: String) {
         if (key.isBlank()) secretStore.remove(SecretCatalog.tavilyApiKey)
         else secretStore.put(SecretCatalog.tavilyApiKey, key.toByteArray(Charsets.UTF_8))
-        _uiState.update { it.copy(tavilyApiKey = "", hasTavilyApiKey = key.isNotBlank()) }
+        _uiState.update { it.copy(hasTavilyApiKey = key.isNotBlank()) }
+    }
+
+    /** 返回值由当前可见组件取得所有权，组件隐藏或销毁时必须清零。 */
+    suspend fun revealTavilyApiKey(): CharArray? = withContext(Dispatchers.IO) {
+        val bytes = secretStore.get(SecretCatalog.tavilyApiKey) ?: return@withContext null
+        try {
+            bytes.toString(Charsets.UTF_8).toCharArray()
+        } finally {
+            bytes.fill(0)
+        }
     }
 
     fun updateSearchDepth(depth: String) {
@@ -117,7 +128,6 @@ data class SearchConfigState(
     val webSearchEnabled: Boolean = true,
     val searchEngine: String = "duckduckgo",
     val searXngUrl: String = "https://searx.be",
-    val tavilyApiKey: String = "",
     val hasTavilyApiKey: Boolean = false,
     val searchDepth: String = "advanced",
     val resultCount: Int = 5,

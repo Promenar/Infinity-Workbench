@@ -20,7 +20,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.remote.protocol.ProtocolType
-import com.promenar.nexara.data.model.toCredentialUpdate
+import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.ui.chat.ChatScreen
 import com.promenar.nexara.ui.chat.SessionSettingsScreen
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
@@ -350,13 +350,22 @@ fun NexaraNavGraph(
                         popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
                     }
                 },
-                onSave = { protocolType, baseUrl, apiKey, model, name ->
+                onSave = { protocolType, baseUrl, credential, model, name ->
+                    val providerManager = com.promenar.nexara.data.manager.ProviderManager.getInstance()
+                    val existingSummary = providerId?.let(providerManager::getProviderSummary)
+                    val credentialPresent = when (credential) {
+                        is CredentialUpdate.Replace -> true
+                        CredentialUpdate.Clear -> false
+                        CredentialUpdate.Preserve -> existingSummary?.let {
+                            it.hasApiKey || it.hasVertexCredentials
+                        } ?: false
+                    }
                     if (providerId == null) {
                         // 判断是首次配置还是新增额外提供商
-                        val mainConfig = app.getSavedProviderConfig()
-                        if (mainConfig == null || mainConfig.apiKey.isBlank()) {
+                        val mainConfig = providerManager.getProviderSummary("default")
+                        if (mainConfig == null || (!mainConfig.hasApiKey && !mainConfig.hasVertexCredentials)) {
                             // 全新安装 / 主提供商未配置：创建主提供商，使 Tier 3 兜底生效
-                            app.updateProvider(protocolType, baseUrl, apiKey, model, name)
+                            app.updateProvider(protocolType, baseUrl, credential, model, name)
                         } else {
                             // 已有主提供商：新增额外提供商
                             val id = "extra_${java.util.UUID.randomUUID()}"
@@ -367,18 +376,18 @@ fun NexaraNavGraph(
                                 baseUrl = baseUrl,
                                 model = model,
                                 protocolType = protocolType,
-                                hasApiKey = apiKey.isNotBlank() && protocolType !is ProtocolType.Google_VertexAI,
-                                hasVertexCredentials = apiKey.isNotBlank() && protocolType is ProtocolType.Google_VertexAI,
+                                hasApiKey = credentialPresent && protocolType !is ProtocolType.Google_VertexAI,
+                                hasVertexCredentials = credentialPresent && protocolType is ProtocolType.Google_VertexAI,
                             )
                             com.promenar.nexara.data.manager.ProviderManager.getInstance()
                                 .addProvider(
                                     item,
-                                    apiKey.toCredentialUpdate(),
+                                    credential,
                                 )
                         }
                     } else if (providerId == "default") {
                         // 编辑主提供商
-                        app.updateProvider(protocolType, baseUrl, apiKey, model, name)
+                        app.updateProvider(protocolType, baseUrl, credential, model, name)
                     } else {
                         // 编辑额外提供商
                         val item = com.promenar.nexara.data.model.ProviderListItem(
@@ -388,14 +397,14 @@ fun NexaraNavGraph(
                             baseUrl = baseUrl,
                             model = model,
                             protocolType = protocolType,
-                            hasApiKey = apiKey.isNotBlank() && protocolType !is ProtocolType.Google_VertexAI,
-                            hasVertexCredentials = apiKey.isNotBlank() && protocolType is ProtocolType.Google_VertexAI,
+                            hasApiKey = credentialPresent && protocolType !is ProtocolType.Google_VertexAI,
+                            hasVertexCredentials = credentialPresent && protocolType is ProtocolType.Google_VertexAI,
                         )
                         com.promenar.nexara.data.manager.ProviderManager.getInstance()
                             .updateExtraProvider(
                                 providerId,
                                 item,
-                                apiKey.toCredentialUpdate(),
+                                credential,
                             )
                     }
                 }

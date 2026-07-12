@@ -55,6 +55,7 @@ fun SearchConfigScreen(
     
     var newIncludeDomain by remember { mutableStateOf("") }
     var newExcludeDomain by remember { mutableStateOf("") }
+    var tavilyKeyEdit by remember { mutableStateOf("") }
 
     NexaraPageLayout(
         title = stringResource(R.string.search_config_title),
@@ -169,21 +170,19 @@ fun SearchConfigScreen(
         if (uiState.searchEngine == "tavily") {
             Text(text = stringResource(R.string.search_config_tavily_key_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
             Spacer(modifier = Modifier.height(8.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(NexaraShapes.medium)
-                    .background(NexaraColors.SurfaceContainer)
-                    .padding(12.dp)
-            ) {
-                BasicTextField(
-                    value = uiState.tavilyApiKey,
-                    onValueChange = { viewModel.updateTavilyApiKey(it) },
-                    textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                    cursorBrush = SolidColor(NexaraColors.Primary),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            SecretField(
+                value = tavilyKeyEdit,
+                onValueChange = {
+                    tavilyKeyEdit = it
+                    if (it.isNotBlank()) viewModel.updateTavilyApiKey(it)
+                },
+                hasStoredSecret = uiState.hasTavilyApiKey,
+                onRevealRequest = viewModel::revealTavilyApiKey,
+                onClear = {
+                    tavilyKeyEdit = ""
+                    viewModel.updateTavilyApiKey("")
+                },
+            )
             Spacer(modifier = Modifier.height(16.dp))
         }
 

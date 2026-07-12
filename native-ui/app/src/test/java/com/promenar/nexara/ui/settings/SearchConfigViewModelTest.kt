@@ -11,6 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
+import kotlinx.coroutines.test.runTest
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -35,7 +36,6 @@ class SearchConfigViewModelTest {
         assertThat(secrets.text(SecretCatalog.tavilyApiKey)).isEqualTo("fake-tavily-key")
         assertThat(prefs.contains("tavily_api_key")).isFalse()
         assertThat(viewModel.uiState.value.hasTavilyApiKey).isTrue()
-        assertThat(viewModel.uiState.value.tavilyApiKey).isEmpty()
         assertThat(viewModel.uiState.value.toString()).doesNotContain("fake-tavily-key")
     }
 
@@ -49,7 +49,19 @@ class SearchConfigViewModelTest {
         assertThat(secrets.text(SecretCatalog.tavilyApiKey)).isEqualTo("fake-updated-key")
         assertThat(prefs.contains("tavily_api_key")).isFalse()
         assertThat(viewModel.uiState.value.hasTavilyApiKey).isTrue()
-        assertThat(viewModel.uiState.value.tavilyApiKey).isEmpty()
+    }
+
+    @Test
+    fun `完整 Tavily Key 只能通过临时可清零数组读取且不进入状态`() = runTest {
+        secrets.put(SecretCatalog.tavilyApiKey, "temporary-secret".encodeToByteArray())
+        val viewModel = SearchConfigViewModel(app, secrets)
+
+        val revealed = viewModel.revealTavilyApiKey()
+
+        assertThat(revealed?.concatToString()).isEqualTo("temporary-secret")
+        assertThat(viewModel.uiState.value.toString()).doesNotContain("temporary-secret")
+        revealed?.fill('\u0000')
+        assertThat(revealed).isEqualTo(CharArray("temporary-secret".length))
     }
 
     private class MemorySecretStore : SecretStore {

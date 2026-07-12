@@ -782,6 +782,7 @@ private fun SearchConfigBottomSheet(
 ) {
     val searchViewModel: SearchConfigViewModel = viewModel()
     val searchState by searchViewModel.uiState.collectAsState()
+    var tavilyKeyEdit by remember { mutableStateOf("") }
     
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -810,10 +811,10 @@ private fun SearchConfigBottomSheet(
         ) {
             Text(
                 text = when (skillId) {
-                    "web_search" -> "Web 搜索全局配置"
-                    "search_tavily" -> "Tavily 搜索配置"
-                    "search_searxng" -> "SearXNG 搜索配置"
-                    else -> "配置"
+                    "web_search" -> stringResource(R.string.search_sheet_web_title)
+                    "search_tavily" -> stringResource(R.string.search_sheet_tavily_title)
+                    "search_searxng" -> stringResource(R.string.search_sheet_searxng_title)
+                    else -> stringResource(R.string.search_sheet_title)
                 },
                 style = NexaraTypography.headlineMedium,
                 color = NexaraColors.OnSurface
@@ -846,22 +847,18 @@ private fun SearchConfigBottomSheet(
 
             if (skillId == "search_tavily" || (skillId == "web_search" && searchState.searchEngine == "tavily")) {
                 Text(stringResource(R.string.search_api_key), style = NexaraTypography.labelMedium)
-                BasicTextField(
-                    value = searchState.tavilyApiKey,
-                    onValueChange = { searchViewModel.updateTavilyApiKey(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .background(NexaraColors.SurfaceContainer, RoundedCornerShape(12.dp))
-                        .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp),
-                    textStyle = NexaraTypography.bodyLarge.copy(color = NexaraColors.OnSurface, fontFamily = FontFamily.Monospace),
-                    decorationBox = { innerTextField ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (searchState.tavilyApiKey.isEmpty()) Text("Paste API Key here", color = NexaraColors.Outline, style = NexaraTypography.bodyLarge)
-                            innerTextField()
-                        }
-                    }
+                SecretField(
+                    value = tavilyKeyEdit,
+                    onValueChange = {
+                        tavilyKeyEdit = it
+                        if (it.isNotBlank()) searchViewModel.updateTavilyApiKey(it)
+                    },
+                    hasStoredSecret = searchState.hasTavilyApiKey,
+                    onRevealRequest = searchViewModel::revealTavilyApiKey,
+                    onClear = {
+                        tavilyKeyEdit = ""
+                        searchViewModel.updateTavilyApiKey("")
+                    },
                 )
                 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -950,4 +947,3 @@ private fun SettingsSlider(label: String, value: Float, range: ClosedFloatingPoi
         )
     }
 }
-

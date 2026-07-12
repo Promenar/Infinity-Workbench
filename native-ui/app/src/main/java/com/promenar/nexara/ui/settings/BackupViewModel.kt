@@ -591,6 +591,14 @@ class BackupViewModel internal constructor(
         }
     }
 
+    /** 仅供当前 WebDAV 配置 sheet 临时显示；调用方取得数组所有权并负责及时清零。 */
+    suspend fun revealWebDavPassword(): CharArray? = withContext(ioDispatcher) {
+        synchronized(operationLock) {
+            if (!initialized || webDavBlocked || !_uiState.value.hasWebDavPassword || cleared) return@withContext null
+        }
+        readCanonicalAuth().useAndCopyPassword()
+    }
+
     /** password 由本方法取得所有权并清零。 */
     fun export(output: OutputStream, password: CharArray?, confirmation: CharArray?): Boolean =
         startPasswordOperation(

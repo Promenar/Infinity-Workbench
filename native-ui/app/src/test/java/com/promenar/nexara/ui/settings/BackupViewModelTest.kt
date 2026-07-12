@@ -198,6 +198,20 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `WebDAV reveal returns owned clearable array without adding plaintext to state`() = runTest(dispatcher) {
+        val secrets = FakeSecrets()
+        val vm = newViewModel(secrets = secrets)
+        vm.saveWebDavConfig("https://dav.invalid/", "user", "temporary-password".toCharArray())
+
+        val revealed = vm.revealWebDavPassword()
+
+        assertThat(revealed?.concatToString()).isEqualTo("temporary-password")
+        assertThat(vm.uiState.value.toString()).doesNotContain("temporary-password")
+        revealed?.fill('\u0000')
+        assertThat(revealed).isEqualTo(CharArray("temporary-password".length))
+    }
+
+    @Test
     fun `changing WebDAV endpoint or password invalidates listed selection`() = runTest(dispatcher) {
         val remote = RemoteBackup("a.nexara", 42, 1234, "etag-a")
         val operations = FakeOperations(remote = listOf(remote))

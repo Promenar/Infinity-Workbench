@@ -36,8 +36,6 @@ import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Save
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,10 +69,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -111,7 +111,7 @@ fun ProviderFormScreen(
     onNavigateBack: () -> Unit,
     onNavigateToModels: () -> Unit = {},
     onNavigateToLocalModels: () -> Unit = {},
-    onSave: (protocolType: ProtocolType, baseUrl: String, apiKey: String, model: String, name: String?) -> Unit = { _, _, _, _, _ -> }
+    onSave: (protocolType: ProtocolType, baseUrl: String, credential: CredentialUpdate, model: String, name: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as NexaraApplication
@@ -124,17 +124,18 @@ fun ProviderFormScreen(
     var presetMenuExpanded by remember { mutableStateOf(false) }
     var baseUrl by remember { mutableStateOf(PROVIDER_PRESETS[0].defaultBaseUrl) }
     var apiKey by remember { mutableStateOf("") }
-    var apiKeyVisible by remember { mutableStateOf(false) }
+    var credentialUpdate by remember { mutableStateOf<CredentialUpdate>(CredentialUpdate.Preserve) }
+    var hasCredential by remember { mutableStateOf(false) }
     var localProto by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(providerId) {
         if (providerId != null) {
-            val config = viewModel.getProviderConfig(providerId)
+            val config = viewModel.getProviderSummary(providerId)
             if (config != null) {
-                name = config.name ?: ""
+                name = config.name
                 baseUrl = config.baseUrl
-                apiKey = config.apiKey
+                hasCredential = config.hasApiKey || config.hasVertexCredentials
                 val matched = PROVIDER_PRESETS.find { 
                     it.protocolType == config.protocolType && (it.name != "Custom" || config.protocolType == ProtocolType.Generic_OpenAI_Compat)
                 }
@@ -148,6 +149,7 @@ fun ProviderFormScreen(
 
     val isEditing = providerId != null
     val isLocal = selectedPreset.protocolType == ProtocolType.Local
+    val endpointValid = isLocal || isSecureProviderEndpoint(baseUrl)
 
     // 键盘避让：当任意配置字段获取焦点时，将 "Configuration" 标题带入视野
     val bringIntoView = remember { BringIntoViewRequester() }
@@ -332,7 +334,7 @@ fun ProviderFormScreen(
                             .clip(NexaraShapes.medium)
                             .background(NexaraColors.InversePrimary)
                             .clickable {
-                                onSave(ProtocolType.Local, "", "", "", "本地模型")
+                                onSave(ProtocolType.Local, "", CredentialUpdate.Preserve, "", "本地模型")
                                 onNavigateToLocalModels()
                             }
                             .padding(vertical = 14.dp),
@@ -382,56 +384,49 @@ fun ProviderFormScreen(
                         modifier = Modifier.onFocusChanged { if (it.isFocused) focusTrigger++ }
                     )
                 }
-
-                LabeledField(
-                    label = stringResource(R.string.provider_form_label_api_key),
-                    trailingLabel = stringResource(R.string.provider_form_secure_storage)
-                ) {
-                    Box {
-                        GlassInputField(
-                            value = apiKey,
-                            onValueChange = { apiKey = it },
-                            placeholder = stringResource(R.string.provider_form_placeholder_api_key),
-                            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            modifier = Modifier
-                                .onFocusChanged { if (it.isFocused) focusTrigger++ }
-                                .padding(end = 40.dp)
-                        )
-                        IconButton(
-                            onClick = { apiKeyVisible = !apiKeyVisible },
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                contentDescription = if (apiKeyVisible) stringResource(R.string.provider_form_cd_hide) else stringResource(R.string.provider_form_cd_show),
-                                tint = NexaraColors.OnSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
+                if (!endpointValid) {
+                    Text(
+                        text = stringResource(R.string.provider_form_https_required),
+                        style = NexaraTypography.bodyMedium,
+                        color = NexaraColors.Error,
+                    )
                 }
 
-                if (selectedPreset.protocolType == ProtocolType.Google_VertexAI) {
-                    LabeledField(label = stringResource(R.string.provider_form_label_sa)) {
-                        GlassInputField(
-                            value = "",
-                            onValueChange = { json ->
-                                try {
-                                    val trimmed = json.trim()
-                                    if (trimmed.startsWith("{")) {
-                                        val projectMatch = Regex("\"project_id\"\\s*:\\s*\"([^\"]+)\"").find(trimmed)
-                                        if (projectMatch != null) {
-                                            name = projectMatch.groupValues[1].take(20)
-                                        }
-                                    }
-                                } catch (_: Exception) { }
-                            },
-                            placeholder = stringResource(R.string.provider_form_paste_json)
-                        )
-                    }
+                LabeledField(
+                    label = stringResource(
+                        if (selectedPreset.protocolType is ProtocolType.Google_VertexAI) {
+                            R.string.provider_form_label_sa
+                        } else R.string.provider_form_label_api_key,
+                    ),
+                    trailingLabel = stringResource(R.string.provider_form_secure_storage)
+                ) {
+                    SecretField(
+                        value = apiKey,
+                        onValueChange = {
+                            apiKey = it
+                            credentialUpdate = if (it.isBlank()) CredentialUpdate.Preserve else CredentialUpdate.Replace(it)
+                        },
+                        hasStoredSecret = hasCredential,
+                        onRevealRequest = {
+                            providerId?.let {
+                                viewModel.revealProviderCredential(
+                                    it,
+                                    selectedPreset.protocolType is ProtocolType.Google_VertexAI,
+                                )
+                            }
+                        },
+                        onClear = {
+                            apiKey = ""
+                            hasCredential = false
+                            credentialUpdate = CredentialUpdate.Clear
+                        },
+                        placeholder = stringResource(
+                            if (selectedPreset.protocolType is ProtocolType.Google_VertexAI) {
+                                R.string.provider_form_paste_json
+                            } else R.string.provider_form_placeholder_api_key,
+                        ),
+                        modifier = Modifier.onFocusChanged { if (it.isFocused) focusTrigger++ },
+                    )
                 }
             }
         }
@@ -451,7 +446,7 @@ fun ProviderFormScreen(
                     .clip(NexaraShapes.medium)
                     .background(if (testStatus == true) NexaraColors.StatusSuccess.copy(alpha = 0.1f) else if (testStatus == false) NexaraColors.StatusError.copy(alpha = 0.1f) else NexaraColors.SurfaceHigh)
                     .border(0.5.dp, if (testStatus == true) NexaraColors.StatusSuccess else if (testStatus == false) NexaraColors.StatusError else NexaraColors.Primary.copy(alpha = 0.3f), NexaraShapes.medium)
-                    .clickable(enabled = !isTesting) {
+                    .clickable(enabled = !isTesting && endpointValid) {
                         isTesting = true
                         testStatus = null
                         scope.launch {
@@ -460,13 +455,26 @@ fun ProviderFormScreen(
                                 if (protocolType is ProtocolType.Local) {
                                     true
                                 } else {
-                                    val protocol = ProtocolFactory.create(
-                                        type = protocolType,
-                                        baseUrl = baseUrl,
-                                        apiKey = apiKey,
-                                        model = ""
-                                    )
-                                    protocol.listModels().isNotEmpty()
+                                    val transient = when (val update = credentialUpdate) {
+                                        is CredentialUpdate.Replace -> update.value.toCharArray()
+                                        CredentialUpdate.Clear -> CharArray(0)
+                                        CredentialUpdate.Preserve -> providerId?.let {
+                                            viewModel.revealProviderCredential(
+                                                it,
+                                                protocolType is ProtocolType.Google_VertexAI,
+                                            )
+                                        } ?: CharArray(0)
+                                    }
+                                    try {
+                                        ProtocolFactory.create(
+                                            type = protocolType,
+                                            baseUrl = baseUrl,
+                                            apiKey = transient.concatToString(),
+                                            model = "",
+                                        ).listModels().isNotEmpty()
+                                    } finally {
+                                        transient.fill('\u0000')
+                                    }
                                 }
                             }.getOrDefault(false)
                             isTesting = false
@@ -509,8 +517,14 @@ fun ProviderFormScreen(
                     .weight(1f)
                     .clip(NexaraShapes.medium)
                     .background(NexaraColors.InversePrimary)
-                    .clickable {
-                        onSave(if (selectedPreset.name == "Custom") localProto else selectedPreset.protocolType, baseUrl, apiKey, "", name.ifBlank { null })
+                    .clickable(enabled = endpointValid) {
+                        onSave(
+                            if (selectedPreset.name == "Custom") localProto else selectedPreset.protocolType,
+                            baseUrl,
+                            credentialUpdate,
+                            "",
+                            name.ifBlank { null },
+                        )
                         viewModel.refreshProviders()
                         if (providerId != null) {
                             onNavigateToModels()
@@ -546,6 +560,11 @@ fun ProviderFormScreen(
         Spacer(modifier = Modifier.height(200.dp))
     }
 }
+
+internal fun isSecureProviderEndpoint(value: String): Boolean = runCatching {
+    val uri = java.net.URI(value)
+    uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+}.getOrDefault(false)
 
 @Composable
 private fun PresetItem(

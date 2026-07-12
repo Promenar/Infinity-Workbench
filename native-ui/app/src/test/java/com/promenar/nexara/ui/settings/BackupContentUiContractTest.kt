@@ -32,15 +32,17 @@ class BackupContentUiContractTest {
     }
 
     @Test
-    fun `unfinished cloud restore and key export cannot act as fake entry points`() {
+    fun `key export and cloud restore are wired to real gated entry points`() {
         val source = String(
             Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/ui/settings/BackupSettingsScreen.kt")),
             Charsets.UTF_8,
         )
 
-        assertThat(source).doesNotContain("stringResource(R.string.backup_restore_cloud)")
-        assertThat(Regex("if \\(\\!uiState\\.includeKeys\\) \\{").findAll(source).count()).isEqualTo(2)
-        assertThat(source).doesNotContain("viewModel.listRemote()")
+        assertThat(source).contains("stringResource(R.string.backup_restore_cloud)")
+        assertThat(source).contains("showExportPasswordDialog = true")
+        assertThat(source).contains("showUploadPasswordDialog = true")
+        assertThat(source).contains("viewModel.listRemote()")
+        assertThat(source).contains("viewModel.restoreSelectedRemote(")
     }
 
     @Test
@@ -67,7 +69,6 @@ class BackupContentUiContractTest {
         )
         assertThat(resetSection).contains("BackupErrorCode.CONNECTION_FAILED")
         assertThat(resetSection).contains("BackupErrorCode.CONFIGURATION_MISSING")
-        assertThat(resetSection).doesNotContain("BackupErrorCode.RESTORE_FAILED")
         assertThat(resetSection).contains("stringResource(R.string.backup_reset_webdav_security)")
         assertThat(source).doesNotContain("\"Exporting...\"")
         assertThat(source).doesNotContain("\"Importing...\"")

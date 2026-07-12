@@ -42,6 +42,11 @@
     <string name="common_cd_pin">Pin</string>
     <string name="common_cd_unpin">Unpin</string>
     <string name="common_cd_selected">Selected</string>
+    <string name="secret_field_placeholder">Enter a new secret</string>
+    <string name="secret_field_show">Temporarily show full secret</string>
+    <string name="secret_field_hide">Hide secret</string>
+    <string name="secret_field_clear">Clear saved secret</string>
+    <string name="provider_form_https_required">Cloud provider endpoints must use a valid HTTPS URL.</string>
     <string name="workbench_refresh">Refresh</string>
 
     <!-- ============ Navigation ============ -->
@@ -463,6 +468,39 @@
     <string name="backup_test_connection">Test Connection</string>
     <string name="backup_save_config">Save Configuration</string>
     <string name="backup_reset_webdav_security">Reset WebDAV Security Configuration</string>
+    <string name="backup_remote_refresh">Refresh remote backups</string>
+    <string name="backup_remote_empty">No remote backups found. Refresh after configuring WebDAV.</string>
+    <string name="backup_remote_metadata">%1$d bytes · %2$d</string>
+    <string name="backup_password_export_title">Protect exported keys</string>
+    <string name="backup_password_upload_title">Protect keys before upload</string>
+    <string name="backup_password_restore_title">Restore local backup</string>
+    <string name="backup_password_remote_restore_title">Restore selected remote backup</string>
+    <string name="backup_password_label">Backup password</string>
+    <string name="backup_password_hint">Enter password</string>
+    <string name="backup_password_confirm_label">Confirm password</string>
+    <string name="backup_password_confirm_hint">Enter the same password again</string>
+    <string name="backup_password_mismatch">Passwords do not match</string>
+    <string name="backup_restore_password_optional">Leave empty for a backup that does not contain encrypted keys.</string>
+    <string name="backup_status_initializing">Securely reading backup configuration…</string>
+    <string name="backup_status_saving_config">Securely saving WebDAV configuration…</string>
+    <string name="backup_status_testing">Testing connection…</string>
+    <string name="backup_status_listing">Loading remote backups…</string>
+    <string name="backup_status_uploading">Uploading backup…</string>
+    <string name="backup_status_staging_restore">Validating and staging restore package…</string>
+    <string name="backup_status_cancelling">Securely cleaning the cancelled restore…</string>
+    <string name="backup_status_restarting">Restore is staged. Restarting safely…</string>
+    <string name="backup_status_success">Operation completed</string>
+    <string name="backup_status_success_cleanup_warning">Backup uploaded, but some old remote backups could not be pruned.</string>
+    <string name="backup_error_password_required">A password and matching confirmation are required when keys are included.</string>
+    <string name="backup_error_configuration_missing">Complete the secure WebDAV configuration first.</string>
+    <string name="backup_error_connection">WebDAV connection failed. Verify the secure configuration.</string>
+    <string name="backup_error_remote_list">Remote backups could not be loaded.</string>
+    <string name="backup_error_stale_selection">The remote selection expired. Refresh and select it again.</string>
+    <string name="backup_error_export">Backup export failed.</string>
+    <string name="backup_error_upload">Backup upload failed.</string>
+    <string name="backup_error_restore">Backup validation or restore staging failed.</string>
+    <string name="backup_error_restart">Safe restart failed. Retry or cancel the pending restore.</string>
+    <string name="backup_error_cleanup">Pending restore cleanup failed. Data operations remain blocked for safety.</string>
 
     <!-- LocalModelsScreen -->
     <string name="local_models_title">Local Models</string>
@@ -882,6 +920,10 @@
     <string name="search_config_engine_duckduckgo">DuckDuckGo (Local / Free)</string>
     <string name="search_config_engine_searxng">SearXNG (Meta-Search / Public Node)</string>
     <string name="search_config_engine_tavily">Tavily (AI Optimized / API Key)</string>
+    <string name="search_sheet_web_title">Web Search Configuration</string>
+    <string name="search_sheet_tavily_title">Tavily Search Configuration</string>
+    <string name="search_sheet_searxng_title">SearXNG Search Configuration</string>
+    <string name="search_sheet_title">Search Configuration</string>
     <string name="chat_menu_clear_history">Clear History</string>
     <string name="chat_menu_rename">Rename</string>
     <string name="chat_menu_delete_session">Delete Session</string>
