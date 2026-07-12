@@ -267,7 +267,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         }
 
         // 安全恢复必须在 ProviderManager、listener、本地模型与向量化等 writer 启动前同步完成。
-        // recovery 在 IO dispatcher 执行并受显式启动超时约束；失败抛出脱敏异常并中止 Application 初始化。
+        // recovery 在当前启动调用链同步等待，完成前绝不开放 writer；失败抛出脱敏异常并中止初始化。
         backupRuntime = createBackupRuntime()
         backupRuntime.recoverBeforeWriters()
 

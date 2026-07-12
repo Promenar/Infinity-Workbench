@@ -13,8 +13,8 @@ class BackupRuntimeTest {
         val calls = AtomicInteger()
         val runtime = BackupRuntime(FakeDataSource { calls.incrementAndGet() })
 
-        runtime.recoverBeforeWriters(timeoutMillis = 1_000)
-        runtime.recoverBeforeWriters(timeoutMillis = 1_000)
+        runtime.recoverBeforeWriters()
+        runtime.recoverBeforeWriters()
 
         assertThat(runtime.isWriterGateOpen).isTrue()
         assertThat(calls.get()).isEqualTo(1)
@@ -24,7 +24,7 @@ class BackupRuntimeTest {
     fun `recovery failure keeps gate closed and exposes only sanitized error`() {
         val runtime = BackupRuntime(FakeDataSource { error("secret-path=/data/user/0/private") })
 
-        val thrown = runCatching { runtime.recoverBeforeWriters(1_000) }.exceptionOrNull()
+        val thrown = runCatching { runtime.recoverBeforeWriters() }.exceptionOrNull()
 
         assertThat(thrown).isInstanceOf(BackupStartupException::class.java)
         assertThat(thrown!!.message).isEqualTo("安全恢复未完成，应用写入已禁用")
@@ -33,18 +33,25 @@ class BackupRuntimeTest {
     }
 
     @Test
-    fun `recovery timeout is bounded and keeps writer gate closed`() {
+    fun `recovery waits for non cancellable side effects and leaves no worker thread`() {
+        var sideEffectCompleted = false
+        val callerThread = Thread.currentThread()
+        var recoveryThread: Thread? = null
         val runtime = BackupRuntime(FakeDataSource {
-            withContext(NonCancellable) { delay(500) }
+            withContext(NonCancellable) {
+                delay(100)
+                recoveryThread = Thread.currentThread()
+                sideEffectCompleted = true
+            }
         })
-        val started = System.nanoTime()
 
-        val thrown = runCatching { runtime.recoverBeforeWriters(50) }.exceptionOrNull()
+        runtime.recoverBeforeWriters()
 
-        val elapsedMillis = (System.nanoTime() - started) / 1_000_000
-        assertThat(thrown).isInstanceOf(BackupStartupException::class.java)
-        assertThat(elapsedMillis).isLessThan(250)
-        assertThat(runtime.isWriterGateOpen).isFalse()
+        assertThat(sideEffectCompleted).isTrue()
+        assertThat(recoveryThread).isSameInstanceAs(callerThread)
+        assertThat(runtime.isWriterGateOpen).isTrue()
+        assertThat(Thread.getAllStackTraces().keys.map(Thread::getName))
+            .doesNotContain("nexara-backup-startup-recovery")
     }
 
     @Test

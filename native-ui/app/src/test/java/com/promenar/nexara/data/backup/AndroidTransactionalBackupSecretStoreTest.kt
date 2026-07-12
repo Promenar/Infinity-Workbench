@@ -142,6 +142,25 @@ class AndroidTransactionalBackupSecretStoreTest {
         assertThat(runCatching { newStore().commitPrepared("never-prepared") }.isFailure).isTrue()
     }
 
+    @Test
+    fun `prepared retry compares staged bytes and wipes loaded copies`() = runBlocking {
+        val id = SecretId("provider_api_key:retry")
+        val before = mapOf(id to "before".toByteArray())
+        val after = mapOf(id to "after".toByteArray())
+        newStore().prepare("tx-retry", before, after)
+
+        staging.returnedRefs.clear()
+        newStore().prepare("tx-retry", before, after)
+        assertThat(staging.returnedRefs).isNotEmpty()
+        assertThat(staging.returnedRefs.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+
+        staging.returnedRefs.clear()
+        val changed = mapOf(id to "changed".toByteArray())
+        assertThat(runCatching { newStore().prepare("tx-retry", before, changed) }.isFailure).isTrue()
+        assertThat(staging.returnedRefs).isNotEmpty()
+        assertThat(staging.returnedRefs.all { bytes -> bytes.all { it == 0.toByte() } }).isTrue()
+    }
+
     private fun newStore() = AndroidTransactionalBackupSecretStore(
         liveStore = live,
         stagingStore = staging,
@@ -152,6 +171,7 @@ class AndroidTransactionalBackupSecretStoreTest {
         private val values = ConcurrentHashMap<SecretId, ByteArray>()
         var failPutOnceFor: SecretId? = null
         var failNextPut: Boolean = false
+        val returnedRefs = mutableListOf<ByteArray>()
 
         override fun put(id: SecretId, value: ByteArray) {
             if (failNextPut) {
@@ -165,7 +185,7 @@ class AndroidTransactionalBackupSecretStoreTest {
             values.put(id, value.copyOf())?.fill(0)
         }
 
-        override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
+        override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()?.also(returnedRefs::add)
         override fun contains(id: SecretId): Boolean = values.containsKey(id)
         override fun remove(id: SecretId) { values.remove(id)?.fill(0) }
         fun text(id: SecretId): String? = get(id)?.let { bytes ->

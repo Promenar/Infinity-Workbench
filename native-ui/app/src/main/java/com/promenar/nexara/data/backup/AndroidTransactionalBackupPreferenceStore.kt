@@ -29,6 +29,7 @@ internal class AndroidTransactionalBackupPreferenceStore(
         "backup-preference-transactions-v1.json",
     ),
     private val namespaceAppliedHook: (String, PreferenceApplyDirection) -> Unit = { _, _ -> },
+    private val maxLedgerBytes: Long = MAX_LEDGER_BYTES,
 ) : TransactionalBackupPreferenceStore {
     private val appContext = context.applicationContext
     private val atomicLedger = AtomicFile(ledgerFile)
@@ -67,7 +68,27 @@ internal class AndroidTransactionalBackupPreferenceStore(
         val existing = ledger.records[txId]
         val candidate = PreferenceTransactionRecord.prepared(txId, canonicalBefore, canonicalAfter)
         when {
-            existing == null -> writeLedger(ledger.copy(records = ledger.records + (txId to candidate)))
+            existing == null -> writeLedger(candidateLedger(ledger, txId, candidate))
+            existing == candidate -> Unit
+            else -> throw BackupValidationException("相同 txId 的偏好 prepared 状态不一致")
+        }
+    }
+
+    override suspend fun preflightRestore(
+        txId: String,
+        before: BackupPreferenceSnapshot,
+        after: BackupPreferenceSnapshot,
+    ) = processMutex.withLock {
+        requireTxId(txId)
+        val candidate = PreferenceTransactionRecord.prepared(
+            txId = txId,
+            before = validateSnapshot(before),
+            after = validateSnapshot(after),
+        )
+        val ledger = readLedger()
+        val existing = ledger.records[txId]
+        when {
+            existing == null -> validateLedgerCapacity(candidateLedger(ledger, txId, candidate))
             existing == candidate -> Unit
             else -> throw BackupValidationException("相同 txId 的偏好 prepared 状态不一致")
         }
@@ -80,7 +101,7 @@ internal class AndroidTransactionalBackupPreferenceStore(
     override suspend fun finalizePrepared(txId: String) = processMutex.withLock {
         requireTxId(txId)
         val ledger = readLedger()
-        val record = ledger.records[txId] ?: throw BackupValidationException("偏好 prepared 状态不存在")
+        val record = ledger.records[txId] ?: return@withLock
         if (record.phase == PreferenceTransactionPhase.FINALIZED) return@withLock
         val direction = record.direction ?: throw BackupValidationException("偏好 prepared 尚未应用，不能 finalize")
         val receiptWithoutDigest = PreferenceTransactionRecord(
@@ -98,7 +119,11 @@ internal class AndroidTransactionalBackupPreferenceStore(
     private suspend fun applyPrepared(txId: String, direction: PreferenceApplyDirection) = processMutex.withLock {
         requireTxId(txId)
         val ledger = readLedger()
-        val record = ledger.records[txId] ?: throw BackupValidationException("偏好 prepared 状态不存在")
+        val record = ledger.records[txId]
+        if (record == null) {
+            if (direction == PreferenceApplyDirection.BEFORE) return@withLock
+            throw BackupValidationException("偏好 prepared 状态不存在")
+        }
         if (record.phase == PreferenceTransactionPhase.FINALIZED) {
             if (record.direction != direction) throw BackupValidationException("偏好 finalized 方向冲突")
             return@withLock
@@ -251,7 +276,7 @@ internal class AndroidTransactionalBackupPreferenceStore(
 
     private fun readLedger(): PreferenceTransactionLedger {
         if (!atomicLedger.baseFile.exists()) return PreferenceTransactionLedger()
-        if (atomicLedger.baseFile.length() > MAX_LEDGER_BYTES) throw BackupValidationException("偏好事务状态过大")
+        if (atomicLedger.baseFile.length() > maxLedgerBytes) throw BackupValidationException("偏好事务状态过大")
         return try {
             atomicLedger.openRead().use {
                 json.decodeFromString<PreferenceTransactionLedger>(it.readBytes().toString(Charsets.UTF_8))
@@ -271,7 +296,7 @@ internal class AndroidTransactionalBackupPreferenceStore(
 
     private fun writeLedger(ledger: PreferenceTransactionLedger) {
         val bytes = json.encodeToString(ledger).toByteArray()
-        if (bytes.size.toLong() > MAX_LEDGER_BYTES) throw BackupValidationException("偏好事务状态超过安全限制")
+        if (bytes.size.toLong() > maxLedgerBytes) throw BackupValidationException("偏好事务状态超过安全限制")
         val output = atomicLedger.startWrite()
         try {
             output.write(bytes)
@@ -279,6 +304,18 @@ internal class AndroidTransactionalBackupPreferenceStore(
         } catch (error: Throwable) {
             atomicLedger.failWrite(output)
             throw error
+        }
+    }
+
+    private fun candidateLedger(
+        ledger: PreferenceTransactionLedger,
+        txId: String,
+        candidate: PreferenceTransactionRecord,
+    ) = ledger.copy(records = ledger.records + (txId to candidate))
+
+    private fun validateLedgerCapacity(ledger: PreferenceTransactionLedger) {
+        if (json.encodeToString(ledger).toByteArray().size.toLong() > maxLedgerBytes) {
+            throw BackupValidationException("偏好事务状态超过安全限制")
         }
     }
 

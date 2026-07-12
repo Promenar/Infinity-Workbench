@@ -164,7 +164,32 @@ class AndroidTransactionalBackupPreferenceStoreTest {
         store().commitPrepared("tx-final")
         store().finalizePrepared("tx-final")
         assertFails { store().rollbackPrepared("tx-final") }
+        store().rollbackPrepared("never-prepared")
+        store().finalizePrepared("never-prepared")
         assertFails { store().commitPrepared("never-prepared") }
+    }
+
+    @Test
+    fun `preflight validates typed values and provider ids before creating ledger`() = runBlocking {
+        val adapter = store()
+        val before = BackupPreferenceSnapshot(emptyList(), setOf("default"))
+        val malformed = BackupPreferenceSnapshot(
+            entries = listOf(entry("settings", "loop_limit", PreferenceValueType.STRING, "not-an-int")),
+            providerIds = setOf("default"),
+        )
+
+        assertFails { adapter.preflightRestore("tx-malformed", before, malformed) }
+
+        assertThat(ledgerFile.exists()).isFalse()
+    }
+
+    @Test
+    fun `preflight rejects ledger capacity before writing ledger`() = runBlocking {
+        val snapshot = BackupPreferenceSnapshot(emptyList(), setOf("default"))
+
+        assertFails { store(maxLedgerBytes = 32).preflightRestore("tx-capacity", snapshot, snapshot) }
+
+        assertThat(ledgerFile.exists()).isFalse()
     }
 
     @Test
@@ -181,8 +206,9 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     private fun store(
+        maxLedgerBytes: Long = 34L * 1024 * 1024,
         hook: (String, PreferenceApplyDirection) -> Unit = { _, _ -> },
-    ) = AndroidTransactionalBackupPreferenceStore(context, ledgerFile, hook)
+    ) = AndroidTransactionalBackupPreferenceStore(context, ledgerFile, hook, maxLedgerBytes)
 
     private fun seedBeforeState() {
         context.getSharedPreferences("nexara_settings", 0).edit().putString("language", "en").commit()

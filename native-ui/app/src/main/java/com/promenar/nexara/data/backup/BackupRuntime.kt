@@ -6,10 +6,6 @@ import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.security.SecretStore
 import kotlinx.coroutines.runBlocking
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 
 /** 启动期安全恢复闸门；只有 recovery 成功后才允许业务 writer 启动。 */
 class BackupRuntime internal constructor(
@@ -21,35 +17,17 @@ class BackupRuntime internal constructor(
     val isWriterGateOpen: Boolean
         get() = state == State.READY
 
-    fun recoverBeforeWriters(timeoutMillis: Long = DEFAULT_STARTUP_TIMEOUT_MILLIS) = synchronized(lock) {
+    fun recoverBeforeWriters() = synchronized(lock) {
         if (state == State.READY) return@synchronized
         if (state == State.BLOCKED) throw BackupStartupException()
-        require(timeoutMillis > 0) { "安全恢复超时必须大于 0" }
         state = State.RECOVERING
-        val executor = Executors.newSingleThreadExecutor { task ->
-            Thread(task, "nexara-backup-startup-recovery").apply { isDaemon = true }
-        }
-        val recovery = executor.submit<Unit> {
-            runBlocking { dataSource.recoverInterruptedRestore() }
-        }
         try {
-            recovery.get(timeoutMillis, TimeUnit.MILLISECONDS)
+            runBlocking { dataSource.recoverInterruptedRestore() }
             state = State.READY
-        } catch (error: ExecutionException) {
+        } catch (error: Throwable) {
             state = State.BLOCKED
-            val cause = error.cause
-            if (cause is Error) throw cause
+            if (error is Error) throw error
             throw BackupStartupException()
-        } catch (_: TimeoutException) {
-            state = State.BLOCKED
-            throw BackupStartupException()
-        } catch (error: InterruptedException) {
-            Thread.currentThread().interrupt()
-            state = State.BLOCKED
-            throw BackupStartupException()
-        } finally {
-            recovery.cancel(true)
-            executor.shutdownNow()
         }
     }
 
@@ -62,8 +40,6 @@ class BackupRuntime internal constructor(
     private enum class State { NEW, RECOVERING, READY, BLOCKED }
 
     companion object {
-        const val DEFAULT_STARTUP_TIMEOUT_MILLIS = 5_000L
-
         fun createAndroid(
             context: Context,
             database: NexaraDatabase,

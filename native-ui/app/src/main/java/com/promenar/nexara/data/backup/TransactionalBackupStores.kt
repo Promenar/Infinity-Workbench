@@ -8,6 +8,12 @@ import com.promenar.nexara.data.security.SecretId
  */
 interface TransactionalBackupPreferenceStore {
     suspend fun snapshot(maxTotalBytes: Long): BackupPreferenceSnapshot
+    /** 只读验证 typed/providerIds 与 prepared ledger 容量；失败不得产生持久化写入。 */
+    suspend fun preflightRestore(
+        txId: String,
+        before: BackupPreferenceSnapshot,
+        after: BackupPreferenceSnapshot,
+    )
     suspend fun prepare(txId: String, before: BackupPreferenceSnapshot, after: BackupPreferenceSnapshot)
     suspend fun commitPrepared(txId: String)
     suspend fun rollbackPrepared(txId: String)

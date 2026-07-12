@@ -482,6 +482,64 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `preference preflight failure occurs before journal and external writes`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            db.clearAllTables()
+            val sentinel = AgentEntity("sentinel", "old", createdAt = 1)
+            db.agentDao().insert(sentinel)
+            val oldPreferences = BackupPreferenceSnapshot(
+                listOf(BackupPreferenceEntry("settings", "language", "en")), emptySet()
+            )
+            preferences.snapshot = oldPreferences
+            preferences.failPreflight = true
+
+            assertFails { newDataSource().restore(validated(backup)) }
+
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+            assertThat(preferences.prepareCalls).isEqualTo(0)
+            assertThat(preferences.snapshot).isEqualTo(oldPreferences)
+            assertThat(db.agentDao().getAll()).containsExactly(sentinel)
+            assertThat(Files.list(restoreParent).use { it.count() }).isEqualTo(0)
+        }
+    }
+
+    @Test
+    fun `prepare failure before preference record recovers old state across datasource recreation`() {
+        runBlocking {
+            seedCompleteGraph()
+            val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+            db.clearAllTables()
+            val sentinel = AgentEntity("sentinel", "old", createdAt = 1)
+            db.agentDao().insert(sentinel)
+            val oldPreferences = BackupPreferenceSnapshot(
+                listOf(BackupPreferenceEntry("settings", "language", "en")), emptySet()
+            )
+            preferences.snapshot = oldPreferences
+            preferences.prepareFailureBeforeRecord = SimulatedRestoreProcessDeath(RestoreCrashPoint.JOURNAL_PREPARED)
+
+            var interrupted = false
+            try {
+                newDataSource().restore(validated(backup))
+            } catch (_: SimulatedRestoreProcessDeath) {
+                interrupted = true
+            }
+            assertThat(interrupted).isTrue()
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isTrue()
+
+            preferences = preferences.reopen().also { it.prepareFailureBeforeRecord = null }
+            secrets = secrets.reopen()
+            newDataSource().recoverInterruptedRestore()
+
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+            assertThat(preferences.snapshot).isEqualTo(oldPreferences)
+            assertThat(db.agentDao().getAll()).containsExactly(sentinel)
+            assertThat(Files.list(restoreParent).use { it.count() }).isEqualTo(0)
+        }
+    }
+
+    @Test
     fun `interrupted restore recovers to exactly old or new state after datasource recreation`() {
         runBlocking {
             RestoreCrashPoint.entries.forEach { point ->
@@ -1046,6 +1104,12 @@ private class FakePreferenceStore private constructor(
     var failRollback: Boolean
         get() = state.failRollback
         set(value) { state.failRollback = value }
+    var failPreflight: Boolean
+        get() = state.failPreflight
+        set(value) { state.failPreflight = value }
+    var prepareFailureBeforeRecord: Throwable?
+        get() = state.prepareFailureBeforeRecord
+        set(value) { state.prepareFailureBeforeRecord = value }
     var prepareCalls: Int = 0
     private val prepared get() = state.prepared
 
@@ -1061,8 +1125,17 @@ private class FakePreferenceStore private constructor(
         return snapshot
     }
 
+    override suspend fun preflightRestore(
+        txId: String,
+        before: BackupPreferenceSnapshot,
+        after: BackupPreferenceSnapshot,
+    ) {
+        if (failPreflight) throw BackupValidationException("injected preference preflight failure")
+    }
+
     override suspend fun prepare(txId: String, before: BackupPreferenceSnapshot, after: BackupPreferenceSnapshot) {
         prepareCalls++
+        prepareFailureBeforeRecord?.let { throw it }
         prepared[txId] = before to after
     }
 
@@ -1084,6 +1157,8 @@ private class FakePreferenceStore private constructor(
         var snapshot: BackupPreferenceSnapshot,
         var failCommit: Boolean = false,
         var failRollback: Boolean = false,
+        var failPreflight: Boolean = false,
+        var prepareFailureBeforeRecord: Throwable? = null,
         val prepared: MutableMap<String, Pair<BackupPreferenceSnapshot, BackupPreferenceSnapshot>> = mutableMapOf(),
     )
 }

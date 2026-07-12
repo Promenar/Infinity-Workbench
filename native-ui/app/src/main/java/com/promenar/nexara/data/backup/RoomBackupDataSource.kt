@@ -120,6 +120,7 @@ class RoomBackupDataSource(
         validatePayload(transformed, validated.files)
         val expectedFingerprint = fingerprint(transformed)
         val beforePreferences = preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+        preferences.preflightRestore(restoreId, beforePreferences, preferenceSnapshot)
         val eligibleIds = eligibleSecretIds(preferenceSnapshot.providerIds + beforePreferences.providerIds)
         val beforeSecrets = secrets.snapshot(eligibleIds, BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         val afterSecrets = validated.secrets.mapValues { it.value.copyOf() }

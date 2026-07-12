@@ -69,7 +69,11 @@ class AndroidTransactionalBackupSecretStore internal constructor(
             if (existing.phase == SecretTxPhase.PREPARED &&
                 existing.beforeIds == safeBefore.keys.map(SecretId::value).sorted() &&
                 existing.afterIds == safeAfter.keys.map(SecretId::value).sorted()
-            ) return@synchronized
+            ) {
+                verifyPreparedBytes(txId, StageSide.BEFORE, safeBefore)
+                verifyPreparedBytes(txId, StageSide.AFTER, safeAfter)
+                return@synchronized
+            }
             throw BackupValidationException("Secret prepared 事务状态冲突")
         }
         val record = existing ?: SecretTxRecord(
@@ -186,6 +190,24 @@ class AndroidTransactionalBackupSecretStore internal constructor(
             stagingStore.put(stagingId(txId, side, id), owned)
         } finally {
             owned.fill(0)
+        }
+    }
+
+    private fun verifyPreparedBytes(
+        txId: String,
+        side: StageSide,
+        expected: Map<SecretId, ByteArray>,
+    ) {
+        expected.forEach { (id, expectedBytes) ->
+            val staged = stagingStore.get(stagingId(txId, side, id))
+                ?: throw BackupValidationException("Secret prepared staging 缺失")
+            try {
+                if (!MessageDigest.isEqual(staged, expectedBytes)) {
+                    throw BackupValidationException("Secret prepared 重试内容不一致")
+                }
+            } finally {
+                staged.fill(0)
+            }
         }
     }
 
