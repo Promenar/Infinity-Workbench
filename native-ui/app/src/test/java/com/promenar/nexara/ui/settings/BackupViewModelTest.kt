@@ -982,6 +982,64 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `include keys export is rejected before password validation while config test owns admission`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Result<Unit>>()
+        val operations = FakeOperations(testGate = gate)
+        val vm = newViewModel(
+            operations = operations,
+            synchronousIo = false,
+            ioDispatcher = Dispatchers.IO,
+        )
+        runCurrent(); drainRealIoUntil { vm.uiState.value.operation !is BackupOperation.Initializing }
+        vm.setIncludeKeys(true)
+        assertThat(vm.saveAndTestWebDavConfig("https://busy.invalid/", "u", "pw".toCharArray())).isTrue()
+        drainRealIoUntil { vm.uiState.value.operation is BackupOperation.Testing }
+        val output = TrackingOutputStream()
+
+        assertThat(vm.export(output, null, null)).isFalse()
+
+        assertThat(output.closeCount).isEqualTo(1)
+        assertThat(operations.exportCalls).isEqualTo(0)
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Testing)
+        gate.complete(Result.success(Unit))
+        drainRealIoUntil { vm.uiState.value.operation is BackupOperation.Success }
+    }
+
+    @Test
+    fun `stale fatal config publisher cannot clear or overwrite successor revision`() {
+        val vmRef = AtomicReference<BackupViewModel>()
+        val hooks = FatalConfigRaceHooks()
+        val secrets = FakeSecrets()
+
+        val thrown = assertThrows<AssertionError> {
+            runTest(dispatcher) {
+                val vm = newViewModel(
+                    secrets = secrets,
+                    hooks = hooks,
+                    synchronousIo = false,
+                    ioDispatcher = dispatcher,
+                )
+                vmRef.set(vm)
+                runCurrent()
+                secrets.throwAfterPut = AssertionError("fatal-a")
+                hooks.afterReconciled = {
+                    secrets.throwAfterPut = null
+                    assertThat(vm.saveWebDavConfig("https://b.invalid/", "b", "b-pass".toCharArray())).isTrue()
+                }
+
+                assertThat(vm.saveWebDavConfig("https://a.invalid/", "a", "a-pass".toCharArray())).isTrue()
+                advanceUntilIdle()
+                assertThat(vm.uiState.value.webdavUrl).isEqualTo("https://b.invalid/")
+                assertThat(vm.uiState.value.operation).isInstanceOf(BackupOperation.Success::class.java)
+            }
+        }
+
+        assertThat(thrown).hasMessageThat().isEqualTo("fatal-a")
+        assertThat(vmRef.get().uiState.value.webdavUrl).isEqualTo("https://b.invalid/")
+        assertThat(vmRef.get().uiState.value.operation).isInstanceOf(BackupOperation.Success::class.java)
+    }
+
+    @Test
     fun `save and test failure still publishes the atomically saved canonical revision`() = runTest(dispatcher) {
         val gate = CompletableDeferred(Result.failure<Unit>(IllegalStateException("offline")))
         val operations = FakeOperations(testGate = gate)
@@ -1157,6 +1215,13 @@ class BackupViewModelTest {
                 release.await()
             }
         }
+    }
+
+    private class FatalConfigRaceHooks : BackupViewModelHooks {
+        var afterReconciled: () -> Unit = {}
+        override fun afterOperationRegistered(phase: BackupOperation) = Unit
+        override suspend fun beforeStateCommit(phase: BackupOperation) = Unit
+        override fun afterConfigFailureReconciled(revision: Long) = afterReconciled()
     }
 
     private class FakeSettings(

@@ -152,6 +152,7 @@ fun interface BackupRestartRequester {
 internal interface BackupViewModelHooks {
     fun afterOperationRegistered(phase: BackupOperation)
     suspend fun beforeStateCommit(phase: BackupOperation)
+    fun afterConfigFailureReconciled(revision: Long) = Unit
 
     data object None : BackupViewModelHooks {
         override fun afterOperationRegistered(phase: BackupOperation) = Unit
@@ -306,12 +307,13 @@ class BackupViewModel internal constructor(
                 try {
                     withContext(ioDispatcher) { saveWebDavConfigNow(url, user, ownedPassword, reservation) }
                 } catch (cancelled: CancellationException) {
-                    publishConfigFailureIfNeeded("WebDAV 配置保存已中断")
+                    publishConfigFailureIfNeeded(reservation.revision, "WebDAV 配置保存已中断")
                     throw cancelled
                 } catch (error: Exception) {
-                    publishConfigFailureIfNeeded("保存 WebDAV 配置失败")
+                    publishConfigFailureIfNeeded(reservation.revision, "保存 WebDAV 配置失败")
                 } catch (error: Error) {
-                    publishFatalConfigFailure(error)
+                    hooks.afterConfigFailureReconciled(reservation.revision)
+                    publishFatalConfigFailure(error, reservation.revision)
                     throw error
                 } finally {
                     ownedPassword?.fill('\u0000')
@@ -431,12 +433,13 @@ class BackupViewModel internal constructor(
                 try {
                     withContext(ioDispatcher) { deleteWebDavPasswordNow(reservation) }
                 } catch (cancelled: CancellationException) {
-                    publishConfigFailureIfNeeded("WebDAV 密码删除已中断")
+                    publishConfigFailureIfNeeded(reservation.revision, "WebDAV 密码删除已中断")
                     throw cancelled
                 } catch (error: Exception) {
-                    publishConfigFailureIfNeeded("删除 WebDAV 密码失败")
+                    publishConfigFailureIfNeeded(reservation.revision, "删除 WebDAV 密码失败")
                 } catch (error: Error) {
-                    publishFatalConfigFailure(error)
+                    hooks.afterConfigFailureReconciled(reservation.revision)
+                    publishFatalConfigFailure(error, reservation.revision)
                     throw error
                 }
             }
@@ -486,7 +489,8 @@ class BackupViewModel internal constructor(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Error) {
-                    publishFatalConfigFailure(error)
+                    hooks.afterConfigFailureReconciled(revision)
+                    publishFatalConfigFailure(error, revision)
                     throw error
                 }
             }
@@ -792,18 +796,20 @@ class BackupViewModel internal constructor(
                 ownedConfirmation == null || ownedConfirmation.isEmpty())) {
             ownedPassword?.fill('\u0000')
             ownedConfirmation?.fill('\u0000')
-            _uiState.update {
-                it.copy(operation = BackupOperation.Error(BackupErrorCode.PASSWORD_REQUIRED, "包含密钥时必须输入并确认备份密码"))
-            }
+            publishPasswordValidationFailure(
+                BackupErrorCode.PASSWORD_REQUIRED,
+                "包含密钥时必须输入并确认备份密码",
+            )
             externalCleanup()
             return false
         }
         if (include && !constantTimeEquals(ownedPassword!!, ownedConfirmation!!)) {
             ownedPassword.fill('\u0000')
             ownedConfirmation.fill('\u0000')
-            _uiState.update {
-                it.copy(operation = BackupOperation.Error(BackupErrorCode.PASSWORD_MISMATCH, "两次输入的备份密码不一致"))
-            }
+            publishPasswordValidationFailure(
+                BackupErrorCode.PASSWORD_MISMATCH,
+                "两次输入的备份密码不一致",
+            )
             externalCleanup()
             return false
         }
@@ -1064,7 +1070,17 @@ class BackupViewModel internal constructor(
         }
     }
     private fun isBusy(): Boolean = synchronized(operationLock) {
-        currentJob != null || restoreControl != null || restoreBlocked || cleared
+        isBusyLocked()
+    }
+
+    private fun isBusyLocked(): Boolean =
+        currentJob != null || configMutationRevision != null || restoreControl != null || restoreBlocked || cleared
+
+    private fun publishPasswordValidationFailure(code: BackupErrorCode, message: String) {
+        synchronized(operationLock) {
+            if (!initialized || isBusyLocked() || restoreControl?.restartAuthorized == true) return
+            _uiState.update { it.copy(operation = BackupOperation.Error(code, message)) }
+        }
     }
 
     private fun captureWebDavRevision(): Long? = synchronized(operationLock) {
@@ -1397,8 +1413,10 @@ class BackupViewModel internal constructor(
         }
     }
 
-    private fun publishConfigFailureIfNeeded(message: String) {
+    private fun publishConfigFailureIfNeeded(revision: Long, message: String) {
         synchronized(operationLock) {
+            if (configRevision.get() != revision) return
+            if (configMutationRevision != null && configMutationRevision != revision) return
             if (_uiState.value.operation is BackupOperation.SavingConfig) {
                 _uiState.update { it.copy(operation = BackupOperation.Error(
                     BackupErrorCode.CONFIGURATION_MISSING,
@@ -1408,8 +1426,10 @@ class BackupViewModel internal constructor(
         }
     }
 
-    private fun publishFatalConfigFailure(error: Error) {
+    private fun publishFatalConfigFailure(error: Error, revision: Long? = null) {
         synchronized(operationLock) {
+            if (revision != null && configRevision.get() != revision) return
+            if (revision != null && configMutationRevision != null && configMutationRevision != revision) return
             configMutationRevision = null
             webDavBlocked = true
             _uiState.update { it.copy(operation = BackupOperation.Blocked(
