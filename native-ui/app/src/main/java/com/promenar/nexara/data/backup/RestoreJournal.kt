@@ -209,7 +209,14 @@ internal class FileRestoreJournal(
             var current: Path? = path.root
             path.forEach { segment ->
                 current = current!!.resolve(segment)
-                if (Files.isSymbolicLink(current)) throw BackupValidationException("受信路径祖先包含符号链接")
+                if (Files.isSymbolicLink(current)) {
+                    // Android 的 /data/user/0 是由系统控制、父目录不可写的稳定别名。
+                    // 只允许这种调用进程无法替换的系统祖先；任何位于可写父目录中的 symlink 仍 fail closed。
+                    val parent = current!!.parent
+                    if (parent == null || Files.isWritable(parent)) {
+                        throw BackupValidationException("受信路径祖先包含可替换的符号链接")
+                    }
+                }
             }
         }
 

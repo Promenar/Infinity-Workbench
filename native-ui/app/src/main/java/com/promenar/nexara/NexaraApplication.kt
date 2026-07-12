@@ -11,6 +11,7 @@ import androidx.room.Room
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.GraphStore
@@ -95,6 +96,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
+
+    lateinit var backupRuntime: BackupRuntime
+        private set
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
@@ -262,6 +266,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             workSpaceDir.mkdirs()
         }
 
+        // 安全恢复必须在 ProviderManager、listener、本地模型与向量化等 writer 启动前同步完成。
+        // recovery 在 IO dispatcher 执行并受显式启动超时约束；失败抛出脱敏异常并中止 Application 初始化。
+        backupRuntime = createBackupRuntime()
+        backupRuntime.recoverBeforeWriters()
+
         // 初始化统一数据源（必须在 buildProviderFromPrefs 之前）
         val providerManager = ProviderManager.init(this, secretStore)
 
@@ -303,6 +312,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         prefs.registerOnSharedPreferenceChangeListener(providerListener)
         settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
     }
+
+    /** 仅供测试应用替换 AndroidKeyStore/真实文件系统依赖；生产始终使用安全 runtime。 */
+    protected open fun createBackupRuntime(): BackupRuntime =
+        BackupRuntime.createAndroid(this, database, secretStore)
 
     private var _embeddingClient: EmbeddingClient? = null
     val embeddingClient: EmbeddingClient

@@ -16,12 +16,13 @@ class AndroidKeystoreSecretStore internal constructor(
     constructor(
         context: Context,
         preferencesName: String = DEFAULT_PREFERENCES_NAME,
+        keyAlias: String = KEY_ALIAS,
     ) : this(
         preferences = context.applicationContext.getSharedPreferences(
             preferencesName,
             Context.MODE_PRIVATE,
         ),
-        key = getOrCreateKey(KEY_ALIAS),
+        key = getOrCreateKey(keyAlias),
     )
 
     override fun put(id: SecretId, value: ByteArray) {

@@ -93,7 +93,11 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                     throw BackupValidationException("待删除恢复目录 fileKey 已变化")
                 }
                 expectedInventory?.let { expected ->
-                    val actual = buildSet { collectInventory(it, "", this) }
+                    // UnixSecureDirectoryStream 只允许从同一 handle 获取一次 iterator。
+                    // 使用同一 root descriptor 派生独立 view 做 inventory，保留原 handle 给后续删除遍历。
+                    val actual = it.newDirectoryStream(Path.of("."), LinkOption.NOFOLLOW_LINKS).use { inventoryView ->
+                        buildSet { collectInventory(inventoryView, "", this) }
+                    }
                     if (actual != expected) throw BackupValidationException("待删除目录 descriptor inventory 已变化")
                 }
                 marker?.let { (name, expected) ->

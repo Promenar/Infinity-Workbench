@@ -181,6 +181,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("com.google.truth:truth:1.2.0")
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

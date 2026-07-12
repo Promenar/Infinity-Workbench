@@ -9,6 +9,11 @@ import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
+import com.promenar.nexara.data.backup.BackupContent
+import com.promenar.nexara.data.backup.BackupDataSource
+import com.promenar.nexara.data.backup.BackupRuntime
+import com.promenar.nexara.data.backup.BackupSnapshot
+import com.promenar.nexara.data.backup.ValidatedBackup
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
@@ -415,6 +420,11 @@ class ChatViewModelTest {
 
 class TestNexaraApplication : NexaraApplication() {
     override val secretStore: SecretStore = MemorySecretStore()
+    override fun createBackupRuntime(): BackupRuntime = BackupRuntime(object : BackupDataSource {
+        override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = error("unused")
+        override suspend fun restore(validated: ValidatedBackup) = error("unused")
+        override suspend fun recoverInterruptedRestore() = Unit
+    })
 }
 
 private class MemorySecretStore : SecretStore {

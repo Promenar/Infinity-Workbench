@@ -113,7 +113,18 @@ data class BackupPreferenceEntry(
     val namespace: String,
     val key: String,
     val value: String,
+    val type: PreferenceValueType = PreferenceValueType.STRING,
 )
+
+@Serializable
+enum class PreferenceValueType {
+    STRING,
+    STRING_SET,
+    BOOLEAN,
+    INT,
+    LONG,
+    FLOAT,
+}
 
 @Serializable
 internal data class DatabaseBackupPayload(
