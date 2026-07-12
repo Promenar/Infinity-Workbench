@@ -1,6 +1,26 @@
 import java.io.FileInputStream
 import java.util.Properties
 
+val realLlmEnvironmentNames = listOf(
+    "NEXARA_TEST_LLM_BASE_URL",
+    "NEXARA_TEST_LLM_API_KEY",
+    "NEXARA_TEST_LLM_MULTIMODAL_MODEL",
+    "NEXARA_TEST_LLM_FAST_TEXT_MODEL",
+    "NEXARA_TEST_LLM_REASONING_MODEL",
+    "NEXARA_TEST_LLM_BALANCED_MULTIMODAL_MODEL",
+)
+val requestedTaskNames = gradle.startParameter.taskNames
+val credentialFreeIntegrationInvocation = requestedTaskNames.any {
+    it.contains("integration", ignoreCase = true)
+} && requestedTaskNames.none {
+    it.contains("release", ignoreCase = true)
+}
+val credentialFreeReleaseManifestInspection = requestedTaskNames.isNotEmpty() && requestedTaskNames.all {
+    it.contains("processRelease", ignoreCase = true) && it.contains("Manifest", ignoreCase = true)
+}
+val credentialFreeInvocation =
+    credentialFreeIntegrationInvocation || credentialFreeReleaseManifestInspection
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -40,7 +60,7 @@ android {
             }
             
             val keystorePropertiesFile = file("$secureEnvPath/secure.properties")
-            if (keystorePropertiesFile.exists()) {
+            if (!credentialFreeInvocation && keystorePropertiesFile.exists()) {
                 val keystoreProperties = Properties()
                 keystoreProperties.load(FileInputStream(keystorePropertiesFile))
                 
@@ -93,6 +113,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
 }
 
 ksp {
@@ -193,4 +214,39 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
     workingDir = rootProject.projectDir
+}
+
+afterEvaluate {
+    val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+    tasks.register<Test>("realLlmIntegrationTest") {
+        group = "verification"
+        description = "显式运行真实 LLM 集成测试；凭证仅从允许的进程环境变量读取。"
+        val configured = realLlmEnvironmentNames.all {
+            providers.environmentVariable(it).orNull?.isNotBlank() == true
+        }
+        testClassesDirs = debugUnitTest.get().testClassesDirs
+        classpath = debugUnitTest.get().classpath
+        filter {
+            includeTestsMatching("*RealLlmProviderIntegrationTest")
+            isFailOnNoMatchingTests = true
+        }
+        failOnNoDiscoveredTests.set(true)
+        systemProperty("nexara.realLlmIntegration", "true")
+        failFast = true
+        reports.html.required.set(false)
+        reports.junitXml.required.set(false)
+        testLogging {
+            showExceptions = false
+            showCauses = false
+            showStackTraces = false
+            showStandardStreams = false
+        }
+        if (configured) {
+            dependsOn("compileDebugUnitTestSources", "processDebugUnitTestJavaRes")
+        }
+        onlyIf {
+            if (!configured) logger.lifecycle("integration credentials unavailable")
+            configured
+        }
+    }
 }
