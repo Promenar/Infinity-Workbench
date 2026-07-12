@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -1105,7 +1107,8 @@ fun ApprovalCard(
     NexaraGlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 8.dp)
+            .testTag(UiTags.CHAT_APPROVAL_CARD),
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
@@ -1121,6 +1124,9 @@ fun ApprovalCard(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
+                    modifier = Modifier.testTag(
+                        if (isExecuted) UiTags.CHAT_APPROVAL_EXECUTED else UiTags.CHAT_APPROVAL_REQUIRED
+                    ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -1165,7 +1171,9 @@ fun ApprovalCard(
                     ) {
                         Button(
                             onClick = onDecline,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag(UiTags.CHAT_APPROVAL_DECLINE),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = NexaraColors.SurfaceHigh,
                                 contentColor = NexaraColors.OnSurface
@@ -1176,7 +1184,9 @@ fun ApprovalCard(
                         }
                         Button(
                             onClick = onApprove,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag(UiTags.CHAT_APPROVAL_APPROVE),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = NexaraColors.Tertiary,
                                 contentColor = NexaraColors.OnTertiary
