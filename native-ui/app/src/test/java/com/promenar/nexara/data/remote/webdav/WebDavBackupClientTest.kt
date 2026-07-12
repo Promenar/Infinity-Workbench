@@ -1,7 +1,6 @@
 package com.promenar.nexara.data.remote.webdav
 
 import com.google.common.truth.Truth.assertThat
-import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
@@ -133,7 +132,7 @@ class WebDavBackupClientTest {
             respond("", HttpStatusCode.Created)
         }
         val client = KtorWebDavBackupClient(
-            httpClient = HttpClient(engine),
+            engine = engine,
             uuidFactory = { UUID(0, counter.incrementAndGet().toLong()) },
         )
 
@@ -317,7 +316,7 @@ class WebDavBackupClientTest {
     }
 
     private fun client(engine: MockEngine): KtorWebDavBackupClient = KtorWebDavBackupClient(
-        httpClient = HttpClient(engine),
+        engine = engine,
         uuidFactory = { UUID.fromString("00000000-0000-0000-0000-000000000007") },
     )
 
