@@ -13,8 +13,11 @@ import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.LocalLibrary
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -25,7 +28,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +46,11 @@ enum class AppTab(@StringRes val titleRes: Int, val icon: ImageVector) {
     SETTINGS(R.string.nav_tab_settings, Icons.Rounded.Settings)
 }
 
+internal fun shouldUseNavigationRail(width: androidx.compose.ui.unit.Dp): Boolean = width >= 600.dp
+
+internal fun constrainedBodyWidth(available: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp =
+    minOf(available, 960.dp)
+
 @Composable
 fun MainTabScaffold(
     onNavigateToSecondary: (String) -> Unit,
@@ -48,20 +60,11 @@ fun MainTabScaffold(
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.CHAT) }
 
-    Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            NexaraBottomNavigationBar(
-                selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it }
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        AdaptiveNavigationSurface(
+            expanded = shouldUseNavigationRail(maxWidth),
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it },
         ) {
             when (selectedTab) {
                 AppTab.CHAT -> com.promenar.nexara.ui.hub.AgentHubScreen(
@@ -85,6 +88,77 @@ fun MainTabScaffold(
 }
 
 @Composable
+internal fun AdaptiveNavigationSurface(
+    expanded: Boolean,
+    selectedTab: AppTab,
+    onTabSelected: (AppTab) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (expanded) {
+        Row(modifier = Modifier.fillMaxSize().background(NexaraColors.CanvasBackground)) {
+            NavigationRail(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .testTag("main_navigation_rail"),
+                containerColor = NexaraColors.CanvasBackground,
+            ) {
+                Spacer(modifier = Modifier.height(12.dp))
+                AppTab.entries.forEach { tab ->
+                    NavigationRailItem(
+                        selected = selectedTab == tab,
+                        onClick = { onTabSelected(tab) },
+                        icon = {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = null,
+                            )
+                        },
+                        label = { Text(stringResource(tab.titleRes)) },
+                        modifier = Modifier.minimumInteractiveComponentSize(),
+                    )
+                }
+            }
+            AdaptiveBody(modifier = Modifier.weight(1f), content = content)
+        }
+    } else {
+        Scaffold(
+            containerColor = NexaraColors.CanvasBackground,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                NexaraBottomNavigationBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = onTabSelected,
+                )
+            },
+        ) { paddingValues ->
+            AdaptiveBody(
+                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                content = content,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdaptiveBody(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(max = 960.dp)
+                .fillMaxHeight()
+                .fillMaxWidth()
+        ) { content() }
+    }
+}
+
+@Composable
 private fun NexaraBottomNavigationBar(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit
@@ -93,6 +167,7 @@ private fun NexaraBottomNavigationBar(
         modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
+            .testTag("main_bottom_navigation")
     ) {
         Box(
             modifier = Modifier
@@ -148,17 +223,21 @@ private fun TabItem(
     Column(
         modifier = Modifier
             .scale(scale)
+            .minimumInteractiveComponentSize()
+            .semantics { selected = isSelected }
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                role = Role.Tab,
                 onClick = onClick
-            ),
+            )
+            .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector = tab.icon,
-            contentDescription = stringResource(tab.titleRes),
+            contentDescription = null,
             tint = contentColor,
             modifier = Modifier
                 .size(24.dp)

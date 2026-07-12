@@ -71,7 +71,7 @@
     <string name="welcome_brand">NEXARA</string>
     <string name="welcome_slogan">INTELLIGENCE REIMAGINED</string>
     <string name="welcome_lang_english">English</string>
-    <string name="welcome_lang_chinese">中文 (简体)</string>
+    <string name="welcome_lang_chinese">Chinese (Simplified)</string>
     <string name="welcome_cd_language">Select language</string>
 
     <!-- ============ Shared / Reused ============ -->
@@ -321,6 +321,19 @@
     <string name="chat_cd_stop">Stop</string>
     <string name="chat_cd_send">Send</string>
     <string name="chat_cd_scroll_bottom">Scroll to bottom</string>
+    <string name="chat_cd_add_image">Add image</string>
+    <string name="chat_cd_selected_image">Selected image</string>
+    <string name="chat_cd_remove_image">Remove image</string>
+    <string name="chat_image_only_prompt">Describe this image</string>
+    <string name="chat_session_prompt_title">Session Prompt</string>
+    <string name="chat_session_prompt_placeholder">Add session-specific instructions…</string>
+    <string name="chat_approval_arguments">Arguments</string>
+    <string name="chat_approval_fallback">This tool call is waiting for your approval.</string>
+    <string name="chat_status_ready">Ready to send</string>
+    <string name="chat_status_uploading">Uploading</string>
+    <string name="chat_status_receiving">Receiving response</string>
+    <string name="chat_status_completed">Completed</string>
+    <string name="chat_status_error">Generation failed</string>
     <string name="chat_confirm_truncate_title">Confirm Truncate?</string>
     <string name="chat_confirm_truncate_message">This will permanently delete all messages after this point. Continue?</string>
     <string name="chat_undo_truncate">Truncated history</string>
@@ -755,12 +768,12 @@
     <string name="rag_home_title">Knowledge Base</string>
     <string name="rag_home_subtitle">Centralized intelligence repository and vector storage.</string>
     <string name="rag_home_search">Search documents…</string>
-    <string name="rag_home_documents">文档</string>
-    <string name="rag_home_memory">记忆</string>
-    <string name="rag_home_graph">图谱</string>
-    <string name="rag_home_count_docs">%1$d 份</string>
-    <string name="rag_home_count_items">%1$d 条</string>
-    <string name="rag_home_count_nodes">%1$d 个</string>
+    <string name="rag_home_documents">Documents</string>
+    <string name="rag_home_memory">Memory</string>
+    <string name="rag_home_graph">Graph</string>
+    <string name="rag_home_count_docs">%1$d documents</string>
+    <string name="rag_home_count_items">%1$d items</string>
+    <string name="rag_home_count_nodes">%1$d nodes</string>
     <string name="rag_home_section_collections">Collections</string>
     <string name="rag_home_new">New</string>
     <string name="rag_home_new_folder_title">New Folder</string>
@@ -946,8 +959,8 @@
     <string name="retrieval_similarity_threshold">Similarity Threshold</string>
     <string name="retrieval_doc_section">Document Retrieval</string>
     <string name="retrieval_doc_limit">Top-K Documents</string>
-    <string name="retrieval_hybrid_section">混合搜索</string>
-    <string name="retrieval_hybrid_enable">启用混合搜索</string>
+    <string name="retrieval_hybrid_section">Hybrid Search</string>
+    <string name="retrieval_hybrid_enable">Enable hybrid search</string>
     <string name="retrieval_hybrid_desc">Combine dense vector with sparse BM25 matching</string>
     <string name="retrieval_vector_weight">Vector Weight</string>
     <string name="retrieval_bm25_boost">BM25 Boost</string>
@@ -976,9 +989,9 @@
     <string name="rag_status_indexing">Indexing</string>
     <string name="rag_status_error">Error</string>
     <string name="rag_status_pending">Pending</string>
-    <string name="chat_status_thinking">正在思考...</string>
-    <string name="chat_status_thought">已完成思考</string>
-    <string name="chat_model_placeholder">未配置模型</string>
+    <string name="chat_status_thinking">Thinking…</string>
+    <string name="chat_status_thought">Thought completed</string>
+    <string name="chat_model_placeholder">No model configured</string>
 
     <!-- SearchConfigScreen engine labels -->
     <string name="search_config_engine_label">Search Engine Provider</string>
@@ -1017,5 +1030,5 @@
     <string name="sheet_settings_ui_title">UI Settings</string>
     <string name="sheet_settings_font_size">Font Size</string>
     <string name="sheet_settings_font_size_unit">px</string>
-    <string name="chat_hint_select_model">请先点击顶部配置会话模型</string>
+    <string name="chat_hint_select_model">Select a session model from the controls above</string>
 </resources>

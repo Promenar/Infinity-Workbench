@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -37,7 +38,9 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -101,7 +104,12 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
@@ -230,6 +238,9 @@ fun ChatScreen(
 
     val dismissLabel = stringResource(R.string.common_dismiss)
     val copiedLabel = stringResource(R.string.chat_copy_success)
+    val describeImagePrompt = stringResource(R.string.chat_image_only_prompt)
+    val approvalArgumentsLabel = stringResource(R.string.chat_approval_arguments)
+    val approvalFallback = stringResource(R.string.chat_approval_fallback)
     LaunchedEffect(uiState.error) {
         val errorMessage = uiState.error ?: return@LaunchedEffect
         snackbarAction = { chatViewModel.clearError() }
@@ -348,21 +359,26 @@ fun ChatScreen(
             )
         },
         snackbarHost = {
-            NexaraSnackbarHost(
-                hostState = snackbarHostState,
-                snackbarData = snackbarData,
-                onAction = {
-                    snackbarAction?.invoke()
-                    snackbarHostState.currentSnackbarData?.dismiss()
-                }
-            )
+            Box(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) {
+                NexaraSnackbarHost(
+                    hostState = snackbarHostState,
+                    snackbarData = snackbarData,
+                    onAction = {
+                        snackbarAction?.invoke()
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                    }
+                )
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .fillMaxSize()
+                    .align(Alignment.Center)
+                    .fillMaxHeight()
+                    .widthIn(max = 960.dp)
+                    .fillMaxWidth()
                     .nestedScroll(userScrollConnection),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 150.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -436,12 +452,18 @@ fun ChatScreen(
 
                     uiState.approvalRequest?.let { request ->
                         item(key = "approval_request") {
-                            ApprovalCard(
-                                toolName = request.toolName ?: stringResource(R.string.chat_approval_unknown_tool),
-                                description = approvalDescription(request),
-                                onApprove = { chatViewModel.approveRequest() },
-                                onDecline = { chatViewModel.rejectRequest() }
-                            )
+                            ChatApprovalLiveRegion {
+                                ApprovalCard(
+                                    toolName = request.toolName ?: stringResource(R.string.chat_approval_unknown_tool),
+                                    description = approvalDescription(
+                                        request,
+                                        approvalArgumentsLabel,
+                                        approvalFallback,
+                                    ),
+                                    onApprove = { chatViewModel.approveRequest() },
+                                    onDecline = { chatViewModel.rejectRequest() }
+                                )
+                            }
                         }
                     }
 
@@ -455,7 +477,12 @@ fun ChatScreen(
                 visible = uiState.isLoading && uiState.messages.isEmpty(),
                 enter = fadeIn(),
                 exit = fadeOut(),
-                modifier = Modifier.fillMaxSize().padding(bottom = 160.dp)
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxHeight()
+                    .widthIn(max = 960.dp)
+                    .fillMaxWidth()
+                    .padding(bottom = 160.dp)
             ) {
                 ChatSkeleton(modifier = Modifier.fillMaxSize())
             }
@@ -486,6 +513,7 @@ fun ChatScreen(
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 4.dp) // 极窄外边距，显著加宽
                         .padding(bottom = 8.dp)
+                        .widthIn(max = 960.dp)
                         .fillMaxWidth(),
                     color = NexaraColors.SurfaceLow, // 调整颜色为更深的 SurfaceLow，契合 Header
                     shape = RoundedCornerShape(24.dp), // 略微减小圆角，配合加宽效果
@@ -522,15 +550,22 @@ fun ChatScreen(
                                     Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp))) {
                                         coil3.compose.AsyncImage(
                                             model = uri,
-                                            contentDescription = null,
+                                            contentDescription = stringResource(R.string.chat_cd_selected_image),
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = ContentScale.Crop
                                         )
                                         IconButton(
                                             onClick = { selectedImageUris = selectedImageUris.toMutableList().apply { removeAt(index) } },
-                                            modifier = Modifier.align(Alignment.TopEnd).size(20.dp)
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                         ) {
-                                            Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                            Icon(
+                                                Icons.Rounded.Close,
+                                                stringResource(R.string.chat_cd_remove_image),
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp),
+                                            )
                                         }
                                     }
                                 }
@@ -552,7 +587,7 @@ fun ChatScreen(
                                 onTextChange = { chatViewModel.updateInputText(it) },
                                 onSend = {
                                     if (inputText.isNotBlank() || selectedImageUris.isNotEmpty()) {
-                                        val textToSend = inputText.ifBlank { "Describe this image" }
+                                        val textToSend = inputText.ifBlank { describeImagePrompt }
                                         chatViewModel.sendMessage(textToSend, selectedImageUris)
                                         selectedImageUris = emptyList()
                                     }
@@ -607,9 +642,15 @@ fun ChatScreen(
                         containerColor = NexaraColors.SurfaceHigh,
                         contentColor = NexaraColors.Primary,
                         shape = CircleShape,
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier
+                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag("chat_scroll_bottom")
                     ) {
-                        Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Rounded.ArrowDownward,
+                            stringResource(R.string.chat_cd_scroll_bottom),
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
                 }
             }
@@ -674,13 +715,17 @@ fun ChatScreen(
         onDismiss = { showSessionPromptEditor = false },
         onSave = { text -> chatViewModel.updateCustomPrompt(text); showSessionPromptEditor = false },
         initialText = uiState.session?.customPrompt ?: "",
-        title = "Session Prompt",
-        placeholder = "Add session-specific instructions...",
+        title = stringResource(R.string.chat_session_prompt_title),
+        placeholder = stringResource(R.string.chat_session_prompt_placeholder),
         mode = EditorMode.DIALOG
     )
 }
 
-private fun approvalDescription(request: com.promenar.nexara.data.model.ApprovalRequest): String {
+private fun approvalDescription(
+    request: com.promenar.nexara.data.model.ApprovalRequest,
+    argumentsLabel: String,
+    fallback: String,
+): String {
     val reason = request.reason?.takeIf { it.isNotBlank() }
     val args = request.args
         ?.takeIf { it.isNotBlank() }
@@ -689,10 +734,20 @@ private fun approvalDescription(request: com.promenar.nexara.data.model.Approval
 
     return listOfNotNull(
         reason,
-        args?.let { "Arguments: $it" }
+        args?.let { "$argumentsLabel: $it" }
     ).joinToString("\n").ifBlank {
-        "This tool call is waiting for your approval."
+        fallback
     }
+}
+
+@Composable
+internal fun ChatApprovalLiveRegion(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Assertive }
+            .testTag("chat_approval_live_region"),
+    ) { content() }
 }
 
 @Composable
@@ -721,6 +776,7 @@ fun ContextCircularIndicator(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChatInputTopBar(
     modelName: String,
@@ -730,16 +786,16 @@ private fun ChatInputTopBar(
     onModelClick: () -> Unit,
     onManualSummary: () -> Unit
 ) {
-    Row(
+    androidx.compose.foundation.layout.FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // Model Indicator
         NexaraGlassCard(
             onClick = onModelClick,
             shape = RoundedCornerShape(50),
-            modifier = Modifier
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -766,7 +822,6 @@ private fun ChatInputTopBar(
             )
         }
 
-        Spacer(modifier = Modifier.weight(1f))
     }
 }
 
@@ -781,7 +836,7 @@ private fun TokenIndicator(
         NexaraGlassCard(
             onClick = { showTooltip = !showTooltip },
             shape = RoundedCornerShape(50),
-            modifier = Modifier
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -875,7 +930,12 @@ fun ChatTopBar(
             Column {
                 Text(title, style = NexaraTypography.titleMedium, color = NexaraColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (subtitle.isNotBlank()) {
-                    Text(subtitle, style = NexaraTypography.labelSmall, color = NexaraColors.OnSurfaceVariant)
+                    Text(
+                        subtitle,
+                        style = NexaraTypography.labelSmall,
+                        color = NexaraColors.OnSurfaceVariant,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
                 }
             }
         },
@@ -884,11 +944,19 @@ fun ChatTopBar(
         },
         actions = {
             IconButton(onClick = onWorkspace) {
-                Icon(Icons.Rounded.Folder, null, tint = NexaraColors.OnSurface)
+                Icon(
+                    Icons.Rounded.Folder,
+                    stringResource(R.string.chat_cd_workspace),
+                    tint = NexaraColors.OnSurface,
+                )
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Rounded.MoreVert, null, tint = NexaraColors.OnSurface)
+                    Icon(
+                        Icons.Rounded.MoreVert,
+                        stringResource(R.string.chat_cd_options),
+                        tint = NexaraColors.OnSurface,
+                    )
                 }
                 DropdownMenu(
                     expanded = showMenu,
@@ -903,7 +971,7 @@ fun ChatTopBar(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Session Prompt", style = NexaraTypography.labelMedium) },
+                        text = { Text(stringResource(R.string.chat_session_prompt_title), style = NexaraTypography.labelMedium) },
                         onClick = {
                             showMenu = false
                             onSessionPrompt()
@@ -1029,12 +1097,12 @@ fun ChatInputBar(
         ) {
             IconButton(
                 onClick = onPickImage,
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                 enabled = !isGenerating
             ) {
                 Icon(
                     Icons.Rounded.AddPhotoAlternate,
-                    null,
+                    stringResource(R.string.chat_cd_add_image),
                     tint = if (hasImages) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
                     modifier = Modifier.size(22.dp)
                 )
@@ -1186,6 +1254,24 @@ private fun GenerationStatusButton(
     } else {
         getIconForStatus(status)
     }
+    val statusDescription = stringResource(
+        when (status) {
+            GenerationStatus.IDLE -> R.string.chat_status_ready
+            GenerationStatus.UPLOADING -> R.string.chat_status_uploading
+            GenerationStatus.THINKING -> R.string.chat_status_thinking
+            GenerationStatus.RECEIVING -> R.string.chat_status_receiving
+            GenerationStatus.COMPLETED -> R.string.chat_status_completed
+            GenerationStatus.ERROR -> R.string.chat_status_error
+        }
+    )
+    val actionDescription = when (status) {
+        GenerationStatus.IDLE -> stringResource(R.string.chat_cd_send)
+        GenerationStatus.UPLOADING,
+        GenerationStatus.THINKING,
+        GenerationStatus.RECEIVING -> stringResource(R.string.chat_cd_stop)
+        GenerationStatus.COMPLETED,
+        GenerationStatus.ERROR -> statusDescription
+    }
 
     IconButton(
         onClick = {
@@ -1193,15 +1279,24 @@ private fun GenerationStatusButton(
             else if (status != GenerationStatus.COMPLETED && status != GenerationStatus.ERROR) onStop()
         },
         modifier = Modifier
-            .size(40.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .offset { IntOffset(x = if (status == GenerationStatus.ERROR) (shakeOffset.dp).roundToPx() else 0, y = 0) }
             .clip(CircleShape)
-            .background(containerColor),
+            .background(containerColor)
+            .semantics {
+                stateDescription = statusDescription
+                liveRegion = if (status == GenerationStatus.ERROR) {
+                    LiveRegionMode.Assertive
+                } else {
+                    LiveRegionMode.Polite
+                }
+            }
+            .testTag("chat_generation_action"),
         enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING)
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
+            contentDescription = actionDescription,
             tint = contentColor,
             modifier = Modifier
                 .size(20.dp)

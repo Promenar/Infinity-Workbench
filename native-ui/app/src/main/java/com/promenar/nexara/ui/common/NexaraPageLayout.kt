@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.RowScope
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,10 +30,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -84,19 +88,22 @@ fun NexaraPageLayout(
         },
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.systemBars
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .then(if (imePadding) Modifier.imePadding() else Modifier)
+                .then(if (imePadding) Modifier.imePadding() else Modifier),
+            contentAlignment = Alignment.TopCenter,
         ) {
             Column(
                 modifier = Modifier
+                    .widthIn(max = 960.dp)
                     .fillMaxWidth()
-                    .weight(1f)
+                    .fillMaxHeight()
                     .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                     .padding(horizontal = 20.dp, vertical = 24.dp)
                     .padding(bottom = 24.dp)
+                    .testTag("nexara_page_body")
             ) {
                 content()
             }
