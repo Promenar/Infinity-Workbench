@@ -7,6 +7,7 @@ import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.ProviderSummary
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.stableModelId
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
@@ -69,6 +70,9 @@ class ProviderManager private constructor(
         migrateLegacySecrets()
         loadProviders()
         loadModels()
+        _providers.value.forEach { provider ->
+            ensureConfiguredModel(provider.id, provider.name, provider.model)
+        }
         loadPresetModels()
     }
 
@@ -77,6 +81,7 @@ class ProviderManager private constructor(
     /**
      * 写入主提供商配置（SharedPreferences "nexara_provider"）。
      */
+    @Synchronized
     fun updateMainProvider(
         protocolType: ProtocolType,
         baseUrl: String,
@@ -99,11 +104,13 @@ class ProviderManager private constructor(
         }
         // 重建提供商列表
         loadProviders()
+        ensureConfiguredModel("default", name ?: protocolType.displayName, model)
     }
 
     /**
      * 读取主提供商完整配置。兼容旧 ProtocolId 枚举名。
      */
+    @Synchronized
     fun getMainProviderConfig(): ProviderConfig? {
         val protocolName = providerPrefs.getString("protocol_id", null) ?: return null
         val protocolType = ProtocolType.fromLegacyName(protocolName)
@@ -117,6 +124,11 @@ class ProviderManager private constructor(
         )
     }
 
+    fun getMainConfiguredModelId(): String? = getMainProviderConfig()
+        ?.model
+        ?.takeIf { it.isNotBlank() }
+        ?.let { stableModelId("default", it) }
+
     // ── 提供商查询 ──────────────────────────────────────────────────
 
     /**
@@ -125,7 +137,7 @@ class ProviderManager private constructor(
      * 查找策略：
      * 1. 在模型列表中按 ID 匹配
      * 2. 使用模型的 providerId 精确查找
-     * 3. 若 providerId 为空，按 providerName 在提供商列表中模糊匹配
+     * 3. providerId 缺失时失败，不按显示名称猜测归属
      */
     fun getProviderConfigByModelId(modelId: String): ProviderConfig? {
         val model = _providerModels.value.find { it.id == modelId }
@@ -134,7 +146,6 @@ class ProviderManager private constructor(
             return null
         }
         val pid = model.providerId
-            ?: _providers.value.find { it.name == model.providerName }?.id
         if (pid == null) {
             android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] providerId 无法解析: modelId=$modelId providerId=null providerName=${model.providerName}, 已加载提供商=${_providers.value.map { "${it.id}->${it.name}" }}")
             return null
@@ -153,6 +164,7 @@ class ProviderManager private constructor(
      * - "default" → 主提供商配置
      * - "extra_N" → 额外提供商配置（新格式按索引，也支持按真实 ID 查找）
      */
+    @Synchronized
     fun getProviderConfig(providerId: String): ProviderConfig? {
         if (providerId == "default") return getMainProviderConfig()
         val count = settingsPrefs.getInt("extra_providers_count", 0)
@@ -197,7 +209,7 @@ class ProviderManager private constructor(
     fun loadProviders() {
         val items = mutableListOf<ProviderListItem>()
         val config = getMainProviderConfig()
-        if (config != null && (config.apiKey.isNotBlank() || config.vertexServiceAccountJson.isNotBlank() || config.protocolType is ProtocolType.Local)) {
+        if (config != null) {
             val typeName = config.protocolType.displayName
             items.add(
                 ProviderListItem(
@@ -231,12 +243,14 @@ class ProviderManager private constructor(
                     protocolType = ProtocolType.fromLegacyName(protoName),
                     hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(realId)),
                     hasVertexCredentials = secretStore.contains(SecretCatalog.vertexServiceAccount(realId)),
+                    enabled = settingsPrefs.getBoolean("${prefix}_enabled", true),
                 )
             )
         }
         _providers.value = items
     }
 
+    @Synchronized
     fun addProvider(
         item: ProviderListItem,
         credentialUpdate: CredentialUpdate = CredentialUpdate.Preserve,
@@ -248,9 +262,11 @@ class ProviderManager private constructor(
         _providers.update { it + item }
         persistExtraProviders()
         loadProviders()
+        ensureConfiguredModel(item.id, item.name, item.model)
         _configurationChanges.tryEmit(Unit)
     }
 
+    @Synchronized
     fun updateExtraProvider(
         id: String,
         item: ProviderListItem,
@@ -268,9 +284,11 @@ class ProviderManager private constructor(
         }
         persistExtraProviders()
         loadProviders()
+        ensureConfiguredModel(item.id, item.name, item.model)
         _configurationChanges.tryEmit(Unit)
     }
 
+    @Synchronized
     fun deleteProvider(providerId: String) {
         secretStore.remove(SecretCatalog.providerApiKey(providerId))
         secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
@@ -293,6 +311,7 @@ class ProviderManager private constructor(
                 .putString("${prefix}_base_url", item.baseUrl)
                 .putString("${prefix}_model", item.model)
                 .putString("${prefix}_id", item.id)
+                .putBoolean("${prefix}_enabled", item.enabled)
                 .apply()
         }
     }
@@ -465,6 +484,8 @@ class ProviderManager private constructor(
             val contextLength = settingsPrefs.getInt("${prefix}_context", 8192)
             val providerName = settingsPrefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
             val storedProviderId = settingsPrefs.getString("${prefix}_provider_id", null)
+            val remoteModelId = settingsPrefs.getString("${prefix}_remote_model_id", null)
+                ?: id.substringAfter("::", id)
             val enabled = enabledSet.contains(id)
             val maxOutput = settingsPrefs.getInt("${prefix}_maxoutput", 0)
             val cutoff = settingsPrefs.getString("${prefix}_cutoff", null)
@@ -479,6 +500,7 @@ class ProviderManager private constructor(
                 capabilities = storedCaps.toList(),
                 providerName = providerName,
                 providerId = storedProviderId,
+                remoteModelId = remoteModelId,
                 maxOutputTokens = maxOutput,
                 knowledgeCutoff = cutoff
             )
@@ -499,11 +521,12 @@ class ProviderManager private constructor(
             if (migratedModel !== model) {
                 migrated = true
             }
-            // 回填 providerId：旧数据未存储 providerId，按 providerName 匹配
-            if (migratedModel.providerId == null && migratedModel.providerName != "Cloud") {
-                val matchedPid = _providers.value.find { it.name == migratedModel.providerName }?.id
-                if (matchedPid != null) {
-                    migratedModel = migratedModel.copy(providerId = matchedPid)
+            // 只在已有精确 providerId 时升级为稳定复合标识；绝不按显示名称猜测。
+            val exactProviderId = migratedModel.providerId
+            if (exactProviderId != null) {
+                val compositeId = stableModelId(exactProviderId, migratedModel.remoteModelId)
+                if (migratedModel.id != compositeId) {
+                    migratedModel = migratedModel.copy(id = compositeId)
                     migrated = true
                 }
             }
@@ -529,7 +552,7 @@ class ProviderManager private constructor(
         hasStoredMaxOutput: Boolean,
         hasStoredCutoff: Boolean
     ): ModelInfo {
-        val spec = com.promenar.nexara.data.model.findModelSpec(model.id) ?: return model
+        val spec = com.promenar.nexara.data.model.findModelSpec(model.remoteModelId) ?: return model
         var changed = false
 
         // 1. 修复名称：如果是原始 ID 且 Spec 中有更好的名字，则替换
@@ -617,8 +640,38 @@ class ProviderManager private constructor(
     }
 
     fun addModel(model: ModelInfo) {
-        _providerModels.update { it + model }
+        val normalized = model.providerId?.let { providerId ->
+            model.copy(id = stableModelId(providerId, model.remoteModelId))
+        } ?: model
+        _providerModels.update { models ->
+            require(models.none { it.id == normalized.id }) { "模型 ID 已存在: ${normalized.id}" }
+            models + normalized
+        }
         persistModels()
+    }
+
+    private fun ensureConfiguredModel(providerId: String, providerName: String, remoteModelId: String) {
+        if (remoteModelId.isBlank()) return
+        val id = stableModelId(providerId, remoteModelId)
+        if (_providerModels.value.any { it.id == id }) return
+        val spec = com.promenar.nexara.data.model.findModelSpec(remoteModelId)
+        val type = spec?.type?.name?.lowercase() ?: "chat"
+        addModel(
+            ModelInfo(
+                name = spec?.note ?: remoteModelId,
+                id = id,
+                remoteModelId = remoteModelId,
+                description = spec?.note ?: "Provider configured model",
+                enabled = true,
+                type = type,
+                contextLength = spec?.contextLength ?: 8192,
+                capabilities = buildModelCapabilities(type, spec),
+                providerName = providerName,
+                providerId = providerId,
+                maxOutputTokens = spec?.maxOutputTokens ?: 0,
+                knowledgeCutoff = spec?.knowledgeCutoff,
+            )
+        )
     }
 
     fun updateModel(updated: ModelInfo) {
@@ -664,6 +717,7 @@ class ProviderManager private constructor(
                 .putStringSet("${prefix}_caps", model.capabilities.toSet())
                 .putString("${prefix}_provider", model.providerName)
                 .putString("${prefix}_provider_id", model.providerId)
+                .putString("${prefix}_remote_model_id", model.remoteModelId)
                 .putInt("${prefix}_maxoutput", model.maxOutputTokens)
                 .apply()
             if (model.knowledgeCutoff != null) {

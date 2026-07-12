@@ -30,6 +30,7 @@ data class ProviderListItem(
     val protocolType: ProtocolType = ProtocolType.Generic_OpenAI_Compat,
     val hasApiKey: Boolean = false,
     val hasVertexCredentials: Boolean = false,
+    val enabled: Boolean = true,
 )
 
 data class ProviderSummary(

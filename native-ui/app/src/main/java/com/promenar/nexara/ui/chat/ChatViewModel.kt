@@ -41,6 +41,8 @@ import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ImageInput
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.UnifiedLlmClient
+import com.promenar.nexara.data.remote.ProviderRequestRouter
+import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -106,6 +108,7 @@ class ChatViewModel(
     private val agentRepository: IAgentRepository,
     private val llmProvider: LlmProvider,
     private val unifiedLlmClient: UnifiedLlmClient? = null,
+    providerRequestRouter: ProviderRequestRouter? = null,
     private val configResolver: AgentConfigResolver,
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
@@ -115,6 +118,8 @@ class ChatViewModel(
     private val skillRegistry: com.promenar.nexara.ui.chat.manager.registry.SkillRegistry? = null,
     private val exportSessionUseCase: ExportSessionUseCase? = null
 ) : ViewModel() {
+
+    private val providerRouteGate = providerRequestRouter?.let(::ChatProviderRouteGate)
 
     private val store = (application as NexaraApplication).chatStore
 
@@ -141,6 +146,8 @@ class ChatViewModel(
 
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
+    private val _providerResolutionFailure = MutableStateFlow<ProviderResolution.Failure?>(null)
+    val providerResolutionFailure: StateFlow<ProviderResolution.Failure?> = _providerResolutionFailure
     private val _isGenerating = MutableStateFlow(false)
     private val _isLoading = MutableStateFlow(false)
     private val _generationStatus = MutableStateFlow(GenerationStatus.IDLE)
@@ -259,6 +266,7 @@ class ChatViewModel(
             _generationStatus.update { GenerationStatus.UPLOADING }
             _isGenerating.update { true }
             _error.update { null }
+            _providerResolutionFailure.value = null
 
             val imageDataUrls = if (imageUris.isNotEmpty()) {
                 val converted = withContext(Dispatchers.IO) {
@@ -350,6 +358,7 @@ class ChatViewModel(
         _generationStatus.update { GenerationStatus.UPLOADING }
         _streamingContent.update { "" }
         _error.update { null }
+        _providerResolutionFailure.value = null
 
         try {
         val defaultPhases = listOf(
@@ -366,6 +375,27 @@ class ChatViewModel(
 
         val agent = agentRepository.getById(sessionForCtx.agentId)
         val agentConfig = configResolver.resolve(agent)
+        val effectiveModel = sessionForCtx.modelId?.takeIf { it.isNotBlank() }
+            ?: agentConfig.modelId.takeIf { it.isNotBlank() }
+            ?: ProviderManager.getInstance().getMainConfiguredModelId().orEmpty()
+        val providerRoute = withContext(Dispatchers.IO) {
+            providerRouteGate?.resolve(effectiveModel)
+        }
+        providerRoute?.failure?.let { failure ->
+            _providerResolutionFailure.value = failure
+            val message = providerRoutingErrorMessage(failure)
+            _error.value = message
+            messageManager.updateMessageContent(
+                sessionId,
+                assistantMsgId,
+                "",
+                UpdateMessageOptions(isError = true, errorMessage = message),
+            )
+            _generationStatus.value = GenerationStatus.ERROR
+            _isGenerating.value = false
+            return
+        }
+        _providerResolutionFailure.value = null
 
         // 使用缓存的 ragOptions，确保与用户最新设置一致（绕过 store 异步延迟）
         val effectiveRagOptions = _currentRagOptions.value.let { cached ->
@@ -481,9 +511,6 @@ class ChatViewModel(
 
         val activeTools = buildToolList(sessionForCtx)
 
-        val effectiveModel = sessionForCtx.modelId
-            ?: agentConfig.modelId
-
         val effectiveParams = sessionForCtx.inferenceParams ?: InferenceParams(
             temperature = agentConfig.temperature,
             topP = agentConfig.topP,
@@ -492,7 +519,7 @@ class ChatViewModel(
 
         val request = PromptRequest(
             messages = protocolMessages,
-            model = effectiveModel,
+            model = providerRoute?.remoteModelId ?: effectiveModel,
             temperature = effectiveParams.temperature,
             topP = effectiveParams.topP,
             maxTokens = effectiveParams.maxTokens,
@@ -516,7 +543,13 @@ class ChatViewModel(
         var streamingError: String? = null
 
         try {
-            val flow = if (unifiedLlmClient != null) {
+            val requestClient = providerRoute?.client ?: unifiedLlmClient
+            val flow = if (providerRoute?.useLocalProvider == true) {
+                LlmProvider.local(
+                    (application as NexaraApplication).localInferenceEngine,
+                    request.model,
+                ).sendPrompt(request)
+            } else if (requestClient != null) {
                 val stParams = com.promenar.nexara.data.remote.middleware.StreamTextParams(
                     messages = request.messages,
                     model = request.model,
@@ -535,7 +568,7 @@ class ChatViewModel(
                 val sConfig = com.promenar.nexara.data.remote.StreamConfig(
                     enableWebSearch = sessionForCtx.options.webSearch == true
                 )
-                unifiedLlmClient.sendStream(stParams, sConfig)
+                requestClient.sendStream(stParams, sConfig)
             } else {
                 llmProvider.sendPrompt(request)
             }
@@ -1505,7 +1538,7 @@ class ChatViewModel(
                         messageRepository = app.messageRepository,
                         agentRepository = app.agentRepository,
                         llmProvider = app.llmProvider,
-                        unifiedLlmClient = app.unifiedLlmClient,
+                        providerRequestRouter = app.providerRequestRouter,
                         configResolver = app.configResolver,
                         embeddingClient = app.embeddingClient,
                         vectorStore = app.vectorStore,
@@ -1521,6 +1554,10 @@ class ChatViewModel(
                 }
             }
     }
+
+    private fun providerRoutingErrorMessage(failure: ProviderResolution.Failure): String =
+        "Provider 路由失败：${failure.reason.name}；请打开对应 Provider 设置" +
+            (failure.providerId?.let { "（$it）" } ?: "")
 
     private fun updateTokenIndicator(session: Session) {
         viewModelScope.launch {

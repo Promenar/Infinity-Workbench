@@ -29,9 +29,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import com.promenar.nexara.data.remote.stableModelId
 
 data class ModelInfo(
     val name: String,
+    /** 持久化与会话引用使用的稳定复合标识：providerId::remoteModelId。 */
     val id: String,
     val description: String,
     val enabled: Boolean,
@@ -40,6 +42,8 @@ data class ModelInfo(
     val capabilities: List<String> = emptyList(),
     val providerName: String = "Cloud",
     val providerId: String? = null,
+    /** 提交给远端协议的原始模型 ID，不得把复合标识发送给服务端。 */
+    val remoteModelId: String = id.substringAfter("::", id),
     val testStatus: String? = null,
     /** 最大输出 token 数，0=未指定 */
     val maxOutputTokens: Int = 0,
@@ -269,19 +273,21 @@ class SettingsViewModel(
                     var updatedCount = 0
 
                     for (id in fetchedIds) {
+                        val compositeId = stableModelId(providerId, id)
                         val spec = com.promenar.nexara.data.model.findModelSpec(id)
                         val type = spec?.type?.name?.lowercase() ?: "chat"
                         val caps = pm.buildModelCapabilities(type, spec)
 
-                        if (id in existingIds) {
+                        if (compositeId in existingIds) {
                             // 更新已存在模型的元数据
-                            val existing = currentModels.find { it.id == id } ?: continue
+                            val existing = currentModels.find { it.id == compositeId } ?: continue
                             val refreshed = existing.copy(
                                 name = spec?.note ?: existing.name,
                                 type = type,
                                 contextLength = spec?.contextLength ?: existing.contextLength,
                                 capabilities = caps,
                                 providerId = providerId,
+                                remoteModelId = id,
                                 maxOutputTokens = spec?.maxOutputTokens ?: existing.maxOutputTokens,
                                 knowledgeCutoff = spec?.knowledgeCutoff ?: existing.knowledgeCutoff
                             )
@@ -292,7 +298,8 @@ class SettingsViewModel(
                         } else {
                             // 新增模型
                             pm.addModel(ModelInfo(
-                                name = spec?.note ?: id, id = id,
+                                name = spec?.note ?: id, id = compositeId,
+                                remoteModelId = id,
                                 description = spec?.note ?: "Fetched model",
                                 enabled = false, type = type,
                                 contextLength = spec?.contextLength ?: 8192,

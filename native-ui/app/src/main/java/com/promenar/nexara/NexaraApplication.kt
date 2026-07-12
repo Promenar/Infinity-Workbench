@@ -38,6 +38,8 @@ import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.toCredentialUpdate
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
+import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.FileOperationRepository
 import com.promenar.nexara.data.repository.IMessageRepository
@@ -269,6 +271,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     private var _unifiedLlmClient: com.promenar.nexara.data.remote.UnifiedLlmClient? = null
     val unifiedLlmClient: com.promenar.nexara.data.remote.UnifiedLlmClient?
         get() = _unifiedLlmClient ?: buildUnifiedLlmClient().also { _unifiedLlmClient = it }
+
+    /** 聊天主路径按每次请求的稳定模型归属解析，不复用 default Provider 客户端。 */
+    val providerRequestRouter: ProviderRequestRouter by lazy {
+        val middlewares = if (com.promenar.nexara.BuildConfig.DEBUG) {
+            listOf(com.promenar.nexara.data.remote.middleware.MetroLoggingMiddleware())
+        } else {
+            emptyList()
+        }
+        DefaultProviderRequestRouter(ProviderManager.getInstance(), middlewares)
+    }
 
     var hapticEnabled: Boolean = true
         internal set
