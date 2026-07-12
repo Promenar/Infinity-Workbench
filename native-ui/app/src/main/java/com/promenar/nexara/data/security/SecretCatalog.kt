@@ -12,12 +12,13 @@ object SecretCatalog {
     val tavilyApiKey = SecretId("tavily_api_key")
     val embeddingApiKey = SecretId("embedding_api_key")
     val webDavPassword = SecretId("webdav_password")
+    val webDavAuthRecord = SecretId("webdav_auth_record_v1")
     val automaticBackupPassword = SecretId("automatic_backup_password")
 
     fun backupEligible(providerIds: Collection<String>): Set<SecretId> = buildSet {
         add(tavilyApiKey)
         add(embeddingApiKey)
-        add(webDavPassword)
+        add(webDavAuthRecord)
         add(automaticBackupPassword)
         providerIds.forEach { providerId ->
             add(providerApiKey(providerId))

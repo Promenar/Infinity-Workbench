@@ -16,7 +16,12 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-enum class PendingRestorePhase { STAGED }
+enum class PendingRestorePhase(val wireCode: Int) {
+    /** v1 已发布序号，不得改变。 */
+    STAGED(0),
+    STAGING(1),
+    CANCELLED(2),
+}
 
 data class PendingRestoreMetadata(
     val txId: String,
@@ -37,9 +42,13 @@ class PendingRestorePayload(
 }
 
 interface PendingRestoreStore {
+    fun begin(expectedTxId: String)
     fun stage(packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata
+    fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata
+    fun authorize(expectedTxId: String): PendingRestoreMetadata
     fun read(): PendingRestorePayload?
     fun clear(expectedTxId: String)
+    fun cancel(expectedTxId: String)
 }
 
 internal interface PendingRestoreCryptor {
@@ -60,13 +69,86 @@ class AndroidPendingRestoreStore internal constructor(
         AndroidKeystorePendingRestoreCryptor(),
     )
 
-    override fun stage(packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
-        requireBounded(packageBytes)
-        val metadata = PendingRestoreMetadata(
-            txId = txIdFactory().also(::requireTxId),
-            packageSha256 = sha256(packageBytes),
-            phase = PendingRestorePhase.STAGED,
+    @Synchronized
+    override fun begin(expectedTxId: String) {
+        requireTxId(expectedTxId)
+        val existing = read()
+        existing?.use {
+            if (it.metadata.txId == expectedTxId && it.metadata.phase == PendingRestorePhase.STAGING &&
+                it.packageBytes.isEmpty()
+            ) return
+            throw BackupValidationException("已存在其他待恢复事务")
+        }
+        writeRecord(
+            PendingRestoreMetadata(expectedTxId, ByteArray(SHA256_BYTES), PendingRestorePhase.STAGING),
+            ByteArray(0),
+            null,
         )
+    }
+
+    @Synchronized
+    override fun stage(packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
+        val txId = txIdFactory()
+        begin(txId)
+        stage(txId, packageBytes, password)
+        return authorize(txId)
+    }
+
+    @Synchronized
+    override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
+        requireBounded(packageBytes)
+        val existing = read() ?: throw BackupValidationException("待恢复事务未开始或已取消")
+        existing.use {
+            if (it.metadata.txId != expectedTxId || it.metadata.phase != PendingRestorePhase.STAGING ||
+                it.packageBytes.isNotEmpty()
+            ) {
+                throw BackupValidationException("待恢复事务已失效")
+            }
+        }
+        val metadata = PendingRestoreMetadata(
+            txId = expectedTxId.also(::requireTxId),
+            packageSha256 = sha256(packageBytes),
+            phase = PendingRestorePhase.STAGING,
+        )
+        return writeRecord(metadata, packageBytes, password)
+    }
+
+    @Synchronized
+    override fun authorize(expectedTxId: String): PendingRestoreMetadata {
+        requireTxId(expectedTxId)
+        val existing = read() ?: throw BackupValidationException("待恢复事务不存在")
+        existing.use { payload ->
+            if (payload.metadata.txId != expectedTxId || payload.metadata.phase != PendingRestorePhase.STAGING ||
+                payload.packageBytes.isEmpty()
+            ) {
+                throw BackupValidationException("待恢复事务不可授权")
+            }
+            val actualDigest = sha256(payload.packageBytes)
+            try {
+                if (!MessageDigest.isEqual(payload.metadata.packageSha256, actualDigest)) {
+                    throw BackupValidationException("待恢复包摘要不一致")
+                }
+            } finally {
+                actualDigest.fill(0)
+            }
+            val authorized = PendingRestoreMetadata(
+                expectedTxId,
+                payload.metadata.packageSha256.copyOf(),
+                PendingRestorePhase.STAGED,
+            )
+            return try {
+                writeRecord(authorized, payload.packageBytes, payload.password)
+            } finally {
+                authorized.packageSha256.fill(0)
+            }
+        }
+    }
+
+    private fun writeRecord(
+        metadata: PendingRestoreMetadata,
+        packageBytes: ByteArray,
+        password: CharArray?,
+    ): PendingRestoreMetadata {
         val plain = encode(metadata, packageBytes, password)
         var encrypted = ByteArray(0)
         try {
@@ -93,6 +175,7 @@ class AndroidPendingRestoreStore internal constructor(
         }
     }
 
+    @Synchronized
     override fun read(): PendingRestorePayload? {
         if (!atomicFile.baseFile.exists()) return null
         val encrypted = try {
@@ -143,11 +226,34 @@ class AndroidPendingRestoreStore internal constructor(
         }
     }
 
+    @Synchronized
     override fun clear(expectedTxId: String) {
         requireTxId(expectedTxId)
         val existing = read() ?: return
         existing.use {
             if (it.metadata.txId != expectedTxId) throw BackupValidationException("待恢复事务身份不一致")
+        }
+        atomicFile.delete()
+    }
+
+    @Synchronized
+    override fun cancel(expectedTxId: String) {
+        requireTxId(expectedTxId)
+        val existing = read() ?: return
+        existing.use { payload ->
+            if (payload.metadata.txId != expectedTxId) {
+                throw BackupValidationException("待恢复事务身份不一致")
+            }
+            val cancelled = PendingRestoreMetadata(
+                txId = expectedTxId,
+                packageSha256 = ByteArray(SHA256_BYTES),
+                phase = PendingRestorePhase.CANCELLED,
+            )
+            try {
+                writeRecord(cancelled, ByteArray(0), null)
+            } finally {
+                cancelled.packageSha256.fill(0)
+            }
         }
         atomicFile.delete()
     }
@@ -159,7 +265,7 @@ class AndroidPendingRestoreStore internal constructor(
             ByteBuffer.allocate(HEADER_BYTES + tx.size + packageBytes.size + passwordBytes.size)
                 .putInt(MAGIC)
                 .putInt(VERSION)
-                .putInt(metadata.phase.ordinal)
+                .putInt(metadata.phase.wireCode)
                 .putInt(tx.size)
                 .putInt(packageBytes.size)
                 .putInt(passwordBytes.size)
@@ -180,13 +286,19 @@ class AndroidPendingRestoreStore internal constructor(
             if (buffer.remaining() < HEADER_BYTES || buffer.int != MAGIC || buffer.int != VERSION) {
                 throw BackupValidationException("待恢复记录格式无效")
             }
-            val phase = PendingRestorePhase.entries.getOrNull(buffer.int)
+            val phaseCode = buffer.int
+            val phase = PendingRestorePhase.entries.singleOrNull { it.wireCode == phaseCode }
                 ?: throw BackupValidationException("待恢复记录阶段无效")
             val txLength = buffer.int
             val packageLength = buffer.int
             val passwordLength = buffer.int
             val digest = ByteArray(SHA256_BYTES).also(buffer::get)
-            if (txLength !in 1..64 || packageLength !in 1..BackupPackageLimits.MAX_IN_MEMORY_BYTES.toInt() ||
+            val validPackageLength = if (phase == PendingRestorePhase.STAGED) {
+                packageLength in 1..BackupPackageLimits.MAX_IN_MEMORY_BYTES.toInt()
+            } else {
+                packageLength in 0..BackupPackageLimits.MAX_IN_MEMORY_BYTES.toInt()
+            }
+            if (txLength !in 1..64 || !validPackageLength ||
                 passwordLength !in 0..MAX_PASSWORD_BYTES ||
                 buffer.remaining() != txLength + packageLength + passwordLength
             ) {
@@ -201,7 +313,7 @@ class AndroidPendingRestoreStore internal constructor(
             try {
                 val txId = txBytes.toString(Charsets.US_ASCII).also(::requireTxId)
                 val actualDigest = sha256(packageBytes)
-                if (!MessageDigest.isEqual(digest, actualDigest)) {
+                if (phase == PendingRestorePhase.STAGED && !MessageDigest.isEqual(digest, actualDigest)) {
                     actualDigest.fill(0)
                     packageBytes.fill(0)
                     throw BackupValidationException("待恢复包摘要不一致")

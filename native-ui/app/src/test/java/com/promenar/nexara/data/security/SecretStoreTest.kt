@@ -89,7 +89,7 @@ class SecretStoreTest {
         assertThat(result).containsExactly(
             SecretCatalog.tavilyApiKey,
             SecretCatalog.embeddingApiKey,
-            SecretCatalog.webDavPassword,
+            SecretCatalog.webDavAuthRecord,
             SecretCatalog.automaticBackupPassword,
             SecretCatalog.providerApiKey("provider-a"),
             SecretCatalog.vertexServiceAccount("provider-a"),

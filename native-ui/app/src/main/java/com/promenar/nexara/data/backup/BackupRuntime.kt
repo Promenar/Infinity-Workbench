@@ -76,6 +76,10 @@ class BackupRuntime internal constructor(
         val pending = store.read() ?: return
         pending.use { payload ->
             val txId = payload.metadata.txId
+            if (payload.metadata.phase != PendingRestorePhase.STAGED) {
+                store.clear(txId)
+                return
+            }
             if (dataSource.hasCompletedRestore(txId)) {
                 store.clear(txId)
                 return

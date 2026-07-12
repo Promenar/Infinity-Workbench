@@ -16,6 +16,51 @@ import javax.crypto.spec.SecretKeySpec
 @Config(sdk = [33])
 class PendingRestoreStoreTest {
     @Test
+    fun `staging ticket cannot overwrite another transaction and cancelled ticket cannot commit late stage`() {
+        val file = Files.createTempFile("pending-restore", ".bin").toFile().also { it.delete() }
+        val store = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(ByteArray(32) { 4 })) { TX_ID }
+        store.begin(TX_ID)
+        store.read()!!.use { assertThat(it.metadata.phase).isEqualTo(PendingRestorePhase.STAGING) }
+
+        assertThrows(BackupValidationException::class.java) {
+            store.begin("123e4567-e89b-12d3-a456-426614174099")
+        }
+        store.stage(TX_ID, byteArrayOf(1), null)
+        assertThrows(BackupValidationException::class.java) { store.begin(TX_ID) }
+        store.cancel(TX_ID)
+        assertThat(store.read()).isNull()
+        assertThrows(BackupValidationException::class.java) {
+            store.stage(TX_ID, byteArrayOf(1), null)
+        }
+    }
+
+    @Test
+    fun `stage authorize and cancel write failures preserve only non-restorable staging state`() {
+        val file = Files.createTempFile("pending-restore", ".bin").toFile().also { it.delete() }
+        val cryptor = SwitchableCryptor(ByteArray(32) { 6 })
+        val store = AndroidPendingRestoreStore(AtomicFile(file), cryptor) { TX_ID }
+        store.begin(TX_ID)
+
+        cryptor.failEncrypt = true
+        assertThrows(BackupValidationException::class.java) { store.stage(TX_ID, byteArrayOf(1), null) }
+        cryptor.failEncrypt = false
+        store.read()!!.use {
+            assertThat(it.metadata.phase).isEqualTo(PendingRestorePhase.STAGING)
+            assertThat(it.packageBytes).isEmpty()
+        }
+
+        store.stage(TX_ID, byteArrayOf(1), null)
+        cryptor.failEncrypt = true
+        assertThrows(BackupValidationException::class.java) { store.authorize(TX_ID) }
+        assertThrows(BackupValidationException::class.java) { store.cancel(TX_ID) }
+        cryptor.failEncrypt = false
+        store.read()!!.use {
+            assertThat(it.metadata.phase).isEqualTo(PendingRestorePhase.STAGING)
+            assertThat(it.packageBytes).isEqualTo(byteArrayOf(1))
+        }
+    }
+
+    @Test
     fun `encrypted pending survives store recreation and contains no package or password plaintext`() {
         val file = Files.createTempFile("pending-restore", ".bin").toFile().also { it.delete() }
         val key = ByteArray(32) { it.toByte() }
@@ -49,6 +94,7 @@ class PendingRestoreStoreTest {
         file.writeBytes(tampered)
         assertThrows(BackupValidationException::class.java) { store.read() }
 
+        AtomicFile(file).delete()
         store.stage(byteArrayOf(1, 2, 3), "pw".toCharArray())
         assertThrows(BackupValidationException::class.java) {
             AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(ByteArray(32) { 2 })).read()
@@ -72,6 +118,16 @@ class PendingRestoreStoreTest {
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, encrypted.copyOfRange(0, 12)))
             return cipher.doFinal(encrypted.copyOfRange(12, encrypted.size))
         }
+    }
+
+    private class SwitchableCryptor(key: ByteArray) : PendingRestoreCryptor {
+        private val delegate = TestCryptor(key)
+        var failEncrypt = false
+        override fun encrypt(plain: ByteArray): ByteArray {
+            if (failEncrypt) error("simulated encrypt failure")
+            return delegate.encrypt(plain)
+        }
+        override fun decrypt(encrypted: ByteArray) = delegate.decrypt(encrypted)
     }
 
     private companion object {

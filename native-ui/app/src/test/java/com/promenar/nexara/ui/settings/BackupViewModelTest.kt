@@ -12,6 +12,7 @@ import com.promenar.nexara.data.repository.BackupUploadReceipt
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
+import com.promenar.nexara.data.security.WebDavAuthRecordCodec
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
@@ -34,6 +35,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BackupViewModelTest {
@@ -58,15 +60,36 @@ class BackupViewModelTest {
         val secrets = FakeSecrets()
         newViewModel(settings = settings, secrets = secrets)
 
-        assertThat(secrets.text(SecretCatalog.webDavPassword)).isEqualTo("legacy")
+        assertThat(secrets.authPassword()).isEqualTo("legacy")
         assertThat(settings.webDavPasswordPlaintext).isNull()
 
         settings.webDavPasswordPlaintext = "stale"
         secrets.put(SecretCatalog.webDavPassword, "current".encodeToByteArray())
         val vm = newViewModel(settings = settings, secrets = secrets)
-        assertThat(secrets.text(SecretCatalog.webDavPassword)).isEqualTo("current")
+        // canonical 已存在时不再使用后写入的 legacy raw secret。
+        assertThat(secrets.authPassword()).isEqualTo("legacy")
         assertThat(settings.webDavPasswordPlaintext).isNull()
         assertThat(vm.uiState.value.hasWebDavPassword).isTrue()
+    }
+
+    @Test
+    fun `legacy raw secret wins over plaintext and both legacy locations are removed after canonical commit`() {
+        val settings = FakeSettings(
+            webDavUrl = "https://legacy.invalid/",
+            webDavUser = "legacy-user",
+            webDavPasswordPlaintext = "plaintext-stale",
+        )
+        val secrets = FakeSecrets().apply {
+            put(SecretCatalog.webDavPassword, "raw-current".encodeToByteArray())
+        }
+
+        val vm = newViewModel(settings = settings, secrets = secrets)
+
+        assertThat(secrets.authPassword()).isEqualTo("raw-current")
+        assertThat(secrets.contains(SecretCatalog.webDavPassword)).isFalse()
+        assertThat(settings.webDavPasswordPlaintext).isNull()
+        assertThat(vm.uiState.value.webdavUrl).isEqualTo("https://legacy.invalid/")
+        assertThat(vm.uiState.value.webdavUser).isEqualTo("legacy-user")
     }
 
     @Test
@@ -78,13 +101,13 @@ class BackupViewModelTest {
         val first = "first".toCharArray()
         vm.saveWebDavConfig("https://dav.invalid/", "user", first)
         assertThat(first).isEqualTo(CharArray(5))
-        assertThat(secrets.text(SecretCatalog.webDavPassword)).isEqualTo("first")
+        assertThat(secrets.authPassword()).isEqualTo("first")
         assertThat(settings.webDavPasswordPlaintext).isNull()
 
         val second = "second".toCharArray()
         vm.saveWebDavConfig("https://dav.invalid/", "user", second)
         assertThat(second).isEqualTo(CharArray(6))
-        assertThat(secrets.text(SecretCatalog.webDavPassword)).isEqualTo("second")
+        assertThat(secrets.authPassword()).isEqualTo("second")
 
         vm.deleteWebDavPassword()
         assertThat(secrets.contains(SecretCatalog.webDavPassword)).isFalse()
@@ -92,7 +115,7 @@ class BackupViewModelTest {
     }
 
     @Test
-    fun `failed secret save wipes input and leaves previous config and plaintext untouched`() {
+    fun `failed canonical save wipes input preserves old auth and removes unsafe plaintext fallback`() {
         val settings = FakeSettings(
             webDavUrl = "https://old.invalid/",
             webDavUser = "old-user",
@@ -111,7 +134,8 @@ class BackupViewModelTest {
         assertThat(password).isEqualTo(CharArray("replacement".length))
         assertThat(settings.webDavUrl).isEqualTo("https://old.invalid/")
         assertThat(settings.webDavUser).isEqualTo("old-user")
-        assertThat(settings.webDavPasswordPlaintext).isEqualTo("fallback")
+        assertThat(settings.webDavPasswordPlaintext).isNull()
+        assertThat(secrets.authPassword()).isEqualTo("legacy")
     }
 
     @Test
@@ -520,6 +544,243 @@ class BackupViewModelTest {
         assertThat(operations.testCancelled).isTrue()
     }
 
+    @Test
+    fun `cancelled noncooperative stage keeps gate closed until durable pending cleanup finishes`() = runTest(dispatcher) {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val discardRelease = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            localStageStarted = started,
+            localStageGate = release,
+            discardGate = discardRelease,
+        )
+        val vm = newViewModel(operations = operations)
+        vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+        runCurrent(); started.await()
+
+        vm.cancelOperation()
+        assertThat(vm.testConnection()).isFalse()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.CancellingRestore)
+        release.complete(Unit)
+        runCurrent()
+        assertThat(operations.discardCalls).isEqualTo(1)
+        assertThat(vm.listRemote()).isFalse()
+        val rejectedPassword = "new-secret".toCharArray()
+        assertThat(vm.saveWebDavConfig("https://blocked.invalid/", "u", rejectedPassword)).isFalse()
+        assertThat(rejectedPassword).isEqualTo(CharArray("new-secret".length))
+
+        discardRelease.complete(Unit)
+        advanceUntilIdle()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Idle)
+        assertThat(vm.testConnection()).isTrue()
+    }
+
+    @Test
+    fun `onCleared keeps independent cleanup scope alive for noncooperative staged restore`() = runTest(dispatcher) {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val operations = FakeOperations(localStageStarted = started, localStageGate = release)
+        val vm = newViewModel(operations = operations)
+        val store = ViewModelStore().apply { put("restore", vm) }
+        vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+        runCurrent(); started.await()
+
+        store.clear()
+        assertThat(vm.testConnection()).isFalse()
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(operations.discardCalls).isEqualTo(1)
+        assertThat(operations.pending).isFalse()
+    }
+
+    @Test
+    fun `stage write followed by failure is cleaned and cleanup failure blocks every new operation`() = runTest(dispatcher) {
+        val cleaned = FakeOperations(stageWriteThenThrow = true)
+        val cleanedVm = newViewModel(operations = cleaned)
+        cleanedVm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+        advanceUntilIdle()
+        assertThat(cleaned.discardCalls).isEqualTo(1)
+        assertThat(cleaned.pending).isFalse()
+        assertThat(cleanedVm.uiState.value.operation).isInstanceOf(BackupOperation.Error::class.java)
+
+        val failed = FakeOperations(stageWriteThenThrow = true, discardFailure = IllegalStateException("cleanup"))
+        val failedVm = newViewModel(operations = failed)
+        failedVm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+        advanceUntilIdle()
+        assertThat(failedVm.uiState.value.operation).isInstanceOf(BackupOperation.Blocked::class.java)
+        assertThat(failedVm.testConnection()).isFalse()
+        assertThat(failedVm.restoreLocal(ByteArrayInputStream(byteArrayOf(2)), null)).isFalse()
+    }
+
+    @Test
+    fun `restart authorization is linearized and dispatch exception retains pending for retry`() = runTest(dispatcher) {
+        val operations = FakeOperations()
+        val restart = FakeRestart(failFirst = IllegalStateException("dispatch"))
+        val vm = newViewModel(operations = operations, restart = restart)
+        restart.concurrentProbe = { vm.testConnection() }
+
+        vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+        advanceUntilIdle()
+
+        assertThat(restart.probeReturnedWithoutBlocking).isTrue()
+        assertThat(restart.probeResult).isFalse()
+        assertThat(operations.pending).isTrue()
+        assertThat(operations.discardCalls).isEqualTo(0)
+        assertThat(vm.uiState.value.operation).isInstanceOf(BackupOperation.Blocked::class.java)
+        assertThat(vm.saveWebDavConfig("https://new.invalid/", "u", "p".toCharArray())).isFalse()
+        vm.cancelOperation()
+        assertThat(operations.discardCalls).isEqualTo(0)
+
+        assertThat(vm.retryRestart()).isTrue()
+        advanceUntilIdle()
+        assertThat(restart.calls).isEqualTo(2)
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Restarting)
+    }
+
+    @Test
+    fun `only explicit pending restart cancellation removes authorized pending`() = runTest(dispatcher) {
+        val operations = FakeOperations()
+        val vm = newViewModel(
+            operations = operations,
+            restart = FakeRestart(failFirst = IllegalStateException("dispatch")),
+        )
+        vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+        advanceUntilIdle()
+        vm.cancelOperation()
+        assertThat(operations.pending).isTrue()
+
+        assertThat(vm.cancelPendingRestart()).isTrue()
+        advanceUntilIdle()
+
+        assertThat(operations.pending).isFalse()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Idle)
+        assertThat(vm.testConnection()).isTrue()
+    }
+
+    @Test
+    fun `durable authorization failure never dispatches restart or auto-clears pending`() = runTest(dispatcher) {
+        val operations = FakeOperations(authorizeFailure = IllegalStateException("authorize"))
+        val restart = FakeRestart()
+        val vm = newViewModel(operations = operations, restart = restart)
+
+        vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+        advanceUntilIdle()
+
+        assertThat(restart.calls).isEqualTo(0)
+        assertThat(operations.pending).isTrue()
+        assertThat(operations.discardCalls).isEqualTo(0)
+        assertThat(vm.uiState.value.operation).isInstanceOf(BackupOperation.Blocked::class.java)
+    }
+
+    @Test
+    fun `canonical auth commit is atomic across before-write and after-write failures`() = runTest(dispatcher) {
+        val secrets = FakeSecrets()
+        val operations = FakeOperations()
+        val vm = newViewModel(operations = operations, secrets = secrets)
+        vm.saveWebDavConfig("https://old.invalid/", "old", "old-pass".toCharArray())
+
+        secrets.throwBeforePut = IllegalStateException("before")
+        assertThrows<IllegalStateException> {
+            vm.saveWebDavConfig("https://new.invalid/", "new", "new-pass".toCharArray())
+        }
+        secrets.throwBeforePut = null
+        vm.testConnection(); advanceUntilIdle()
+        assertThat(operations.lastConfig).isEqualTo(WebDavConfig("https://old.invalid/", "old", "old-pass"))
+
+        secrets.throwAfterPut = IllegalStateException("after")
+        assertThrows<IllegalStateException> {
+            vm.saveWebDavConfig("https://new.invalid/", "new", "new-pass".toCharArray())
+        }
+        secrets.throwAfterPut = null
+        assertThat(vm.uiState.value.webdavUrl).isEqualTo("https://new.invalid/")
+        vm.testConnection(); advanceUntilIdle()
+        assertThat(operations.lastConfig).isEqualTo(WebDavConfig("https://new.invalid/", "new", "new-pass"))
+    }
+
+    @Test
+    fun `prefs cache failure cannot split canonical auth and reconstruction repairs cache`() = runTest(dispatcher) {
+        val settings = FakeSettings()
+        val secrets = FakeSecrets()
+        val operations = FakeOperations()
+        val vm = newViewModel(operations, settings, secrets)
+        settings.cacheFailure = IllegalStateException("prefs")
+
+        assertThat(vm.saveWebDavConfig("https://canonical.invalid/", "canonical", "secret".toCharArray())).isTrue()
+        assertThat(vm.uiState.value.webdavUrl).isEqualTo("https://canonical.invalid/")
+        vm.testConnection(); advanceUntilIdle()
+        assertThat(operations.lastConfig).isEqualTo(WebDavConfig("https://canonical.invalid/", "canonical", "secret"))
+
+        settings.cacheFailure = null
+        val recreated = newViewModel(operations, settings, secrets)
+        assertThat(recreated.uiState.value.webdavUrl).isEqualTo("https://canonical.invalid/")
+        assertThat(settings.webDavUrl).isEqualTo("https://canonical.invalid/")
+    }
+
+    @Test
+    fun `corrupt canonical auth fails WebDAV closed without disabling local restore`() = runTest(dispatcher) {
+        val secrets = FakeSecrets().apply { putRaw(SecretCatalog.webDavAuthRecord, byteArrayOf(1, 2, 3)) }
+        val operations = FakeOperations()
+        val vm = newViewModel(operations = operations, secrets = secrets)
+
+        assertThat(vm.testConnection()).isFalse()
+        assertThat(vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)).isTrue()
+        advanceUntilIdle()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Restarting)
+    }
+
+    @Test
+    fun `config cache Error propagates but reservation is released after canonical publish`() = runTest(dispatcher) {
+        val settings = FakeSettings()
+        val secrets = FakeSecrets()
+        val operations = FakeOperations()
+        val vm = newViewModel(operations, settings, secrets)
+        settings.cacheFailure = AssertionError("prefs-error")
+
+        assertThrows<AssertionError> {
+            vm.saveWebDavConfig("https://committed.invalid/", "u", "p".toCharArray())
+        }
+        settings.cacheFailure = null
+        assertThat(vm.testConnection()).isTrue()
+        advanceUntilIdle()
+        assertThat(operations.lastConfig?.baseUrl).isEqualTo("https://committed.invalid/")
+    }
+
+    @Test
+    fun `restart Error is never converted to a recoverable Exception state`() {
+        val operations = FakeOperations()
+        val thrown = assertThrows<AssertionError> {
+            runTest(dispatcher) {
+                val vm = newViewModel(operations = operations, restart = FakeRestart(AssertionError("fatal-restart")))
+                vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+                advanceUntilIdle()
+            }
+        }
+
+        assertThat(thrown).hasMessageThat().isEqualTo("fatal-restart")
+        assertThat(operations.discardCalls).isEqualTo(0)
+        assertThat(operations.pending).isTrue()
+    }
+
+    @Test
+    fun `pending cleanup Error remains visible and leaves restore fail closed`() {
+        val operations = FakeOperations(
+            stageWriteThenThrow = true,
+            discardFailure = AssertionError("fatal-cleanup"),
+        )
+        val thrown = assertThrows<AssertionError> {
+            runTest(dispatcher) {
+                val vm = newViewModel(operations = operations)
+                vm.restoreLocal(ByteArrayInputStream(byteArrayOf(1)), null)
+                advanceUntilIdle()
+            }
+        }
+
+        assertThat(thrown).hasMessageThat().isEqualTo("fatal-cleanup")
+        assertThat(operations.pending).isTrue()
+        assertThat(operations.discardCalls).isEqualTo(1)
+    }
+
     private fun newViewModel(
         operations: FakeOperations = FakeOperations(),
         settings: FakeSettings = FakeSettings(),
@@ -551,32 +812,63 @@ class BackupViewModelTest {
     }
 
     private class FakeSettings(
-        override var webDavEnabled: Boolean = false,
+        webDavEnabled: Boolean = false,
         override var autoBackup: Boolean = false,
-        override var webDavUrl: String = "",
-        override var webDavUser: String = "",
+        webDavUrl: String = "",
+        webDavUser: String = "",
         override var lastBackupTime: Long = 0,
-        override var webDavPasswordPlaintext: String? = null,
-    ) : BackupSettingsStore
+        webDavPasswordPlaintext: String? = null,
+    ) : BackupSettingsStore {
+        var cacheFailure: Throwable? = null
+        private var enabledValue = webDavEnabled
+        private var urlValue = webDavUrl
+        private var userValue = webDavUser
+        private var plaintextValue = webDavPasswordPlaintext
+        override var webDavEnabled: Boolean
+            get() = enabledValue
+            set(value) { cacheFailure?.let { throw it }; enabledValue = value }
+        override var webDavUrl: String
+            get() = urlValue
+            set(value) { cacheFailure?.let { throw it }; urlValue = value }
+        override var webDavUser: String
+            get() = userValue
+            set(value) { cacheFailure?.let { throw it }; userValue = value }
+        override var webDavPasswordPlaintext: String?
+            get() = plaintextValue
+            set(value) { cacheFailure?.let { throw it }; plaintextValue = value }
+    }
 
     private class FakeSecrets : SecretStore {
         private val values = ConcurrentHashMap<SecretId, ByteArray>()
         var throwOnPut = false
+        var throwBeforePut: Throwable? = null
+        var throwAfterPut: Throwable? = null
         var blockPut = false
         val putEntered = CountDownLatch(1)
         val putRelease = CountDownLatch(1)
         override fun put(id: SecretId, value: ByteArray) {
             if (throwOnPut) error("secret write failed")
+            throwBeforePut?.let { throw it }
             if (blockPut) {
                 putEntered.countDown()
                 putRelease.await(5, TimeUnit.SECONDS)
             }
             values[id] = value.copyOf()
+            throwAfterPut?.let { throw it }
         }
         override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
         override fun contains(id: SecretId) = values.containsKey(id)
         override fun remove(id: SecretId) { values.remove(id)?.fill(0) }
         fun text(id: SecretId) = values[id]?.toString(Charsets.UTF_8)
+        fun putRaw(id: SecretId, bytes: ByteArray) { values[id] = bytes.copyOf() }
+        fun authPassword(): String? {
+            val encoded = values[SecretCatalog.webDavAuthRecord]?.copyOf() ?: return null
+            return try {
+                WebDavAuthRecordCodec.decode(encoded).use { it.passwordBytes.toString(Charsets.UTF_8) }
+            } finally {
+                encoded.fill(0)
+            }
+        }
     }
 
     private class CloseTrackingInputStream(
@@ -606,9 +898,20 @@ class BackupViewModelTest {
         }
     }
 
-    private class FakeRestart : BackupRestartRequester {
+    private class FakeRestart(private var failFirst: Throwable? = null) : BackupRestartRequester {
         var calls = 0
-        override fun requestRestart() { calls++ }
+        var concurrentProbe: (() -> Boolean)? = null
+        var probeReturnedWithoutBlocking = false
+        var probeResult: Boolean? = null
+        override fun requestRestart() {
+            calls++
+            concurrentProbe?.let { probe ->
+                val thread = Thread { probeResult = probe() }.apply { start() }
+                thread.join(1_000)
+                probeReturnedWithoutBlocking = !thread.isAlive
+            }
+            failFirst?.let { error -> failFirst = null; throw error }
+        }
     }
 
     private class FakeOperations(
@@ -621,6 +924,12 @@ class BackupViewModelTest {
         private val exportFailure: Boolean = false,
         private val remoteStageStarted: CompletableDeferred<Unit>? = null,
         private val remoteStageGate: CompletableDeferred<Unit>? = null,
+        private val localStageStarted: CompletableDeferred<Unit>? = null,
+        private val localStageGate: CompletableDeferred<Unit>? = null,
+        private val stageWriteThenThrow: Boolean = false,
+        private val discardFailure: Throwable? = null,
+        private val discardGate: CompletableDeferred<Unit>? = null,
+        private val authorizeFailure: Throwable? = null,
     ) : BackupOperations {
         var exportCalls = 0
         var stageRemoteCalls = 0
@@ -628,6 +937,8 @@ class BackupViewModelTest {
         var observedPassword: CharArray? = null
         var observedConfirmation: CharArray? = null
         var testCancelled = false
+        var discardCalls = 0
+        var pending = false
 
         override suspend fun export(options: BackupExportOptions): ByteArray {
             exportCalls++
@@ -654,23 +965,48 @@ class BackupViewModelTest {
             lastConfig = config
             return listGate?.let { withContext(NonCancellable) { it.await() } } ?: remote
         }
-        override suspend fun stageLocalRestore(input: java.io.InputStream, password: CharArray?): PendingRestoreMetadata {
+        override suspend fun stageLocalRestore(
+            operationId: String,
+            input: java.io.InputStream,
+            password: CharArray?,
+        ): PendingRestoreMetadata {
             if (stageFailure) error("failure")
-            return metadata()
+            pending = true
+            if (localStageGate != null) withContext(NonCancellable) {
+                localStageStarted?.complete(Unit)
+                localStageGate.await()
+            }
+            if (stageWriteThenThrow) error("failure after durable stage")
+            return metadata(operationId)
         }
-        override suspend fun stageRemoteRestore(config: WebDavConfig, selected: RemoteBackup, password: CharArray?): PendingRestoreMetadata {
+        override suspend fun stageRemoteRestore(
+            operationId: String,
+            config: WebDavConfig,
+            selected: RemoteBackup,
+            password: CharArray?,
+        ): PendingRestoreMetadata {
             stageRemoteCalls++
             if (selected !in remote) error("stale")
             if (remoteStageGate != null) withContext(NonCancellable) {
                 remoteStageStarted?.complete(Unit)
                 remoteStageGate.await()
             }
-            return metadata()
+            pending = true
+            return metadata(operationId)
         }
-        private fun metadata() = PendingRestoreMetadata(
-            "123e4567-e89b-12d3-a456-426614174000",
+        override suspend fun discardPendingRestore(operationId: String) {
+            discardCalls++
+            discardGate?.await()
+            discardFailure?.let { throw it }
+            pending = false
+        }
+        override suspend fun authorizePendingRestore(operationId: String) {
+            authorizeFailure?.let { throw it }
+        }
+        private fun metadata(operationId: String) = PendingRestoreMetadata(
+            operationId,
             MessageDigest.getInstance("SHA-256").digest(byteArrayOf(1)),
-            PendingRestorePhase.STAGED,
+            PendingRestorePhase.STAGING,
         )
     }
 }

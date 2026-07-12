@@ -118,6 +118,27 @@ class BackupRuntimeTest {
         assertThat(store.isPresent).isFalse()
     }
 
+    @Test
+    fun `startup clears unfinished or cancelled transaction without decoding or restoring`() = runBlocking {
+        for (phase in listOf(PendingRestorePhase.STAGING, PendingRestorePhase.CANCELLED)) {
+            val store = FakePendingStore(
+                "123e4567-e89b-12d3-a456-426614174010",
+                ByteArray(0),
+                null,
+                phase,
+            )
+            val source = ReceiptDataSource()
+            val codec = object : BackupPackageCodec {
+                override fun encode(snapshot: BackupSnapshot, options: BackupOptions) = error("unused")
+                override fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup = error("must not decode")
+            }
+
+            assertThat(BackupRuntime(source, store, codec).recoverBeforeWriters()).isEqualTo(BackupStartupState.Ready)
+            assertThat(source.restoreIds).isEmpty()
+            assertThat(store.isPresent).isFalse()
+        }
+    }
+
     private class FakeDataSource(
         private val recover: suspend () -> Unit,
     ) : BackupDataSource {
@@ -144,13 +165,17 @@ class BackupRuntimeTest {
         private val txId: String,
         private val bytes: ByteArray,
         private val chars: CharArray?,
+        private val phase: PendingRestorePhase = PendingRestorePhase.STAGED,
     ) : PendingRestoreStore {
         var isPresent = true
         var clearCount = 0
         var failNextClear = false
+        override fun begin(expectedTxId: String) = error("unused")
         override fun stage(packageBytes: ByteArray, password: CharArray?) = error("unused")
+        override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?) = error("unused")
+        override fun authorize(expectedTxId: String) = error("unused")
         override fun read(): PendingRestorePayload? = if (!isPresent) null else PendingRestorePayload(
-            PendingRestoreMetadata(txId, MessageDigest.getInstance("SHA-256").digest(bytes), PendingRestorePhase.STAGED),
+            PendingRestoreMetadata(txId, MessageDigest.getInstance("SHA-256").digest(bytes), phase),
             bytes.copyOf(),
             chars?.copyOf(),
         )
@@ -163,5 +188,6 @@ class BackupRuntimeTest {
             isPresent = false
             clearCount++
         }
+        override fun cancel(expectedTxId: String) = clear(expectedTxId)
     }
 }

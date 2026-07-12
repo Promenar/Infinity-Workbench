@@ -28,6 +28,7 @@ import com.promenar.nexara.data.remote.webdav.WebDavBackupClient
 import com.promenar.nexara.data.remote.webdav.WebDavConfig
 import com.promenar.nexara.data.remote.webdav.WebDavPruneWarning
 import java.io.InputStream
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -93,10 +94,18 @@ class BackupRepository(
     }
 
     suspend fun stageLocalRestore(input: InputStream, password: CharArray? = null): PendingRestoreMetadata =
+        stageLocalRestore(UUID.randomUUID().toString(), input, password)
+
+    suspend fun stageLocalRestore(
+        operationId: String,
+        input: InputStream,
+        password: CharArray? = null,
+    ): PendingRestoreMetadata =
         withContext(Dispatchers.IO) {
+            pendingStore.begin(operationId)
             val bytes = readBounded(input)
             try {
-                stageValidated(bytes, password)
+                stageValidated(operationId, bytes, password)
             } finally {
                 bytes.fill(0)
             }
@@ -106,24 +115,45 @@ class BackupRepository(
         config: WebDavConfig,
         selected: RemoteBackup,
         password: CharArray? = null,
+    ): PendingRestoreMetadata = stageRemoteRestore(UUID.randomUUID().toString(), config, selected, password)
+
+    suspend fun stageRemoteRestore(
+        operationId: String,
+        config: WebDavConfig,
+        selected: RemoteBackup,
+        password: CharArray? = null,
     ): PendingRestoreMetadata {
+        withContext(Dispatchers.IO) { pendingStore.begin(operationId) }
         val bytes = downloadRemote(config, selected)
         return try {
-            stageValidated(bytes, password)
+            stageValidated(operationId, bytes, password)
         } finally {
             bytes.fill(0)
         }
     }
 
     fun stageValidated(packageBytes: ByteArray, password: CharArray? = null): PendingRestoreMetadata {
+        return stageValidated(UUID.randomUUID().toString(), packageBytes, password)
+    }
+
+    fun stageValidated(operationId: String, packageBytes: ByteArray, password: CharArray? = null): PendingRestoreMetadata {
         requireBoundedPackage(packageBytes)
+        pendingStore.begin(operationId)
         val ownedPassword = password?.copyOf()
         try {
             codec.decode(packageBytes, ownedPassword).use { /* 验证先行，运行中绝不写 Operational 数据 */ }
-            return pendingStore.stage(packageBytes, ownedPassword)
+            return pendingStore.stage(operationId, packageBytes, ownedPassword)
         } finally {
             ownedPassword?.fill('\u0000')
         }
+    }
+
+    suspend fun discardPendingRestore(operationId: String) = withContext(Dispatchers.IO) {
+        pendingStore.cancel(operationId)
+    }
+
+    suspend fun authorizePendingRestore(operationId: String) = withContext(Dispatchers.IO) {
+        pendingStore.authorize(operationId)
     }
 
     private fun validatedPassword(options: BackupExportOptions): CharArray? {
