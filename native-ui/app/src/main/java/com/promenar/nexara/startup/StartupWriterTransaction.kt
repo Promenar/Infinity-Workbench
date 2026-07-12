@@ -16,6 +16,22 @@ internal class StartupWriterRegistration(
     val rollback: () -> Unit,
 )
 
+internal enum class StartupMigration {
+    WORKSPACE_DIRECTORY,
+    PROVIDER_MIGRATION_AND_INIT,
+}
+
+internal class IdempotentStartupMigrationStage {
+    private val completed = mutableMapOf<StartupMigration, Any>()
+
+    @Synchronized
+    fun <T : Any> run(migration: StartupMigration, apply: () -> T): T {
+        @Suppress("UNCHECKED_CAST")
+        completed[migration]?.let { cached -> return cached as T }
+        return apply().also { result -> completed[migration] = result }
+    }
+}
+
 internal class StartupWriterTransaction<T>(
     private val preflight: () -> T,
     private val registrations: (T) -> List<StartupWriterRegistration>,

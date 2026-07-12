@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
@@ -21,7 +22,8 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.util.LocaleHelper
 
 class MainActivity : ComponentActivity() {
-    private lateinit var shareIntentQueue: ShareIntentQueue
+    private val shareIntentViewModel by viewModels<ShareIntentViewModel>()
+    private val shareIntentQueue: ShareIntentQueue get() = shareIntentViewModel.queue
 
     override fun attachBaseContext(newBase: Context) {
         val lang = LocaleHelper.getSavedLanguage(newBase)
@@ -31,7 +33,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        shareIntentQueue = ShareIntentQueue.restore(savedInstanceState)
+        shareIntentQueue.restoreConsumedState(savedInstanceState)
         enqueueShareIntent(intent)
         val app = application as NexaraApplication
         setContent {
@@ -70,15 +72,23 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        shareIntentQueue.save(outState)
+        shareIntentQueue.saveConsumedState(outState)
         super.onSaveInstanceState(outState)
     }
 
     private fun enqueueShareIntent(candidate: Intent?) {
-        shareIntentQueue.enqueue(candidate)
-        if (candidate != null && ShareIntentQueue.fingerprint(candidate) != null) {
-            setIntent(Intent(this, MainActivity::class.java).apply { action = Intent.ACTION_MAIN })
+        if (!ShareIntentQueue.isShareIntent(candidate)) return
+        val result = shareIntentQueue.enqueue(candidate)
+        setIntent(Intent(this, MainActivity::class.java).apply { action = Intent.ACTION_MAIN })
+        when (result) {
+            ShareEnqueueResult.Accepted, ShareEnqueueResult.Duplicate -> Unit
+            ShareEnqueueResult.RejectedInvalid -> showShareFeedback(R.string.share_intent_invalid)
+            ShareEnqueueResult.RejectedCapacity -> showShareFeedback(R.string.share_intent_queue_full)
         }
+    }
+
+    private fun showShareFeedback(message: Int) {
+        Toast.makeText(this, getString(message), Toast.LENGTH_SHORT).show()
     }
 
     private fun consumeShareIntentsIfReady() {

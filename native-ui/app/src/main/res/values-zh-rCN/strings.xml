@@ -75,6 +75,8 @@
     <string name="startup_blocked_icon_description">安全恢复已阻塞</string>
     <string name="startup_retry">重试安全恢复</string>
     <string name="startup_importing_files">正在导入 %1$d 个文件</string>
+    <string name="share_intent_invalid">此分享内容无法安全导入</string>
+    <string name="share_intent_queue_full">待处理分享内容过多，请稍后重试</string>
     <string name="shared_confirm_delete_title">确认删除</string>
     <string name="shared_action_cannot_undo">此操作无法撤销。</string>
     <string name="shared_btn_copy">复制</string>

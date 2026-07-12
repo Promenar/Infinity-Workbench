@@ -75,6 +75,8 @@
     <string name="startup_blocked_icon_description">Safe recovery blocked</string>
     <string name="startup_retry">Retry safe recovery</string>
     <string name="startup_importing_files">Importing %1$d files</string>
+    <string name="share_intent_invalid">This shared content cannot be imported safely</string>
+    <string name="share_intent_queue_full">Too many shared items are waiting. Try again shortly</string>
     <string name="shared_confirm_delete_title">Confirm Delete</string>
     <string name="shared_action_cannot_undo">This action cannot be undone.</string>
     <string name="shared_btn_copy">Copy</string>

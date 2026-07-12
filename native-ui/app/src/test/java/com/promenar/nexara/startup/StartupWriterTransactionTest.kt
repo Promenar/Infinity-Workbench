@@ -7,6 +7,66 @@ import org.junit.Test
 
 class StartupWriterTransactionTest {
     @Test
+    fun `successful migrations are cached when later registration fails and retry does not repeat them`() {
+        val migrations = IdempotentStartupMigrationStage()
+        var providerMigrations = 0
+        var directoryMigrations = 0
+        var registrationAttempts = 0
+        var activeRegistrations = 0
+        val transaction = StartupWriterTransaction(
+            preflight = {
+                migrations.run(StartupMigration.WORKSPACE_DIRECTORY) {
+                    directoryMigrations++
+                    Unit
+                }
+                migrations.run(StartupMigration.PROVIDER_MIGRATION_AND_INIT) {
+                    providerMigrations++
+                    "provider"
+                }
+            },
+            registrations = {
+                listOf(
+                    StartupWriterRegistration(
+                        register = {
+                            activeRegistrations++
+                            if (registrationAttempts++ == 0) error("later registration failure")
+                        },
+                        rollback = { activeRegistrations-- },
+                    )
+                )
+            },
+        )
+
+        assertThat(runCatching { transaction.commit() }.isFailure).isTrue()
+        assertThat(activeRegistrations).isEqualTo(0)
+        transaction.commit()
+
+        assertThat(providerMigrations).isEqualTo(1)
+        assertThat(directoryMigrations).isEqualTo(1)
+        assertThat(activeRegistrations).isEqualTo(1)
+    }
+
+    @Test
+    fun `failed migration is not cached and can retry without partial result`() {
+        val migrations = IdempotentStartupMigrationStage()
+        var attempts = 0
+
+        assertThat(runCatching {
+            migrations.run(StartupMigration.WORKSPACE_DIRECTORY) {
+                attempts++
+                error("migration failed")
+            }
+        }.isFailure).isTrue()
+        val result = migrations.run(StartupMigration.WORKSPACE_DIRECTORY) {
+            attempts++
+            "ready"
+        }
+
+        assertThat(result).isEqualTo("ready")
+        assertThat(attempts).isEqualTo(2)
+    }
+
+    @Test
     fun `every synchronous failure rolls all observer listener and job counts back to zero then retry commits once`() {
         val preflightPhases = 4
         val sideEffectCount = 7

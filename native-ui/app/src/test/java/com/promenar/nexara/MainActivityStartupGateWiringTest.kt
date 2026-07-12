@@ -29,7 +29,8 @@ class MainActivityStartupGateWiringTest {
         val onNewIntent = functionBody("override fun onNewIntent(intent: Intent)")
         val consume = functionBody("private fun consumeShareIntentsIfReady()")
 
-        assertThat(onCreate).contains("ShareIntentQueue.restore(savedInstanceState)")
+        assertThat(source).contains("by viewModels<ShareIntentViewModel>()")
+        assertThat(onCreate).contains("restoreConsumedState(savedInstanceState)")
         assertThat(onCreate).contains("enqueueShareIntent(intent)")
         assertThat(onNewIntent).contains("enqueueShareIntent(intent)")
         assertThat(consume).contains("BackupStartupState.Ready")
@@ -37,14 +38,18 @@ class MainActivityStartupGateWiringTest {
     }
 
     @Test
-    fun `share queue is saved and activity share payload is replaced`() {
+    fun `only consumed state is saved and every share payload is immediately replaced`() {
         val save = functionBody("override fun onSaveInstanceState(outState: Bundle)")
         val enqueue = functionBody("private fun enqueueShareIntent(candidate: Intent?)")
 
-        assertThat(save).contains("shareIntentQueue.save(outState)")
-        assertThat(enqueue).contains("ShareIntentQueue.fingerprint(candidate)")
+        assertThat(save).contains("saveConsumedState(outState)")
+        assertThat(save).doesNotContain("pending")
+        assertThat(enqueue).contains("ShareEnqueueResult.RejectedInvalid")
+        assertThat(enqueue).contains("ShareEnqueueResult.RejectedCapacity")
         assertThat(enqueue).contains("setIntent(Intent(this, MainActivity::class.java)")
         assertThat(enqueue).contains("Intent.ACTION_MAIN")
+        assertThat(enqueue).contains("R.string.share_intent_invalid")
+        assertThat(enqueue).contains("R.string.share_intent_queue_full")
     }
 
     private fun functionBody(signature: String): String {

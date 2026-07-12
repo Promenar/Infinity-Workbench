@@ -94,6 +94,8 @@ import kotlinx.coroutines.launch
 import com.promenar.nexara.startup.StartupBackgroundHealthMonitor
 import com.promenar.nexara.startup.StartupBackgroundTask
 import com.promenar.nexara.startup.StartupBackgroundTaskHealth
+import com.promenar.nexara.startup.IdempotentStartupMigrationStage
+import com.promenar.nexara.startup.StartupMigration
 import com.promenar.nexara.startup.StartupWriterRegistration
 import com.promenar.nexara.startup.StartupWriterSession
 import com.promenar.nexara.startup.StartupWriterTransaction
@@ -117,6 +119,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     private var startupRecoveryJob: Job? = null
     private var writersInitialized = false
     private var startupWriterSession: StartupWriterSession<PreparedStartupWriters>? = null
+    private val startupMigrationStage = IdempotentStartupMigrationStage()
     private val startupBackgroundHealthMonitor = StartupBackgroundHealthMonitor { task, failure ->
         NexaraLogger.logError("StartupBackground.${task.name}", failure)
     }
@@ -313,19 +316,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     private fun createStartupWriterTransaction() = StartupWriterTransaction(
-        preflight = ::prepareStartupWriters,
+        preflight = ::prepareAndMigrateStartupWriters,
         registrations = ::startupWriterRegistrations,
     )
 
-    private fun prepareStartupWriters(): PreparedStartupWriters {
+    private fun prepareAndMigrateStartupWriters(): PreparedStartupWriters {
         backupRuntime.requireWriterGate()
-        val workSpaceDir = java.io.File(filesDir, "WorkSpace")
-        check((workSpaceDir.isDirectory || workSpaceDir.mkdirs()) && workSpaceDir.isDirectory) {
-            "workspace_directory_unavailable"
-        }
-
-        // ProviderManager 可能执行历史配置迁移，因此必须在任何可撤销注册之前完成。
-        val providerManager = ProviderManager.init(this, secretStore)
+        // 第一阶段仅执行读取和不注册外部资源的对象构造。
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
         val nextHapticEnabled = settingsPrefs.getBoolean("haptic_enabled", true)
         val lastModelToLoad = if (
@@ -333,7 +330,6 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             settingsPrefs.getBoolean("local_auto_load", false)
         ) prefs.getString("last_local_model", null) else null
         val inferenceEngine = localInferenceEngine
-        val preparedVectorizationQueue = vectorizationQueue
         val processObserver = object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 inferenceEngine.mainSlot.value.modelPath?.let { mainPath ->
@@ -341,6 +337,21 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 }
             }
         }
+
+        // 第二阶段是进程内幂等 migration；后续注册失败重试时不会重复执行。
+        startupMigrationStage.run(StartupMigration.WORKSPACE_DIRECTORY) {
+            val workSpaceDir = java.io.File(filesDir, "WorkSpace")
+            check((workSpaceDir.isDirectory || workSpaceDir.mkdirs()) && workSpaceDir.isDirectory) {
+                "workspace_directory_unavailable"
+            }
+            Unit
+        }
+        val providerManager = startupMigrationStage.run(StartupMigration.PROVIDER_MIGRATION_AND_INIT) {
+            ProviderManager.init(this, secretStore)
+        }
+
+        // 依赖 ProviderManager 的对象只能在 migration 完成后构造。
+        val preparedVectorizationQueue = vectorizationQueue
         return PreparedStartupWriters(
             providerManager = providerManager,
             settingsPrefs = settingsPrefs,

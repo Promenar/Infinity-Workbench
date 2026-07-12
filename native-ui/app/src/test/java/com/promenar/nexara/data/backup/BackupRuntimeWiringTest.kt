@@ -24,11 +24,15 @@ class BackupRuntimeWiringTest {
 
     @Test
     fun `all business writers live behind one transactional ready-only initializer`() {
-        val preflight = functionBody("private fun prepareStartupWriters(): PreparedStartupWriters")
+        val preflight = functionBody("private fun prepareAndMigrateStartupWriters(): PreparedStartupWriters")
         val registrations = functionBody(
             "private fun startupWriterRegistrations("
         )
         preflightMarkers.forEach { marker -> assertThat(preflight).contains(marker) }
+        assertThat(preflight.indexOf("getSharedPreferences(\"nexara_settings\", MODE_PRIVATE)"))
+            .isLessThan(preflight.indexOf("StartupMigration.WORKSPACE_DIRECTORY"))
+        assertThat(preflight.indexOf("StartupMigration.WORKSPACE_DIRECTORY"))
+            .isLessThan(preflight.indexOf("StartupMigration.PROVIDER_MIGRATION_AND_INIT"))
         registrationMarkers.forEach { marker -> assertThat(registrations).contains(marker) }
 
         val recovery = functionBody("private fun startBackupRecovery()")
@@ -74,9 +78,11 @@ class BackupRuntimeWiringTest {
         )
         val preflightMarkers = listOf(
             "backupRuntime.requireWriterGate()",
-            "workSpaceDir.mkdirs()",
-            "ProviderManager.init(this, secretStore)",
             "getSharedPreferences(\"nexara_settings\", MODE_PRIVATE)",
+            "StartupMigration.WORKSPACE_DIRECTORY",
+            "workSpaceDir.mkdirs()",
+            "StartupMigration.PROVIDER_MIGRATION_AND_INIT",
+            "ProviderManager.init(this, secretStore)",
         )
         val registrationMarkers = listOf(
             "ProcessLifecycleOwner.get().lifecycle.addObserver",
