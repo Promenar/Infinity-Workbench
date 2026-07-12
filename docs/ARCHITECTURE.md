@@ -1,6 +1,6 @@
 # Nexara Architecture 全景
 
-> **最后更新**: 2026-05-19
+> **最后更新**: 2026-07-13
 > **注意**: 本文档为快速参考。完整架构设计见 [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构 + 技术路线择优），实现进度与差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)。
 
 ## 核心架构
@@ -31,7 +31,9 @@ graph TD
 - **Repository 层**: 9 个数据仓库实现（Agent/Document/Folder/KG/Message/Provider/Session/TokenStats/Vector），覆盖率 100%。
 - **ContextBuilder**: 负责多源上下文（RAG/Web/KG/History）的异步调度、打分与 Prompt 合成，支持实时观测回调。所有子源均已接入 NexaraLogger 错误追踪。
 - **MemoryManager**: 核心 RAG 检索引擎，集成 Embedding/Rerank/Hybrid Search 三阶段检索管线。embedQuery/search/rerank 全路径接入日志。
-- **VectorizationQueue**: 文档/记忆向量化任务队列，含进度追踪、重试机制、分段日志。状态通过 `onStateChange` 回调同步至 UI。
+- **VectorizationQueue / DocumentIndexService**: 文档/记忆持久队列与候选索引事务服务。文件内容先构建隔离向量/KG 候选，事务内复核哈希后原子切换；配置切换和进程死亡均可恢复中断任务。
+- **WorkspaceRepository / WorkspaceDeletionTransaction**: Session root 作用域文件仓储。永久删除把派生索引与文件记录纳入同一 Room 事务，并用稳定 tombstone 恢复物理删除的进程死亡窗口。
+- **SharedFileImporter / DurableShareInbox**: SAF 与系统分享共用的逐项导入管线；支持去重、容量重试、部分失败、崩溃恢复及索引回执。
 - **MicroGraphExtractor/GraphExtractor**: 知识图谱提取引擎（JIT 缓存 + 全量提取双模式），全链路接入日志。
 - **ImageGenClient**: OpenAI-compatible 图像生成 API 客户端，支持 url/b64_json 响应格式。
 - **ImageGenerationSkill**: `generate_image` 工具实现，LLM 可调用生成图片并内联展示在对话气泡中。
@@ -57,6 +59,7 @@ graph TD
 - **ADR-015 (2026-05-18)**: **Nexara Metro 调试桥系统 (Phase 1)** — 对标 React Native Metro Server 的非侵入、全链路、无 Socket 双端调试桥。通过 Room 审计回调、OkHttp SSE 拦截拦截器、LlmMiddleware 中间件在 DEBUG 下以结构化格式流式打印，在桌面配合 Node.js TUI 解析器实现 100% 零网络阻碍的秒级极速调试。✅ 已实施。
 - **ADR-016 (2026-05-18)**: **CancellationException 传播模式与 channelFlow 生命周期规范** — 两项结构性缺陷根治：(1) 4 个协议类 `sendPromptSync` 的 `catch (e: Exception)` 捕获了 `CancellationException`，违反 Kotlin 结构化并发契约，导致 `withTimeoutOrNull` 失效。修复方案：在所有 `catch (e: Exception)` 前插入 `catch (e: CancellationException) { throw e }` 透传。(2) `UnifiedLlmClient.sendStream()` 使用 `channelFlow { ... awaitClose {} }`，底层协议流结束后 `awaitClose {}` 无限期挂起导致 Flow 永不完成，造成 `isGenerating` 卡死。修复方案：移除 `awaitClose {}`，让 `channelFlow` 在代码块结束时自然完成。同时 `ChatViewModel.generateMessage()` 添加 `try-finally` 确保任何退出路径都重置 `isGenerating`。✅ 已实施。
 - **ADR-017 (2026-05-18)**: **知识图谱可视化 176+ 大数据量防崩溃与性能优化** — 彻底根治 ECharts 大数据量下悬挂边（Dangling Edges）导致的 JS 解析致命崩溃、无初始布局（`initLayout`）导致的坐标重叠斥力爆炸（NaN），以及 category 索引越界和连线模板解析异常。在 `kg_template.html` 中引入前置悬挂边安全过滤映射表、显式圆周初始布局（`circular`）、精细化的力导向参数调优（手机端 `repulsion: 120`）、安全类别降级映射与 Formatter 回调，并配合全局 try-catch 和红色报错卡片展示，实现 100% 可视化防崩溃与 3 倍以上的渲染收敛性能。✅ 已实施。
+- **ADR-019 (2026-07-13)**: **工作区文件、派生索引与删除恢复采用事务候选切换** — 重索引失败保留旧结果；永久删除统一清理派生数据；稳定 tombstone 与持久队列覆盖进程死亡恢复。✅ 已实施，详见 [ADR-019](./ADR/ADR-019-transactional-workspace-indexing.md)。
 
 ### 新增关键组件 (2026-05-18 移植 & 调试桥落地)
 - **UnifiedLlmClient**: 统一 LLM 调用入口，整合中间件链 + ToolCallLifecycleHandler，自动路由 Protocol。
