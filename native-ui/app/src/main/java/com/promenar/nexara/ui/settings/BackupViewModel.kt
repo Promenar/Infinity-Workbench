@@ -154,8 +154,6 @@ class BackupViewModel internal constructor(
 
     /** password 非空时由本方法取得所有权，并在返回前清零；null 表示保留既有密码。 */
     fun saveWebDavConfig(url: String, user: String, password: CharArray?) {
-        settings.webDavUrl = url
-        settings.webDavUser = user
         try {
             if (password != null) {
                 if (password.isEmpty()) {
@@ -170,6 +168,8 @@ class BackupViewModel internal constructor(
                 }
                 settings.webDavPasswordPlaintext = null
             }
+            settings.webDavUrl = url
+            settings.webDavUser = user
         } finally {
             password?.fill('\u0000')
         }
@@ -241,7 +241,9 @@ class BackupViewModel internal constructor(
 
     /** password 由本方法取得所有权并清零。 */
     fun restoreLocal(input: InputStream, password: CharArray?): Boolean =
-        startRestore(password) { owned -> input.use { operations.stageLocalRestore(it, owned) } }
+        startRestore(password, completion = { runCatching { input.close() } }) { owned ->
+            operations.stageLocalRestore(input, owned)
+        }
 
     /** 必须先 list 并按完整 RemoteBackup 对象选中；password 由本方法取得所有权并清零。 */
     fun restoreSelectedRemote(password: CharArray?): Boolean {
@@ -278,26 +280,32 @@ class BackupViewModel internal constructor(
 
     private fun startRestore(
         password: CharArray?,
+        completion: () -> Unit = {},
         stage: suspend (CharArray?) -> PendingRestoreMetadata,
     ): Boolean {
         val owned = password?.copyOf()
         password?.fill('\u0000')
-        val started = startOperation(BackupOperation.StagingRestore) { token ->
-            try {
-                stage(owned)
-                if (!isCurrent(token)) return@startOperation
-                try {
-                    restartRequester.requestRestart()
-                } catch (_: Throwable) {
-                    fail(token, BackupErrorCode.RESTART_FAILED, "恢复包已暂存，但安全重启请求失败")
-                    return@startOperation
-                }
-                complete(token, BackupOperation.Restarting)
-            } finally {
+        val started = startOperation(
+            phase = BackupOperation.StagingRestore,
+            onCompletion = {
                 owned?.fill('\u0000')
+                completion()
+            },
+        ) { token ->
+            stage(owned)
+            if (!isCurrent(token)) return@startOperation
+            try {
+                restartRequester.requestRestart()
+            } catch (_: Exception) {
+                fail(token, BackupErrorCode.RESTART_FAILED, "恢复包已暂存，但安全重启请求失败")
+                return@startOperation
             }
+            complete(token, BackupOperation.Restarting)
         }
-        if (!started) owned?.fill('\u0000')
+        if (!started) {
+            owned?.fill('\u0000')
+            completion()
+        }
         return started
     }
 
@@ -334,20 +342,21 @@ class BackupViewModel internal constructor(
             }
             return false
         }
-        val started = startOperation(phase) { token ->
-            try {
-                block(
-                    token,
-                    BackupExportOptions(
-                        includeSecrets = include,
-                        password = if (include) ownedPassword else null,
-                        passwordConfirmation = if (include) ownedConfirmation else null,
-                    ),
-                )
-            } finally {
+        val started = startOperation(
+            phase = phase,
+            onCompletion = {
                 ownedPassword?.fill('\u0000')
                 ownedConfirmation?.fill('\u0000')
-            }
+            },
+        ) { token ->
+            block(
+                token,
+                BackupExportOptions(
+                    includeSecrets = include,
+                    password = if (include) ownedPassword else null,
+                    passwordConfirmation = if (include) ownedConfirmation else null,
+                ),
+            )
         }
         if (!started) {
             ownedPassword?.fill('\u0000')
@@ -356,18 +365,22 @@ class BackupViewModel internal constructor(
         return started
     }
 
-    private fun startOperation(phase: BackupOperation, block: suspend (Long) -> Unit): Boolean {
+    private fun startOperation(
+        phase: BackupOperation,
+        onCompletion: () -> Unit = {},
+        block: suspend (Long) -> Unit,
+    ): Boolean {
         val token: Long
         synchronized(operationLock) {
             if (currentJob?.isActive == true) return false
             token = generation.incrementAndGet()
             _uiState.update { it.copy(operation = phase) }
-            currentJob = viewModelScope.launch {
+            val launched = viewModelScope.launch {
                 try {
                     block(token)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch (_: Throwable) {
+                } catch (_: Exception) {
                     fail(token, errorCodeFor(phase), errorMessageFor(phase))
                 } finally {
                     synchronized(operationLock) {
@@ -375,6 +388,8 @@ class BackupViewModel internal constructor(
                     }
                 }
             }
+            launched.invokeOnCompletion { onCompletion() }
+            currentJob = launched
         }
         return true
     }

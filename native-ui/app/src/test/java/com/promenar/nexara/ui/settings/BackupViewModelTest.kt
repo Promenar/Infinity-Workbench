@@ -85,6 +85,29 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `failed secret save wipes input and leaves previous config and plaintext untouched`() {
+        val settings = FakeSettings(
+            webDavUrl = "https://old.invalid/",
+            webDavUser = "old-user",
+            webDavPasswordPlaintext = "legacy",
+        )
+        val secrets = FakeSecrets()
+        val vm = newViewModel(settings = settings, secrets = secrets)
+        settings.webDavPasswordPlaintext = "fallback"
+        secrets.throwOnPut = true
+        val password = "replacement".toCharArray()
+
+        org.junit.jupiter.api.assertThrows<IllegalStateException> {
+            vm.saveWebDavConfig("https://new.invalid/", "new-user", password)
+        }
+
+        assertThat(password).isEqualTo(CharArray("replacement".length))
+        assertThat(settings.webDavUrl).isEqualTo("https://old.invalid/")
+        assertThat(settings.webDavUser).isEqualTo("old-user")
+        assertThat(settings.webDavPasswordPlaintext).isEqualTo("fallback")
+    }
+
+    @Test
     fun `mismatched key password never calls repository and consumes both inputs`() = runTest(dispatcher) {
         val operations = FakeOperations()
         val vm = newViewModel(operations = operations)
@@ -226,6 +249,22 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `busy rejection closes owned local restore stream`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Result<Unit>>()
+        val operations = FakeOperations(testGate = gate)
+        val vm = newViewModel(operations = operations)
+        vm.testConnection()
+        runCurrent()
+        val input = CloseTrackingInputStream(byteArrayOf(1))
+
+        assertThat(vm.restoreLocal(input, null)).isFalse()
+
+        assertThat(input.closed).isTrue()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Testing)
+        vm.cancelOperation()
+    }
+
+    @Test
     fun `clearing ViewModel cancels in flight work`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Result<Unit>>()
         val operations = FakeOperations(testGate = gate)
@@ -255,11 +294,23 @@ class BackupViewModelTest {
 
     private class FakeSecrets : SecretStore {
         private val values = mutableMapOf<SecretId, ByteArray>()
-        override fun put(id: SecretId, value: ByteArray) { values[id] = value.copyOf() }
+        var throwOnPut = false
+        override fun put(id: SecretId, value: ByteArray) {
+            if (throwOnPut) error("secret write failed")
+            values[id] = value.copyOf()
+        }
         override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
         override fun contains(id: SecretId) = id in values
         override fun remove(id: SecretId) { values.remove(id)?.fill(0) }
         fun text(id: SecretId) = values[id]?.toString(Charsets.UTF_8)
+    }
+
+    private class CloseTrackingInputStream(bytes: ByteArray) : ByteArrayInputStream(bytes) {
+        var closed = false
+        override fun close() {
+            closed = true
+            super.close()
+        }
     }
 
     private class FakeRestart : BackupRestartRequester {

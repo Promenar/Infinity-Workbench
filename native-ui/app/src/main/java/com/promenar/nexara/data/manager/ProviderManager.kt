@@ -322,7 +322,14 @@ class ProviderManager private constructor(
     private fun migratePreference(prefs: SharedPreferences, key: String, secretId: SecretId) {
         if (!prefs.contains(key)) return
         val plaintext = prefs.getString(key, null) ?: return
-        if (plaintext.isNotEmpty()) secretStore.put(secretId, plaintext.toByteArray(Charsets.UTF_8))
+        if (plaintext.isNotEmpty() && !secretStore.contains(secretId)) {
+            val bytes = plaintext.toByteArray(Charsets.UTF_8)
+            try {
+                secretStore.put(secretId, bytes)
+            } finally {
+                bytes.fill(0)
+            }
+        }
         check(prefs.edit().remove(key).commit()) { "旧明文凭证删除失败" }
     }
 

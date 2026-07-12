@@ -147,6 +147,18 @@ class ProviderManagerSecretTest {
     }
 
     @Test
+    fun `旧明文迁移不覆盖已存在的安全凭证`() {
+        val backupPrefs = app.getSharedPreferences("nexara_backup_settings", 0)
+        backupPrefs.edit().putString("webdav_pass", "stale-plaintext").commit()
+        secrets.put(SecretCatalog.webDavPassword, "current-secret".encodeToByteArray())
+
+        ProviderManager.createForTest(app, secrets)
+
+        assertThat(secrets.text(SecretCatalog.webDavPassword)).isEqualTo("current-secret")
+        assertThat(backupPrefs.contains("webdav_pass")).isFalse()
+    }
+
+    @Test
     fun `脱敏主配置保存时保留凭证而明确清除才删除`() {
         val manager = ProviderManager.createForTest(app, secrets)
         manager.updateMainProvider(
