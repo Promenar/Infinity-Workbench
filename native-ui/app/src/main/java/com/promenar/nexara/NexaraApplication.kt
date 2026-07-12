@@ -93,6 +93,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.promenar.nexara.startup.StartupBackgroundHealthMonitor
 import com.promenar.nexara.startup.StartupBackgroundTask
 import com.promenar.nexara.startup.StartupBackgroundTaskHealth
@@ -297,7 +298,6 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             return
         }
 
-        backupRuntime = createBackupRuntime()
         startBackupRecovery()
     }
 
@@ -316,13 +316,25 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         if (startupRecoveryJob?.isActive == true || _startupState.value == BackupStartupState.Ready) return
         _startupState.value = BackupStartupState.Recovering
         startupRecoveryJob = startupScope.launch {
-            if (backupRuntime.recoverBeforeWriters() == BackupStartupState.Ready) {
-                _startupState.value = runCatching {
-                    initializeAfterRecoveryOnce()
-                    BackupStartupState.Ready
-                }.getOrElse { BackupStartupState.Blocked }
-            } else {
+            try {
+                val runtime = withContext(Dispatchers.IO) {
+                    if (!::backupRuntime.isInitialized) backupRuntime = createBackupRuntime()
+                    backupRuntime
+                }
+                if (runtime.recoverBeforeWriters() == BackupStartupState.Ready) {
+                    _startupState.value = runCatching {
+                        initializeAfterRecoveryOnce()
+                        BackupStartupState.Ready
+                    }.getOrElse { BackupStartupState.Blocked }
+                } else {
+                    _startupState.value = BackupStartupState.Blocked
+                }
+            } catch (error: Exception) {
+                NexaraLogger.logError("BackupStartupRecovery", error)
                 _startupState.value = BackupStartupState.Blocked
+            } catch (error: Error) {
+                _startupState.value = BackupStartupState.Blocked
+                throw error
             }
         }
     }

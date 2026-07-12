@@ -38,6 +38,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 enum class BackupErrorCode {
@@ -163,6 +165,7 @@ private data class RestoreControl(
     val operationId: String,
     var restartAuthorized: Boolean = false,
     var durableAuthorized: Boolean = false,
+    var recoverableResourceCloseBlock: Boolean = false,
 )
 
 private class OnceCleanup(private val action: () -> Unit) {
@@ -209,6 +212,7 @@ class BackupViewModel internal constructor(
     private var currentCleanup: OnceCleanup? = null
     private var activeWebDavRevision: Long? = null
     private var configMutationRevision: Long? = null
+    private var configJob: Job? = null
     private var restoreControl: RestoreControl? = null
     private var restoreBlocked = false
     private var webDavBlocked = false
@@ -219,7 +223,9 @@ class BackupViewModel internal constructor(
     val uiState: StateFlow<BackupUiState> = _uiState.asStateFlow()
 
     constructor(application: Application) : this(
-        operations = RepositoryBackupOperations(BackupRepository(application)),
+        operations = LazyBackupOperations(Dispatchers.IO) {
+            RepositoryBackupOperations(BackupRepository(application))
+        },
         settings = SharedPreferencesBackupSettingsStore(
             application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
         ),
@@ -296,9 +302,12 @@ class BackupViewModel internal constructor(
         }
         if (!synchronousIoForTests) {
             _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
-            operationScope.launch {
+            launchConfigMutation(reservation.revision) {
                 try {
                     withContext(ioDispatcher) { saveWebDavConfigNow(url, user, ownedPassword, reservation) }
+                } catch (cancelled: CancellationException) {
+                    publishConfigFailureIfNeeded("WebDAV 配置保存已中断")
+                    throw cancelled
                 } catch (error: Exception) {
                     publishConfigFailureIfNeeded("保存 WebDAV 配置失败")
                 } catch (error: Error) {
@@ -374,7 +383,7 @@ class BackupViewModel internal constructor(
             return false
         }
         _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
-        operationScope.launch {
+        launchConfigMutation(reservation.revision) {
             try {
                 withContext(ioDispatcher) {
                     saveWebDavConfigNow(
@@ -392,8 +401,12 @@ class BackupViewModel internal constructor(
                     reservation.revision,
                     BackupOperation.Success("连接测试成功"),
                 )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
-                withContext(ioDispatcher) { resolveSaveAndTestFailure(reservation.revision, fatal = false) }
+                withContext(NonCancellable + ioDispatcher) {
+                    resolveSaveAndTestFailure(reservation.revision, fatal = false)
+                }
             } catch (error: Error) {
                 try {
                     withContext(NonCancellable + ioDispatcher) {
@@ -414,9 +427,12 @@ class BackupViewModel internal constructor(
         val reservation = synchronized(operationLock) { reserveWebDavMutationLocked() } ?: return false
         if (!synchronousIoForTests) {
             _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
-            operationScope.launch {
+            launchConfigMutation(reservation.revision) {
                 try {
                     withContext(ioDispatcher) { deleteWebDavPasswordNow(reservation) }
+                } catch (cancelled: CancellationException) {
+                    publishConfigFailureIfNeeded("WebDAV 密码删除已中断")
+                    throw cancelled
                 } catch (error: Exception) {
                     publishConfigFailureIfNeeded("删除 WebDAV 密码失败")
                 } catch (error: Error) {
@@ -464,9 +480,11 @@ class BackupViewModel internal constructor(
         }
         if (!synchronousIoForTests) {
             _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
-            operationScope.launch {
+            launchConfigMutation(revision) {
                 try {
                     withContext(ioDispatcher) { resetWebDavAuthNow(revision) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (error: Error) {
                     publishFatalConfigFailure(error)
                     throw error
@@ -674,18 +692,25 @@ class BackupViewModel internal constructor(
         try {
             cancellation.run()
         } catch (error: Throwable) {
-            restoreOperationId?.let(::markRestoreCleanupBlocked)
+            restoreOperationId?.let { markRestoreResourceCloseBlocked(it, error !is Error) }
             if (restoreOperationId == null || error is Error) throw error
         }
     }
 
     override fun onCleared() {
-        synchronized(operationLock) { cleared = true }
-        cancelOperation()
-        synchronized(operationLock) {
-            if (currentJob == null) operationScope.cancel()
+        val configToCancel = synchronized(operationLock) {
+            cleared = true
+            configJob
         }
-        super.onCleared()
+        try {
+            cancelOperation()
+        } finally {
+            configToCancel?.cancel()
+            synchronized(operationLock) {
+                if (currentJob == null && configJob == null) operationScope.cancel()
+            }
+            super.onCleared()
+        }
     }
 
     private fun startRestore(
@@ -718,6 +743,9 @@ class BackupViewModel internal constructor(
                         requestAuthorizedRestart(operationId)
                     } catch (error: Exception) {
                         markRestartAuthorizationBlocked(operationId)
+                    } catch (error: Error) {
+                        markRestartAuthorizationBlocked(operationId)
+                        throw error
                     }
                 }
             } finally {
@@ -725,6 +753,7 @@ class BackupViewModel internal constructor(
                     withContext(NonCancellable) {
                         try {
                             operations.discardPendingRestore(operationId)
+                            releaseRecoverableResourceCloseBlock(operationId)
                         } catch (error: Throwable) {
                             markRestoreCleanupBlocked(operationId)
                             throw error
@@ -814,8 +843,7 @@ class BackupViewModel internal constructor(
         val token: Long
         val cleanup = OnceCleanup(onCompletion)
         val launched = synchronized(operationLock) {
-            if (!initialized || currentJob != null || restoreBlocked || cleared || restoreControl?.restartAuthorized == true) return false
-            if (webDavRevision != null && configMutationRevision != null) return false
+            if (!initialized || currentJob != null || configMutationRevision != null || restoreBlocked || cleared || restoreControl?.restartAuthorized == true) return false
             if (webDavRevision != null && webDavRevision != configRevision.get()) return false
             token = generation.incrementAndGet()
             _uiState.update { it.copy(operation = phase) }
@@ -845,7 +873,7 @@ class BackupViewModel internal constructor(
                                     _uiState.update { it.copy(operation = BackupOperation.Idle) }
                                 }
                             }
-                            if (cleared) operationScope.cancel()
+                            if (cleared && configJob == null) operationScope.cancel()
                         }
                     }
                 }
@@ -943,6 +971,9 @@ class BackupViewModel internal constructor(
                 requestAuthorizedRestart(control.operationId)
             } catch (error: Exception) {
                 markRestartAuthorizationBlocked(control.operationId)
+            } catch (error: Error) {
+                markRestartAuthorizationBlocked(control.operationId)
+                throw error
             }
         }
         return true
@@ -969,6 +1000,9 @@ class BackupViewModel internal constructor(
                 }
             } catch (error: Exception) {
                 markRestoreCleanupBlocked(operationId)
+            } catch (error: Error) {
+                markRestoreCleanupBlocked(operationId)
+                throw error
             }
         }
         return true
@@ -988,6 +1022,32 @@ class BackupViewModel internal constructor(
                         "已取消的恢复事务清理失败，已禁止继续操作",
                     ))
                 }
+            }
+        }
+    }
+
+    private fun markRestoreResourceCloseBlocked(operationId: String, recoverable: Boolean) {
+        synchronized(operationLock) {
+            val control = restoreControl
+            if (control?.operationId == operationId) {
+                control.recoverableResourceCloseBlock = recoverable
+                restoreBlocked = true
+                _uiState.update { it.copy(operation = BackupOperation.Blocked(
+                    BackupErrorCode.RESTORE_CLEANUP_FAILED,
+                    "恢复输入流关闭失败，正在确认暂存事务是否已安全清理",
+                )) }
+            }
+        }
+    }
+
+    private fun releaseRecoverableResourceCloseBlock(operationId: String) {
+        synchronized(operationLock) {
+            val control = restoreControl
+            if (control?.operationId == operationId && control.recoverableResourceCloseBlock && !control.restartAuthorized) {
+                control.recoverableResourceCloseBlock = false
+                restoreBlocked = false
+                restoreControl = null
+                _uiState.update { it.copy(operation = BackupOperation.Idle) }
             }
         }
     }
@@ -1035,6 +1095,7 @@ class BackupViewModel internal constructor(
 
     private fun reserveWebDavMutationLocked(): ConfigMutationReservation? {
         if (!initialized || configMutationRevision != null || webDavBlocked || restoreControl != null || cleared) return null
+        if (currentJob != null && activeWebDavRevision == null) return null
         val revision = configRevision.incrementAndGet()
         configMutationRevision = revision
         val cancellation = if (activeWebDavRevision != null) {
@@ -1068,6 +1129,83 @@ class BackupViewModel internal constructor(
             configMutationRevision = null
             _uiState.update { it.copy(operation = operation) }
         }
+    }
+
+    private fun launchConfigMutation(revision: Long, block: suspend () -> Unit) {
+        lateinit var job: Job
+        job = operationScope.launch(start = CoroutineStart.LAZY) {
+            var operationFailure: Throwable? = null
+            try {
+                block()
+            } catch (error: Throwable) {
+                operationFailure = error
+                throw error
+            } finally {
+                try {
+                    withContext(NonCancellable + ioDispatcher) {
+                        reconcileIncompleteConfigMutation(revision)
+                    }
+                } catch (reconcileFailure: Throwable) {
+                    if (reconcileFailure is Error) {
+                        operationFailure?.let { reconcileFailure.addSuppressed(it) }
+                        throw reconcileFailure
+                    }
+                    operationFailure?.addSuppressed(reconcileFailure) ?: throw reconcileFailure
+                }
+            }
+        }
+        val cancelImmediately = synchronized(operationLock) {
+            check(configMutationRevision == revision) { "WebDAV 配置操作已失效" }
+            // 上一个 Job 可能只剩 finally/缓存清理；reservation 已释放后允许新操作接管槽位。
+            configJob = job
+            cleared
+        }
+        job.invokeOnCompletion {
+            synchronized(operationLock) {
+                if (configJob === job) configJob = null
+                if (cleared && currentJob == null) operationScope.cancel()
+            }
+        }
+        job.start()
+        if (cancelImmediately) job.cancel()
+    }
+
+    private fun reconcileIncompleteConfigMutation(revision: Long) {
+        if (synchronized(operationLock) { configMutationRevision != revision }) return
+        var endpoint: String? = null
+        var username: String? = null
+        var hasPassword = false
+        var canonicalFailure: Throwable? = null
+        val canonicalAvailable = try {
+            readCanonicalAuth().use {
+                endpoint = it.endpoint
+                username = it.username
+                hasPassword = it.passwordBytes.isNotEmpty()
+            }
+            true
+        } catch (error: Throwable) {
+            canonicalFailure = error
+            false
+        }
+        synchronized(operationLock) {
+            if (configMutationRevision != revision) return
+            configMutationRevision = null
+            webDavBlocked = !canonicalAvailable
+            _uiState.update { state -> state.copy(
+                webdavUrl = endpoint ?: state.webdavUrl,
+                webdavUser = username ?: state.webdavUser,
+                hasWebDavPassword = if (canonicalAvailable) hasPassword else state.hasWebDavPassword,
+                operation = if (canonicalAvailable) BackupOperation.Error(
+                    BackupErrorCode.CONFIGURATION_MISSING,
+                    "WebDAV 配置操作已中断，已按安全存储中的实际结果恢复",
+                ) else BackupOperation.Blocked(
+                    BackupErrorCode.CONNECTION_FAILED,
+                    "WebDAV 配置操作中断且安全记录无法读取，已故障关闭",
+                ),
+            ) }
+        }
+        if (canonicalAvailable) cleanupWebDavCachesBestEffort(endpoint.orEmpty(), username.orEmpty())
+        (canonicalFailure as? Error)?.let { throw it }
     }
 
     private fun resolveSaveAndTestFailure(revision: Long, fatal: Boolean) {
@@ -1319,6 +1457,49 @@ class BackupViewModel internal constructor(
 }
 
 internal fun BackupUiState.withKeysIncluded(include: Boolean): BackupUiState = copy(includeKeys = include)
+
+internal class LazyBackupOperations(
+    private val factoryDispatcher: CoroutineDispatcher,
+    private val factory: () -> BackupOperations,
+) : BackupOperations {
+    private val mutex = Mutex()
+    @Volatile private var cached: BackupOperations? = null
+
+    private suspend fun delegate(): BackupOperations = cached ?: mutex.withLock {
+        cached ?: withContext(factoryDispatcher) { factory() }.also { cached = it }
+    }
+
+    override suspend fun export(options: BackupExportOptions) = withContext(factoryDispatcher) {
+        delegate().export(options)
+    }
+    override suspend fun upload(config: WebDavConfig, options: BackupExportOptions) = withContext(factoryDispatcher) {
+        delegate().upload(config, options)
+    }
+    override suspend fun testRemote(config: WebDavConfig) = withContext(factoryDispatcher) {
+        delegate().testRemote(config)
+    }
+    override suspend fun listRemote(config: WebDavConfig) = withContext(factoryDispatcher) {
+        delegate().listRemote(config)
+    }
+    override fun newRestoreOperationId(): String = cached?.newRestoreOperationId() ?: UUID.randomUUID().toString()
+    override suspend fun stageLocalRestore(
+        operationId: String,
+        input: InputStream,
+        password: CharArray?,
+    ) = withContext(factoryDispatcher) { delegate().stageLocalRestore(operationId, input, password) }
+    override suspend fun stageRemoteRestore(
+        operationId: String,
+        config: WebDavConfig,
+        selected: RemoteBackup,
+        password: CharArray?,
+    ) = withContext(factoryDispatcher) { delegate().stageRemoteRestore(operationId, config, selected, password) }
+    override suspend fun discardPendingRestore(operationId: String) = withContext(factoryDispatcher) {
+        delegate().discardPendingRestore(operationId)
+    }
+    override suspend fun authorizePendingRestore(operationId: String) = withContext(factoryDispatcher) {
+        delegate().authorizePendingRestore(operationId)
+    }
+}
 
 private class RepositoryBackupOperations(private val repository: BackupRepository) : BackupOperations {
     override suspend fun export(options: BackupExportOptions) = repository.export(options)

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentLinkedQueue
 
 class BackupRepositoryTypedTest {
     @Test
@@ -128,6 +129,56 @@ class BackupRepositoryTypedTest {
         }
         assertThat(pending.stageCalls).isEqualTo(0)
         oversized.fill(0)
+    }
+
+    @Test
+    fun `remote restore download validation and pending stage all stay off caller thread`() = runBlocking {
+        val caller = Thread.currentThread()
+        val observedThreads = ConcurrentLinkedQueue<Thread>()
+        val remote = RemoteBackup("remote.nexara", 3, 1, null)
+        val config = WebDavConfig("https://dav.invalid/", "u", "p")
+        val codec = object : BackupPackageCodec {
+            override fun encode(snapshot: BackupSnapshot, options: com.promenar.nexara.data.backup.BackupOptions) = error("unused")
+            override fun decode(bytes: ByteArray, password: CharArray?): ValidatedBackup {
+                observedThreads += Thread.currentThread()
+                return ValidatedBackup(BackupManifest(1, 1, "test", 1, emptyList(), false, false))
+            }
+        }
+        val webDav = object : WebDavBackupClient {
+            override suspend fun test(config: WebDavConfig) = Result.success(Unit)
+            override suspend fun uploadAtomic(config: WebDavConfig, fileName: String, bytes: ByteArray) = error("unused")
+            override suspend fun uploadAndPrune(config: WebDavConfig, fileName: String, bytes: ByteArray, keep: Int) = error("unused")
+            override suspend fun list(config: WebDavConfig): List<RemoteBackup> {
+                observedThreads += Thread.currentThread()
+                return listOf(remote)
+            }
+            override suspend fun download(config: WebDavConfig, backup: RemoteBackup): ByteArray {
+                observedThreads += Thread.currentThread()
+                return byteArrayOf(1, 2, 3)
+            }
+            override suspend fun prune(config: WebDavConfig, keep: Int) = error("unused")
+        }
+        val pending = object : PendingRestoreStore {
+            override fun begin(expectedTxId: String) { observedThreads += Thread.currentThread() }
+            override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
+                observedThreads += Thread.currentThread()
+                return PendingRestoreMetadata(
+                    expectedTxId,
+                    MessageDigest.getInstance("SHA-256").digest(packageBytes),
+                    PendingRestorePhase.STAGING,
+                )
+            }
+            override fun authorize(expectedTxId: String) = error("unused")
+            override fun read(): PendingRestorePayload? = null
+            override fun clear(expectedTxId: String) = Unit
+            override fun cancel(expectedTxId: String) = Unit
+        }
+
+        BackupRepository(RecordingSource(), codec, webDav, pending)
+            .stageRemoteRestore("remote-op", config, remote, null)
+
+        assertThat(observedThreads).isNotEmpty()
+        assertThat(observedThreads.none { it === caller }).isTrue()
     }
 
     private class RecordingSource : BackupDataSource {

@@ -233,7 +233,7 @@ fun BackupSettingsScreen(
                         ExportButton(
                             icon = Icons.Rounded.Download,
                             title = stringResource(R.string.backup_export_title),
-                            subtitle = if (uiState.isExporting) "Exporting..." else stringResource(R.string.backup_export_subtitle),
+                            subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
                             modifier = Modifier.weight(1f),
                             onClick = { exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara") }
                         )
@@ -241,7 +241,7 @@ fun BackupSettingsScreen(
                     ExportButton(
                         icon = Icons.Rounded.Upload,
                         title = stringResource(R.string.backup_import_title),
-                        subtitle = if (uiState.isImporting) "Importing..." else stringResource(R.string.backup_import_subtitle),
+                        subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
                         modifier = Modifier.weight(1f),
                         onClick = { importLauncher.launch("*/*") }
                     )
@@ -319,14 +319,14 @@ fun BackupSettingsScreen(
                                         onClick = { viewModel.upload(null, null) }
                                     )
                                 }
-                                ActionButton(
-                                    label = stringResource(R.string.backup_config_webdav),
-                                    icon = Icons.Rounded.Link,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    onClick = { showWebdavSheet = true }
-                                )
                             }
                         }
+                        ActionButton(
+                            label = stringResource(R.string.backup_config_webdav),
+                            icon = Icons.Rounded.Link,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { showWebdavSheet = true }
+                        )
                     }
                 }
             }
@@ -383,7 +383,7 @@ fun BackupSettingsScreen(
                     color = NexaraColors.OnSurface
                 )
                 GlassInputField(stringResource(R.string.backup_webdav_url_label), tempWebdavUrl, { tempWebdavUrl = it }, stringResource(R.string.backup_webdav_url_hint))
-                GlassInputField(stringResource(R.string.backup_webdav_user_label), tempWebdavUser, { tempWebdavUser = it }, "user")
+                GlassInputField(stringResource(R.string.backup_webdav_user_label), tempWebdavUser, { tempWebdavUser = it }, stringResource(R.string.backup_webdav_user_hint))
                 GlassInputField(stringResource(R.string.backup_webdav_pass_label), tempWebdavPass, { tempWebdavPass = it }, "••••••••", isPassword = true)
                 ActionButton(
                     label = stringResource(R.string.backup_test_connection),
@@ -426,7 +426,7 @@ fun BackupSettingsScreen(
                     blockedCode == BackupErrorCode.CONFIGURATION_MISSING
                 ) {
                     ActionButton(
-                        label = "重置 WebDAV 安全配置",
+                        label = stringResource(R.string.backup_reset_webdav_security),
                         icon = Icons.Rounded.DeleteForever,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { viewModel.resetWebDavAuth() },

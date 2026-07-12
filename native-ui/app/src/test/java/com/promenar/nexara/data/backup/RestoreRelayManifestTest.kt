@@ -33,8 +33,7 @@ class RestoreRelayManifestTest {
         val onCreate = source.substringAfter("override fun onCreate()")
             .substringBefore("fun retryStartupRecovery")
 
-        assertThat(onCreate.indexOf("restoreRelayEarlyExit = true"))
-            .isLessThan(onCreate.indexOf("backupRuntime = createBackupRuntime()"))
+        assertThat(onCreate).doesNotContain("createBackupRuntime()")
         assertThat(onCreate.indexOf("return"))
             .isLessThan(onCreate.indexOf("startBackupRecovery()"))
     }

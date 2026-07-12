@@ -122,10 +122,10 @@ class BackupRepository internal constructor(
         config: WebDavConfig,
         selected: RemoteBackup,
         password: CharArray? = null,
-    ): PendingRestoreMetadata {
-        withContext(Dispatchers.IO) { pendingStore.begin(operationId) }
+    ): PendingRestoreMetadata = withContext(Dispatchers.IO) {
+        pendingStore.begin(operationId)
         val bytes = downloadRemote(config, selected)
-        return try {
+        try {
             stageValidated(operationId, bytes, password)
         } finally {
             bytes.fill(0)

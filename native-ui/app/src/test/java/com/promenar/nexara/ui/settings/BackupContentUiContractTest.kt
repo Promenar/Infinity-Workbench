@@ -55,5 +55,37 @@ class BackupContentUiContractTest {
         assertThat(source).contains("if (accepted) tempWebdavPass = \"\"")
         assertThat(source).contains("viewModel.resetWebDavAuth()")
         assertThat(source).doesNotContain("if (accepted) showWebdavSheet = false")
+        assertThat(source).contains(
+            "                            }\n" +
+                "                        }\n" +
+                "                        ActionButton(\n" +
+                "                            label = stringResource(R.string.backup_config_webdav)",
+        )
+        val resetSection = source.substring(
+            source.indexOf("val blockedCode ="),
+            source.indexOf("private fun ExportButton"),
+        )
+        assertThat(resetSection).contains("BackupErrorCode.CONNECTION_FAILED")
+        assertThat(resetSection).contains("BackupErrorCode.CONFIGURATION_MISSING")
+        assertThat(resetSection).doesNotContain("BackupErrorCode.RESTORE_FAILED")
+        assertThat(resetSection).contains("stringResource(R.string.backup_reset_webdav_security)")
+        assertThat(source).doesNotContain("\"Exporting...\"")
+        assertThat(source).doesNotContain("\"Importing...\"")
+        assertThat(source).doesNotContain(", \"user\")")
+        assertThat(source).contains("stringResource(R.string.backup_exporting)")
+        assertThat(source).contains("stringResource(R.string.backup_importing)")
+        assertThat(source).contains("stringResource(R.string.backup_webdav_user_hint)")
+    }
+
+    @Test
+    fun `production BackupRepository construction is deferred behind IO lazy operations`() {
+        val source = String(
+            Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/ui/settings/BackupViewModel.kt")),
+            Charsets.UTF_8,
+        )
+
+        assertThat(source).contains("operations = LazyBackupOperations(Dispatchers.IO)")
+        assertThat(source).contains("RepositoryBackupOperations(BackupRepository(application))")
+        assertThat(source).doesNotContain("operations = RepositoryBackupOperations(BackupRepository(application))")
     }
 }

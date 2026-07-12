@@ -15,7 +15,7 @@ class BackupRuntimeWiringTest {
     fun `application onCreate starts recovery asynchronously without business writers`() {
         val onCreate = functionBody("override fun onCreate()")
 
-        assertThat(onCreate).contains("backupRuntime = createBackupRuntime()")
+        assertThat(onCreate).doesNotContain("createBackupRuntime()")
         assertThat(onCreate).contains("startBackupRecovery()")
         assertThat(onCreate).doesNotContain("recoverBeforeWriters()")
         writerMarkers.forEach { marker -> assertThat(onCreate).doesNotContain(marker) }
@@ -36,7 +36,11 @@ class BackupRuntimeWiringTest {
         registrationMarkers.forEach { marker -> assertThat(registrations).contains(marker) }
 
         val recovery = functionBody("private fun startBackupRecovery()")
-        assertThat(recovery).contains("backupRuntime.recoverBeforeWriters()")
+        assertThat(recovery).contains("withContext(Dispatchers.IO)")
+        assertThat(recovery).contains("backupRuntime = createBackupRuntime()")
+        assertThat(recovery).contains("runtime.recoverBeforeWriters()")
+        assertThat(recovery).contains("catch (error: Exception)")
+        assertThat(recovery).contains("_startupState.value = BackupStartupState.Blocked")
         assertThat(recovery).contains("BackupStartupState.Ready")
         assertThat(recovery).contains("initializeAfterRecoveryOnce()")
         val initialize = recovery.indexOf("initializeAfterRecoveryOnce()")
@@ -53,6 +57,21 @@ class BackupRuntimeWiringTest {
     fun `runtime remains private and production factory uses secure datasource`() {
         assertThat(source).contains("private lateinit var backupRuntime: BackupRuntime")
         assertThat(source).contains("BackupRuntime.createAndroid(this, database, secretStore)")
+        assertThat(source.indexOf("withContext(Dispatchers.IO)")).isLessThan(
+            source.indexOf("backupRuntime = createBackupRuntime()"),
+        )
+    }
+
+    @Test
+    fun `failed runtime creation is retryable and concurrent retries share the active job gate`() {
+        val recovery = functionBody("private fun startBackupRecovery()")
+
+        assertThat(recovery).contains("startupRecoveryJob?.isActive == true")
+        assertThat(recovery).contains("if (!::backupRuntime.isInitialized) backupRuntime = createBackupRuntime()")
+        assertThat(recovery.indexOf("catch (error: Exception)")).isLessThan(
+            recovery.lastIndexOf("_startupState.value = BackupStartupState.Blocked"),
+        )
+        assertThat(recovery).doesNotContain("backupRuntime = null")
     }
 
     private fun functionBody(signature: String): String {
