@@ -42,6 +42,17 @@ class GraphExtractor(
         text: String,
         docId: String? = null,
         scope: KgScope? = null
+    ): ExtractionResult = extract(text, docId, scope, persist = true)
+
+    /** 仅构建候选图谱，不触碰现有图谱；由上层与向量索引在同一事务内切换。 */
+    suspend fun extractCandidate(text: String, docId: String? = null): ExtractionResult =
+        extract(text, docId, scope = null, persist = false)
+
+    private suspend fun extract(
+        text: String,
+        docId: String?,
+        scope: KgScope?,
+        persist: Boolean,
     ): ExtractionResult {
         return try {
             val chunks = splitText(text)
@@ -158,29 +169,31 @@ class GraphExtractor(
                 return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "No nodes or edges extracted")
             }
 
-            // 重新抽取时先清除该文档的旧图谱数据，避免 weight 累加和重复边（事务性原子清空）
-            if (docId != null) {
-                graphStore.clearGraphForDoc(docId)
-            }
-
-            val nameToIdMap = mutableMapOf<String, String>()
-            for (node in mergedNodes) {
-                try {
-                    val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
-                    nameToIdMap[node.name] = id
-                } catch (e: Exception) {
-                    NexaraLogger.logError("[RAG][GraphExtractor] Node upsert failed", e)
+            if (persist) {
+                // 兼容旧调用路径；候选路径严禁在事务切换前清除旧图谱。
+                if (docId != null) {
+                    graphStore.clearGraphForDoc(docId)
                 }
-            }
 
-            for (edge in mergedEdges) {
-                val sourceId = nameToIdMap[edge.source]
-                val targetId = nameToIdMap[edge.target]
-                if (sourceId != null && targetId != null) {
+                val nameToIdMap = mutableMapOf<String, String>()
+                for (node in mergedNodes) {
                     try {
-                        graphStore.createEdge(sourceId, targetId, edge.relation, docId, edge.weight, scope)
+                        val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
+                        nameToIdMap[node.name] = id
                     } catch (e: Exception) {
-                        NexaraLogger.logError("[RAG][GraphExtractor] Edge create failed", e)
+                        NexaraLogger.logError("[RAG][GraphExtractor] Node upsert failed", e)
+                    }
+                }
+
+                for (edge in mergedEdges) {
+                    val sourceId = nameToIdMap[edge.source]
+                    val targetId = nameToIdMap[edge.target]
+                    if (sourceId != null && targetId != null) {
+                        try {
+                            graphStore.createEdge(sourceId, targetId, edge.relation, docId, edge.weight, scope)
+                        } catch (e: Exception) {
+                            NexaraLogger.logError("[RAG][GraphExtractor] Edge create failed", e)
+                        }
                     }
                 }
             }

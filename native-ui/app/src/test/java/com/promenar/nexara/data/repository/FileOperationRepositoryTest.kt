@@ -11,6 +11,8 @@ import com.promenar.nexara.domain.repository.PatchOperation
 import com.promenar.nexara.domain.repository.PatchResult
 import com.promenar.nexara.domain.repository.WriteResult
 import com.promenar.nexara.infra.util.Sha256Utils
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.FileIndexEventSink
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -220,5 +222,84 @@ class FileOperationRepositoryTest {
         assertThat(File(testDir, "test.txt").readText()).isEqualTo("stable")
         assertThat(db.fileEntryDao().getByUuid("root-1", entry.uuid)!!.hash).isEqualTo(entry.hash)
         assertThat(File(testDir, ".nexara_versions").walkTopDown().filter { it.isFile }.toList()).isEmpty()
+    }
+
+    @Test
+    fun `成功写入与patch在提交后发布带新hash的索引事件`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "line1\nline2")
+        val firstSinkEvents = mutableListOf<FileIndexEvent>()
+        val secondSinkEvents = mutableListOf<FileIndexEvent>()
+        var activeSink = FileIndexEventSink(firstSinkEvents::add)
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink { event -> activeSink.publish(event) },
+        )
+
+        val write = repo.writeFileAtomic(ROOT, entry.uuid, "line1\nwrite", "session", entry.hash)
+        val writeHash = (write as WriteResult.Success).newHash
+        activeSink = FileIndexEventSink(secondSinkEvents::add)
+        val patch = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("replace_lines", startLine = 2, endLine = 2, newContent = "patch")),
+            writeHash,
+        ) as PatchResult.Success
+
+        assertThat(firstSinkEvents).containsExactly(FileIndexEvent.Changed(ROOT, entry.uuid, writeHash))
+        assertThat(secondSinkEvents).containsExactly(FileIndexEvent.Changed(ROOT, entry.uuid, patch.newHash))
+    }
+
+    @Test
+    fun `写入失败冲突与相同内容不发布索引事件`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        val events = mutableListOf<FileIndexEvent>()
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink(events::add),
+        )
+
+        repo.writeFileAtomic(ROOT, entry.uuid, "stable", "session", entry.hash)
+        repo.writeFileAtomic(ROOT, entry.uuid, "changed", "session", "wrong-hash")
+
+        assertThat(events).isEmpty()
+    }
+
+    @Test
+    fun `索引事件入队失败时写入结果明确标记但不伪装文件写失败`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        db.fileEntryDao().update(entry.copy(vectorizedAt = 1L, kgExtractedAt = 1L))
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink { throw IllegalStateException("queue unavailable") },
+        )
+
+        val result = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", entry.hash)
+
+        assertThat(result).isInstanceOf(WriteResult.Success::class.java)
+        result as WriteResult.Success
+        assertThat(result.indexQueued).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(ROOT, entry.uuid)?.hash).isEqualTo(result.newHash)
+        assertThat(db.fileEntryDao().getByUuid(ROOT, entry.uuid)?.vectorizedAt).isNull()
+        assertThat(db.fileEntryDao().getByUuid(ROOT, entry.uuid)?.kgExtractedAt).isNull()
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("committed")
+
+        val patch = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("replace_lines", startLine = 1, endLine = 1, newContent = "patched")),
+            result.newHash,
+        ) as PatchResult.Success
+        assertThat(patch.indexQueued).isFalse()
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("patched")
+    }
+
+    private companion object {
+        const val ROOT = "root-1"
     }
 }

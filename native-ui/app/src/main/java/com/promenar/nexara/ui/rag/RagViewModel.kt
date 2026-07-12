@@ -498,11 +498,8 @@ class RagViewModel(
                 } else {
                     listOfNotNull(entry)
                 }
-                entriesToClean
-                    .filter { !it.isDirectory }
-                    .forEach { cleanupDocumentArtifacts(it.uuid) }
-
                 workspaceRepository.permanentDelete(rootUuid, id)
+                entriesToClean.filterNot { it.isDirectory }.forEach { clearDocumentRuntimeState(it.uuid) }
                 loadStats()
             } catch (e: Exception) {
                 NexaraLogger.logError("RagViewModel.deleteCollection", e)
@@ -527,8 +524,8 @@ class RagViewModel(
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
                 for (id in ids) {
-                    cleanupDocumentArtifacts(id)
                     workspaceRepository.permanentDelete(rootUuid, id)
+                    clearDocumentRuntimeState(id)
                 }
                 loadStats()
             } catch (e: Exception) {
@@ -811,18 +808,11 @@ class RagViewModel(
         }
     }
 
-    private suspend fun cleanupDocumentArtifacts(docId: String) {
-        try {
-            app.vectorizationQueue.cancel(docId)
-            vectorRepository.deleteByDocument(docId)
-            app.graphStore.clearGraphForDoc(docId)
-            _indexingDocIds.update { ids -> ids - docId }
-            _kgExtractionStates.update { states -> states - docId }
-            _kgExtractingIds.remove(docId)
-        } catch (e: Exception) {
-            NexaraLogger.logError("RagViewModel.cleanupDocumentArtifacts($docId)", e)
-            throw e
-        }
+    private fun clearDocumentRuntimeState(docId: String) {
+        app.vectorizationQueue.cancel(docId)
+        _indexingDocIds.update { ids -> ids - docId }
+        _kgExtractionStates.update { states -> states - docId }
+        _kgExtractingIds.remove(docId)
     }
 
     fun clearAllVectors(withGraph: Boolean = false) {

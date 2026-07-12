@@ -43,6 +43,7 @@ import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,10 +51,15 @@ import java.util.Locale
 @Composable
 fun RecycleBinPanel(
     workspaceRootUuid: String?,
-    workspaceRepo: IWorkspaceRepository
+    workspaceRepo: IWorkspaceRepository,
+    scopedFiles: List<FileEntry>? = null,
 ) {
-    val recycledFiles by workspaceRepo.observeRecycleBin(workspaceRootUuid ?: "")
-        .collectAsState(initial = emptyList())
+    val recycleFlow = when {
+        scopedFiles != null -> flowOf(scopedFiles)
+        workspaceRootUuid != null -> workspaceRepo.observeRecycleBin(workspaceRootUuid)
+        else -> flowOf(emptyList())
+    }
+    val recycledFiles by recycleFlow.collectAsState(initial = scopedFiles.orEmpty())
 
     var showPermanentDeleteConfirm by remember { mutableStateOf<FileEntry?>(null) }
     var showEmptyConfirm by remember { mutableStateOf(false) }

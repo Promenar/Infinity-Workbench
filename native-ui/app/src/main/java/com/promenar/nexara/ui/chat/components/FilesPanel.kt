@@ -95,12 +95,14 @@ fun FilesPanel(
     indexingFileIds: Set<String> = emptySet(),
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     folders: List<FileEntry> = emptyList(),
+    rootFiles: List<FileEntry>? = null,
     externalSelectedIds: MutableList<String>? = null,
     onFileClick: (String) -> Unit = {}
 ) {
-    val rootsFlow = workspaceRootUuid?.let { workspaceRepo.observeChildren(it, it) }
+    val rootsFlow = if (rootFiles == null) workspaceRootUuid?.let { workspaceRepo.observeChildren(it, it) }
         ?: flowOf(emptyList())
-    val roots by rootsFlow.collectAsState(initial = emptyList())
+    else flowOf(rootFiles)
+    val roots by rootsFlow.collectAsState(initial = rootFiles.orEmpty())
 
     val filteredRoots = if (searchQuery.isBlank()) roots else {
         roots.filter { it.name.contains(searchQuery, ignoreCase = true) }
@@ -358,7 +360,7 @@ private fun FileTreeNode(
     // "移动到"目录选择器
     if (showMoveSheet) {
         MoveToSheet(
-            folders = emptyList(), // 由父级通过 workspaceRepo.observeRoots 查询
+            folders = emptyList(), // 目录选择器仅查询当前工作区根目录的直接子项
             workspaceRepo = workspaceRepo,
             workspaceRootUuid = workspaceRootUuid,
             onDismiss = { showMoveSheet = false },

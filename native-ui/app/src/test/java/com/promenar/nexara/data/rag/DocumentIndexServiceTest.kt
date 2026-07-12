@@ -1,0 +1,304 @@
+package com.promenar.nexara.data.rag
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.entity.DocumentTagEntity
+import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
+import com.promenar.nexara.data.local.db.entity.KgNodeEntity
+import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.local.db.entity.TagEntity
+import com.promenar.nexara.data.local.db.entity.VectorEntity
+import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import java.io.File
+
+@RunWith(RobolectricTestRunner::class)
+class DocumentIndexServiceTest {
+    private lateinit var database: NexaraDatabase
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+    }
+
+    @After
+    fun tearDown() = database.close()
+
+    @Test
+    fun `候选构建失败时旧索引保持可检索`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database) { throw IllegalStateException("embedding failed") }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isInstanceOf(DocumentIndexResult.Failed::class.java)
+        assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_VECTOR)
+        assertThat(database.vectorDao().searchByKeyword("old searchable").map { it.id })
+            .containsExactly(OLD_VECTOR)
+    }
+
+    @Test
+    fun `候选完成后文件hash变化时不切换旧索引`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database) {
+            val file = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+            database.fileEntryDao().update(file.copy(hash = "hash-newer"))
+            candidate()
+        }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isEqualTo(DocumentIndexResult.HashChanged("hash-newer"))
+        assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
+    }
+
+    @Test
+    fun `事务中候选写入失败会回滚并保留全部旧派生数据`() = runTest {
+        seedFileAndOldArtifacts()
+        val invalid = candidate().copy(
+            edges = listOf(edge("invalid-edge", "missing-node", "new-target")),
+        )
+        val service = RoomDocumentIndexService(database) { invalid }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isInstanceOf(DocumentIndexResult.Failed::class.java)
+        assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
+        assertThat(database.documentTagDao().getByDocId(FILE)).hasSize(1)
+        assertThat(database.vectorizationTaskDao().getByDocId(FILE)).hasSize(1)
+    }
+
+    @Test
+    fun `hash未变时事务切换新索引并保留用户标签清理旧任务`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database) { candidate() }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isInstanceOf(DocumentIndexResult.Rebuilt::class.java)
+        assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(NEW_VECTOR)
+        assertThat(database.vectorDao().searchByKeyword("old searchable")).isEmpty()
+        assertThat(database.vectorDao().searchByKeyword("new searchable").map { it.id })
+            .containsExactly(NEW_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(NEW_EDGE)
+        assertThat(database.kgNodeDao().getById("old-source")).isNull()
+        assertThat(database.documentTagDao().getByDocId(FILE)).hasSize(1)
+        assertThat(database.vectorizationTaskDao().getByDocId(FILE)).isEmpty()
+        assertThat(database.fileEntryDao().getByUuid(ROOT, FILE)?.vectorizedAt).isNotNull()
+    }
+
+    @Test
+    fun `删除事件事务清理全部派生数据`() = runTest {
+        seedFileAndOldArtifacts()
+        database.kgNodeDao().insert(KgNodeEntity(
+            id = "unrelated-orphan", name = "unrelated", createdAt = 1, fileUuid = "other-file",
+        ))
+        val service = RoomDocumentIndexService(database) { error("删除不应构建候选") }
+
+        val result = service.rebuild(FileIndexEvent.Deleted(ROOT, FILE))
+
+        assertThat(result).isInstanceOf(DocumentIndexResult.Deleted::class.java)
+        assertThat(database.vectorDao().getByDocId(FILE)).isEmpty()
+        assertThat(database.kgEdgeDao().getByDocId(FILE)).isEmpty()
+        assertThat(database.kgNodeDao().getById("old-source")).isNull()
+        assertThat(database.kgNodeDao().getById("unrelated-orphan")).isNotNull()
+        assertThat(database.documentTagDao().getByDocId(FILE)).isEmpty()
+        assertThat(database.vectorizationTaskDao().getByDocId(FILE)).isEmpty()
+    }
+
+    @Test
+    fun `默认候选构建器只读当前hash文件并生成隔离向量`() = runTest {
+        seedFileAndOldArtifacts()
+        val file = File.createTempFile("nexara-index", ".txt").apply { writeText("candidate text") }
+        try {
+            val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+            database.fileEntryDao().update(current.copy(
+                physicalRootPath = file.parentFile!!.absolutePath,
+                materializedPath = "/${file.name}",
+                hash = com.promenar.nexara.infra.util.Sha256Utils.hash("candidate text"),
+            ))
+            val embedding = mockk<EmbeddingClient>()
+            coEvery { embedding.embedDocuments(any()) } answers {
+                EmbeddingResult(firstArg<List<String>>().map { floatArrayOf(1f, 0f) })
+            }
+            val builder = WorkspaceDocumentIndexCandidateBuilder(
+                database.fileEntryDao(), embedding, RagConfiguration(docChunkSize = 100, chunkOverlap = 10),
+            )
+            val hash = database.fileEntryDao().getByUuid(ROOT, FILE)!!.hash
+
+            val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash))
+
+            assertThat(candidate.vectors).isNotEmpty()
+            assertThat(candidate.vectors.all { it.docId == FILE && it.fileUuid == FILE }).isTrue()
+            assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_VECTOR)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `启用知识图谱时候选构建器同时生成隔离节点与边`() = runTest {
+        seedFileAndOldArtifacts()
+        val file = File.createTempFile("nexara-index-kg", ".txt").apply { writeText("Alice knows Bob") }
+        try {
+            val hash = com.promenar.nexara.infra.util.Sha256Utils.hash("Alice knows Bob")
+            val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+            database.fileEntryDao().update(current.copy(
+                physicalRootPath = file.parentFile!!.absolutePath,
+                materializedPath = "/${file.name}",
+                hash = hash,
+            ))
+            val embedding = mockk<EmbeddingClient>()
+            coEvery { embedding.embedDocuments(any()) } returns EmbeddingResult(listOf(floatArrayOf(1f, 0f)))
+            val graphBuilder = mockk<KnowledgeGraphCandidateBuilder>()
+            coEvery { graphBuilder.build(any(), FILE) } returns ExtractionResult(
+                nodes = listOf(ExtractedNode("Alice", "person"), ExtractedNode("Bob", "person")),
+                edges = listOf(ExtractedEdge("Alice", "Bob", "knows")),
+            )
+            val builder = WorkspaceDocumentIndexCandidateBuilder(
+                database.fileEntryDao(),
+                embedding,
+                RagConfiguration(enableKnowledgeGraph = true, docChunkSize = 100, chunkOverlap = 10),
+                graphCandidateBuilder = graphBuilder,
+            )
+
+            val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash))
+
+            coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE) }
+            assertThat(candidate.nodes.map { it.name }).containsExactly("Alice", "Bob")
+            assertThat(candidate.edges.single().docId).isEqualTo(FILE)
+            assertThat(candidate.edges.single().fileUuid).isEqualTo(FILE)
+            assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `任务选项优先于全局配置且跳过向量与图谱`() = runTest {
+        seedFileAndOldArtifacts()
+        val file = File.createTempFile("nexara-index-options", ".txt").apply { writeText("plain") }
+        try {
+            val hash = com.promenar.nexara.infra.util.Sha256Utils.hash("plain")
+            val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+            database.fileEntryDao().update(current.copy(
+                physicalRootPath = file.parentFile!!.absolutePath,
+                materializedPath = "/${file.name}",
+                hash = hash,
+            ))
+            val embedding = mockk<EmbeddingClient>()
+            val graphBuilder = mockk<KnowledgeGraphCandidateBuilder>()
+            val builder = WorkspaceDocumentIndexCandidateBuilder(
+                database.fileEntryDao(), embedding, RagConfiguration(enableKnowledgeGraph = true),
+                graphCandidateBuilder = graphBuilder,
+            )
+
+            val candidate = builder.build(FileIndexEvent.Changed(
+                ROOT, FILE, hash, skipVectorization = true,
+                kgStrategy = null, useConfiguredKgStrategy = false,
+            ))
+
+            assertThat(candidate.vectors).isEmpty()
+            assertThat(candidate.nodes).isEmpty()
+            coVerify(exactly = 0) { embedding.embedDocuments(any()) }
+            coVerify(exactly = 0) { graphBuilder.build(any(), any()) }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `活动任务计数排除失败部分与中断仅包含真实运行态`() = runTest {
+        seedFileAndOldArtifacts()
+        val dao = database.vectorizationTaskDao()
+        assertThat(dao.countActiveForFile(ROOT, FILE)).isEqualTo(0)
+        dao.insert(VectorizationTaskEntity(
+            id = "pending", type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE, status = "pending",
+            docId = FILE, workspaceRootUuid = ROOT, sourceMimeType = "text/plain", createdAt = 2, updatedAt = 2,
+        ))
+        assertThat(dao.countActiveForFile(ROOT, FILE)).isEqualTo(1)
+    }
+
+    @Test
+    fun `恢复查询包含从未索引与内容晚于索引时间的文件`() = runTest {
+        seedFileAndOldArtifacts()
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        database.fileEntryDao().update(current.copy(vectorizedAt = 5, updatedAt = 10))
+
+        val recoverable = database.fileEntryDao().getUnvectorizedSupportedFiles(listOf("text/plain"))
+
+        assertThat(recoverable.map { it.uuid }).contains(FILE)
+    }
+
+    private suspend fun seedFileAndOldArtifacts() {
+        database.sessionDao().insert(SessionEntity("session", "agent", "session", createdAt = 1, updatedAt = 1))
+        database.fileEntryDao().insert(FileEntry(
+            uuid = ROOT, workspaceRootUuid = ROOT, parentUuid = null, name = "root", hash = "root-hash",
+            isDirectory = true, physicalRootPath = "/tmp", materializedPath = "/", createdAt = 1, updatedAt = 1,
+        ))
+        database.fileEntryDao().insert(FileEntry(
+            uuid = FILE, workspaceRootUuid = ROOT, parentUuid = ROOT, name = "doc.txt", hash = HASH,
+            mimeType = "text/plain", sizeBytes = 3, physicalRootPath = "/tmp", materializedPath = "/doc.txt",
+            createdAt = 1, updatedAt = 1,
+        ))
+        database.vectorDao().insert(vector(OLD_VECTOR, "old searchable"))
+        database.kgNodeDao().insert(node("old-source"))
+        database.kgNodeDao().insert(node("old-target"))
+        database.kgEdgeDao().insert(edge(OLD_EDGE, "old-source", "old-target"))
+        database.tagDao().insert(TagEntity("tag", "tag", createdAt = 1))
+        database.documentTagDao().insert(DocumentTagEntity(FILE, "tag", 1))
+        database.vectorizationTaskDao().insert(VectorizationTaskEntity(
+            id = "task", type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE, status = "failed",
+            docId = FILE, workspaceRootUuid = ROOT, sourceMimeType = "text/plain", createdAt = 1, updatedAt = 1,
+        ))
+    }
+
+    private fun changed() = FileIndexEvent.Changed(ROOT, FILE, HASH)
+
+    private fun candidate() = DocumentIndexCandidate(
+        vectors = listOf(vector(NEW_VECTOR, "new searchable")),
+        nodes = listOf(node("new-source"), node("new-target")),
+        edges = listOf(edge(NEW_EDGE, "new-source", "new-target")),
+    )
+
+    private fun vector(id: String, content: String) = VectorEntity(
+        id = id, docId = FILE, content = content, embedding = byteArrayOf(0, 0, 0, 0),
+        metadata = "{\"type\":\"document\"}", createdAt = 1, fileUuid = FILE,
+    )
+
+    private fun node(id: String) = KgNodeEntity(
+        id = id, name = id, createdAt = 1, fileUuid = FILE,
+    )
+
+    private fun edge(id: String, source: String, target: String) = KgEdgeEntity(
+        id = id, sourceId = source, targetId = target, relation = "rel", docId = FILE,
+        createdAt = 1, fileUuid = FILE,
+    )
+
+    private companion object {
+        const val ROOT = "root"
+        const val FILE = "file"
+        const val HASH = "hash-v1"
+        const val OLD_VECTOR = "old-vector"
+        const val NEW_VECTOR = "new-vector"
+        const val OLD_EDGE = "old-edge"
+        const val NEW_EDGE = "new-edge"
+    }
+}

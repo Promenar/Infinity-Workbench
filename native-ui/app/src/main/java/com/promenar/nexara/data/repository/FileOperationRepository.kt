@@ -15,6 +15,8 @@ import com.promenar.nexara.domain.repository.ReadResult
 import com.promenar.nexara.domain.repository.WriteResult
 import com.promenar.nexara.infra.util.MyersDiff
 import com.promenar.nexara.infra.util.Sha256Utils
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.FileIndexEventSink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,6 +27,7 @@ class FileOperationRepository(
     private val versionDao: FileVersionDao,
     private val fileOps: WorkspaceFileOps = SecureWorkspaceFileOps(),
     private val versionCommitter: (suspend (FileVersionEntity, FileEntry) -> Unit)? = null,
+    private val indexEventSink: FileIndexEventSink = FileIndexEventSink.None,
 ) : IFileOperationRepository {
 
     override suspend fun writeFileAtomic(
@@ -46,8 +49,9 @@ class FileOperationRepository(
                     message = "文件已被其他会话修改。请先读取最新版本再重试。",
                 )
             }
-            commitContentChange(entry, newContent, sessionId)
-            WriteResult.Success(Sha256Utils.hash(newContent))
+            val newHash = commitContentChange(entry, newContent, sessionId)
+            val indexQueued = newHash == null || publishIndexEvent(workspaceRootUuid, uuid, newHash)
+            WriteResult.Success(newHash ?: entry.hash, indexQueued)
         }
     }
 
@@ -173,12 +177,24 @@ class FileOperationRepository(
             }
 
             val newContent = lines.joinToString("\n")
-            commitContentChange(entry, newContent, null)
-            PatchResult.Success(Sha256Utils.hash(newContent), operations.size)
+            val newHash = commitContentChange(entry, newContent, null)
+            val indexQueued = newHash == null || publishIndexEvent(workspaceRootUuid, uuid, newHash)
+            PatchResult.Success(newHash ?: entry.hash, operations.size, indexQueued)
         }
     }
 
-    private suspend fun commitContentChange(entry: FileEntry, newContent: String, sessionId: String?) {
+    private suspend fun publishIndexEvent(workspaceRootUuid: String, uuid: String, newHash: String): Boolean =
+        try {
+            indexEventSink.publish(FileIndexEvent.Changed(workspaceRootUuid, uuid, newHash))
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // 文件与版本记录已经提交，不能再把索引入队故障伪装成写入失败。
+            false
+        }
+
+    private suspend fun commitContentChange(entry: FileEntry, newContent: String, sessionId: String?): String? {
         val root = File(entry.physicalRootPath).toPath()
         val oldContent = readContent(entry)
         val physicalHash = Sha256Utils.hash(oldContent)
@@ -186,7 +202,7 @@ class FileOperationRepository(
             throw IllegalStateException("文件内容与数据库哈希不一致，已拒绝覆盖: ${entry.uuid}")
         }
         val newHash = Sha256Utils.hash(newContent)
-        if (newHash == entry.hash && oldContent == newContent) return
+        if (newHash == entry.hash && oldContent == newContent) return null
 
         val versionId = UUID.randomUUID().toString()
         val snapshotRelative = snapshotRelative(entry, versionId)
@@ -206,6 +222,8 @@ class FileOperationRepository(
             hash = newHash,
             sizeBytes = newContent.toByteArray(Charsets.UTF_8).size.toLong(),
             lastWriteSessionId = sessionId,
+            vectorizedAt = null,
+            kgExtractedAt = null,
             updatedAt = System.currentTimeMillis(),
         )
 
@@ -222,6 +240,7 @@ class FileOperationRepository(
             databaseCommitted = true
             // 备份清理失败不反转已经提交的 DB/物理新版本；残留隐藏备份可由维护任务清理。
             runCatching { activeReplacement.commit() }
+            return newHash
         } catch (failure: Throwable) {
             if (!databaseCommitted) {
                 if (replacement != null) rollbackReplacement(replacement, failure)

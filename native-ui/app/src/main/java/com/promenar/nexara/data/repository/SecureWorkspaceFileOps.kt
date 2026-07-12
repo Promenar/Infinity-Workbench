@@ -42,12 +42,14 @@ interface WorkspaceFileOps {
     fun replaceFile(root: Path, relative: List<String>, bytes: ByteArray): WorkspaceFileRollback
     fun reconcileFile(root: Path, relative: List<String>, expectedHash: String)
     fun move(root: Path, source: List<String>, target: List<String>): WorkspaceFileRollback
-    fun stageDelete(root: Path, source: List<String>): WorkspaceFileRollback
+    fun stageDelete(root: Path, source: List<String>, deletionToken: String): WorkspaceFileRollback
+    fun recoverTombstones(root: Path, restorePath: (deletionToken: String) -> List<String>?): TombstoneRecoveryReport
     fun delete(root: Path, source: List<String>)
     fun cleanupTombstones(root: Path)
 }
 
 data class WorkspaceStreamWriteResult(val sizeBytes: Long, val sha256: String)
+data class TombstoneRecoveryReport(val attentionTokens: List<String> = emptyList())
 
 class WorkspaceFileTooLargeException(val limitBytes: Long) : java.io.IOException(
     "工作区文件超过上限: $limitBytes bytes"
@@ -322,15 +324,45 @@ class SecureWorkspaceFileOps(
         )
     }
 
-    override fun stageDelete(root: Path, source: List<String>): WorkspaceFileRollback {
+    override fun stageDelete(root: Path, source: List<String>, deletionToken: String): WorkspaceFileRollback {
         requireSafeRelative(source)
-        val tombstone = listOf(".nexara_tombstones", UUID.randomUUID().toString())
+        require(deletionToken.matches(Regex("[0-9a-f]{24}"))) { "删除令牌无效" }
+        val tombstone = listOf(".nexara_tombstones", deletionToken)
         ensureSystemDirectory(root, tombstone.first())
         descriptorMove(root, source, tombstone)
         return DescriptorRollback(
             commitAction = { deleteNode(root, tombstone) },
             rollbackAction = { descriptorMove(root, tombstone, source) },
         )
+    }
+
+    override fun recoverTombstones(
+        root: Path,
+        restorePath: (String) -> List<String>?,
+    ): TombstoneRecoveryReport {
+        val tokens = openSecure(root).use { secure ->
+            val tombstones = try {
+                secure.newDirectoryStream(Paths.get(".nexara_tombstones"), LinkOption.NOFOLLOW_LINKS)
+            } catch (_: java.nio.file.NoSuchFileException) {
+                return TombstoneRecoveryReport()
+            }
+            tombstones.use { directory -> directory.toList().map { it.fileName.toString() } }
+        }
+        val attention = mutableListOf<String>()
+        tokens.forEach { token ->
+            try {
+                val tombstone = listOf(".nexara_tombstones", token)
+                val source = restorePath(token)
+                if (source == null) deleteNode(root, tombstone)
+                else {
+                    requireSafeRelative(source)
+                    descriptorMove(root, tombstone, source)
+                }
+            } catch (_: Exception) {
+                attention += token
+            }
+        }
+        return TombstoneRecoveryReport(attention)
     }
 
     override fun delete(root: Path, source: List<String>) {

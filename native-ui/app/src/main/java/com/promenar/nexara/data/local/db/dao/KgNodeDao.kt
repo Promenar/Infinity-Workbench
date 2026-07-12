@@ -43,6 +43,9 @@ interface KgNodeDao {
     @Query("DELETE FROM kg_nodes WHERE session_id = :sessionId")
     suspend fun deleteBySessionId(sessionId: String)
 
+    @Query("DELETE FROM kg_nodes WHERE file_uuid = :fileUuid")
+    suspend fun deleteByFileUuid(fileUuid: String): Int
+
     @Query("DELETE FROM kg_nodes WHERE session_id IS NOT NULL")
     suspend fun deleteAllSessionNodes()
 

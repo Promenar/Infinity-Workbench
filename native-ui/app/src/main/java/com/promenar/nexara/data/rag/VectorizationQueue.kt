@@ -22,8 +22,9 @@ class VectorizationQueue(
     private val vectorizationTaskDao: VectorizationTaskDao,
     private val ragConfig: RagConfiguration = RagConfiguration(),
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val fileEntryDao: com.promenar.nexara.data.local.db.dao.FileEntryDao? = null
-) {
+    private val fileEntryDao: com.promenar.nexara.data.local.db.dao.FileEntryDao? = null,
+    private val documentIndexService: DocumentIndexService? = null,
+) : FileIndexEventSink {
     private val queue = mutableListOf<VectorizationTask>()
     private val retainedAttention = mutableListOf<VectorizationTask>()
     @Volatile private var isProcessing = false
@@ -41,6 +42,34 @@ class VectorizationQueue(
         onStateChange = callback
         val current = snapshotState()
         callback(current.queue, current.currentTask)
+    }
+
+    override suspend fun publish(event: FileIndexEvent) {
+        when (event) {
+            is FileIndexEvent.Changed -> {
+                val dao = requireNotNull(fileEntryDao) { "文件索引 DAO 未配置" }
+                val entry = dao.getByUuid(event.workspaceRootUuid, event.fileUuid)
+                    ?: throw java.io.FileNotFoundException("索引文件不存在")
+                enqueueDocumentReference(
+                    workspaceRootUuid = event.workspaceRootUuid,
+                    docId = event.fileUuid,
+                    docTitle = entry.name,
+                    sourceMimeType = entry.mimeType ?: "application/octet-stream",
+                    kgStrategy = event.kgStrategy
+                        ?: "full".takeIf { event.useConfiguredKgStrategy && ragConfig.enableKnowledgeGraph },
+                    skipVectorization = event.skipVectorization,
+                )
+            }
+            is FileIndexEvent.Deleted -> {
+                cancel(event.fileUuid)
+                val service = requireNotNull(documentIndexService) { "文档索引服务未配置" }
+                when (val result = service.delete(event.workspaceRootUuid, event.fileUuid)) {
+                    is DocumentIndexResult.Deleted -> Unit
+                    is DocumentIndexResult.Failed -> throw result.failure
+                    else -> error("删除索引返回了无效状态: $result")
+                }
+            }
+        }
     }
 
     suspend fun enqueueDocument(
@@ -111,7 +140,30 @@ class VectorizationQueue(
         require(sourceMimeType in DocumentReferenceExtractor.SUPPORTED_MIME_TYPES) { "不支持索引 MIME" }
         val id = deterministicReferenceTaskId(workspaceRootUuid, docId)
         val existing = vectorizationTaskDao.getByWorkspaceFile(workspaceRootUuid, docId, TYPE_DOCUMENT_REFERENCE)
-        if (existing != null) return@withLock existing.id
+        if (existing != null) {
+            if (existing.status !in setOf("failed", "partial", "interrupted")) return@withLock existing.id
+            val retried = existing.copy(
+                status = "pending",
+                progress = 0.0,
+                error = null,
+                subStatus = "内容已变化，等待重新索引",
+                kgStrategy = kgStrategy,
+                skipVectorization = skipVectorization,
+                sourceMimeType = sourceMimeType,
+                contentTruncated = false,
+                updatedAt = System.currentTimeMillis(),
+            )
+            check(vectorizationTaskDao.update(retried) == 1) { "旧索引任务已不存在，无法重新排队" }
+            val task = retried.toTask()
+            synchronized(queueLock) {
+                retainedAttention.removeAll { it.id == task.id }
+                queue.removeAll { it.id == task.id }
+                queue.add(task)
+            }
+            notifyStateChange()
+            startProcessorIfNeeded()
+            return@withLock existing.id
+        }
         val task = VectorizationTask(
             id = id,
             type = TYPE_DOCUMENT_REFERENCE,
@@ -152,7 +204,7 @@ class VectorizationQueue(
                 contentTruncated = false,
                 updatedAt = System.currentTimeMillis(),
             )
-            vectorizationTaskDao.insert(retried)
+            check(vectorizationTaskDao.update(retried) == 1) { "旧索引任务已不存在，无法重试" }
             val task = retried.toTask()
             synchronized(queueLock) {
                 retainedAttention.removeAll { it.id == task.id }
@@ -338,6 +390,23 @@ class VectorizationQueue(
         val entry = fileEntryDao?.getByUuid(workspaceRootUuid, docId)
             ?: throw IllegalStateException("Document reference file missing")
         if (entry.mimeType != task.sourceMimeType) throw SecurityException("索引任务 MIME 与文件不一致")
+        documentIndexService?.let { service ->
+            when (val result = service.rebuild(FileIndexEvent.Changed(
+                workspaceRootUuid = workspaceRootUuid,
+                fileUuid = docId,
+                contentHash = entry.hash,
+                skipVectorization = task.skipVectorization,
+                kgStrategy = task.kgStrategy,
+                useConfiguredKgStrategy = false,
+            ))) {
+                is DocumentIndexResult.Rebuilt -> return
+                is DocumentIndexResult.HashChanged -> throw java.util.ConcurrentModificationException(
+                    "索引期间文件内容已变化: ${result.currentHash ?: "deleted"}",
+                )
+                is DocumentIndexResult.Failed -> throw result.failure
+                is DocumentIndexResult.Deleted -> throw IllegalStateException("索引文件已删除")
+            }
+        }
         task.status = "extracting_source"
         task.progress = 8.0
         task.subStatus = "正在安全读取工作区文件..."
@@ -480,6 +549,17 @@ class VectorizationQueue(
         }
         isProcessing = false
         notifyStateChange()
+    }
+
+    fun shutdown() {
+        scope.cancel()
+        clear()
+    }
+
+    suspend fun shutdownForReplacement() {
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancelAndJoin()
+        vectorizationTaskDao.markProcessingAsInterrupted(System.currentTimeMillis())
+        clear()
     }
 
     private suspend fun saveTaskToDb(task: VectorizationTask) {

@@ -32,7 +32,7 @@ interface IFileOperationRepository {
 }
 
 sealed class WriteResult {
-    data class Success(val newHash: String) : WriteResult()
+    data class Success(val newHash: String, val indexQueued: Boolean = true) : WriteResult()
     data class Conflict(val currentHash: String, val expectedHash: String, val message: String) :
         WriteResult()
 
@@ -76,7 +76,11 @@ data class PatchOperation(
 )
 
 sealed class PatchResult {
-    data class Success(val newHash: String, val appliedOperations: Int) : PatchResult()
+    data class Success(
+        val newHash: String,
+        val appliedOperations: Int,
+        val indexQueued: Boolean = true,
+    ) : PatchResult()
     data class Failure(val error: PatchError) : PatchResult()
 }
 

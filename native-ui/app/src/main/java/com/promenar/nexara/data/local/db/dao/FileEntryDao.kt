@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FileEntryDao {
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid")
+    suspend fun getAllByWorkspaceRoot(workspaceRootUuid: String): List<FileEntry>
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: FileEntry)
 
@@ -47,7 +49,7 @@ interface FileEntryDao {
         SELECT * FROM workspace_files
         WHERE is_directory = 0
           AND in_recycle_bin = 0
-          AND vectorized_at IS NULL
+          AND (vectorized_at IS NULL OR updated_at > vectorized_at)
           AND mime_type IN (:mimeTypes)
         ORDER BY created_at ASC
     """)

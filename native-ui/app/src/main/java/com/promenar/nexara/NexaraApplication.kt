@@ -210,11 +210,21 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             database.fileEntryDao(),
             database.workspaceSeqDao(),
             File(filesDir, "session_workspaces"),
+            deleteCommitter = com.promenar.nexara.data.repository.WorkspaceDeletionTransaction(database)::delete,
+            onDeleteCommitted = { ids ->
+                vectorizationQueueResource.peek()?.let { queue -> ids.forEach(queue::cancel) }
+            },
         )
     }
 
     val fileOperationRepository: com.promenar.nexara.domain.repository.IFileOperationRepository by lazy {
-        FileOperationRepository(database.fileEntryDao(), database.fileVersionDao())
+        FileOperationRepository(
+            database.fileEntryDao(),
+            database.fileVersionDao(),
+            indexEventSink = com.promenar.nexara.data.rag.FileIndexEventSink { event ->
+                vectorizationQueue.publish(event)
+            },
+        )
     }
 
     val taskRepository: com.promenar.nexara.domain.repository.ITaskRepository by lazy {
@@ -453,7 +463,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                         _providerConfigurationVersion.value += 1
                         rebuildEmbeddingClient()
                         rebuildRerankClient()
-                        _vectorizationQueue = null
+                        resetVectorizationQueue()
                         _unifiedLlmClient = null
                     }
                 }
@@ -475,6 +485,19 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     task = StartupBackgroundTask.VECTOR_RESUME,
                     start = CoroutineStart.LAZY,
                 ) {
+                    runCatching {
+                        com.promenar.nexara.data.worker.RecycleBinCleanupWorker
+                            .recoverPendingDeletions(database)
+                    }.onSuccess { attention ->
+                        if (attention.failedRoots.isNotEmpty() || attention.failedTombstones.isNotEmpty()) {
+                            NexaraLogger.log(
+                                "[WorkspaceDeleteRecovery] roots=${attention.failedRoots.size} " +
+                                    "tombstones=${attention.failedTombstones.values.sumOf { it.size }}",
+                            )
+                        }
+                    }.onFailure { failure ->
+                        NexaraLogger.logError("WorkspaceDeleteRecovery.startup", failure)
+                    }
                     prepared.vectorizationQueue.resumeInterruptedTasks().getOrThrow()
                 }
             },
@@ -628,18 +651,18 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         if (key == "base_url" || key == "embedding_base_url") {
             rebuildEmbeddingClient()
             rebuildRerankClient()
-            _vectorizationQueue = null
+            resetVectorizationQueue()
         }
         if (key == "model") {
             rebuildEmbeddingClient()
-            _vectorizationQueue = null
+            resetVectorizationQueue()
         }
     }
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "preset_embedding_model" || key == "all_models" || key == "enabled_models") {
             rebuildEmbeddingClient()
-            _vectorizationQueue = null
+            resetVectorizationQueue()
         }
         if (key == "preset_rerank_model" || key == "all_models") {
             rebuildRerankClient()
@@ -648,7 +671,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         if (key?.startsWith("extra_provider_") == true && key.endsWith("_base_url")) {
             rebuildEmbeddingClient()
             rebuildRerankClient()
-            _vectorizationQueue = null
+            resetVectorizationQueue()
         }
     }
 
@@ -748,18 +771,60 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     fun rebuildGraphExtractor() {
         _graphExtractor = null
+        resetVectorizationQueue()
     }
 
-    private var _vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue? = null
+    private val vectorizationQueueResource = com.promenar.nexara.utils.SynchronizedResettableResource<com.promenar.nexara.data.rag.VectorizationQueue>(
+        dispose = com.promenar.nexara.data.rag.VectorizationQueue::shutdown,
+    )
+
+    private fun resetVectorizationQueue() {
+        val handle = vectorizationQueueResource.beginReset() ?: return
+        startupScope.launch(Dispatchers.IO) {
+            try {
+                handle.value.shutdownForReplacement()
+            } catch (failure: Exception) {
+                NexaraLogger.logError("VectorizationQueue.handoff", failure)
+            } finally {
+                vectorizationQueueResource.completeReset(handle)
+            }
+            vectorizationQueue.resumeInterruptedTasks().exceptionOrNull()?.let { failure ->
+                NexaraLogger.logError("VectorizationQueue.resumeAfterHandoff", failure)
+            }
+        }
+    }
+    val documentIndexService: com.promenar.nexara.data.rag.DocumentIndexService
+        get() = createDocumentIndexService(ragConfigPersistence.loadFullConfig())
+
+    private fun createDocumentIndexService(
+        config: com.promenar.nexara.data.rag.RagConfiguration,
+    ): com.promenar.nexara.data.rag.DocumentIndexService =
+        com.promenar.nexara.data.rag.RoomDocumentIndexService(
+            database = database,
+            candidateBuilder = com.promenar.nexara.data.rag.WorkspaceDocumentIndexCandidateBuilder(
+                fileEntryDao = database.fileEntryDao(),
+                embeddingClient = embeddingClient,
+                ragConfig = config,
+                graphCandidateBuilder = com.promenar.nexara.data.rag.GraphExtractorKnowledgeGraphCandidateBuilder(
+                    graphExtractor,
+                ),
+            ),
+        )
+
     val vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue
-        get() = _vectorizationQueue ?: com.promenar.nexara.data.rag.VectorizationQueue(
-            vectorStore = vectorStore,
-            embeddingClient = embeddingClient,
-            graphExtractor = graphExtractor,
-            vectorDao = database.vectorDao(),
-            vectorizationTaskDao = database.vectorizationTaskDao(),
-            fileEntryDao = database.fileEntryDao()
-        ).also { _vectorizationQueue = it }
+        get() = vectorizationQueueResource.getOrCreate {
+            val config = ragConfigPersistence.loadFullConfig()
+            com.promenar.nexara.data.rag.VectorizationQueue(
+                vectorStore = vectorStore,
+                embeddingClient = embeddingClient,
+                graphExtractor = graphExtractor,
+                vectorDao = database.vectorDao(),
+                vectorizationTaskDao = database.vectorizationTaskDao(),
+                ragConfig = config,
+                fileEntryDao = database.fileEntryDao(),
+                documentIndexService = createDocumentIndexService(config),
+            )
+        }
 
     val defaultAgents: List<com.promenar.nexara.domain.model.Agent> by lazy {
         // DB 只保存与 Locale 无关的稳定 fallback；显示与编辑按 Activity 当前 Locale 叠加。
@@ -806,7 +871,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         // 同步重建 Embedding / Rerank 客户端（使用最新的 baseUrl/apiKey）
         rebuildEmbeddingClient()
         rebuildRerankClient()
-        _vectorizationQueue = null  // 让 VectorizationQueue 下次访问时重新捕获新的 embeddingClient
+        resetVectorizationQueue() // 让 VectorizationQueue 下次访问时重新捕获新的 embeddingClient
         _unifiedLlmClient = null
     }
 
@@ -824,7 +889,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         _providerConfigurationVersion.value += 1
         rebuildEmbeddingClient()
         rebuildRerankClient()
-        _vectorizationQueue = null
+        resetVectorizationQueue()
         _unifiedLlmClient = null
     }
 

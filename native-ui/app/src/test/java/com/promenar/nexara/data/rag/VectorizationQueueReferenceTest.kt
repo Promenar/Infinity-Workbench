@@ -14,6 +14,98 @@ import org.junit.Test
 
 class VectorizationQueueReferenceTest {
     @Test
+    fun `文件索引事件sink将变更持久入队并将删除委托事务清理`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
+        coEvery { taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE) } returns null
+        coEvery { taskDao.insertIgnore(any()) } returns 1L
+        val fileDao = mockk<FileEntryDao>()
+        coEvery { fileDao.getByUuid(ROOT, DOC) } returns com.promenar.nexara.data.local.db.entity.FileEntry(
+            uuid = DOC, workspaceRootUuid = ROOT, parentUuid = ROOT, name = "note.txt", hash = "hash-v1",
+            mimeType = "text/plain", physicalRootPath = "/tmp", materializedPath = "/note.txt",
+            createdAt = 1, updatedAt = 1,
+        )
+        val service = mockk<DocumentIndexService>()
+        coEvery { service.delete(ROOT, DOC) } returns DocumentIndexResult.Deleted(DOC)
+        val queue = VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = mockk(relaxed = true),
+            graphExtractor = null,
+            vectorDao = mockk(relaxed = true),
+            vectorizationTaskDao = taskDao,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            fileEntryDao = fileDao,
+            documentIndexService = service,
+        )
+
+        queue.publish(FileIndexEvent.Changed(ROOT, DOC, "hash-v1"))
+        queue.publish(FileIndexEvent.Deleted(ROOT, DOC))
+
+        coVerify(exactly = 1) { taskDao.insertIgnore(match { it.docId == DOC }) }
+        coVerify(exactly = 1) { service.delete(ROOT, DOC) }
+    }
+
+    @Test
+    fun `文件引用任务委托事务索引服务且hash竞态不伪装完成`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
+        coEvery { taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE) } returns null
+        coEvery { taskDao.insertIgnore(any()) } returns 1L
+        val fileDao = mockk<FileEntryDao>()
+        coEvery { fileDao.getByUuid(ROOT, DOC) } returns com.promenar.nexara.data.local.db.entity.FileEntry(
+            uuid = DOC, workspaceRootUuid = ROOT, parentUuid = ROOT, name = "note.txt", hash = "hash-v1",
+            mimeType = "text/plain", physicalRootPath = "/tmp", materializedPath = "/note.txt",
+            createdAt = 1, updatedAt = 1,
+        )
+        val service = mockk<DocumentIndexService>()
+        coEvery { service.rebuild(FileIndexEvent.Changed(
+            ROOT, DOC, "hash-v1", skipVectorization = true,
+            kgStrategy = "semantic", useConfiguredKgStrategy = false,
+        )) } returns
+            DocumentIndexResult.HashChanged("hash-v2")
+        val queue = VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = mockk(relaxed = true),
+            graphExtractor = null,
+            vectorDao = mockk(relaxed = true),
+            vectorizationTaskDao = taskDao,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            fileEntryDao = fileDao,
+            documentIndexService = service,
+        )
+
+        queue.enqueueDocumentReference(
+            ROOT, DOC, "note.txt", "text/plain", kgStrategy = "semantic", skipVectorization = true,
+        )
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            service.rebuild(FileIndexEvent.Changed(
+                ROOT, DOC, "hash-v1", skipVectorization = true,
+                kgStrategy = "semantic", useConfiguredKgStrategy = false,
+            ))
+        }
+        coVerify(exactly = 0) { fileDao.update(any()) }
+        assertThat(queue.state.value.queue.single().status).isEqualTo("failed")
+    }
+
+    @Test
+    fun `失败部分与中断文件任务收到Changed后重置并重新入队`() = runTest {
+        listOf("failed", "partial", "interrupted").forEach { status ->
+            val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
+            coEvery {
+                taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)
+            } returns entity("doc-ref-$status").copy(status = status)
+            coEvery { taskDao.update(any()) } returns 1
+            val queue = queue(taskDao, StandardTestDispatcher(testScheduler))
+
+            val id = queue.enqueueDocumentReference(ROOT, DOC, "note.txt", "text/plain")
+
+            assertThat(id).isEqualTo("doc-ref-$status")
+            assertThat(queue.getQueueLength()).isEqualTo(1)
+            coVerify(exactly = 1) { taskDao.update(match { it.id == id && it.status == "pending" }) }
+        }
+    }
+
+    @Test
     fun `文件引用任务先持久化且document不再滥用session外键`() = runTest {
         val taskDao = mockk<VectorizationTaskDao>()
         coEvery { taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE) } returns null

@@ -185,11 +185,11 @@ class TestWorkspaceFileOps(
         })
     }
 
-    override fun stageDelete(root: Path, source: List<String>): WorkspaceFileRollback {
+    override fun stageDelete(root: Path, source: List<String>, deletionToken: String): WorkspaceFileRollback {
         val from = resolve(root, source, requireTarget = true)
         val tombstones = resolve(root, listOf(".nexara_tombstones"))
         Files.createDirectories(tombstones)
-        val staged = tombstones.resolve(UUID.randomUUID().toString())
+        val staged = tombstones.resolve(deletionToken)
         Files.move(from, staged)
         return rollback(
             commit = { deleteTree(staged) },
@@ -197,6 +197,27 @@ class TestWorkspaceFileOps(
                 Files.move(staged, from)
             },
         )
+    }
+
+    override fun recoverTombstones(
+        root: Path,
+        restorePath: (String) -> List<String>?,
+    ): TombstoneRecoveryReport {
+        val tombstones = resolve(root, listOf(".nexara_tombstones"))
+        if (!Files.exists(tombstones, LinkOption.NOFOLLOW_LINKS)) return TombstoneRecoveryReport()
+        val attention = mutableListOf<String>()
+        Files.list(tombstones).use { entries ->
+            entries.toList().forEach { staged ->
+                try {
+                    val source = restorePath(staged.fileName.toString())
+                    if (source == null) deleteTree(staged)
+                    else Files.move(staged, resolve(root, source))
+                } catch (_: Exception) {
+                    attention += staged.fileName.toString()
+                }
+            }
+        }
+        return TombstoneRecoveryReport(attention)
     }
 
     override fun delete(root: Path, source: List<String>) {

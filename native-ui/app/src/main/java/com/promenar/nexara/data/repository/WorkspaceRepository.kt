@@ -5,6 +5,7 @@ import com.promenar.nexara.data.local.db.dao.WorkspaceSeqDao
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.infra.util.Sha256Utils
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -22,6 +23,7 @@ class WorkspaceRepository(
     private val insertCommitter: (suspend (FileEntry) -> Unit)? = null,
     private val updateCommitter: (suspend (List<FileEntry>) -> Unit)? = null,
     private val deleteCommitter: (suspend (String, List<String>) -> Unit)? = null,
+    private val onDeleteCommitted: (List<String>) -> Unit = {},
     private val bulkDeleteSnapshotHook: suspend () -> Unit = {},
 ) : IWorkspaceRepository {
     @Volatile
@@ -390,13 +392,24 @@ class WorkspaceRepository(
         } else emptyList()
         reconcileEntryTree(entry)
         val root = File(entry.physicalRootPath).toPath()
-        val staged = fileOps.stageDelete(root, relative(entry.materializedPath))
+        val staged = fileOps.stageDelete(
+            root,
+            relative(entry.materializedPath),
+            workspaceDeletionToken(entry.uuid),
+        )
         val ids = children.map { it.uuid } + uuid
         try {
-            (deleteCommitter ?: dao::deleteByUuids).invoke(workspaceRootUuid, ids)
+            requireNotNull(deleteCommitter) {
+                "永久删除必须配置包含派生数据清理的事务提交器"
+            }.invoke(workspaceRootUuid, ids)
         } catch (failure: Throwable) {
             runCatching { staged.rollback() }.exceptionOrNull()?.let(failure::addSuppressed)
             throw failure
+        }
+        try {
+            onDeleteCommitted(ids)
+        } catch (_: Exception) {
+            // 数据库与物理删除已提交；运行时队列通知失败不能反转持久状态。
         }
         // Tombstone 清理失败时保留在受控目录，后续维护清理可幂等重试。
         runCatching { staged.commit() }
@@ -416,7 +429,7 @@ class WorkspaceRepository(
 
     suspend fun cleanupStaleRecycleBin(workspaceRootUuid: String, cutoff: Long) = withContext(Dispatchers.IO) {
         withRootMutation(workspaceRootUuid) { root ->
-            fileOps.cleanupTombstones(File(root.physicalRootPath).toPath())
+            recoverPendingTombstonesLocked(root)
             val staleFiles = dao.observeRecycleBin(workspaceRootUuid).first()
                 .filter { (it.recycledAt ?: 0) < cutoff }
             val staleRoots = staleFiles.filter { candidate ->
@@ -432,7 +445,18 @@ class WorkspaceRepository(
 
     suspend fun cleanupPendingTombstones(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
         withRootMutation(workspaceRootUuid) { root ->
-            fileOps.cleanupTombstones(File(root.physicalRootPath).toPath())
+            recoverPendingTombstonesLocked(root)
+        }
+    }
+
+    private suspend fun recoverPendingTombstonesLocked(root: FileEntry): TombstoneRecoveryReport {
+        val restorePaths = dao.getAllByWorkspaceRoot(root.uuid).associate { entry ->
+            workspaceDeletionToken(entry.uuid) to relative(entry.materializedPath)
+        }
+        return fileOps.recoverTombstones(File(root.physicalRootPath).toPath(), restorePaths::get).also { report ->
+            if (report.attentionTokens.isNotEmpty()) {
+                NexaraLogger.log("[WorkspaceDeleteRecovery] root=${root.uuid} attention=${report.attentionTokens.size}")
+            }
         }
     }
 
@@ -512,6 +536,8 @@ class WorkspaceRepository(
         return WorkspaceMutationCoordinator.withBoundRoot(
             File(initial.physicalRootPath).toPath(), initial.hash,
         ) {
+            val currentRoot = requireRoot(workspaceRootUuid)
+            recoverPendingTombstonesLocked(currentRoot)
             block(requireRoot(workspaceRootUuid))
         }
     }
@@ -617,3 +643,5 @@ class WorkspaceRepository(
         normalizeMaterializedPath(parentPath).trimEnd('/') + "/" + name
 
 }
+
+internal fun workspaceDeletionToken(fileUuid: String): String = Sha256Utils.hash(fileUuid).take(24)

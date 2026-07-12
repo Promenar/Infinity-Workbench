@@ -39,7 +39,10 @@ class WorkspaceRepositoryTest {
         db = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repo = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps())
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+        )
         val projectRoot = java.nio.file.Path.of(System.getProperty("user.dir"))
         rootA = Files.createTempDirectory(projectRoot, ".nexara-workspace-a").toFile()
         rootB = Files.createTempDirectory(projectRoot, ".nexara-workspace-b").toFile()
@@ -290,6 +293,7 @@ class WorkspaceRepositoryTest {
                     delegate.reconcileFile(root, relative, expectedHash)
                 }
             },
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
         )
 
         repo.rename(root.uuid, renameEntry.uuid, "renamed.txt")
@@ -392,21 +396,96 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `仓储永久删除目录在同一数据库事务清理全部子文件派生数据`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder")
+        val file = repo.createFileInWorkspace(root.uuid, "child", "a.txt", "A", folder.uuid, "/folder/a.txt")
+        seedDerivedArtifacts(root.uuid, file.uuid)
+        val deletion = WorkspaceDeletionTransaction(db)
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = deletion::delete,
+        )
+
+        repo.permanentDelete(root.uuid, folder.uuid)
+
+        assertThat(db.vectorDao().getByDocId(file.uuid)).isEmpty()
+        assertThat(db.kgEdgeDao().getByDocId(file.uuid)).isEmpty()
+        assertThat(db.documentTagDao().getByDocId(file.uuid)).isEmpty()
+        assertThat(db.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
+    }
+
+    @Test
+    fun `派生清理或文件记录删除失败会回滚数据库并恢复物理文件`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        seedDerivedArtifacts(root.uuid, file.uuid)
+        val deletion = WorkspaceDeletionTransaction(db) { throw IllegalStateException("injected transaction failure") }
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = deletion::delete,
+        )
+
+        val failure = runCatching { repo.permanentDelete(root.uuid, file.uuid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNotNull()
+        assertThat(db.vectorDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(db.documentTagDao().getByDocId(file.uuid)).hasSize(1)
+    }
+
+    private suspend fun seedDerivedArtifacts(workspaceRootUuid: String, fileUuid: String) {
+        db.vectorDao().insert(com.promenar.nexara.data.local.db.entity.VectorEntity(
+            id = "vector-$fileUuid", docId = fileUuid, content = "indexed",
+            embedding = byteArrayOf(0, 0, 0, 0), createdAt = 1, fileUuid = fileUuid,
+        ))
+        db.kgNodeDao().insert(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
+            id = "source-$fileUuid", name = "source", createdAt = 1, fileUuid = fileUuid,
+        ))
+        db.kgNodeDao().insert(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
+            id = "target-$fileUuid", name = "target", createdAt = 1, fileUuid = fileUuid,
+        ))
+        db.kgEdgeDao().insert(com.promenar.nexara.data.local.db.entity.KgEdgeEntity(
+            id = "edge-$fileUuid", sourceId = "source-$fileUuid", targetId = "target-$fileUuid",
+            relation = "rel", docId = fileUuid, createdAt = 1, fileUuid = fileUuid,
+        ))
+        db.tagDao().insert(com.promenar.nexara.data.local.db.entity.TagEntity("tag-$fileUuid", "tag", createdAt = 1))
+        db.documentTagDao().insert(com.promenar.nexara.data.local.db.entity.DocumentTagEntity(
+            fileUuid, "tag-$fileUuid", 1,
+        ))
+        db.vectorizationTaskDao().insert(com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity(
+            id = "task-$fileUuid", type = com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+            status = "failed", docId = fileUuid, workspaceRootUuid = workspaceRootUuid,
+            sourceMimeType = "text/plain", createdAt = 1, updatedAt = 1,
+        ))
+    }
+
+    @Test
     fun `failed tombstone cleanup is retryable by maintenance`() = runBlocking<Unit> {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
         val secure = TestWorkspaceFileOps()
         val cleanupFailingOps = object : WorkspaceFileOps by secure {
-            override fun stageDelete(root: java.nio.file.Path, source: List<String>): WorkspaceFileRollback {
-                val actual = secure.stageDelete(root, source)
+            override fun stageDelete(
+                root: java.nio.file.Path,
+                source: List<String>,
+                deletionToken: String,
+            ): WorkspaceFileRollback {
+                val actual = secure.stageDelete(root, source, deletionToken)
                 return object : WorkspaceFileRollback {
                     override fun commit() = throw IllegalStateException("injected tombstone cleanup failure")
                     override fun rollback() = actual.rollback()
                 }
             }
         }
-        repo = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao(), fileOps = cleanupFailingOps)
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = cleanupFailingOps,
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+        )
 
         repo.permanentDelete(root.uuid, entry.uuid)
 
@@ -417,6 +496,76 @@ class WorkspaceRepositoryTest {
         repo = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps())
         repo.cleanupPendingTombstones(root.uuid)
         assertThat(File(rootA, ".nexara_tombstones").walkTopDown().any { it.isFile }).isFalse()
+    }
+
+    @Test
+    fun `stage后进程死亡时数据库仍有记录则维护流程恢复原路径`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val ops = TestWorkspaceFileOps()
+        ops.stageDelete(rootA.toPath(), listOf("a.txt"), workspaceDeletionToken(entry.uuid))
+        assertThat(File(rootA, "a.txt").exists()).isFalse()
+
+        repo.cleanupPendingTombstones(root.uuid)
+
+        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isNotNull()
+    }
+
+    @Test
+    fun `stage后进程死亡时数据库已提交删除则维护流程清理tombstone`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val ops = TestWorkspaceFileOps()
+        ops.stageDelete(rootA.toPath(), listOf("a.txt"), workspaceDeletionToken(entry.uuid))
+        WorkspaceDeletionTransaction(db).delete(root.uuid, listOf(entry.uuid))
+
+        repo.cleanupPendingTombstones(root.uuid)
+
+        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        assertThat(File(rootA, ".nexara_tombstones").walkTopDown().any { it.isFile }).isFalse()
+    }
+
+    @Test
+    fun `损坏恢复路径拒绝越界且单token失败不阻断其他tombstone恢复`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val bad = repo.createFileInWorkspace(root.uuid, "bad", "bad.txt", "bad", root.uuid, "/bad.txt")
+        val good = repo.createFileInWorkspace(root.uuid, "good", "good.txt", "good", root.uuid, "/good.txt")
+        val ops = TestWorkspaceFileOps()
+        ops.stageDelete(rootA.toPath(), listOf("bad.txt"), workspaceDeletionToken(bad.uuid))
+        ops.stageDelete(rootA.toPath(), listOf("good.txt"), workspaceDeletionToken(good.uuid))
+        db.fileEntryDao().update(bad.copy(materializedPath = "/../outside.txt"))
+        val outside = rootA.parentFile.resolve("outside.txt")
+        outside.delete()
+
+        val report = repo.cleanupPendingTombstones(root.uuid)
+
+        assertThat(report.attentionTokens).contains(workspaceDeletionToken(bad.uuid))
+        assertThat(File(rootA, "good.txt").readText()).isEqualTo("good")
+        assertThat(outside.exists()).isFalse()
+    }
+
+    @Test
+    fun `自动恢复按root隔离并报告失败root`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val healthy = repo.ensureSessionRoot("session-a")
+        insertSession("session-b", rootB.absolutePath)
+        val broken = repo.ensureSessionRoot("session-b")
+        rootB.deleteRecursively()
+
+        val attention = com.promenar.nexara.data.worker.RecycleBinCleanupWorker
+            .recoverPendingDeletions(db) { database ->
+                WorkspaceRepository(
+                    database.fileEntryDao(), database.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+                    deleteCommitter = WorkspaceDeletionTransaction(database)::delete,
+                )
+            }
+
+        assertThat(attention.failedRoots).contains(broken.uuid)
+        assertThat(attention.failedRoots).doesNotContain(healthy.uuid)
     }
 
     @Test
@@ -432,11 +581,16 @@ class WorkspaceRepositoryTest {
             db.fileEntryDao(),
             db.workspaceSeqDao(),
             fileOps = object : WorkspaceFileOps by delegate {
-                override fun stageDelete(root: java.nio.file.Path, source: List<String>): WorkspaceFileRollback {
+                override fun stageDelete(
+                    root: java.nio.file.Path,
+                    source: List<String>,
+                    deletionToken: String,
+                ): WorkspaceFileRollback {
                     stagedDeletes += 1
-                    return delegate.stageDelete(root, source)
+                    return delegate.stageDelete(root, source, deletionToken)
                 }
             },
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
         )
 
         repo.emptyRecycleBin(root.uuid)
@@ -456,6 +610,7 @@ class WorkspaceRepositoryTest {
         val release = CompletableDeferred<Unit>()
         val bulk = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
             bulkDeleteSnapshotHook = { snapshotReached.complete(Unit); release.await() },
         )
         val restoreRepo = WorkspaceRepository(
@@ -485,6 +640,7 @@ class WorkspaceRepositoryTest {
         val release = CompletableDeferred<Unit>()
         val bulk = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
             bulkDeleteSnapshotHook = { snapshotReached.complete(Unit); release.await() },
         )
         val restoreRepo = WorkspaceRepository(
@@ -539,6 +695,7 @@ class WorkspaceRepositoryTest {
         )
         val anotherWorkspace = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
         )
 
         val write = async(Dispatchers.Default) {
@@ -576,6 +733,7 @@ class WorkspaceRepositoryTest {
         )
         val anotherWorkspace = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
         )
 
         val write = async(Dispatchers.Default) {
