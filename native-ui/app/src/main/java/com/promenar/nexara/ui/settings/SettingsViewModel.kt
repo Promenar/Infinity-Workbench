@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import com.promenar.nexara.data.remote.stableModelId
+import com.promenar.nexara.ui.welcome.verifyOnboardingModelCandidate
 
 data class ModelInfo(
     val name: String,
@@ -50,6 +51,26 @@ data class ModelInfo(
     /** 训练数据截止日期（YYYYMM），null=未知 */
     val knowledgeCutoff: String? = null
 )
+
+/**
+ * `listModels` 只有模型 ID，不能据此证明未知模型具备聊天能力。
+ * 已知规格优先；明显的专用模型按名称保守分类；其余保持 unknown，
+ * 交由首次引导对具体模型执行最小聊天探测，避免无证据误放行。
+ */
+internal fun classifyFetchedModelType(
+    remoteModelId: String,
+    knownType: String?,
+): String {
+    knownType?.lowercase()?.let { return it }
+    val normalized = remoteModelId.lowercase()
+    return when {
+        Regex("(?:^|[-_/.])(embed(?:ding)?|bge-m3)(?:$|[-_/.])").containsMatchIn(normalized) -> "embedding"
+        Regex("(?:^|[-_/.])(rerank(?:er)?|bge-reranker)(?:$|[-_/.])").containsMatchIn(normalized) -> "rerank"
+        Regex("(?:^|[-_/.])(image|dall-e|flux|stable-diffusion)(?:$|[-_/.])").containsMatchIn(normalized) -> "image"
+        Regex("(?:^|[-_/.])(audio|speech|tts|whisper)(?:$|[-_/.])").containsMatchIn(normalized) -> "audio"
+        else -> "unknown"
+    }
+}
 
 data class ProviderStats(
     val name: String,
@@ -275,8 +296,12 @@ class SettingsViewModel(
                     for (id in fetchedIds) {
                         val compositeId = stableModelId(providerId, id)
                         val spec = com.promenar.nexara.data.model.findModelSpec(id)
-                        val type = spec?.type?.name?.lowercase() ?: "chat"
-                        val caps = pm.buildModelCapabilities(type, spec)
+                        val type = classifyFetchedModelType(id, spec?.type?.name)
+                        val caps = if (type in setOf("chat", "reasoning", "image", "embedding", "rerank")) {
+                            pm.buildModelCapabilities(type, spec)
+                        } else {
+                            emptyList()
+                        }
 
                         if (compositeId in existingIds) {
                             // 更新已存在模型的元数据
@@ -328,6 +353,49 @@ class SettingsViewModel(
                 _isFetchingModels.value = false
             }
         }
+    }
+
+    suspend fun verifyOnboardingModel(providerId: String, model: ModelInfo): ModelInfo? {
+        val verified = verifyOnboardingModelCandidate(model) { remoteModelId ->
+            val config = pm.getProviderConfig(providerId) ?: return@verifyOnboardingModelCandidate false
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    kotlinx.coroutines.withTimeout(15_000) {
+                        val provider = if (config.protocolType is ProtocolType.Local) {
+                            com.promenar.nexara.data.remote.provider.LlmProvider.local(
+                                app.localInferenceEngine,
+                                remoteModelId,
+                            )
+                        } else {
+                            com.promenar.nexara.data.remote.provider.LlmProvider.builder()
+                                .protocolType(config.protocolType)
+                                .baseUrl(config.baseUrl)
+                                .apiKey(config.apiKey)
+                                .serviceAccountJson(config.vertexServiceAccountJson)
+                                .model(remoteModelId)
+                                .build()
+                        }
+                        provider.sendPromptSync(
+                            com.promenar.nexara.data.remote.protocol.PromptRequest(
+                                messages = listOf(
+                                    com.promenar.nexara.data.remote.protocol.ProtocolMessage(
+                                        role = "user",
+                                        content = "Reply OK.",
+                                    )
+                                ),
+                                model = remoteModelId,
+                                maxTokens = 1,
+                                tools = null,
+                                stream = false,
+                            )
+                        )
+                        true
+                    }
+                }.getOrDefault(false)
+            }
+        }
+        if (verified != null && verified != model) pm.updateModel(verified)
+        return verified
     }
 
     /**
@@ -502,8 +570,9 @@ class SettingsViewModel(
     }
 
     fun setLanguage(lang: String) {
-        _language.value = lang
-        prefs.edit().putString("language", lang).apply()
+        if (com.promenar.nexara.util.LocaleController.setApplicationLanguage(app, lang)) {
+            _language.value = lang
+        }
     }
 
     fun setThemeMode(mode: String) {

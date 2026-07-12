@@ -70,8 +70,10 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.CredentialUpdate
+import com.promenar.nexara.data.local.inference.SlotState
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.model.ProviderSummary
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.SecretField
@@ -86,6 +88,32 @@ data class ProviderPreset(
     val defaultBaseUrl: String,
     val iconRes: Int? = null
 )
+
+internal suspend fun persistVerifiedProviderConnection(
+    protocolType: ProtocolType,
+    baseUrl: String,
+    credential: CredentialUpdate,
+    model: String,
+    name: String?,
+    onSave: suspend (ProtocolType, String, CredentialUpdate, String, String?) -> String,
+    readSummary: suspend (String) -> ProviderSummary?,
+): String {
+    val savedProviderId = onSave(protocolType, baseUrl, credential, model, name)
+    val summary = checkNotNull(readSummary(savedProviderId)) { "保存后的提供商不可读" }
+    check(summary.protocolType == protocolType && summary.baseUrl == baseUrl) {
+        "保存后的提供商配置与已验证输入不一致"
+    }
+    when (credential) {
+        is CredentialUpdate.Replace -> check(
+            if (protocolType is ProtocolType.Google_VertexAI) summary.hasVertexCredentials else summary.hasApiKey
+        ) { "保存后的提供商凭证不可用" }
+        CredentialUpdate.Clear -> check(!summary.hasApiKey && !summary.hasVertexCredentials) {
+            "提供商凭证清除未生效"
+        }
+        CredentialUpdate.Preserve -> Unit
+    }
+    return savedProviderId
+}
 
 val PROVIDER_PRESETS = listOf(
     ProviderPreset("OpenAI", ProtocolType.OpenAI_ChatCompletions, "https://api.openai.com", R.drawable.ic_provider_openai),
@@ -108,10 +136,14 @@ val PROVIDER_PRESETS = listOf(
 @Composable
 fun ProviderFormScreen(
     providerId: String? = null,
+    forceLocalProbeFailureForTesting: Boolean = false,
     onNavigateBack: () -> Unit,
     onNavigateToModels: () -> Unit = {},
     onNavigateToLocalModels: () -> Unit = {},
-    onSave: suspend (protocolType: ProtocolType, baseUrl: String, credential: CredentialUpdate, model: String, name: String?) -> Unit = { _, _, _, _, _ -> }
+    onboardingMode: Boolean = false,
+    onSaved: (String) -> Unit = {},
+    onConnectionVerified: (String) -> Unit = {},
+    onSave: suspend (protocolType: ProtocolType, baseUrl: String, credential: CredentialUpdate, model: String, name: String?) -> String = { _, _, _, _, _ -> "" },
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as NexaraApplication
@@ -129,12 +161,25 @@ fun ProviderFormScreen(
     var originalUsesVertex by remember { mutableStateOf<Boolean?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
+    var localConnectionFailed by remember { mutableStateOf(false) }
     var localProto by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(providerId) {
         if (providerId != null) {
-            val config = viewModel.getProviderSummary(providerId)
+            val config = if (forceLocalProbeFailureForTesting) {
+                com.promenar.nexara.data.model.ProviderSummary(
+                    id = providerId,
+                    name = "Local",
+                    protocolType = ProtocolType.Local,
+                    baseUrl = "",
+                    model = "",
+                    hasApiKey = false,
+                    hasVertexCredentials = false,
+                )
+            } else {
+                viewModel.getProviderSummary(providerId)
+            }
             if (config != null) {
                 name = config.name
                 baseUrl = config.baseUrl
@@ -343,11 +388,49 @@ fun ProviderFormScreen(
                             .background(NexaraColors.InversePrimary)
                             .clickable {
                                 if (!isSaving) scope.launch {
+                                    if (onboardingMode && providerId != null) {
+                                        isSaving = true
+                                        localConnectionFailed = false
+                                        val probeState = if (forceLocalProbeFailureForTesting) {
+                                            SlotState()
+                                        } else {
+                                            app.localInferenceEngine.mainSlot.value
+                                        }
+                                        val discoveredModels = localProviderModelsForConnection(probeState)
+                                        if (discoveredModels.isEmpty()) {
+                                            localConnectionFailed = true
+                                            isSaving = false
+                                            return@launch
+                                        }
+                                        try {
+                                            val savedProviderId = onSave(
+                                                ProtocolType.Local,
+                                                "",
+                                                CredentialUpdate.Preserve,
+                                                discoveredModels.first(),
+                                                "本地模型",
+                                            )
+                                            onConnectionVerified(savedProviderId)
+                                            onNavigateBack()
+                                        } catch (_: Exception) {
+                                            localConnectionFailed = true
+                                        } finally {
+                                            isSaving = false
+                                        }
+                                        return@launch
+                                    }
                                     isSaving = true
                                     saveFailed = false
                                     try {
-                                        onSave(ProtocolType.Local, "", CredentialUpdate.Preserve, "", "本地模型")
-                                        onNavigateToLocalModels()
+                                        val savedProviderId = onSave(
+                                            ProtocolType.Local,
+                                            "",
+                                            CredentialUpdate.Preserve,
+                                            "",
+                                            "本地模型",
+                                        )
+                                        onSaved(savedProviderId)
+                                        if (onboardingMode) onNavigateBack() else onNavigateToLocalModels()
                                     } catch (_: Exception) {
                                         saveFailed = true
                                     } finally {
@@ -359,10 +442,38 @@ fun ProviderFormScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = stringResource(R.string.local_models_title),
+                            text = stringResource(
+                                if (onboardingMode && providerId != null) {
+                                    R.string.provider_form_btn_test
+                                } else {
+                                    R.string.local_models_title
+                                }
+                            ),
                             style = NexaraTypography.labelMedium,
                             color = NexaraColors.OnPrimary
                         )
+                    }
+                    if (localConnectionFailed) {
+                        Text(
+                            text = stringResource(R.string.onboarding_local_model_unavailable),
+                            style = NexaraTypography.bodyMedium,
+                            color = NexaraColors.Error,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(NexaraShapes.medium)
+                                .border(0.5.dp, NexaraColors.Primary, NexaraShapes.medium)
+                                .clickable(onClick = onNavigateToLocalModels)
+                                .padding(vertical = 14.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.local_models_title),
+                                style = NexaraTypography.labelMedium,
+                                color = NexaraColors.Primary,
+                            )
+                        }
                     }
                 }
             }
@@ -504,6 +615,28 @@ fun ProviderFormScreen(
                                     }
                                 }.getOrDefault(false)
                             }
+                            if (testStatus == true && providerId != null) {
+                                isSaving = true
+                                saveFailed = false
+                                try {
+                                    val savedProviderId = persistVerifiedProviderConnection(
+                                        protocolType = protocolType,
+                                        baseUrl = baseUrl,
+                                        credential = credentialUpdate,
+                                        model = "",
+                                        name = name.ifBlank { null },
+                                        onSave = onSave,
+                                        readSummary = viewModel::getProviderSummary,
+                                    )
+                                    onConnectionVerified(savedProviderId)
+                                    if (onboardingMode) onNavigateBack()
+                                } catch (_: Exception) {
+                                    testStatus = false
+                                    saveFailed = true
+                                } finally {
+                                    isSaving = false
+                                }
+                            }
                             isTesting = false
                         }
                     }
@@ -549,14 +682,19 @@ fun ProviderFormScreen(
                         saveFailed = false
                         scope.launch {
                             try {
-                                onSave(
+                                val savedProviderId = onSave(
                                     if (selectedPreset.name == "Custom") localProto else selectedPreset.protocolType,
                                     baseUrl,
                                     credentialUpdate,
                                     "",
                                     name.ifBlank { null },
                                 )
-                                if (providerId != null) onNavigateToModels() else onNavigateBack()
+                                onSaved(savedProviderId)
+                                if (onboardingMode) {
+                                    onNavigateBack()
+                                } else {
+                                    if (providerId != null) onNavigateToModels() else onNavigateBack()
+                                }
                             } catch (_: Exception) {
                                 saveFailed = true
                             } finally {
@@ -607,6 +745,9 @@ internal fun isSecureProviderEndpoint(value: String): Boolean = runCatching {
 
 internal fun isProviderEndpointAllowed(protocol: ProtocolType, value: String): Boolean =
     protocol is ProtocolType.Local || isSecureProviderEndpoint(value)
+
+internal fun localProviderModelsForConnection(state: SlotState): List<String> =
+    state.modelName.trim().takeIf { state.isLoaded && it.isNotEmpty() }?.let(::listOf).orEmpty()
 
 @Composable
 private fun PresetItem(

@@ -1,7 +1,5 @@
 package com.promenar.nexara.navigation
 
-import android.app.Activity
-import android.content.Intent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -10,7 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,6 +27,12 @@ import androidx.navigation.navArgument
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.model.CredentialUpdate
+import com.promenar.nexara.domain.usecase.IdGenerator
+import com.promenar.nexara.onboarding.OnboardingStateStore
+import com.promenar.nexara.onboarding.OnboardingStep
+import com.promenar.nexara.onboarding.OnboardingLanguageSelectionCoordinator
+import com.promenar.nexara.onboarding.createOnboardingAgentSession
+import com.promenar.nexara.onboarding.isSuccessfulOnboardingAssistant
 import com.promenar.nexara.ui.chat.ChatScreen
 import com.promenar.nexara.ui.chat.SessionSettingsScreen
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
@@ -39,6 +49,7 @@ import com.promenar.nexara.ui.rag.AdvancedRetrievalScreen
 import com.promenar.nexara.ui.settings.BackupSettingsScreen
 import com.promenar.nexara.ui.settings.DeveloperScreen
 import com.promenar.nexara.ui.settings.LocalModelsScreen
+import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.settings.ProviderFormScreen
 import com.promenar.nexara.ui.settings.ProviderModelsScreen
 import com.promenar.nexara.ui.settings.SettingsViewModel
@@ -49,7 +60,10 @@ import com.promenar.nexara.ui.settings.TokenUsageScreen
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.welcome.WelcomeScreen
-import com.promenar.nexara.ui.welcome.WelcomeLanguageSelection
+import com.promenar.nexara.ui.welcome.eligibleOnboardingModels
+import com.promenar.nexara.util.LocaleController
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 object NavDestinations {
     const val WELCOME = "welcome"
@@ -106,8 +120,52 @@ private fun PlaceholderScreen(title: String) {
 @Composable
 fun NexaraNavGraph(
     navController: NavHostController,
-    startDestination: String = NavDestinations.WELCOME
+    startDestination: String = NavDestinations.WELCOME,
+    onboardingStateStore: OnboardingStateStore? = null,
+    onboardingModelsOverride: List<ModelInfo>? = null,
+    forceLocalProbeFailureForTesting: Boolean = false,
 ) {
+    val context = LocalContext.current
+    val app = context.applicationContext as NexaraApplication
+    val onboardingStore = remember(app, onboardingStateStore) {
+        onboardingStateStore ?: OnboardingStateStore(app)
+    }
+    val onboardingState by onboardingStore.state.collectAsState()
+    val onboardingScope = rememberCoroutineScope()
+    val languageSelection = remember(context, onboardingStore) {
+        OnboardingLanguageSelectionCoordinator(
+            stateStore = onboardingStore,
+            currentLanguage = { LocaleController.getSavedLanguage(context) },
+            persistLanguage = { LocaleController.persistLanguage(context, it) },
+            applyLanguage = { LocaleController.applyLanguage(context, it) },
+        )
+    }
+
+    LaunchedEffect(onboardingState.step, onboardingState.sessionId) {
+        val sessionId = onboardingState.sessionId
+        if (onboardingState.step == OnboardingStep.FIRST_CHAT && sessionId != null) {
+            app.chatStore.state.collect { chatState ->
+                val assistantSucceeded = chatState.sessions
+                    .firstOrNull { it.id == sessionId }
+                    ?.messages
+                    .orEmpty()
+                    .any(::isSuccessfulOnboardingAssistant)
+                if (assistantSucceeded) {
+                    onboardingStore.recordFirstChatResult(sessionId, assistantSucceeded = true)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(onboardingState.step) {
+        if (onboardingState.step == OnboardingStep.COMPLETED) {
+            navController.navigate(NavDestinations.MAIN_TAB_SCAFFOLD) {
+                popUpTo(NavDestinations.WELCOME) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -145,20 +203,102 @@ fun NexaraNavGraph(
         }
     ) {
         composable(NavDestinations.WELCOME) {
-            val context = LocalContext.current
+            val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
+            val providerModels by viewModel.providerModels.collectAsState()
+            val isFetchingModels by viewModel.isFetchingModels.collectAsState()
+            val models = eligibleOnboardingModels(
+                onboardingModelsOverride ?: providerModels,
+                onboardingState.providerId,
+            )
+            LaunchedEffect(onboardingState.step, onboardingState.providerId) {
+                if (onboardingState.step == OnboardingStep.MODEL && onboardingModelsOverride == null) {
+                    onboardingState.providerId?.let(viewModel::refreshProviderModels)
+                }
+            }
+            var isWorking by remember { mutableStateOf(false) }
+            var onboardingError by remember { mutableStateOf<String?>(null) }
+            val actionFailed = androidx.compose.ui.res.stringResource(com.promenar.nexara.R.string.onboarding_action_failed)
             WelcomeScreen(
                 onLanguageSelected = { languageCode ->
-                    if (WelcomeLanguageSelection.complete(context, languageCode)) {
-                        val activity = context as? Activity
-                        if (activity != null) {
-                            activity.startActivity(Intent.makeRestartActivityTask(activity.componentName))
-                        } else {
-                            navController.navigate(NavDestinations.MAIN_TAB_SCAFFOLD) {
-                                popUpTo(NavDestinations.WELCOME) { inclusive = true }
+                    if (!isWorking) {
+                        isWorking = true
+                        languageSelection.select(languageCode)
+                        isWorking = false
+                    }
+                },
+                state = onboardingState,
+                models = models,
+                isWorking = isWorking || isFetchingModels,
+                errorMessage = onboardingError,
+                onOpenProvider = { navController.navigate(NavDestinations.providerForm()) },
+                onOpenConnection = {
+                    navController.navigate(NavDestinations.providerForm(onboardingState.providerId))
+                },
+                onModelSelected = { modelId: String ->
+                    models.firstOrNull { it.id == modelId }?.let { model ->
+                        if (!isWorking) {
+                            isWorking = true
+                            onboardingError = null
+                            onboardingScope.launch {
+                                val verified = viewModel.verifyOnboardingModel(
+                                    providerId = onboardingState.providerId.orEmpty(),
+                                    model = model,
+                                )
+                                if (verified == null) {
+                                    onboardingError = app.getString(
+                                        com.promenar.nexara.R.string.onboarding_model_probe_failed
+                                    )
+                                } else {
+                                    if (!verified.enabled) viewModel.updateModel(verified.copy(enabled = true))
+                                    onboardingStore.selectModel(verified.id)
+                                }
+                                isWorking = false
                             }
                         }
                     }
-                }
+                },
+                onRefreshModels = {
+                    onboardingState.providerId?.let(viewModel::refreshProviderModels)
+                },
+                onBackToConnection = { onboardingStore.returnToConnection() },
+                onCreateAgent = { name ->
+                    if (!isWorking) {
+                        isWorking = true
+                        onboardingError = null
+                        onboardingScope.launch {
+                            runCatching {
+                                val modelId = requireNotNull(
+                                    onboardingState.modelId?.takeIf { it.isNotBlank() }
+                                ) { "首次引导尚未选择模型" }
+                                createOnboardingAgentSession(
+                                    modelId = modelId,
+                                    createAgent = {
+                                        app.createAgentUseCase(
+                                            name = name,
+                                            description = "",
+                                            modelId = modelId,
+                                            systemPrompt = "",
+                                        ).id
+                                    },
+                                    newSessionId = IdGenerator::session,
+                                    createSession = app.sessionRepository::create,
+                                    deleteSession = app.sessionRepository::delete,
+                                    deleteAgent = app.agentRepository::delete,
+                                    chatStore = app.chatStore,
+                                    recordCheckpoint = onboardingStore::recordAgentCreated,
+                                )
+                            }.onFailure {
+                                onboardingError = actionFailed
+                            }
+                            isWorking = false
+                        }
+                    }
+                },
+                onOpenFirstChat = {
+                    onboardingState.sessionId?.let { sessionId ->
+                        navController.navigate(NavDestinations.chatHero(sessionId))
+                    }
+                },
             )
         }
 
@@ -344,11 +484,12 @@ fun NexaraNavGraph(
             )
         ) { backStackEntry ->
             val providerId = backStackEntry.arguments?.getString("providerId")
-            val context = LocalContext.current
-            val app = context.applicationContext as NexaraApplication
             val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
+            val onboardingMode = onboardingState.step == OnboardingStep.PROVIDER ||
+                onboardingState.step == OnboardingStep.CONNECTION
             ProviderFormScreen(
                 providerId = providerId,
+                forceLocalProbeFailureForTesting = forceLocalProbeFailureForTesting,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToModels = {
                     val pid = providerId ?: ""
@@ -359,6 +500,17 @@ fun NexaraNavGraph(
                 onNavigateToLocalModels = {
                     navController.navigate(NavDestinations.LOCAL_MODELS) {
                         popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
+                    }
+                },
+                onboardingMode = onboardingMode,
+                onSaved = { savedProviderId ->
+                    if (onboardingState.step == OnboardingStep.PROVIDER) {
+                        onboardingStore.recordProviderSaved(savedProviderId)
+                    }
+                },
+                onConnectionVerified = { verifiedProviderId ->
+                    if (onboardingState.step == OnboardingStep.CONNECTION) {
+                        onboardingStore.recordConnectionResult(verifiedProviderId, succeeded = true)
                     }
                 },
                 onSave = { protocolType, baseUrl, credential, model, name ->
@@ -378,6 +530,7 @@ fun NexaraNavGraph(
                         if (mainConfig == null || (!mainConfig.hasApiKey && !mainConfig.hasVertexCredentials)) {
                             // 全新安装 / 主提供商未配置：创建主提供商，使 Tier 3 兜底生效
                             app.updateProvider(protocolType, baseUrl, credential, model, name)
+                            "default"
                         } else {
                             // 已有主提供商：新增额外提供商
                             val id = "extra_${java.util.UUID.randomUUID()}"
@@ -396,10 +549,12 @@ fun NexaraNavGraph(
                                     item,
                                     credential,
                                 )
+                            id
                         }
                       } else if (providerId == "default") {
                         // 编辑主提供商
                         app.updateProvider(protocolType, baseUrl, credential, model, name)
+                        providerId
                       } else {
                         // 编辑额外提供商
                         val item = com.promenar.nexara.data.model.ProviderListItem(
@@ -418,6 +573,7 @@ fun NexaraNavGraph(
                                 item,
                                 credential,
                             )
+                        providerId
                       }
                     }
                 }

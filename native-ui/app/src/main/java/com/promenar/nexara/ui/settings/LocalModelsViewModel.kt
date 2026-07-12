@@ -5,16 +5,18 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.local.inference.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class LocalModelsViewModel(application: Application) : ViewModel() {
 
-    private val appContext = application.applicationContext
+    private val app = application as NexaraApplication
+    private val appContext = app.applicationContext
     private val prefs = appContext.getSharedPreferences("nexara_settings", 0)
 
-    private val engine: LocalInferenceEngine = LocalInferenceEngine(appContext)
+    private val engine: LocalInferenceEngine = app.localInferenceEngine
     private val storageManager: ModelStorageManager = ModelStorageManager(appContext)
     private val downloader: ModelDownloader = ModelDownloader(appContext)
 

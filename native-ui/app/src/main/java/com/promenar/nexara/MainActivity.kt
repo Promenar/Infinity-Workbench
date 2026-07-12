@@ -13,7 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
@@ -23,6 +23,10 @@ import androidx.navigation.compose.rememberNavController
 import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.navigation.NexaraNavGraph
+import com.promenar.nexara.onboarding.OnboardingState
+import com.promenar.nexara.onboarding.OnboardingStateStore
+import com.promenar.nexara.onboarding.OnboardingStep
+import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.share.core.AndroidShareIndexScheduler
 import com.promenar.nexara.share.core.DurableShareInbox
 import com.promenar.nexara.share.core.ShareImportTargetProvider
@@ -35,10 +39,15 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.util.LocaleHelper
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
-import androidx.annotation.VisibleForTesting
 import com.promenar.nexara.share.ui.ShareImportUiState
 
+internal fun allowOnboardingEmptyModelsOverride(
+    isDebugBuild: Boolean,
+    requestedByIntent: Boolean,
+): Boolean = isDebugBuild && requestedByIntent
+
 class MainActivity : ComponentActivity() {
+    private val onboardingStore by lazy { OnboardingStateStore(applicationContext) }
     private val durableShareInbox by lazy { DurableShareInbox.get(noBackupFilesDir) }
     private val shareIntentViewModel by viewModels<ShareIntentViewModel> {
         ShareIntentViewModel.factory(durableShareInbox, applicationContext.contentResolver)
@@ -108,16 +117,36 @@ class MainActivity : ComponentActivity() {
                         val navController = rememberNavController()
                         val backStackEntry by navController.currentBackStackEntryAsState()
                         val importState by shareImportViewModel.state.collectAsStateWithLifecycle()
-                        val context = LocalContext.current
-                        val prefs = context.getSharedPreferences("nexara_prefs", Context.MODE_PRIVATE)
-                        val hasShownWelcome = prefs.getBoolean("has_shown_welcome", false)
-                        val startDestination = if (hasShownWelcome) {
+                        val onboardingState by onboardingStore.state.collectAsStateWithLifecycle()
+                        val startDestination = if (onboardingState.step == OnboardingStep.COMPLETED) {
                             NavDestinations.MAIN_TAB_SCAFFOLD
                         } else {
                             NavDestinations.WELCOME
                         }
 
-                        NexaraNavGraph(navController = navController, startDestination = startDestination)
+                        NexaraNavGraph(
+                            navController = navController,
+                            startDestination = startDestination,
+                            onboardingStateStore = onboardingStore,
+                            onboardingModelsOverride = if (allowOnboardingEmptyModelsOverride(
+                                isDebugBuild = BuildConfig.DEBUG,
+                                requestedByIntent = intent.getBooleanExtra(
+                                    EXTRA_ONBOARDING_EMPTY_MODELS_FOR_TESTING,
+                                    false,
+                                ),
+                            )) {
+                                emptyList<ModelInfo>()
+                            } else {
+                                null
+                            },
+                            forceLocalProbeFailureForTesting = allowOnboardingEmptyModelsOverride(
+                                isDebugBuild = BuildConfig.DEBUG,
+                                requestedByIntent = intent.getBooleanExtra(
+                                    EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING,
+                                    false,
+                                ),
+                            ),
+                        )
                         LaunchedEffect(startupState, backStackEntry) {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
                             if (startupState == BackupStartupState.Ready) shareImportViewModel.presentNext()
@@ -158,6 +187,12 @@ class MainActivity : ComponentActivity() {
             consumeShareIntentsIfReady()
         }
     }
+
+    @VisibleForTesting
+    internal fun onboardingStateForTesting(): OnboardingState = onboardingStore.state.value
+
+    @VisibleForTesting
+    internal fun onboardingStateStoreForTesting(): OnboardingStateStore = onboardingStore
 
     private fun stageShareIntent(candidate: Intent?) {
         if (!ShareIntentQueue.isShareIntent(candidate)) return
@@ -237,4 +272,13 @@ class MainActivity : ComponentActivity() {
 
     @VisibleForTesting
     internal fun shareImportStateForTesting(): ShareImportUiState = shareImportViewModel.state.value
+
+    companion object {
+        @VisibleForTesting
+        internal const val EXTRA_ONBOARDING_EMPTY_MODELS_FOR_TESTING =
+            "com.promenar.nexara.extra.ONBOARDING_EMPTY_MODELS_FOR_TESTING"
+        @VisibleForTesting
+        internal const val EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING =
+            "com.promenar.nexara.extra.ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING"
+    }
 }

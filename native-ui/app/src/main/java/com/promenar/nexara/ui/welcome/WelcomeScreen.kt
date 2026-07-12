@@ -7,16 +7,25 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -25,28 +34,60 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
+import com.promenar.nexara.onboarding.OnboardingState
+import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
 fun WelcomeScreen(
-    onLanguageSelected: (String) -> Unit
+    onLanguageSelected: (String) -> Unit,
+    state: OnboardingState = OnboardingState(),
+    models: List<ModelInfo> = emptyList(),
+    isWorking: Boolean = false,
+    errorMessage: String? = null,
+    onOpenProvider: () -> Unit = {},
+    onOpenConnection: () -> Unit = {},
+    onModelSelected: (String) -> Unit = {},
+    onRefreshModels: () -> Unit = {},
+    onBackToConnection: () -> Unit = {},
+    onCreateAgent: (String) -> Unit = {},
+    onOpenFirstChat: () -> Unit = {},
 ) {
+    if (state.step != OnboardingStep.LANGUAGE) {
+        OnboardingProgressScreen(
+            state = state,
+            models = models,
+            isWorking = isWorking,
+            errorMessage = errorMessage,
+            onOpenProvider = onOpenProvider,
+            onOpenConnection = onOpenConnection,
+            onModelSelected = onModelSelected,
+            onRefreshModels = onRefreshModels,
+            onBackToConnection = onBackToConnection,
+            onCreateAgent = onCreateAgent,
+            onOpenFirstChat = onOpenFirstChat,
+        )
+        return
+    }
     // Scaffold provides the true immersive edge-to-edge canvas
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets.systemBars // Enforces avoidance of notch/nav bar naturally
+        contentWindowInsets = WindowInsets.safeDrawing
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .testTag("onboarding_step_language")
         ) {
             // Background Atmosphere (The massive blurs)
             AtmosphereBackground()
@@ -55,7 +96,8 @@ fun WelcomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 20.dp), // safe-margin: 20px
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -93,11 +135,13 @@ fun WelcomeScreen(
                     LanguageButton(
                         icon = Icons.Rounded.Language,
                         text = stringResource(R.string.welcome_lang_english),
+                        enabled = !isWorking,
                         onClick = { onLanguageSelected("en") }
                     )
                     LanguageButton(
                         icon = Icons.Rounded.Translate,
                         text = stringResource(R.string.welcome_lang_chinese),
+                        enabled = !isWorking,
                         onClick = { onLanguageSelected("zh") }
                     )
                 }
@@ -128,6 +172,203 @@ fun WelcomeScreen(
             }
         }
     }
+}
+
+@Composable
+private fun OnboardingProgressScreen(
+    state: OnboardingState,
+    models: List<ModelInfo>,
+    isWorking: Boolean,
+    errorMessage: String?,
+    onOpenProvider: () -> Unit,
+    onOpenConnection: () -> Unit,
+    onModelSelected: (String) -> Unit,
+    onRefreshModels: () -> Unit,
+    onBackToConnection: () -> Unit,
+    onCreateAgent: (String) -> Unit,
+    onOpenFirstChat: () -> Unit,
+) {
+    var agentName by rememberSaveable { mutableStateOf("") }
+    val stepNumber = (state.step.ordinal + 1).coerceIn(1, 6)
+    Scaffold(
+        containerColor = NexaraColors.CanvasBackground,
+        contentWindowInsets = WindowInsets.safeDrawing,
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            AtmosphereBackground()
+            if (state.step == OnboardingStep.MODEL) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .testTag("onboarding_step_model"),
+                    contentPadding = PaddingValues(vertical = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item { OnboardingStepHeader(state.step, stepNumber) }
+                    items(models, key = { it.id }) { model ->
+                        OnboardingActionButton(
+                            text = if (model.type.equals("unknown", ignoreCase = true)) {
+                                stringResource(R.string.onboarding_model_pending_label, model.name)
+                            } else {
+                                model.name
+                            },
+                            enabled = !isWorking,
+                            modifier = Modifier.testTag("onboarding_model_option"),
+                            onClick = { onModelSelected(model.id) },
+                        )
+                    }
+                    if (models.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.onboarding_model_empty),
+                                style = NexaraTypography.bodyMedium,
+                                color = NexaraColors.Error,
+                                modifier = Modifier.testTag("onboarding_model_empty"),
+                            )
+                        }
+                        item {
+                            OnboardingActionButton(
+                                text = stringResource(R.string.onboarding_model_refresh),
+                                enabled = !isWorking,
+                                modifier = Modifier.testTag("onboarding_model_refresh"),
+                                onClick = onRefreshModels,
+                            )
+                        }
+                        item {
+                            OnboardingActionButton(
+                                text = stringResource(R.string.onboarding_model_back_connection),
+                                enabled = !isWorking,
+                                modifier = Modifier.testTag("onboarding_model_back_connection"),
+                                onClick = onBackToConnection,
+                            )
+                        }
+                    }
+                    errorMessage?.let { message -> item { OnboardingError(message) } }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 32.dp)
+                        .testTag("onboarding_step_${state.step.name.lowercase()}"),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    OnboardingStepHeader(state.step, stepNumber)
+                    when (state.step) {
+                    OnboardingStep.PROVIDER -> OnboardingActionButton(
+                        text = stringResource(R.string.onboarding_provider_action),
+                        enabled = !isWorking,
+                        onClick = onOpenProvider,
+                    )
+                    OnboardingStep.CONNECTION -> OnboardingActionButton(
+                        text = stringResource(R.string.onboarding_connection_action),
+                        enabled = !isWorking,
+                        onClick = onOpenConnection,
+                    )
+                    OnboardingStep.MODEL -> Unit
+                    OnboardingStep.AGENT -> {
+                        OutlinedTextField(
+                            value = agentName,
+                            onValueChange = { agentName = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text(stringResource(R.string.onboarding_agent_name)) },
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        val fallbackName = stringResource(R.string.onboarding_agent_default_name)
+                        OnboardingActionButton(
+                            text = stringResource(R.string.onboarding_agent_action),
+                            enabled = !isWorking,
+                            onClick = { onCreateAgent(agentName.ifBlank { fallbackName }) },
+                        )
+                    }
+                    OnboardingStep.FIRST_CHAT -> OnboardingActionButton(
+                        text = stringResource(R.string.onboarding_first_chat_action),
+                        enabled = !isWorking && state.sessionId != null,
+                        onClick = onOpenFirstChat,
+                    )
+                    OnboardingStep.LANGUAGE, OnboardingStep.COMPLETED -> Unit
+                }
+
+                    if (errorMessage != null) {
+                    Spacer(Modifier.height(16.dp))
+                        OnboardingError(errorMessage)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingStepHeader(step: OnboardingStep, stepNumber: Int) {
+    Text(
+        text = stringResource(R.string.onboarding_progress, stepNumber),
+        style = NexaraTypography.labelMedium,
+        color = NexaraColors.Primary,
+    )
+    Spacer(Modifier.height(12.dp))
+    Text(
+        text = stringResource(step.titleResource()),
+        style = NexaraTypography.headlineLarge,
+        color = NexaraColors.OnBackground,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = stringResource(step.descriptionResource()),
+        style = NexaraTypography.bodyMedium,
+        color = NexaraColors.OnSurfaceVariant,
+    )
+    Spacer(Modifier.height(28.dp))
+}
+
+@Composable
+private fun OnboardingError(message: String) {
+    Text(
+        text = message,
+        style = NexaraTypography.bodyMedium,
+        color = NexaraColors.Error,
+    )
+}
+
+@Composable
+private fun OnboardingActionButton(
+    text: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Text(text = text, style = NexaraTypography.labelMedium)
+    }
+}
+
+private fun OnboardingStep.titleResource(): Int = when (this) {
+    OnboardingStep.PROVIDER -> R.string.onboarding_provider_title
+    OnboardingStep.CONNECTION -> R.string.onboarding_connection_title
+    OnboardingStep.MODEL -> R.string.onboarding_model_title
+    OnboardingStep.AGENT -> R.string.onboarding_agent_title
+    OnboardingStep.FIRST_CHAT -> R.string.onboarding_first_chat_title
+    OnboardingStep.LANGUAGE, OnboardingStep.COMPLETED -> R.string.welcome_brand
+}
+
+private fun OnboardingStep.descriptionResource(): Int = when (this) {
+    OnboardingStep.PROVIDER -> R.string.onboarding_provider_desc
+    OnboardingStep.CONNECTION -> R.string.onboarding_connection_desc
+    OnboardingStep.MODEL -> R.string.onboarding_model_desc
+    OnboardingStep.AGENT -> R.string.onboarding_agent_desc
+    OnboardingStep.FIRST_CHAT -> R.string.onboarding_first_chat_desc
+    OnboardingStep.LANGUAGE, OnboardingStep.COMPLETED -> R.string.welcome_slogan
 }
 
 @Composable
@@ -169,6 +410,7 @@ private fun BoxScope.AtmosphereBackground() {
 private fun LanguageButton(
     icon: ImageVector,
     text: String,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -186,6 +428,7 @@ private fun LanguageButton(
             .fillMaxWidth()
             .scale(scale)
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null, // Disable default ripple because the scale + glass is the intended feedback
                 onClick = onClick

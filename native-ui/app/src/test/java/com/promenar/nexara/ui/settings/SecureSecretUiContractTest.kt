@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.jupiter.api.Test
+import com.promenar.nexara.data.local.inference.SlotState
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 
 class SecureSecretUiContractTest {
@@ -74,6 +75,21 @@ class SecureSecretUiContractTest {
         assertThat(isProviderEndpointAllowed(ProtocolType.Local, "")).isTrue()
         assertThat(isProviderEndpointAllowed(ProtocolType.Generic_OpenAI_Compat, "http://plain.invalid")).isFalse()
         assertThat(isProviderEndpointAllowed(ProtocolType.Generic_OpenAI_Compat, "https://secure.invalid")).isTrue()
+    }
+
+    @Test
+    fun `local connection requires an actually loaded named main model`() {
+        assertThat(localProviderModelsForConnection(SlotState())).isEmpty()
+        assertThat(
+            localProviderModelsForConnection(SlotState(isLoaded = true, modelName = ""))
+        ).isEmpty()
+        assertThat(
+            localProviderModelsForConnection(SlotState(isLoaded = true, modelName = "local.gguf"))
+        ).containsExactly("local.gguf")
+        assertThat(source("ui/settings/LocalModelsViewModel.kt"))
+            .contains("app.localInferenceEngine")
+        assertThat(source("ui/settings/LocalModelsViewModel.kt"))
+            .doesNotContain("LocalInferenceEngine(appContext)")
     }
 
     @Test

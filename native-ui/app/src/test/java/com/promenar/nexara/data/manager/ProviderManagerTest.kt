@@ -11,6 +11,8 @@ import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.ui.settings.persistVerifiedProviderConnection
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +52,29 @@ class ProviderManagerTest {
         manager.setPresetModel("summary", stored.id)
         assertThat(manager.summaryModelId.value).isEqualTo("default::remote-model")
         assertThat(runCatching { manager.setPresetModel("summary", "remote-model") }.isFailure).isTrue()
+    }
+
+    @Test
+    fun `连接探测后修改地址和 Key 必须保存且可由 ProviderManager 反读`() = runTest {
+        val updatedUrl = "https://updated-provider.invalid/v1"
+        val updatedKey = "updated-key"
+
+        val savedId = persistVerifiedProviderConnection(
+            protocolType = ProtocolType.OpenAI_ChatCompletions,
+            baseUrl = updatedUrl,
+            credential = CredentialUpdate.Replace(updatedKey),
+            model = "",
+            name = "更新后的提供商",
+            onSave = { protocol, url, credential, model, name ->
+                manager.updateMainProvider(protocol, url, credential, model, name)
+                "default"
+            },
+            readSummary = manager::getProviderSummary,
+        )
+
+        assertThat(savedId).isEqualTo("default")
+        assertThat(manager.getProviderSummary("default")?.baseUrl).isEqualTo(updatedUrl)
+        assertThat(manager.getMainProviderConfig()?.apiKey).isEqualTo(updatedKey)
     }
 
     @Test
