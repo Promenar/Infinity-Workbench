@@ -40,7 +40,6 @@ import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ImageInput
 import com.promenar.nexara.data.remote.protocol.StreamChunk
-import com.promenar.nexara.data.remote.UnifiedLlmClient
 import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.provider.LlmProvider
@@ -57,6 +56,7 @@ import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -107,9 +107,12 @@ class ChatViewModel(
     private val messageRepository: IMessageRepository,
     private val agentRepository: IAgentRepository,
     private val llmProvider: LlmProvider,
-    private val unifiedLlmClient: UnifiedLlmClient? = null,
-    providerRequestRouter: ProviderRequestRouter? = null,
+    providerRequestRouter: ProviderRequestRouter,
     private val configResolver: AgentConfigResolver,
+    providerResolutionDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val localLlmProviderFactory: (String) -> LlmProvider = { modelId ->
+        LlmProvider.local((application as NexaraApplication).localInferenceEngine, modelId)
+    },
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
     private val textSplitter: RecursiveCharacterTextSplitter? = null,
@@ -119,7 +122,10 @@ class ChatViewModel(
     private val exportSessionUseCase: ExportSessionUseCase? = null
 ) : ViewModel() {
 
-    private val providerRouteGate = providerRequestRouter?.let(::ChatProviderRouteGate)
+    private val providerRouteGate = ChatProviderRouteGate(
+        providerRequestRouter,
+        providerResolutionDispatcher,
+    )
 
     private val store = (application as NexaraApplication).chatStore
 
@@ -378,24 +384,6 @@ class ChatViewModel(
         val effectiveModel = sessionForCtx.modelId?.takeIf { it.isNotBlank() }
             ?: agentConfig.modelId.takeIf { it.isNotBlank() }
             ?: ProviderManager.getInstance().getMainConfiguredModelId().orEmpty()
-        val providerRoute = withContext(Dispatchers.IO) {
-            providerRouteGate?.resolve(effectiveModel)
-        }
-        providerRoute?.failure?.let { failure ->
-            _providerResolutionFailure.value = failure
-            val message = providerRoutingErrorMessage(failure)
-            _error.value = message
-            messageManager.updateMessageContent(
-                sessionId,
-                assistantMsgId,
-                "",
-                UpdateMessageOptions(isError = true, errorMessage = message),
-            )
-            _generationStatus.value = GenerationStatus.ERROR
-            _isGenerating.value = false
-            return
-        }
-        _providerResolutionFailure.value = null
 
         // 使用缓存的 ragOptions，确保与用户最新设置一致（绕过 store 异步延迟）
         val effectiveRagOptions = _currentRagOptions.value.let { cached ->
@@ -454,8 +442,10 @@ class ChatViewModel(
             agentRetrievalConfig = agentConfig.retrievalConfig
         )
 
-        val contextResult = try {
-            contextBuilder.buildContext(contextParams)
+        val routePreparation = try {
+            providerRouteGate.prepare(effectiveModel) {
+                contextBuilder.buildContext(contextParams)
+            }
         } catch (e: Exception) {
             _error.update { "Context build failed: ${e.message}" }
             _ragPhases.update { phases -> phases.map { p -> if (p.status == PhaseStatus.ACTIVE) p.copy(status = PhaseStatus.DONE) else p } }
@@ -467,6 +457,25 @@ class ChatViewModel(
             }
             return
         }
+        val (providerRoute, contextResult) = when (routePreparation) {
+            is ChatRoutePreparation.Failure -> {
+                val failure = routePreparation.failure
+                _providerResolutionFailure.value = failure
+                val message = providerRoutingErrorMessage(failure)
+                _error.value = message
+                messageManager.updateMessageContent(
+                    sessionId,
+                    assistantMsgId,
+                    "",
+                    UpdateMessageOptions(isError = true, errorMessage = message),
+                )
+                _generationStatus.value = GenerationStatus.ERROR
+                _isGenerating.value = false
+                return
+            }
+            is ChatRoutePreparation.Success -> routePreparation.route to routePreparation.context
+        }
+        _providerResolutionFailure.value = null
 
         val hasRagContext = contextResult.ragContext.isNotBlank() ||
             contextResult.ragReferences.isNotEmpty() ||
@@ -519,7 +528,7 @@ class ChatViewModel(
 
         val request = PromptRequest(
             messages = protocolMessages,
-            model = providerRoute?.remoteModelId ?: effectiveModel,
+            model = requireNotNull(providerRoute.remoteModelId),
             temperature = effectiveParams.temperature,
             topP = effectiveParams.topP,
             maxTokens = effectiveParams.maxTokens,
@@ -543,13 +552,12 @@ class ChatViewModel(
         var streamingError: String? = null
 
         try {
-            val requestClient = providerRoute?.client ?: unifiedLlmClient
-            val flow = if (providerRoute?.useLocalProvider == true) {
-                LlmProvider.local(
-                    (application as NexaraApplication).localInferenceEngine,
-                    request.model,
-                ).sendPrompt(request)
-            } else if (requestClient != null) {
+            val flow = if (providerRoute.useLocalProvider) {
+                localLlmProviderFactory(request.model).sendPrompt(request)
+            } else {
+                val requestClient = requireNotNull(providerRoute.client) {
+                    "Router 成功但未创建云端请求客户端"
+                }
                 val stParams = com.promenar.nexara.data.remote.middleware.StreamTextParams(
                     messages = request.messages,
                     model = request.model,
@@ -569,8 +577,6 @@ class ChatViewModel(
                     enableWebSearch = sessionForCtx.options.webSearch == true
                 )
                 requestClient.sendStream(stParams, sConfig)
-            } else {
-                llmProvider.sendPrompt(request)
             }
             _generationStatus.update { GenerationStatus.THINKING }
             
@@ -1012,7 +1018,7 @@ class ChatViewModel(
         return runCatching {
             val providerManager = ProviderManager.getInstance()
             providerManager.summaryModelId.value.takeIf { it.isNotBlank() }
-                ?: providerManager.getMainProviderConfig()?.model?.takeIf { it.isNotBlank() }
+                ?: providerManager.getMainConfiguredModelId()
         }.getOrNull()
     }
 
@@ -1540,6 +1546,10 @@ class ChatViewModel(
                         llmProvider = app.llmProvider,
                         providerRequestRouter = app.providerRequestRouter,
                         configResolver = app.configResolver,
+                        providerResolutionDispatcher = Dispatchers.IO,
+                        localLlmProviderFactory = { modelId ->
+                            LlmProvider.local(app.localInferenceEngine, modelId)
+                        },
                         embeddingClient = app.embeddingClient,
                         vectorStore = app.vectorStore,
                         textSplitter = app.textSplitter,

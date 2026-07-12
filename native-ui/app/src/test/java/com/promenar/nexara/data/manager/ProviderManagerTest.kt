@@ -5,6 +5,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
+import com.promenar.nexara.data.remote.ProviderResolution
+import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.ui.settings.ModelInfo
@@ -41,7 +44,12 @@ class ProviderManagerTest {
         val stored = manager.providerModels.value.single()
         assertThat(stored.id).isEqualTo("default::remote-model")
         assertThat(stored.remoteModelId).isEqualTo("remote-model")
+        assertThat(manager.getMainConfiguredModelId()).isEqualTo("default::remote-model")
         assertThat(manager.getProviderConfigByModelId(stored.id)?.apiKey).isEqualTo("test-key")
+
+        manager.setPresetModel("summary", stored.id)
+        assertThat(manager.summaryModelId.value).isEqualTo("default::remote-model")
+        assertThat(runCatching { manager.setPresetModel("summary", "remote-model") }.isFailure).isTrue()
     }
 
     @Test
@@ -49,6 +57,34 @@ class ProviderManagerTest {
         manager.addModel(model(providerId = null, id = "unowned"))
 
         assertThat(manager.getProviderConfigByModelId("unowned")).isNull()
+    }
+
+    @Test
+    fun `v0_2 不对旧裸模型 ID 做半迁移且 Router typed fail`() {
+        val prefs = app.getSharedPreferences("nexara_settings", 0)
+        prefs.edit()
+            .clear()
+            .putStringSet("all_models", setOf("legacy-model"))
+            .putStringSet("enabled_models", setOf("legacy-model"))
+            .putString("all_models_order", "legacy-model")
+            .putString("model_info_legacy-model_name", "Legacy")
+            .putString("model_info_legacy-model_provider_id", "default")
+            .putString("model_info_legacy-model_provider", "同名提供商")
+            .commit()
+        val isolated = ProviderManager.createForTest(app, TestSecretStore()).also {
+            it.updateMainProvider(
+                ProtocolType.OpenAI_ChatCompletions,
+                "https://provider.invalid",
+                CredentialUpdate.Replace("test-key"),
+                "remote-model",
+                "同名提供商",
+            )
+        }
+
+        assertThat(isolated.providerModels.value.map { it.id })
+            .containsAtLeast("legacy-model", "default::remote-model")
+        val failure = DefaultProviderRequestRouter(isolated).resolve("legacy-model") as ProviderResolution.Failure
+        assertThat(failure.reason).isEqualTo(ProviderResolutionError.MODEL_PROVIDER_MISMATCH)
     }
 
     private fun model(providerId: String?, id: String) = ModelInfo(

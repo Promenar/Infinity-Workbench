@@ -6,12 +6,17 @@ import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.remote.ResolvedProviderModel
 import com.promenar.nexara.data.remote.UnifiedLlmClient
+import com.promenar.nexara.data.remote.UnifiedProviderConfig
+import com.promenar.nexara.data.remote.protocol.ProtocolType
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
-import java.io.File
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelProviderRoutingTest {
     @Test
-    fun `解析失败时不创建客户端且暴露 typed 恢复信息`() {
+    fun `解析失败时不创建客户端且暴露 typed 恢复信息`() = runTest {
         var clientCreations = 0
         val failure = ProviderResolution.Failure(
             ProviderResolutionError.API_KEY_MISSING,
@@ -26,23 +31,59 @@ class ChatViewModelProviderRoutingTest {
             }
         }
 
-        val result = ChatProviderRouteGate(router).resolve("provider::model")
+        var contextCalls = 0
+        val result = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)).prepare("provider::model") {
+            contextCalls++
+            "context"
+        }
 
-        assertThat(result.failure).isEqualTo(failure)
-        assertThat(result.client).isNull()
+        assertThat(result).isEqualTo(ChatRoutePreparation.Failure(failure))
+        assertThat(contextCalls).isEqualTo(0)
         assertThat(clientCreations).isEqualTo(0)
     }
 
     @Test
-    fun `ChatViewModel 在上下文网络路径前执行请求级解析`() {
-        val source = sequenceOf(
-            File("src/main/java/com/promenar/nexara/ui/chat/ChatViewModel.kt"),
-            File("app/src/main/java/com/promenar/nexara/ui/chat/ChatViewModel.kt"),
-        ).first { it.isFile }.readText()
-        val resolveIndex = source.indexOf("providerRouteGate?.resolve(effectiveModel)")
-        val contextIndex = source.indexOf("contextBuilder.buildContext(contextParams)")
+    fun `成功路由先构建当次客户端再把远端模型交给发送阶段`() = runTest {
+        var currentKey = "key-v1"
+        val clientKeys = mutableListOf<String>()
+        var contextCalls = 0
+        val router = object : ProviderRequestRouter {
+            override fun resolve(modelId: String): ProviderResolution = ProviderResolution.Success(
+                ResolvedProviderModel(
+                    modelId = modelId,
+                    remoteModelId = "remote-model",
+                    providerId = "provider",
+                    providerName = "Provider",
+                    config = UnifiedProviderConfig(
+                        protocolType = ProtocolType.OpenAI_ChatCompletions,
+                        baseUrl = "https://provider.invalid",
+                        apiKey = currentKey,
+                        defaultModel = "remote-model",
+                    ),
+                )
+            )
 
-        assertThat(resolveIndex).isAtLeast(0)
-        assertThat(contextIndex).isGreaterThan(resolveIndex)
+            override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient {
+                clientKeys += resolved.config.apiKey
+                return UnifiedLlmClient(providerConfigResolver = { resolved.config })
+            }
+        }
+        val gate = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler))
+
+        val first = gate.prepare("provider::remote-model") {
+            contextCalls++
+            "context-v1"
+        } as ChatRoutePreparation.Success<String>
+        currentKey = "key-v2"
+        val second = gate.prepare("provider::remote-model") {
+            contextCalls++
+            "context-v2"
+        } as ChatRoutePreparation.Success<String>
+
+        assertThat(first.route.remoteModelId).isEqualTo("remote-model")
+        assertThat(first.context).isEqualTo("context-v1")
+        assertThat(second.context).isEqualTo("context-v2")
+        assertThat(contextCalls).isEqualTo(2)
+        assertThat(clientKeys).containsExactly("key-v1", "key-v2").inOrder()
     }
 }

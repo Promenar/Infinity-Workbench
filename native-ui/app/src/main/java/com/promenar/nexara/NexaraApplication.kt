@@ -552,7 +552,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             }
         }
         
-        val model = prefs.getString("embedding_model", "")?.ifBlank { presetModel } ?: presetModel
+        val presetRemoteModel = ProviderManager.getInstance().getRemoteModelId(presetModel).orEmpty()
+        val model = prefs.getString("embedding_model", "")
+            ?.ifBlank { presetRemoteModel }
+            ?: presetRemoteModel
         NexaraLogger.log("[EmbeddingClient] 构建: model=$model resolvedBy=$resolvedBy baseUrlSet=${baseUrl.isNotBlank()} apiKeySet=${apiKey.isNotBlank()}")
         return EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model, localEngine = localInferenceEngine)
     }
@@ -591,12 +594,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         }
         
         val savedConfig = getSavedProviderConfig()
+        val remotePresetModel = ProviderManager.getInstance().getRemoteModelId(presetModel).orEmpty()
         val maxPerCall = ragConfigPersistence.loadFullConfig().rerankMaxPerCall
         NexaraLogger.log("[RerankClient] 构建: model=$presetModel hasBaseUrl=${baseUrl.isNotBlank()} maxPerCall=$maxPerCall")
         return RerankClient(
             baseUrl = baseUrl,
             apiKey = apiKey,
-            modelId = presetModel,
+            modelId = remotePresetModel,
             llmProtocol = savedConfig?.let {
                 try { llmProvider.protocol } catch (_: Exception) { null }
             },

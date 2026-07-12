@@ -4,6 +4,11 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.model.*
 import com.promenar.nexara.data.remote.protocol.*
+import com.promenar.nexara.data.remote.ProviderRequestRouter
+import com.promenar.nexara.data.remote.ProviderResolution
+import com.promenar.nexara.data.remote.ResolvedProviderModel
+import com.promenar.nexara.data.remote.UnifiedLlmClient
+import com.promenar.nexara.data.remote.UnifiedProviderConfig
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -186,6 +191,25 @@ class ChatViewModelTest {
     }
 
     private val fakeLlmProvider = LlmProvider(fakeProtocol)
+    private val fakeProviderRouter = object : ProviderRequestRouter {
+        override fun resolve(modelId: String): ProviderResolution = ProviderResolution.Success(
+            ResolvedProviderModel(
+                modelId = modelId,
+                remoteModelId = modelId.substringAfter("::", modelId),
+                providerId = "test-local",
+                providerName = "测试本地 Provider",
+                config = UnifiedProviderConfig(
+                    protocolType = ProtocolType.Local,
+                    baseUrl = "",
+                    apiKey = "",
+                    defaultModel = modelId.substringAfter("::", modelId),
+                ),
+            )
+        )
+
+        override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient =
+            error("本地测试路由不应创建云客户端")
+    }
 
     private val fakeTaskRepository = object : com.promenar.nexara.domain.repository.ITaskRepository {
         override fun observeActiveTree(sessionId: String): Flow<List<TaskStep>> = kotlinx.coroutines.flow.flowOf(emptyList())
@@ -235,17 +259,11 @@ class ChatViewModelTest {
             messageRepository = stubMessageRepo,
             agentRepository = stubAgentRepo,
             llmProvider = fakeLlmProvider,
+            providerRequestRouter = fakeProviderRouter,
+            providerResolutionDispatcher = testDispatcher,
+            localLlmProviderFactory = { fakeLlmProvider },
             configResolver = configResolver
         )
-
-        // Force unifiedLlmClient to null in test environment to bypass remote API invocation and isolate LlmProvider stubbing
-        try {
-            val field = ChatViewModel::class.java.getDeclaredField("unifiedLlmClient")
-            field.isAccessible = true
-            field.set(viewModel, null)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 
     @After

@@ -6,6 +6,8 @@ import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.settings.ModelInfo
 import org.junit.Test
+import java.security.KeyPairGenerator
+import java.util.Base64
 
 class ProviderRequestRouterTest {
     private val models = linkedMapOf<String, ModelInfo>()
@@ -101,6 +103,46 @@ class ProviderRequestRouterTest {
     }
 
     @Test
+    fun `禁用模型在网络前 typed fail`() {
+        seed("p", "model", "key")
+        models["p::model"] = models.getValue("p::model").copy(enabled = false)
+
+        assertFailure("p::model", ProviderResolutionError.MODEL_DISABLED)
+        assertThat(createdConfigs).isEmpty()
+    }
+
+    @Test
+    fun `Vertex 凭证缺字段或私钥不可解析时不创建客户端且不泄露原文`() {
+        val secretMarker = "never-print-private-material"
+        seedVertex("vertex", "gemini", """{"project_id":"project","client_email":"a@b","private_key":"$secretMarker"}""")
+
+        val failure = router.resolve("vertex::gemini") as ProviderResolution.Failure
+
+        assertThat(failure.reason).isEqualTo(ProviderResolutionError.VERTEX_CREDENTIAL_INVALID)
+        assertThat(failure.toString()).doesNotContain(secretMarker)
+        assertThat(createdConfigs).isEmpty()
+    }
+
+    @Test
+    fun `Vertex 完整有效凭证在创建客户端前解析出 projectId`() {
+        val privateKey = KeyPairGenerator.getInstance("RSA").apply { initialize(1024) }
+            .generateKeyPair().private.encoded
+        val pem = "-----BEGIN PRIVATE KEY-----\n" +
+            Base64.getEncoder().encodeToString(privateKey) +
+            "\n-----END PRIVATE KEY-----"
+        privateKey.fill(0)
+        seedVertex(
+            "vertex",
+            "gemini",
+            """{"project_id":"project-safe","client_email":"service@example.invalid","private_key":${jsonString(pem)}}""",
+        )
+
+        val success = router.resolve("vertex::gemini") as ProviderResolution.Success
+
+        assertThat(success.value.config.projectId).isEqualTo("project-safe")
+    }
+
+    @Test
     fun `本地协议允许空 endpoint 与空 Key`() {
         val providerId = "local"
         providers[providerId] = ProviderListItem(
@@ -133,6 +175,36 @@ class ProviderRequestRouterTest {
             model = remoteModelId,
         )
         models[stableModelId(providerId, remoteModelId)] = model(providerId, remoteModelId)
+    }
+
+    private fun seedVertex(providerId: String, remoteModelId: String, credentials: String) {
+        providers[providerId] = ProviderListItem(
+            id = providerId,
+            name = providerId,
+            protocolType = ProtocolType.Google_VertexAI,
+        )
+        configs[providerId] = ProviderConfig(
+            protocolType = ProtocolType.Google_VertexAI,
+            baseUrl = "https://vertex.invalid",
+            model = remoteModelId,
+            vertexServiceAccountJson = credentials,
+        )
+        models[stableModelId(providerId, remoteModelId)] = model(providerId, remoteModelId)
+    }
+
+    private fun jsonString(value: String): String = buildString {
+        append('"')
+        value.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(char)
+            }
+        }
+        append('"')
     }
 
     private fun model(providerId: String, remoteModelId: String) = ModelInfo(

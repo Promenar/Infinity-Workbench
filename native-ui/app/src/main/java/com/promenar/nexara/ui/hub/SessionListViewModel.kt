@@ -134,7 +134,7 @@ class SessionListViewModel(
         return runCatching {
             val providerManager = ProviderManager.getInstance()
             providerManager.summaryModelId.value.takeIf { it.isNotBlank() }
-                ?: providerManager.getMainProviderConfig()?.model?.takeIf { it.isNotBlank() }
+                ?: providerManager.getMainConfiguredModelId()
         }.getOrNull()
     }
 

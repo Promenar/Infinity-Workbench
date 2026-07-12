@@ -129,6 +129,10 @@ class ProviderManager private constructor(
         ?.takeIf { it.isNotBlank() }
         ?.let { stableModelId("default", it) }
 
+    fun getRemoteModelId(modelId: String): String? = _providerModels.value
+        .firstOrNull { it.id == modelId }
+        ?.remoteModelId
+
     // ── 提供商查询 ──────────────────────────────────────────────────
 
     /**
@@ -521,15 +525,8 @@ class ProviderManager private constructor(
             if (migratedModel !== model) {
                 migrated = true
             }
-            // 只在已有精确 providerId 时升级为稳定复合标识；绝不按显示名称猜测。
-            val exactProviderId = migratedModel.providerId
-            if (exactProviderId != null) {
-                val compositeId = stableModelId(exactProviderId, migratedModel.remoteModelId)
-                if (migratedModel.id != compositeId) {
-                    migratedModel = migratedModel.copy(id = compositeId)
-                    migrated = true
-                }
-            }
+            // v0.2 不迁移旧裸 ID：旧版必须卸载。残留裸 ID 会由 Router typed fail，
+            // 禁止只迁 ModelInfo 却遗漏 Agent/Session/预设引用的半迁移。
             migratedModel
          }.sortedWith(compareByDescending<ModelInfo> { it.enabled }.thenBy { it.name.lowercase() })
 
@@ -738,6 +735,9 @@ class ProviderManager private constructor(
     }
 
     fun setPresetModel(type: String, modelId: String) {
+        require(modelId.isBlank() || _providerModels.value.any { it.id == modelId }) {
+            "预设模型必须使用已注册的稳定复合 ID"
+        }
         val key = when (type) {
             "summary" -> {
                 _summaryModelId.value = modelId

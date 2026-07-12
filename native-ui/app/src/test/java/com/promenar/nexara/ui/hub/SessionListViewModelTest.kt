@@ -92,7 +92,7 @@ class SessionListViewModelTest {
     @Test
     fun `createSession uses agent modelId from repository`() = runTest {
         val agent = Agent(
-            id = "a1", name = "Agent", modelId = "gpt-4",
+            id = "a1", name = "Agent", modelId = "provider::gpt-4",
             temperature = 0.5, topP = 0.8, maxTokens = 2048,
             executionMode = ExecutionMode.SEMI
         )
@@ -106,7 +106,7 @@ class SessionListViewModelTest {
         assertThat(createdSessionId).isNotNull()
         assertThat(createdSessionId!!).startsWith("session_")
         val session = store.get().sessions.first()
-        assertThat(session.modelId).isEqualTo("gpt-4")
+        assertThat(session.modelId).isEqualTo("provider::gpt-4")
         assertThat(session.inferenceParams?.temperature).isEqualTo(0.5)
     }
 
