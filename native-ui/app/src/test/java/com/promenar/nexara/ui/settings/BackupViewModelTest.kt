@@ -16,6 +16,10 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CompletableDeferred
@@ -211,6 +215,56 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `config change at commit hook prevents old list state write`() = runTest(dispatcher) {
+        val stale = RemoteBackup("stale.nexara", 42, 1234, "etag-a")
+        val hooks = CommitGateHooks(BackupOperation.ListingRemote)
+        val vm = newViewModel(operations = FakeOperations(remote = listOf(stale)), hooks = hooks)
+        vm.saveWebDavConfig("https://a.invalid/", "a", null)
+        vm.listRemote()
+        runCurrent()
+        hooks.entered.await()
+
+        vm.saveWebDavConfig("https://b.invalid/", "b", null)
+        hooks.release.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.webdavUrl).isEqualTo("https://b.invalid/")
+        assertThat(vm.uiState.value.remoteBackups).isEmpty()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Idle)
+    }
+
+    @Test
+    fun `operations reject during lock-free config save and never mix old endpoint with new password`() = runTest(dispatcher) {
+        val secrets = FakeSecrets()
+        val operations = FakeOperations()
+        val vm = newViewModel(operations = operations, secrets = secrets)
+        vm.saveWebDavConfig("https://a.invalid/", "a", "a-pass".toCharArray())
+        secrets.blockPut = true
+        val saveResult = AtomicReference<Boolean>()
+        val saveThread = Thread {
+            saveResult.set(vm.saveWebDavConfig("https://b.invalid/", "b", "b-pass".toCharArray()))
+        }.apply { start() }
+        assertThat(secrets.putEntered.await(5, TimeUnit.SECONDS)).isTrue()
+
+        val operationResult = AtomicReference<Boolean>()
+        val operationThread = Thread { operationResult.set(vm.testConnection()) }.apply { start() }
+        operationThread.join(1_000)
+        val returnedWithoutBlocking = !operationThread.isAlive
+        secrets.putRelease.countDown()
+        saveThread.join(5_000)
+        operationThread.join(5_000)
+
+        assertThat(returnedWithoutBlocking).isTrue()
+        assertThat(operationResult.get()).isFalse()
+        assertThat(saveResult.get()).isTrue()
+        assertThat(vm.testConnection()).isTrue()
+        advanceUntilIdle()
+        assertThat(operations.lastConfig?.baseUrl).isEqualTo("https://b.invalid/")
+        assertThat(operations.lastConfig?.username).isEqualTo("b")
+        assertThat(operations.lastConfig?.password).isEqualTo("b-pass")
+    }
+
+    @Test
     fun `remote restore stages exact selected object and stale selection cannot restart`() = runTest(dispatcher) {
         val remote = RemoteBackup("one.nexara", 42, 1234, "etag")
         val operations = FakeOperations(remote = listOf(remote))
@@ -394,6 +448,67 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `LAZY registration placeholder rejects a concurrent second start`() {
+        val hooks = BlockingRegistrationHooks()
+        val vm = newViewModel(hooks = hooks)
+        val firstResult = AtomicReference<Boolean>()
+        val first = Thread { firstResult.set(vm.testConnection()) }.apply { start() }
+        assertThat(hooks.entered.await(5, TimeUnit.SECONDS)).isTrue()
+
+        val secondResult = vm.listRemote()
+
+        assertThat(secondResult).isFalse()
+        hooks.release.countDown()
+        first.join(5_000)
+        assertThat(firstResult.get()).isTrue()
+        vm.cancelOperation()
+    }
+
+    @Test
+    fun `cancel cleanup cannot overwrite a newly registered phase`() = runTest(dispatcher) {
+        val closeEntered = CountDownLatch(1)
+        val closeRelease = CountDownLatch(1)
+        val output = TrackingOutputStream(closeEntered = closeEntered, closeRelease = closeRelease)
+        val exportGate = CompletableDeferred<Unit>()
+        val vm = newViewModel(operations = FakeOperations(exportGate = exportGate))
+        vm.export(output, null, null)
+        val cancelThread = Thread { vm.cancelOperation() }.apply { start() }
+        assertThat(closeEntered.await(5, TimeUnit.SECONDS)).isTrue()
+
+        assertThat(vm.testConnection()).isTrue()
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Testing)
+        closeRelease.countDown()
+        cancelThread.join(5_000)
+
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Testing)
+        vm.cancelOperation()
+    }
+
+    @Test
+    fun `cancel after remote stage starts can never request restart`() = runTest(dispatcher) {
+        val remote = RemoteBackup("one.nexara", 42, 1234, "etag")
+        val stageStarted = CompletableDeferred<Unit>()
+        val stageRelease = CompletableDeferred<Unit>()
+        val operations = FakeOperations(
+            remote = listOf(remote),
+            remoteStageStarted = stageStarted,
+            remoteStageGate = stageRelease,
+        )
+        val restart = FakeRestart()
+        val vm = newViewModel(operations = operations, restart = restart)
+        vm.listRemote(); advanceUntilIdle(); vm.selectRemote(remote)
+        vm.restoreSelectedRemote(null)
+        runCurrent(); stageStarted.await()
+
+        vm.cancelOperation()
+        stageRelease.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(restart.calls).isEqualTo(0)
+        assertThat(vm.uiState.value.operation).isEqualTo(BackupOperation.Idle)
+    }
+
+    @Test
     fun `clearing ViewModel cancels in flight work`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Result<Unit>>()
         val operations = FakeOperations(testGate = gate)
@@ -410,7 +525,30 @@ class BackupViewModelTest {
         settings: FakeSettings = FakeSettings(),
         secrets: FakeSecrets = FakeSecrets(),
         restart: FakeRestart = FakeRestart(),
-    ) = BackupViewModel(operations, settings, secrets, restart, clock = { 999L })
+        hooks: BackupViewModelHooks = BackupViewModelHooks.None,
+    ) = BackupViewModel(operations, settings, secrets, restart, clock = { 999L }, hooks = hooks)
+
+    private class BlockingRegistrationHooks : BackupViewModelHooks {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        override fun afterOperationRegistered(phase: BackupOperation) {
+            entered.countDown()
+            release.await(5, TimeUnit.SECONDS)
+        }
+        override suspend fun beforeStateCommit(phase: BackupOperation) = Unit
+    }
+
+    private class CommitGateHooks(private val target: BackupOperation) : BackupViewModelHooks {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        override fun afterOperationRegistered(phase: BackupOperation) = Unit
+        override suspend fun beforeStateCommit(phase: BackupOperation) {
+            if (phase::class == target::class) withContext(NonCancellable) {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+    }
 
     private class FakeSettings(
         override var webDavEnabled: Boolean = false,
@@ -422,14 +560,21 @@ class BackupViewModelTest {
     ) : BackupSettingsStore
 
     private class FakeSecrets : SecretStore {
-        private val values = mutableMapOf<SecretId, ByteArray>()
+        private val values = ConcurrentHashMap<SecretId, ByteArray>()
         var throwOnPut = false
+        var blockPut = false
+        val putEntered = CountDownLatch(1)
+        val putRelease = CountDownLatch(1)
         override fun put(id: SecretId, value: ByteArray) {
             if (throwOnPut) error("secret write failed")
+            if (blockPut) {
+                putEntered.countDown()
+                putRelease.await(5, TimeUnit.SECONDS)
+            }
             values[id] = value.copyOf()
         }
         override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
-        override fun contains(id: SecretId) = id in values
+        override fun contains(id: SecretId) = values.containsKey(id)
         override fun remove(id: SecretId) { values.remove(id)?.fill(0) }
         fun text(id: SecretId) = values[id]?.toString(Charsets.UTF_8)
     }
@@ -448,11 +593,15 @@ class BackupViewModelTest {
 
     private class TrackingOutputStream(
         private val closeError: Error? = null,
+        private val closeEntered: CountDownLatch? = null,
+        private val closeRelease: CountDownLatch? = null,
     ) : OutputStream() {
         var closeCount = 0
         override fun write(value: Int) = Unit
         override fun close() {
             closeCount++
+            closeEntered?.countDown()
+            closeRelease?.await(5, TimeUnit.SECONDS)
             closeError?.let { throw it }
         }
     }
@@ -470,6 +619,8 @@ class BackupViewModelTest {
         private val listGate: CompletableDeferred<List<RemoteBackup>>? = null,
         private val exportGate: CompletableDeferred<Unit>? = null,
         private val exportFailure: Boolean = false,
+        private val remoteStageStarted: CompletableDeferred<Unit>? = null,
+        private val remoteStageGate: CompletableDeferred<Unit>? = null,
     ) : BackupOperations {
         var exportCalls = 0
         var stageRemoteCalls = 0
@@ -510,6 +661,10 @@ class BackupViewModelTest {
         override suspend fun stageRemoteRestore(config: WebDavConfig, selected: RemoteBackup, password: CharArray?): PendingRestoreMetadata {
             stageRemoteCalls++
             if (selected !in remote) error("stale")
+            if (remoteStageGate != null) withContext(NonCancellable) {
+                remoteStageStarted?.complete(Unit)
+                remoteStageGate.await()
+            }
             return metadata()
         }
         private fun metadata() = PendingRestoreMetadata(

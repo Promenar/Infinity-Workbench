@@ -310,12 +310,14 @@ fun BackupSettingsScreen(
                         AnimatedVisibility(visible = uiState.webdavEnabled) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SettingsToggle(stringResource(R.string.backup_auto_backup), checked = uiState.autoBackup, onCheckedChange = { viewModel.setAutoBackup(it) })
-                                ActionButton(
-                                    label = stringResource(R.string.backup_upload_cloud),
-                                    icon = Icons.Rounded.Upload,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    onClick = { viewModel.upload(null, null) }
-                                )
+                                if (!uiState.includeKeys) {
+                                    ActionButton(
+                                        label = stringResource(R.string.backup_upload_cloud),
+                                        icon = Icons.Rounded.Upload,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        onClick = { viewModel.upload(null, null) }
+                                    )
+                                }
                                 ActionButton(
                                     label = stringResource(R.string.backup_config_webdav),
                                     icon = Icons.Rounded.Link,

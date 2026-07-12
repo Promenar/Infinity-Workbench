@@ -39,7 +39,7 @@ class BackupContentUiContractTest {
         )
 
         assertThat(source).doesNotContain("stringResource(R.string.backup_restore_cloud)")
-        assertThat(source).contains("if (!uiState.includeKeys) {")
+        assertThat(Regex("if \\(\\!uiState\\.includeKeys\\) \\{").findAll(source).count()).isEqualTo(2)
         assertThat(source).doesNotContain("viewModel.listRemote()")
     }
 }
