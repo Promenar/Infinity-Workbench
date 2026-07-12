@@ -39,9 +39,11 @@ class WebDavBackupClientTest {
     @Test
     fun `download preserves arbitrary bytes including zero bytes`() = runTest {
         val expected = byteArrayOf(0, 1, 2, 0, -1, 10, 13, 0)
-        val engine = MockEngine { respond(ByteReadChannel(expected), HttpStatusCode.OK) }
+        val engine = MockEngine {
+            respond(ByteReadChannel(expected), HttpStatusCode.OK, headersOf(HttpHeaders.ETag, TEST_ETAG))
+        }
 
-        val actual = client(engine).download(config, backupName(1000))
+        val actual = client(engine).download(config, remote(1000))
 
         assertThat(actual.asList()).containsExactlyElementsIn(expected.asList()).inOrder()
     }
@@ -52,11 +54,14 @@ class WebDavBackupClientTest {
             respond(
                 content = ByteReadChannel(byteArrayOf(1)),
                 status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentLength, (16L * 1024 * 1024 + 1).toString()),
+                headers = headersOf(
+                    HttpHeaders.ContentLength to listOf((16L * 1024 * 1024 + 1).toString()),
+                    HttpHeaders.ETag to listOf(TEST_ETAG),
+                ),
             )
         }
 
-        val error = runCatching { client(engine).download(config, backupName(1000)) }.exceptionOrNull()
+        val error = runCatching { client(engine).download(config, remote(1000)) }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(WebDavException::class.java)
         assertThat(error!!.message).contains("过大")
@@ -65,9 +70,11 @@ class WebDavBackupClientTest {
     @Test
     fun `download rejects chunked response when actual bytes cross limit`() = runTest {
         val oversized = ByteArray(16 * 1024 * 1024 + 1) { 7 }
-        val engine = MockEngine { respond(ByteReadChannel(oversized), HttpStatusCode.OK) }
+        val engine = MockEngine {
+            respond(ByteReadChannel(oversized), HttpStatusCode.OK, headersOf(HttpHeaders.ETag, TEST_ETAG))
+        }
 
-        val error = runCatching { client(engine).download(config, backupName(1000)) }.exceptionOrNull()
+        val error = runCatching { client(engine).download(config, remote(1000)) }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(WebDavException::class.java)
         assertThat(error!!.message).contains("停止读取")
@@ -231,7 +238,7 @@ class WebDavBackupClientTest {
 
         val names = listOf("../${backupName(1)}", "/${backupName(1)}", "${backupName(1)}\r\nX-Evil: yes")
         names.forEach { name ->
-            assertThat(runCatching { client.download(config, name) }.exceptionOrNull())
+            assertThat(runCatching { client.download(config, RemoteBackup(name, 0, 0, TEST_ETAG)) }.exceptionOrNull())
                 .isInstanceOf(WebDavException::class.java)
         }
         assertThat(requests).isEqualTo(0)
@@ -244,7 +251,7 @@ class WebDavBackupClientTest {
 
         val errors = listOf(
             client.test(config).exceptionOrNull(),
-            runCatching { client.download(sensitive, backupName(1)) }.exceptionOrNull(),
+            runCatching { client.download(sensitive, remote(1)) }.exceptionOrNull(),
         )
 
         errors.filterNotNull().forEach { error ->
@@ -263,10 +270,10 @@ class WebDavBackupClientTest {
         var observed: HttpRequestData? = null
         val engine = MockEngine { request ->
             observed = request
-            respond(byteArrayOf(), HttpStatusCode.OK)
+            respond(byteArrayOf(), HttpStatusCode.OK, headersOf(HttpHeaders.ETag, TEST_ETAG))
         }
 
-        client(engine).download(config, backupName(1))
+        client(engine).download(config, remote(1))
 
         assertThat(observed!!.headers[HttpHeaders.Authorization]).startsWith("Basic ")
         assertThat(observed!!.url.toString()).doesNotContain(config.username)
@@ -277,7 +284,7 @@ class WebDavBackupClientTest {
     fun `401 403 and 5xx produce status-only sanitized errors`() = runTest {
         for (status in listOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.InternalServerError)) {
             val error = runCatching {
-                client(MockEngine { respondError(status) }).download(config, backupName(1))
+                client(MockEngine { respondError(status) }).download(config, remote(1))
             }.exceptionOrNull()
 
             assertThat(error).isInstanceOf(WebDavException::class.java)
@@ -309,7 +316,7 @@ class WebDavBackupClientTest {
         val cancellation = CancellationException("cancel-now")
         val engine = MockEngine { throw cancellation }
 
-        val error = runCatching { client(engine).download(config, backupName(1)) }.exceptionOrNull()
+        val error = runCatching { client(engine).download(config, remote(1)) }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(CancellationException::class.java)
         assertThat(error!!.message).isEqualTo("cancel-now")
@@ -321,6 +328,8 @@ class WebDavBackupClientTest {
     )
 
     private fun backupName(timestamp: Long) = "nexara_backup_${timestamp.toString().padStart(13, '0')}.nexara"
+
+    private fun remote(timestamp: Long) = RemoteBackup(backupName(timestamp), 0, 0, TEST_ETAG)
 
     private fun multistatus(vararg responses: String): String =
         """<?xml version="1.0" encoding="UTF-8"?><d:multistatus xmlns:d="DAV:">${responses.joinToString("")}</d:multistatus>"""
@@ -341,4 +350,8 @@ class WebDavBackupClientTest {
           </d:prop><d:status>$propStatus</d:status></d:propstat>
         </d:response>
     """.trimIndent()
+
+    private companion object {
+        const val TEST_ETAG = "\"test-etag\""
+    }
 }

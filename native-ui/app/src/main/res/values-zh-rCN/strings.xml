@@ -430,7 +430,8 @@
     <string name="backup_title">备份与恢复</string>
     <string name="backup_desc">管理数据安全、本地导出与云端同步设置。</string>
     <string name="backup_content_title">备份内容</string>
-    <string name="backup_items_selected">%1$d 项已选择</string>
+    <string name="backup_core_content_summary">核心数据固定包含，密钥可选。</string>
+    <string name="backup_core_content_fixed">始终包含</string>
     <string name="backup_content_sessions">会话</string>
     <string name="backup_content_library">知识库</string>
     <string name="backup_content_files">文件</string>

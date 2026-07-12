@@ -431,7 +431,8 @@
     <string name="backup_title">Backup &amp; Restore</string>
     <string name="backup_desc">Manage data security, local export, and cloud sync settings.</string>
     <string name="backup_content_title">Backup Content</string>
-    <string name="backup_items_selected">%1$d items selected</string>
+    <string name="backup_core_content_summary">Core data is always included; API keys are optional.</string>
+    <string name="backup_core_content_fixed">Always included</string>
     <string name="backup_content_sessions">Sessions</string>
     <string name="backup_content_library">Knowledge Base</string>
     <string name="backup_content_files">Files</string>

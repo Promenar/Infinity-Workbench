@@ -79,13 +79,12 @@ fun BackupSettingsScreen(
     var tempWebdavUser by remember(uiState.webdavUser) { mutableStateOf(uiState.webdavUser) }
     var tempWebdavPass by remember(uiState.webdavPass) { mutableStateOf(uiState.webdavPass) }
 
-    val selectedCount = listOf(
-        uiState.sessionsChecked, 
-        uiState.libraryChecked, 
-        uiState.filesChecked, 
-        uiState.settingsChecked, 
-        uiState.keysChecked
-    ).count { it }
+    val coreContentLabels = listOf(
+        stringResource(R.string.backup_content_sessions),
+        stringResource(R.string.backup_content_library),
+        stringResource(R.string.backup_content_files),
+        stringResource(R.string.backup_content_settings),
+    )
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -181,7 +180,7 @@ fun BackupSettingsScreen(
                                         color = NexaraColors.OnSurface
                                     )
                                     Text(
-                                        text = stringResource(R.string.backup_items_selected, selectedCount),
+                                        text = stringResource(R.string.backup_core_content_summary),
                                         style = NexaraTypography.bodyMedium.copy(
                                             fontSize = 12.sp,
                                             fontFamily = SpaceGrotesk
@@ -205,11 +204,17 @@ fun BackupSettingsScreen(
                                     .padding(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                SettingsToggle(stringResource(R.string.backup_content_sessions), checked = uiState.sessionsChecked, onCheckedChange = { viewModel.toggleCheck("sessions", it) })
-                                SettingsToggle(stringResource(R.string.backup_content_library), checked = uiState.libraryChecked, onCheckedChange = { viewModel.toggleCheck("library", it) })
-                                SettingsToggle(stringResource(R.string.backup_content_files), checked = uiState.filesChecked, onCheckedChange = { viewModel.toggleCheck("files", it) })
-                                SettingsToggle(stringResource(R.string.backup_content_settings), checked = uiState.settingsChecked, onCheckedChange = { viewModel.toggleCheck("settings", it) })
-                                SettingsToggle(stringResource(R.string.backup_content_keys), checked = uiState.keysChecked, onCheckedChange = { viewModel.toggleCheck("keys", it) })
+                                Text(
+                                    text = stringResource(R.string.backup_core_content_fixed),
+                                    style = NexaraTypography.labelMedium,
+                                    color = NexaraColors.OnSurface,
+                                )
+                                Text(
+                                    text = coreContentLabels.joinToString(" · "),
+                                    style = NexaraTypography.bodyMedium,
+                                    color = NexaraColors.OnSurfaceVariant,
+                                )
+                                SettingsToggle(stringResource(R.string.backup_content_keys), checked = uiState.keysChecked, onCheckedChange = { viewModel.setIncludeKeys(it) })
                             }
                         }
                     }

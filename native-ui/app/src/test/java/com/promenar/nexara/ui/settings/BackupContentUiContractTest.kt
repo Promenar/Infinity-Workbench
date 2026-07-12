@@ -1,0 +1,33 @@
+package com.promenar.nexara.ui.settings
+
+import com.google.common.truth.Truth.assertThat
+import org.junit.jupiter.api.Test
+import java.nio.file.Files
+import java.nio.file.Path
+
+class BackupContentUiContractTest {
+    @Test
+    fun `core backup content cannot be toggled while keys remain optional`() {
+        val initial = BackupUiState()
+
+        assertThat(BackupUiState::class.java.declaredFields.map { it.name }).containsNoneOf(
+            "sessionsChecked", "libraryChecked", "filesChecked", "settingsChecked",
+        )
+        assertThat(initial.withKeysIncluded(true).keysChecked).isTrue()
+        assertThat(initial.keysChecked).isFalse()
+    }
+
+    @Test
+    fun `screen has no interactive core category toggles`() {
+        val source = String(
+            Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/ui/settings/BackupSettingsScreen.kt")),
+            Charsets.UTF_8,
+        )
+
+        listOf("sessions", "library", "files", "settings").forEach { type ->
+            assertThat(source).doesNotContain("toggleCheck(\"$type\"")
+        }
+        assertThat(source).contains("setIncludeKeys(it)")
+        assertThat(source).contains("backup_core_content_fixed")
+    }
+}

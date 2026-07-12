@@ -105,7 +105,7 @@ class WebDavBackupClientReviewTest {
             timeouts = timeouts,
         )
 
-        val error = runCatching { hanging.download(config, backupName(1)) }.exceptionOrNull()
+        val error = runCatching { hanging.download(config, remote(1)) }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(WebDavException::class.java)
         assertThat(error!!.message).contains("超时")
@@ -162,11 +162,14 @@ class WebDavBackupClientReviewTest {
             respond(
                 body,
                 HttpStatusCode.OK,
-                io.ktor.http.headersOf(io.ktor.http.HttpHeaders.ContentLength, (16L * 1024 * 1024 + 1).toString()),
+                io.ktor.http.headersOf(
+                    io.ktor.http.HttpHeaders.ContentLength to listOf((16L * 1024 * 1024 + 1).toString()),
+                    io.ktor.http.HttpHeaders.ETag to listOf(TEST_ETAG),
+                ),
             )
         }
 
-        assertThat(runCatching { client(engine).download(config, backupName(1)) }.isFailure).isTrue()
+        assertThat(runCatching { client(engine).download(config, remote(1)) }.isFailure).isTrue()
         assertThat(body.isClosedForRead).isTrue()
     }
 
@@ -268,6 +271,8 @@ class WebDavBackupClientReviewTest {
 
     private fun backupName(value: Long) = "nexara_backup_${value.toString().padStart(13, '0')}.nexara"
 
+    private fun remote(value: Long) = RemoteBackup(backupName(value), 0, 0, TEST_ETAG)
+
     private fun validCollectionXml() = multistatus(response("/backups/", collection = true))
 
     private fun multistatus(vararg responses: String): String =
@@ -293,4 +298,8 @@ class WebDavBackupClientReviewTest {
           <d:getlastmodified>$modified</d:getlastmodified>
         </d:prop><d:status>$status</d:status></d:propstat>
     """.trimIndent()
+
+    private companion object {
+        const val TEST_ETAG = "\"test-etag\""
+    }
 }

@@ -160,7 +160,7 @@ class BackupRepositoryTypedTest {
             return UploadAndPruneResult.Committed(fileName, warning)
         }
         override suspend fun list(config: WebDavConfig): List<RemoteBackup> = emptyList()
-        override suspend fun download(config: WebDavConfig, fileName: String): ByteArray = error("unused")
+        override suspend fun download(config: WebDavConfig, backup: RemoteBackup): ByteArray = error("unused")
         override suspend fun prune(config: WebDavConfig, keep: Int) = error("must not be called")
     }
 

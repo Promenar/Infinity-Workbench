@@ -68,7 +68,10 @@ class DavMultiStatusParser {
             if (size < 0 || size > BackupPackageLimits.MAX_IN_MEMORY_BYTES) continue
             val modified = successfulProps.firstNotNullOfOrNull { it.directDavText("getlastmodified") }
                 .toServerEpochMillis()
-            backups += RemoteBackup(fileName, size, modified)
+            val strongEtag = successfulProps.firstNotNullOfOrNull { prop ->
+                prop.directDavText("getetag")?.takeIf(::isStrictStrongEtag)
+            }
+            backups += RemoteBackup(fileName, size, modified, strongEtag)
         }
         return DavMultiStatus(backups.distinctBy { it.fileName }, containsTarget)
     }
@@ -130,6 +133,8 @@ class DavMultiStatusParser {
         0L
     }
 
+    private fun isStrictStrongEtag(value: String): Boolean = STRONG_ETAG.matches(value)
+
     private fun secureFactory(): DocumentBuilderFactory = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = true
         isXIncludeAware = false
@@ -145,5 +150,6 @@ class DavMultiStatusParser {
 
     private companion object {
         const val DAV = "DAV:"
+        val STRONG_ETAG = Regex("\"[\\u0021\\u0023-\\u007E]{0,200}\"")
     }
 }

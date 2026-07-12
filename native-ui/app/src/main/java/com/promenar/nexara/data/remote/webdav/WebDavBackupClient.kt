@@ -39,6 +39,7 @@ data class RemoteBackup(
     val fileName: String,
     val sizeBytes: Long,
     val lastModifiedEpochMillis: Long,
+    val strongEtag: String?,
 )
 
 data class WebDavTimeouts(
@@ -79,7 +80,7 @@ interface WebDavBackupClient {
         keep: Int = 5,
     ): UploadAndPruneResult
     suspend fun list(config: WebDavConfig): List<RemoteBackup>
-    suspend fun download(config: WebDavConfig, fileName: String): ByteArray
+    suspend fun download(config: WebDavConfig, backup: RemoteBackup): ByteArray
     suspend fun prune(config: WebDavConfig, keep: Int = 5)
 }
 
@@ -223,17 +224,29 @@ class KtorWebDavBackupClient(
         }
     }
 
-    override suspend fun download(config: WebDavConfig, fileName: String): ByteArray {
+    override suspend fun download(config: WebDavConfig, backup: RemoteBackup): ByteArray {
         val collection = validatedCollection(config)
-        val safeName = validatedBackupFileName(fileName)
+        val safeName = validatedBackupFileName(backup.fileName)
+        val strongEtag = backup.strongEtag?.takeIf(::isStrictStrongEtag)
+            ?: throw WebDavException("远程备份缺少可验证的强 ETag，已拒绝下载")
         val target = childUri(collection, safeName)
         return timedOperation("下载", timeouts.getMillis) {
             val response = httpClient.request(target.toASCIIString()) {
                 method = HttpMethod.Get
                 authenticated(config)
+                header(HttpHeaders.IfMatch, strongEtag)
             }
             requireExpectedResponse(response, target)
+            if (response.status == HttpStatusCode.PreconditionFailed) {
+                discard(response)
+                throw WebDavException("远程备份已变化，请刷新列表后重试")
+            }
             requireExactStatus("下载", response, GET_STATUSES)
+            val responseEtag = response.headers[HttpHeaders.ETag]
+            if (responseEtag != strongEtag || !isStrictStrongEtag(responseEtag)) {
+                discard(response)
+                throw WebDavException("远程备份响应身份与所选对象不一致")
+            }
             readLimited(response, BackupPackageLimits.MAX_IN_MEMORY_BYTES, "远程备份")
         }
     }
@@ -411,6 +424,8 @@ class KtorWebDavBackupClient(
         if (size > BackupPackageLimits.MAX_IN_MEMORY_BYTES) throw WebDavException("WebDAV $operation 内容过大")
     }
 
+    private fun isStrictStrongEtag(value: String): Boolean = STRONG_ETAG.matches(value)
+
     private fun io.ktor.client.request.HttpRequestBuilder.authenticated(config: WebDavConfig) {
         val token = Base64.getEncoder().encodeToString("${config.username}:${config.password}".toByteArray(Charsets.UTF_8))
         header(HttpHeaders.Authorization, "Basic $token")
@@ -429,7 +444,8 @@ class KtorWebDavBackupClient(
         const val OVERWRITE = "Overwrite"
         const val LIST_RESPONSE_LIMIT = 4L * 1024 * 1024
         val SAFE_CHILD = Regex("[A-Za-z0-9._-]{1,220}")
+        val STRONG_ETAG = Regex("\"[\\u0021\\u0023-\\u007E]{0,200}\"")
         const val PROPFIND_BODY =
-            """<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>"""
+            """<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/><d:getetag/></d:prop></d:propfind>"""
     }
 }

@@ -24,12 +24,12 @@ class WebDavBackupClientRound2Test {
     fun `body stall is bounded by get operation timeout and channel is cancelled`() = runBlocking {
         val stalled = ByteChannel(autoFlush = true)
         val client = client(
-            MockEngine { respond(stalled, HttpStatusCode.OK) },
+            MockEngine { respond(stalled, HttpStatusCode.OK, headersOf(HttpHeaders.ETag, TEST_ETAG)) },
             WebDavTimeouts(500, 500, 30, 500, 500, 500, 100),
         )
 
         val error = runCatching {
-            withTimeout(500) { client.download(config, backupName(1)) }
+            withTimeout(500) { client.download(config, remote(1)) }
         }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(WebDavException::class.java)
@@ -45,7 +45,7 @@ class WebDavBackupClientRound2Test {
         )
 
         val error = runCatching {
-            withTimeout(25) { client.download(config, backupName(1)) }
+            withTimeout(25) { client.download(config, remote(1)) }
         }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(TimeoutCancellationException::class.java)
@@ -67,7 +67,7 @@ class WebDavBackupClientRound2Test {
             }
         }
 
-        val error = runCatching { client(engine).download(config, backupName(1)) }.exceptionOrNull()
+        val error = runCatching { client(engine).download(config, remote(1)) }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(WebDavException::class.java)
         assertThat(requests).hasSize(1)
@@ -83,7 +83,7 @@ class WebDavBackupClientRound2Test {
                 respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, location))
             }
 
-            val error = runCatching { client(engine).download(config, backupName(1)) }.exceptionOrNull()
+            val error = runCatching { client(engine).download(config, remote(1)) }.exceptionOrNull()
 
             assertThat(error).isInstanceOf(WebDavException::class.java)
             assertThat(requests).hasSize(1)
@@ -113,4 +113,10 @@ class WebDavBackupClientRound2Test {
     )
 
     private fun backupName(value: Long) = "nexara_backup_${value.toString().padStart(13, '0')}.nexara"
+
+    private fun remote(value: Long) = RemoteBackup(backupName(value), 0, 0, TEST_ETAG)
+
+    private companion object {
+        const val TEST_ETAG = "\"test-etag\""
+    }
 }

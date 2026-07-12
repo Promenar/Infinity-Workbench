@@ -89,7 +89,7 @@ class BackupRepository(
     suspend fun downloadRemote(config: WebDavConfig, selected: RemoteBackup): ByteArray {
         val current = webDav.list(config).singleOrNull { it == selected }
             ?: throw BackupValidationException("所选远程备份已变化，请刷新列表后重试")
-        return webDav.download(config, current.fileName).also(::requireBoundedPackage)
+        return webDav.download(config, current).also(::requireBoundedPackage)
     }
 
     suspend fun stageLocalRestore(input: InputStream, password: CharArray? = null): PendingRestoreMetadata =

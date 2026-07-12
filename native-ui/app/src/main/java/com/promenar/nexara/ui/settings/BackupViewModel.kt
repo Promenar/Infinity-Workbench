@@ -21,10 +21,6 @@ import java.io.InputStream
 import java.io.OutputStream
 
 data class BackupUiState(
-    val sessionsChecked: Boolean = true,
-    val libraryChecked: Boolean = true,
-    val filesChecked: Boolean = true,
-    val settingsChecked: Boolean = true,
     val keysChecked: Boolean = false,
     val webdavEnabled: Boolean = false,
     val autoBackup: Boolean = false,
@@ -84,17 +80,8 @@ class BackupViewModel(application: Application) : ViewModel() {
         prefs.edit().putBoolean("auto_backup", enabled).apply()
     }
 
-    fun toggleCheck(type: String, checked: Boolean) {
-        _uiState.update {
-            when (type) {
-                "sessions" -> it.copy(sessionsChecked = checked)
-                "library" -> it.copy(libraryChecked = checked)
-                "files" -> it.copy(filesChecked = checked)
-                "settings" -> it.copy(settingsChecked = checked)
-                "keys" -> it.copy(keysChecked = checked)
-                else -> it
-            }
-        }
+    fun setIncludeKeys(include: Boolean) {
+        _uiState.update { it.withKeysIncluded(include) }
     }
 
     fun performExport(outputStream: OutputStream) {
@@ -181,3 +168,5 @@ class BackupViewModel(application: Application) : ViewModel() {
             }
     }
 }
+
+internal fun BackupUiState.withKeysIncluded(include: Boolean): BackupUiState = copy(keysChecked = include)
