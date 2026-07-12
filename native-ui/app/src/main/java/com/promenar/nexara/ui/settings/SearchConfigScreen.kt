@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
@@ -50,7 +51,11 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 @Composable
 fun SearchConfigScreen(
     onNavigateBack: () -> Unit,
-    viewModel: SearchConfigViewModel = viewModel()
+    viewModel: SearchConfigViewModel = viewModel(
+        factory = SearchConfigViewModel.factory(
+            LocalContext.current.applicationContext as android.app.Application
+        )
+    )
 ) {
     val uiState by viewModel.uiState.collectAsState()
     

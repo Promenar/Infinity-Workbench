@@ -480,10 +480,8 @@ private fun formatFileSize(bytes: Long): String {
 
 @Composable
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier {
-    return this.then(
-        clickable(
-            indication = null,
-            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-        ) { onClick() }
-    )
+    return clickable(
+        indication = null,
+        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    ) { onClick() }
 }

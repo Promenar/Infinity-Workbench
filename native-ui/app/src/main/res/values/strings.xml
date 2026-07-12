@@ -458,7 +458,7 @@
     <string name="backup_content_keys">API Keys</string>
     <string name="backup_section_local">Local Storage</string>
     <string name="backup_export_title">Export Backup</string>
-    <string name="backup_export_subtitle">JSON Archive</string>
+    <string name="backup_export_subtitle">Nexara secure archive</string>
     <string name="backup_exporting">Exporting…</string>
     <string name="backup_import_title">Import Backup</string>
     <string name="backup_import_subtitle">Restore Data</string>
@@ -471,7 +471,7 @@
     <string name="backup_upload_cloud">Upload to Cloud</string>
     <string name="backup_restore_cloud">Restore from Cloud</string>
     <string name="backup_config_webdav">Configure WebDAV</string>
-    <string name="backup_info_text">Data is stored locally by default. Configure WebDAV for end-to-end encrypted cross-device sync.</string>
+    <string name="backup_info_text">Data is stored locally by default. WebDAV enables cross-device sync. Backups can be password-encrypted; encryption is required when keys are included.</string>
     <string name="backup_webdav_config_title">WebDAV Configuration</string>
     <string name="backup_webdav_url_label">Server URL</string>
     <string name="backup_webdav_url_hint">https://your-webdav-server.com</string>

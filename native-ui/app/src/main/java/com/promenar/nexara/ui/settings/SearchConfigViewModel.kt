@@ -3,6 +3,8 @@ package com.promenar.nexara.ui.settings
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
 import com.promenar.nexara.data.security.SecretCatalog
@@ -36,6 +38,27 @@ class SearchConfigViewModel(
         (application as? NexaraApplication)?.secretStore ?: AndroidKeystoreSecretStore(application),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AndroidViewModel(application) {
+    companion object {
+        fun factory(
+            application: Application,
+            secretStore: SecretStore? = null,
+            ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        ): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    require(modelClass.isAssignableFrom(SearchConfigViewModel::class.java)) {
+                        "unsupported_view_model"
+                    }
+                    @Suppress("UNCHECKED_CAST")
+                    return if (secretStore == null) {
+                        SearchConfigViewModel(application, ioDispatcher = ioDispatcher) as T
+                    } else {
+                        SearchConfigViewModel(application, secretStore, ioDispatcher) as T
+                    }
+                }
+            }
+    }
+
     private val prefs = application.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
 
     private val _uiState = MutableStateFlow(SearchConfigState())

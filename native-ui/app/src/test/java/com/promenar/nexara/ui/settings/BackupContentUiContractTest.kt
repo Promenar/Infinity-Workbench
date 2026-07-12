@@ -90,4 +90,27 @@ class BackupContentUiContractTest {
         assertThat(source).contains("RepositoryBackupOperations(BackupRepository(application))")
         assertThat(source).doesNotContain("operations = RepositoryBackupOperations(BackupRepository(application))")
     }
+
+    @Test
+    fun `backup copy accurately describes archive format and conditional encryption`() {
+        val english = String(Files.readAllBytes(Path.of("app/src/main/res/values/strings.xml")), Charsets.UTF_8)
+        val chinese = String(Files.readAllBytes(Path.of("app/src/main/res/values-zh-rCN/strings.xml")), Charsets.UTF_8)
+
+        assertThat(english).contains(">Nexara secure archive<")
+        assertThat(chinese).contains(">Nexara 安全归档<")
+        assertThat(english).doesNotContain(">JSON Archive<")
+        assertThat(chinese).doesNotContain(">JSON 归档<")
+        assertThat(english).contains("Backups can be password-encrypted; encryption is required when keys are included.")
+        assertThat(chinese).contains("备份可选使用密码加密；包含密钥时必须加密。")
+        assertThat(english).doesNotContain("end-to-end encrypted cross-device sync")
+        assertThat(chinese).doesNotContain("端到端加密的跨设备同步")
+    }
+
+    @Test
+    fun `large accessibility fonts stack local backup actions`() {
+        assertThat(shouldStackBackupActions(1.0f)).isFalse()
+        assertThat(shouldStackBackupActions(1.49f)).isFalse()
+        assertThat(shouldStackBackupActions(1.5f)).isTrue()
+        assertThat(shouldStackBackupActions(2.0f)).isTrue()
+    }
 }

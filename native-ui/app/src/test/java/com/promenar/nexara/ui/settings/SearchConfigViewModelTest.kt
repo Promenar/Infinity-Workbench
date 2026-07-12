@@ -39,6 +39,14 @@ class SearchConfigViewModelTest {
     @After fun tearDown() = Dispatchers.resetMain()
 
     @Test
+    fun `production factory creates the dependency injected AndroidViewModel`() {
+        val created = SearchConfigViewModel.factory(app, secrets, dispatcher)
+            .create(SearchConfigViewModel::class.java)
+
+        assertThat(created).isInstanceOf(SearchConfigViewModel::class.java)
+    }
+
+    @Test
     fun `旧 Tavily 明文初始化后迁入 SecretStore 且状态不回显`() = runTest(dispatcher) {
         val prefs = app.getSharedPreferences("nexara_search", 0)
         prefs.edit().putString("tavily_api_key", "fake-tavily-key").commit()

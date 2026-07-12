@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +31,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -63,10 +65,12 @@ fun SecretField(
     placeholder: String = stringResource(R.string.secret_field_placeholder),
 ) {
     val scope = rememberCoroutineScope()
-    val fieldFocusRequester = remember { FocusRequester() }
+    val revealFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     var transientSecret by remember { mutableStateOf<CharArray?>(null) }
     var visible by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
+    var revealFocused by remember { mutableStateOf(false) }
     var focusGeneration by remember { mutableStateOf(0L) }
     var revealRequested by remember { mutableStateOf(false) }
     var revealGeneration by remember { mutableStateOf(0L) }
@@ -133,7 +137,6 @@ fun SecretField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = placeholder }
-                    .focusRequester(fieldFocusRequester)
                     .onFocusChanged {
                         if (focused && !it.isFocused) focusGeneration += 1
                         focused = it.isFocused
@@ -154,7 +157,8 @@ fun SecretField(
                     if (visible) {
                         hide()
                     } else {
-                        fieldFocusRequester.requestFocus()
+                        revealFocusRequester.requestFocus()
+                        keyboardController?.hide()
                         if (value.isNotEmpty()) {
                             visible = true
                         } else {
@@ -184,7 +188,15 @@ fun SecretField(
                         }
                     }
                 },
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier
+                    .size(48.dp)
+                    .onFocusChanged {
+                        if (revealFocused && !it.isFocused) focusGeneration += 1
+                        revealFocused = it.isFocused
+                        if (!it.isFocused) hide()
+                    }
+                    .focusRequester(revealFocusRequester)
+                    .focusable(),
             ) {
                 Icon(
                     imageVector = if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,

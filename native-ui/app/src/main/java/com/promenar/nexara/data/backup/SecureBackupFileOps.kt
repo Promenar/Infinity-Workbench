@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.OpenOption
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.nio.file.SecureDirectoryStream
 import java.nio.file.StandardOpenOption
 
@@ -46,7 +47,7 @@ internal object SecureBackupFileOps : RestoreFileOperations {
             val opened = mutableListOf<SecureDirectoryStream<Path>>()
             try {
                 relative.dropLast(1).forEach { segment ->
-                    val next = current.newDirectoryStream(Path.of(segment), LinkOption.NOFOLLOW_LINKS)
+                    val next = current.newDirectoryStream(Paths.get(segment), LinkOption.NOFOLLOW_LINKS)
                     opened += next
                     current = next
                 }
@@ -55,7 +56,7 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                     StandardOpenOption.WRITE,
                     LinkOption.NOFOLLOW_LINKS,
                 )
-                current.newByteChannel(Path.of(relative.last()), options).use { channel ->
+                current.newByteChannel(Paths.get(relative.last()), options).use { channel ->
                     var offset = 0
                     while (offset < bytes.size) {
                         offset += channel.write(ByteBuffer.wrap(bytes, offset, bytes.size - offset))
@@ -77,7 +78,7 @@ internal object SecureBackupFileOps : RestoreFileOperations {
         expectedInventory: Set<RestoreTreeEntry>?,
     ) {
         openSecure(parent).use { parentStream ->
-            val childPath = Path.of(childName)
+            val childPath = Paths.get(childName)
             val child = try {
                 parentStream.newDirectoryStream(childPath, LinkOption.NOFOLLOW_LINKS)
             } catch (error: Exception) {
@@ -85,7 +86,7 @@ internal object SecureBackupFileOps : RestoreFileOperations {
             }
             child.use {
                 val attributes = it.getFileAttributeView(
-                    Path.of("."),
+                    Paths.get("."),
                     java.nio.file.attribute.BasicFileAttributeView::class.java,
                     LinkOption.NOFOLLOW_LINKS,
                 ).readAttributes()
@@ -95,13 +96,13 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                 expectedInventory?.let { expected ->
                     // UnixSecureDirectoryStream 只允许从同一 handle 获取一次 iterator。
                     // 使用同一 root descriptor 派生独立 view 做 inventory，保留原 handle 给后续删除遍历。
-                    val actual = it.newDirectoryStream(Path.of("."), LinkOption.NOFOLLOW_LINKS).use { inventoryView ->
+                    val actual = it.newDirectoryStream(Paths.get("."), LinkOption.NOFOLLOW_LINKS).use { inventoryView ->
                         buildSet { collectInventory(inventoryView, "", this) }
                     }
                     if (actual != expected) throw BackupValidationException("待删除目录 descriptor inventory 已变化")
                 }
                 marker?.let { (name, expected) ->
-                    val bytes = readBounded(it, Path.of(name), 128)
+                    val bytes = readBounded(it, Paths.get(name), 128)
                     try {
                         if (bytes.toString(Charsets.UTF_8) != expected) {
                             throw BackupValidationException("待删除恢复目录 owner marker 无效")
@@ -111,7 +112,7 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                     }
                 }
                 deleteChildren(it, marker?.first)
-                marker?.let { itMarker -> it.deleteFile(Path.of(itMarker.first)) }
+                marker?.let { itMarker -> it.deleteFile(Paths.get(itMarker.first)) }
             }
             parentStream.deleteDirectory(childPath)
         }
@@ -119,13 +120,13 @@ internal object SecureBackupFileOps : RestoreFileOperations {
 
     override fun moveTree(parent: Path, sourceName: String, targetName: String) {
         openSecure(parent).use { secure ->
-            secure.move(Path.of(sourceName), secure, Path.of(targetName))
+            secure.move(Paths.get(sourceName), secure, Paths.get(targetName))
         }
     }
 
     override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> =
         openSecure(parent).use { secure ->
-            secure.newDirectoryStream(Path.of(childName), LinkOption.NOFOLLOW_LINKS).use { child ->
+            secure.newDirectoryStream(Paths.get(childName), LinkOption.NOFOLLOW_LINKS).use { child ->
                 buildSet { collectInventory(child, "", this) }
             }
         }
@@ -155,11 +156,11 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                 val opened = mutableListOf<SecureDirectoryStream<Path>>()
                 try {
                     parents.forEach { segment ->
-                        current = current.newDirectoryStream(Path.of(segment), LinkOption.NOFOLLOW_LINKS)
+                        current = current.newDirectoryStream(Paths.get(segment), LinkOption.NOFOLLOW_LINKS)
                             .also(opened::add)
                     }
-                    rootStream.newDirectoryStream(Path.of(temporaryName), LinkOption.NOFOLLOW_LINKS).use { }
-                    rootStream.move(Path.of(temporaryName), current, Path.of(name))
+                    rootStream.newDirectoryStream(Paths.get(temporaryName), LinkOption.NOFOLLOW_LINKS).use { }
+                    rootStream.move(Paths.get(temporaryName), current, Paths.get(name))
                 } finally {
                     opened.asReversed().forEach { runCatching { it.close() } }
                 }

@@ -26,6 +26,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.UUID
@@ -550,8 +551,8 @@ class RoomBackupDataSource(
             session.optionalString("workspace_root_uuid")?.let { rootId ->
                 val root = roots[rootId] ?: throw BackupValidationException("Session workspace root 不存在")
                 session.optionalString("workspace_path")?.let { path ->
-                    if (Path.of(path).toAbsolutePath().normalize() !=
-                        Path.of(root.requiredString("physical_root_path")).toAbsolutePath().normalize()
+                    if (Paths.get(path).toAbsolutePath().normalize() !=
+                        Paths.get(root.requiredString("physical_root_path")).toAbsolutePath().normalize()
                     ) throw BackupValidationException("Session workspace path 与 root 不一致")
                 }
             }
@@ -675,7 +676,7 @@ class RoomBackupDataSource(
             val sessionId = row.requiredString("id")
             val rootId = row.optionalString("workspace_root_uuid")
             val token = rootId?.let(rootTokens::get)
-            val oldRoot = row.optionalString("workspace_path")?.let(Path::of)?.toAbsolutePath()?.normalize()
+            val oldRoot = row.optionalString("workspace_path")?.let(Paths::get)?.toAbsolutePath()?.normalize()
             val newRoot = token?.let(finalRoot::resolve)
             sessionId to (oldRoot to newRoot)
         }
@@ -683,7 +684,7 @@ class RoomBackupDataSource(
             val artifactPath = row.optionalString("workspace_path") ?: return@map row
             val (oldRoot, newRoot) = sessionPathMapping.getValue(row.requiredString("session_id"))
             if (oldRoot == null || newRoot == null) throw BackupValidationException("Artifact 缺少可重写的 workspace root")
-            val oldArtifact = Path.of(artifactPath).toAbsolutePath().normalize()
+            val oldArtifact = Paths.get(artifactPath).toAbsolutePath().normalize()
             if (!oldArtifact.startsWith(oldRoot)) throw BackupValidationException("Artifact workspace path 越界")
             JsonObject(row + ("workspace_path" to JsonPrimitive(newRoot.resolve(oldRoot.relativize(oldArtifact)).toString())))
         }
@@ -705,7 +706,7 @@ class RoomBackupDataSource(
         val directories = linkedSetOf<List<String>>()
         val pendingFiles = mutableListOf<Pair<List<String>, ByteArray>>()
         transformed.rows(FILE_TABLE).forEach { row ->
-            val finalPhysicalRoot = Path.of(row.requiredString("physical_root_path"))
+            val finalPhysicalRoot = Paths.get(row.requiredString("physical_root_path"))
             val rootToken = finalPhysicalRoot.fileName.toString()
             val relative = normalizeMaterializedPath(row.requiredString("materialized_path"))
             val treePath = listOf(rootToken) + relative
@@ -841,7 +842,7 @@ class RoomBackupDataSource(
     }
 
     private fun requireTrustedSourceRoot(value: String): Path {
-        val root = Path.of(value).toAbsolutePath().normalize()
+        val root = Paths.get(value).toAbsolutePath().normalize()
         FileRestoreJournal.rejectSymlinkAncestors(root)
         val real = root.toRealPath(LinkOption.NOFOLLOW_LINKS)
         val directSource = trustedSourceBases.count { real.parent == it } == 1

@@ -70,6 +70,7 @@ import com.promenar.nexara.ui.theme.SpaceGrotesk
 
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.collectAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -165,6 +166,13 @@ internal fun BackupSettingsScreen(
             showRestorePasswordDialog = true
         }
     }
+    val stackLocalActions = shouldStackBackupActions(LocalDensity.current.fontScale)
+
+    val onExportClick = {
+        if (uiState.includeKeys) showExportPasswordDialog = true
+        else exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara")
+    }
+    val onImportClick = { importLauncher.launch("*/*") }
 
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
@@ -310,29 +318,50 @@ internal fun BackupSettingsScreen(
             item { SettingsSectionHeader(stringResource(R.string.backup_section_local)) }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ExportButton(
-                        icon = Icons.Rounded.Download,
-                        title = stringResource(R.string.backup_export_title),
-                        subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
-                        modifier = Modifier.weight(1f),
-                        enabled = uiState.canExecute,
-                        onClick = {
-                            if (uiState.includeKeys) showExportPasswordDialog = true
-                            else exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara")
-                        }
-                    )
-                    ExportButton(
-                        icon = Icons.Rounded.Upload,
-                        title = stringResource(R.string.backup_import_title),
-                        subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
-                        modifier = Modifier.weight(1f),
-                        enabled = uiState.canExecute,
-                        onClick = { importLauncher.launch("*/*") }
-                    )
+                if (stackLocalActions) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ExportButton(
+                            icon = Icons.Rounded.Download,
+                            title = stringResource(R.string.backup_export_title),
+                            subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = uiState.canExecute,
+                            onClick = onExportClick,
+                        )
+                        ExportButton(
+                            icon = Icons.Rounded.Upload,
+                            title = stringResource(R.string.backup_import_title),
+                            subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = uiState.canExecute,
+                            onClick = onImportClick,
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ExportButton(
+                            icon = Icons.Rounded.Download,
+                            title = stringResource(R.string.backup_export_title),
+                            subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
+                            modifier = Modifier.weight(1f),
+                            enabled = uiState.canExecute,
+                            onClick = onExportClick,
+                        )
+                        ExportButton(
+                            icon = Icons.Rounded.Upload,
+                            title = stringResource(R.string.backup_import_title),
+                            subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
+                            modifier = Modifier.weight(1f),
+                            enabled = uiState.canExecute,
+                            onClick = onImportClick,
+                        )
+                    }
                 }
             }
 
@@ -776,6 +805,8 @@ internal fun BackupPasswordDialog(
         },
     )
 }
+
+internal fun shouldStackBackupActions(fontScale: Float): Boolean = fontScale >= 1.5f
 
 @Composable
 private fun ExportButton(

@@ -71,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -100,6 +101,7 @@ fun RagHomeScreen(
     onNavigateToGraph: () -> Unit = {},
     onNavigateToDocEditor: (String) -> Unit = {}
 ) {
+    val locale = LocalConfiguration.current.locales[0]
     val stats by viewModel.stats.collectAsState()
     val folders by viewModel.folders.collectAsState()
     val folderStats by viewModel.folderStats.collectAsState()
@@ -345,7 +347,7 @@ fun RagHomeScreen(
                                         Text(text = if (isExpanded) memory.content else memory.content.take(120) + if (memory.content.length > 120) "…" else "", style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurface, maxLines = if (isExpanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             memory.sessionId?.let { Text("Session: ${it.take(8)}…", style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace), color = NexaraColors.Primary.copy(alpha = 0.7f)) }
-                                            Text(text = java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(memory.createdAt)), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
+                                            Text(text = java.text.SimpleDateFormat("MMM d, HH:mm", locale).format(java.util.Date(memory.createdAt)), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
                                         }
                                     }
                                 }

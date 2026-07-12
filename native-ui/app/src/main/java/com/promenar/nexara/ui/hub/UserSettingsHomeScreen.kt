@@ -131,6 +131,7 @@ fun UserSettingsHomeScreen(
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showModelPickerType by remember { mutableStateOf<String?>(null) }
+    val editAvatarTitle = stringResource(R.string.settings_edit_avatar)
 
     val cropLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -156,7 +157,7 @@ fun UserSettingsHomeScreen(
                 setToolbarColor(android.graphics.Color.BLACK)
                 setStatusBarColor(android.graphics.Color.BLACK)
                 setActiveControlsWidgetColor(android.graphics.Color.parseColor("#888DFF")) // Primary color
-                setToolbarTitle(context.getString(R.string.settings_edit_avatar))
+                setToolbarTitle(editAvatarTitle)
             }
             
             val intent = UCrop.of(uri, destinationUri)

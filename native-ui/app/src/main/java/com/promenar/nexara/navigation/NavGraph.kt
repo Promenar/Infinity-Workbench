@@ -1,5 +1,7 @@
 package com.promenar.nexara.navigation
 
+import android.app.Activity
+import android.content.Intent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -47,6 +49,7 @@ import com.promenar.nexara.ui.settings.TokenUsageScreen
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.welcome.WelcomeScreen
+import com.promenar.nexara.ui.welcome.WelcomeLanguageSelection
 
 object NavDestinations {
     const val WELCOME = "welcome"
@@ -144,13 +147,16 @@ fun NexaraNavGraph(
         composable(NavDestinations.WELCOME) {
             val context = LocalContext.current
             WelcomeScreen(
-                onNavigateToChat = {
-                    context.getSharedPreferences("nexara_prefs", android.content.Context.MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("has_shown_welcome", true)
-                        .apply()
-                    navController.navigate(NavDestinations.MAIN_TAB_SCAFFOLD) {
-                        popUpTo(NavDestinations.WELCOME) { inclusive = true }
+                onLanguageSelected = { languageCode ->
+                    if (WelcomeLanguageSelection.complete(context, languageCode)) {
+                        val activity = context as? Activity
+                        if (activity != null) {
+                            activity.startActivity(Intent.makeRestartActivityTask(activity.componentName))
+                        } else {
+                            navController.navigate(NavDestinations.MAIN_TAB_SCAFFOLD) {
+                                popUpTo(NavDestinations.WELCOME) { inclusive = true }
+                            }
+                        }
                     }
                 }
             )

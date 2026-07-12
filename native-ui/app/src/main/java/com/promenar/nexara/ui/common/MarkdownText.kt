@@ -512,7 +512,7 @@ private fun MarkdownSafe(
                     ?.getUnescapedTextInNode(model.content)
 
                 if (link != null) {
-                    var showLightbox by mutableStateOf(false)
+                    var showLightbox by remember(link) { mutableStateOf(false) }
                     val imageData = LocalImageTransformer.current.transform(link)
                     if (imageData != null) {
                         Image(

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import android.os.SystemClock
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -99,6 +100,28 @@ class SecureSecretFieldTest {
         composeRule.onNodeWithText("outside").performClick()
         composeRule.waitForIdle()
 
+        composeRule.onNodeWithText("****").assertIsDisplayed()
+        composeRule.onAllNodesWithText(secret).assertCountEquals(0)
+    }
+
+    @Test
+    fun directEye_doesNotOpenIme_andOutsideStillHidesReveal() {
+        val secret = "direct-no-ime-secret"
+        composeRule.activity.revealProvider = { secret.toCharArray() }
+        val show = composeRule.activity.getString(R.string.secret_field_show)
+
+        composeRule.onNodeWithText("outside").performClick()
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { check(!composeRule.activity.isImeVisible()) }
+
+        composeRule.onNodeWithContentDescription(show).performClick()
+        composeRule.waitForIdle()
+        SystemClock.sleep(750)
+        composeRule.onNodeWithText(secret).assertIsDisplayed()
+        composeRule.runOnIdle { check(!composeRule.activity.isImeVisible()) }
+
+        composeRule.onNodeWithText("outside").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("****").assertIsDisplayed()
         composeRule.onAllNodesWithText(secret).assertCountEquals(0)
     }

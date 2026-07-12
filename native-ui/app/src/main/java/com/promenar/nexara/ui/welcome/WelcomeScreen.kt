@@ -36,7 +36,7 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
 fun WelcomeScreen(
-    onNavigateToChat: () -> Unit
+    onLanguageSelected: (String) -> Unit
 ) {
     // Scaffold provides the true immersive edge-to-edge canvas
     Scaffold(
@@ -93,12 +93,12 @@ fun WelcomeScreen(
                     LanguageButton(
                         icon = Icons.Rounded.Language,
                         text = stringResource(R.string.welcome_lang_english),
-                        onClick = onNavigateToChat
+                        onClick = { onLanguageSelected("en") }
                     )
                     LanguageButton(
                         icon = Icons.Rounded.Translate,
                         text = stringResource(R.string.welcome_lang_chinese),
-                        onClick = onNavigateToChat
+                        onClick = { onLanguageSelected("zh") }
                     )
                 }
             }

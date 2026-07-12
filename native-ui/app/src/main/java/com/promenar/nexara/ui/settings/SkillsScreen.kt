@@ -780,7 +780,10 @@ private fun SearchConfigBottomSheet(
     skillId: String,
     onDismiss: () -> Unit
 ) {
-    val searchViewModel: SearchConfigViewModel = viewModel()
+    val application = LocalContext.current.applicationContext as android.app.Application
+    val searchViewModel: SearchConfigViewModel = viewModel(
+        factory = SearchConfigViewModel.factory(application)
+    )
     val searchState by searchViewModel.uiState.collectAsState()
     
     ModalBottomSheet(

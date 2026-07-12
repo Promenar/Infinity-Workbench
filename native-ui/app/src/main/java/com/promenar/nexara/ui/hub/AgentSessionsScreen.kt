@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
@@ -35,7 +36,6 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +52,7 @@ fun AgentSessionsScreen(
     val agentColor by viewModel.agentColor.collectAsState()
     var sessionToDelete by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    val locale = LocalConfiguration.current.locales[0]
 
     LaunchedEffect(agentId) {
         viewModel.loadSessions(agentId)
@@ -145,7 +146,7 @@ fun AgentSessionsScreen(
                     }
 
                     itemsIndexed(sessions, key = { _, s -> s.id }) { _, session ->
-                        val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+                        val formatter = SimpleDateFormat("MMM dd, HH:mm", locale)
                         val timeString = formatter.format(Date(session.updatedAt))
 
                         SwipeableItem(

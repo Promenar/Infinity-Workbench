@@ -1,13 +1,18 @@
 package com.promenar.nexara.ui.settings
 
 import android.os.Bundle
+import android.view.WindowInsets as AndroidWindowInsets
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.Modifier
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.theme.NexaraTheme
 
@@ -26,12 +31,15 @@ class SecretFieldTestActivity : ComponentActivity() {
         clearAction = {}
     }
 
+    fun isImeVisible(): Boolean =
+        window.decorView.rootWindowInsets?.isVisible(AndroidWindowInsets.Type.ime()) == true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             NexaraTheme {
                 val focus = LocalFocusManager.current
-                Column {
+                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
                     if (showField.value) {
                         SecretField(
                             value = edit.value,
