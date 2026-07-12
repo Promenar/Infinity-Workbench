@@ -77,7 +77,7 @@ fun BackupSettingsScreen(
     // WebDAV local editing states for the sheet
     var tempWebdavUrl by remember(uiState.webdavUrl) { mutableStateOf(uiState.webdavUrl) }
     var tempWebdavUser by remember(uiState.webdavUser) { mutableStateOf(uiState.webdavUser) }
-    var tempWebdavPass by remember(uiState.webdavPass) { mutableStateOf(uiState.webdavPass) }
+    var tempWebdavPass by remember { mutableStateOf("") }
 
     val coreContentLabels = listOf(
         stringResource(R.string.backup_content_sessions),
@@ -91,7 +91,7 @@ fun BackupSettingsScreen(
     ) { uri ->
         uri?.let {
             context.contentResolver.openOutputStream(it)?.let { os ->
-                viewModel.performExport(os)
+                viewModel.export(os, null, null)
             }
         }
     }
@@ -101,7 +101,7 @@ fun BackupSettingsScreen(
     ) { uri ->
         uri?.let {
             context.contentResolver.openInputStream(it)?.let { `is` ->
-                viewModel.performImport(`is`)
+                viewModel.restoreLocal(`is`, null)
             }
         }
     }
@@ -316,15 +316,14 @@ fun BackupSettingsScreen(
                                         label = stringResource(R.string.backup_upload_cloud),
                                         icon = Icons.Rounded.Upload,
                                         modifier = Modifier.weight(1f),
-                                        onClick = { viewModel.uploadToCloud() }
+                                        onClick = { viewModel.upload(null, null) }
                                     )
                                     ActionButton(
                                         label = stringResource(R.string.backup_restore_cloud),
                                         icon = Icons.Rounded.Download,
                                         modifier = Modifier.weight(1f),
                                         onClick = { 
-                                            // TODO: Add file picker for cloud files. For now use common name.
-                                            viewModel.downloadFromCloud("nexara_latest.nexara") 
+                                            viewModel.listRemote()
                                         }
                                     )
                                 }
@@ -398,9 +397,14 @@ fun BackupSettingsScreen(
                     label = stringResource(R.string.backup_test_connection),
                     icon = Icons.Rounded.Link,
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { 
-                        // TODO: Implement test connection
-                        showWebdavSheet = false 
+                    onClick = {
+                        viewModel.saveWebDavConfig(
+                            tempWebdavUrl,
+                            tempWebdavUser,
+                            tempWebdavPass.takeIf { it.isNotEmpty() }?.toCharArray(),
+                        )
+                        tempWebdavPass = ""
+                        viewModel.testConnection()
                     }
                 )
                 ActionButton(
@@ -409,7 +413,12 @@ fun BackupSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     isPrimary = true,
                     onClick = { 
-                        viewModel.updateWebdavConfig(tempWebdavUrl, tempWebdavUser, tempWebdavPass)
+                        viewModel.saveWebDavConfig(
+                            tempWebdavUrl,
+                            tempWebdavUser,
+                            tempWebdavPass.takeIf { it.isNotEmpty() }?.toCharArray(),
+                        )
+                        tempWebdavPass = ""
                         showWebdavSheet = false 
                     }
                 )
