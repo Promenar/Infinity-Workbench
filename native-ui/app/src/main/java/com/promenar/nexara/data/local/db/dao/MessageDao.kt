@@ -18,7 +18,7 @@ interface MessageDao {
     suspend fun insertAll(messages: List<MessageEntity>)
 
     @Update
-    suspend fun update(message: MessageEntity)
+    suspend fun update(message: MessageEntity): Int
 
     @Delete
     suspend fun delete(message: MessageEntity)

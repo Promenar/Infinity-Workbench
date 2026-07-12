@@ -3,10 +3,12 @@ package com.promenar.nexara.ui.chat.manager
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.*
 import com.promenar.nexara.data.repository.IMessageRepository
+import com.promenar.nexara.data.repository.MessagePersistenceException
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -27,6 +29,8 @@ class MessageManagerTest {
     private var persistedSessionId: String? = null
     private var failScopedDelete = false
     private var failPartialUpdate = false
+    private var insertFailure: Throwable? = null
+    private var failMissingRow = false
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {}
@@ -38,10 +42,12 @@ class MessageManagerTest {
 
     private val stubMessageRepo = object : IMessageRepository {
         override suspend fun insert(message: Message, sessionId: String) {
+            insertFailure?.let { throw it }
             persistedMessage = message
             persistedSessionId = sessionId
         }
         override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
+            if (failMissingRow) throw MessagePersistenceException("missing row: $messageId")
             if (failPartialUpdate) {
                 failPartialUpdate = false
                 throw IllegalStateException("db update failed")
@@ -50,6 +56,9 @@ class MessageManagerTest {
             persistedMessage = persistedMessage?.let { current ->
                 current.copy(
                     content = updates["content"] as? String ?: current.content,
+                    status = if ("status" in updates) updates["status"] as String? else current.status,
+                    isError = if ("isError" in updates) updates["isError"] as Boolean else current.isError,
+                    errorMessage = if ("errorMessage" in updates) updates["errorMessage"] as String? else current.errorMessage,
                     tokens = if ("tokens" in updates) updates["tokens"] as TokenUsage? else current.tokens,
                     kgPaths = if ("kgPaths" in updates) {
                         @Suppress("UNCHECKED_CAST")
@@ -89,6 +98,8 @@ class MessageManagerTest {
         persistedSessionId = null
         failScopedDelete = false
         failPartialUpdate = false
+        insertFailure = null
+        failMissingRow = false
         store = ChatStore()
         messageManager = MessageManager(store, stubMessageRepo, stubSessionRepo, testScope)
         sessionManager = SessionManager(store, stubSessionRepo)
@@ -111,6 +122,51 @@ class MessageManagerTest {
         val session = store.getSession("s1")!!
         assertThat(session.messages).hasSize(1)
         assertThat(session.messages[0].content).isEqualTo("hello")
+    }
+
+    @Test
+    fun `addMessage插入失败不写Store且传播异常`() = testScope.runTest {
+        seedSession()
+        insertFailure = IllegalStateException("insert failed")
+
+        val failure = runCatching { messageManager.addMessage("s1", assistantMessage()) }.exceptionOrNull()
+
+        assertThat(failure?.message).isEqualTo("insert failed")
+        assertThat(store.getSession("s1")!!.messages).isEmpty()
+    }
+
+    @Test
+    fun `addMessage取消不写Store且原样传播Cancellation`() = testScope.runTest {
+        seedSession()
+        val cancelled = CancellationException("cancel insert")
+        insertFailure = cancelled
+
+        val failure = runCatching { messageManager.addMessage("s1", assistantMessage()) }.exceptionOrNull()
+
+        assertThat(failure).isSameInstanceAs(cancelled)
+        assertThat(store.getSession("s1")!!.messages).isEmpty()
+    }
+
+    @Test
+    fun `准备补偿覆盖DB与Store三种存在组合且只按session删除`() = testScope.runTest {
+        seedSession()
+        val message = assistantMessage()
+
+        store.update { state ->
+            state.copy(sessions = state.sessions.map { it.copy(messages = listOf(message)) })
+        }
+        messageManager.discardPreparedMessage("s1", message.id)
+        assertThat(store.getSession("s1")!!.messages).isEmpty()
+
+        persistedMessage = message
+        persistedSessionId = "s1"
+        messageManager.discardPreparedMessage("s1", message.id)
+        assertThat(persistedMessage).isNull()
+
+        messageManager.addMessage("s1", message)
+        messageManager.discardPreparedMessage("s1", message.id)
+        assertThat(store.getSession("s1")!!.messages).isEmpty()
+        assertThat(persistedMessage).isNull()
     }
 
     @Test
@@ -739,5 +795,206 @@ class MessageManagerTest {
         val session = store.getSession("s1")!!
         assertThat(session.messages[0].content).isEqualTo("buffered content")
         assertThat(messageManager.hasPendingUpdates("s1", "m1")).isFalse()
+    }
+
+    @Test
+    fun `生成终态同步写入Store与Repository且成功会清除旧错误`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(
+                id = "m1",
+                role = MessageRole.ASSISTANT,
+                content = "partial",
+                status = "streaming",
+                isError = true,
+                errorMessage = "old",
+            ),
+        )
+        advanceUntilIdle()
+
+        messageManager.markGenerationTerminal("s1", "m1", "final", "success")
+
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.content).isEqualTo("final")
+        assertThat(stored.status).isEqualTo("success")
+        assertThat(stored.isError).isFalse()
+        assertThat(stored.errorMessage).isNull()
+        assertThat(persistedMessage).isEqualTo(stored)
+        assertThat(partialUpdates.last()["status"]).isEqualTo("success")
+        assertThat(partialUpdates.last()["isError"]).isEqualTo(false)
+        assertThat(partialUpdates.last()).containsKey("errorMessage")
+        assertThat(partialUpdates.last()["errorMessage"]).isNull()
+    }
+
+    @Test
+    fun `recoverable错误后的旧db debounce不得覆盖success终态`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        advanceUntilIdle()
+        messageManager.updateMessageContent(
+            "s1",
+            "m1",
+            "partial",
+            UpdateMessageOptions(isError = true, errorMessage = "recoverable"),
+        )
+        advanceTimeBy(100)
+        runCurrent()
+
+        messageManager.markGenerationTerminal("s1", "m1", "final", "success")
+        advanceUntilIdle()
+
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.status).isEqualTo("success")
+        assertThat(stored.isError).isFalse()
+        assertThat(stored.errorMessage).isNull()
+        assertThat(persistedMessage?.status).isEqualTo("success")
+        assertThat(persistedMessage?.isError).isFalse()
+        assertThat(persistedMessage?.errorMessage).isNull()
+    }
+
+    @Test
+    fun `CONTINUE清理同lane pending中的recoverable错误`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        advanceUntilIdle()
+        messageManager.updateMessageContent(
+            "s1", "m1", "partial",
+            UpdateMessageOptions(isError = true, errorMessage = "recoverable"),
+        )
+        messageManager.updateMessageContent(
+            "s1", "m1", "partial",
+            UpdateMessageOptions(clearError = true, clearToolCalls = true),
+        )
+
+        messageManager.flushGenerationTerminal("s1", "m1")
+
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.isError).isFalse()
+        assertThat(stored.errorMessage).isNull()
+        assertThat(stored.toolCalls).isEmpty()
+        assertThat(persistedMessage?.isError).isFalse()
+        assertThat(persistedMessage?.errorMessage).isNull()
+    }
+
+    @Test
+    fun `同lane先清理旧工具再收到新工具时以新工具为准`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        advanceUntilIdle()
+        messageManager.updateMessageContent(
+            "s1", "m1", "",
+            UpdateMessageOptions(clearToolCalls = true),
+        )
+        messageManager.updateMessageContent(
+            "s1", "m1", "",
+            UpdateMessageOptions(toolCalls = listOf(ToolCall("call-2", "read_file", "{}"))),
+        )
+
+        messageManager.flushGenerationTerminal("s1", "m1")
+
+        assertThat(store.getSession("s1")!!.messages.single().toolCalls?.map { it.id })
+            .containsExactly("call-2")
+    }
+
+    @Test
+    fun `终态屏障等待inflight更新后以终态最后写入`() = testScope.runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val manager = MessageManager(
+            store,
+            stubMessageRepo,
+            stubSessionRepo,
+            testScope,
+            MessageManagerHooks(beforeUiApply = {
+                entered.complete(Unit)
+                release.await()
+            }),
+        )
+        seedSession()
+        manager.addMessage("s1", assistantMessage())
+        advanceUntilIdle()
+        manager.updateMessageContent(
+            "s1",
+            "m1",
+            "partial",
+            UpdateMessageOptions(isError = true, errorMessage = "recoverable"),
+        )
+        advanceTimeBy(100)
+        runCurrent()
+        entered.await()
+        val terminal = launch {
+            manager.markGenerationTerminal("s1", "m1", "final", "success")
+        }
+
+        release.complete(Unit)
+        terminal.join()
+        advanceUntilIdle()
+
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.content).isEqualTo("final")
+        assertThat(stored.status).isEqualTo("success")
+        assertThat(stored.isError).isFalse()
+        assertThat(persistedMessage?.status).isEqualTo("success")
+    }
+
+    @Test
+    fun `error与cancelled终态同步Store和Repository`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        advanceUntilIdle()
+
+        messageManager.markGenerationTerminal("s1", "m1", "partial", "error", "network")
+        assertThat(store.getSession("s1")!!.messages.single().status).isEqualTo("error")
+        assertThat(persistedMessage?.status).isEqualTo("error")
+        assertThat(persistedMessage?.isError).isTrue()
+
+        messageManager.markGenerationTerminal("s1", "m1", "partial", "cancelled")
+        assertThat(store.getSession("s1")!!.messages.single().status).isEqualTo("cancelled")
+        assertThat(persistedMessage?.status).isEqualTo("cancelled")
+        assertThat(persistedMessage?.isError).isFalse()
+        assertThat(persistedMessage?.errorMessage).isNull()
+    }
+
+    @Test
+    fun `终态DB写失败时Store不得提前发布success`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(id = "m1", role = MessageRole.ASSISTANT, content = "partial", status = "streaming"),
+        )
+        advanceUntilIdle()
+        failPartialUpdate = true
+
+        val failure = runCatching {
+            messageManager.markGenerationTerminal("s1", "m1", "final", "success")
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(store.getSession("s1")!!.messages.single().status).isEqualTo("streaming")
+        assertThat(persistedMessage?.status).isEqualTo("streaming")
+    }
+
+    @Test
+    fun `终态目标DB行缺失时Store幽灵消息不得发布success`() = testScope.runTest {
+        seedSession()
+        val ghost = Message(
+            id = "m1",
+            role = MessageRole.ASSISTANT,
+            content = "partial",
+            status = "streaming",
+        )
+        store.update { state ->
+            state.copy(sessions = state.sessions.map { it.copy(messages = listOf(ghost)) })
+        }
+        failMissingRow = true
+
+        val failure = runCatching {
+            messageManager.markGenerationTerminal("s1", "m1", "final", "success")
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(MessagePersistenceException::class.java)
+        assertThat(store.getSession("s1")!!.messages.single().status).isEqualTo("streaming")
+        assertThat(store.getSession("s1")!!.messages.single().content).isEqualTo("partial")
     }
 }

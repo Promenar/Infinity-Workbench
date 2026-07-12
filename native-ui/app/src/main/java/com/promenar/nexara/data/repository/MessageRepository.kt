@@ -37,13 +37,14 @@ open class MessageRepository(
     }
 
     open suspend fun update(message: Message, sessionId: String) {
-        messageDao.update(message.toEntity(sessionId))
+        checkUpdated(message.id, messageDao.update(message.toEntity(sessionId)))
     }
 
     override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
-        val existing = messageDao.getById(messageId) ?: return
+        val existing = messageDao.getById(messageId)
+            ?: throw MessagePersistenceException("消息不存在，无法持久化更新：$messageId")
         val updated = applyPartialUpdates(existing, updates)
-        messageDao.update(updated)
+        checkUpdated(messageId, messageDao.update(updated))
     }
 
     override suspend fun delete(messageId: String) {
@@ -134,7 +135,15 @@ open class MessageRepository(
 
     override suspend fun appendContent(messageId: String, chunk: String) {
         val existing = messageDao.getById(messageId) ?: return
-        messageDao.update(existing.copy(content = existing.content + chunk))
+        checkUpdated(messageId, messageDao.update(existing.copy(content = existing.content + chunk)))
+    }
+
+    private fun checkUpdated(messageId: String, affectedRows: Int) {
+        if (affectedRows != 1) {
+            throw MessagePersistenceException(
+                "消息持久化更新影响行数异常：messageId=$messageId, affectedRows=$affectedRows",
+            )
+        }
     }
 
     // ── Mappers ─────────────────────────────────────────────────────────

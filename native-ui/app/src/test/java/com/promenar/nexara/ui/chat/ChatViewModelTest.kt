@@ -6,6 +6,7 @@ import com.promenar.nexara.data.model.*
 import com.promenar.nexara.data.remote.protocol.*
 import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
+import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.remote.ResolvedProviderModel
 import com.promenar.nexara.data.remote.UnifiedLlmClient
 import com.promenar.nexara.data.remote.UnifiedProviderConfig
@@ -19,6 +20,7 @@ import com.promenar.nexara.data.backup.BackupDataSource
 import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.data.backup.BackupSnapshot
 import com.promenar.nexara.data.backup.ValidatedBackup
+import com.promenar.nexara.data.generation.ChatProviderRouteGate
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
@@ -28,6 +30,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -49,6 +54,7 @@ class ChatViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 
     private lateinit var viewModel: ChatViewModel
+    private lateinit var generationScope: CoroutineScope
 
     private val kgPath = KgPath(
         queryKeywords = listOf("Nexara"),
@@ -153,6 +159,7 @@ class ChatViewModelTest {
     private val savedMessages = mutableListOf<Pair<Message, String>>()
     private val deletedMessages = mutableListOf<String>()
     private var failScopedDelete = false
+    private var afterInsert: suspend (Message, String) -> Unit = { _, _ -> }
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {
@@ -168,6 +175,9 @@ class ChatViewModelTest {
                 }
                 if (updates.containsKey("stats")) {
                     session = session.copy(stats = updates["stats"] as SessionStats?)
+                }
+                if (updates.containsKey("draft")) {
+                    session = session.copy(draft = updates["draft"] as String?)
                 }
                 savedSessions[index] = session
             }
@@ -188,6 +198,7 @@ class ChatViewModelTest {
                 savedSessions.removeIf { it.id == sessionId }
                 savedSessions.add(updated)
             }
+            afterInsert(message, sessionId)
         }
 
         override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
@@ -274,6 +285,9 @@ class ChatViewModelTest {
 
     private var fakeStreamChunks: List<StreamChunk> = emptyList()
     private var protocolRequestCount = 0
+    private var holdStreamOpen = false
+    private var providerCancelled = false
+    private var forcedProviderFailure: ProviderResolution.Failure? = null
 
     private val fakeProtocol = object : LlmProtocol {
         override val protocolType = ProtocolType.OpenAI_ChatCompletions
@@ -283,6 +297,7 @@ class ChatViewModelTest {
                 for (chunk in fakeStreamChunks) {
                     emit(chunk)
                 }
+                if (holdStreamOpen) kotlinx.coroutines.awaitCancellation()
             }
         }
 
@@ -290,12 +305,12 @@ class ChatViewModelTest {
             return PromptResponse(content = "test response")
         }
 
-        override fun cancel() {}
+        override fun cancel() { providerCancelled = true }
     }
 
     private val fakeLlmProvider = LlmProvider(fakeProtocol)
     private val fakeProviderRouter = object : ProviderRequestRouter {
-        override fun resolve(modelId: String): ProviderResolution = ProviderResolution.Success(
+        override fun resolve(modelId: String): ProviderResolution = forcedProviderFailure ?: ProviderResolution.Success(
             ResolvedProviderModel(
                 modelId = modelId,
                 remoteModelId = modelId.substringAfter("::", modelId),
@@ -345,7 +360,11 @@ class ChatViewModelTest {
         deletedMessages.clear()
         fakeStreamChunks = emptyList()
         failScopedDelete = false
+        afterInsert = { _, _ -> }
         protocolRequestCount = 0
+        holdStreamOpen = false
+        providerCancelled = false
+        forcedProviderFailure = null
 
         stubAgentRepo.seed(Agent(
             id = "a1",
@@ -357,6 +376,52 @@ class ChatViewModelTest {
         val configResolver = AgentConfigResolver(
             app.getSharedPreferences("nexara_settings", 0)
         )
+        generationScope = CoroutineScope(SupervisorJob() + testDispatcher)
+        val presentationStore = com.promenar.nexara.data.generation.GenerationPresentationStore()
+        val generationSessionManager = com.promenar.nexara.ui.chat.manager.SessionManager(app.chatStore, stubSessionRepo)
+        val generationMessageManager = com.promenar.nexara.ui.chat.manager.MessageManager(
+            app.chatStore,
+            stubMessageRepo,
+            stubSessionRepo,
+            generationScope,
+        )
+        val generationToolLedger = io.mockk.mockk<com.promenar.nexara.data.repository.ToolExecutionLedger>(relaxed = true)
+        val generationToolExecutor = com.promenar.nexara.ui.chat.manager.ToolExecutor(
+            app.chatStore,
+            generationMessageManager,
+            null,
+            fakeTaskRepository,
+            generationToolLedger,
+        )
+        val runnerFactory = com.promenar.nexara.data.generation.DefaultChatGenerationRunnerFactory(
+            settings = app.getSharedPreferences("nexara_settings", 0),
+            applicationScope = generationScope,
+            store = app.chatStore,
+            agentRepository = stubAgentRepo,
+            configResolver = configResolver,
+            routeGate = ChatProviderRouteGate(fakeProviderRouter, testDispatcher),
+            contextBuilder = com.promenar.nexara.ui.chat.manager.ContextBuilder(taskRepository = fakeTaskRepository),
+            messageManager = generationMessageManager,
+            localProviderFactory = { fakeLlmProvider },
+            provider = fakeLlmProvider,
+            toolLedger = generationToolLedger,
+            toolExecutor = generationToolExecutor,
+            postProcessor = com.promenar.nexara.ui.chat.manager.PostProcessor(
+                app.chatStore,
+                generationSessionManager,
+                generationMessageManager,
+            ),
+            memoryManager = null,
+            summaryManager = com.promenar.nexara.ui.chat.manager.SummaryManager(fakeLlmProvider),
+            sessionManager = generationSessionManager,
+            skillRegistry = null,
+            presentationStore = presentationStore,
+        )
+        val generationCoordinator = com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
+            applicationScope = generationScope,
+            runnerFactory = runnerFactory,
+            presentationStore = presentationStore,
+        )
 
         viewModel = ChatViewModel(
             application = app,
@@ -367,12 +432,15 @@ class ChatViewModelTest {
             providerRequestRouter = fakeProviderRouter,
             providerResolutionDispatcher = testDispatcher,
             localLlmProviderFactory = { fakeLlmProvider },
-            configResolver = configResolver
+            configResolver = configResolver,
+            generationCoordinatorOverride = generationCoordinator,
+            generationPresentationStoreOverride = presentationStore,
         )
     }
 
     @After
     fun tearDown() {
+        generationScope.cancel()
         kotlinx.coroutines.Dispatchers.resetMain()
     }
 
@@ -478,6 +546,48 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `完成终态被当前VM消费后回到IDLE`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession()
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Done)
+
+        viewModel.sendMessage("test")
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.IDLE)
+    }
+
+    @Test
+    fun `Coordinator终态先到时combine仍保留路由Rejected设置入口直至UI消费`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession()
+        advanceUntilIdle()
+        forcedProviderFailure = ProviderResolution.Failure(
+            reason = ProviderResolutionError.API_KEY_MISSING,
+            modelId = "gpt-4o",
+            providerId = "provider-missing-key",
+        )
+
+        viewModel.sendMessage("trigger route failure")
+        advanceUntilIdle()
+
+        assertThat(viewModel.providerResolutionFailure.value?.providerId)
+            .isEqualTo("provider-missing-key")
+        assertThat(viewModel.uiState.value.error).contains("Provider 路由失败")
+        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.ERROR)
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+
+        seedSession("clean-session")
+        advanceUntilIdle()
+        assertThat(viewModel.providerResolutionFailure.value).isNull()
+        assertThat(viewModel.uiState.value.error).isNull()
+        assertThat(viewModel.ragPhases.value).isEmpty()
+        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.IDLE)
+    }
+
+    @Test
     fun stopGeneration_resetsIsGenerating() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(); advanceUntilIdle()
@@ -485,6 +595,105 @@ class ChatViewModelTest {
 
         assertThat(viewModel.uiState.value.isGenerating).isFalse()
         
+    }
+
+    @Test
+    fun `A生成时B发送返回Busy且不留幽灵消息并且B停止不取消A`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession("A")
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial-A"))
+        holdStreamOpen = true
+        viewModel.sendMessage("from A")
+        advanceUntilIdle()
+        assertThat(protocolRequestCount).isEqualTo(1)
+
+        seedSession("B")
+        advanceUntilIdle()
+        viewModel.updateInputText("from B")
+        viewModel.sendMessage("from B")
+        advanceUntilIdle()
+
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        assertThat(app.chatStore.getSession("B")!!.messages).isEmpty()
+        assertThat(viewModel.inputText.value).isEqualTo("from B")
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.ERROR)
+        assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(providerCancelled).isFalse()
+
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+        assertThat(providerCancelled).isFalse()
+
+        viewModel.loadSession("A")
+        advanceUntilIdle()
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+        assertThat(providerCancelled).isTrue()
+    }
+
+    @Test
+    fun `同会话并发双击只保留一组消息`() = runTest {
+        seedSession("A")
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        holdStreamOpen = true
+
+        viewModel.sendMessage("first")
+        advanceUntilIdle()
+        viewModel.updateInputText("second")
+        viewModel.sendMessage("second")
+        advanceUntilIdle()
+
+        val session = ApplicationProvider.getApplicationContext<NexaraApplication>()
+            .chatStore.getSession("A")!!
+        assertThat(session.messages.map { it.content }).containsExactly("first", "partial").inOrder()
+        assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(viewModel.inputText.value).isEqualTo("second")
+    }
+
+    @Test
+    fun `assistant插入已提交但返回前取消时第二click不留下首轮幽灵pair`() = runTest {
+        seedSession("A")
+        advanceUntilIdle()
+        val committedBeforeReturn = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val secondPreparationEntered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val releaseSecondPreparation = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var suspendOnce = true
+        afterInsert = { message, _ ->
+            if (message.role == MessageRole.ASSISTANT && suspendOnce) {
+                suspendOnce = false
+                committedBeforeReturn.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            } else if (message.role == MessageRole.USER && message.content == "second") {
+                secondPreparationEntered.complete(Unit)
+                releaseSecondPreparation.await()
+            }
+        }
+
+        viewModel.updateInputText("first")
+        viewModel.sendMessage("first")
+        committedBeforeReturn.await()
+        viewModel.updateInputText("second")
+        holdStreamOpen = true
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("second-response"))
+        viewModel.sendMessage("second")
+        secondPreparationEntered.await()
+        assertThat(viewModel.inputText.value).isEqualTo("second")
+        assertThat(savedSessions.single { it.id == "A" }.draft).isEqualTo("second")
+        releaseSecondPreparation.complete(Unit)
+        advanceUntilIdle()
+
+        val storeMessages = ApplicationProvider.getApplicationContext<NexaraApplication>()
+            .chatStore.getSession("A")!!.messages
+        val repositoryMessages = savedMessages.filter { it.second == "A" }.map { it.first }
+        assertThat(storeMessages.map { it.content })
+            .containsExactly("second", "second-response").inOrder()
+        assertThat(repositoryMessages.map { it.content })
+            .containsExactly("second", "second-response").inOrder()
+        assertThat(storeMessages.none { it.content == "first" }).isTrue()
+        assertThat(repositoryMessages.none { it.content == "first" }).isTrue()
     }
 
     @Test
@@ -548,6 +757,24 @@ class ChatViewModelTest {
 
         assertThat(viewModel.uiState.value.error).isEqualTo("Something went wrong")
         
+    }
+
+    @Test
+    fun `onCleared只移除观察者不取消应用级生成`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(); advanceUntilIdle()
+        holdStreamOpen = true
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("hello")
+        kotlinx.coroutines.yield()
+        assertThat(protocolRequestCount).isGreaterThan(0)
+        providerCancelled = false
+
+        ChatViewModel::class.java.getDeclaredMethod("onCleared").apply { isAccessible = true }.invoke(viewModel)
+
+        assertThat(providerCancelled).isFalse()
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+        viewModel.stopGeneration()
     }
 
     @Test

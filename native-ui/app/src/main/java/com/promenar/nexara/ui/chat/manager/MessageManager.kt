@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -51,12 +52,14 @@ class MessageManager(
     private val store: ChatStore,
     private val messageRepository: IMessageRepository,
     private val sessionRepository: ISessionRepository,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
+    /** 不绑定 ViewModel；生成协调器迁移后由应用级 scope 注入。 */
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val hooks: MessageManagerHooks = MessageManagerHooks(),
 ) {
     private data class PendingUpdate(
         val epoch: Long,
         var content: String,
+        var status: String? = null,
         var tokens: TokenUsage? = null,
         var reasoning: String? = null,
         var citations: List<Citation>? = null,
@@ -67,11 +70,13 @@ class MessageManager(
         var thoughtSignature: String? = null,
         var taskState: TaskState? = null,
         var toolCalls: List<ToolCall>? = null,
+        var clearToolCalls: Boolean = false,
         var executionSteps: List<ExecutionStep>? = null,
         var pendingApprovalToolIds: List<String>? = null,
         var toolResults: List<ToolResultArtifact>? = null,
         var isError: Boolean? = null,
         var errorMessage: String? = null,
+        var clearError: Boolean = false,
         var isLongWait: Boolean? = null,
         var loopCount: Int? = null
     )
@@ -102,6 +107,7 @@ class MessageManager(
     }
 
     suspend fun addMessage(sessionId: String, message: Message) {
+        messageRepository.insert(message, sessionId)
         store.update { state ->
             state.copy(
                 sessions = state.sessions.map { s ->
@@ -117,10 +123,6 @@ class MessageManager(
             )
         }
 
-        try {
-            messageRepository.insert(message, sessionId)
-        } catch (_: Exception) {
-        }
     }
 
     /**
@@ -260,6 +262,7 @@ class MessageManager(
             try {
                 val updates = mapOf(
                     "content" to message.content,
+                    "status" to message.status,
                     "reasoning" to message.reasoning,
                     "isArchived" to message.isArchived,
                     "tokens" to message.tokens,
@@ -289,6 +292,7 @@ class MessageManager(
                 ?: PendingUpdate(epoch = lane.epoch, content = content)
 
             current.content = content
+            options?.status?.let { current.status = it }
             options?.tokens?.let { current.tokens = it }
             options?.reasoning?.let { current.reasoning = it }
             options?.citations?.let { current.citations = it }
@@ -298,12 +302,26 @@ class MessageManager(
             options?.ragMetadata?.let { current.ragMetadata = it }
             options?.thoughtSignature?.let { current.thoughtSignature = it }
             options?.planningTask?.let { current.taskState = it }
-            options?.toolCalls?.let { current.toolCalls = it }
+            if (options?.clearToolCalls == true) {
+                current.toolCalls = emptyList()
+                current.clearToolCalls = true
+            } else {
+                options?.toolCalls?.let {
+                    current.toolCalls = it
+                    current.clearToolCalls = false
+                }
+            }
             options?.executionSteps?.let { current.executionSteps = it }
             options?.pendingApprovalToolIds?.let { current.pendingApprovalToolIds = it }
             options?.toolResults?.let { current.toolResults = it }
-            options?.isError?.let { current.isError = it }
-            options?.errorMessage?.let { current.errorMessage = it }
+            if (options?.clearError == true) {
+                current.isError = false
+                current.errorMessage = null
+                current.clearError = true
+            } else {
+                options?.isError?.let { current.isError = it }
+                options?.errorMessage?.let { current.errorMessage = it }
+            }
             options?.isLongWait?.let { current.isLongWait = it }
             options?.loopCount?.let { current.loopCount = it }
             pendingUpdates[key] = current
@@ -376,6 +394,7 @@ class MessageManager(
 
         val dbUpdates = buildMap {
             put("content", pending.content)
+            pending.status?.let { put("status", it) }
             pending.tokens?.let { put("tokens", newTokens) }
             pending.reasoning?.let { put("reasoning", it) }
             pending.citations?.let { put("citations", it) }
@@ -387,9 +406,15 @@ class MessageManager(
             pending.executionSteps?.let { put("executionSteps", it) }
             pending.pendingApprovalToolIds?.let { put("pendingApprovalToolIds", it) }
             pending.toolResults?.let { put("toolResults", it) }
-            pending.toolCalls?.let { put("toolCalls", it) }
-            pending.isError?.let { put("isError", it) }
-            pending.errorMessage?.let { put("errorMessage", it) }
+            if (pending.clearToolCalls) put("toolCalls", emptyList<ToolCall>())
+            else pending.toolCalls?.let { put("toolCalls", it) }
+            if (pending.clearError) {
+                put("isError", false)
+                put("errorMessage", null)
+            } else {
+                pending.isError?.let { put("isError", it) }
+                pending.errorMessage?.let { put("errorMessage", it) }
+            }
         }
 
             debouncedDbUpdate(sessionId, messageId, pending.epoch, dbUpdates)
@@ -426,6 +451,7 @@ class MessageManager(
         newTokens: TokenUsage
     ): Message = message.copy(
         content = pending.content,
+        status = pending.status ?: message.status,
         tokens = newTokens,
         reasoning = pending.reasoning ?: message.reasoning,
         citations = pending.citations ?: message.citations,
@@ -435,12 +461,12 @@ class MessageManager(
         ragMetadata = pending.ragMetadata ?: message.ragMetadata,
         thoughtSignature = pending.thoughtSignature ?: message.thoughtSignature,
         planningTask = pending.taskState ?: message.planningTask,
-        toolCalls = pending.toolCalls ?: message.toolCalls,
+        toolCalls = if (pending.clearToolCalls) emptyList() else pending.toolCalls ?: message.toolCalls,
         executionSteps = pending.executionSteps ?: message.executionSteps,
         pendingApprovalToolIds = pending.pendingApprovalToolIds ?: message.pendingApprovalToolIds,
         toolResults = pending.toolResults ?: message.toolResults,
-        isError = pending.isError ?: message.isError,
-        errorMessage = pending.errorMessage ?: message.errorMessage,
+        isError = if (pending.clearError) false else pending.isError ?: message.isError,
+        errorMessage = if (pending.clearError) null else pending.errorMessage ?: message.errorMessage,
         isLongWait = pending.isLongWait ?: message.isLongWait,
         loopCount = pending.loopCount ?: message.loopCount
     )
@@ -509,6 +535,7 @@ class MessageManager(
 
     private fun PendingUpdate.toDbUpdates(): MutableMap<String, Any?> = buildMap<String, Any?> {
         put("content", content)
+        status?.let { put("status", it) }
         tokens?.let { put("tokens", it) }
         reasoning?.let { put("reasoning", it) }
         thoughtSignature?.let { put("thoughtSignature", it) }
@@ -516,9 +543,15 @@ class MessageManager(
         executionSteps?.let { put("executionSteps", it) }
         pendingApprovalToolIds?.let { put("pendingApprovalToolIds", it) }
         toolResults?.let { put("toolResults", it) }
-        toolCalls?.let { put("toolCalls", it) }
-        isError?.let { put("isError", it) }
-        errorMessage?.let { put("errorMessage", it) }
+        if (clearToolCalls) put("toolCalls", emptyList<ToolCall>())
+        else toolCalls?.let { put("toolCalls", it) }
+        if (clearError) {
+            put("isError", false)
+            put("errorMessage", null)
+        } else {
+            isError?.let { put("isError", it) }
+            errorMessage?.let { put("errorMessage", it) }
+        }
     }.toMutableMap()
 
     private fun clearRagFields(updates: MutableMap<String, Any?>) {
@@ -658,6 +691,41 @@ class MessageManager(
         }
     }
 
+    /** 发送准备失败的幂等补偿：只按 session+message 删除，DB 无行时也清理 Store 与 lane。 */
+    suspend fun discardPreparedMessage(sessionId: String, messageId: String) =
+        discardPreparedMessages(sessionId, listOf(messageId))
+
+    /** 同一发送回合的组级补偿；调用方按 assistant→user 传入，Store 只做一次原子过滤。 */
+    suspend fun discardPreparedMessages(sessionId: String, messageIds: List<String>) {
+        val orderedIds = messageIds.distinct()
+        val purgeKeys = purgeMessageState(sessionId, orderedIds)
+        var failure: Throwable? = null
+        try {
+            orderedIds.forEach { messageId ->
+                try {
+                    messageRepository.deleteInSession(sessionId, messageId)
+                } catch (error: Throwable) {
+                    if (failure == null) failure = error else failure?.addSuppressed(error)
+                }
+            }
+            val idSet = orderedIds.toSet()
+            store.update { state ->
+                state.copy(
+                    sessions = state.sessions.map { session ->
+                        if (session.id == sessionId) {
+                            session.copy(messages = session.messages.filterNot { it.id in idSet })
+                        } else {
+                            session
+                        }
+                    },
+                )
+            }
+        } finally {
+            finishPurge(purgeKeys)
+        }
+        failure?.let { throw it }
+    }
+
     suspend fun deleteMessagesAfter(
         sessionId: String,
         timestamp: Long,
@@ -795,6 +863,119 @@ class MessageManager(
 
     suspend fun flushMessageUpdates(sessionId: String, messageId: String) {
         flushUpdate(sessionId, messageId)
+    }
+
+    suspend fun flushGenerationTerminal(sessionId: String, messageId: String) {
+        val key = "$sessionId:$messageId"
+        lateinit var lane: MessageLane
+        var pendingUi: PendingUpdate? = null
+        var inFlightUi: PendingUpdate? = null
+        var pendingDb: DbPendingUpdate? = null
+        synchronized(stateLock) {
+            purgingKeys += key
+            lane = lanes.getOrPut(key) { MessageLane() }
+            lane.epoch += 1
+            throttleJobs.remove(key)?.cancel()
+            dbDebounceJobs.remove(key)?.cancel()
+            pendingUi = pendingUpdates.remove(key)
+            inFlightUi = inFlightUiUpdates.remove(key)
+            pendingDb = dbPendingUpdates.remove(key)
+        }
+        var failure: Throwable? = null
+        try {
+            lane.mutex.withLock {
+                val current = store.getSession(sessionId)?.messages?.firstOrNull { it.id == messageId }
+                    ?: return@withLock
+                val merged = listOfNotNull(inFlightUi, pendingUi).fold(current) { message, pending ->
+                    applyPendingToMessage(message, pending, pending.tokens ?: message.tokens ?: TokenUsage())
+                }
+                val updates = mutableMapOf<String, Any?>()
+                pendingDb?.updates?.let(updates::putAll)
+                inFlightUi?.toDbUpdates()?.let(updates::putAll)
+                pendingUi?.toDbUpdates()?.let(updates::putAll)
+                if (updates.isNotEmpty()) {
+                    try {
+                        messageRepository.updatePartial(messageId, updates)
+                    } catch (error: Throwable) {
+                        failure = error
+                    }
+                }
+                store.updateMessageInSession(sessionId, messageId) { merged }
+                synchronized(stateLock) {
+                    invalidateMessageStateLocked(key, lane)
+                    if (lanes[key] === lane) lanes.remove(key)
+                }
+            }
+        } finally {
+            finishPurge(setOf(key))
+        }
+        failure?.let { throw it }
+    }
+
+    suspend fun markGenerationTerminal(
+        sessionId: String,
+        messageId: String,
+        content: String,
+        status: String,
+        errorMessage: String? = null,
+    ) {
+        val key = "$sessionId:$messageId"
+        lateinit var lane: MessageLane
+        var pendingUi: PendingUpdate? = null
+        var inFlightUi: PendingUpdate? = null
+        var pendingDb: DbPendingUpdate? = null
+        synchronized(stateLock) {
+            purgingKeys += key
+            lane = lanes.getOrPut(key) { MessageLane() }
+            lane.epoch += 1
+            throttleJobs.remove(key)?.cancel()
+            dbDebounceJobs.remove(key)?.cancel()
+            pendingUi = pendingUpdates.remove(key)
+            inFlightUi = inFlightUiUpdates.remove(key)
+            pendingDb = dbPendingUpdates.remove(key)
+        }
+        var failure: Throwable? = null
+        try {
+            lane.mutex.withLock {
+                val current = store.getSession(sessionId)?.messages?.firstOrNull { it.id == messageId }
+                    ?: return@withLock
+                val merged = listOfNotNull(inFlightUi, pendingUi).fold(current) { message, pending ->
+                    applyPendingToMessage(message, pending, pending.tokens ?: message.tokens ?: TokenUsage())
+                }
+                val isError = status == "error"
+                val terminal = merged.copy(
+                    content = content,
+                    status = status,
+                    isError = isError,
+                    errorMessage = errorMessage,
+                )
+                val updates = mutableMapOf<String, Any?>()
+                pendingDb?.updates?.let(updates::putAll)
+                inFlightUi?.toDbUpdates()?.let(updates::putAll)
+                pendingUi?.toDbUpdates()?.let(updates::putAll)
+                updates.putAll(
+                    mapOf(
+                        "content" to content,
+                        "status" to status,
+                        "isError" to isError,
+                        "errorMessage" to errorMessage,
+                    ),
+                )
+                try {
+                    messageRepository.updatePartial(messageId, updates)
+                    store.updateMessageInSession(sessionId, messageId) { terminal }
+                } catch (error: Throwable) {
+                    failure = error
+                }
+                synchronized(stateLock) {
+                    invalidateMessageStateLocked(key, lane)
+                    if (lanes[key] === lane) lanes.remove(key)
+                }
+            }
+        } finally {
+            finishPurge(setOf(key))
+        }
+        failure?.let { throw it }
     }
 
     fun hasPendingUpdates(sessionId: String, messageId: String): Boolean {

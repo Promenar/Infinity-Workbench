@@ -43,6 +43,8 @@ import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.provider.LlmProvider
+import com.promenar.nexara.data.generation.ChatGenerationRunner
+import com.promenar.nexara.data.generation.ChatGenerationRuntime
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.domain.repository.IAgentRepository
@@ -60,16 +62,22 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -172,26 +180,19 @@ class ChatViewModel(
     private val memoryManager: MemoryManager? = null,
     private val kgProvider: KgProvider? = null,
     private val skillRegistry: com.promenar.nexara.ui.chat.manager.registry.SkillRegistry? = null,
-    private val exportSessionUseCase: ExportSessionUseCase? = null
+    private val exportSessionUseCase: ExportSessionUseCase? = null,
+    generationCoordinatorOverride: com.promenar.nexara.domain.generation.GenerationCoordinator? = null,
+    generationPresentationStoreOverride: com.promenar.nexara.data.generation.GenerationPresentationStore? = null,
 ) : ViewModel() {
 
-    private val providerRouteGate = ChatProviderRouteGate(
-        providerRequestRouter,
-        providerResolutionDispatcher,
-    )
-
     private val store = (application as NexaraApplication).chatStore
+    private val generationCoordinator = generationCoordinatorOverride
+        ?: (application as NexaraApplication).generationCoordinator
+    private val generationPresentationStore = generationPresentationStoreOverride
+        ?: (application as NexaraApplication).generationPresentationStore
 
     private val sessionManager = SessionManager(store, sessionRepository)
-    private val messageManager = MessageManager(store, messageRepository, sessionRepository, viewModelScope)
-    private val webSearchContextProvider = (application as NexaraApplication).webSearchContextProvider
-
-    private val contextBuilder = ContextBuilder(
-        webSearchProvider = webSearchContextProvider,
-        ragProvider = memoryManager?.let { MemoryManagerRagAdapter(it) },
-        kgProvider = kgProvider,
-        taskRepository = (application as NexaraApplication).taskRepository
-    )
+    private val messageManager = MessageManager(store, messageRepository, sessionRepository)
     private val toolLedger = (application as NexaraApplication).toolExecutionLedger
     private val toolExecutor = ToolExecutor(
         store,
@@ -200,7 +201,6 @@ class ChatViewModel(
         (application as NexaraApplication).taskRepository,
         toolLedger,
     )
-    private val postProcessor = PostProcessor(store, sessionManager, messageManager, embeddingClient, vectorStore, textSplitter)
     private val summaryManager = SummaryManager(llmProvider)
     private val approvalManager = ApprovalManager(
         store,
@@ -251,23 +251,31 @@ class ChatViewModel(
     val postProcessTasks: StateFlow<List<PostProcessTask>> = _postProcessTasks
 
     fun addPostProcessTask(type: PostProcessType, status: PostProcessStatus = PostProcessStatus.RUNNING, progress: Float = 0f, detail: String = ""): String {
-        val id = "pp_${System.currentTimeMillis()}_${type.ordinal}"
-        val task = PostProcessTask(id = id, type = type, status = status, progress = progress, detail = detail)
-        _postProcessTasks.update { it + task }
+        val sessionId = _currentSessionId.value ?: return ""
+        val taskId = generationCoordinator.observe(sessionId).value?.taskId ?: return ""
+        val port = generationPresentationStore.port(sessionId, taskId)
+        val id = port.addPostProcessTask(type, detail)
+        port.updatePostProcessTask(id, status, progress, detail)
         return id
     }
 
     fun updatePostProcessTask(id: String, status: PostProcessStatus? = null, progress: Float? = null, detail: String? = null) {
-        _postProcessTasks.update { tasks ->
-            tasks.map { if (it.id == id) it.copy(status = status ?: it.status, progress = progress ?: it.progress, detail = detail ?: it.detail) else it }
+        _currentSessionId.value?.let { sessionId ->
+            val taskId = generationCoordinator.observe(sessionId).value?.taskId ?: return@let
+            generationPresentationStore.port(sessionId, taskId)
+                .updatePostProcessTask(id, status, progress, detail)
         }
     }
 
     fun removePostProcessTask(id: String) {
-        _postProcessTasks.update { tasks -> tasks.filter { it.id != id } }
+        _currentSessionId.value?.let { sessionId ->
+            val taskId = generationCoordinator.observe(sessionId).value?.taskId ?: return@let
+            generationPresentationStore.port(sessionId, taskId).removePostProcessTask(id)
+        }
     }
 
     private var generationJob: Job? = null
+    private val sendPreparationMutex = Mutex()
 
     @Suppress("UNCHECKED_CAST")
     val uiState: StateFlow<ChatUiState> = combine(
@@ -307,6 +315,112 @@ class ChatViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
 
     init {
+        viewModelScope.launch {
+            _currentSessionId.collectLatest { sessionId ->
+                if (sessionId == null) return@collectLatest
+                resetSessionTransientState()
+                restoreHistoricalRagProjection(sessionId)
+                try {
+                    generationPresentationStore.observe(sessionId).collect { presentation ->
+                        if (presentation == null) {
+                            _streamingContent.value = ""
+                            _postProcessTasks.value = emptyList()
+                            _ragPhases.value = emptyList()
+                            if (_generationStatus.value != GenerationStatus.ERROR) {
+                                _error.value = null
+                                _providerResolutionFailure.value = null
+                                _generationStatus.value = GenerationStatus.IDLE
+                            }
+                            return@collect
+                        }
+                        _ragPhases.value = presentation.ragPhases
+                        _streamingContent.value = presentation.streamingContent
+                        _error.value = presentation.error
+                        _providerResolutionFailure.value = presentation.providerFailure
+                        _isGenerating.value = presentation.generating
+                        _postProcessTasks.value = presentation.postProcessTasks
+                        _generationStatus.value = when {
+                            presentation.handledFailure -> GenerationStatus.ERROR
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.THINKING ->
+                                GenerationStatus.THINKING
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.STREAMING ->
+                                GenerationStatus.RECEIVING
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED ->
+                                GenerationStatus.COMPLETED
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.FAILED ->
+                                GenerationStatus.ERROR
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED ->
+                                GenerationStatus.IDLE
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED ->
+                                GenerationStatus.ERROR
+                            else -> _generationStatus.value
+                        }
+                    }
+                } finally {
+                    generationPresentationStore.release(sessionId)
+                }
+            }
+        }
+        viewModelScope.launch {
+            _currentSessionId.collectLatest { sessionId ->
+                if (sessionId == null) return@collectLatest
+                try {
+                    combine(
+                        generationCoordinator.observe(sessionId),
+                        generationPresentationStore.observe(sessionId),
+                    ) { task, presentation -> task to presentation }
+                        .collect { (task, presentation) ->
+                        if (task == null) {
+                            _isGenerating.value = false
+                            if (_generationStatus.value == GenerationStatus.COMPLETED) {
+                                _generationStatus.value = GenerationStatus.IDLE
+                            }
+                            return@collect
+                        }
+                        _isGenerating.value = task.phase !in setOf(
+                            com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
+                            com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
+                            com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
+                            com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
+                            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL,
+                        )
+                        task.error?.let { _error.value = it.message }
+                        _generationStatus.value = when (task.phase) {
+                            com.promenar.nexara.domain.generation.GenerationPhase.PREPARING,
+                            com.promenar.nexara.domain.generation.GenerationPhase.BUILDING_CONTEXT,
+                            com.promenar.nexara.domain.generation.GenerationPhase.CONNECTING -> GenerationStatus.UPLOADING
+                            com.promenar.nexara.domain.generation.GenerationPhase.THINKING -> GenerationStatus.THINKING
+                            com.promenar.nexara.domain.generation.GenerationPhase.STREAMING -> GenerationStatus.RECEIVING
+                            com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED -> GenerationStatus.COMPLETED
+                            com.promenar.nexara.domain.generation.GenerationPhase.FAILED -> GenerationStatus.ERROR
+                            com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED -> GenerationStatus.IDLE
+                            com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED -> GenerationStatus.ERROR
+                            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL -> _generationStatus.value
+                            com.promenar.nexara.domain.generation.GenerationPhase.POST_PROCESSING -> GenerationStatus.RECEIVING
+                        }
+                        if (task.phase in TERMINAL_GENERATION_PHASES) {
+                            val terminalPresentation = presentation
+                                ?.takeIf { it.taskId == task.taskId }
+                                ?.takeIf {
+                                    it.handledFailure ||
+                                        it.phase?.let { phase -> phase in TERMINAL_GENERATION_PHASES } == true
+                                }
+                                ?: return@collect
+                            _error.value = terminalPresentation.error ?: _error.value
+                            _providerResolutionFailure.value =
+                                terminalPresentation.providerFailure ?: _providerResolutionFailure.value
+                            _ragPhases.value = terminalPresentation.ragPhases
+                            _postProcessTasks.value = terminalPresentation.postProcessTasks
+                            if (task.phase != com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED) {
+                                generationCoordinator.acknowledgeTerminal(task.taskId)
+                            }
+                        }
+                        }
+                } finally {
+                    generationCoordinator.release(sessionId)
+                }
+            }
+        }
         approvalManager.setCallbacks(
             onGenerateMessage = { sessionId, content, isResumption ->
                 generateMessage(sessionId, content, isResumption)
@@ -337,31 +451,31 @@ class ChatViewModel(
 
         val session = store.getSession(sessionId) ?: return
 
-        cancelActiveGeneration()
+        cancelPendingPreparation()
         generationJob = viewModelScope.launch {
-            _generationStatus.update { GenerationStatus.UPLOADING }
-            _isGenerating.update { true }
-            _error.update { null }
-            _providerResolutionFailure.value = null
+            sendPreparationMutex.withLock {
+                _generationStatus.update { GenerationStatus.UPLOADING }
+                _isGenerating.update { true }
+                _error.update { null }
+                _providerResolutionFailure.value = null
 
-            val imageDataUrls = if (imageUris.isNotEmpty()) {
-                val converted = withContext(Dispatchers.IO) {
-                    imageUris.map { uri -> uriToDataUrl(uri) }
+                val imageDataUrls = if (imageUris.isNotEmpty()) {
+                    val converted = withContext(Dispatchers.IO) {
+                        imageUris.map { uri -> uriToDataUrl(uri) }
+                    }
+                    if (converted.any { it == null }) {
+                        _error.update { "Image read failed. Please remove the failed attachment and try again." }
+                        _generationStatus.update { GenerationStatus.ERROR }
+                        _isGenerating.update { false }
+                        return@withLock
+                    }
+                    converted.filterNotNull()
+                } else {
+                    emptyList()
                 }
-                if (converted.any { it == null }) {
-                    _error.update { "Image read failed. Please remove the failed attachment and try again." }
-                    _generationStatus.update { GenerationStatus.ERROR }
-                    _isGenerating.update { false }
-                    return@launch
-                }
-                converted.filterNotNull()
-            } else {
-                emptyList()
+
+                enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls)
             }
-
-            _inputText.update { "" }
-            sessionManager.updateSessionDraft(sessionId, null)
-            enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls)
         }
     }
 
@@ -384,27 +498,70 @@ class ChatViewModel(
         val userMsgId = IdGenerator.message("user")
         val assistantMsgId = IdGenerator.message("ai")
 
-        val userMessage = Message(
-            id = userMsgId,
-            role = MessageRole.USER,
-            content = text,
-            userImages = imageDataUrls.ifEmpty { null },
-            createdAt = System.currentTimeMillis()
-        )
-        messageManager.addMessage(sessionId, userMessage)
+        try {
+            val userMessage = Message(
+                id = userMsgId,
+                role = MessageRole.USER,
+                content = text,
+                userImages = imageDataUrls.ifEmpty { null },
+                createdAt = System.currentTimeMillis()
+            )
+            messageManager.addMessage(sessionId, userMessage)
 
-        val assistantMessage = Message(
-            id = assistantMsgId,
-            role = MessageRole.ASSISTANT,
-            content = "",
-            modelId = session.modelId,
-            createdAt = System.currentTimeMillis()
-        )
-        messageManager.addMessage(sessionId, assistantMessage)
+            val assistantMessage = Message(
+                id = assistantMsgId,
+                role = MessageRole.ASSISTANT,
+                content = "",
+                modelId = session.modelId,
+                createdAt = System.currentTimeMillis()
+            )
+            messageManager.addMessage(sessionId, assistantMessage)
 
-        generateMessage(sessionId, "", false, assistantMsgId, userMsgId, text)
+            when (val start = generateMessage(sessionId, "", false, assistantMsgId, userMsgId, text)) {
+                is com.promenar.nexara.domain.generation.StartGenerationResult.Started,
+                is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> {
+                    _inputText.value = ""
+                    sessionManager.updateSessionDraft(sessionId, null)
+                }
+                is com.promenar.nexara.domain.generation.StartGenerationResult.Busy,
+                is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected,
+                null -> {
+                    messageManager.discardPreparedMessages(
+                        sessionId,
+                        listOf(assistantMsgId, userMsgId),
+                    )
+                    _inputText.value = text
+                    sessionManager.updateSessionDraft(sessionId, text)
+                    _isGenerating.value = false
+                    _generationStatus.value = GenerationStatus.ERROR
+                    _error.value = when (start) {
+                        is com.promenar.nexara.domain.generation.StartGenerationResult.Busy ->
+                            "已有会话正在生成：${start.activeSessionId}"
+                        is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected -> start.error.message
+                        else -> "生成请求未能启动"
+                    }
+                }
+            }
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) {
+                runCatching {
+                    messageManager.discardPreparedMessages(
+                        sessionId,
+                        listOf(assistantMsgId, userMsgId),
+                    )
+                }
+                    .exceptionOrNull()?.let(failure::addSuppressed)
+                val draftToPreserve = _inputText.value.ifBlank { text }
+                _inputText.value = draftToPreserve
+                runCatching { sessionManager.updateSessionDraft(sessionId, draftToPreserve) }
+                    .exceptionOrNull()?.let(failure::addSuppressed)
+                _isGenerating.value = false
+            }
+            throw failure
+        }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private suspend fun generateMessage(
         sessionId: String,
         interventionContent: String,
@@ -412,606 +569,42 @@ class ChatViewModel(
         existingAssistantMsgId: String? = null,
         userMsgId: String? = null,
         userContent: String? = null,
-        loopCount: Int = 0
-    ) {
-        val session = store.getSession(sessionId) ?: return
-        val prefs = application.getSharedPreferences("nexara_settings", 0)
-        val effectiveLoopLimit = prefs.getInt("loop_limit", 50)
-        if (loopCount >= effectiveLoopLimit) return
-
+    ): com.promenar.nexara.domain.generation.StartGenerationResult? {
+        val session = store.getSession(sessionId) ?: return null
         val assistantMsgId = existingAssistantMsgId
             ?: session.messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
-            ?: return
-
-        val sessionForCtx = store.getSession(sessionId) ?: return
-
+            ?: return null
         val effectiveUserContent = userContent
-            ?: interventionContent.ifBlank { sessionForCtx.pendingIntervention }
-            ?: sessionForCtx.messages.lastOrNull { it.role == MessageRole.USER }?.content
+            ?: interventionContent.ifBlank { session.pendingIntervention }
+            ?: session.messages.lastOrNull { it.role == MessageRole.USER }?.content
             ?: ""
-
-        _isGenerating.update { true }
-        _generationStatus.update { GenerationStatus.UPLOADING }
-        _streamingContent.update { "" }
-        _error.update { null }
-        _providerResolutionFailure.value = null
-
-        try {
-        val defaultPhases = listOf(
-            RagPhase("embed", "Embedding query", PhaseStatus.PENDING),
-            RagPhase("memory", "Searching memory", PhaseStatus.PENDING),
-            RagPhase("docs", "Searching documents", PhaseStatus.PENDING),
-            RagPhase("hybrid", "Hybrid fusion", PhaseStatus.PENDING),
-            RagPhase("rank", "Ranking results", PhaseStatus.PENDING),
-            RagPhase("rerank", "Reranking", PhaseStatus.PENDING),
-            RagPhase("kg", "KG retrieval", PhaseStatus.PENDING),
-            RagPhase("ready", "Context ready", PhaseStatus.PENDING)
-        )
-        _ragPhases.update { defaultPhases }
-
-        val agent = agentRepository.getById(sessionForCtx.agentId)
-        val agentConfig = configResolver.resolve(agent)
-        val effectiveModel = sessionForCtx.modelId?.takeIf { it.isNotBlank() }
-            ?: agentConfig.modelId.takeIf { it.isNotBlank() }
-            ?: ProviderManager.getInstance().getMainConfiguredModelId().orEmpty()
-
-        // 使用缓存的 ragOptions，确保与用户最新设置一致（绕过 store 异步延迟）
-        val effectiveRagOptions = _currentRagOptions.value.let { cached ->
-            val sessionOpts = sessionForCtx.ragOptions
-            if (sessionOpts != null && sessionOpts != cached) {
-                // 回退：如果 session 中有值但与缓存不同，以缓存为准
-                cached
-            } else if (sessionOpts != null) {
-                sessionOpts
-            } else {
-                cached
-            }
-        }
-        NexaraLogger.log("[ChatViewModel] generateMessage ragOptions: enableMemory=${effectiveRagOptions.enableMemory}, enableDocs=${effectiveRagOptions.enableDocs}, isGlobal=${effectiveRagOptions.isGlobal}")
-
-        val contextParams = ContextBuilderParams(
+        val request = com.promenar.nexara.domain.generation.GenerationRequest(
             sessionId = sessionId,
-            content = effectiveUserContent,
-            assistantMsgId = assistantMsgId,
-            session = sessionForCtx,
-            ragOptions = effectiveRagOptions,  // 显式传递，确保生效
-            onRagProgress = { stage, percentage, subStage ->
-                messageManager.updateMessageProgress(
-                    sessionId, assistantMsgId,
-                    RagProgress(stage = stage, percentage = percentage, subStage = subStage)
-                )
-                _ragPhases.update { phases ->
-                    val phaseId = when {
-                        stage.contains("Embedding", ignoreCase = true) -> "embed"
-                        stage.contains("memory", ignoreCase = true) || stage.contains("Searching memory", ignoreCase = true) -> "memory"
-                        stage.contains("document", ignoreCase = true) || stage.contains("Searching documents", ignoreCase = true) -> "docs"
-                        stage.contains("Hybrid", ignoreCase = true) || stage.contains("fusion", ignoreCase = true) -> "hybrid"
-                        stage.contains("Ranking", ignoreCase = true) || stage.contains("Rank", ignoreCase = true) -> "rank"
-                        stage.contains("Rerank", ignoreCase = true) -> "rerank"
-                        stage.contains("KG", ignoreCase = true) -> "kg"
-                        stage.contains("Context ready", ignoreCase = true) -> "ready"
-                        else -> null
-                    }
-                    if (phaseId == null) return@update phases
-                    val idx = phases.indexOfFirst { it.id == phaseId }
-                    if (idx < 0) return@update phases
-                    phases.mapIndexed { i, p ->
-                        if (i == idx) p.copy(
-                            status = PhaseStatus.ACTIVE,
-                            progress = percentage,
-                            detail = subStage
-                        )
-                        else if (i < idx && p.status == PhaseStatus.ACTIVE) p.copy(status = PhaseStatus.DONE)
-                        else if (phaseId == "ready" && i == idx) p.copy(status = PhaseStatus.DONE, progress = 100)
-                        else p
-                    }
-                }
-            },
-            agentSystemPrompt = agentConfig.systemPrompt,
-            sessionCustomPrompt = sessionForCtx.customPrompt,
-            agentRetrievalConfig = agentConfig.retrievalConfig
+            assistantMessageId = assistantMsgId,
+            userMessageId = userMsgId,
+            userContent = effectiveUserContent,
+            imageDataUrls = session.messages.lastOrNull { it.id == userMsgId }?.userImages.orEmpty(),
+            runtimePolicy = com.promenar.nexara.domain.generation.GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            requestId = IdGenerator.message("generation"),
         )
-
-        val routePreparation = try {
-            providerRouteGate.prepare(effectiveModel) {
-                contextBuilder.buildContext(contextParams)
+        return generationCoordinator.start(request).also { result ->
+            when (result) {
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Started,
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> Unit
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Busy -> {
+                _error.value = "已有会话正在生成：${result.activeSessionId}"
             }
-        } catch (e: Exception) {
-            _error.update { "Context build failed: ${e.message}" }
-            _ragPhases.update { phases -> phases.map { p -> if (p.status == PhaseStatus.ACTIVE) p.copy(status = PhaseStatus.DONE) else p } }
-            _isGenerating.update { false }
-            _generationStatus.update { GenerationStatus.ERROR }
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(2000)
-                _generationStatus.update { GenerationStatus.IDLE }
-            }
-            return
-        }
-        val (providerRoute, contextResult) = when (routePreparation) {
-            is ChatRoutePreparation.Failure -> {
-                val failure = routePreparation.failure
-                _providerResolutionFailure.value = failure
-                val message = providerRoutingErrorMessage(failure)
-                _error.value = message
-                messageManager.updateMessageContent(
-                    sessionId,
-                    assistantMsgId,
-                    "",
-                    UpdateMessageOptions(isError = true, errorMessage = message),
-                )
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected -> {
+                _error.value = result.error.message
                 _generationStatus.value = GenerationStatus.ERROR
-                _isGenerating.value = false
-                return
-            }
-            is ChatRoutePreparation.Success -> routePreparation.route to routePreparation.context
-        }
-        _providerResolutionFailure.value = null
-
-        val hasRagContext = contextResult.hasPersistableRagContext()
-
-        if (!hasRagContext) {
-            _ragPhases.update { emptyList() }
-            messageManager.clearMessageRagState(sessionId, assistantMsgId)
-        } else {
-            // P0 修复: 仅将真正执行过的 ACTIVE 阶段标记为 DONE；未触发的 PENDING 阶段保持原状
-            // 原逻辑: phases.map { if (p.status != DONE) p.copy(status = DONE) } — 批量假完成
-            _ragPhases.update { phases ->
-                val executedPhaseIds = phases.filter { it.status == PhaseStatus.ACTIVE || it.status == PhaseStatus.DONE }.map { it.id }.toSet()
-                phases.map { p ->
-                    when {
-                        // 已执行 (ACTIVE→DONE) 或已完成的保持 DONE
-                        p.id in executedPhaseIds && p.status != PhaseStatus.DONE -> p.copy(status = PhaseStatus.DONE)
-                        // 未执行 (PENDING) 保持 PENDING，不批量升级
-                        else -> p
-                    }
-                }
             }
         }
-
-        contextResult.toMessageRagUpdateOptions()?.let { ragUpdate ->
-            messageManager.updateMessageContent(
-                sessionId, assistantMsgId, "",
-                ragUpdate,
-            )
-        }
-
-        val protocolMessages = buildProtocolMessages(sessionForCtx, contextResult.finalSystemPrompt)
-
-        val activeTools = buildToolList(sessionForCtx)
-
-        val effectiveParams = sessionForCtx.inferenceParams ?: InferenceParams(
-            temperature = agentConfig.temperature,
-            topP = agentConfig.topP,
-            maxTokens = agentConfig.maxTokens
-        )
-
-        val request = PromptRequest(
-            messages = protocolMessages,
-            model = requireNotNull(providerRoute.remoteModelId),
-            temperature = effectiveParams.temperature,
-            topP = effectiveParams.topP,
-            maxTokens = effectiveParams.maxTokens,
-            frequencyPenalty = effectiveParams.frequencyPenalty,
-            presencePenalty = effectiveParams.presencePenalty,
-            topK = effectiveParams.topK,
-            repetitionPenalty = effectiveParams.repetitionPenalty,
-            tools = activeTools.ifEmpty { null },
-            webSearch = sessionForCtx.options.webSearch,
-            enableGeminiSearch = sessionForCtx.options.enableGeminiSearch,
-            stream = true,
-            streamTimeout = (effectiveParams.streamTimeout ?: 120).toLong() * 1000
-        )
-
-        var accumulatedContent = ""
-        var accumulatedReasoning = ""
-        var accumulatedTokens = TokenUsage()
-        val accumulatedToolCalls = mutableListOf<ToolCall>()
-        // P0-2 修复: 流式错误不应直接杀死整个 Agent Loop。
-        // 若模型已产出工具调用，即使流中遇到错误，仍应执行工具并反馈给模型重试。
-        var streamingError: String? = null
-
-        try {
-            val flow = if (providerRoute.useLocalProvider) {
-                localLlmProviderFactory(request.model).sendPrompt(request)
-            } else {
-                val requestClient = requireNotNull(providerRoute.client) {
-                    "Router 成功但未创建云端请求客户端"
-                }
-                val stParams = com.promenar.nexara.data.remote.middleware.StreamTextParams(
-                    messages = request.messages,
-                    model = request.model,
-                    temperature = request.temperature,
-                    topP = request.topP,
-                    maxOutputTokens = request.maxTokens,
-                    frequencyPenalty = request.frequencyPenalty,
-                    presencePenalty = request.presencePenalty,
-                    topK = request.topK,
-                    repetitionPenalty = request.repetitionPenalty,
-                    streamTimeout = request.streamTimeout,
-                    enableGeminiSearch = request.enableGeminiSearch,
-                    tools = activeTools.associateBy { it.function.name },
-                    enableWebSearch = sessionForCtx.options.webSearch == true
-                )
-                val sConfig = com.promenar.nexara.data.remote.StreamConfig(
-                    enableWebSearch = sessionForCtx.options.webSearch == true
-                )
-                requestClient.sendStream(stParams, sConfig)
-            }
-            _generationStatus.update { GenerationStatus.THINKING }
-            
-            flow.collect { chunk ->
-                if (_generationStatus.value == GenerationStatus.THINKING && (chunk is StreamChunk.TextDelta || chunk is StreamChunk.Thinking)) {
-                    _generationStatus.update { GenerationStatus.RECEIVING }
-                }
-                when (chunk) {
-                    is StreamChunk.TextDelta -> {
-                        accumulatedContent += chunk.content
-                        chunk.reasoning?.let { accumulatedReasoning += it }
-                        val sanitized = sanitizeStreamingContent(accumulatedContent, accumulatedToolCalls)
-                        if (sanitized.isToolInjection) {
-                            accumulatedContent = sanitized.cleanText
-                            appendSyntheticExecutionStep(sessionId, assistantMsgId, sanitized.toolCallData)
-                        }
-                        _streamingContent.update { accumulatedContent }
-                        messageManager.updateMessageContent(
-                            sessionId, assistantMsgId, accumulatedContent,
-                            UpdateMessageOptions(
-                                reasoning = accumulatedReasoning.ifBlank { null },
-                                tokens = accumulatedTokens
-                            )
-                        )
-                    }
-                    is StreamChunk.Thinking -> {
-                        accumulatedReasoning += chunk.content
-                        messageManager.updateMessageContent(
-                            sessionId, assistantMsgId, accumulatedContent,
-                            UpdateMessageOptions(reasoning = accumulatedReasoning.ifBlank { null })
-                        )
-                    }
-                    is StreamChunk.ToolCallDelta -> {
-                        val existing = accumulatedToolCalls.find { it.id == chunk.id }
-                        if (existing != null) {
-                            accumulatedToolCalls[accumulatedToolCalls.indexOf(existing)] = existing.copy(
-                                name = if (chunk.name.isNotEmpty()) chunk.name else existing.name,
-                                arguments = existing.arguments + chunk.arguments
-                            )
-                        } else {
-                            accumulatedToolCalls.add(
-                                ToolCall(id = chunk.id, name = chunk.name, arguments = chunk.arguments)
-                            )
-                        }
-                        messageManager.updateMessageContent(
-                            sessionId, assistantMsgId, accumulatedContent,
-                            UpdateMessageOptions(toolCalls = accumulatedToolCalls.toList())
-                        )
-                    }
-                    is StreamChunk.Usage -> {
-                        accumulatedTokens = TokenUsage(
-                            input = chunk.usage.input,
-                            output = chunk.usage.output,
-                            total = chunk.usage.total
-                        )
-                    }
-                    is StreamChunk.Citations -> {
-                        val mappedCitations = chunk.citations.map {
-                            com.promenar.nexara.data.model.Citation(
-                                title = it.title,
-                                url = it.url,
-                                source = it.source
-                            )
-                        }
-                        messageManager.updateMessageContent(
-                            sessionId, assistantMsgId, accumulatedContent,
-                            UpdateMessageOptions(citations = mappedCitations)
-                        )
-                    }
-                    is StreamChunk.Error -> {
-                        _error.update { chunk.message }
-                        streamingError = chunk.message
-                        messageManager.updateMessageContent(
-                            sessionId, assistantMsgId, accumulatedContent,
-                            UpdateMessageOptions(
-                                isError = true,
-                                errorMessage = chunk.message
-                            )
-                        )
-                        // P0-2 修复：流式错误不再立即取消协程。
-                        // 若模型已产出工具调用（即使是错误的调用），仍需反馈给模型让其重试。
-                        // 仅当无工具调用且无内容时才立即终止流。
-                        if (accumulatedToolCalls.isEmpty() && accumulatedContent.isBlank()) {
-                            currentCoroutineContext().cancel(
-                                kotlinx.coroutines.CancellationException("Stream error received: ${chunk.message}")
-                            )
-                        }
-                        // 否则：让流自然结束（Done chunk 最终会到来），后续逻辑会处理工具调用
-                    }
-                    is StreamChunk.ToolCallLifecycle -> {}
-                    is StreamChunk.Done -> {}
-                }
-            }
-        } catch (e: Exception) {
-            if (currentCoroutineContext().isActive) {
-                _error.update { "Generation failed: ${e.message}" }
-                messageManager.updateMessageContent(
-                    sessionId, assistantMsgId, accumulatedContent,
-                    UpdateMessageOptions(isError = true, errorMessage = e.message)
-                )
-            }
-            _isGenerating.update { false }
-            _generationStatus.update { GenerationStatus.ERROR }
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(2000)
-                _generationStatus.update { GenerationStatus.IDLE }
-            }
-        }
-
-        // P0-2 修复：仅当流被取消（非 streamingError 导致）且无内容时提前返回。
-        // 若存在 streamingError 但有工具调用/内容，继续执行工具反馈循环。
-        val wasCancelled = !currentCoroutineContext().isActive && streamingError == null
-        if (wasCancelled) return
-
-        messageManager.flushMessageUpdates(sessionId, assistantMsgId)
-        _streamingContent.update { "" }
-
-        // ── Fallback 解析器：模型可能在 TextDelta 中以 Markdown 代码块形式输出工具调用 JSON ──
-        // 部分模型（如 MiniMax-M2.7）不会通过标准 ToolCallDelta 协议下发工具指令，
-        // 而是将工具调用以 JSON 代码块形式嵌入普通文本流。此处做后置正则提取兜底。
-        val hasCompleteToolCalls = accumulatedToolCalls.isNotEmpty() && accumulatedToolCalls.all {
-            it.name.isNotEmpty() && it.arguments.isNotEmpty()
-        }
-        if (!hasCompleteToolCalls && accumulatedContent.isNotBlank()) {
-            val fallbackCalls = extractToolCallsFromText(accumulatedContent)
-            if (fallbackCalls.isNotEmpty()) {
-                // 将提取到的工具调用追加到累积列表
-                val mergedCalls = mergeToolCallsById(accumulatedToolCalls, fallbackCalls)
-                accumulatedToolCalls.clear()
-                accumulatedToolCalls.addAll(mergedCalls)
-                // 从显示内容中移除 JSON 代码块，避免用户在气泡中看到原始 JSON
-                accumulatedContent = stripToolCallJsonBlocks(accumulatedContent)
-                // 刷新 UI：用清洗后的内容更新消息
-                messageManager.updateMessageContent(
-                    sessionId, assistantMsgId, accumulatedContent,
-                    UpdateMessageOptions(toolCalls = accumulatedToolCalls.toList())
-                )
-            }
-        }
-
-        // P0-2 修复：即使 streamingError 存在，只要有工具调用，仍然执行并提供反馈
-        if (accumulatedToolCalls.isNotEmpty() && (currentCoroutineContext().isActive || streamingError != null)) {
-            val executionMode = sessionForCtx.executionMode.ifEmpty { "semi" }
-            val pendingIds = determinePendingToolIds(accumulatedToolCalls, executionMode)
-
-            if (pendingIds.isNotEmpty()) {
-                val firstPendingTc = accumulatedToolCalls.find { it.id in pendingIds }
-                val approvalRequest = ApprovalRequest(
-                    toolName = firstPendingTc?.name,
-                    args = firstPendingTc?.arguments,
-                    reason = "Execution mode: $executionMode",
-                    type = "tool_approval"
-                )
-                messageManager.flushNonApprovalUpdatesNow(sessionId, assistantMsgId)
-                val creation = toolLedger.createToolApproval(
-                    sessionId,
-                    assistantMsgId,
-                    accumulatedToolCalls.toList(),
-                    pendingIds.toSet(),
-                    approvalRequest,
-                )
-                if (creation == com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT) {
-                    _error.update { "当前会话已有不一致的工具审批，请先处理现有审批。" }
-                    _isGenerating.update { false }
-                    return
-                }
-                messageManager.mirrorPersistedPendingApprovalState(
-                    sessionId,
-                    assistantMsgId,
-                    pendingIds,
-                )
-                store.updateSession(sessionId) {
-                    it.copy(
-                        approvalRequest = approvalRequest,
-                        loopStatus = com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL,
-                    )
-                }
-
-                val safeToolCallIds = accumulatedToolCalls
-                    .asSequence()
-                    .map { it.id }
-                    .filterNot { it in pendingIds }
-                    .toSet()
-                // 即使没有安全工具也必须注册整批调用，确保审批回调只转换既有 PENDING 项。
-                if (creation != com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT) {
-                    toolExecutor.executeTools(
-                        sessionId,
-                        assistantMsgId,
-                        accumulatedToolCalls.toList(),
-                        safeToolCallIds,
-                    )
-                }
-
-                _isGenerating.update { false }
-            } else {
-                toolExecutor.executeTools(
-                    sessionId,
-                    assistantMsgId,
-                    accumulatedToolCalls.toList(),
-                )
-
-                _isGenerating.update { false }
-                if (currentCoroutineContext().isActive) {
-                    val newAssistantMsgId = IdGenerator.message("ai")
-                    val newAssistantMsg = Message(
-                        id = newAssistantMsgId,
-                        role = MessageRole.ASSISTANT,
-                        content = "",
-                        modelId = sessionForCtx.modelId,
-                        createdAt = System.currentTimeMillis()
-                    )
-                    messageManager.addMessage(sessionId, newAssistantMsg)
-                    generateMessage(sessionId, "", true, newAssistantMsgId, loopCount = loopCount + 1)
-                }
-            }
-        } else {
-            _isGenerating.update { false }
-            if (streamingError != null) {
-                // 流式错误且无工具调用：显示错误状态，不标记为 COMPLETED
-                _generationStatus.update { GenerationStatus.ERROR }
-                viewModelScope.launch {
-                    kotlinx.coroutines.delay(3000)
-                    _generationStatus.update { GenerationStatus.IDLE }
-                }
-            } else {
-                _generationStatus.update { GenerationStatus.COMPLETED }
-                viewModelScope.launch {
-                    kotlinx.coroutines.delay(1000)
-                    _generationStatus.update { GenerationStatus.IDLE }
-                }
-            }
-        }
-
-        if (userMsgId != null && currentCoroutineContext().isActive) {
-            viewModelScope.launch {
-                try {
-                    val finalSession = store.getSession(sessionId) ?: return@launch
-                    val agent = com.promenar.nexara.data.model.Agent(
-                        id = finalSession.agentId,
-                        name = finalSession.agentId
-                    )
-                    val sessionRagOpts = finalSession.ragOptions
-                    val isRagEnabled = sessionRagOpts?.enableMemory == true || sessionRagOpts?.enableDocs == true
-                    
-                    val totalCtxTokens = contextResult.ragUsage?.ragSystem ?: 0
-                    
-                    val ppParams = com.promenar.nexara.ui.chat.manager.PostProcessorParams(
-                        sessionId = sessionId,
-                        assistantMsgId = assistantMsgId,
-                        userMsgId = userMsgId,
-                        userContent = effectiveUserContent,
-                        assistantContent = accumulatedContent,
-                        agent = agent,
-                        session = finalSession,
-                        ragEnabled = isRagEnabled,
-                        ragUsage = contextResult.ragUsage,
-                        accumulatedUsage = accumulatedTokens,
-                        totalContextTokens = totalCtxTokens,
-                        modelId = finalSession.modelId ?: ""
-                    )
-                    postProcessor.updateStats(ppParams)
-
-                    // P0 修复: 每轮对话完成后自动存储记忆向量 (addTurnToMemory 之前从未被调用)
-                    if (sessionRagOpts?.enableMemory == true
-                        && effectiveUserContent.isNotBlank()
-                        && accumulatedContent.isNotBlank()
-                        && memoryManager != null
-                    ) {
-                        try {
-                            val turnStart = System.currentTimeMillis()
-                            memoryManager.addTurnToMemory(
-                                sessionId = sessionId,
-                                userContent = effectiveUserContent,
-                                aiContent = accumulatedContent,
-                                userMessageId = userMsgId,
-                                assistantMessageId = assistantMsgId
-                            )
-                            val turnMs = System.currentTimeMillis() - turnStart
-                            NexaraLogger.log("[ChatViewModel] addTurnToMemory success: session=$sessionId, time=${turnMs}ms")
-                        } catch (e: Exception) {
-                            NexaraLogger.logError("[ChatViewModel] addTurnToMemory failed for session=$sessionId", e)
-                        }
-                    }
-
-                    // Sliding window and archiving logic
-                    val windowSize = finalSession.inferenceParams?.activeContextWindow ?: 10
-                    if (finalSession.messages.size > windowSize) {
-                        val activeMsgs = getSafeActiveWindow(finalSession.messages, windowSize)
-                        val activeMsgIds = activeMsgs.map { it.id }.toSet()
-                        
-                        val overflowMsgs = finalSession.messages.filter { it.id !in activeMsgIds && !it.isArchived }
-                        
-                        if (overflowMsgs.isNotEmpty()) {
-                            // 1. Archive to RAG
-                            if (sessionRagOpts?.enableMemory == true) {
-                                val archiveTaskId = addPostProcessTask(
-                                    type = PostProcessType.ARCHIVE_TO_RAG,
-                                    detail = "Archiving ${overflowMsgs.size} messages"
-                                )
-                                try {
-                                    postProcessor.archiveMessagesToRag(
-                                        sessionId, overflowMsgs, finalSession.modelId ?: "",
-                                        onProgress = { progress, detail ->
-                                            updatePostProcessTask(archiveTaskId, progress = progress, detail = detail)
-                                        }
-                                    )
-                                    updatePostProcessTask(archiveTaskId, status = PostProcessStatus.DONE, progress = 1f)
-                                    viewModelScope.launch {
-                                        kotlinx.coroutines.delay(3000)
-                                        removePostProcessTask(archiveTaskId)
-                                    }
-                                } catch (e: Exception) {
-                                    updatePostProcessTask(archiveTaskId, status = PostProcessStatus.ERROR, detail = e.message ?: "Archive failed")
-                                }
-                            }
-                            
-                            // 2. Mark as archived in DB
-                            overflowMsgs.forEach { msg ->
-                                messageManager.updateMessage(sessionId, msg.id, msg.copy(isArchived = true))
-                            }
-                            
-                            // 3. Auto-summary trigger
-                            val threshold = finalSession.inferenceParams?.autoSummaryThreshold ?: 0.8
-                            val totalTokens = accumulatedTokens.total
-                            val maxTokens = com.promenar.nexara.data.model.findModelSpec(
-                                finalSession.modelId ?: ""
-                            )?.contextLength ?: 128000
-                            
-                            if (totalTokens > maxTokens * threshold) {
-                                val summaryTaskId = addPostProcessTask(
-                                    type = PostProcessType.AUTO_SUMMARY,
-                                    detail = "Summarizing conversation"
-                                )
-                                val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
-                                val summaryModelId = settingsPrefs.getString("preset_summary_model", "")
-                                
-                                try {
-                                    val newSummary = summaryManager.summarize(
-                                        oldSummary = finalSession.summary,
-                                        overflowMessages = overflowMsgs,
-                                        summaryModelId = summaryModelId,
-                                        currentModelId = finalSession.modelId ?: "",
-                                        onProgress = { detail ->
-                                            updatePostProcessTask(summaryTaskId, detail = detail)
-                                        }
-                                    )
-                                    
-                                    if (newSummary != finalSession.summary) {
-                                        sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
-                                    }
-                                    updatePostProcessTask(summaryTaskId, status = PostProcessStatus.DONE, progress = 1f)
-                                    viewModelScope.launch {
-                                        kotlinx.coroutines.delay(3000)
-                                        removePostProcessTask(summaryTaskId)
-                                    }
-                                } catch (e: Exception) {
-                                    updatePostProcessTask(summaryTaskId, status = PostProcessStatus.ERROR, detail = e.message ?: "Summary failed")
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-        } finally {
-            // 保证 isGenerating 在任何退出路径下都被重置
-            if (_isGenerating.value) {
-                _isGenerating.update { false }
-            }
         }
     }
 
     fun loadSession(sessionId: String) {
-        _ragPhases.update { emptyList() }
+        _inputText.value = ""
+        resetSessionTransientState()
         val existing = store.getSession(sessionId)
         if (existing != null) {
             if (existing.workspaceRootUuid.isNullOrBlank()) {
@@ -1091,6 +684,31 @@ class ChatViewModel(
         }
     }
 
+    private fun resetSessionTransientState() {
+        _streamingContent.value = ""
+        _postProcessTasks.value = emptyList()
+        _ragPhases.value = emptyList()
+        _error.value = null
+        _providerResolutionFailure.value = null
+        _generationStatus.value = GenerationStatus.IDLE
+        _isGenerating.value = false
+    }
+
+    private fun restoreHistoricalRagProjection(sessionId: String) {
+        val lastMessage = store.getSession(sessionId)?.messages
+            ?.lastOrNull { it.role == MessageRole.ASSISTANT && !it.ragReferences.isNullOrEmpty() }
+            ?: return
+        _ragPhases.value = listOf(
+            RagPhase(
+                "retrieved",
+                "已检索",
+                PhaseStatus.DONE,
+                100,
+                "${lastMessage.ragReferences!!.size} 个来源",
+            ),
+        )
+    }
+
     fun createNewSession(agentId: String) {
         viewModelScope.launch {
             val sessionId = IdGenerator.session()
@@ -1146,7 +764,7 @@ class ChatViewModel(
     }
 
     fun stopGeneration() {
-        cancelActiveGeneration()
+        cancelCurrentSessionGeneration()
         val sessionId = _currentSessionId.value
         if (sessionId != null) {
             viewModelScope.launch {
@@ -1164,12 +782,20 @@ class ChatViewModel(
         }
     }
 
-    private fun cancelActiveGeneration() {
+    private fun cancelPendingPreparation() {
         generationJob?.cancel()
         generationJob = null
-        llmProvider.cancel()
-        _isGenerating.update { false }
-        _streamingContent.update { "" }
+    }
+
+    private fun cancelCurrentSessionGeneration() {
+        cancelPendingPreparation()
+        val sessionId = _currentSessionId.value ?: return
+        generationCoordinator.observe(sessionId).value?.taskId?.let { taskId ->
+            generationCoordinator.cancel(
+                taskId,
+                com.promenar.nexara.domain.generation.CancellationReason.USER,
+            )
+        }
     }
 
     fun retryLastMessage() {
@@ -1181,7 +807,7 @@ class ChatViewModel(
 
         val lastAssistantMsg = session.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
 
-        cancelActiveGeneration()
+        cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
             try {
                 if (lastAssistantMsg != null) {
@@ -1204,7 +830,7 @@ class ChatViewModel(
 
     fun approveRequest(intervention: String? = null) {
         val sessionId = _currentSessionId.value ?: return
-        cancelActiveGeneration()
+        cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
             approvalManager.resumeGeneration(sessionId, approved = true, intervention = intervention)
         }
@@ -1218,7 +844,15 @@ class ChatViewModel(
     }
 
     fun clearError() {
+        _currentSessionId.value?.let { sessionId ->
+            generationCoordinator.observe(sessionId).value
+                ?.takeIf {
+                    it.phase == com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED
+                }
+                ?.let { generationCoordinator.acknowledgeTerminal(it.taskId) }
+        }
         _error.update { null }
+        _providerResolutionFailure.value = null
     }
 
     fun regenerateLastMessage() {
@@ -1232,7 +866,7 @@ class ChatViewModel(
         val msgIndex = session.messages.indexOfFirst { it.id == messageId }
         if (msgIndex < 0) return
 
-        cancelActiveGeneration()
+        cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
             messageManager.updateMessageContent(sessionId, messageId, newContent, UpdateMessageOptions())
 
@@ -1371,7 +1005,7 @@ class ChatViewModel(
                 regenerateMessage(userMsg.id)
             } else {
                 // Just regenerate from current state
-                cancelActiveGeneration()
+                cancelCurrentSessionGeneration()
                 generationJob = viewModelScope.launch {
                     messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
                     generateMessage(sessionId, "", false)
@@ -1443,78 +1077,6 @@ class ChatViewModel(
         }
     }
 
-    private fun buildToolList(session: Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> {
-        if (!session.options.toolsEnabled) return emptyList()
-        
-        val prefs = application.getSharedPreferences("nexara_settings", 0)
-        // Android SharedPreferences.getStringSet 有已知缓存 bug：
-        // 返回的 Set 是内部可变引用，修改后再次读取可能返回脏数据。
-        // 必须创建副本以隔离。
-        val enabledSkills = prefs.getStringSet("enabled_skills", null)?.toSet()
-        
-        if (enabledSkills.isNullOrEmpty()) return emptyList()
-        
-        // Tool availability is controlled entirely by the skill-level toggle in Settings.
-        // No session-level web search switch — avoid dual-control confusion.
-        val allowedIds = enabledSkills.toList()
-        
-        // 同时刷新已知工具名缓存，供 Fallback 解析器使用
-        cachedKnownToolNames = null
-
-        return skillRegistry?.getAllTools(allowedIds) ?: emptyList()
-    }
-
-    private fun buildProtocolMessages(
-        session: Session,
-        systemPrompt: String
-    ): List<ProtocolMessage> {
-        val messages = mutableListOf<ProtocolMessage>()
-
-        if (systemPrompt.isNotBlank()) {
-            messages.add(ProtocolMessage(role = "system", content = systemPrompt))
-        }
-
-        val activeWindowSize = session.inferenceParams?.activeContextWindow ?: 10
-        val activeMessages = getSafeActiveWindow(session.messages, activeWindowSize)
-
-        for (msg in activeMessages) {
-            val protocolMsg = when (msg.role) {
-                MessageRole.USER -> {
-                    val imageInputs = msg.userImages?.map { dataUrl ->
-                        val base64Prefix = "base64,"
-                        val base64Idx = dataUrl.indexOf(base64Prefix)
-                        val mimeEnd = dataUrl.indexOf(";")
-                        val mime = if (mimeEnd > 5) dataUrl.substring(5, mimeEnd) else "image/jpeg"
-                        val base64Data = if (base64Idx >= 0) dataUrl.substring(base64Idx + base64Prefix.length) else ""
-                        ImageInput(url = dataUrl, base64 = base64Data, mimeType = mime)
-                    }
-                    ProtocolMessage(role = "user", content = msg.content, imageUrls = imageInputs)
-                }
-                MessageRole.ASSISTANT -> ProtocolMessage(
-                    role = "assistant",
-                    content = msg.content,
-                    reasoning = msg.reasoning,
-                    toolCalls = msg.toolCalls?.map {
-                        com.promenar.nexara.data.remote.protocol.ProtocolToolCall(
-                            id = it.id,
-                            name = it.name,
-                            arguments = it.arguments
-                        )
-                    }
-                )
-                MessageRole.SYSTEM -> ProtocolMessage(role = "system", content = msg.content)
-                MessageRole.TOOL -> ProtocolMessage(
-                    role = "tool",
-                    content = msg.content,
-                    toolCallId = msg.toolCallId,
-                    name = msg.name
-                )
-            }
-            messages.add(protocolMsg)
-        }
-
-        return messages
-    }
 
     private fun getSafeActiveWindow(messages: List<Message>, windowSize: Int): List<Message> {
         if (messages.size <= windowSize) return messages
@@ -1566,9 +1128,12 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        _currentSessionId.value?.let { sessionId ->
+            generationCoordinator.release(sessionId)
+            generationPresentationStore.release(sessionId)
+        }
         super.onCleared()
-        generationJob?.cancel()
-        llmProvider.cancel()
+        // 生成由应用级 owner 持有；ViewModel 销毁只移除观察者，不终止请求。
     }
 
     fun deleteMessage(messageId: String) {
@@ -1588,7 +1153,7 @@ class ChatViewModel(
         val session = store.getSession(sessionId) ?: return
         val message = session.messages.find { it.id == messageId } ?: return
         
-        cancelActiveGeneration()
+        cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
             backupAndTruncate(sessionId, message.createdAt + 1)
             messageManager.updateMessageContent(sessionId, messageId, newContent)
@@ -1613,7 +1178,7 @@ class ChatViewModel(
                 .maxByOrNull { it.createdAt }
         } ?: return
         
-        cancelActiveGeneration()
+        cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
             // Delete all messages strictly after this one with backup
             backupAndTruncate(sessionId, userMessage.createdAt + 1)
@@ -1652,6 +1217,8 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
             sessionManager.deleteSession(sessionId)
+            generationCoordinator.release(sessionId, discardTerminal = true)
+            generationPresentationStore.release(sessionId)
         }
     }
 
@@ -1664,6 +1231,13 @@ class ChatViewModel(
     }
 
     companion object {
+        private val TERMINAL_GENERATION_PHASES = setOf(
+            com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
+            com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
+            com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
+            com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
+        )
+
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -1762,225 +1336,6 @@ class ChatViewModel(
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    //  Fallback 解析器：从文本中提取工具调用 JSON
-    // ─────────────────────────────────────────────────────────────
-
-    /**
-     * 从 LLM 输出的纯文本中提取内嵌的工具调用 JSON。
-     *
-     * 部分模型（如 MiniMax-M2.7）不会通过标准 ToolCallDelta 协议下发工具指令，
-     * 而是在 TextDelta 中以 Markdown 代码块形式输出 JSON。本方法做后置正则兜底。
-     *
-     * 支持的格式：
-     *   1. ```json { "name": "search_searxng", "arguments": {...} } ```
-     *   2. ```{ "function": { "name": "...", "arguments": "..." } } ```
-     *   3. 裸 JSON 对象含 tool_name/tool/function 字段
-     */
-    private fun extractToolCallsFromText(content: String): List<ToolCall> {
-        val results = mutableListOf<ToolCall>()
-
-        // ── 优先级 0：DeepSeek DSML 格式（<||DSML||tool_calls>） ──
-        val dsmlParser = com.promenar.nexara.data.remote.parser.DsmlStreamParser()
-        val outputText = StringBuilder()
-        val dsmlCalls = dsmlParser.process(content, outputText)
-        dsmlParser.flush(outputText)
-        if (dsmlCalls.isNotEmpty()) {
-            dsmlCalls.mapTo(results) { dc ->
-                val argsMap = buildJsonObject { dc.args.forEach { (k, v) ->
-                    put(k, when (v) {
-                        is String -> JsonPrimitive(v)
-                        is Number -> JsonPrimitive(v)
-                        is Boolean -> JsonPrimitive(v)
-                        is JsonElement -> v
-                        else -> JsonPrimitive(v.toString())
-                    })
-                }}
-                val arguments = argsMap.toString()
-                ToolCall(
-                    id = stableFallbackToolCallId("dsml", dc.toolName, arguments, results.size),
-                    name = dc.toolName,
-                    arguments = arguments,
-                )
-            }
-            // DSML 结果同样需要工具名校验
-            val filtered = results.filter { isKnownTool(it.name) }
-            if (filtered.isNotEmpty()) return filtered
-            results.clear()
-        }
-
-        // ── 优先级 1：MiniMax / 百川 / 智谱 等非标准 XML 标签（<FunctionCall>、<tool_call 等） ──
-        // 覆盖格式变体：
-        //   MiniMax:      <FunctionCall>func_name</FunctionCall>（纯文本函数名，无参数）
-        //   MiniMax-Alt:  <FunctionCall>{"name":"func","arguments":{}}</FunctionCall>（JSON 格式）
-        //   百川/Qwen:    <tool_call name="func">{"arg1":"val1"}</tool_call >
-        //   通用:         <function_call>JSON</function_call>
-        val xmlTagRegex = Regex(
-            """<\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*([^>]*)>([\s\S]*?)</\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        )
-
-        xmlTagRegex.findAll(content).forEach { match ->
-            val attrs = match.groupValues[1].trim()
-            val body = match.groupValues[2].trim()
-            if (body.isEmpty()) return@forEach
-
-            // 尝试从属性中提取 name（如 <tool_call name="func">）
-            val attrName = Regex("""name\s*=\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
-                .find(attrs)?.groupValues?.get(1)
-
-            if (body.startsWith("{") || body.startsWith("[")) {
-                // JSON 格式内容
-                try {
-                    val element = Json.parseToJsonElement(body)
-                    val tc = parseToolCallFromJson(element, results.size)
-                    if (tc != null) { results.add(tc); return@forEach }
-                } catch (_: Exception) {
-                    val segments = scanBalancedJsonSegments(body)
-                    for (segment in segments) {
-                        try {
-                            val inner = Json.parseToJsonElement(segment.content)
-                            val tc = parseToolCallFromJson(inner, results.size)
-                            if (tc != null && results.none { it.name == tc.name }) { results.add(tc); return@forEach }
-                        } catch (_: Exception) {}
-                    }
-                }
-            } else {
-                // 纯文本函数名（MiniMax 风格：<FunctionCall>get_current_time</FunctionCall>）
-                val funcName = attrName ?: body.lines().first().trim()
-                if (funcName.isNotEmpty() && funcName.none { it == '{' || it == '<' }) {
-                    if (isKnownTool(funcName)) {
-                        results.add(ToolCall(
-                            id = stableFallbackToolCallId("xml", funcName, "{}", results.size),
-                            name = funcName,
-                            arguments = "{}"
-                        ))
-                    }
-                }
-            }
-        }
-
-        if (results.isNotEmpty()) return results
-
-        // ── 严格 XML 强标签约束升级 ──
-        // 废弃旧的 [优先级 2（Markdown 代码块提取）] 与 [优先级 3（终极兜底裸大括号扫描）]，防止日常对话中的科普/示例代码块被误提取为工具并运行。
-        // 普通 JSON 代码块和文本仅作为 Markdown 文本渲染，不作为工具 Fallback 处理。
-
-        return results
-    }
-
-    /**
-     * 从 JsonElement 解析为 ToolCall，支持多种字段命名约定：
-     *  - name / function.name / tool / tool_name
-     *  - arguments / parameters / input / function.arguments
-     */
-    private fun parseToolCallFromJson(element: JsonElement, index: Int): ToolCall? {
-        if (element !is JsonObject) return null
-
-        // ── 提取工具名称 ──
-        val name: String = element["name"]?.jsonPrimitive?.content
-            ?: element["tool"]?.jsonPrimitive?.content
-            ?: element["tool_name"]?.jsonPrimitive?.content
-            ?: element["function"]?.jsonObject?.get("name")?.jsonPrimitive?.content
-            ?: return null
-
-        // ── 工具名校验：必须存在于 SkillRegistry 中 ──
-        if (!isKnownTool(name)) return null
-
-        // ── 提取参数 ──
-        val rawArgs: Any? = element["arguments"]
-            ?: element["parameters"]
-            ?: element["input"]
-            ?: element["args"]
-            ?: element["function"]?.jsonObject?.get("arguments")
-
-        val arguments: String = when (rawArgs) {
-            is JsonObject -> rawArgs.toString()
-            is JsonPrimitive -> rawArgs.content
-            is String -> rawArgs
-            else -> "{}"
-        }
-
-        val id = stableFallbackToolCallId("fallback", name, arguments, index)
-        return ToolCall(id = id, name = name, arguments = arguments)
-    }
-
-    /**
-     * 缓存的已知工具名集合，避免每次 Fallback 解析都重复调用 getAllTools()
-     */
-    @Volatile
-    private var cachedKnownToolNames: Set<String>? = null
-
-    private fun isKnownTool(name: String): Boolean {
-        val known = cachedKnownToolNames ?: run {
-            val tools = skillRegistry?.getAllTools()?.map { it.function.name }?.toSet() ?: emptySet()
-            cachedKnownToolNames = tools
-            tools
-        }
-        // 安全校验：如果工具列表为空，说明 registry 可能未就绪，信任放行
-        return known.isEmpty() || name in known
-    }
-
-    /**
-     * 从内容中移除 JSON 工具调用代码块，避免用户看到原始 JSON 指令。
-     * 处理两种场景：
-     *   1. Markdown 代码块包裹的 JSON（```json ... ```）
-     *   2. 裸 JSON 对象（以 { 开头含 tool/name/function 字段的行）
-     */
-    private val XML_TOOL_PATTERN = Regex(
-        """<\s*(?:FunctionCall|tool_call|function_call|function_name|func_call|tool-call|function-call)[^>]*/?>[\s\S]*?</\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*>""",
-        RegexOption.IGNORE_CASE
-    )
-
-    // P1-2 修复：原正则 `---\s*...` 过于宽松，会误匹配 Markdown 表格分隔线 `---|---|---`。
-    // 现添加负向前瞻 `(?!-{2,})` 排除紧跟两个以上横线的表格分隔符。
-    // 并增加 `\n` 开头锚点要求行首匹配，避免匹配文本行内的三个横线。
-    private val TOOL_RESULT_SEPARATOR_PATTERN = Regex(
-        """(?:^|\n)---(?!-{2,})\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]\s*[\s\S]*?(?=\n\n|\n?$)""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
-    )
-
-    private fun stripToolCallJsonBlocks(content: String): String {
-        var result = content
-
-        // 1. 彻底剔除 XML 格式标签及其内部内容
-        result = result.replace(XML_TOOL_PATTERN, "")
-
-        // ── 严格 XML 强标签约束升级 ──
-        // 废弃旧的 [步骤 2（剔除 Markdown JSON 块）] 与 [步骤 3（利用大括号配对扫描剔除裸 JSON）]，
-        // 从而完美放行并完整保留正文中的普通 JSON 代码块与教学大括号文本。
-
-        // 4. 清理工具结果指示符与多余空行
-        result = result.replace(TOOL_RESULT_SEPARATOR_PATTERN, "")
-        result = result.replace(Regex("\n{3,}"), "\n\n").trim()
-        
-        return result
-    }
-
-    private val highRiskToolNames = setOf(
-        "write_file",
-        "patch_file",
-        "create_file",
-        "delete_file",
-        "exec_js",
-        "web_fetch",
-        "generate_image",
-        "create_tool",
-        "drop_plan"
-    )
-
-    private fun determinePendingToolIds(
-        toolCalls: List<ToolCall>,
-        executionMode: String
-    ): List<String> {
-        return when (executionMode) {
-            "auto" -> emptyList()
-            "manual" -> toolCalls.map { it.id }
-            else -> toolCalls
-                .filter { it.name in highRiskToolNames }
-                .map { it.id }
-        }
-    }
 
     private fun getDefaultRagOptions(): com.promenar.nexara.data.model.RagOptions {
         val ragPrefs = application.getSharedPreferences("rag_settings", android.content.Context.MODE_PRIVATE)
@@ -1995,115 +1350,4 @@ class ChatViewModel(
         )
     }
 
-    private data class SanitizedStreamingContent(
-        val cleanText: String,
-        val isToolInjection: Boolean,
-        val toolCallData: List<ExecutionStep> = emptyList()
-    )
-
-    private fun sanitizeStreamingContent(
-        content: String,
-        toolCalls: List<ToolCall>
-    ): SanitizedStreamingContent {
-        if (toolCalls.isNotEmpty()) return SanitizedStreamingContent(content, false)
-
-        val match = TOOL_RESULT_SEPARATOR_PATTERN.find(content)
-        if (match == null) return SanitizedStreamingContent(content, false)
-
-        val separatorIdx = content.indexOf(match.value)
-        val beforeSeparator = content.substring(0, separatorIdx)
-        val afterSeparator = content.substring(separatorIdx)
-
-        return SanitizedStreamingContent(
-            cleanText = beforeSeparator.trimEnd(),
-            isToolInjection = true,
-            toolCallData = listOf(
-                ExecutionStep(
-                    id = "stream-sniff-${System.currentTimeMillis()}",
-                    type = "tool_result",
-                    content = afterSeparator.take(500)
-                )
-            )
-        )
-    }
-
-    private suspend fun appendSyntheticExecutionStep(
-        sessionId: String,
-        targetMsgId: String,
-        newSteps: List<ExecutionStep>
-    ) {
-        val currentSession = store.getSession(sessionId) ?: return
-        val currentMsg = currentSession.messages.find { it.id == targetMsgId } ?: return
-        val currentSteps = currentMsg.executionSteps ?: emptyList()
-        val updatedSteps = currentSteps + newSteps
-        messageManager.updateMessageContent(
-            sessionId, targetMsgId, currentMsg.content,
-            UpdateMessageOptions(executionSteps = updatedSteps)
-        )
-    }
-
-    private data class JsonSegment(val start: Int, val end: Int, val content: String)
-
-    /**
-     * [DeepSeek 审计优化] 提取公共的大括号配对扫描器，消除重复代码。
-     * 在文本中扫描配对大括号包围的 JSON 段，支持任意深度的对象/数组嵌套，且跳过字面量及转义大括号。
-     * @return 匹配到的 JsonSegment 列表（含首尾索引对与 JSON 串），已通过 triggerKeywords 过滤
-     */
-    private fun scanBalancedJsonSegments(
-        text: String,
-        startIndex: Int = 0,
-        triggerKeywords: List<String> = listOf("\"name\"", "\"tool\"", "\"tool_name\"", "\"function\"")
-    ): List<JsonSegment> {
-        val segments = mutableListOf<JsonSegment>()
-        var index = startIndex
-        while (index < text.length) {
-            val openBraceIdx = text.indexOf('{', index)
-            if (openBraceIdx == -1) break
-            
-            val closeBraceIdx = findMatchingCloseBrace(text, openBraceIdx)
-            
-            if (closeBraceIdx != -1) {
-                val possibleJson = text.substring(openBraceIdx, closeBraceIdx + 1)
-                if (triggerKeywords.any { possibleJson.contains(it) }) {
-                    segments.add(JsonSegment(openBraceIdx, closeBraceIdx, possibleJson))
-                }
-                index = closeBraceIdx + 1
-            } else {
-                index = openBraceIdx + 1
-            }
-        }
-        return segments
-    }
-
-    /**
-     * 精确匹配闭合大括号。能够识别双引号作用域，并忽略其内部的任何大括号。
-     */
-    private fun findMatchingCloseBrace(text: String, startAt: Int): Int {
-        var braceCount = 0
-        var inQuote = false
-        var escaped = false
-        for (i in startAt until text.length) {
-            val c = text[i]
-            if (escaped) {
-                escaped = false
-                continue
-            }
-            if (c == '\\') {
-                escaped = true
-                continue
-            }
-            if (c == '"') {
-                inQuote = !inQuote
-                continue
-            }
-            if (!inQuote) {
-                if (c == '{') braceCount++
-                else if (c == '}') {
-                    braceCount--
-                    if (braceCount == 0) return i
-                }
-            }
-        }
-        return -1
-    }
 }

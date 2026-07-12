@@ -2,6 +2,9 @@ package com.promenar.nexara.data.repository
 
 import com.promenar.nexara.data.model.Message
 
+class MessagePersistenceException(message: String, cause: Throwable? = null) :
+    IllegalStateException(message, cause)
+
 interface IMessageRepository {
     suspend fun insert(message: Message, sessionId: String)
     suspend fun updatePartial(messageId: String, updates: Map<String, Any?>)

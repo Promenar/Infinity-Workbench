@@ -193,6 +193,78 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val chatStore: ChatStore by lazy { ChatStore() }
 
+    private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val generationPresentationStore by lazy {
+        com.promenar.nexara.data.generation.GenerationPresentationStore()
+    }
+    private val generationSessionManager by lazy {
+        com.promenar.nexara.ui.chat.manager.SessionManager(chatStore, sessionRepository)
+    }
+    private val generationMessageManager by lazy {
+        com.promenar.nexara.ui.chat.manager.MessageManager(
+            chatStore,
+            messageRepository,
+            sessionRepository,
+            generationScope,
+        )
+    }
+    private val generationContextBuilder by lazy {
+        com.promenar.nexara.ui.chat.manager.ContextBuilder(
+            webSearchProvider = webSearchContextProvider,
+            ragProvider = com.promenar.nexara.data.rag.MemoryManagerRagAdapter(memoryManager),
+            kgProvider = kgProvider,
+            taskRepository = taskRepository,
+        )
+    }
+    private val generationToolExecutor by lazy {
+        com.promenar.nexara.ui.chat.manager.ToolExecutor(
+            chatStore,
+            generationMessageManager,
+            skillRegistry,
+            taskRepository,
+            toolExecutionLedger,
+        )
+    }
+    private val generationPostProcessor by lazy {
+        com.promenar.nexara.ui.chat.manager.PostProcessor(
+            chatStore,
+            generationSessionManager,
+            generationMessageManager,
+            embeddingClient,
+            vectorStore,
+            textSplitter,
+        )
+    }
+    val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
+        val settings = getSharedPreferences("nexara_settings", MODE_PRIVATE)
+        val provider = llmProvider
+        val runnerFactory = com.promenar.nexara.data.generation.DefaultChatGenerationRunnerFactory(
+            settings = settings,
+            applicationScope = generationScope,
+            store = chatStore,
+            agentRepository = agentRepository,
+            configResolver = configResolver,
+            routeGate = com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
+            contextBuilder = generationContextBuilder,
+            messageManager = generationMessageManager,
+            localProviderFactory = { modelId -> LlmProvider.local(localInferenceEngine, modelId) },
+            provider = provider,
+            toolLedger = toolExecutionLedger,
+            toolExecutor = generationToolExecutor,
+            postProcessor = generationPostProcessor,
+            memoryManager = memoryManager,
+            summaryManager = com.promenar.nexara.ui.chat.manager.SummaryManager(provider),
+            sessionManager = generationSessionManager,
+            skillRegistry = skillRegistry,
+            presentationStore = generationPresentationStore,
+        )
+        com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
+            applicationScope = generationScope,
+            runnerFactory = runnerFactory,
+            presentationStore = generationPresentationStore,
+        )
+    }
+
     private var _vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository? = null
     val vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository
         get() = _vectorRepository ?: VectorRepository(database.vectorDao(), embeddingClient).also { _vectorRepository = it }

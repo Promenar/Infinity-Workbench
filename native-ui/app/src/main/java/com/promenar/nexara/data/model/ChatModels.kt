@@ -216,6 +216,7 @@ data class ToolResultArtifact(
 
 @Serializable
 data class UpdateMessageOptions(
+    val status: String? = null,
     val tokens: TokenUsage? = null,
     val reasoning: String? = null,
     val citations: List<Citation>? = null,
@@ -226,11 +227,13 @@ data class UpdateMessageOptions(
     val thoughtSignature: String? = null,
     val planningTask: TaskState? = null,
     val toolCalls: List<ToolCall>? = null,
+    val clearToolCalls: Boolean = false,
     val executionSteps: List<ExecutionStep>? = null,
     val pendingApprovalToolIds: List<String>? = null,
     val toolResults: List<ToolResultArtifact>? = null,
     val isError: Boolean? = null,
     val errorMessage: String? = null,
+    val clearError: Boolean = false,
     val isLongWait: Boolean? = null,
     val loopCount: Int? = null
 )
