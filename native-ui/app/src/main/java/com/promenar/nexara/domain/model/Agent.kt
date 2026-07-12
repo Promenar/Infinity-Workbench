@@ -21,5 +21,7 @@ data class Agent(
     val useInheritedConfig: Boolean = true,
     val executionMode: ExecutionMode = ExecutionMode.SEMI,
     val skills: List<String> = emptyList(),
+    val nameCustomized: Boolean = false,
+    val descriptionCustomized: Boolean = false,
     val createdAt: Long = 0L
 )

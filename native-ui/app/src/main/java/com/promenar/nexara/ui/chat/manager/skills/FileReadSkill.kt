@@ -35,7 +35,7 @@ class FileReadSkill(
             }
         }
 
-        val result = fileOpRepo.readFileRange(uuid, startLine, endLine)
+        val result = fileOpRepo.readFileRange(context.workspaceRootUuid, uuid, startLine, endLine)
 
         return ToolResult(
             "read_file_${System.currentTimeMillis()}",

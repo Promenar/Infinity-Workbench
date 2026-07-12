@@ -16,24 +16,16 @@ import com.promenar.nexara.domain.repository.WriteResult
 import com.promenar.nexara.infra.util.MyersDiff
 import com.promenar.nexara.infra.util.Sha256Utils
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.LinkOption
-import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 class FileOperationRepository(
     private val dao: FileEntryDao,
     private val versionDao: FileVersionDao,
-    private val currentFileWriter: ((File, String) -> Unit)? = null,
+    private val fileOps: WorkspaceFileOps = SecureWorkspaceFileOps(),
     private val versionCommitter: (suspend (FileVersionEntity, FileEntry) -> Unit)? = null,
 ) : IFileOperationRepository {
-    private val mutationMutex = Mutex()
 
     override suspend fun writeFileAtomic(
         workspaceRootUuid: String,
@@ -42,11 +34,13 @@ class FileOperationRepository(
         sessionId: String,
         expectedHash: String,
     ): WriteResult = withContext(Dispatchers.IO) {
-        mutationMutex.withLock {
-            val entry = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withLock WriteResult.NotFound
-            if (entry.isDirectory) return@withLock WriteResult.NotFound
+        val initial = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withContext WriteResult.NotFound
+        val root = bindRoot(workspaceRootUuid)
+        WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
+            val entry = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withBoundRoot WriteResult.NotFound
+            if (entry.isDirectory) return@withBoundRoot WriteResult.NotFound
             if (entry.hash != expectedHash) {
-                return@withLock WriteResult.Conflict(
+                return@withBoundRoot WriteResult.Conflict(
                     currentHash = entry.hash,
                     expectedHash = expectedHash,
                     message = "文件已被其他会话修改。请先读取最新版本再重试。",
@@ -63,14 +57,16 @@ class FileOperationRepository(
         startLine: Int?,
         endLine: Int?,
     ): ReadResult = withContext(Dispatchers.IO) {
-        val entry = requireFile(workspaceRootUuid, uuid)
-        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
-        val allLines = if (physicalFile.exists()) physicalFile.readLines() else emptyList()
-        val total = allLines.size
-        val start = startLine?.coerceIn(1, total.coerceAtLeast(1)) ?: 1
-        val end = endLine?.coerceIn(1, total.coerceAtLeast(1)) ?: total
-        val content = if (total == 0) "" else allLines.subList(start - 1, end).joinToString("\n")
-        ReadResult(entry.uuid, entry.name, total, start, end, content, entry.hash, entry.updatedAt)
+        val root = bindRoot(workspaceRootUuid)
+        WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
+            val entry = requireFile(workspaceRootUuid, uuid)
+            val allLines = readContent(entry).lines().let { if (it == listOf("")) emptyList() else it }
+            val total = allLines.size
+            val start = startLine?.coerceIn(1, total.coerceAtLeast(1)) ?: 1
+            val end = endLine?.coerceIn(1, total.coerceAtLeast(1)) ?: total
+            val content = if (total == 0) "" else allLines.subList(start - 1, end).joinToString("\n")
+            ReadResult(entry.uuid, entry.name, total, start, end, content, entry.hash, entry.updatedAt)
+        }
     }
 
     override suspend fun diffFile(
@@ -78,16 +74,17 @@ class FileOperationRepository(
         uuid: String,
         basisHash: String?,
     ): DiffResult = withContext(Dispatchers.IO) {
-        val entry = requireFile(workspaceRootUuid, uuid)
-        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
-        val currentContent = if (physicalFile.exists()) physicalFile.readText() else ""
-        val basisContent = when {
-            basisHash == null || basisHash == entry.hash -> currentContent
-            else -> readVersionContent(entry, basisHash)
-        }
-        val effectiveBasisHash = basisHash ?: entry.hash
-        val hunks = MyersDiff.computeHunks(basisContent.lines(), currentContent.lines())
-        DiffResult(
+        val root = bindRoot(workspaceRootUuid)
+        WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
+            val entry = requireFile(workspaceRootUuid, uuid)
+            val currentContent = readContent(entry)
+            val basisContent = when {
+                basisHash == null || basisHash == entry.hash -> currentContent
+                else -> readVersionContent(entry, basisHash)
+            }
+            val effectiveBasisHash = basisHash ?: entry.hash
+            val hunks = MyersDiff.computeHunks(basisContent.lines(), currentContent.lines())
+            DiffResult(
             uuid = entry.uuid,
             basisHash = effectiveBasisHash,
             currentHash = entry.hash,
@@ -100,7 +97,8 @@ class FileOperationRepository(
                     lines = hunk.lines.map { DiffLine(it.type, it.content) },
                 )
             },
-        )
+            )
+        }
     }
 
     override suspend fun patchFile(
@@ -109,12 +107,15 @@ class FileOperationRepository(
         operations: List<PatchOperation>,
         expectedHash: String,
     ): PatchResult = withContext(Dispatchers.IO) {
-        mutationMutex.withLock {
+        val initial = dao.getByUuid(workspaceRootUuid, uuid)
+            ?: return@withContext fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
+        val root = bindRoot(workspaceRootUuid)
+        WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
             val entry = dao.getByUuid(workspaceRootUuid, uuid)
-                ?: return@withLock fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
-            if (entry.isDirectory) return@withLock fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
+                ?: return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
+            if (entry.isDirectory) return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
             if (entry.hash != expectedHash) {
-                return@withLock PatchResult.Failure(PatchError(
+                return@withBoundRoot PatchResult.Failure(PatchError(
                     code = "HASH_MISMATCH",
                     message = "文件已被其他会话修改。请先获取最新差异再重试。",
                     operationIndex = -1,
@@ -123,8 +124,7 @@ class FileOperationRepository(
                 ))
             }
 
-            val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
-            val currentContent = if (physicalFile.exists()) physicalFile.readText() else ""
+            val currentContent = readContent(entry)
             val lines = currentContent.lines().toMutableList()
             val originalTotal = lines.size
             var lineOffset = 0
@@ -135,7 +135,7 @@ class FileOperationRepository(
                         val start = (operation.startLine ?: 0) + lineOffset
                         val end = (operation.endLine ?: 0) + lineOffset
                         if (start < 1 || end < start || start > lines.size) {
-                            return@withLock rangeFailure(operation, index, uuid, originalTotal)
+                            return@withBoundRoot rangeFailure(operation, index, uuid, originalTotal)
                         }
                         val replacement = (operation.newContent ?: "").lines()
                         val count = end - start + 1
@@ -147,7 +147,7 @@ class FileOperationRepository(
                         val after = operation.afterLine ?: -1
                         val indexInCurrent = after + lineOffset
                         if (after < 0 || indexInCurrent > lines.size) {
-                            return@withLock rangeFailure(operation, index, uuid, originalTotal)
+                            return@withBoundRoot rangeFailure(operation, index, uuid, originalTotal)
                         }
                         val insertion = (operation.newContent ?: "").lines()
                         lines.addAll(indexInCurrent, insertion)
@@ -157,13 +157,13 @@ class FileOperationRepository(
                         val start = (operation.startLine ?: 0) + lineOffset
                         val end = (operation.endLine ?: 0) + lineOffset
                         if (start < 1 || end < start || start > lines.size) {
-                            return@withLock rangeFailure(operation, index, uuid, originalTotal)
+                            return@withBoundRoot rangeFailure(operation, index, uuid, originalTotal)
                         }
                         val count = end - start + 1
                         lines.subList(start - 1, (start - 1 + count).coerceAtMost(lines.size)).clear()
                         lineOffset -= count
                     }
-                    else -> return@withLock PatchResult.Failure(PatchError(
+                    else -> return@withBoundRoot PatchResult.Failure(PatchError(
                         code = "INVALID_ACTION",
                         message = "未知的 patch 操作类型: ${operation.action}",
                         operationIndex = index,
@@ -179,8 +179,8 @@ class FileOperationRepository(
     }
 
     private suspend fun commitContentChange(entry: FileEntry, newContent: String, sessionId: String?) {
-        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
-        val oldContent = if (physicalFile.exists()) physicalFile.readText() else ""
+        val root = File(entry.physicalRootPath).toPath()
+        val oldContent = readContent(entry)
         val physicalHash = Sha256Utils.hash(oldContent)
         if (physicalHash != entry.hash) {
             throw IllegalStateException("文件内容与数据库哈希不一致，已拒绝覆盖: ${entry.uuid}")
@@ -189,8 +189,10 @@ class FileOperationRepository(
         if (newHash == entry.hash && oldContent == newContent) return
 
         val versionId = UUID.randomUUID().toString()
-        val snapshot = resolveSnapshotFile(entry, versionId)
-        writeTextAtomically(snapshot, oldContent)
+        val snapshotRelative = snapshotRelative(entry, versionId)
+        ensureDirectories(root, snapshotRelative.dropLast(1))
+        fileOps.createFile(root, snapshotRelative, oldContent.toByteArray(Charsets.UTF_8))
+        val snapshot = root.resolve(snapshotRelative.joinToString(File.separator)).toFile()
         val version = FileVersionEntity(
             id = versionId,
             fileUuid = entry.uuid,
@@ -207,28 +209,34 @@ class FileOperationRepository(
             updatedAt = System.currentTimeMillis(),
         )
 
+        var replacement: WorkspaceFileRollback? = null
+        var databaseCommitted = false
         try {
-            (currentFileWriter ?: ::writeTextAtomically).invoke(physicalFile, newContent)
-            try {
-                (versionCommitter ?: versionDao::commitVersionAndFile).invoke(version, updated)
-            } catch (databaseFailure: Throwable) {
-                restoreAfterFailure(physicalFile, oldContent, databaseFailure)
-                throw databaseFailure
-            }
+            val activeReplacement = fileOps.replaceFile(
+                root,
+                relative(entry.materializedPath),
+                newContent.toByteArray(Charsets.UTF_8),
+            )
+            replacement = activeReplacement
+            (versionCommitter ?: versionDao::commitVersionAndFile).invoke(version, updated)
+            databaseCommitted = true
+            // 备份清理失败不反转已经提交的 DB/物理新版本；残留隐藏备份可由维护任务清理。
+            runCatching { activeReplacement.commit() }
         } catch (failure: Throwable) {
-            if (runCatching { physicalFile.exists() && physicalFile.readText() != oldContent }.getOrDefault(true)) {
-                restoreAfterFailure(physicalFile, oldContent, failure)
+            if (!databaseCommitted) {
+                if (replacement != null) rollbackReplacement(replacement, failure)
+                runCatching { fileOps.delete(root, snapshotRelative) }.exceptionOrNull()?.let(failure::addSuppressed)
             }
-            snapshot.delete()
             throw failure
         }
     }
 
-    private fun restoreAfterFailure(file: File, oldContent: String, original: Throwable) {
-        try {
-            writeTextAtomically(file, oldContent)
-        } catch (rollbackFailure: Throwable) {
-            original.addSuppressed(rollbackFailure)
+    private fun rollbackReplacement(replacement: WorkspaceFileRollback, failure: Throwable) {
+        val first = runCatching { replacement.rollback() }.exceptionOrNull() ?: return
+        val second = runCatching { replacement.rollback() }.exceptionOrNull()
+        if (second != null) {
+            second.addSuppressed(first)
+            failure.addSuppressed(second)
         }
     }
 
@@ -241,72 +249,44 @@ class FileOperationRepository(
         if (!rawSnapshotPath.startsWith(expectedDir)) {
             throw SecurityException("文件版本快照路径无效")
         }
-        var cursor = rootPath
-        rootPath.relativize(rawSnapshotPath).forEach { segment ->
-            cursor = cursor.resolve(segment)
-            if (Files.exists(cursor, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(cursor)) {
-                throw SecurityException("文件版本快照路径包含软链接")
+        val relative = rootPath.relativize(rawSnapshotPath).map { it.toString() }
+        return fileOps.read(rootPath, relative).toString(Charsets.UTF_8).also { content ->
+            if (Sha256Utils.hash(content) != version.hash) {
+                throw SecurityException("文件版本快照哈希校验失败")
             }
         }
-        val snapshot = rawSnapshotPath.toFile().canonicalFile
-        if (!snapshot.path.startsWith(expectedDir.toFile().canonicalPath + File.separator) || !snapshot.isFile) {
-            throw SecurityException("文件版本快照路径无效")
-        }
-        return snapshot.readText()
     }
 
-    private fun resolveSnapshotFile(entry: FileEntry, versionId: String): File {
-        val snapshot = resolveRootedFile(
-            entry.physicalRootPath,
-            "/.nexara_versions/${entry.workspaceRootUuid}/${entry.uuid}/$versionId.snapshot",
-        )
-        snapshot.parentFile?.let { if (!it.mkdirs() && !it.isDirectory) error("无法创建版本目录") }
-        return snapshot
+    private fun snapshotRelative(entry: FileEntry, versionId: String): List<String> =
+        listOf(".nexara_versions", entry.workspaceRootUuid, entry.uuid, "$versionId.snapshot")
+
+    private fun ensureDirectories(root: java.nio.file.Path, directories: List<String>) {
+        directories.indices.forEach { index -> fileOps.ensureDirectory(root, directories.take(index + 1)) }
     }
+
+    private fun readContent(entry: FileEntry): String {
+        val root = File(entry.physicalRootPath).toPath()
+        val relative = relative(entry.materializedPath)
+        fileOps.reconcileFile(root, relative, entry.hash)
+        return fileOps.read(root, relative).toString(Charsets.UTF_8)
+    }
+
+    private fun relative(materializedPath: String): List<String> =
+        materializedPath.replace('\\', '/').trim('/').split('/').filter { it.isNotBlank() }
 
     private suspend fun requireFile(workspaceRootUuid: String, uuid: String): FileEntry =
-        dao.getByUuid(workspaceRootUuid, uuid)?.takeUnless { it.isDirectory }
+        bindRoot(workspaceRootUuid).let {
+            dao.getByUuid(workspaceRootUuid, uuid)?.takeUnless { it.isDirectory }
+        }
             ?: throw NoSuchElementException("File not found: $uuid")
 
-    private fun resolveRootedFile(rootPath: String, materializedPath: String): File {
-        val root = File(rootPath).canonicalFile
-        val rootNioPath = root.toPath()
-        val rawTargetPath = rootNioPath.resolve(materializedPath.trimStart('/', '\\')).normalize()
-        if (rawTargetPath != rootNioPath && !rawTargetPath.startsWith(rootNioPath)) {
-            throw SecurityException("文件路径越过工作区根: $materializedPath")
-        }
-        var cursor = rootNioPath
-        rootNioPath.relativize(rawTargetPath).forEach { segment ->
-            cursor = cursor.resolve(segment)
-            if (Files.exists(cursor, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(cursor)) {
-                throw SecurityException("文件路径包含软链接: $materializedPath")
-            }
-        }
-        val target = rawTargetPath.toFile().canonicalFile
-        if (target != root && !target.path.startsWith(root.path + File.separator)) {
-            throw SecurityException("文件路径越过工作区根: $materializedPath")
-        }
-        return target
+    private suspend fun bindRoot(workspaceRootUuid: String): FileEntry {
+        val root = dao.getByUuid(workspaceRootUuid, workspaceRootUuid)
+            ?.takeIf { it.isDirectory && it.parentUuid == null }
+            ?: throw SecurityException("工作区根不存在或无效")
+        return root
     }
 
-    private fun writeTextAtomically(target: File, content: String) {
-        val parent = target.parentFile ?: error("文件缺少父目录")
-        if (!parent.exists() && !parent.mkdirs()) error("无法创建父目录: ${parent.path}")
-        val temp = File.createTempFile("${target.name}.", ".tmp", parent)
-        try {
-            FileOutputStream(temp).use { stream ->
-                stream.write(content.toByteArray(Charsets.UTF_8))
-                stream.fd.sync()
-            }
-            try {
-                Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
-        } finally {
-            temp.delete()
-        }
-    }
 
     private fun fileFailure(code: String, message: String, uuid: String) =
         PatchResult.Failure(PatchError(code, message, -1, uuid))
@@ -321,10 +301,4 @@ class FileOperationRepository(
             suggestion = "请先读取当前文件内容后重试。",
         ))
 
-    // Task3B 完成 root 透传前，旧入口全部失败关闭。
-    override suspend fun writeFileAtomic(uuid: String, newContent: String, sessionId: String, expectedHash: String): WriteResult = WriteResult.NotFound
-    override suspend fun readFileRange(uuid: String, startLine: Int?, endLine: Int?): ReadResult = throw NoSuchElementException("workspaceRootUuid required")
-    override suspend fun diffFile(uuid: String, basisHash: String?): DiffResult = throw NoSuchElementException("workspaceRootUuid required")
-    override suspend fun patchFile(uuid: String, operations: List<PatchOperation>, expectedHash: String): PatchResult =
-        fileFailure("FILE_NOT_FOUND", "workspaceRootUuid required", uuid)
 }

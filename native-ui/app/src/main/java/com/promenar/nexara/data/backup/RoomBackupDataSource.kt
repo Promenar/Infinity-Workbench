@@ -122,9 +122,9 @@ class RoomBackupDataSource(
         val restoreId = operationId
         val stagingRoot = restoreParent.resolve(".restore-$restoreId.tmp")
         val finalRoot = restoreParent.resolve("restore-$restoreId")
-        val transformed = transformPaths(payload, finalRoot)
+        var transformed = transformPaths(payload, finalRoot)
         validatePayload(transformed, validated.files)
-        val expectedFingerprint = fingerprint(transformed)
+        var expectedFingerprint = fingerprint(transformed)
         val beforePreferences = preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         preferences.preflightRestore(restoreId, beforePreferences, preferenceSnapshot)
         val eligibleIds = eligibleSecretIds(preferenceSnapshot.providerIds + beforePreferences.providerIds)
@@ -144,7 +144,13 @@ class RoomBackupDataSource(
             preferences.prepare(restoreId, beforePreferences, preferenceSnapshot)
             secrets.prepare(restoreId, beforeSecrets, afterSecrets)
             crashHook.hit(RestoreCrashPoint.JOURNAL_PREPARED)
-            val expectedTree = stageFiles(stagingRoot, transformed, validated.files)
+            val staged = stageFiles(stagingRoot, transformed, validated.files)
+            transformed = staged.payload
+            validatePayload(transformed, validated.files)
+            expectedFingerprint = fingerprint(transformed)
+            record = record.copy(expectedDatabaseFingerprint = expectedFingerprint)
+            journal.write(record)
+            val expectedTree = staged.expectedTree
             moveAtomically(stagingRoot, finalRoot)
             restoreFileOperations.verifyAndSync(finalRoot, expectedTree)
             record = record.copy(newRootFileKey = fileKey(finalRoot))
@@ -644,9 +650,11 @@ class RoomBackupDataSource(
 
     private fun transformPaths(payload: DatabaseBackupPayload, finalRoot: Path): DatabaseBackupPayload {
         val rootTokens = linkedMapOf<String, String>()
+        val rootIdentities = linkedMapOf<String, String>()
         payload.rows(FILE_TABLE).forEach { row ->
             val logicalRoot = logicalRoot(row)
             rootTokens.getOrPut(logicalRoot) { safeRootToken(logicalRoot) }
+            rootIdentities.getOrPut(logicalRoot) { UUID.randomUUID().toString() }
         }
         if (rootTokens.values.size != rootTokens.values.toSet().size) {
             throw BackupValidationException("workspace root token 冲突")
@@ -654,12 +662,16 @@ class RoomBackupDataSource(
         val transformedTables = payload.tables.toMutableMap()
         transformedTables[FILE_TABLE] = payload.rows(FILE_TABLE).map { row ->
             val token = rootTokens.getValue(logicalRoot(row))
-            JsonObject(
-                row + mapOf(
+            val rewritten = row + mapOf(
                     "physical_root_path" to JsonPrimitive(finalRoot.resolve(token).toString()),
                     "vectorized_at" to JsonNull,
                     "kg_extracted_at" to JsonNull,
                 )
+            JsonObject(
+                if (row.requiredString("uuid") == row.requiredString("workspace_root_uuid") &&
+                    row.optionalString("parent_uuid") == null
+                ) rewritten + ("hash" to JsonPrimitive(rootIdentities.getValue(logicalRoot(row))))
+                else rewritten
             )
         }
         transformedTables["messages"] = payload.rows("messages").map { row ->
@@ -691,11 +703,16 @@ class RoomBackupDataSource(
         return payload.copy(tables = transformedTables)
     }
 
+    private data class StagedWorkspaceFiles(
+        val expectedTree: Set<RestoreTreeEntry>,
+        val payload: DatabaseBackupPayload,
+    )
+
     private fun stageFiles(
         stagingRoot: Path,
         transformed: DatabaseBackupPayload,
         files: Map<String, ByteArray>,
-    ): Set<RestoreTreeEntry> {
+    ): StagedWorkspaceFiles {
         if (Files.exists(stagingRoot, LinkOption.NOFOLLOW_LINKS)) {
             throw BackupValidationException("staging 目录已存在")
         }
@@ -726,14 +743,40 @@ class RoomBackupDataSource(
             }
         }
         directories.sortedBy { it.size }.forEach { restoreFileOperations.createDirectory(stagingRoot, it) }
+        val restoredIdentities = linkedMapOf<String, String>()
+        transformed.rows(FILE_TABLE)
+            .filter { row ->
+                row.requiredString("uuid") == row.requiredString("workspace_root_uuid") &&
+                    row.optionalString("parent_uuid") == null
+            }
+            .forEach { rootRow ->
+                val rootToken = Paths.get(rootRow.requiredString("physical_root_path")).fileName.toString()
+                restoredIdentities[rootRow.requiredString("uuid")] = restoreFileOperations.initializeWorkspaceRootIdentity(
+                    stagingRoot,
+                    listOf(rootToken),
+                    rootRow.requiredString("hash"),
+                )
+            }
         pendingFiles.forEach { (relative, bytes) -> restoreFileOperations.writeNew(stagingRoot, relative, bytes) }
         val expected = buildSet {
             add(RestoreTreeEntry(OWNER_MARKER, false))
             directories.forEach { add(RestoreTreeEntry(it.joinToString("/"), true)) }
+            transformed.rows(FILE_TABLE)
+                .filter { it.requiredString("uuid") == it.requiredString("workspace_root_uuid") && it.optionalString("parent_uuid") == null }
+                .forEach { row ->
+                    val token = Paths.get(row.requiredString("physical_root_path")).fileName.toString()
+                    add(RestoreTreeEntry("$token/.nexara_root_identity", false))
+                }
             pendingFiles.forEach { (path, _) -> add(RestoreTreeEntry(path.joinToString("/"), false)) }
         }
         restoreFileOperations.verifyAndSync(stagingRoot, expected)
-        return expected
+        val rewrittenTables = transformed.tables.toMutableMap()
+        rewrittenTables[FILE_TABLE] = transformed.rows(FILE_TABLE).map { row ->
+            restoredIdentities[row.requiredString("uuid")]?.let { identity ->
+                JsonObject(row + ("hash" to JsonPrimitive(identity)))
+            } ?: row
+        }
+        return StagedWorkspaceFiles(expected, transformed.copy(tables = rewrittenTables))
     }
 
     private fun moveAtomically(source: Path, target: Path) {
@@ -882,7 +925,9 @@ class RoomBackupDataSource(
         return groups.entries.joinToString(",") { (managed, managedRows) ->
             val expected = expectedManagedInventory(managed, managedRows)
             val actual = restoreFileOperations.inventory(managed.path.parent, managed.path.fileName.toString())
-            if (actual != expected) throw BackupValidationException("旧 managed root 包含未登记、缺失或异常内容")
+            if (actual != expected) throw BackupValidationException(
+                "旧 managed root 包含未登记、缺失或异常内容；missing=${expected - actual}；unexpected=${actual - expected}",
+            )
             val encodedKey = java.util.Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(fileKey(managed.path).toByteArray())
             "${managed.baseIndex}:$encodedKey:${inventoryToken(expected)}"
@@ -1047,6 +1092,12 @@ class RoomBackupDataSource(
             val prefix = if (physicalRoot == managed.path) emptyList() else listOf(physicalRoot.fileName.toString())
             val relative = prefix + normalizeMaterializedPath(row.requiredString("materialized_path"))
             val isDirectory = row.requiredBoolean("is_directory")
+            if (row.requiredString("uuid") == row.requiredString("workspace_root_uuid") &&
+                row.optionalString("parent_uuid") == null &&
+                Regex("^[^|]+\\|[0-9a-f]{64}$").matches(row.requiredString("hash"))
+            ) {
+                add(RestoreTreeEntry((prefix + ".nexara_root_identity").joinToString("/"), false))
+            }
             val ancestorLimit = if (isDirectory) relative.size else relative.size - 1
             (1..ancestorLimit.coerceAtLeast(0)).forEach { depth ->
                 add(RestoreTreeEntry(relative.take(depth).joinToString("/"), true))
@@ -1148,6 +1199,9 @@ class RoomBackupDataSource(
         val normalizedSeparators = value.replace('\\', '/')
         val parts = normalizedSeparators.split('/').filter(String::isNotEmpty)
         if (parts.any { it == "." || it == ".." }) throw BackupValidationException("文件路径越界")
+        if (parts.any { it.startsWith(".nexara", ignoreCase = true) }) {
+            throw BackupValidationException("文件路径占用系统保留名称")
+        }
         return parts
     }
 
@@ -1221,7 +1275,7 @@ class RoomBackupDataSource(
 
     private companion object {
         const val DATABASE_SCHEMA_VERSION = 1
-        const val ROOM_SCHEMA_V1_IDENTITY_HASH = "c9a3019357d00e515f226e279da18e8d"
+        const val ROOM_SCHEMA_V1_IDENTITY_HASH = "6cd9d23201fddcd40667259b7212d7b2"
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"
         const val OLD_CLEANUP_MARKER = ".restore-cleanup-owner"

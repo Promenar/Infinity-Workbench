@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.agent.PresetAgents
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
@@ -22,10 +23,12 @@ import kotlinx.coroutines.launch
 
 class AgentEditViewModel(
     private val agentRepository: AgentRepository,
-    private val ragConfigPersistence: RagConfigPersistence
+    private val ragConfigPersistence: RagConfigPersistence,
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
+    private val _initialDisplayName = MutableStateFlow("")
+    private val _initialDisplayDescription = MutableStateFlow("")
     private val _name = MutableStateFlow("")
     private val _description = MutableStateFlow("")
     private val _systemPrompt = MutableStateFlow("")
@@ -39,6 +42,7 @@ class AgentEditViewModel(
     private val _useInheritedConfig = MutableStateFlow(true)
     private val _ragConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRagConfig())
     private val _retrievalConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRetrievalConfig())
+    private val _saveError = MutableStateFlow<String?>(null)
 
     val name: StateFlow<String> = _name.asStateFlow()
     val description: StateFlow<String> = _description.asStateFlow()
@@ -53,29 +57,52 @@ class AgentEditViewModel(
     val useInheritedConfig: StateFlow<Boolean> = _useInheritedConfig.asStateFlow()
     val ragConfig: StateFlow<com.promenar.nexara.data.agent.AgentRagConfig> = _ragConfig.asStateFlow()
     val retrievalConfig: StateFlow<com.promenar.nexara.data.agent.AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
+    val saveError: StateFlow<String?> = _saveError.asStateFlow()
 
     val hasChanges: StateFlow<Boolean> = combine(
-        combine(_initialAgent, _name, _description) { initial, n, d -> Triple(initial, n, d) },
+        combine(
+            _initialAgent,
+            _name,
+            _description,
+            _initialDisplayName,
+            _initialDisplayDescription,
+        ) { initial, n, d, baselineName, baselineDescription ->
+            TextEditState(initial, n, d, baselineName, baselineDescription)
+        },
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
         combine(_temperature, _topP) { temp, tp -> Pair(temp, tp) },
         combine(_useInheritedConfig, _ragConfig, _retrievalConfig) { u, r, ret -> Triple(u, r, ret) }
-    ) { (initial, name, desc), (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr) ->
-        initial == null || initial.name != name || initial.description != desc ||
+    ) { text, (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr) ->
+        val initial = text.initial
+        initial == null || text.baselineName != text.name || text.baselineDescription != text.description ||
         initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
-        initial.useInheritedConfig != useIn || initial.ragConfig != rag || initial.retrievalConfig != retr
+        initial.useInheritedConfig != useIn ||
+        (!useIn && (initial.ragConfig != rag || initial.retrievalConfig != retr))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private var saveJob: Job? = null
 
-    fun loadAgent(agentId: String) {
+    fun loadAgent(
+        agentId: String,
+        localizedPresetName: String? = null,
+        localizedPresetDescription: String? = null,
+    ) {
         viewModelScope.launch {
             val agent = agentRepository.observeById(agentId).first()
             if (agent != null) {
+                val displayName = if (
+                    PresetAgents.isPreset(agentId) && !agent.nameCustomized
+                ) localizedPresetName ?: agent.name else agent.name
+                val displayDescription = if (
+                    PresetAgents.isPreset(agentId) && !agent.descriptionCustomized
+                ) localizedPresetDescription ?: agent.description else agent.description
                 _initialAgent.value = agent
-                _name.value = agent.name
-                _description.value = agent.description
+                _initialDisplayName.value = displayName
+                _initialDisplayDescription.value = displayDescription
+                _name.value = displayName
+                _description.value = displayDescription
                 _systemPrompt.value = agent.systemPrompt
                 _selectedModel.value = agent.modelId
                 _selectedColor.value = agent.color
@@ -193,10 +220,19 @@ class AgentEditViewModel(
 
     fun saveAgent(agentId: String) {
         viewModelScope.launch {
+            val initial = _initialAgent.value
+            val nameChanged = _name.value != _initialDisplayName.value
+            val descriptionChanged = _description.value != _initialDisplayDescription.value
             val agent = Agent(
                 id = agentId,
-                name = _name.value,
-                description = _description.value,
+                name = if (nameChanged) _name.value else initial?.name.orEmpty(),
+                description = if (descriptionChanged) {
+                    _description.value
+                } else {
+                    initial?.description.orEmpty()
+                },
+                nameCustomized = initial?.nameCustomized == true || nameChanged,
+                descriptionCustomized = initial?.descriptionCustomized == true || descriptionChanged,
                 systemPrompt = _systemPrompt.value,
                 modelId = _selectedModel.value,
                 icon = _selectedIcon.value,
@@ -209,12 +245,20 @@ class AgentEditViewModel(
                 ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
                 retrievalConfig = if (_useInheritedConfig.value) null else _retrievalConfig.value,
                 useInheritedConfig = _useInheritedConfig.value,
-                executionMode = _initialAgent.value?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
-                skills = _initialAgent.value?.skills ?: emptyList(),
-                createdAt = _initialAgent.value?.createdAt ?: System.currentTimeMillis()
+                executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
+                skills = initial?.skills ?: emptyList(),
+                createdAt = initial?.createdAt ?: System.currentTimeMillis()
             )
-            agentRepository.update(agent)
+            try {
+                agentRepository.update(agent)
+            } catch (error: Exception) {
+                _saveError.value = error.message ?: "Agent 保存失败"
+                return@launch
+            }
+            _saveError.value = null
             _initialAgent.value = agent
+            _initialDisplayName.value = _name.value
+            _initialDisplayDescription.value = _description.value
         }
     }
 
@@ -230,6 +274,14 @@ class AgentEditViewModel(
         }
     }
 
+    private data class TextEditState(
+        val initial: Agent?,
+        val name: String,
+        val description: String,
+        val baselineName: String,
+        val baselineDescription: String,
+    )
+
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
@@ -240,7 +292,7 @@ class AgentEditViewModel(
                         agentRepository = app.agentRepository,
                         ragConfigPersistence = RagConfigPersistence(
                             app.getSharedPreferences("rag_settings", 0)
-                        )
+                        ),
                     ) as T
                 }
             }

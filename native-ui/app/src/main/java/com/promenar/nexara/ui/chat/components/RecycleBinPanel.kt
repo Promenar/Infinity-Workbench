@@ -64,7 +64,9 @@ fun RecycleBinPanel(
             itemCount = recycledFiles.size,
             onRestore = {
                 scope.launch {
-                    recycledFiles.forEach { workspaceRepo.restoreFromRecycleBin(it.uuid) }
+                    workspaceRootUuid?.let { root ->
+                        recycledFiles.forEach { workspaceRepo.restoreFromRecycleBin(root, it.uuid) }
+                    }
                 }
             },
             onPermanentDelete = {
@@ -89,7 +91,7 @@ fun RecycleBinPanel(
                         file = file,
                         onRestore = {
                             scope.launch {
-                                workspaceRepo.restoreFromRecycleBin(file.uuid)
+                                workspaceRootUuid?.let { workspaceRepo.restoreFromRecycleBin(it, file.uuid) }
                             }
                         },
                         onPermanentDelete = {
@@ -120,7 +122,9 @@ fun RecycleBinPanel(
                 message = "永久删除「${target.name}」？此操作不可撤销。",
                 confirmText = "永久删除",
                 onConfirm = {
-                    scope.launch { workspaceRepo.permanentDelete(target.uuid) }
+                    workspaceRootUuid?.let { root ->
+                        scope.launch { workspaceRepo.permanentDelete(root, target.uuid) }
+                    }
                     showPermanentDeleteConfirm = null
                 },
                 onCancel = { showPermanentDeleteConfirm = null },

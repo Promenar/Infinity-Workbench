@@ -19,7 +19,7 @@ class FileDiffSkill(
             ?: return ToolResult("err", "缺少 uuid", "error")
         val basisHash = args["basisHash"] as? String
 
-        val result = fileOpRepo.diffFile(uuid, basisHash)
+        val result = fileOpRepo.diffFile(context.workspaceRootUuid, uuid, basisHash)
 
         return ToolResult(
             "diff_file_${System.currentTimeMillis()}",

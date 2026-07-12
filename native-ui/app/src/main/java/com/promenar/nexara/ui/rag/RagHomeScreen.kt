@@ -99,7 +99,7 @@ fun RagHomeScreen(
     onNavigateToFolder: (String, String) -> Unit = { _, _ -> },
     onNavigateToConfig: () -> Unit = {},
     onNavigateToGraph: () -> Unit = {},
-    onNavigateToDocEditor: (String) -> Unit = {}
+    onNavigateToDocEditor: (String, String) -> Unit = { _, _ -> }
 ) {
     val locale = LocalConfiguration.current.locales[0]
     val stats by viewModel.stats.collectAsState()
@@ -304,7 +304,12 @@ fun RagHomeScreen(
                             onViewKG = { _ -> onNavigateToGraph() },
                             onCopy = { viewModel.copyFile(it) },
                             indexingFileIds = viewModel.indexingDocIds.collectAsState().value,
-                            kgExtractionStates = kgExtractionStates
+                            kgExtractionStates = kgExtractionStates,
+                            onFileClick = { docId ->
+                                viewModel.workspaceRootUuid.value?.let { root ->
+                                    onNavigateToDocEditor(root, docId)
+                                }
+                            }
                         )
                     }
                 }

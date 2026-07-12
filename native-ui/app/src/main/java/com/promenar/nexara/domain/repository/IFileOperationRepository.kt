@@ -9,23 +9,8 @@ interface IFileOperationRepository {
         expectedHash: String
     ): WriteResult
 
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun writeFileAtomic(
-        uuid: String,
-        newContent: String,
-        sessionId: String,
-        expectedHash: String
-    ): WriteResult
-
     suspend fun readFileRange(
         workspaceRootUuid: String,
-        uuid: String,
-        startLine: Int? = null,
-        endLine: Int? = null
-    ): ReadResult
-
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun readFileRange(
         uuid: String,
         startLine: Int? = null,
         endLine: Int? = null
@@ -37,12 +22,6 @@ interface IFileOperationRepository {
         basisHash: String? = null
     ): DiffResult
 
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun diffFile(
-        uuid: String,
-        basisHash: String? = null
-    ): DiffResult
-
     suspend fun patchFile(
         workspaceRootUuid: String,
         uuid: String,
@@ -50,12 +29,6 @@ interface IFileOperationRepository {
         expectedHash: String
     ): PatchResult
 
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun patchFile(
-        uuid: String,
-        operations: List<PatchOperation>,
-        expectedHash: String
-    ): PatchResult
 }
 
 sealed class WriteResult {

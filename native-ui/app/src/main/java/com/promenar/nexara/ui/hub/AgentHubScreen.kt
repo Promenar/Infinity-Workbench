@@ -25,7 +25,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.R
+import com.promenar.nexara.data.agent.PresetAgentDisplay
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -41,6 +43,11 @@ fun AgentHubScreen(
     val viewModel: AgentHubViewModel = viewModel(factory = AgentHubViewModel.factory(context.applicationContext as android.app.Application))
     val agents by viewModel.agents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val displayAgents = agents.map { agent ->
+        val (title, subtitle) = resolveAgentDisplay(agent)
+        AgentDisplayItem(agent, title, subtitle)
+    }
+    val visibleAgents = filterAgentDisplays(displayAgents, searchQuery)
 
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -128,7 +135,8 @@ fun AgentHubScreen(
                     }
                 }
 
-                itemsIndexed(agents, key = { _, agent -> agent.id }) { _, agent ->
+                itemsIndexed(visibleAgents, key = { _, item -> item.agent.id }) { _, item ->
+                    val agent = item.agent
                     val parsedColor = try {
                         Color(agent.color.toColorInt())
                     } catch (_: Exception) {
@@ -139,8 +147,8 @@ fun AgentHubScreen(
 
                     AgentCardItem(
                         icon = iconVector,
-                        title = agent.name,
-                        subtitle = agent.description,
+                        title = item.title,
+                        subtitle = item.subtitle,
                         iconContainerColor = parsedColor,
                         isPinned = agent.isPinned,
                         onPin = { viewModel.togglePin(agent.id) },
@@ -391,7 +399,7 @@ private fun AddAgentDialog(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = model.ifBlank { "请选择模型..." },
+                                text = model.ifBlank { stringResource(R.string.hub_dialog_placeholder_select_model) },
                                 style = NexaraTypography.bodyMedium,
                                 color = if (model.isNotBlank()) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
                                 maxLines = 1,
@@ -452,6 +460,31 @@ private fun AddAgentDialog(
         textContentColor = NexaraColors.OnSurfaceVariant
     )
 }
+
+/**
+ * 显示叠加层解析：预置未定制 → 当前 Locale 资源；已定制/非预置 → DB 原文。
+ * 实时求值，跟随语言切换重组，不写 DB。
+ */
+@Composable
+private fun resolveAgentDisplay(
+    agent: Agent,
+): Pair<String, String> {
+    val fields = PresetAgentDisplay.resolve(agent)
+    @Composable
+    fun resolve(source: PresetAgentDisplay.TextSource): String = when (source) {
+        is PresetAgentDisplay.TextSource.Resource -> stringResource(source.res)
+        is PresetAgentDisplay.TextSource.Literal -> source.value
+    }
+    return resolve(fields.name) to resolve(fields.description)
+}
+
+internal data class AgentDisplayItem(val agent: Agent, val title: String, val subtitle: String)
+
+internal fun filterAgentDisplays(items: List<AgentDisplayItem>, query: String): List<AgentDisplayItem> =
+    if (query.isBlank()) items else items.filter {
+        it.title.contains(query, ignoreCase = true) ||
+            it.subtitle.contains(query, ignoreCase = true)
+    }
 
 private fun agentIconVector(icon: String): ImageVector = when (icon) {
     "💻" -> Icons.Rounded.Code

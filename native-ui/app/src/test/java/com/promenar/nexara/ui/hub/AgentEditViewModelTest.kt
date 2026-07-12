@@ -220,4 +220,137 @@ class AgentEditViewModelTest {
             assertThat(awaitItem()).isTrue()
         }
     }
+
+    @Test
+    fun `saveAgent persists customized text flag with text in one repository update`() = runTest {
+        val agent = Agent(id = "coder", name = "Coder", executionMode = ExecutionMode.SEMI)
+        every { repo.observeById("coder") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("coder")
+        vm.setName("My Coder")
+        vm.saveAgent("coder")
+
+        coVerify { repo.update(match { it.name == "My Coder" && it.nameCustomized }) }
+    }
+
+    @Test
+    fun `saveAgent persists literal edits for non preset agents`() = runTest {
+        val agent = Agent(id = "user-1", name = "Custom", executionMode = ExecutionMode.SEMI)
+        every { repo.observeById("user-1") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("user-1")
+        vm.setName("Renamed")
+        vm.saveAgent("user-1")
+
+        coVerify { repo.update(match { it.name == "Renamed" }) }
+    }
+
+    @Test
+    fun `uncustomized preset loads current locale text and model-only save does not freeze it`() = runTest {
+        val agent = Agent(
+            id = "coder",
+            name = "Coding Expert",
+            description = "Stable fallback",
+            modelId = "provider::old",
+            executionMode = ExecutionMode.SEMI,
+        )
+        every { repo.observeById("coder") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+
+        vm.loadAgent("coder", "编程专家", "本地化描述")
+        vm.setModel("provider::new")
+        vm.saveAgent("coder")
+
+        assertThat(vm.name.value).isEqualTo("编程专家")
+        assertThat(vm.description.value).isEqualTo("本地化描述")
+        coVerify {
+            repo.update(match {
+                it.modelId == "provider::new" &&
+                    it.name == "Coding Expert" &&
+                    it.description == "Stable fallback" &&
+                    !it.nameCustomized && !it.descriptionCustomized
+            })
+        }
+    }
+
+    @Test
+    fun `localized preset edit baseline has no changes before user input`() = runTest {
+        val agent = Agent(
+            id = "coder",
+            name = "Coding Expert",
+            description = "Stable fallback",
+            executionMode = ExecutionMode.SEMI,
+        )
+        every { repo.observeById("coder") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+
+        vm.loadAgent("coder", "编程专家", "本地化描述")
+
+        vm.hasChanges.test { assertThat(awaitItem()).isFalse() }
+    }
+
+    @Test
+    fun `changing only preset name freezes only name and preserves localized description`() = runTest {
+        val agent = Agent(
+            id = "coder",
+            name = "Coding Expert",
+            description = "Stable fallback",
+            executionMode = ExecutionMode.SEMI,
+        )
+        every { repo.observeById("coder") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+
+        vm.loadAgent("coder", "编程专家", "本地化描述")
+        vm.setName("我的编程助手")
+        vm.saveAgent("coder")
+
+        coVerify {
+            repo.update(match {
+                it.name == "我的编程助手" && it.description == "Stable fallback" &&
+                    it.nameCustomized && !it.descriptionCustomized
+            })
+        }
+    }
+
+    @Test
+    fun `changing only preset description freezes only description and preserves localized name`() = runTest {
+        val agent = Agent(
+            id = "coder",
+            name = "Coding Expert",
+            description = "Stable fallback",
+            executionMode = ExecutionMode.SEMI,
+        )
+        every { repo.observeById("coder") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+
+        vm.loadAgent("coder", "编程专家", "本地化描述")
+        vm.setDescription("我的专属描述")
+        vm.saveAgent("coder")
+
+        coVerify {
+            repo.update(match {
+                it.name == "Coding Expert" && it.description == "我的专属描述" &&
+                    !it.nameCustomized && it.descriptionCustomized
+            })
+        }
+    }
+
+    @Test
+    fun `room update failure leaves text and customization flags uncommitted`() = runTest {
+        val agent = Agent(id = "coder", name = "Coding Expert", executionMode = ExecutionMode.SEMI)
+        every { repo.observeById("coder") } returns flowOf(agent)
+        coEvery { repo.update(any()) } throws IllegalStateException("room failed")
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+
+        vm.loadAgent("coder", "编程专家", "本地化描述")
+        vm.setName("用户文本")
+        vm.saveAgent("coder")
+
+        assertThat(vm.saveError.value).contains("room failed")
+        coVerify(exactly = 1) {
+            repo.update(match { it.name == "用户文本" && it.nameCustomized })
+        }
+        assertThat(agent.name).isEqualTo("Coding Expert")
+        assertThat(agent.nameCustomized).isFalse()
+    }
 }

@@ -11,6 +11,8 @@ class AgentMapperTest {
         id: String = "test-id",
         name: String = "Test Agent",
         description: String = "desc",
+        nameCustomized: Boolean = true,
+        descriptionCustomized: Boolean = true,
         systemPrompt: String = "prompt",
         model: String = "gpt-4",
         icon: String = "✨",
@@ -28,6 +30,8 @@ class AgentMapperTest {
         id = id,
         name = name,
         description = description,
+        nameCustomized = nameCustomized,
+        descriptionCustomized = descriptionCustomized,
         systemPrompt = systemPrompt,
         model = model,
         icon = icon,
@@ -50,6 +54,8 @@ class AgentMapperTest {
         assertThat(agent.id).isEqualTo("test-id")
         assertThat(agent.name).isEqualTo("Test Agent")
         assertThat(agent.description).isEqualTo("desc")
+        assertThat(agent.nameCustomized).isTrue()
+        assertThat(agent.descriptionCustomized).isTrue()
         assertThat(agent.systemPrompt).isEqualTo("prompt")
         assertThat(agent.modelId).isEqualTo("gpt-4")
         assertThat(agent.icon).isEqualTo("✨")
@@ -104,6 +110,8 @@ class AgentMapperTest {
             id = "e1",
             name = "Entity Test",
             description = "ed",
+            nameCustomized = true,
+            descriptionCustomized = true,
             systemPrompt = "sp",
             modelId = "m1",
             icon = "🧪",
@@ -117,6 +125,8 @@ class AgentMapperTest {
         val entity = AgentMapper.toEntity(agent)
         assertThat(entity.id).isEqualTo("e1")
         assertThat(entity.name).isEqualTo("Entity Test")
+        assertThat(entity.nameCustomized).isTrue()
+        assertThat(entity.descriptionCustomized).isTrue()
         assertThat(entity.model).isEqualTo("m1")
         assertThat(entity.isPinned).isEqualTo(1)
         assertThat(entity.temperature).isEqualTo(0.5)
@@ -136,6 +146,8 @@ class AgentMapperTest {
         val entity = createEntity(
             id = "roundtrip",
             name = "RT",
+            nameCustomized = true,
+            descriptionCustomized = false,
             isPinned = 1,
             temperature = 0.5,
             topP = 0.8,
@@ -146,6 +158,8 @@ class AgentMapperTest {
         val back = AgentMapper.toEntity(domain)
         assertThat(back.id).isEqualTo(entity.id)
         assertThat(back.name).isEqualTo(entity.name)
+        assertThat(back.nameCustomized).isEqualTo(entity.nameCustomized)
+        assertThat(back.descriptionCustomized).isEqualTo(entity.descriptionCustomized)
         assertThat(back.isPinned).isEqualTo(entity.isPinned)
         assertThat(back.temperature).isEqualTo(entity.temperature)
         assertThat(back.top_p).isEqualTo(entity.top_p)

@@ -54,8 +54,8 @@ class RagViewModelTest {
         every { app.filesDir } returns java.io.File(System.getProperty("java.io.tmpdir"))
 
         coEvery { kgRepository.getNodeCount() } returns 0
-        every { workspaceRepository.observeRoots() } returns flowOf(emptyList())
-        every { workspaceRepository.observeChildren(any()) } returns flowOf(emptyList())
+        coEvery { workspaceRepository.ensureSessionRoot(any()) } returns rootEntry()
+        every { workspaceRepository.observeChildren(any(), any()) } returns flowOf(emptyList())
         coEvery { vectorRepository.getCount() } returns 0
         coEvery { vectorRepository.countByType() } returns emptyList()
         coEvery { vectorRepository.countBySession(any()) } returns emptyList()
@@ -107,7 +107,7 @@ class RagViewModelTest {
     }
 
     @Test
-    fun `folders comes from workspaceRepository observeRoots`() = runTest {
+    fun `folders comes from root scoped children`() = runTest {
         val dirs = listOf(
             FileEntry(
                 uuid = "f1", parentUuid = null, name = "Folder 1", hash = "",
@@ -120,7 +120,7 @@ class RagViewModelTest {
                 isDirectory = true, createdAt = 200L, updatedAt = 200L
             )
         )
-        every { workspaceRepository.observeRoots() } returns flowOf(dirs)
+        every { workspaceRepository.observeChildren("rag-root", "rag-root") } returns flowOf(dirs)
 
         val vm = createViewModel()
 
@@ -129,7 +129,7 @@ class RagViewModelTest {
     }
 
     @Test
-    fun `documents comes from workspaceRepository observeRoots non-directory entries`() = runTest {
+    fun `documents comes from root scoped children non-directory entries`() = runTest {
         val entries = listOf(
             FileEntry(
                 uuid = "d1", parentUuid = null, name = "Doc 1.txt", hash = "abc",
@@ -137,13 +137,26 @@ class RagViewModelTest {
                 isDirectory = false, createdAt = 100L, updatedAt = 100L
             )
         )
-        every { workspaceRepository.observeRoots() } returns flowOf(entries)
+        every { workspaceRepository.observeChildren("rag-root", "rag-root") } returns flowOf(entries)
 
         val vm = createViewModel()
 
         assertThat(vm.documents.value).hasSize(1)
         assertThat(vm.documents.value[0].id).isEqualTo("d1")
     }
+
+    private fun rootEntry() = FileEntry(
+        uuid = "rag-root",
+        workspaceRootUuid = "rag-root",
+        parentUuid = null,
+        name = "root",
+        hash = "",
+        isDirectory = true,
+        physicalRootPath = "/tmp/rag-root",
+        materializedPath = "/",
+        createdAt = 1,
+        updatedAt = 1,
+    )
 
     @Test
     fun `lastQueueError is initially null`() = runTest {

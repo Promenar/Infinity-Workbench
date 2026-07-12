@@ -74,8 +74,8 @@ fun MainTabScaffold(
                     },
                     onNavigateToConfig = { onNavigateToSecondary("rag_global_config") },
                     onNavigateToGraph = { onNavigateToSecondary("knowledge_graph") },
-                    onNavigateToDocEditor = { docId ->
-                        onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.docEditor(docId))
+                    onNavigateToDocEditor = { rootUuid, docId ->
+                        onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.docEditor(rootUuid, docId))
                     }
                 )
                 AppTab.SETTINGS -> com.promenar.nexara.ui.hub.UserSettingsHomeScreen(onNavigateToSecondary = onNavigateToSecondary)

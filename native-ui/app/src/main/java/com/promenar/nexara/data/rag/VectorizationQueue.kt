@@ -30,6 +30,7 @@ class VectorizationQueue(
     }
 
     suspend fun enqueueDocument(
+        workspaceRootUuid: String,
         docId: String,
         docTitle: String,
         content: String,
@@ -41,6 +42,7 @@ class VectorizationQueue(
             type = "document",
             docId = docId,
             docTitle = docTitle,
+            workspaceRootUuid = workspaceRootUuid,
             status = "pending",
             kgStrategy = kgStrategy,
             skipVectorization = skipVectorization,
@@ -248,7 +250,11 @@ class VectorizationQueue(
             task.status = "completed"
             task.progress = 100.0
             notifyStateChange()
-            updateFileEntryVectorizedAt(docId, System.currentTimeMillis())
+            updateFileEntryVectorizedAt(
+                task.workspaceRootUuid ?: throw SecurityException("Document task missing workspaceRootUuid"),
+                docId,
+                System.currentTimeMillis(),
+            )
             return
         }
 
@@ -283,7 +289,11 @@ class VectorizationQueue(
         task.subStatus = "正在更新文件索引状态..."
         notifyStateChange()
 
-        updateFileEntryVectorizedAt(docId, System.currentTimeMillis())
+        updateFileEntryVectorizedAt(
+            task.workspaceRootUuid ?: throw SecurityException("Document task missing workspaceRootUuid"),
+            docId,
+            System.currentTimeMillis(),
+        )
 
         // 可选：知识图谱提取
         if (graphExtractor != null && task.kgStrategy != null) {
@@ -303,10 +313,10 @@ class VectorizationQueue(
     }
 
     /** 更新 FileEntry 的 vectorizedAt 时间戳 */
-    private suspend fun updateFileEntryVectorizedAt(docId: String, timestamp: Long) {
+    private suspend fun updateFileEntryVectorizedAt(workspaceRootUuid: String, docId: String, timestamp: Long) {
         try {
             val dao = fileEntryDao ?: return
-            val entry = dao.getByUuid(docId) ?: return
+            val entry = dao.getByUuid(workspaceRootUuid, docId) ?: return
             dao.update(entry.copy(vectorizedAt = timestamp, updatedAt = timestamp))
         } catch (_: Exception) { }
     }
@@ -341,7 +351,7 @@ class VectorizationQueue(
                     status = task.status,
                     docId = task.docId,
                     docTitle = task.docTitle,
-                    sessionId = task.sessionId,
+                    sessionId = if (task.type == "document") task.workspaceRootUuid else task.sessionId,
                     userContent = task.userContent,
                     aiContent = task.aiContent,
                     userMessageId = task.userMessageId,
@@ -388,6 +398,7 @@ class VectorizationQueue(
                     type = entity.type,
                     docId = entity.docId,
                     docTitle = entity.docTitle,
+                    workspaceRootUuid = if (entity.type == "document") entity.sessionId else null,
                     sessionId = entity.sessionId,
                     userContent = entity.userContent,
                     aiContent = entity.aiContent,

@@ -77,6 +77,7 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.flow.flowOf
 
 @Composable
 fun FilesPanel(
@@ -97,7 +98,9 @@ fun FilesPanel(
     externalSelectedIds: MutableList<String>? = null,
     onFileClick: (String) -> Unit = {}
 ) {
-    val roots by workspaceRepo.observeRoots().collectAsState(initial = emptyList())
+    val rootsFlow = workspaceRootUuid?.let { workspaceRepo.observeChildren(it, it) }
+        ?: flowOf(emptyList())
+    val roots by rootsFlow.collectAsState(initial = emptyList())
 
     val filteredRoots = if (searchQuery.isBlank()) roots else {
         roots.filter { it.name.contains(searchQuery, ignoreCase = true) }
@@ -110,7 +113,7 @@ fun FilesPanel(
 
     val content = @Composable { root: FileEntry ->
         FileTreeNode(
-            file = root, depth = 0, workspaceRepo = workspaceRepo,
+            file = root, depth = 0, workspaceRootUuid = workspaceRootUuid!!, workspaceRepo = workspaceRepo,
             searchQuery = searchQuery,
             onReindex = onReindex, onDelete = { id ->
                 onDelete?.invoke(id); selectedIds.remove(id)
@@ -210,6 +213,7 @@ private fun BatchActionBar(
 private fun FileTreeNode(
     file: FileEntry,
     depth: Int,
+    workspaceRootUuid: String,
     workspaceRepo: IWorkspaceRepository,
     searchQuery: String = "",
     onReindex: ((String) -> Unit)? = null,
@@ -356,6 +360,7 @@ private fun FileTreeNode(
         MoveToSheet(
             folders = emptyList(), // 由父级通过 workspaceRepo.observeRoots 查询
             workspaceRepo = workspaceRepo,
+            workspaceRootUuid = workspaceRootUuid,
             onDismiss = { showMoveSheet = false },
             onSelect = { targetUuid ->
                 showMoveSheet = false
@@ -370,7 +375,7 @@ private fun FileTreeNode(
             enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(200)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
             exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(150)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
         ) {
-            val children by workspaceRepo.observeChildren(file.uuid)
+            val children by workspaceRepo.observeChildren(workspaceRootUuid, file.uuid)
                 .collectAsState(initial = emptyList())
 
             val filteredChildren = if (searchQuery.isBlank()) children else {
@@ -380,7 +385,7 @@ private fun FileTreeNode(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 filteredChildren.forEach { child ->
                     FileTreeNode(
-                        file = child, depth = depth + 1, workspaceRepo = workspaceRepo,
+                        file = child, depth = depth + 1, workspaceRootUuid = workspaceRootUuid, workspaceRepo = workspaceRepo,
                         searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
                         onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onViewKG = onViewKG, onCopy = onCopy,
                         indexingFileIds = indexingFileIds,
@@ -490,10 +495,12 @@ private fun RenameDialog(
 private fun MoveToSheet(
     folders: List<FileEntry>,
     workspaceRepo: IWorkspaceRepository,
+    workspaceRootUuid: String,
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit
 ) {
-    val dirs by workspaceRepo.observeRoots().collectAsState(initial = emptyList())
+    val dirs by workspaceRepo.observeChildren(workspaceRootUuid, workspaceRootUuid)
+        .collectAsState(initial = emptyList())
     val directoryList = folders.ifEmpty { dirs.filter { it.isDirectory } }
 
     ModalBottomSheet(
@@ -509,7 +516,7 @@ private fun MoveToSheet(
             }
             // 根目录选项
             Row(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(NexaraColors.SurfaceContainer).clickable { onSelect("") }.padding(14.dp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(NexaraColors.SurfaceContainer).clickable { onSelect(workspaceRootUuid) }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Rounded.FolderOpen, null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))

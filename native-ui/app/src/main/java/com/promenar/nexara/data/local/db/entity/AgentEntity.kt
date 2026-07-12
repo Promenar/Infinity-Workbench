@@ -12,6 +12,10 @@ data class AgentEntity(
     val id: String,
     val name: String,
     val description: String = "",
+    @ColumnInfo(name = "name_customized")
+    val nameCustomized: Boolean = false,
+    @ColumnInfo(name = "description_customized")
+    val descriptionCustomized: Boolean = false,
     @ColumnInfo(name = "system_prompt")
     val systemPrompt: String = "",
     val model: String = "",

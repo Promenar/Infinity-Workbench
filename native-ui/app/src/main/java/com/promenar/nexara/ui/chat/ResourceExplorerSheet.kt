@@ -20,6 +20,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,8 +49,10 @@ fun ResourceExplorerSheet(
         )
     )
 ) {
+    LaunchedEffect(sessionId) { viewModel.loadSession(sessionId) }
     val searchQuery by viewModel.searchQuery.collectAsState()
     val recycleBinCount by viewModel.recycleBinCount.collectAsState()
+    val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsState()
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
 
@@ -130,12 +133,12 @@ fun ResourceExplorerSheet(
             ) { page ->
                 when (page) {
                     0 -> FilesPanel(
-                        workspaceRootUuid = viewModel.workspaceRootUuid,
+                        workspaceRootUuid = workspaceRootUuid,
                         workspaceRepo = viewModel.workspaceRepo,
                         searchQuery = searchQuery
                     )
                     1 -> RecycleBinPanel(
-                        workspaceRootUuid = viewModel.workspaceRootUuid,
+                        workspaceRootUuid = workspaceRootUuid,
                         workspaceRepo = viewModel.workspaceRepo
                     )
                 }

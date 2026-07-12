@@ -64,7 +64,7 @@ object NavDestinations {
     const val AGENT_ADVANCED_RETRIEVAL = "agent_advanced_retrieval/{agentId}"
     const val SESSION_SETTINGS_SHEET = "session_settings_sheet/{sessionId}"
     const val WORKSPACE_SHEET = "workspace_sheet/{sessionId}"
-    const val DOC_EDITOR = "doc_editor/{docId}"
+    const val DOC_EDITOR = "doc_editor/{workspaceRootUuid}/{docId}"
     const val KNOWLEDGE_GRAPH = "knowledge_graph"
     const val RAG_ADVANCED = "rag_advanced"
     const val RAG_ADVANCED_KG = "rag_advanced_kg"
@@ -88,7 +88,7 @@ object NavDestinations {
     fun providerForm(providerId: String? = null) =
         if (providerId != null) "provider_form?providerId=$providerId" else "provider_form"
     fun providerModels(providerId: String) = "provider_models/$providerId"
-    fun docEditor(docId: String) = "doc_editor/$docId"
+    fun docEditor(workspaceRootUuid: String, docId: String) = "doc_editor/$workspaceRootUuid/$docId"
     fun ragFolder(folderId: String, folderName: String) =
         "rag_folder/$folderId/$folderName"
 }
@@ -271,10 +271,15 @@ fun NexaraNavGraph(
 
         composable(
             route = NavDestinations.DOC_EDITOR,
-            arguments = listOf(navArgument("docId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("workspaceRootUuid") { type = NavType.StringType },
+                navArgument("docId") { type = NavType.StringType },
+            )
         ) { backStackEntry ->
+            val workspaceRootUuid = backStackEntry.arguments?.getString("workspaceRootUuid") ?: ""
             val docId = backStackEntry.arguments?.getString("docId") ?: ""
             DocEditorScreen(
+                workspaceRootUuid = workspaceRootUuid,
                 docId = docId,
                 onNavigateBack = { navController.popBackStack() }
             )

@@ -752,10 +752,27 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         ).also { _vectorizationQueue = it }
 
     val defaultAgents: List<com.promenar.nexara.domain.model.Agent> by lazy {
+        // DB 只保存与 Locale 无关的稳定 fallback；显示与编辑按 Activity 当前 Locale 叠加。
+        val preset = com.promenar.nexara.data.agent.PresetAgents
         listOf(
-            com.promenar.nexara.domain.model.Agent(id = "default", name = "Nexara 助手", description = "通用 AI 助手，支持流式对话与知识检索", icon = "✨", color = "#C0C1FF", isPinned = true),
-            com.promenar.nexara.domain.model.Agent(id = "coder", name = "编程专家", description = "精通全栈开发与架构设计", icon = "💻", color = "#6366F1"),
-            com.promenar.nexara.domain.model.Agent(id = "writer", name = "创意写作", description = "文学创作、翻译与润色", icon = "📝", color = "#10B981")
+            com.promenar.nexara.domain.model.Agent(
+                id = "default",
+                name = preset.fallbackName("default"),
+                description = preset.fallbackDescription("default"),
+                icon = "✨", color = "#C0C1FF", isPinned = true
+            ),
+            com.promenar.nexara.domain.model.Agent(
+                id = "coder",
+                name = preset.fallbackName("coder"),
+                description = preset.fallbackDescription("coder"),
+                icon = "💻", color = "#6366F1"
+            ),
+            com.promenar.nexara.domain.model.Agent(
+                id = "writer",
+                name = preset.fallbackName("writer"),
+                description = preset.fallbackDescription("writer"),
+                icon = "📝", color = "#10B981"
+            )
         )
     }
 

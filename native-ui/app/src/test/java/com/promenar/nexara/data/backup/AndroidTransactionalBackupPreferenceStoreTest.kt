@@ -34,7 +34,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `snapshot preserves all SharedPreferences value types across six namespaces and filters denied keys`() = runBlocking {
+    fun `snapshot preserves all SharedPreferences value types across six namespaces and filters denied keys`(): Unit = runBlocking {
         context.getSharedPreferences("nexara_provider", 0).edit()
             .putString("model", "m1")
             .putString("api_key", "must-not-leak")
@@ -76,7 +76,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `commit removes absent allowed keys preserves denied keys and is idempotent after recreation`() = runBlocking {
+    fun `commit removes absent allowed keys preserves denied keys and is idempotent after recreation`(): Unit = runBlocking {
         val settings = context.getSharedPreferences("nexara_settings", 0)
         settings.edit()
             .putString("language", "en")
@@ -114,7 +114,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `partial commit can be retried after recreation`() = runBlocking {
+    fun `partial commit can be retried after recreation`(): Unit = runBlocking {
         seedBeforeState()
         val initial = store()
         val before = initial.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
@@ -134,7 +134,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `partial commit can be rolled back after recreation`() = runBlocking {
+    fun `partial commit can be rolled back after recreation`(): Unit = runBlocking {
         seedBeforeState()
         val initial = store()
         val before = initial.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
@@ -153,7 +153,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `finalized receipt survives recreation and distinguishes completed direction from missing state`() = runBlocking {
+    fun `finalized receipt survives recreation and distinguishes completed direction from missing state`(): Unit = runBlocking {
         seedBeforeState()
         val first = store()
         val before = first.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
@@ -170,7 +170,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `preflight validates typed values and provider ids before creating ledger`() = runBlocking {
+    fun `preflight validates typed values and provider ids before creating ledger`(): Unit = runBlocking {
         val adapter = store()
         val before = BackupPreferenceSnapshot(emptyList(), setOf("default"))
         val malformed = BackupPreferenceSnapshot(
@@ -184,7 +184,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `preflight rejects ledger capacity before writing ledger`() = runBlocking {
+    fun `preflight rejects ledger capacity before writing ledger`(): Unit = runBlocking {
         val snapshot = BackupPreferenceSnapshot(emptyList(), setOf("default"))
 
         assertFails { store(maxLedgerBytes = 32).preflightRestore("tx-capacity", snapshot, snapshot) }
@@ -193,7 +193,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
-    fun `prepare is idempotent only for identical canonical snapshots and validates provider ids`() = runBlocking {
+    fun `prepare is idempotent only for identical canonical snapshots and validates provider ids`(): Unit = runBlocking {
         seedBeforeState()
         val adapter = store()
         val before = adapter.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)

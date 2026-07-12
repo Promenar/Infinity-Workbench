@@ -237,6 +237,9 @@ internal class AndroidTransactionalBackupPreferenceStore(
                 else -> PreferenceValueType.STRING
             }
         }
+        if (namespace == "settings" && key.startsWith("extra_provider_") && key.endsWith("_enabled")) {
+            return PreferenceValueType.BOOLEAN
+        }
         if (namespace == "provider" && key.startsWith("provider_") && key.endsWith("_enabled")) {
             return PreferenceValueType.BOOLEAN
         }

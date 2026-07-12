@@ -22,4 +22,5 @@ interface SkillExecutionContext {
     val sessionId: String
     val agentId: String
     val workspacePath: String?
+    val workspaceRootUuid: String
 }

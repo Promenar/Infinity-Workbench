@@ -16,6 +16,7 @@ class CurrentTimeSkillTest {
         override val sessionId = "test-session"
         override val agentId = "test-agent"
         override val workspacePath = null
+        override val workspaceRootUuid = "root-1"
     }
 
     @Test

@@ -12,6 +12,7 @@ class WebFetchSkillTest {
         override val sessionId: String = "s1"
         override val agentId: String = "a1"
         override val workspacePath: String? = null
+        override val workspaceRootUuid: String = "root-1"
     }
 
     @Test

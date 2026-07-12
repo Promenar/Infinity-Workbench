@@ -13,6 +13,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -152,21 +153,64 @@ class AgentHubViewModelTest {
     }
 
     @Test
-    fun `agents filters by search query`() = runTest {
-        val agents = listOf(
-            Agent(id = "a1", name = "Alpha", description = "First", executionMode = ExecutionMode.SEMI),
-            Agent(id = "a2", name = "Beta", description = "Second", executionMode = ExecutionMode.SEMI)
+    fun `localized display text is the same corpus used by search`() = runTest {
+        val coder = Agent(
+            id = "coder",
+            name = "稳定 fallback",
+            description = "稳定描述",
+            executionMode = ExecutionMode.SEMI,
+        )
+        val displayed = listOf(AgentDisplayItem(coder, "Coding Expert", "Software architecture specialist"))
+
+        assertThat(filterAgentDisplays(displayed, "Coding Expert").map { it.agent.id })
+            .containsExactly("coder")
+        assertThat(filterAgentDisplays(displayed, "稳定 fallback")).isEmpty()
+    }
+
+    @Test
+    fun `repository emissions continuously refresh cards after returning from edit`() = runTest {
+        val stream = MutableStateFlow(
+            listOf(Agent(id = "coder", name = "Old", executionMode = ExecutionMode.SEMI))
         )
         val repo: AgentRepository = mockk(relaxed = true)
-        every { repo.observeAll() } returns flowOf(agents)
-
+        every { repo.observeAll() } returns stream
         val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
-        vm.updateSearchQuery("alpha")
 
         vm.agents.test {
-            val result = awaitItem()
-            assertThat(result).hasSize(1)
-            assertThat(result[0].name).isEqualTo("Alpha")
+            var initial = awaitItem()
+            if (initial.isEmpty()) initial = awaitItem()
+            assertThat(initial.single().name).isEqualTo("Old")
+
+            stream.value = listOf(Agent(id = "coder", name = "Saved", executionMode = ExecutionMode.SEMI))
+
+            assertThat(awaitItem().single().name).isEqualTo("Saved")
+        }
+    }
+
+    @Test
+    fun `room emission publishes text and customization marker atomically`() = runTest {
+        val stream = MutableStateFlow(
+            listOf(Agent(id = "coder", name = "Fallback", executionMode = ExecutionMode.SEMI))
+        )
+        val repo: AgentRepository = mockk(relaxed = true)
+        every { repo.observeAll() } returns stream
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
+
+        vm.agents.test {
+            var initial = awaitItem()
+            if (initial.isEmpty()) initial = awaitItem()
+            stream.value = listOf(
+                Agent(
+                    id = "coder",
+                    name = "User Name",
+                    nameCustomized = true,
+                    executionMode = ExecutionMode.SEMI,
+                )
+            )
+
+            val saved = awaitItem().single()
+            assertThat(saved.name).isEqualTo("User Name")
+            assertThat(saved.nameCustomized).isTrue()
         }
     }
 }

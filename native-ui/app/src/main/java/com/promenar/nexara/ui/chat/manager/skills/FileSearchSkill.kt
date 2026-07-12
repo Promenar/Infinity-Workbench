@@ -21,12 +21,12 @@ class FileSearchSkill(
         val mode = args["mode"] as? String ?: "name"
 
         return try {
-            val roots = workspaceRepo.observeRoots().firstOrNull()
+            val roots = workspaceRepo.observeChildren(context.workspaceRootUuid, context.workspaceRootUuid).firstOrNull()
                 ?: return ToolResult("search_files_${System.currentTimeMillis()}", "未找到工作区")
 
             val results = mutableListOf<String>()
             for (root in roots) {
-                searchTree(workspaceRepo, root.uuid, query, mode, results, "")
+                searchTree(workspaceRepo, context.workspaceRootUuid, root.uuid, query, mode, results, "")
             }
 
             if (results.isEmpty()) {
@@ -44,13 +44,14 @@ class FileSearchSkill(
 
     private suspend fun searchTree(
         repo: IWorkspaceRepository,
+        workspaceRootUuid: String,
         parentUuid: String,
         query: String,
         mode: String,
         results: MutableList<String>,
         prefix: String
     ) {
-        val children = repo.observeChildren(parentUuid).firstOrNull() ?: return
+        val children = repo.observeChildren(workspaceRootUuid, parentUuid).firstOrNull() ?: return
         for (child in children) {
             val path = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
             if (mode == "name") {
@@ -59,7 +60,7 @@ class FileSearchSkill(
                 }
             }
             if (child.isDirectory) {
-                searchTree(repo, child.uuid, query, mode, results, path)
+                searchTree(repo, workspaceRootUuid, child.uuid, query, mode, results, path)
             }
         }
     }

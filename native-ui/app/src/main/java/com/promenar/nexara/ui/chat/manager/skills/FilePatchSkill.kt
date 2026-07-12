@@ -46,7 +46,7 @@ class FilePatchSkill(
             return ToolResult("err", "operations 不能为空", "error")
         }
 
-        return when (val result = fileOpRepo.patchFile(uuid, operations, expectedHash)) {
+        return when (val result = fileOpRepo.patchFile(context.workspaceRootUuid, uuid, operations, expectedHash)) {
             is PatchResult.Success -> ToolResult(
                 "patch_file_${System.currentTimeMillis()}",
                 "补丁应用成功。新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"

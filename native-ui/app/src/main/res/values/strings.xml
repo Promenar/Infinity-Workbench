@@ -114,6 +114,15 @@
     <string name="hub_dialog_label_prompt">System Prompt</string>
     <string name="hub_action_unpin">Unpin</string>
 
+    <!-- Preset agents (localized display; DB stores seed text, overlay resolves to these) -->
+    <string name="preset_agent_default_name">Nexara Assistant</string>
+    <string name="preset_agent_default_desc">General AI assistant with streaming chat and knowledge retrieval</string>
+    <string name="preset_agent_coder_name">Coding Expert</string>
+    <string name="preset_agent_coder_desc">Full-stack development and architecture design</string>
+    <string name="preset_agent_writer_name">Creative Writing</string>
+    <string name="preset_agent_writer_desc">Literary creation, translation and polishing</string>
+    <string name="hub_dialog_placeholder_select_model">Select a model…</string>
+
     <!-- Sessions -->
     <string name="sessions_search_placeholder">Search sessions…</string>
     <string name="sessions_empty_title">No Conversations Yet</string>
@@ -134,6 +143,8 @@
     <string name="agent_edit_placeholder_desc">Describe this agent…</string>
     <string name="agent_edit_section_appearance">Appearance</string>
     <string name="agent_edit_label_icon">Select Icon</string>
+    <string name="agent_edit_icon_toggle_collapse">Collapse</string>
+    <string name="agent_edit_icon_toggle_expand">View all</string>
     <string name="agent_edit_icon_custom">Custom</string>
     <string name="agent_edit_icon_upload">Upload Image</string>
     <string name="agent_edit_section_personality">Personality</string>

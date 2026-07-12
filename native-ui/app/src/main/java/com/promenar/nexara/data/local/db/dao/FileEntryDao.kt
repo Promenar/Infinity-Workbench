@@ -22,38 +22,28 @@ interface FileEntryDao {
     @Update
     suspend fun update(entry: FileEntry)
 
+    @Update
+    suspend fun updateAll(entries: List<FileEntry>)
+
     @Delete
     suspend fun delete(entry: FileEntry)
 
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
     suspend fun getByUuid(workspaceRootUuid: String, uuid: String): FileEntry?
 
-    @Deprecated("必须显式传入 workspaceRootUuid")
-    @Query("SELECT * FROM workspace_files WHERE uuid = :uuid AND 0")
-    suspend fun getByUuid(uuid: String): FileEntry?
-
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
     fun observeByUuid(workspaceRootUuid: String, uuid: String): Flow<FileEntry?>
-
-    @Deprecated("必须显式传入 workspaceRootUuid")
-    @Query("SELECT * FROM workspace_files WHERE uuid = :uuid AND 0")
-    fun observeByUuid(uuid: String): Flow<FileEntry?>
 
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND parent_uuid = :parentUuid ORDER BY is_directory DESC, name ASC")
     fun observeChildren(workspaceRootUuid: String, parentUuid: String): Flow<List<FileEntry>>
 
-    @Deprecated("必须显式传入 workspaceRootUuid")
-    @Query("SELECT * FROM workspace_files WHERE parent_uuid = :parentUuid AND 0")
-    fun observeChildren(parentUuid: String): Flow<List<FileEntry>>
-
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :workspaceRootUuid AND parent_uuid IS NULL AND in_recycle_bin = 0")
     fun observeRoots(workspaceRootUuid: String): Flow<List<FileEntry>>
 
-    @Deprecated("必须显式传入 workspaceRootUuid")
-    @Query("SELECT * FROM workspace_files WHERE 0")
-    fun observeRoots(): Flow<List<FileEntry>>
+    @Query("SELECT * FROM workspace_files WHERE uuid = workspace_root_uuid AND workspace_root_uuid != '' AND parent_uuid IS NULL")
+    suspend fun getAllWorkspaceRootsForMaintenance(): List<FileEntry>
 
-    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND in_recycle_bin = 1 ORDER BY recycled_at DESC")
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND in_recycle_bin = 1 AND materialized_path != '/.recycle_bin' ORDER BY recycled_at DESC")
     fun observeRecycleBin(workspaceRootUuid: String): Flow<List<FileEntry>>
 
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND materialized_path = :path LIMIT 1")
@@ -65,20 +55,24 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND name LIKE '%' || :query || '%' AND in_recycle_bin = 0")
     fun searchByName(workspaceRootUuid: String, query: String): Flow<List<FileEntry>>
 
-    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND materialized_path LIKE :prefix || '%' AND in_recycle_bin = :inRecycleBin")
+    @Query("""
+        SELECT * FROM workspace_files
+        WHERE workspace_root_uuid = :workspaceRootUuid
+          AND in_recycle_bin = :inRecycleBin
+          AND (
+            (:prefix = '/' AND substr(materialized_path, 1, 1) = '/')
+            OR materialized_path = :prefix
+            OR substr(materialized_path, 1, length(:prefix) + 1) = :prefix || '/'
+          )
+    """)
     suspend fun getSubtree(workspaceRootUuid: String, prefix: String, inRecycleBin: Boolean): List<FileEntry>
-
-    @Deprecated("必须显式传入 workspaceRootUuid")
-    @Query("SELECT * FROM workspace_files WHERE materialized_path = :prefix AND 0")
-    suspend fun getSubtree(prefix: String): List<FileEntry>
 
     @Transaction
     @Query("DELETE FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
     suspend fun deleteByUuid(workspaceRootUuid: String, uuid: String)
 
-    @Deprecated("必须显式传入 workspaceRootUuid")
-    @Query("DELETE FROM workspace_files WHERE uuid = :uuid AND 0")
-    suspend fun deleteByUuid(uuid: String)
+    @Query("DELETE FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid IN (:uuids)")
+    suspend fun deleteByUuids(workspaceRootUuid: String, uuids: List<String>)
 
     @Query("UPDATE workspace_files SET vectorized_at = NULL, kg_extracted_at = NULL WHERE workspace_root_uuid = :workspaceRootUuid")
     suspend fun resetAllRAGStatus(workspaceRootUuid: String)
@@ -89,7 +83,35 @@ interface FileEntryDao {
     @Query("SELECT COUNT(*) FROM sessions WHERE workspace_root_uuid = :workspaceRootUuid AND id != :sessionId")
     suspend fun countOtherSessionsForRoot(workspaceRootUuid: String, sessionId: String): Int
 
-    @Query("UPDATE sessions SET workspace_root_uuid = :workspaceRootUuid, workspace_path = COALESCE(workspace_path, :physicalRootPath), updated_at = :updatedAt WHERE id = :sessionId AND workspace_root_uuid IS NULL")
+    @Query("""
+        SELECT COUNT(*) FROM sessions AS s
+        INNER JOIN workspace_files AS f
+          ON f.uuid = s.workspace_root_uuid AND f.workspace_root_uuid = f.uuid
+        WHERE f.physical_root_path = :canonicalPath AND s.id != :sessionId
+    """)
+    suspend fun countOtherSessionsForPhysicalRoot(canonicalPath: String, sessionId: String): Int
+
+    @Query("""
+        UPDATE sessions
+        SET workspace_root_uuid = :workspaceRootUuid,
+            workspace_path = :physicalRootPath,
+            updated_at = :updatedAt
+        WHERE id = :sessionId
+    """)
+    suspend fun canonicalizeSessionRootClaim(
+        sessionId: String,
+        workspaceRootUuid: String,
+        physicalRootPath: String,
+        updatedAt: Long,
+    )
+
+    @Query("""
+        UPDATE sessions
+        SET workspace_root_uuid = :workspaceRootUuid,
+            workspace_path = :physicalRootPath,
+            updated_at = :updatedAt
+        WHERE id = :sessionId AND workspace_root_uuid IS NULL
+    """)
     suspend fun claimSessionRoot(
         sessionId: String,
         workspaceRootUuid: String,
@@ -105,8 +127,17 @@ interface FileEntryDao {
             if (countOtherSessionsForRoot(existingUuid, sessionId) != 0) {
                 throw SecurityException("Workspace root is referenced by multiple sessions")
             }
-            return getByUuid(existingUuid, existingUuid)
+            val existing = getByUuid(existingUuid, existingUuid)
                 ?: throw IllegalStateException("Session workspace root reference is invalid: $sessionId")
+            if (countOtherSessionsForPhysicalRoot(existing.physicalRootPath, sessionId) != 0) {
+                throw SecurityException("Workspace physical root is referenced by another session")
+            }
+            canonicalizeSessionRootClaim(sessionId, existingUuid, existing.physicalRootPath, System.currentTimeMillis())
+            return existing
+        }
+
+        if (countOtherSessionsForPhysicalRoot(candidate.physicalRootPath, sessionId) != 0) {
+            throw SecurityException("Workspace physical root is referenced by another session")
         }
 
         insertAbort(candidate)

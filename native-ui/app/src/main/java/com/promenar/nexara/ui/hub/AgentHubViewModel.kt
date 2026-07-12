@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 class AgentHubViewModel(
     private val agentRepository: AgentRepository,
     private val createAgentUseCase: CreateAgentUseCase,
-    private val defaultAgents: List<Agent>
+    private val defaultAgents: List<Agent>,
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -29,13 +29,8 @@ class AgentHubViewModel(
 
     private val _dbAgents = MutableStateFlow<List<Agent>>(emptyList())
 
-    val agents: StateFlow<List<Agent>> = combine(_dbAgents, _searchQuery) { list, query ->
-        val filtered = if (query.isBlank()) list
-        else list.filter {
-            it.name.contains(query, ignoreCase = true) ||
-            it.description.contains(query, ignoreCase = true)
-        }
-        filtered.sortedWith(compareByDescending<Agent> { it.isPinned }.thenByDescending { it.createdAt })
+    val agents: StateFlow<List<Agent>> = combine(_dbAgents, _searchQuery) { list, _ ->
+        list.sortedWith(compareByDescending<Agent> { it.isPinned }.thenByDescending { it.createdAt })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun updateSearchQuery(query: String) {
@@ -44,14 +39,15 @@ class AgentHubViewModel(
 
     init {
         viewModelScope.launch {
-            val saved = agentRepository.observeAll().first()
-            if (saved.isNotEmpty()) {
-                _dbAgents.value = saved
-            } else {
-                for (agent in defaultAgents) {
-                    agentRepository.create(agent)
+            var seeded = false
+            agentRepository.observeAll().collect { saved ->
+                if (saved.isEmpty() && !seeded && defaultAgents.isNotEmpty()) {
+                    seeded = true
+                    defaultAgents.forEach { agentRepository.create(it) }
+                    _dbAgents.value = defaultAgents
+                } else {
+                    _dbAgents.value = saved
                 }
-                _dbAgents.value = defaultAgents
             }
         }
     }
@@ -59,7 +55,9 @@ class AgentHubViewModel(
     fun createAgent(name: String, description: String, model: String, systemPrompt: String) {
         viewModelScope.launch {
             val agent = createAgentUseCase(name, description, model, systemPrompt)
-            _dbAgents.update { it + agent }
+            _dbAgents.update { agents ->
+                if (agents.any { it.id == agent.id }) agents else agents + agent
+            }
         }
     }
 
@@ -90,7 +88,7 @@ class AgentHubViewModel(
                     return AgentHubViewModel(
                         agentRepository = app.agentRepository,
                         createAgentUseCase = app.createAgentUseCase,
-                        defaultAgents = app.defaultAgents
+                        defaultAgents = app.defaultAgents,
                     ) as T
                 }
             }

@@ -17,29 +17,13 @@ interface IWorkspaceRepository {
     ): List<FileEntry>
     fun searchByName(workspaceRootUuid: String, query: String): Flow<List<FileEntry>>
 
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    fun observeRoots(): Flow<List<FileEntry>>
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    fun observeChildren(parentUuid: String): Flow<List<FileEntry>>
     fun observeRecycleBin(workspaceRootUuid: String): Flow<List<FileEntry>>
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun getByUuid(uuid: String): FileEntry?
     suspend fun createFileInWorkspace(
         workspaceRootUuid: String,
         uuid: String,
         name: String,
         content: String,
         parentUuid: String?,
-        materializedPath: String
-    ): FileEntry
-
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun createFile(
-        uuid: String,
-        name: String,
-        content: String,
-        parentUuid: String?,
-        physicalRootPath: String,
         materializedPath: String
     ): FileEntry
 
@@ -51,31 +35,12 @@ interface IWorkspaceRepository {
         materializedPath: String
     ): FileEntry
 
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun createDirectory(
-        uuid: String,
-        name: String,
-        parentUuid: String?,
-        physicalRootPath: String,
-        materializedPath: String
-    ): FileEntry
-
     suspend fun moveToRecycleBin(workspaceRootUuid: String, uuid: String)
     suspend fun restoreFromRecycleBin(workspaceRootUuid: String, uuid: String)
     suspend fun permanentDelete(workspaceRootUuid: String, uuid: String)
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun moveToRecycleBin(uuid: String)
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun restoreFromRecycleBin(uuid: String)
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun permanentDelete(uuid: String)
     suspend fun emptyRecycleBin(workspaceRootUuid: String)
     suspend fun updateParent(workspaceRootUuid: String, uuid: String, newParentUuid: String)
     suspend fun rename(workspaceRootUuid: String, uuid: String, newName: String)
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun updateParent(uuid: String, newParentUuid: String)
     suspend fun getNextSeqForDate(dateKey: String): Int
     suspend fun resetAllRAGStatus(workspaceRootUuid: String)
-    @Deprecated("Task3B 前的失败关闭兼容入口；必须传 workspaceRootUuid")
-    suspend fun resetAllRAGStatus()
 }

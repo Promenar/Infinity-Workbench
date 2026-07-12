@@ -10,17 +10,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class ResourceExplorerViewModel(
-    application: Application
+    application: Application,
+    injectedWorkspaceRepository: IWorkspaceRepository? = null,
 ) : ViewModel() {
 
-    private val app = application as NexaraApplication
-    val workspaceRepo: IWorkspaceRepository = app.workspaceRepository
+    val workspaceRepo: IWorkspaceRepository = injectedWorkspaceRepository
+        ?: (application as NexaraApplication).workspaceRepository
 
-    var workspaceRootUuid: String? = null
-        private set
+    private val _workspaceRootUuid = MutableStateFlow<String?>(null)
+    val workspaceRootUuid: StateFlow<String?> = _workspaceRootUuid.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -32,13 +34,19 @@ class ResourceExplorerViewModel(
         _searchQuery.value = query
     }
 
-    fun loadWorkspaceRoot(uuid: String?) {
-        workspaceRootUuid = uuid
-        if (uuid != null) {
-            viewModelScope.launch {
+    private var recycleJob: Job? = null
+
+    fun loadSession(sessionId: String) {
+        recycleJob?.cancel()
+        recycleJob = viewModelScope.launch {
+            val uuid = workspaceRepo.ensureSessionRoot(sessionId).uuid
+            _workspaceRootUuid.value = uuid
+            try {
                 workspaceRepo.observeRecycleBin(uuid).collect { files ->
                     _recycleBinCount.value = files.size
                 }
+            } finally {
+                if (_workspaceRootUuid.value == uuid) _recycleBinCount.value = 0
             }
         }
     }

@@ -76,6 +76,7 @@ enum class DocEditorViewMode { EDIT, PREVIEW, SPLIT }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocEditorScreen(
+    workspaceRootUuid: String,
     docId: String,
     onNavigateBack: () -> Unit
 ) {
@@ -98,8 +99,8 @@ fun DocEditorScreen(
     var viewMode by remember { mutableStateOf(DocEditorViewMode.EDIT) }
     var titleText by remember(document) { mutableStateOf(document?.title ?: "") }
 
-    androidx.compose.runtime.LaunchedEffect(docId) {
-        viewModel.loadDocument(docId)
+    androidx.compose.runtime.LaunchedEffect(workspaceRootUuid, docId) {
+        viewModel.loadDocument(workspaceRootUuid, docId)
     }
 
     val wordCount = remember(content) { content.split("\\s+".toRegex()).count { it.isNotBlank() } }

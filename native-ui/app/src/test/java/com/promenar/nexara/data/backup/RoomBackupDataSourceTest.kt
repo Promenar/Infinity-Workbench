@@ -21,6 +21,10 @@ import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
+import com.promenar.nexara.data.repository.FileOperationRepository
+import com.promenar.nexara.data.repository.TestWorkspaceFileOps
+import com.promenar.nexara.data.repository.WorkspaceRepository
+import com.promenar.nexara.domain.repository.WriteResult
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -89,7 +93,14 @@ class RoomBackupDataSourceTest {
     fun `snapshot and restore preserve source rows real files and safe preferences`() {
         runBlocking {
         val now = 100L
-        val agent = AgentEntity(id = "agent-1", name = "Agent", createdAt = now)
+        val agent = AgentEntity(
+            id = "agent-1",
+            name = "Agent",
+            description = "Customized description",
+            nameCustomized = true,
+            descriptionCustomized = true,
+            createdAt = now,
+        )
         val session = SessionEntity(
             id = "session-1",
             agentId = agent.id,
@@ -157,7 +168,7 @@ class RoomBackupDataSourceTest {
         assertThat(db.agentDao().getAll()).containsExactly(agent)
         assertThat(db.sessionDao().getAll()).containsExactly(session.copy(workspacePath = restoredRoot().toString()))
         assertThat(db.messageDao().getBySession(session.id)).containsExactly(message)
-        val restoredFile = db.fileEntryDao().getByUuid(file.uuid)!!
+        val restoredFile = db.fileEntryDao().getByUuid(file.workspaceRootUuid, file.uuid)!!
         assertThat(Path.of(restoredFile.physicalRootPath).startsWith(restoreParent)).isTrue()
         assertThat(Files.readAllBytes(Path.of(restoredFile.physicalRootPath).resolve("docs/a.bin"))).isEqualTo(bytes)
             assertThat(preferences.snapshot.entries.map { it.key }).containsExactly(
@@ -192,11 +203,35 @@ class RoomBackupDataSourceTest {
                 "workspace_files", "workspace_seq",
             ).forEach { assertThat(rowCount(it)).isGreaterThan(0) }
             assertThat(db.messageDao().getById("message-1")!!.vectorizationStatus).isNull()
-            assertThat(db.fileEntryDao().getByUuid("file-1")!!.vectorizedAt).isNull()
-            assertThat(db.fileEntryDao().getByUuid("file-1")!!.kgExtractedAt).isNull()
+            assertThat(db.fileEntryDao().getByUuid("root-1", "file-1")!!.vectorizedAt).isNull()
+            assertThat(db.fileEntryDao().getByUuid("root-1", "file-1")!!.kgExtractedAt).isNull()
             assertThat(Path.of(db.artifactDao().getById("artifact-1")!!.workspacePath!!).startsWith(restoreParent))
                 .isTrue()
         }
+    }
+
+    @Test
+    fun `restored workspace identity supports ensure read and write`() = runBlocking<Unit> {
+        seedCompleteGraph()
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+
+        newDataSource().restore(validated(backup))
+        val workspace = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+        )
+        val root = workspace.ensureSessionRoot("session-1")
+        val file = workspace.getByUuid(root.uuid, "file-1")!!
+        val fileOperations = FileOperationRepository(
+            db.fileEntryDao(), db.fileVersionDao(), TestWorkspaceFileOps(),
+        )
+
+        assertThat(fileOperations.readFileRange(root.uuid, file.uuid).content).isEqualTo("complete-graph")
+        assertThat(
+            fileOperations.writeFileAtomic(root.uuid, file.uuid, "updated", "session-1", file.hash),
+        ).isInstanceOf(WriteResult.Success::class.java)
+        assertThat(fileOperations.readFileRange(root.uuid, file.uuid).content).isEqualTo("updated")
+        assertThat(Files.exists(Path.of(root.physicalRootPath).resolve(".nexara_root_identity"))).isTrue()
     }
 
     @Test
@@ -259,7 +294,7 @@ class RoomBackupDataSourceTest {
     fun `snapshot streams files within package limits and materializes an empty hash`() {
         runBlocking {
             seedCompleteGraph()
-            val file = db.fileEntryDao().getByUuid("file-1")!!
+            val file = db.fileEntryDao().getByUuid("root-1", "file-1")!!
             db.fileEntryDao().update(file.copy(hash = ""))
 
             val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
@@ -329,7 +364,7 @@ class RoomBackupDataSourceTest {
     fun `snapshot rejects oversized declarations before opening a source file`() {
         runBlocking {
             seedCompleteGraph()
-            val file = db.fileEntryDao().getByUuid("file-1")!!
+            val file = db.fileEntryDao().getByUuid("root-1", "file-1")!!
             db.fileEntryDao().update(file.copy(sizeBytes = BackupPackageLimits.MAX_ENTRY_BYTES + 1))
             var opened = false
 
@@ -347,7 +382,7 @@ class RoomBackupDataSourceTest {
             val seeded = seedCompleteGraph()
             val nearLimit = ByteArray(3 * 1024 * 1024) { (it % 251).toByte() }
             Files.write(seeded.filePath, nearLimit)
-            val file = db.fileEntryDao().getByUuid("file-1")!!
+            val file = db.fileEntryDao().getByUuid("root-1", "file-1")!!
             db.fileEntryDao().update(file.copy(sizeBytes = nearLimit.size.toLong(), hash = sha256(nearLimit)))
             val accepted = newDataSource().snapshot(CANONICAL_CONTENT)
             assertThat(accepted.files.getValue("file-1").size).isEqualTo(nearLimit.size)
@@ -640,7 +675,7 @@ class RoomBackupDataSourceTest {
 
             assertThat(db.messageDao().getById("post-commit")).isNotNull()
             assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
-            assertThat(Files.exists(Path.of(db.fileEntryDao().getByUuid("file-1")!!.physicalRootPath))).isTrue()
+            assertThat(Files.exists(Path.of(db.fileEntryDao().getByUuid("root-1", "file-1")!!.physicalRootPath))).isTrue()
         }
     }
 
@@ -679,7 +714,7 @@ class RoomBackupDataSourceTest {
             val second = newDataSource().snapshot(CANONICAL_CONTENT)
             newDataSource().restore(validated(second))
 
-            assertThat(db.fileEntryDao().getByUuid("file-1")).isNotNull()
+            assertThat(db.fileEntryDao().getByUuid("root-1", "file-1")).isNotNull()
             assertThat(second.files.getValue("file-1").toString(Charsets.UTF_8)).isEqualTo("complete-graph")
         }
     }
@@ -1302,6 +1337,20 @@ private class TestRestoreFileOperations : RestoreFileOperations {
         }
     }
 
+    override fun initializeWorkspaceRootIdentity(root: Path, relative: List<String>, nonce: String): String {
+        val target = relative.fold(root) { current, segment -> current.resolve(segment) }
+        val key = Files.readAttributes(
+            target,
+            java.nio.file.attribute.BasicFileAttributes::class.java,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()?.toString() ?: error("测试 workspace root 缺少 fileKey")
+        writeNew(root, relative + ".nexara_root_identity", "$nonce\n$key".toByteArray())
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(key.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return "$nonce|$digest"
+    }
+
     override fun deleteTree(
         parent: Path,
         childName: String,
@@ -1388,6 +1437,8 @@ private class SwappingRestoreFileOperations(
     override fun createTransactionRoot(parent: Path, name: String) = delegate.createTransactionRoot(parent, name)
     override fun createDirectory(root: Path, relative: List<String>) = delegate.createDirectory(root, relative)
     override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) = delegate.writeNew(root, relative, bytes)
+    override fun initializeWorkspaceRootIdentity(root: Path, relative: List<String>, nonce: String): String =
+        delegate.initializeWorkspaceRootIdentity(root, relative, nonce)
     override fun moveTree(parent: Path, sourceName: String, targetName: String) =
         delegate.moveTree(parent, sourceName, targetName)
     override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> = delegate.inventory(parent, childName)

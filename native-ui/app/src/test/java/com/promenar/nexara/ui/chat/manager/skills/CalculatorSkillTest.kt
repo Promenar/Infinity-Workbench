@@ -14,6 +14,7 @@ class CalculatorSkillTest {
         override val sessionId = "test-session"
         override val agentId = "test-agent"
         override val workspacePath = null
+        override val workspaceRootUuid = "root-1"
     }
 
     // ── 基本四则运算 ──

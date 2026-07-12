@@ -78,7 +78,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import java.io.File
 
 enum class GenerationStatus {
     IDLE,
@@ -921,6 +920,9 @@ class ChatViewModel(
         _ragPhases.update { emptyList() }
         val existing = store.getSession(sessionId)
         if (existing != null) {
+            if (existing.workspaceRootUuid.isNullOrBlank()) {
+                viewModelScope.launch { ensureSessionWorkspace(sessionId) }
+            }
             _currentSessionId.update { sessionId }
             updateAgentName(existing.agentId)
             // 同步当前会话的 ragOptions 到缓存
@@ -953,6 +955,14 @@ class ChatViewModel(
                         val defaultOptions = getDefaultRagOptions()
                         hydrated = hydrated.copy(ragOptions = defaultOptions)
                         sessionManager.updateSession(sessionId, mapOf("ragOptions" to defaultOptions))
+                    }
+                    if (hydrated.workspaceRootUuid.isNullOrBlank()) {
+                        val root = (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
+                        hydrated = hydrated.copy(workspaceRootUuid = root.uuid, workspacePath = root.physicalRootPath)
+                        sessionManager.updateSession(
+                            sessionId,
+                            mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
+                        )
                     }
                     store.update { state ->
                         if (state.sessions.any { it.id == sessionId }) state
@@ -990,10 +1000,6 @@ class ChatViewModel(
     fun createNewSession(agentId: String) {
         viewModelScope.launch {
             val sessionId = IdGenerator.session()
-            val workspacePath = File((application as NexaraApplication).filesDir, "workspaces/$sessionId").apply {
-                if (!exists()) mkdirs()
-            }.absolutePath
-            
             val defaultOptions = getDefaultRagOptions()
             val agent = agentRepository.getById(agentId)
             val defaultModelId = agent?.modelId
@@ -1003,15 +1009,27 @@ class ChatViewModel(
                 id = sessionId,
                 agentId = agentId,
                 modelId = defaultModelId,
-                workspacePath = workspacePath,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
                 ragOptions = defaultOptions
             )
             sessionManager.addSession(session)
+            val root = (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
+            sessionManager.updateSession(
+                sessionId,
+                mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
+            )
             _currentSessionId.update { sessionId }
             updateAgentName(agentId)
         }
+    }
+
+    private suspend fun ensureSessionWorkspace(sessionId: String) {
+        val root = (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
+        sessionManager.updateSession(
+            sessionId,
+            mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
+        )
     }
 
     private fun resolveDefaultModelId(): String? {

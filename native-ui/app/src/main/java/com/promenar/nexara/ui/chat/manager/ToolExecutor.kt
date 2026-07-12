@@ -157,6 +157,8 @@ class ToolExecutor(
                     override val sessionId = session.id
                     override val agentId = session.agentId
                     override val workspacePath = session.workspacePath
+                    override val workspaceRootUuid = session.workspaceRootUuid
+                        ?: throw SecurityException("Session workspace root is missing")
                 }
             )
         } catch (e: Exception) {

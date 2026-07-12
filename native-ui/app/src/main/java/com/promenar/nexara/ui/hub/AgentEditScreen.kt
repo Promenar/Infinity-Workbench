@@ -37,6 +37,7 @@ import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.data.agent.PresetAgents
 
 data class AgentIconOption(
     val id: String,
@@ -75,6 +76,13 @@ fun AgentEditScreen(
     val systemPrompt by viewModel.systemPrompt.collectAsState()
     val selectedColor by viewModel.selectedColor.collectAsState()
     val selectedIcon by viewModel.selectedIcon.collectAsState()
+    val saveError by viewModel.saveError.collectAsState()
+    val localizedPresetName = if (PresetAgents.isPreset(agentId)) {
+        stringResource(PresetAgents.nameRes(agentId))
+    } else null
+    val localizedPresetDescription = if (PresetAgents.isPreset(agentId)) {
+        stringResource(PresetAgents.descRes(agentId))
+    } else null
 
     var showSystemPromptEditor by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -88,7 +96,7 @@ fun AgentEditScreen(
     val currentIconVector = presetIcons.find { it.id == selectedIcon }?.icon ?: Icons.Rounded.AutoAwesome
 
     LaunchedEffect(agentId) {
-        viewModel.loadAgent(agentId)
+        viewModel.loadAgent(agentId, localizedPresetName, localizedPresetDescription)
     }
 
     UnifiedPromptEditor(
@@ -145,6 +153,15 @@ fun AgentEditScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            saveError?.let { message ->
+                item {
+                    Text(
+                        text = message,
+                        color = NexaraColors.Error,
+                        style = NexaraTypography.bodyMedium,
+                    )
+                }
+            }
             item {
                 SettingsSectionHeader(stringResource(R.string.agent_edit_section_basic))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -255,7 +272,7 @@ fun AgentEditScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isExpanded) "收起" else "查看全部",
+                                    text = if (isExpanded) stringResource(R.string.agent_edit_icon_toggle_collapse) else stringResource(R.string.agent_edit_icon_toggle_expand),
                                     style = NexaraTypography.labelMedium.copy(color = NexaraColors.Primary, fontSize = 12.sp)
                                 )
                                 Icon(

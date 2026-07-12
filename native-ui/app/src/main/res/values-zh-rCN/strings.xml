@@ -114,6 +114,15 @@
     <string name="hub_dialog_label_prompt">系统提示词</string>
     <string name="hub_action_unpin">取消置顶</string>
 
+    <!-- 预置助手（本地化展示；DB 保存种子文本，叠加层解析为资源） -->
+    <string name="preset_agent_default_name">Nexara 助手</string>
+    <string name="preset_agent_default_desc">通用 AI 助手，支持流式对话与知识检索</string>
+    <string name="preset_agent_coder_name">编程专家</string>
+    <string name="preset_agent_coder_desc">精通全栈开发与架构设计</string>
+    <string name="preset_agent_writer_name">创意写作</string>
+    <string name="preset_agent_writer_desc">文学创作、翻译与润色</string>
+    <string name="hub_dialog_placeholder_select_model">请选择模型…</string>
+
     <!-- Sessions -->
     <string name="sessions_search_placeholder">搜索会话…</string>
     <string name="sessions_empty_title">还没有对话</string>
@@ -134,6 +143,8 @@
     <string name="agent_edit_placeholder_desc">描述这个助手…</string>
     <string name="agent_edit_section_appearance">外观</string>
     <string name="agent_edit_label_icon">选择图标</string>
+    <string name="agent_edit_icon_toggle_collapse">收起</string>
+    <string name="agent_edit_icon_toggle_expand">查看全部</string>
     <string name="agent_edit_icon_custom">自定义</string>
     <string name="agent_edit_icon_upload">上传图片</string>
     <string name="agent_edit_section_personality">性格</string>

@@ -23,7 +23,7 @@ class FileWriteSkill(
         val expectedHash = args["expectedHash"] as? String
             ?: return ToolResult("err", "缺少 expectedHash", "error")
 
-        return when (val result = fileOpRepo.writeFileAtomic(uuid, content, context.sessionId, expectedHash)) {
+        return when (val result = fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, expectedHash)) {
             is WriteResult.Success -> ToolResult(
                 "write_file_${System.currentTimeMillis()}",
                 "写入成功。新 Hash: ${result.newHash}"

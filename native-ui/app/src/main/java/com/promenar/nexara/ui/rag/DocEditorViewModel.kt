@@ -43,12 +43,14 @@ class DocEditorViewModel(
 
     private var currentHash = ""
     private var currentUuid = ""
+    private var currentWorkspaceRootUuid = ""
     private var originalContent = ""
 
-    fun loadFile(uuid: String) {
+    fun loadFile(workspaceRootUuid: String, uuid: String) {
         viewModelScope.launch {
             try {
-                val result = fileOperationRepository.readFileRange(uuid)
+                val result = fileOperationRepository.readFileRange(workspaceRootUuid, uuid)
+                currentWorkspaceRootUuid = workspaceRootUuid
                 currentUuid = uuid
                 currentHash = result.hash
                 _fileName.value = result.name
@@ -69,12 +71,13 @@ class DocEditorViewModel(
         }
     }
 
-    fun loadDocument(docId: String) = loadFile(docId)
+    fun loadDocument(workspaceRootUuid: String, docId: String) = loadFile(workspaceRootUuid, docId)
 
     fun saveDocument() {
         viewModelScope.launch {
             try {
                 val result = fileOperationRepository.writeFileAtomic(
+                    workspaceRootUuid = currentWorkspaceRootUuid,
                     uuid = currentUuid,
                     newContent = _content.value,
                     sessionId = "editor",
@@ -122,7 +125,7 @@ class DocEditorViewModel(
             viewModelScope.launch {
                 try {
                     val dao = app.database.fileEntryDao()
-                    val entry = dao.getByUuid(currentUuid)
+                    val entry = dao.getByUuid(currentWorkspaceRootUuid, currentUuid)
                     if (entry != null) {
                         dao.update(entry.copy(name = newTitle, updatedAt = System.currentTimeMillis()))
                     }

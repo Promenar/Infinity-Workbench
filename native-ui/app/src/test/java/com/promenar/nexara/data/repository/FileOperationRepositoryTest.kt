@@ -32,8 +32,8 @@ class FileOperationRepositoryTest {
         db = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repo = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao())
-        testDir = File(System.getProperty("java.io.tmpdir"), "nexara_test_${System.nanoTime()}")
+        repo = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao(), TestWorkspaceFileOps())
+        testDir = File(System.getProperty("user.dir"), ".nexara_test_${System.nanoTime()}")
         testDir.mkdirs()
     }
 
@@ -51,6 +51,20 @@ class FileOperationRepositoryTest {
         val file = File(testDir, "test.txt")
         file.writeText(content)
         val hash = Sha256Utils.hash(content)
+        db.fileEntryDao().insert(
+            FileEntry(
+                uuid = workspaceRootUuid,
+                workspaceRootUuid = workspaceRootUuid,
+                parentUuid = null,
+                name = "workspace",
+                hash = "test-root-identity",
+                isDirectory = true,
+                physicalRootPath = testDir.absolutePath,
+                materializedPath = "/",
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
         val entry = FileEntry(
             uuid = uuid,
             workspaceRootUuid = workspaceRootUuid,
@@ -82,6 +96,23 @@ class FileOperationRepositoryTest {
         val diff = repo.diffFile("root-1", entry.uuid, entry.hash)
         assertThat(diff.hunks).isNotEmpty()
         assertThat(diff.basisHash).isEqualTo(entry.hash)
+    }
+
+    @Test
+    fun `diff rejects tampered historical snapshot`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "old content")
+        repo.writeFileAtomic("root-1", entry.uuid, "new content", "session-1", entry.hash)
+        val version = db.fileVersionDao().getByFile("root-1", entry.uuid).single()
+        File(version.contentPath).writeText("tampered")
+
+        var rejected = false
+        try {
+            repo.diffFile("root-1", entry.uuid, entry.hash)
+        } catch (_: SecurityException) {
+            rejected = true
+        }
+
+        assertThat(rejected).isTrue()
     }
 
     @Test
@@ -119,9 +150,15 @@ class FileOperationRepositoryTest {
     @Test
     fun `physical write failure leaves database current file and versions unchanged`() = runBlocking<Unit> {
         val entry = insertTestFile(content = "stable")
-        repo = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao()) { _, _ ->
-            throw IllegalStateException("injected write failure")
-        }
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps { phase ->
+                if (phase == WorkspaceFilePhase.BEFORE_MUTATION) {
+                    throw IllegalStateException("injected write failure")
+                }
+            },
+        )
 
         var failed = false
         try {
@@ -141,6 +178,7 @@ class FileOperationRepositoryTest {
         repo = FileOperationRepository(
             dao = db.fileEntryDao(),
             versionDao = db.fileVersionDao(),
+            fileOps = TestWorkspaceFileOps(),
             versionCommitter = { _, _ -> throw IllegalStateException("injected database failure") },
         )
 
@@ -155,6 +193,32 @@ class FileOperationRepositoryTest {
         assertThat(File(testDir, "test.txt").readText()).isEqualTo("stable")
         assertThat(db.fileEntryDao().getByUuid("root-1", entry.uuid)!!.hash).isEqualTo(entry.hash)
         assertThat(db.fileVersionDao().getByFile("root-1", entry.uuid)).isEmpty()
+        assertThat(File(testDir, ".nexara_versions").walkTopDown().filter { it.isFile }.toList()).isEmpty()
+    }
+
+    @Test
+    fun `database failure retries a transient second-step physical rollback`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        var failRestoreOnce = true
+        repo = FileOperationRepository(
+            dao = db.fileEntryDao(),
+            versionDao = db.fileVersionDao(),
+            fileOps = TestWorkspaceFileOps { phase ->
+                if (phase == WorkspaceFilePhase.ROLLBACK_BEFORE_RESTORE && failRestoreOnce) {
+                    failRestoreOnce = false
+                    throw IllegalStateException("injected rollback restore failure")
+                }
+            },
+            versionCommitter = { _, _ -> throw IllegalStateException("injected database failure") },
+        )
+
+        val failure = runCatching {
+            repo.writeFileAtomic("root-1", entry.uuid, "new", "session", entry.hash)
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("stable")
+        assertThat(db.fileEntryDao().getByUuid("root-1", entry.uuid)!!.hash).isEqualTo(entry.hash)
         assertThat(File(testDir, ".nexara_versions").walkTopDown().filter { it.isFile }.toList()).isEmpty()
     }
 }

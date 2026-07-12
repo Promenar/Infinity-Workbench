@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
@@ -63,7 +65,7 @@ class RagViewModel(
 
     /** RAG 知识库工作区物理根目录 */
     private val ragWorkspaceRoot: java.io.File by lazy {
-        java.io.File(app.filesDir, "rag_workspace").also { it.mkdirs() }
+        java.io.File(app.filesDir, "rag_workspace")
     }
 
     /** 当前工作区根目录的 FileEntry UUID（首个根目录，用于 FilesPanel） */
@@ -133,13 +135,24 @@ class RagViewModel(
         ensureRagWorkspaceRoot()
     }
 
-    /** 确保 RAG 工作区物理目录存在；不再强制创建"知识库"根文件夹——
-     *  文档分布在根目录或用户自行创建文件夹整理，交由用户决定。 */
+    /** 为全局知识库建立不可见的系统 Session owner，再通过统一 repository 认领真实 root。 */
     private fun ensureRagWorkspaceRoot() {
-        // 仅确保物理目录存在，不创建数据库中的强制根文件夹。
-        // _workspaceRootUuid 保持为 null，表示文件/文件夹挂在根层级。
-        if (!ragWorkspaceRoot.exists()) {
-            ragWorkspaceRoot.mkdirs()
+        viewModelScope.launch {
+            val sessionId = "__nexara_rag_workspace__"
+            if (app.database.sessionDao().getById(sessionId) == null) {
+                val now = System.currentTimeMillis()
+                app.database.sessionDao().insert(
+                    com.promenar.nexara.data.local.db.entity.SessionEntity(
+                        id = sessionId,
+                        agentId = "__system__",
+                        title = "RAG Workspace",
+                        workspacePath = ragWorkspaceRoot.absolutePath,
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
+                )
+            }
+            _workspaceRootUuid.value = workspaceRepository.ensureSessionRoot(sessionId).uuid
         }
     }
 
@@ -215,14 +228,18 @@ class RagViewModel(
 
     private fun startDataObservation() {
         viewModelScope.launch {
-            workspaceRepository.observeRoots().collect { roots ->
+            workspaceRootUuid.filterNotNull().flatMapLatest { root ->
+                workspaceRepository.observeChildren(root, root)
+            }.collect { roots ->
                 val allFiles = roots.filter { !it.isDirectory }
                 _documents.value = allFiles.map { it.toDocument() }
             }
         }
 
         viewModelScope.launch {
-            workspaceRepository.observeRoots().collect { entries ->
+            workspaceRootUuid.filterNotNull().flatMapLatest { root ->
+                workspaceRepository.observeChildren(root, root)
+            }.collect { entries ->
                 val dirs = entries.filter { it.isDirectory }
                 _folders.value = dirs.map { it.toFolder() }
                 updateFolderStats(_folders.value)
@@ -241,7 +258,8 @@ class RagViewModel(
         viewModelScope.launch {
             val stats = mutableMapOf<String, Int>()
             for (folder in folderList) {
-                val children = workspaceRepository.observeChildren(folder.id).first()
+                val root = _workspaceRootUuid.value ?: continue
+                val children = workspaceRepository.observeChildren(root, folder.id).first()
                 stats[folder.id] = children.size
             }
             _folderStats.value = stats
@@ -419,13 +437,14 @@ class RagViewModel(
     fun createFolder(name: String) {
         viewModelScope.launch {
             try {
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
                 val uuid = java.util.UUID.randomUUID().toString()
                 val matPath = "/$name"
-                workspaceRepository.createDirectory(
+                workspaceRepository.createDirectoryInWorkspace(
+                    workspaceRootUuid = rootUuid,
                     uuid = uuid,
                     name = name,
-                    parentUuid = _workspaceRootUuid.value,
-                    physicalRootPath = ragWorkspaceRoot.absolutePath,
+                    parentUuid = rootUuid,
                     materializedPath = matPath
                 )
             } catch (_: Exception) { }
@@ -435,7 +454,8 @@ class RagViewModel(
     fun loadDocumentsForFolder(folderId: String) {
         viewModelScope.launch {
             try {
-                workspaceRepository.observeChildren(folderId).collect { entries ->
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                workspaceRepository.observeChildren(rootUuid, folderId).collect { entries ->
                     _documents.value = entries.filter { !it.isDirectory }.map { it.toDocument() }
                 }
             } catch (_: Exception) { }
@@ -445,9 +465,10 @@ class RagViewModel(
     fun deleteCollection(id: String) {
         viewModelScope.launch {
             try {
-                val entry = workspaceRepository.getByUuid(id)
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val entry = workspaceRepository.getByUuid(rootUuid, id)
                 val entriesToClean = if (entry != null && entry.isDirectory) {
-                    app.database.fileEntryDao().getSubtree(entry.materializedPath)
+                    workspaceRepository.getSubtree(rootUuid, entry.materializedPath)
                 } else {
                     listOfNotNull(entry)
                 }
@@ -455,7 +476,7 @@ class RagViewModel(
                     .filter { !it.isDirectory }
                     .forEach { cleanupDocumentArtifacts(it.uuid) }
 
-                workspaceRepository.permanentDelete(id)
+                workspaceRepository.permanentDelete(rootUuid, id)
                 loadStats()
             } catch (e: Exception) {
                 NexaraLogger.logError("RagViewModel.deleteCollection", e)
@@ -466,20 +487,8 @@ class RagViewModel(
     fun renameFolder(id: String, newName: String) {
         viewModelScope.launch {
             try {
-                val entry = workspaceRepository.getByUuid(id) ?: return@launch
-                // 通过 DAO 直接更新 FileEntry 的名称字段
-                val dao = app.database.fileEntryDao()
-                val now = System.currentTimeMillis()
-                val updatedMatPath = entry.materializedPath
-                    .substringBeforeLast('/')
-                    .let { if (it.isEmpty()) "/$newName" else "$it/$newName" }
-                dao.update(
-                    entry.copy(
-                        name = newName,
-                        materializedPath = updatedMatPath,
-                        updatedAt = now
-                    )
-                )
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                workspaceRepository.rename(rootUuid, id, newName)
                 loadStats()
             } catch (_: Exception) { }
         }
@@ -490,9 +499,10 @@ class RagViewModel(
     fun deleteDocuments(ids: List<String>) {
         viewModelScope.launch {
             try {
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
                 for (id in ids) {
                     cleanupDocumentArtifacts(id)
-                    workspaceRepository.permanentDelete(id)
+                    workspaceRepository.permanentDelete(rootUuid, id)
                 }
                 loadStats()
             } catch (e: Exception) {
@@ -504,8 +514,8 @@ class RagViewModel(
     fun importDocuments(uris: List<android.net.Uri>, folderId: String? = null) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            val rootPath = ragWorkspaceRoot.absolutePath
-            val parentUuid = folderId ?: _workspaceRootUuid.value
+            val rootUuid = _workspaceRootUuid.value ?: return@launch
+            val parentUuid = folderId ?: rootUuid
             val importedFiles = mutableListOf<FileEntry>()
 
             for (uri in uris) {
@@ -538,14 +548,16 @@ class RagViewModel(
                     }
 
                     val uuid = java.util.UUID.randomUUID().toString()
-                    val matPath = "/${fileName}"
+                    val parentPath = workspaceRepository.getByUuid(rootUuid, parentUuid)?.materializedPath
+                        ?: continue
+                    val matPath = (parentPath.trimEnd('/') + "/${fileName}").let { if (it.startsWith('/')) it else "/$it" }
 
-                    val entry = workspaceRepository.createFile(
+                    val entry = workspaceRepository.createFileInWorkspace(
+                        workspaceRootUuid = rootUuid,
                         uuid = uuid,
                         name = fileName!!,
                         content = content,
                         parentUuid = parentUuid,
-                        physicalRootPath = rootPath,
                         materializedPath = matPath
                     )
 
@@ -555,6 +567,7 @@ class RagViewModel(
                     if (!content.startsWith("Binary file:") && !content.startsWith("[Error]")) {
                         val kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
                         app.vectorizationQueue.enqueueDocument(
+                            workspaceRootUuid = rootUuid,
                             docId = uuid,
                             docTitle = fileName!!,
                             content = content,
@@ -577,11 +590,13 @@ class RagViewModel(
     fun reindexFile(uuid: String) {
         viewModelScope.launch {
             try {
-                val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
-                val result = fileOperationRepository.readFileRange(uuid)
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@launch
+                val result = fileOperationRepository.readFileRange(rootUuid, uuid)
                 if (result.content.isNotBlank()) {
                     val kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
                     app.vectorizationQueue.enqueueDocument(
+                        workspaceRootUuid = rootUuid,
                         docId = uuid,
                         docTitle = entry.name,
                         content = result.content,
@@ -595,12 +610,14 @@ class RagViewModel(
     /** 批量重新索引 */
     fun reindexDocuments(uuids: Collection<String>) {
         viewModelScope.launch {
+            val rootUuid = _workspaceRootUuid.value ?: return@launch
             uuids.forEach { uuid ->
                 try {
-                    val entry = workspaceRepository.getByUuid(uuid) ?: return@forEach
-                    val result = fileOperationRepository.readFileRange(uuid)
+                    val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@forEach
+                    val result = fileOperationRepository.readFileRange(rootUuid, uuid)
                     if (result.content.isNotBlank()) {
                         app.vectorizationQueue.enqueueDocument(
+                            workspaceRootUuid = rootUuid,
                             docId = uuid,
                             docTitle = entry.name,
                             content = result.content,
@@ -618,8 +635,9 @@ class RagViewModel(
     fun moveFile(uuid: String, targetParentUuid: String) {
         viewModelScope.launch {
             try {
-                val newParent = targetParentUuid.ifEmpty { null }
-                workspaceRepository.updateParent(uuid, targetParentUuid)
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val newParent = targetParentUuid.ifEmpty { rootUuid }
+                workspaceRepository.updateParent(rootUuid, uuid, newParent)
             } catch (_: Exception) { }
         }
     }
@@ -628,8 +646,9 @@ class RagViewModel(
     fun extractKG(uuid: String) {
         viewModelScope.launch {
             try {
-                val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
-                val content = fileOperationRepository.readFileRange(uuid).content
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@launch
+                val content = fileOperationRepository.readFileRange(rootUuid, uuid).content
                 if (content.isNotBlank()) {
                     _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.IN_PROGRESS)
                     NexaraLogger.log("[RagViewModel] extractKG start: uuid=$uuid name=${entry.name} contentLen=${content.length}")
@@ -656,18 +675,20 @@ class RagViewModel(
     fun copyFile(uuid: String) {
         viewModelScope.launch {
             try {
-                val entry = workspaceRepository.getByUuid(uuid) ?: return@launch
-                val content = fileOperationRepository.readFileRange(uuid).content
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@launch
+                val content = fileOperationRepository.readFileRange(rootUuid, uuid).content
                 val newUuid = java.util.UUID.randomUUID().toString()
                 val newName = "${entry.name.substringBeforeLast('.')} - 副本.${entry.name.substringAfterLast('.', "")}"
-                val rootPath = ragWorkspaceRoot.absolutePath
-                workspaceRepository.createFile(
+                val parentUuid = entry.parentUuid ?: rootUuid
+                val parentPath = workspaceRepository.getByUuid(rootUuid, parentUuid)?.materializedPath ?: return@launch
+                workspaceRepository.createFileInWorkspace(
+                    workspaceRootUuid = rootUuid,
                     uuid = newUuid,
                     name = newName,
                     content = content,
-                    parentUuid = entry.parentUuid,
-                    physicalRootPath = rootPath,
-                    materializedPath = "/$newName"
+                    parentUuid = parentUuid,
+                    materializedPath = parentPath.trimEnd('/') + "/$newName"
                 )
             } catch (_: Exception) { }
         }
@@ -709,7 +730,8 @@ class RagViewModel(
     fun extractKnowledgeGraph(docId: String, kgStrategy: String) {
         viewModelScope.launch {
             try {
-                val result = fileOperationRepository.readFileRange(docId)
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val result = fileOperationRepository.readFileRange(rootUuid, docId)
                 val content = result.content
                 kgRepository.extractFromContent(content, docId)
             } catch (e: Exception) {
@@ -784,7 +806,8 @@ class RagViewModel(
                 if (withGraph) {
                     kgRepository.clear()
                 }
-                workspaceRepository.resetAllRAGStatus()
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                workspaceRepository.resetAllRAGStatus(rootUuid)
                 loadStats()
             } catch (_: Exception) { }
         }

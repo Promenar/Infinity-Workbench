@@ -142,6 +142,7 @@ class NexaraDatabaseBaselineTest {
         assertToolExecutionLedger(database)
         assertFileVersions(database)
         assertWorkspaceRoot(database)
+        assertAgentCustomizationColumns(database)
     }
 
     private fun assertIndices(database: SupportSQLiteDatabase, entity: ExportedEntity) {
@@ -225,6 +226,14 @@ class NexaraDatabaseBaselineTest {
     private fun assertWorkspaceRoot(database: SupportSQLiteDatabase) {
         val column = database.tableColumns("workspace_files").getValue("workspace_root_uuid")
         assertThat(column.notNull).isTrue()
+    }
+
+    private fun assertAgentCustomizationColumns(database: SupportSQLiteDatabase) {
+        val columns = database.tableColumns("agents")
+        assertThat(columns).containsKey("name_customized")
+        assertThat(columns).containsKey("description_customized")
+        assertThat(columns.getValue("name_customized").notNull).isTrue()
+        assertThat(columns.getValue("description_customized").notNull).isTrue()
     }
 
     private fun SupportSQLiteDatabase.tableColumns(table: String): Map<String, RuntimeColumn> =

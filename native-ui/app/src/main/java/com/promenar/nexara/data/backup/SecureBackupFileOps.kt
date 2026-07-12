@@ -16,6 +16,7 @@ interface RestoreFileOperations {
     fun createTransactionRoot(parent: Path, name: String)
     fun createDirectory(root: Path, relative: List<String>)
     fun writeNew(root: Path, relative: List<String>, bytes: ByteArray)
+    fun initializeWorkspaceRootIdentity(root: Path, relative: List<String>, nonce: String): String
     fun moveTree(parent: Path, sourceName: String, targetName: String)
     fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry>
     fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>)
@@ -69,6 +70,46 @@ internal object SecureBackupFileOps : RestoreFileOperations {
             }
         }
     }
+
+    override fun initializeWorkspaceRootIdentity(root: Path, relative: List<String>, nonce: String): String {
+        require(relative.isNotEmpty() && nonce.isNotBlank())
+        return openSecure(root).use { rootStream ->
+            var current: SecureDirectoryStream<Path> = rootStream
+            val opened = mutableListOf<SecureDirectoryStream<Path>>()
+            try {
+                relative.forEach { segment ->
+                    val next = current.newDirectoryStream(Paths.get(segment), LinkOption.NOFOLLOW_LINKS)
+                    opened += next
+                    current = next
+                }
+                val key = current.getFileAttributeView(
+                    Paths.get("."),
+                    java.nio.file.attribute.BasicFileAttributeView::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                ).readAttributes().fileKey()?.toString()
+                    ?: throw BackupValidationException("恢复 workspace root 缺少 fileKey")
+                val marker = "$nonce\n$key".toByteArray(Charsets.UTF_8)
+                current.newByteChannel(
+                    Paths.get(".nexara_root_identity"),
+                    setOf<OpenOption>(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS),
+                ).use { channel ->
+                    var offset = 0
+                    while (offset < marker.size) {
+                        offset += channel.write(ByteBuffer.wrap(marker, offset, marker.size - offset))
+                    }
+                    (channel as? FileChannel)?.force(true)
+                        ?: throw BackupValidationException("恢复 workspace identity 不支持 fsync")
+                }
+                "$nonce|${sha256(key.toByteArray(Charsets.UTF_8))}"
+            } finally {
+                opened.asReversed().forEach { runCatching { it.close() } }
+            }
+        }
+    }
+
+    private fun sha256(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     override fun deleteTree(
         parent: Path,

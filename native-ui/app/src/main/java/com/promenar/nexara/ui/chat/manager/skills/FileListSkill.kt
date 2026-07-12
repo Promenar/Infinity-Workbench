@@ -19,9 +19,9 @@ class FileListSkill(
         val parentUuid = args["parentUuid"] as? String
 
         val children = if (parentUuid != null) {
-            workspaceRepo.observeChildren(parentUuid).firstOrNull()
+            workspaceRepo.observeChildren(context.workspaceRootUuid, parentUuid).firstOrNull()
         } else {
-            workspaceRepo.observeRoots().firstOrNull()
+            workspaceRepo.observeChildren(context.workspaceRootUuid, context.workspaceRootUuid).firstOrNull()
         }
 
         if (children == null || children.isEmpty()) {

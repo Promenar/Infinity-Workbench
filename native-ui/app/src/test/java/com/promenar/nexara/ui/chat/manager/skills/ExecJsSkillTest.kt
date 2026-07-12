@@ -19,6 +19,7 @@ class ExecJsSkillTest {
         override val sessionId = "s1"
         override val agentId = "a1"
         override val workspacePath: String? = null
+        override val workspaceRootUuid = "root-1"
     }
 
     @BeforeEach

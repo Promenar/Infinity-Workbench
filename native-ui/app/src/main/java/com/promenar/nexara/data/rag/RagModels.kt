@@ -204,6 +204,7 @@ data class VectorizationTask(
     val type: String,
     val docId: String? = null,
     val docTitle: String? = null,
+    val workspaceRootUuid: String? = null,
     val sessionId: String? = null,
     val userContent: String? = null,
     val aiContent: String? = null,
