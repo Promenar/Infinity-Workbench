@@ -25,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
@@ -61,6 +63,7 @@ fun SecretField(
     placeholder: String = stringResource(R.string.secret_field_placeholder),
 ) {
     val scope = rememberCoroutineScope()
+    val fieldFocusRequester = remember { FocusRequester() }
     var transientSecret by remember { mutableStateOf<CharArray?>(null) }
     var visible by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
@@ -130,6 +133,7 @@ fun SecretField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = placeholder }
+                    .focusRequester(fieldFocusRequester)
                     .onFocusChanged {
                         if (focused && !it.isFocused) focusGeneration += 1
                         focused = it.isFocused
@@ -149,30 +153,33 @@ fun SecretField(
                 onClick = {
                     if (visible) {
                         hide()
-                    } else if (value.isNotEmpty()) {
-                        visible = true
                     } else {
-                        revealJob?.cancel()
-                        revealGeneration += 1
-                        val token = revealGeneration
-                        val focusToken = focusGeneration
-                        revealRequested = true
-                        revealJob = scope.launch {
-                            var loaded: CharArray? = null
-                            var accepted = false
-                            try {
-                                loaded = withContext(NonCancellable) { onRevealRequest() }
-                                if (token == revealGeneration && focusToken == focusGeneration &&
-                                    pageActive && revealRequested && loaded != null
-                                ) {
-                                    transientSecret?.fill('\u0000')
-                                    transientSecret = loaded
-                                    loaded = null
-                                    visible = true
-                                    accepted = true
+                        fieldFocusRequester.requestFocus()
+                        if (value.isNotEmpty()) {
+                            visible = true
+                        } else {
+                            revealJob?.cancel()
+                            revealGeneration += 1
+                            val token = revealGeneration
+                            val focusToken = focusGeneration
+                            revealRequested = true
+                            revealJob = scope.launch {
+                                var loaded: CharArray? = null
+                                var accepted = false
+                                try {
+                                    loaded = withContext(NonCancellable) { onRevealRequest() }
+                                    if (token == revealGeneration && focusToken == focusGeneration &&
+                                        pageActive && revealRequested && loaded != null
+                                    ) {
+                                        transientSecret?.fill('\u0000')
+                                        transientSecret = loaded
+                                        loaded = null
+                                        visible = true
+                                        accepted = true
+                                    }
+                                } finally {
+                                    if (!accepted) loaded?.fill('\u0000')
                                 }
-                            } finally {
-                                if (!accepted) loaded?.fill('\u0000')
                             }
                         }
                     }

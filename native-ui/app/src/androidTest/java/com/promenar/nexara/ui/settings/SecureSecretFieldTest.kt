@@ -69,6 +69,41 @@ class SecureSecretFieldTest {
     }
 
     @Test
+    fun directEye_pendingRevealThenOutside_rejectsAndWipesResult() {
+        val gate = CompletableDeferred<CharArray?>()
+        val returned = "direct-late-secret".toCharArray()
+        composeRule.activity.revealProvider = { gate.await() }
+        val show = composeRule.activity.getString(R.string.secret_field_show)
+
+        composeRule.onNodeWithText("outside").performClick()
+        composeRule.onNodeWithContentDescription(show).performClick()
+        composeRule.onNodeWithText("outside").performClick()
+        gate.complete(returned)
+        composeRule.waitForIdle()
+
+        composeRule.onAllNodesWithText("direct-late-secret").assertCountEquals(0)
+        composeRule.runOnIdle { check(returned.contentEquals(CharArray(returned.size))) }
+    }
+
+    @Test
+    fun directEye_visibleRevealThenOutside_returnsToFixedMask() {
+        val secret = "direct-visible-secret"
+        composeRule.activity.revealProvider = { secret.toCharArray() }
+        val show = composeRule.activity.getString(R.string.secret_field_show)
+
+        composeRule.onNodeWithText("outside").performClick()
+        composeRule.onNodeWithContentDescription(show).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(secret).assertIsDisplayed()
+
+        composeRule.onNodeWithText("outside").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("****").assertIsDisplayed()
+        composeRule.onAllNodesWithText(secret).assertCountEquals(0)
+    }
+
+    @Test
     fun hasStoredChangeAndDispose_cancelLateRevealAndWipeResult() {
         val firstGate = CompletableDeferred<CharArray?>()
         val first = "changed-secret".toCharArray()
