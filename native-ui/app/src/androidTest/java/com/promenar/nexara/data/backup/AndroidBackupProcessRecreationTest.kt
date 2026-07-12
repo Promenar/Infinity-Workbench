@@ -46,7 +46,11 @@ class AndroidBackupProcessRecreationTest {
             .putString("signature", Base64.getEncoder().encodeToString(signature))
             .commit()
         signature.fill(0)
-        pendingStore(context).stage("pending-process-package".toByteArray(), "pending-process-password".toCharArray())
+        pendingStore(context).run {
+            begin(PENDING_TX_ID)
+            stage(PENDING_TX_ID, "pending-process-package".toByteArray(), "pending-process-password".toCharArray())
+            authorize(PENDING_TX_ID)
+        }
     }
 
     private suspend fun commitPhase() {
@@ -100,7 +104,7 @@ class AndroidBackupProcessRecreationTest {
     private fun pendingStore(context: Context) = AndroidPendingRestoreStore(
         AtomicFile(context.noBackupFilesDir.resolve(PENDING_FILE)),
         AndroidKeystorePendingRestoreCryptor(PENDING_ALIAS),
-    ) { PENDING_TX_ID }
+    )
 
     private fun deleteAlias(alias: String) {
         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias)

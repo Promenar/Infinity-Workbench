@@ -35,6 +35,12 @@ class WebDavAuthRecordCodecTest {
         invalidUtf8[endpointOffset] = 0xc3.toByte()
         invalidUtf8[endpointOffset + 1] = 0x28
         assertThrows<IllegalArgumentException> { WebDavAuthRecordCodec.decode(invalidUtf8) }
+
+        val invalidPassword = WebDavAuthRecordCodec.encode("e", "u", "xx".toCharArray())
+        val passwordOffset = 5 * Int.SIZE_BYTES + 2
+        invalidPassword[passwordOffset] = 0xc3.toByte()
+        invalidPassword[passwordOffset + 1] = 0x28
+        assertThrows<IllegalArgumentException> { WebDavAuthRecordCodec.decode(invalidPassword) }
     }
 
     @Test

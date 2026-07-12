@@ -171,7 +171,6 @@ class BackupRuntimeTest {
         var clearCount = 0
         var failNextClear = false
         override fun begin(expectedTxId: String) = error("unused")
-        override fun stage(packageBytes: ByteArray, password: CharArray?) = error("unused")
         override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?) = error("unused")
         override fun authorize(expectedTxId: String) = error("unused")
         override fun read(): PendingRestorePayload? = if (!isPresent) null else PendingRestorePayload(

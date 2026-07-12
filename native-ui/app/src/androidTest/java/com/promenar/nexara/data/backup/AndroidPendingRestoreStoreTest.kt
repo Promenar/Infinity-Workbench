@@ -27,13 +27,15 @@ class AndroidPendingRestoreStoreTest {
         val txId = "123e4567-e89b-12d3-a456-426614174000"
         val packageBytes = "android-package-private".toByteArray()
         val password = "android-password-private".toCharArray()
-        val first = store(txId)
-        first.stage(packageBytes, password)
+        val first = store()
+        first.begin(txId)
+        first.stage(txId, packageBytes, password)
+        first.authorize(txId)
 
         val disk = file.readBytes().toString(Charsets.ISO_8859_1)
         assertThat(disk).doesNotContain("android-package-private")
         assertThat(disk).doesNotContain("android-password-private")
-        store("unused").read()!!.use {
+        store().read()!!.use {
             assertThat(it.metadata.txId).isEqualTo(txId)
             assertThat(it.packageBytes).isEqualTo(packageBytes)
             assertThat(it.password).isEqualTo(password)
@@ -49,11 +51,11 @@ class AndroidPendingRestoreStoreTest {
         }
 
         file.writeBytes(file.readBytes().also { it[it.lastIndex] = (it.last() + 1).toByte() })
-        assertThrows(BackupValidationException::class.java) { store("unused").read() }
+        assertThrows(BackupValidationException::class.java) { store().read() }
     }
 
-    private fun store(txId: String) = AndroidPendingRestoreStore(
+    private fun store() = AndroidPendingRestoreStore(
         AtomicFile(file),
         AndroidKeystorePendingRestoreCryptor(alias),
-    ) { txId }
+    )
 }

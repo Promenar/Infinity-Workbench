@@ -42,4 +42,18 @@ class BackupContentUiContractTest {
         assertThat(Regex("if \\(\\!uiState\\.includeKeys\\) \\{").findAll(source).count()).isEqualTo(2)
         assertThat(source).doesNotContain("viewModel.listRemote()")
     }
+
+    @Test
+    fun `WebDAV sheet consumes async save result and exposes canonical recovery without optimistic dismissal`() {
+        val source = String(
+            Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/ui/settings/BackupSettingsScreen.kt")),
+            Charsets.UTF_8,
+        )
+
+        assertThat(source).contains("saveAndTestWebDavConfig(")
+        assertThat(source).contains("val accepted = viewModel.saveWebDavConfig(")
+        assertThat(source).contains("if (accepted) tempWebdavPass = \"\"")
+        assertThat(source).contains("viewModel.resetWebDavAuth()")
+        assertThat(source).doesNotContain("if (accepted) showWebdavSheet = false")
+    }
 }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -389,13 +390,12 @@ fun BackupSettingsScreen(
                     icon = Icons.Rounded.Link,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        viewModel.saveWebDavConfig(
+                        val accepted = viewModel.saveAndTestWebDavConfig(
                             tempWebdavUrl,
                             tempWebdavUser,
                             tempWebdavPass.takeIf { it.isNotEmpty() }?.toCharArray(),
                         )
-                        tempWebdavPass = ""
-                        viewModel.testConnection()
+                        if (accepted) tempWebdavPass = ""
                     }
                 )
                 ActionButton(
@@ -403,16 +403,35 @@ fun BackupSettingsScreen(
                     icon = Icons.Rounded.CloudSync,
                     modifier = Modifier.fillMaxWidth(),
                     isPrimary = true,
-                    onClick = { 
-                        viewModel.saveWebDavConfig(
+                    onClick = {
+                        val accepted = viewModel.saveWebDavConfig(
                             tempWebdavUrl,
                             tempWebdavUser,
                             tempWebdavPass.takeIf { it.isNotEmpty() }?.toCharArray(),
                         )
-                        tempWebdavPass = ""
-                        showWebdavSheet = false 
+                        if (accepted) tempWebdavPass = ""
                     }
                 )
+                uiState.statusMessage?.let { status ->
+                    Text(
+                        text = status,
+                        style = NexaraTypography.bodyMedium,
+                        color = if (uiState.operation is BackupOperation.Blocked ||
+                            uiState.operation is BackupOperation.Error
+                        ) NexaraColors.Error else NexaraColors.OnSurfaceVariant,
+                    )
+                }
+                val blockedCode = (uiState.operation as? BackupOperation.Blocked)?.code
+                if (blockedCode == BackupErrorCode.CONNECTION_FAILED ||
+                    blockedCode == BackupErrorCode.CONFIGURATION_MISSING
+                ) {
+                    ActionButton(
+                        label = "重置 WebDAV 安全配置",
+                        icon = Icons.Rounded.DeleteForever,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { viewModel.resetWebDavAuth() },
+                    )
+                }
             }
         }
     }

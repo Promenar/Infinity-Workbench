@@ -12,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import java.util.UUID
 
 /** 由三次独立 am instrument 调用驱动，以验证 relay 真正杀进程、冷启动恢复和再次重启不重放。 */
 class AndroidRestoreRelayEndToEndTest {
@@ -45,8 +46,13 @@ class AndroidRestoreRelayEndToEndTest {
 
         val repository = BackupRepository(app)
         val bytes = repository.export()
+        val txId = UUID.randomUUID().toString()
         val metadata = try {
-            AndroidPendingRestoreStore(app).stage(bytes, null)
+            AndroidPendingRestoreStore(app).run {
+                begin(txId)
+                stage(txId, bytes, null)
+                authorize(txId)
+            }
         } finally {
             bytes.fill(0)
         }

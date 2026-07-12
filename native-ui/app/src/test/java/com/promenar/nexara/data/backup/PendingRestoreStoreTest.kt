@@ -18,7 +18,7 @@ class PendingRestoreStoreTest {
     @Test
     fun `staging ticket cannot overwrite another transaction and cancelled ticket cannot commit late stage`() {
         val file = Files.createTempFile("pending-restore", ".bin").toFile().also { it.delete() }
-        val store = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(ByteArray(32) { 4 })) { TX_ID }
+        val store = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(ByteArray(32) { 4 }))
         store.begin(TX_ID)
         store.read()!!.use { assertThat(it.metadata.phase).isEqualTo(PendingRestorePhase.STAGING) }
 
@@ -38,7 +38,7 @@ class PendingRestoreStoreTest {
     fun `stage authorize and cancel write failures preserve only non-restorable staging state`() {
         val file = Files.createTempFile("pending-restore", ".bin").toFile().also { it.delete() }
         val cryptor = SwitchableCryptor(ByteArray(32) { 6 })
-        val store = AndroidPendingRestoreStore(AtomicFile(file), cryptor) { TX_ID }
+        val store = AndroidPendingRestoreStore(AtomicFile(file), cryptor)
         store.begin(TX_ID)
 
         cryptor.failEncrypt = true
@@ -67,10 +67,12 @@ class PendingRestoreStoreTest {
         val packageBytes = "package-private-marker".toByteArray()
         val password = "password-private-marker".toCharArray()
 
-        val first = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(key)) { TX_ID }
-        val metadata = first.stage(packageBytes, password)
+        val first = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(key))
+        first.begin(TX_ID)
+        first.stage(TX_ID, packageBytes, password)
+        val metadata = first.authorize(TX_ID)
         val disk = file.readBytes().toString(Charsets.ISO_8859_1)
-        val recreated = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(key)) { error("unused") }
+        val recreated = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(key))
 
         assertThat(disk).doesNotContain("package-private-marker")
         assertThat(disk).doesNotContain("password-private-marker")
@@ -87,15 +89,15 @@ class PendingRestoreStoreTest {
     fun `tamper wrong key and truncated atomic file fail closed`() {
         val file = Files.createTempFile("pending-restore", ".bin").toFile().also { it.delete() }
         val key = ByteArray(32) { 1 }
-        val store = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(key)) { TX_ID }
-        store.stage(byteArrayOf(1, 2, 3), "pw".toCharArray())
+        val store = AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(key))
+        stageAuthorized(store, byteArrayOf(1, 2, 3), "pw".toCharArray())
 
         val tampered = file.readBytes().also { it[it.lastIndex] = (it.last() + 1).toByte() }
         file.writeBytes(tampered)
         assertThrows(BackupValidationException::class.java) { store.read() }
 
         AtomicFile(file).delete()
-        store.stage(byteArrayOf(1, 2, 3), "pw".toCharArray())
+        stageAuthorized(store, byteArrayOf(1, 2, 3), "pw".toCharArray())
         assertThrows(BackupValidationException::class.java) {
             AndroidPendingRestoreStore(AtomicFile(file), TestCryptor(ByteArray(32) { 2 })).read()
         }
@@ -128,6 +130,12 @@ class PendingRestoreStoreTest {
             return delegate.encrypt(plain)
         }
         override fun decrypt(encrypted: ByteArray) = delegate.decrypt(encrypted)
+    }
+
+    private fun stageAuthorized(store: PendingRestoreStore, bytes: ByteArray, password: CharArray?) {
+        store.begin(TX_ID)
+        store.stage(TX_ID, bytes, password)
+        store.authorize(TX_ID)
     }
 
     private companion object {

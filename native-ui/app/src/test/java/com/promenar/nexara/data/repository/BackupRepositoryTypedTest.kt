@@ -166,7 +166,6 @@ class BackupRepositoryTypedTest {
 
     private class FakePendingStore : PendingRestoreStore {
         override fun begin(expectedTxId: String) = Unit
-        override fun stage(packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata = error("unused")
         override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?) = error("unused")
         override fun authorize(expectedTxId: String) = error("unused")
         override fun read() = null
@@ -179,18 +178,16 @@ class BackupRepositoryTypedTest {
         var packageReference: ByteArray? = null
         var passwordReference: CharArray? = null
         override fun begin(expectedTxId: String) = Unit
-        override fun stage(packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
+        override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
             stageCalls++
             packageReference = packageBytes
             passwordReference = password
             return PendingRestoreMetadata(
-                "123e4567-e89b-12d3-a456-426614174000",
+                expectedTxId,
                 MessageDigest.getInstance("SHA-256").digest(packageBytes),
-                PendingRestorePhase.STAGED,
+                PendingRestorePhase.STAGING,
             )
         }
-        override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata =
-            stage(packageBytes, password).copy(txId = expectedTxId)
         override fun authorize(expectedTxId: String) = PendingRestoreMetadata(
             expectedTxId,
             MessageDigest.getInstance("SHA-256").digest(byteArrayOf(1)),

@@ -41,7 +41,7 @@ data class BackupUploadReceipt(
  * 备份用例边界。只接受 typed 参数，并委托 Task 5/6/7 的安全实现；不感知 UI 状态或 DAO。
  * 返回的包字节由调用方拥有，调用方使用完毕后负责擦除。
  */
-class BackupRepository(
+class BackupRepository internal constructor(
     private val dataSource: BackupDataSource,
     private val codec: BackupPackageCodec,
     private val webDav: WebDavBackupClient,

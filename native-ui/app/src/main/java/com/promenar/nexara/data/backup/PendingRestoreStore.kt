@@ -10,7 +10,6 @@ import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 import java.security.KeyStore
 import java.security.MessageDigest
-import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -41,9 +40,8 @@ class PendingRestorePayload(
     }
 }
 
-interface PendingRestoreStore {
+internal interface PendingRestoreStore {
     fun begin(expectedTxId: String)
-    fun stage(packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata
     fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata
     fun authorize(expectedTxId: String): PendingRestoreMetadata
     fun read(): PendingRestorePayload?
@@ -56,10 +54,9 @@ internal interface PendingRestoreCryptor {
     fun decrypt(encrypted: ByteArray): ByteArray
 }
 
-class AndroidPendingRestoreStore internal constructor(
+internal class AndroidPendingRestoreStore internal constructor(
     private val atomicFile: AtomicFile,
     private val cryptor: PendingRestoreCryptor,
-    private val txIdFactory: () -> String = { UUID.randomUUID().toString() },
 ) : PendingRestoreStore {
     constructor(context: Context) : this(
         AtomicFile(
@@ -84,14 +81,6 @@ class AndroidPendingRestoreStore internal constructor(
             ByteArray(0),
             null,
         )
-    }
-
-    @Synchronized
-    override fun stage(packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
-        val txId = txIdFactory()
-        begin(txId)
-        stage(txId, packageBytes, password)
-        return authorize(txId)
     }
 
     @Synchronized

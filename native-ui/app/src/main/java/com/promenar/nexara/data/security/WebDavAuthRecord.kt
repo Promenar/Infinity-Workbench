@@ -69,6 +69,7 @@ object WebDavAuthRecordCodec {
             val passwordBytes = ByteArray(passwordLength).also(buffer::get)
             var transferred = false
             try {
+                validateStrictUtf8(passwordBytes)
                 return WebDavAuthRecord(
                     decodeStrict(endpointBytes),
                     decodeStrict(usernameBytes),
@@ -106,4 +107,13 @@ object WebDavAuthRecordCodec {
         .onUnmappableCharacter(CodingErrorAction.REPORT)
         .decode(ByteBuffer.wrap(bytes))
         .toString()
+
+    private fun validateStrictUtf8(bytes: ByteArray) {
+        val chars = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+        // 只做严格编码验证，不创建不可擦除的 String。
+        for (index in 0 until chars.limit()) chars.put(index, '\u0000')
+    }
 }

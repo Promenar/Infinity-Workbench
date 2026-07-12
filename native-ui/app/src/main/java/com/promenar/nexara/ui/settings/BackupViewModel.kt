@@ -19,11 +19,14 @@ import com.promenar.nexara.data.security.WebDavAuthRecord
 import com.promenar.nexara.data.security.WebDavAuthRecordCodec
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,6 +55,8 @@ enum class BackupErrorCode {
 }
 
 sealed interface BackupOperation {
+    data object Initializing : BackupOperation
+    data object SavingConfig : BackupOperation
     data object Idle : BackupOperation
     data object Testing : BackupOperation
     data object ListingRemote : BackupOperation
@@ -83,6 +88,8 @@ data class BackupUiState(
     val isImporting: Boolean get() = operation is BackupOperation.StagingRestore || operation is BackupOperation.Restarting
     val statusMessage: String? get() = when (val current = operation) {
         BackupOperation.Idle -> null
+        BackupOperation.Initializing -> "正在安全读取备份配置…"
+        BackupOperation.SavingConfig -> "正在安全保存 WebDAV 配置…"
         BackupOperation.Testing -> "正在测试连接…"
         BackupOperation.ListingRemote -> "正在读取远程备份…"
         BackupOperation.Exporting -> "正在导出备份…"
@@ -100,6 +107,8 @@ data class BackupUiState(
         else -> null
     }
     val canExecute: Boolean get() = operation !is BackupOperation.Testing &&
+        operation !is BackupOperation.Initializing &&
+        operation !is BackupOperation.SavingConfig &&
         operation !is BackupOperation.ListingRemote &&
         operation !is BackupOperation.Exporting &&
         operation !is BackupOperation.Uploading &&
@@ -149,7 +158,6 @@ internal interface BackupViewModelHooks {
 }
 
 private data class BoundWebDavConfig(val revision: Long, val config: WebDavConfig)
-private data class SelectedRemote(val remote: RemoteBackup, val bound: BoundWebDavConfig)
 private data class ConfigMutationReservation(val revision: Long, val cancellation: OperationCancellation)
 private data class RestoreControl(
     val operationId: String,
@@ -189,6 +197,8 @@ class BackupViewModel internal constructor(
     private val restartRequester: BackupRestartRequester,
     private val clock: () -> Long = System::currentTimeMillis,
     private val hooks: BackupViewModelHooks = BackupViewModelHooks.None,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val synchronousIoForTests: Boolean = false,
 ) : ViewModel() {
     private val generation = AtomicLong(0)
     private val configRevision = AtomicLong(0)
@@ -203,8 +213,9 @@ class BackupViewModel internal constructor(
     private var restoreBlocked = false
     private var webDavBlocked = false
     private var cleared = false
+    private var initialized = false
 
-    private val _uiState = MutableStateFlow(loadInitialState())
+    private val _uiState = MutableStateFlow(BackupUiState())
     val uiState: StateFlow<BackupUiState> = _uiState.asStateFlow()
 
     constructor(application: Application) : this(
@@ -217,7 +228,27 @@ class BackupViewModel internal constructor(
     )
 
     init {
-        initializeCanonicalWebDavAuth()
+        if (synchronousIoForTests) {
+            initializeCanonicalWebDavAuth()
+            initialized = true
+        } else {
+            _uiState.update { it.copy(operation = BackupOperation.Initializing) }
+            operationScope.launch {
+                try {
+                    withContext(ioDispatcher) { initializeCanonicalWebDavAuth() }
+                } catch (error: Error) {
+                    publishFatalConfigFailure(error)
+                    throw error
+                } finally {
+                    synchronized(operationLock) {
+                        initialized = true
+                        if (_uiState.value.operation is BackupOperation.Initializing) {
+                            _uiState.update { it.copy(operation = BackupOperation.Idle) }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun setWebdavEnabled(enabled: Boolean) {
@@ -236,25 +267,64 @@ class BackupViewModel internal constructor(
     }
 
     fun setAutoBackup(enabled: Boolean) {
+        synchronized(operationLock) {
+            if (!initialized || restoreControl?.restartAuthorized == true || restoreBlocked || cleared) return
+        }
         settings.autoBackup = enabled
         _uiState.update { it.copy(autoBackup = enabled) }
     }
 
     fun setIncludeKeys(include: Boolean) {
+        synchronized(operationLock) {
+            if (!initialized || restoreControl?.restartAuthorized == true || restoreBlocked || cleared) return
+        }
         _uiState.update { it.copy(includeKeys = include) }
     }
 
     /** password 非空时由本方法取得所有权，并在返回前清零；null 表示保留既有密码。 */
     fun saveWebDavConfig(url: String, user: String, password: CharArray?): Boolean {
+        val ownedPassword = password?.copyOf()
+        password?.fill('\u0000')
         val reservation = synchronized(operationLock) {
-            val changed = url != _uiState.value.webdavUrl || user != _uiState.value.webdavUser || password != null
+            val changed = url != _uiState.value.webdavUrl || user != _uiState.value.webdavUser || ownedPassword != null
             if (!changed) return true
             reserveWebDavMutationLocked()
         }
         if (reservation == null) {
-            password?.fill('\u0000')
+            ownedPassword?.fill('\u0000')
             return false
         }
+        if (!synchronousIoForTests) {
+            _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
+            operationScope.launch {
+                try {
+                    withContext(ioDispatcher) { saveWebDavConfigNow(url, user, ownedPassword, reservation) }
+                } catch (error: Exception) {
+                    publishConfigFailureIfNeeded("保存 WebDAV 配置失败")
+                } catch (error: Error) {
+                    publishFatalConfigFailure(error)
+                    throw error
+                } finally {
+                    ownedPassword?.fill('\u0000')
+                }
+            }
+            return true
+        }
+        return try {
+            saveWebDavConfigNow(url, user, ownedPassword, reservation)
+        } finally {
+            ownedPassword?.fill('\u0000')
+        }
+    }
+
+    private fun saveWebDavConfigNow(
+        url: String,
+        user: String,
+        password: CharArray?,
+        reservation: ConfigMutationReservation,
+        releaseReservation: Boolean = true,
+        manageFailure: Boolean = true,
+    ): Boolean {
         try {
             reservation.cancellation.run()
             val existingPassword = if (password == null) readCanonicalAuth().useAndCopyPassword() else null
@@ -268,21 +338,98 @@ class BackupViewModel internal constructor(
                 existingPassword?.fill('\u0000')
             }
             val hasPassword = effectivePassword?.isNotEmpty() == true
-            finishWebDavMutation(reservation.revision) {
-                it.copy(webdavUrl = url, webdavUser = user, hasWebDavPassword = hasPassword)
+            if (releaseReservation) {
+                finishWebDavMutation(reservation.revision) {
+                    it.copy(
+                        webdavUrl = url,
+                        webdavUser = user,
+                        hasWebDavPassword = hasPassword,
+                        operation = BackupOperation.Success("WebDAV 配置已安全保存"),
+                    )
+                }
+            } else synchronized(operationLock) {
+                check(configMutationRevision == reservation.revision)
+                _uiState.update { it.copy(
+                    webdavUrl = url,
+                    webdavUser = user,
+                    hasWebDavPassword = hasPassword,
+                    operation = BackupOperation.Testing,
+                ) }
             }
             cleanupWebDavCachesBestEffort(url, user)
             return true
         } catch (error: Throwable) {
-            handleWebDavMutationFailure(reservation.revision, error)
+            if (manageFailure) handleWebDavMutationFailure(reservation.revision, error)
             throw error
-        } finally {
-            password?.fill('\u0000')
         }
+    }
+
+    /** 保存与连接测试是同一个异步操作，不会用到旧 revision。 */
+    fun saveAndTestWebDavConfig(url: String, user: String, password: CharArray?): Boolean {
+        val ownedPassword = password?.copyOf()
+        password?.fill('\u0000')
+        val reservation = synchronized(operationLock) { reserveWebDavMutationLocked() }
+        if (reservation == null) {
+            ownedPassword?.fill('\u0000')
+            return false
+        }
+        _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
+        operationScope.launch {
+            try {
+                withContext(ioDispatcher) {
+                    saveWebDavConfigNow(
+                        url,
+                        user,
+                        ownedPassword,
+                        reservation,
+                        releaseReservation = false,
+                        manageFailure = false,
+                    )
+                    val config = readCanonicalWebDavConfig()
+                    operations.testRemote(config).getOrThrow()
+                }
+                completeConfigMutation(
+                    reservation.revision,
+                    BackupOperation.Success("连接测试成功"),
+                )
+            } catch (error: Exception) {
+                withContext(ioDispatcher) { resolveSaveAndTestFailure(reservation.revision, fatal = false) }
+            } catch (error: Error) {
+                try {
+                    withContext(NonCancellable + ioDispatcher) {
+                        resolveSaveAndTestFailure(reservation.revision, fatal = true)
+                    }
+                } catch (resolutionError: Error) {
+                    if (resolutionError !== error) error.addSuppressed(resolutionError)
+                }
+                throw error
+            } finally {
+                ownedPassword?.fill('\u0000')
+            }
+        }
+        return true
     }
 
     fun deleteWebDavPassword(): Boolean {
         val reservation = synchronized(operationLock) { reserveWebDavMutationLocked() } ?: return false
+        if (!synchronousIoForTests) {
+            _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
+            operationScope.launch {
+                try {
+                    withContext(ioDispatcher) { deleteWebDavPasswordNow(reservation) }
+                } catch (error: Exception) {
+                    publishConfigFailureIfNeeded("删除 WebDAV 密码失败")
+                } catch (error: Error) {
+                    publishFatalConfigFailure(error)
+                    throw error
+                }
+            }
+            return true
+        }
+        return deleteWebDavPasswordNow(reservation)
+    }
+
+    private fun deleteWebDavPasswordNow(reservation: ConfigMutationReservation): Boolean {
         try {
             reservation.cancellation.run()
             val current = readCanonicalAuth()
@@ -295,7 +442,12 @@ class BackupViewModel internal constructor(
                 }
                 // canonical 先发布，prefs 只是可修复的公开缓存。
             }
-            finishWebDavMutation(reservation.revision) { it.copy(hasWebDavPassword = false) }
+            finishWebDavMutation(reservation.revision) {
+                it.copy(
+                    hasWebDavPassword = false,
+                    operation = BackupOperation.Success("WebDAV 密码已删除"),
+                )
+            }
             cleanupWebDavCachesBestEffort(current.endpoint, current.username)
             return true
         } catch (error: Throwable) {
@@ -304,9 +456,81 @@ class BackupViewModel internal constructor(
         }
     }
 
+    /** 仅用于 canonical 损坏后的显式安全恢复；不会回退读取 legacy 密码。 */
+    fun resetWebDavAuth(): Boolean {
+        val revision = synchronized(operationLock) {
+            if (!initialized || configMutationRevision != null || currentJob != null || restoreControl != null || cleared) return false
+            configRevision.incrementAndGet().also { configMutationRevision = it }
+        }
+        if (!synchronousIoForTests) {
+            _uiState.update { it.copy(operation = BackupOperation.SavingConfig) }
+            operationScope.launch {
+                try {
+                    withContext(ioDispatcher) { resetWebDavAuthNow(revision) }
+                } catch (error: Error) {
+                    publishFatalConfigFailure(error)
+                    throw error
+                }
+            }
+            return true
+        }
+        return resetWebDavAuthNow(revision)
+    }
+
+    private fun resetWebDavAuthNow(revision: Long): Boolean {
+        return try {
+            val encoded = WebDavAuthRecordCodec.encode("", "", null)
+            try {
+                secrets.put(SecretCatalog.webDavAuthRecord, encoded)
+            } finally {
+                encoded.fill(0)
+            }
+            synchronized(operationLock) {
+                check(configMutationRevision == revision)
+                webDavBlocked = false
+                configMutationRevision = null
+                _uiState.update { it.copy(
+                    webdavUrl = "",
+                    webdavUser = "",
+                    hasWebDavPassword = false,
+                    remoteBackups = emptyList(),
+                    selectedRemote = null,
+                    remoteConfigRevision = null,
+                    operation = BackupOperation.Success("WebDAV 安全配置已重置"),
+                ) }
+            }
+            cleanupWebDavCachesBestEffort("", "")
+            true
+        } catch (error: Throwable) {
+            val recovered = try {
+                readCanonicalAuth().use { it.endpoint.isEmpty() && it.username.isEmpty() && it.passwordBytes.isEmpty() }
+            } catch (_: Exception) {
+                false
+            }
+            synchronized(operationLock) {
+                if (configMutationRevision == revision) configMutationRevision = null
+                webDavBlocked = !recovered
+                _uiState.update { state -> state.copy(
+                    operation = if (recovered) BackupOperation.Success("WebDAV 安全配置已重置")
+                    else BackupOperation.Blocked(
+                        BackupErrorCode.CONNECTION_FAILED,
+                        "WebDAV 安全配置重置失败",
+                    ),
+                    webdavUrl = if (recovered) "" else state.webdavUrl,
+                    webdavUser = if (recovered) "" else state.webdavUser,
+                    hasWebDavPassword = if (recovered) false else state.hasWebDavPassword,
+                ) }
+            }
+            if (recovered) cleanupWebDavCachesBestEffort("", "")
+            if (error is Error) throw error
+            recovered
+        }
+    }
+
     fun testConnection(): Boolean {
-        val bound = captureWebDavConfig() ?: return false
-        return startOperation(BackupOperation.Testing, webDavRevision = bound.revision) { token ->
+        val revision = captureWebDavRevision() ?: return false
+        return startOperation(BackupOperation.Testing, webDavRevision = revision) { token ->
+            val bound = readBoundWebDavConfig(revision)
             operations.testRemote(bound.config).getOrThrow()
             hooks.beforeStateCommit(BackupOperation.Testing)
             complete(token, BackupOperation.Success("连接测试成功"), bound.revision)
@@ -314,8 +538,9 @@ class BackupViewModel internal constructor(
     }
 
     fun listRemote(): Boolean {
-        val bound = captureWebDavConfig() ?: return false
-        return startOperation(BackupOperation.ListingRemote, webDavRevision = bound.revision) { token ->
+        val revision = captureWebDavRevision() ?: return false
+        return startOperation(BackupOperation.ListingRemote, webDavRevision = revision) { token ->
+            val bound = readBoundWebDavConfig(revision)
             val backups = operations.listRemote(bound.config)
             hooks.beforeStateCommit(BackupOperation.ListingRemote)
             synchronized(operationLock) {
@@ -364,8 +589,8 @@ class BackupViewModel internal constructor(
 
     /** password/confirmation 由本方法取得所有权并清零。 */
     fun upload(password: CharArray?, confirmation: CharArray?): Boolean {
-        val bound = captureWebDavConfig()
-        if (bound == null) {
+        val revision = captureWebDavRevision()
+        if (revision == null) {
             password?.fill('\u0000')
             confirmation?.fill('\u0000')
             return false
@@ -374,8 +599,9 @@ class BackupViewModel internal constructor(
             BackupOperation.Uploading,
             password,
             confirmation,
-            webDavRevision = bound.revision,
+            webDavRevision = revision,
         ) { token, options ->
+            val bound = readBoundWebDavConfig(revision)
             val receipt = operations.upload(bound.config, options)
             hooks.beforeStateCommit(BackupOperation.Uploading)
             recordBackupSuccess(
@@ -416,25 +642,28 @@ class BackupViewModel internal constructor(
             }
             return false
         }
-        val bound = captureWebDavConfig()
-        if (bound == null || bound.revision != selectedRevision.second) {
+        val revision = captureWebDavRevision()
+        if (revision == null || revision != selectedRevision.second) {
             password?.fill('\u0000')
             return false
         }
-        val selection = SelectedRemote(selectedRevision.first, bound)
-        return startRestore(password, webDavRevision = selection.bound.revision) { operationId, owned ->
-            operations.stageRemoteRestore(operationId, selection.bound.config, selection.remote, owned)
+        val selected = selectedRevision.first
+        return startRestore(password, webDavRevision = revision) { operationId, owned ->
+            val bound = readBoundWebDavConfig(revision)
+            operations.stageRemoteRestore(operationId, bound.config, selected, owned)
         }
     }
 
     fun cancelOperation() {
+        var restoreOperationId: String? = null
         val cancellation = synchronized(operationLock) {
             val restore = restoreControl
             if (restore != null) {
                 if (restore.restartAuthorized) return@synchronized OperationCancellation.None
+                restoreOperationId = restore.operationId
                 generation.incrementAndGet()
                 _uiState.update { state -> state.copy(operation = BackupOperation.CancellingRestore) }
-                OperationCancellation.Active(currentJob, null)
+                OperationCancellation.Active(currentJob, currentCleanup)
             } else {
                 generation.incrementAndGet()
                 takeCurrentOperationLocked().also {
@@ -442,7 +671,12 @@ class BackupViewModel internal constructor(
                 }
             }
         }
-        cancellation.run()
+        try {
+            cancellation.run()
+        } catch (error: Throwable) {
+            restoreOperationId?.let(::markRestoreCleanupBlocked)
+            if (restoreOperationId == null || error is Error) throw error
+        }
     }
 
     override fun onCleared() {
@@ -580,7 +814,7 @@ class BackupViewModel internal constructor(
         val token: Long
         val cleanup = OnceCleanup(onCompletion)
         val launched = synchronized(operationLock) {
-            if (currentJob != null || restoreBlocked || cleared || restoreControl?.restartAuthorized == true) return false
+            if (!initialized || currentJob != null || restoreBlocked || cleared || restoreControl?.restartAuthorized == true) return false
             if (webDavRevision != null && configMutationRevision != null) return false
             if (webDavRevision != null && webDavRevision != configRevision.get()) return false
             token = generation.incrementAndGet()
@@ -653,7 +887,7 @@ class BackupViewModel internal constructor(
 
     private fun fail(token: Long, code: BackupErrorCode, message: String) {
         synchronized(operationLock) {
-            if (!restoreBlocked && isCurrentLocked(token, null)) {
+            if (!restoreBlocked && !webDavBlocked && isCurrentLocked(token, null)) {
                 _uiState.update { it.copy(operation = BackupOperation.Error(code, message)) }
             }
         }
@@ -674,7 +908,7 @@ class BackupViewModel internal constructor(
     private fun requestAuthorizedRestart(operationId: String) {
         try {
             restartRequester.requestRestart()
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             synchronized(operationLock) {
                 if (restoreControl?.operationId == operationId && restoreControl?.restartAuthorized == true) {
                     restoreBlocked = true
@@ -686,6 +920,7 @@ class BackupViewModel internal constructor(
                     }
                 }
             }
+            if (error is Error) throw error
         }
     }
 
@@ -772,12 +1007,15 @@ class BackupViewModel internal constructor(
         currentJob != null || restoreControl != null || restoreBlocked || cleared
     }
 
-    private fun captureWebDavConfig(): BoundWebDavConfig? {
-        val snapshot = synchronized(operationLock) {
-            if (configMutationRevision != null || webDavBlocked || restoreControl != null) return null
-            configRevision.get()
-        }
-        val auth = try { readCanonicalAuth() } catch (_: Exception) {
+    private fun captureWebDavRevision(): Long? = synchronized(operationLock) {
+        if (!initialized || configMutationRevision != null || webDavBlocked || restoreControl != null) null
+        else configRevision.get()
+    }
+
+    private suspend fun readBoundWebDavConfig(revision: Long): BoundWebDavConfig {
+        val config = try {
+            withContext(ioDispatcher) { readCanonicalWebDavConfig() }
+        } catch (error: Exception) {
             synchronized(operationLock) {
                 webDavBlocked = true
                 _uiState.update { it.copy(operation = BackupOperation.Blocked(
@@ -785,21 +1023,18 @@ class BackupViewModel internal constructor(
                     "WebDAV 安全认证记录损坏，已禁止连接",
                 )) }
             }
-            return null
+            throw error
         }
-        try {
-            val password = auth.passwordBytes.toString(Charsets.UTF_8)
-            return synchronized(operationLock) {
-                if (configMutationRevision != null || configRevision.get() != snapshot) null
-                else BoundWebDavConfig(snapshot, WebDavConfig(auth.endpoint, auth.username, password))
+        synchronized(operationLock) {
+            if (configMutationRevision != null || configRevision.get() != revision) {
+                throw CancellationException("WebDAV 配置 revision 已变更")
             }
-        } finally {
-            auth.close()
         }
+        return BoundWebDavConfig(revision, config)
     }
 
     private fun reserveWebDavMutationLocked(): ConfigMutationReservation? {
-        if (configMutationRevision != null || webDavBlocked || restoreControl != null || cleared) return null
+        if (!initialized || configMutationRevision != null || webDavBlocked || restoreControl != null || cleared) return null
         val revision = configRevision.incrementAndGet()
         configMutationRevision = revision
         val cancellation = if (activeWebDavRevision != null) {
@@ -827,6 +1062,49 @@ class BackupViewModel internal constructor(
         }
     }
 
+    private fun completeConfigMutation(revision: Long, operation: BackupOperation) {
+        synchronized(operationLock) {
+            if (configMutationRevision != revision) return
+            configMutationRevision = null
+            _uiState.update { it.copy(operation = operation) }
+        }
+    }
+
+    private fun resolveSaveAndTestFailure(revision: Long, fatal: Boolean) {
+        var readFailure: Throwable? = null
+        val auth = try { readCanonicalAuth() } catch (error: Throwable) {
+            readFailure = error
+            null
+        }
+        var endpoint: String? = null
+        var username: String? = null
+        var hasPassword = false
+        auth?.use {
+            endpoint = it.endpoint
+            username = it.username
+            hasPassword = it.passwordBytes.isNotEmpty()
+        }
+        synchronized(operationLock) {
+            if (configMutationRevision != revision) return
+            configMutationRevision = null
+            webDavBlocked = fatal || auth == null || readFailure is Error
+            _uiState.update { state -> state.copy(
+                webdavUrl = endpoint ?: state.webdavUrl,
+                webdavUser = username ?: state.webdavUser,
+                hasWebDavPassword = if (auth == null) state.hasWebDavPassword else hasPassword,
+                operation = if (webDavBlocked) BackupOperation.Blocked(
+                    BackupErrorCode.CONNECTION_FAILED,
+                    "WebDAV 保存或测试失败，已故障关闭",
+                ) else BackupOperation.Error(
+                    BackupErrorCode.CONNECTION_FAILED,
+                    "WebDAV 配置已按 canonical 结果保存，但连接测试失败",
+                ),
+            ) }
+        }
+        if (auth != null) cleanupWebDavCachesBestEffort(endpoint.orEmpty(), username.orEmpty())
+        (readFailure as? Error)?.let { throw it }
+    }
+
     private fun takeCurrentOperationLocked(): OperationCancellation {
         val cancellation = OperationCancellation.Active(currentJob, currentCleanup)
         currentJob = null
@@ -837,6 +1115,11 @@ class BackupViewModel internal constructor(
     }
 
     private fun initializeCanonicalWebDavAuth() {
+        _uiState.update { it.copy(
+            webdavEnabled = settings.webDavEnabled,
+            autoBackup = settings.autoBackup,
+            lastBackupTime = settings.lastBackupTime,
+        ) }
         try {
             val existing = secrets.get(SecretCatalog.webDavAuthRecord)
             val auth = if (existing != null) {
@@ -844,12 +1127,15 @@ class BackupViewModel internal constructor(
             } else {
                 val legacyBytes = secrets.get(SecretCatalog.webDavPassword)
                 val plaintext = settings.webDavPasswordPlaintext
-                val password = when {
-                    legacyBytes != null -> legacyBytes.toString(Charsets.UTF_8).toCharArray()
-                    plaintext != null -> plaintext.toCharArray()
-                    else -> null
+                val password = try {
+                    when {
+                        legacyBytes != null -> decodeUtf8ToChars(legacyBytes)
+                        plaintext != null -> plaintext.toCharArray()
+                        else -> null
+                    }
+                } finally {
+                    legacyBytes?.fill(0)
                 }
-                legacyBytes?.fill(0)
                 try {
                     val encoded = WebDavAuthRecordCodec.encode(settings.webDavUrl, settings.webDavUser, password)
                     try { secrets.put(SecretCatalog.webDavAuthRecord, encoded) } finally { encoded.fill(0) }
@@ -867,11 +1153,13 @@ class BackupViewModel internal constructor(
                 cleanupWebDavCachesBestEffort(it.endpoint, it.username)
             }
         } catch (_: Exception) {
-            webDavBlocked = true
-            _uiState.update { it.copy(operation = BackupOperation.Blocked(
-                BackupErrorCode.CONNECTION_FAILED,
-                "WebDAV 安全认证记录无法读取，已故障关闭",
-            )) }
+            synchronized(operationLock) {
+                webDavBlocked = true
+                _uiState.update { it.copy(operation = BackupOperation.Blocked(
+                    BackupErrorCode.CONNECTION_FAILED,
+                    "WebDAV 安全认证记录无法读取，已故障关闭",
+                )) }
+            }
         }
     }
 
@@ -881,8 +1169,32 @@ class BackupViewModel internal constructor(
         return try { WebDavAuthRecordCodec.decode(encoded) } finally { encoded.fill(0) }
     }
 
+    private fun readCanonicalWebDavConfig(): WebDavConfig {
+        val auth = readCanonicalAuth()
+        auth.use {
+            val password = decodeUtf8ToChars(it.passwordBytes)
+            return try {
+                WebDavConfig(it.endpoint, it.username, password.concatToString())
+            } finally {
+                password.fill('\u0000')
+            }
+        }
+    }
+
     private fun WebDavAuthRecord.useAndCopyPassword(): CharArray = use {
-        it.passwordBytes.toString(Charsets.UTF_8).toCharArray()
+        decodeUtf8ToChars(it.passwordBytes)
+    }
+
+    private fun decodeUtf8ToChars(bytes: ByteArray): CharArray {
+        val chars = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+        return try {
+            CharArray(chars.remaining()).also(chars::get)
+        } finally {
+            for (index in 0 until chars.limit()) chars.put(index, '\u0000')
+        }
     }
 
     private fun repairPublicWebDavCache(url: String, user: String) {
@@ -947,14 +1259,27 @@ class BackupViewModel internal constructor(
         }
     }
 
-    private fun loadInitialState() = BackupUiState(
-        webdavEnabled = settings.webDavEnabled,
-        autoBackup = settings.autoBackup,
-        webdavUrl = settings.webDavUrl,
-        webdavUser = settings.webDavUser,
-        hasWebDavPassword = secrets.contains(SecretCatalog.webDavPassword),
-        lastBackupTime = settings.lastBackupTime,
-    )
+    private fun publishConfigFailureIfNeeded(message: String) {
+        synchronized(operationLock) {
+            if (_uiState.value.operation is BackupOperation.SavingConfig) {
+                _uiState.update { it.copy(operation = BackupOperation.Error(
+                    BackupErrorCode.CONFIGURATION_MISSING,
+                    message,
+                )) }
+            }
+        }
+    }
+
+    private fun publishFatalConfigFailure(error: Error) {
+        synchronized(operationLock) {
+            configMutationRevision = null
+            webDavBlocked = true
+            _uiState.update { it.copy(operation = BackupOperation.Blocked(
+                BackupErrorCode.CONFIGURATION_MISSING,
+                "WebDAV 安全配置遇到严重错误：${error::class.java.simpleName}",
+            )) }
+        }
+    }
 
     private fun constantTimeEquals(left: CharArray, right: CharArray): Boolean {
         var difference = left.size xor right.size
