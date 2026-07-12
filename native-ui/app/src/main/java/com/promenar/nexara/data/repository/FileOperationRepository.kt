@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.repository
 
 import com.promenar.nexara.data.local.db.dao.FileEntryDao
+import com.promenar.nexara.data.local.db.dao.FileVersionDao
+import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.local.db.entity.FileVersionEntity
 import com.promenar.nexara.domain.repository.DiffHunk
 import com.promenar.nexara.domain.repository.DiffLine
 import com.promenar.nexara.domain.repository.DiffResult
@@ -13,109 +16,77 @@ import com.promenar.nexara.domain.repository.WriteResult
 import com.promenar.nexara.infra.util.MyersDiff
 import com.promenar.nexara.infra.util.Sha256Utils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
+import java.util.UUID
 
 class FileOperationRepository(
-    private val dao: FileEntryDao
+    private val dao: FileEntryDao,
+    private val versionDao: FileVersionDao,
+    private val currentFileWriter: ((File, String) -> Unit)? = null,
+    private val versionCommitter: (suspend (FileVersionEntity, FileEntry) -> Unit)? = null,
 ) : IFileOperationRepository {
+    private val mutationMutex = Mutex()
 
     override suspend fun writeFileAtomic(
+        workspaceRootUuid: String,
         uuid: String,
         newContent: String,
         sessionId: String,
-        expectedHash: String
+        expectedHash: String,
     ): WriteResult = withContext(Dispatchers.IO) {
-        val entry = dao.getByUuid(uuid) ?: return@withContext WriteResult.NotFound
-
-        if (entry.hash != expectedHash) {
-            return@withContext WriteResult.Conflict(
-                currentHash = entry.hash,
-                expectedHash = expectedHash,
-                message = "文件已被其他会话修改。请先读取最新版本再重试。"
-            )
+        mutationMutex.withLock {
+            val entry = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withLock WriteResult.NotFound
+            if (entry.isDirectory) return@withLock WriteResult.NotFound
+            if (entry.hash != expectedHash) {
+                return@withLock WriteResult.Conflict(
+                    currentHash = entry.hash,
+                    expectedHash = expectedHash,
+                    message = "文件已被其他会话修改。请先读取最新版本再重试。",
+                )
+            }
+            commitContentChange(entry, newContent, sessionId)
+            WriteResult.Success(Sha256Utils.hash(newContent))
         }
-
-        val newHash = Sha256Utils.hash(newContent)
-
-        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
-        writeTextAtomically(physicalFile, newContent)
-
-        val now = System.currentTimeMillis()
-        dao.update(
-            entry.copy(
-                hash = newHash,
-                sizeBytes = newContent.toByteArray(Charsets.UTF_8).size.toLong(),
-                lastWriteSessionId = sessionId,
-                updatedAt = now
-            )
-        )
-
-        if (entry.hash != newHash && entry.vectorizedAt != null) {
-            // TODO: 接入向量化队列，触发异步重索引
-        }
-
-        WriteResult.Success(newHash)
     }
 
     override suspend fun readFileRange(
+        workspaceRootUuid: String,
         uuid: String,
         startLine: Int?,
-        endLine: Int?
+        endLine: Int?,
     ): ReadResult = withContext(Dispatchers.IO) {
-        val entry = dao.getByUuid(uuid) ?: throw NoSuchElementException("File not found: $uuid")
-
+        val entry = requireFile(workspaceRootUuid, uuid)
         val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
         val allLines = if (physicalFile.exists()) physicalFile.readLines() else emptyList()
-        val totalLines = allLines.size
-
-        val s = startLine?.coerceIn(1, totalLines) ?: 1
-        val e = endLine?.coerceIn(1, totalLines) ?: totalLines
-
-        val content = if (totalLines == 0) {
-            ""
-        } else {
-            allLines.subList((s - 1).coerceAtMost(totalLines), e.coerceAtMost(totalLines))
-                .joinToString("\n")
-        }
-
-        ReadResult(
-            uuid = entry.uuid,
-            name = entry.name,
-            totalLines = totalLines,
-            startLine = s,
-            endLine = e,
-            content = content,
-            hash = entry.hash,
-            lastModified = entry.updatedAt
-        )
+        val total = allLines.size
+        val start = startLine?.coerceIn(1, total.coerceAtLeast(1)) ?: 1
+        val end = endLine?.coerceIn(1, total.coerceAtLeast(1)) ?: total
+        val content = if (total == 0) "" else allLines.subList(start - 1, end).joinToString("\n")
+        ReadResult(entry.uuid, entry.name, total, start, end, content, entry.hash, entry.updatedAt)
     }
 
     override suspend fun diffFile(
+        workspaceRootUuid: String,
         uuid: String,
-        basisHash: String?
+        basisHash: String?,
     ): DiffResult = withContext(Dispatchers.IO) {
-        val entry = dao.getByUuid(uuid) ?: throw NoSuchElementException("File not found: $uuid")
-
+        val entry = requireFile(workspaceRootUuid, uuid)
         val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
         val currentContent = if (physicalFile.exists()) physicalFile.readText() else ""
-        val currentLines = currentContent.lines()
-
-        val basisContent = if (basisHash != null) {
-            reconstructBasisContent(entry, basisHash, physicalFile, currentContent)
-        } else {
-            currentContent
+        val basisContent = when {
+            basisHash == null || basisHash == entry.hash -> currentContent
+            else -> readVersionContent(entry, basisHash)
         }
-        val basisLines = basisContent.lines()
-
         val effectiveBasisHash = basisHash ?: entry.hash
-
-        val hunks = MyersDiff.computeHunks(basisLines, currentLines)
-
+        val hunks = MyersDiff.computeHunks(basisContent.lines(), currentContent.lines())
         DiffResult(
             uuid = entry.uuid,
             basisHash = effectiveBasisHash,
@@ -126,200 +97,234 @@ class FileOperationRepository(
                     oldCount = hunk.oldCount,
                     newStart = hunk.newStart,
                     newCount = hunk.newCount,
-                    lines = hunk.lines.map { line ->
-                        DiffLine(type = line.type, content = line.content)
-                    }
+                    lines = hunk.lines.map { DiffLine(it.type, it.content) },
                 )
-            }
+            },
         )
     }
 
     override suspend fun patchFile(
+        workspaceRootUuid: String,
         uuid: String,
         operations: List<PatchOperation>,
-        expectedHash: String
+        expectedHash: String,
     ): PatchResult = withContext(Dispatchers.IO) {
-        val entry = dao.getByUuid(uuid)
-            ?: return@withContext PatchResult.Failure(
-                PatchError(
-                    code = "FILE_NOT_FOUND",
-                    message = "文件不存在: $uuid",
-                    operationIndex = -1,
-                    fileUuid = uuid
-                )
-            )
-
-        if (entry.hash != expectedHash) {
-            return@withContext PatchResult.Failure(
-                PatchError(
+        mutationMutex.withLock {
+            val entry = dao.getByUuid(workspaceRootUuid, uuid)
+                ?: return@withLock fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
+            if (entry.isDirectory) return@withLock fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
+            if (entry.hash != expectedHash) {
+                return@withLock PatchResult.Failure(PatchError(
                     code = "HASH_MISMATCH",
-                    message = "文件已被其他会话修改 (当前: ${entry.hash}, 期望: $expectedHash)。请先 diff_file 获取最新差异，再重试。",
+                    message = "文件已被其他会话修改。请先获取最新差异再重试。",
                     operationIndex = -1,
                     fileUuid = uuid,
-                    suggestion = "请先调用 diff_file(uuid='$uuid') 获取最新差异，再重新规划 patch 操作。"
-                )
-            )
-        }
+                    suggestion = "请先调用 diff_file 获取最新差异。",
+                ))
+            }
 
-        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
-        val currentContent = if (physicalFile.exists()) physicalFile.readText() else ""
-        val lines = currentContent.lines().toMutableList()
-        val totalLines = lines.size
+            val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
+            val currentContent = if (physicalFile.exists()) physicalFile.readText() else ""
+            val lines = currentContent.lines().toMutableList()
+            val originalTotal = lines.size
+            var lineOffset = 0
 
-        var lineOffset = 0
-
-        for ((index, op) in operations.withIndex()) {
-            when (op.action) {
-                "replace_lines" -> {
-                    val start = (op.startLine ?: 0) + lineOffset
-                    val end = (op.endLine ?: 0) + lineOffset
-                    if (start < 1 || end < start || start > totalLines + lineOffset) {
-                        return@withContext PatchResult.Failure(
-                            PatchError(
-                                code = "LINE_OUT_OF_RANGE",
-                                message = "操作 'replace_lines' 指定的 startLine=${op.startLine}, endLine=${op.endLine} 超出文件行数 (当前共 $totalLines 行)。请检查文件长度后重试。",
-                                operationIndex = index,
-                                fileUuid = uuid,
-                                totalLines = totalLines,
-                                suggestion = "请先调用 read_file(uuid='$uuid', mode='range', startLine=1, endLine=$totalLines) 获取当前完整内容，再重新规划 patch 操作。"
-                            )
-                        )
+            operations.forEachIndexed { index, operation ->
+                when (operation.action) {
+                    "replace_lines" -> {
+                        val start = (operation.startLine ?: 0) + lineOffset
+                        val end = (operation.endLine ?: 0) + lineOffset
+                        if (start < 1 || end < start || start > lines.size) {
+                            return@withLock rangeFailure(operation, index, uuid, originalTotal)
+                        }
+                        val replacement = (operation.newContent ?: "").lines()
+                        val count = end - start + 1
+                        lines.subList(start - 1, (start - 1 + count).coerceAtMost(lines.size)).clear()
+                        lines.addAll(start - 1, replacement)
+                        lineOffset += replacement.size - count
                     }
-                    val newLines = (op.newContent ?: "").lines()
-                    val replaceCount = end - start + 1
-                    lines.subList(start - 1, (start - 1 + replaceCount).coerceAtMost(lines.size))
-                        .clear()
-                    lines.addAll(start - 1, newLines)
-                    lineOffset += newLines.size - replaceCount
-                }
-
-                "insert_after" -> {
-                    val afterLine = op.afterLine ?: 0
-                    if (afterLine < 0 || afterLine > totalLines + lineOffset) {
-                        return@withContext PatchResult.Failure(
-                            PatchError(
-                                code = "LINE_OUT_OF_RANGE",
-                                message = "操作 'insert_after' 指定的 afterLine=$afterLine 超出文件行数 (当前共 $totalLines 行)。请检查文件长度后重试。",
-                                operationIndex = index,
-                                fileUuid = uuid,
-                                totalLines = totalLines,
-                                suggestion = "请先调用 read_file(uuid='$uuid', mode='range', startLine=1, endLine=$totalLines) 获取当前完整内容，再重新规划 patch 操作。"
-                            )
-                        )
+                    "insert_after" -> {
+                        val after = operation.afterLine ?: -1
+                        val indexInCurrent = after + lineOffset
+                        if (after < 0 || indexInCurrent > lines.size) {
+                            return@withLock rangeFailure(operation, index, uuid, originalTotal)
+                        }
+                        val insertion = (operation.newContent ?: "").lines()
+                        lines.addAll(indexInCurrent, insertion)
+                        lineOffset += insertion.size
                     }
-                    val newLines = (op.newContent ?: "").lines()
-                    lines.addAll(afterLine + lineOffset, newLines)
-                    lineOffset += newLines.size
-                }
-
-                "delete_lines" -> {
-                    val start = (op.startLine ?: 0) + lineOffset
-                    val end = (op.endLine ?: 0) + lineOffset
-                    if (start < 1 || end < start || start > lines.size) {
-                        return@withContext PatchResult.Failure(
-                            PatchError(
-                                code = "LINE_OUT_OF_RANGE",
-                                message = "操作 'delete_lines' 指定的 startLine=${op.startLine}, endLine=${op.endLine} 超出文件行数 (当前共 $totalLines 行)。请检查文件长度后重试。",
-                                operationIndex = index,
-                                fileUuid = uuid,
-                                totalLines = totalLines,
-                                suggestion = "请先调用 read_file(uuid='$uuid', mode='range', startLine=1, endLine=$totalLines) 获取当前完整内容，再重新规划 patch 操作。"
-                            )
-                        )
+                    "delete_lines" -> {
+                        val start = (operation.startLine ?: 0) + lineOffset
+                        val end = (operation.endLine ?: 0) + lineOffset
+                        if (start < 1 || end < start || start > lines.size) {
+                            return@withLock rangeFailure(operation, index, uuid, originalTotal)
+                        }
+                        val count = end - start + 1
+                        lines.subList(start - 1, (start - 1 + count).coerceAtMost(lines.size)).clear()
+                        lineOffset -= count
                     }
-                    val deleteCount = end - start + 1
-                    lines.subList(start - 1, (start - 1 + deleteCount).coerceAtMost(lines.size))
-                        .clear()
-                    lineOffset -= deleteCount
-                }
-
-                else -> {
-                    return@withContext PatchResult.Failure(
-                        PatchError(
-                            code = "INVALID_ACTION",
-                            message = "未知的 patch 操作类型: '${op.action}'。支持的操作: replace_lines, insert_after, delete_lines",
-                            operationIndex = index,
-                            fileUuid = uuid
-                        )
-                    )
+                    else -> return@withLock PatchResult.Failure(PatchError(
+                        code = "INVALID_ACTION",
+                        message = "未知的 patch 操作类型: ${operation.action}",
+                        operationIndex = index,
+                        fileUuid = uuid,
+                    ))
                 }
             }
+
+            val newContent = lines.joinToString("\n")
+            commitContentChange(entry, newContent, null)
+            PatchResult.Success(Sha256Utils.hash(newContent), operations.size)
         }
+    }
 
-        val newContent = lines.joinToString("\n")
+    private suspend fun commitContentChange(entry: FileEntry, newContent: String, sessionId: String?) {
+        val physicalFile = resolveRootedFile(entry.physicalRootPath, entry.materializedPath)
+        val oldContent = if (physicalFile.exists()) physicalFile.readText() else ""
+        val physicalHash = Sha256Utils.hash(oldContent)
+        if (physicalHash != entry.hash) {
+            throw IllegalStateException("文件内容与数据库哈希不一致，已拒绝覆盖: ${entry.uuid}")
+        }
         val newHash = Sha256Utils.hash(newContent)
+        if (newHash == entry.hash && oldContent == newContent) return
 
-        writeTextAtomically(physicalFile, newContent)
-
-        val now = System.currentTimeMillis()
-        dao.update(
-            entry.copy(
-                hash = newHash,
-                sizeBytes = newContent.toByteArray(Charsets.UTF_8).size.toLong(),
-                lastWriteSessionId = entry.lastWriteSessionId,
-                updatedAt = now
-            )
+        val versionId = UUID.randomUUID().toString()
+        val snapshot = resolveSnapshotFile(entry, versionId)
+        writeTextAtomically(snapshot, oldContent)
+        val version = FileVersionEntity(
+            id = versionId,
+            fileUuid = entry.uuid,
+            workspaceRootUuid = entry.workspaceRootUuid,
+            hash = entry.hash,
+            contentPath = snapshot.absolutePath,
+            createdBySessionId = sessionId,
+            createdAt = System.currentTimeMillis(),
+        )
+        val updated = entry.copy(
+            hash = newHash,
+            sizeBytes = newContent.toByteArray(Charsets.UTF_8).size.toLong(),
+            lastWriteSessionId = sessionId,
+            updatedAt = System.currentTimeMillis(),
         )
 
-        if (entry.hash != newHash && entry.vectorizedAt != null) {
-            // TODO: 接入向量化队列，触发异步重索引
+        try {
+            (currentFileWriter ?: ::writeTextAtomically).invoke(physicalFile, newContent)
+            try {
+                (versionCommitter ?: versionDao::commitVersionAndFile).invoke(version, updated)
+            } catch (databaseFailure: Throwable) {
+                restoreAfterFailure(physicalFile, oldContent, databaseFailure)
+                throw databaseFailure
+            }
+        } catch (failure: Throwable) {
+            if (runCatching { physicalFile.exists() && physicalFile.readText() != oldContent }.getOrDefault(true)) {
+                restoreAfterFailure(physicalFile, oldContent, failure)
+            }
+            snapshot.delete()
+            throw failure
         }
-
-        PatchResult.Success(newHash = newHash, appliedOperations = operations.size)
     }
 
-    private fun reconstructBasisContent(
-        entry: com.promenar.nexara.data.local.db.entity.FileEntry,
-        basisHash: String,
-        physicalFile: File,
-        currentContent: String
-    ): String {
-        if (basisHash == entry.hash && physicalFile.exists()) {
-            return currentContent
+    private fun restoreAfterFailure(file: File, oldContent: String, original: Throwable) {
+        try {
+            writeTextAtomically(file, oldContent)
+        } catch (rollbackFailure: Throwable) {
+            original.addSuppressed(rollbackFailure)
         }
-        return ""
     }
+
+    private suspend fun readVersionContent(entry: FileEntry, basisHash: String): String {
+        val version = versionDao.getByHash(entry.workspaceRootUuid, entry.uuid, basisHash)
+            ?: throw NoSuchElementException("File version not found: ${entry.uuid}@$basisHash")
+        val rootPath = File(entry.physicalRootPath).canonicalFile.toPath()
+        val expectedDir = rootPath.resolve(".nexara_versions").normalize()
+        val rawSnapshotPath = File(version.contentPath).toPath().toAbsolutePath().normalize()
+        if (!rawSnapshotPath.startsWith(expectedDir)) {
+            throw SecurityException("文件版本快照路径无效")
+        }
+        var cursor = rootPath
+        rootPath.relativize(rawSnapshotPath).forEach { segment ->
+            cursor = cursor.resolve(segment)
+            if (Files.exists(cursor, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(cursor)) {
+                throw SecurityException("文件版本快照路径包含软链接")
+            }
+        }
+        val snapshot = rawSnapshotPath.toFile().canonicalFile
+        if (!snapshot.path.startsWith(expectedDir.toFile().canonicalPath + File.separator) || !snapshot.isFile) {
+            throw SecurityException("文件版本快照路径无效")
+        }
+        return snapshot.readText()
+    }
+
+    private fun resolveSnapshotFile(entry: FileEntry, versionId: String): File {
+        val snapshot = resolveRootedFile(
+            entry.physicalRootPath,
+            "/.nexara_versions/${entry.workspaceRootUuid}/${entry.uuid}/$versionId.snapshot",
+        )
+        snapshot.parentFile?.let { if (!it.mkdirs() && !it.isDirectory) error("无法创建版本目录") }
+        return snapshot
+    }
+
+    private suspend fun requireFile(workspaceRootUuid: String, uuid: String): FileEntry =
+        dao.getByUuid(workspaceRootUuid, uuid)?.takeUnless { it.isDirectory }
+            ?: throw NoSuchElementException("File not found: $uuid")
 
     private fun resolveRootedFile(rootPath: String, materializedPath: String): File {
         val root = File(rootPath).canonicalFile
-        val relativePath = materializedPath.trimStart('/', '\\')
-        val target = File(root, relativePath).canonicalFile
-        val rootPrefix = root.path + File.separator
-        if (target.path != root.path && !target.path.startsWith(rootPrefix)) {
-            throw SecurityException("File path escapes workspace root: $materializedPath")
+        val rootNioPath = root.toPath()
+        val rawTargetPath = rootNioPath.resolve(materializedPath.trimStart('/', '\\')).normalize()
+        if (rawTargetPath != rootNioPath && !rawTargetPath.startsWith(rootNioPath)) {
+            throw SecurityException("文件路径越过工作区根: $materializedPath")
+        }
+        var cursor = rootNioPath
+        rootNioPath.relativize(rawTargetPath).forEach { segment ->
+            cursor = cursor.resolve(segment)
+            if (Files.exists(cursor, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(cursor)) {
+                throw SecurityException("文件路径包含软链接: $materializedPath")
+            }
+        }
+        val target = rawTargetPath.toFile().canonicalFile
+        if (target != root && !target.path.startsWith(root.path + File.separator)) {
+            throw SecurityException("文件路径越过工作区根: $materializedPath")
         }
         return target
     }
 
     private fun writeTextAtomically(target: File, content: String) {
-        val parent = target.parentFile ?: throw IllegalStateException("File has no parent: ${target.path}")
-        if (!parent.exists() && !parent.mkdirs()) {
-            throw IllegalStateException("Failed to create parent directory: ${parent.path}")
-        }
-
-        val bytes = content.toByteArray(Charsets.UTF_8)
+        val parent = target.parentFile ?: error("文件缺少父目录")
+        if (!parent.exists() && !parent.mkdirs()) error("无法创建父目录: ${parent.path}")
         val temp = File.createTempFile("${target.name}.", ".tmp", parent)
         try {
             FileOutputStream(temp).use { stream ->
-                stream.write(bytes)
+                stream.write(content.toByteArray(Charsets.UTF_8))
                 stream.fd.sync()
             }
             try {
-                Files.move(
-                    temp.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
+                Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
             } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(
-                    temp.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
+                Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
         } finally {
-            if (temp.exists()) temp.delete()
+            temp.delete()
         }
     }
+
+    private fun fileFailure(code: String, message: String, uuid: String) =
+        PatchResult.Failure(PatchError(code, message, -1, uuid))
+
+    private fun rangeFailure(operation: PatchOperation, index: Int, uuid: String, total: Int) =
+        PatchResult.Failure(PatchError(
+            code = "LINE_OUT_OF_RANGE",
+            message = "操作 ${operation.action} 超出文件行数（共 $total 行）。",
+            operationIndex = index,
+            fileUuid = uuid,
+            totalLines = total,
+            suggestion = "请先读取当前文件内容后重试。",
+        ))
+
+    // Task3B 完成 root 透传前，旧入口全部失败关闭。
+    override suspend fun writeFileAtomic(uuid: String, newContent: String, sessionId: String, expectedHash: String): WriteResult = WriteResult.NotFound
+    override suspend fun readFileRange(uuid: String, startLine: Int?, endLine: Int?): ReadResult = throw NoSuchElementException("workspaceRootUuid required")
+    override suspend fun diffFile(uuid: String, basisHash: String?): DiffResult = throw NoSuchElementException("workspaceRootUuid required")
+    override suspend fun patchFile(uuid: String, operations: List<PatchOperation>, expectedHash: String): PatchResult =
+        fileFailure("FILE_NOT_FOUND", "workspaceRootUuid required", uuid)
 }

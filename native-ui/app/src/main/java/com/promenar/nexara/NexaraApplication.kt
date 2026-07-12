@@ -9,6 +9,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.room.Room
+import java.io.File
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
@@ -200,11 +201,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository by lazy {
-        WorkspaceRepository(database.fileEntryDao(), database.workspaceSeqDao())
+        WorkspaceRepository(
+            database.fileEntryDao(),
+            database.workspaceSeqDao(),
+            File(filesDir, "session_workspaces"),
+        )
     }
 
     val fileOperationRepository: com.promenar.nexara.domain.repository.IFileOperationRepository by lazy {
-        FileOperationRepository(database.fileEntryDao())
+        FileOperationRepository(database.fileEntryDao(), database.fileVersionDao())
     }
 
     val taskRepository: com.promenar.nexara.domain.repository.ITaskRepository by lazy {

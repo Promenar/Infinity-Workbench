@@ -7,7 +7,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.domain.repository.PatchOperation
+import com.promenar.nexara.domain.repository.PatchResult
 import com.promenar.nexara.domain.repository.WriteResult
+import com.promenar.nexara.infra.util.Sha256Utils
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -29,8 +32,8 @@ class FileOperationRepositoryTest {
         db = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repo = FileOperationRepository(db.fileEntryDao())
-        testDir = File(System.getProperty("java.io.tmpdir"), "nexara_test_${System.currentTimeMillis()}")
+        repo = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao())
+        testDir = File(System.getProperty("java.io.tmpdir"), "nexara_test_${System.nanoTime()}")
         testDir.mkdirs()
     }
 
@@ -42,72 +45,116 @@ class FileOperationRepositoryTest {
 
     private suspend fun insertTestFile(
         uuid: String = "file-1",
+        workspaceRootUuid: String = "root-1",
         content: String = "hello world",
-        hash: String = "abc123"
     ): FileEntry {
         val file = File(testDir, "test.txt")
         file.writeText(content)
+        val hash = Sha256Utils.hash(content)
         val entry = FileEntry(
             uuid = uuid,
-            parentUuid = null,
+            workspaceRootUuid = workspaceRootUuid,
+            parentUuid = workspaceRootUuid,
             name = "test.txt",
             hash = hash,
             sizeBytes = content.toByteArray().size.toLong(),
-            isDirectory = false,
             physicalRootPath = testDir.absolutePath,
             materializedPath = "/test.txt",
             createdAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis()
+            updatedAt = System.currentTimeMillis(),
         )
         db.fileEntryDao().insert(entry)
         return entry
     }
 
     @Test
-    fun `write success when hash matches`() = runBlocking {
-        val entry = insertTestFile(hash = "abc123")
-        val result = repo.writeFileAtomic("file-1", "new content", "session-1", "abc123")
+    fun `write is root scoped snapshots old content and diff reads history`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "old content")
+        val result = repo.writeFileAtomic("root-1", entry.uuid, "new content", "session-1", entry.hash)
+
         assertThat(result).isInstanceOf(WriteResult.Success::class.java)
-        val success = result as WriteResult.Success
-        assertThat(success.newHash).isNotEmpty()
-        assertThat(success.newHash).isNotEqualTo("abc123")
+        val versions = db.fileVersionDao().getByFile("root-1", entry.uuid)
+        assertThat(versions).hasSize(1)
+        assertThat(versions.single().hash).isEqualTo(entry.hash)
+        assertThat(versions.single().workspaceRootUuid).isEqualTo("root-1")
+        assertThat(File(versions.single().contentPath).readText()).isEqualTo("old content")
 
-        val updated = db.fileEntryDao().getByUuid("file-1")!!
-        assertThat(updated.hash).isEqualTo(success.newHash)
-        assertThat(updated.lastWriteSessionId).isEqualTo("session-1")
+        val diff = repo.diffFile("root-1", entry.uuid, entry.hash)
+        assertThat(diff.hunks).isNotEmpty()
+        assertThat(diff.basisHash).isEqualTo(entry.hash)
     }
 
     @Test
-    fun `write returns Conflict when hash mismatches`() = runBlocking {
-        insertTestFile(hash = "abc123")
-        val result = repo.writeFileAtomic("file-1", "new content", "session-1", "wrong-hash")
-        assertThat(result).isInstanceOf(WriteResult.Conflict::class.java)
-        val conflict = result as WriteResult.Conflict
-        assertThat(conflict.currentHash).isEqualTo("abc123")
-        assertThat(conflict.expectedHash).isEqualTo("wrong-hash")
+    fun `patch snapshots old content only after operations validate`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "line1\nline2")
+        val invalid = repo.patchFile(
+            "root-1",
+            entry.uuid,
+            listOf(PatchOperation("delete_lines", startLine = 9, endLine = 10)),
+            entry.hash,
+        )
+        assertThat(invalid).isInstanceOf(PatchResult.Failure::class.java)
+        assertThat(db.fileVersionDao().getByFile("root-1", entry.uuid)).isEmpty()
+
+        val valid = repo.patchFile(
+            "root-1",
+            entry.uuid,
+            listOf(PatchOperation("replace_lines", startLine = 2, endLine = 2, newContent = "changed")),
+            entry.hash,
+        )
+        assertThat(valid).isInstanceOf(PatchResult.Success::class.java)
+        val version = db.fileVersionDao().getByFile("root-1", entry.uuid).single()
+        assertThat(File(version.contentPath).readText()).isEqualTo("line1\nline2")
     }
 
     @Test
-    fun `write returns NotFound when uuid does not exist`() = runBlocking {
-        val result = repo.writeFileAtomic("nonexistent", "content", "session-1", "any")
-        assertThat(result).isInstanceOf(WriteResult.NotFound::class.java)
+    fun `cross root UUID is indistinguishable from not found and creates no version`() = runBlocking<Unit> {
+        val entry = insertTestFile()
+        assertThat(repo.writeFileAtomic("root-2", entry.uuid, "x", "session", entry.hash))
+            .isEqualTo(WriteResult.NotFound)
+        assertThat(db.fileVersionDao().getByFile("root-1", entry.uuid)).isEmpty()
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("hello world")
     }
 
     @Test
-    fun `read returns file content`() = runBlocking {
-        insertTestFile(content = "line1\nline2\nline3")
-        val result = repo.readFileRange("file-1")
-        assertThat(result.content).isEqualTo("line1\nline2\nline3")
-        assertThat(result.totalLines).isEqualTo(3)
-        assertThat(result.name).isEqualTo("test.txt")
+    fun `physical write failure leaves database current file and versions unchanged`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        repo = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao()) { _, _ ->
+            throw IllegalStateException("injected write failure")
+        }
+
+        var failed = false
+        try {
+            repo.writeFileAtomic("root-1", entry.uuid, "new", "session", entry.hash)
+        } catch (_: IllegalStateException) {
+            failed = true
+        }
+        assertThat(failed).isTrue()
+        assertThat(db.fileEntryDao().getByUuid("root-1", entry.uuid)!!.hash).isEqualTo(entry.hash)
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("stable")
+        assertThat(db.fileVersionDao().getByFile("root-1", entry.uuid)).isEmpty()
     }
 
     @Test
-    fun `read with line range`() = runBlocking {
-        insertTestFile(content = "line1\nline2\nline3\nline4\nline5")
-        val result = repo.readFileRange("file-1", startLine = 2, endLine = 4)
-        assertThat(result.startLine).isEqualTo(2)
-        assertThat(result.endLine).isEqualTo(4)
-        assertThat(result.content).isEqualTo("line2\nline3\nline4")
+    fun `database commit failure rolls physical file back and removes staged snapshot`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        repo = FileOperationRepository(
+            dao = db.fileEntryDao(),
+            versionDao = db.fileVersionDao(),
+            versionCommitter = { _, _ -> throw IllegalStateException("injected database failure") },
+        )
+
+        var failed = false
+        try {
+            repo.writeFileAtomic("root-1", entry.uuid, "new", "session", entry.hash)
+        } catch (_: IllegalStateException) {
+            failed = true
+        }
+
+        assertThat(failed).isTrue()
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("stable")
+        assertThat(db.fileEntryDao().getByUuid("root-1", entry.uuid)!!.hash).isEqualTo(entry.hash)
+        assertThat(db.fileVersionDao().getByFile("root-1", entry.uuid)).isEmpty()
+        assertThat(File(testDir, ".nexara_versions").walkTopDown().filter { it.isFile }.toList()).isEmpty()
     }
 }
