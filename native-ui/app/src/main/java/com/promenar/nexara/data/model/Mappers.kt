@@ -2,7 +2,9 @@ package com.promenar.nexara.data.model
 
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.serializer
 
 val json = Json {
@@ -16,6 +18,26 @@ private inline fun <reified T> encodeToJson(value: T): String =
 
 private inline fun <reified T> decodeFromJson(text: String): T =
     json.decodeFromString(serializer<T>(), text)
+
+internal fun decodeKgPathsOrNull(
+    text: String,
+    decoder: (String) -> List<KgPath> = { decodeFromJson<List<KgPath>>(it) },
+): List<KgPath>? = try {
+    decoder(text)
+} catch (_: SerializationException) {
+    logKgPathsDecodeFailure()
+    null
+} catch (_: IllegalArgumentException) {
+    logKgPathsDecodeFailure()
+    null
+}
+
+private fun logKgPathsDecodeFailure() {
+    NexaraLogger.logError(
+        "MessageMapper.KgPathsDecode",
+        IllegalArgumentException("kgPaths JSON 解析失败"),
+    )
+}
 
 fun SessionEntity.toDomain(): Session = Session(
     id = id,
@@ -94,6 +116,7 @@ fun MessageEntity.toDomain(): Message = Message(
     tokens = tokens?.let { decodeFromJson<TokenUsage>(it) },
     citations = citations?.let { decodeFromJson<List<Citation>>(it) },
     ragReferences = ragReferences?.let { decodeFromJson<List<RagReference>>(it) },
+    kgPaths = kgPaths?.let(::decodeKgPathsOrNull),
     ragProgress = ragProgress?.let { decodeFromJson<RagProgress>(it) },
     ragMetadata = ragMetadata?.let { decodeFromJson<RagMetadata>(it) },
     ragReferencesLoading = ragReferencesLoading == 1,
@@ -127,6 +150,7 @@ fun Message.toEntity(sessionId: String): MessageEntity = MessageEntity(
     tokens = tokens?.let { encodeToJson(it) },
     citations = citations?.let { encodeToJson(it) },
     ragReferences = ragReferences?.let { encodeToJson(it) },
+    kgPaths = kgPaths?.let { encodeToJson(it) },
     ragProgress = ragProgress?.let { encodeToJson(it) },
     ragMetadata = ragMetadata?.let { encodeToJson(it) },
     ragReferencesLoading = if (ragReferencesLoading) 1 else 0,

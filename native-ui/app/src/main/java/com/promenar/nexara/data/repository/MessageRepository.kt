@@ -4,6 +4,7 @@ import com.promenar.nexara.data.local.db.dao.MessageDao
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.model.Citation
 import com.promenar.nexara.data.model.ExecutionStep
+import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagMetadata
@@ -83,6 +84,7 @@ open class MessageRepository(
                 "tokens" -> result.copy(tokens = value?.let { encode(it as TokenUsage) })
                 "citations" -> result.copy(citations = value?.let { encode(it as List<Citation>) })
                 "ragReferences" -> result.copy(ragReferences = value?.let { encode(it as List<RagReference>) })
+                "kgPaths" -> result.copy(kgPaths = value?.let { encode(it as List<KgPath>) })
                 "ragProgress" -> result.copy(ragProgress = value?.let { encode(it as RagProgress) })
                 "ragMetadata" -> result.copy(ragMetadata = value?.let { encode(it as RagMetadata) })
                 "ragReferencesLoading" -> result.copy(ragReferencesLoading = if (value as? Boolean == true) 1 else 0)

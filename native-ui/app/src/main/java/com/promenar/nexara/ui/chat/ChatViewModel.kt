@@ -49,6 +49,7 @@ import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.ui.chat.manager.ApprovalManager
 import com.promenar.nexara.ui.chat.manager.ContextBuilder
 import com.promenar.nexara.ui.chat.manager.ContextBuilderParams
+import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
 import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.MessageManager
 import com.promenar.nexara.ui.chat.manager.PostProcessor
@@ -99,6 +100,27 @@ data class ChatUiState(
     val error: String? = null,
     val approvalRequest: ApprovalRequest? = null
 )
+
+internal fun ContextBuilderResult.hasPersistableRagContext(): Boolean =
+    ragContext.isNotBlank() || ragReferences.isNotEmpty() || citations.isNotEmpty() ||
+        kgPaths.isNotEmpty() || ragUsage != null
+
+internal fun ContextBuilderResult.toMessageRagUpdateOptions(): UpdateMessageOptions? {
+    if (ragReferences.isEmpty() && citations.isEmpty() && kgPaths.isEmpty()) return null
+    val hasReferenceMetadata = ragReferences.isNotEmpty() || citations.isNotEmpty()
+    return UpdateMessageOptions(
+        ragReferences = ragReferences.ifEmpty { null },
+        citations = citations.ifEmpty { null },
+        kgPaths = kgPaths.ifEmpty { null },
+        ragMetadata = if (hasReferenceMetadata) {
+            RagMetadata(
+                chunkCount = ragReferences.size,
+                totalTokens = ragUsage?.ragSystem ?: 0,
+                retrievalTimeMs = 0,
+            )
+        } else null,
+    )
+}
 
 class ChatViewModel(
     private val application: Application,
@@ -476,10 +498,7 @@ class ChatViewModel(
         }
         _providerResolutionFailure.value = null
 
-        val hasRagContext = contextResult.ragContext.isNotBlank() ||
-            contextResult.ragReferences.isNotEmpty() ||
-            contextResult.citations.isNotEmpty() ||
-            contextResult.ragUsage != null
+        val hasRagContext = contextResult.hasPersistableRagContext()
 
         if (!hasRagContext) {
             _ragPhases.update { emptyList() }
@@ -500,18 +519,10 @@ class ChatViewModel(
             }
         }
 
-        if (contextResult.ragReferences.isNotEmpty() || contextResult.citations.isNotEmpty()) {
+        contextResult.toMessageRagUpdateOptions()?.let { ragUpdate ->
             messageManager.updateMessageContent(
                 sessionId, assistantMsgId, "",
-                UpdateMessageOptions(
-                    ragReferences = contextResult.ragReferences.ifEmpty { null },
-                    citations = contextResult.citations.ifEmpty { null },
-                    ragMetadata = RagMetadata(
-                        chunkCount = contextResult.ragReferences.size,
-                        totalTokens = contextResult.ragUsage?.ragSystem ?: 0,
-                        retrievalTimeMs = 0
-                    )
-                )
+                ragUpdate,
             )
         }
 

@@ -22,6 +22,7 @@ import com.promenar.nexara.data.backup.ValidatedBackup
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
+import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +49,70 @@ class ChatViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 
     private lateinit var viewModel: ChatViewModel
+
+    private val kgPath = KgPath(
+        queryKeywords = listOf("Nexara"),
+        nodes = listOf(KgNode("n1", "Nexara", "project")),
+        edges = emptyList(),
+    )
+
+    @Test
+    fun contextResultWithOnlyKgPathsKeepsRagStateAndBuildsKgUpdate() {
+        val result = ContextBuilderResult(
+            searchContext = "",
+            finalSystemPrompt = "system",
+            ragContext = "",
+            citations = emptyList(),
+            ragReferences = emptyList(),
+            ragUsage = null,
+            kgPaths = listOf(kgPath),
+        )
+
+        assertThat(result.hasPersistableRagContext()).isTrue()
+        val options = result.toMessageRagUpdateOptions()
+        assertThat(options).isNotNull()
+        assertThat(options!!.kgPaths).containsExactly(kgPath)
+        assertThat(options.ragReferences).isNull()
+        assertThat(options.citations).isNull()
+        assertThat(options.ragMetadata).isNull()
+    }
+
+    @Test
+    fun contextResultWithReferencesAndKgPathsBuildsOneCompleteUpdate() {
+        val reference = RagReference(id = "r1", content = "content", source = "doc", score = 0.9f)
+        val result = ContextBuilderResult(
+            searchContext = "",
+            finalSystemPrompt = "system",
+            ragContext = "context",
+            citations = emptyList(),
+            ragReferences = listOf(reference),
+            ragUsage = RagUsage(ragSystem = 12),
+            kgPaths = listOf(kgPath),
+        )
+
+        val options = result.toMessageRagUpdateOptions()
+        assertThat(options).isNotNull()
+        assertThat(options!!.ragReferences).containsExactly(reference)
+        assertThat(options.kgPaths).containsExactly(kgPath)
+        assertThat(options.ragMetadata?.chunkCount).isEqualTo(1)
+        assertThat(options.ragMetadata?.totalTokens).isEqualTo(12)
+    }
+
+    @Test
+    fun emptyKgPathsDoNotCreateMessageUpdateOrFakeRagMetadata() {
+        val result = ContextBuilderResult(
+            searchContext = "",
+            finalSystemPrompt = "system",
+            ragContext = "",
+            citations = emptyList(),
+            ragReferences = emptyList(),
+            ragUsage = null,
+            kgPaths = emptyList(),
+        )
+
+        assertThat(result.hasPersistableRagContext()).isFalse()
+        assertThat(result.toMessageRagUpdateOptions()).isNull()
+    }
 
     @Test
     fun applicationDoesNotKeepCredentialBearingProviderStateFlow() {

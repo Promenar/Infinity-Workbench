@@ -111,6 +111,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
+import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
@@ -128,6 +129,13 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+internal fun Message.hasRagArtifacts(): Boolean =
+    !ragReferences.isNullOrEmpty() || !kgPaths.isNullOrEmpty() ||
+        !citations.isNullOrEmpty() || ragReferencesLoading
+
+internal fun selectRagActiveMessage(messages: List<Message>): Message? =
+    messages.find { it.hasRagArtifacts() } ?: messages.lastOrNull()
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -365,15 +373,11 @@ fun ChatScreen(
                         val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
 
                         if (!group.isUser) {
-                            val ragActiveMsg = group.assistantMessages.find { 
-                                !it.ragReferences.isNullOrEmpty() || !it.citations.isNullOrEmpty() || it.ragReferencesLoading 
-                            } ?: group.assistantMessages.lastOrNull()
+                            val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
 
                             if (ragActiveMsg != null) {
                                 val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
-                                val hasRagArtifacts = !ragActiveMsg.ragReferences.isNullOrEmpty() ||
-                                    !ragActiveMsg.citations.isNullOrEmpty() ||
-                                    ragActiveMsg.ragReferencesLoading
+                                val hasRagArtifacts = ragActiveMsg.hasRagArtifacts()
                                 val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
                                 val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
                                 if (targetPhases.isNotEmpty() || hasRagArtifacts) {

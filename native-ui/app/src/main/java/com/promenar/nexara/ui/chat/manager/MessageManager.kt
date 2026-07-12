@@ -21,21 +21,41 @@ import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+data class MessageManagerHooks(
+    val beforeUiApply: suspend (String) -> Unit = {},
+    val beforeDbWrite: suspend (String) -> Unit = {},
+)
+
+internal data class MessageCoordinationState(
+    val lanes: Int = 0,
+    val pendingUi: Int = 0,
+    val inFlightUi: Int = 0,
+    val uiJobs: Int = 0,
+    val pendingDb: Int = 0,
+    val dbJobs: Int = 0,
+    val purging: Int = 0,
+)
 
 class MessageManager(
     private val store: ChatStore,
     private val messageRepository: IMessageRepository,
     private val sessionRepository: ISessionRepository,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
+    private val hooks: MessageManagerHooks = MessageManagerHooks(),
 ) {
     private data class PendingUpdate(
+        val epoch: Long,
         var content: String,
         var tokens: TokenUsage? = null,
         var reasoning: String? = null,
@@ -56,10 +76,24 @@ class MessageManager(
         var loopCount: Int? = null
     )
 
+    private data class MessageLane(
+        val mutex: Mutex = Mutex(),
+        var epoch: Long = 0L,
+    )
+
+    private data class DbPendingUpdate(
+        val epoch: Long,
+        val updates: MutableMap<String, Any?>,
+    )
+
+    private val stateLock = Any()
+    private val lanes = mutableMapOf<String, MessageLane>()
+    private val purgingKeys = mutableSetOf<String>()
     private val pendingUpdates = mutableMapOf<String, PendingUpdate>()
+    private val inFlightUiUpdates = mutableMapOf<String, PendingUpdate>()
     private val throttleJobs = mutableMapOf<String, Job>()
 
-    private val dbPendingUpdates = mutableMapOf<String, MutableMap<String, Any?>>()
+    private val dbPendingUpdates = mutableMapOf<String, DbPendingUpdate>()
     private val dbDebounceJobs = mutableMapOf<String, Job>()
 
     companion object {
@@ -114,44 +148,57 @@ class MessageManager(
         options: UpdateMessageOptions? = null
     ) {
         val key = "$sessionId:$messageId"
-        val current = pendingUpdates[key] ?: PendingUpdate(content = content)
+        if (store.getSession(sessionId)?.messages?.any { it.id == messageId } != true) return
+        val jobToStart = synchronized(stateLock) {
+            if (key in purgingKeys) return
+            val lane = lanes.getOrPut(key) { MessageLane() }
+            val current = pendingUpdates[key]
+                ?.takeIf { it.epoch == lane.epoch }
+                ?: PendingUpdate(epoch = lane.epoch, content = content)
 
-        current.content = content
-        options?.tokens?.let { current.tokens = it }
-        options?.reasoning?.let { current.reasoning = it }
-        options?.citations?.let { current.citations = it }
-        options?.ragReferences?.let { current.ragReferences = it }
-        options?.kgPaths?.let { current.kgPaths = it }
-        options?.ragReferencesLoading?.let { current.ragReferencesLoading = it }
-        options?.ragMetadata?.let { current.ragMetadata = it }
-        options?.thoughtSignature?.let { current.thoughtSignature = it }
-        options?.planningTask?.let { current.taskState = it }
-        options?.toolCalls?.let { current.toolCalls = it }
-        options?.executionSteps?.let { current.executionSteps = it }
-        options?.pendingApprovalToolIds?.let { current.pendingApprovalToolIds = it }
-        options?.toolResults?.let { current.toolResults = it }
-        options?.isError?.let { current.isError = it }
-        options?.errorMessage?.let { current.errorMessage = it }
-        options?.isLongWait?.let { current.isLongWait = it }
-        options?.loopCount?.let { current.loopCount = it }
+            current.content = content
+            options?.tokens?.let { current.tokens = it }
+            options?.reasoning?.let { current.reasoning = it }
+            options?.citations?.let { current.citations = it }
+            options?.ragReferences?.let { current.ragReferences = it }
+            options?.kgPaths?.let { current.kgPaths = it }
+            options?.ragReferencesLoading?.let { current.ragReferencesLoading = it }
+            options?.ragMetadata?.let { current.ragMetadata = it }
+            options?.thoughtSignature?.let { current.thoughtSignature = it }
+            options?.planningTask?.let { current.taskState = it }
+            options?.toolCalls?.let { current.toolCalls = it }
+            options?.executionSteps?.let { current.executionSteps = it }
+            options?.pendingApprovalToolIds?.let { current.pendingApprovalToolIds = it }
+            options?.toolResults?.let { current.toolResults = it }
+            options?.isError?.let { current.isError = it }
+            options?.errorMessage?.let { current.errorMessage = it }
+            options?.isLongWait?.let { current.isLongWait = it }
+            options?.loopCount?.let { current.loopCount = it }
+            pendingUpdates[key] = current
 
-        pendingUpdates[key] = current
-
-        if (!throttleJobs.containsKey(key)) {
-            throttleJobs[key] = scope.launch {
-                delay(UI_THROTTLE_MS)
-                flushUpdate(sessionId, messageId)
+            if (throttleJobs.containsKey(key)) null else {
+                scope.launch(start = CoroutineStart.LAZY) {
+                    delay(UI_THROTTLE_MS)
+                    flushUpdate(sessionId, messageId)
+                }.also { throttleJobs[key] = it }
             }
         }
+        jobToStart?.start()
     }
 
     internal suspend fun flushUpdate(sessionId: String, messageId: String) {
         val key = "$sessionId:$messageId"
-        val pending = pendingUpdates.remove(key) ?: return
-        throttleJobs.remove(key)
+        val lane = synchronized(stateLock) { lanes.getOrPut(key) { MessageLane() } }
+        lane.mutex.withLock {
+            val pending = synchronized(stateLock) {
+                throttleJobs.remove(key)
+                pendingUpdates.remove(key)?.takeIf { it.epoch == lane.epoch }
+                    ?.also { inFlightUiUpdates[key] = it }
+            } ?: return
+            hooks.beforeUiApply(key)
 
-        val session = store.getSession(sessionId) ?: return
-        val message = session.messages.find { it.id == messageId } ?: return
+            val session = store.getSession(sessionId) ?: return
+            val message = session.messages.find { it.id == messageId } ?: return
 
         val oldTokens = message.tokens ?: TokenUsage()
         val newTokens = pending.tokens ?: oldTokens
@@ -213,27 +260,31 @@ class MessageManager(
             pending.errorMessage?.let { put("errorMessage", it) }
         }
 
-        debouncedDbUpdate(sessionId, messageId, dbUpdates)
+            debouncedDbUpdate(sessionId, messageId, pending.epoch, dbUpdates)
 
-        store.update { state ->
-            state.copy(
-                sessions = state.sessions.map { s ->
-                    if (s.id == sessionId) {
-                        s.copy(
-                            messages = s.messages.map { m ->
-                                if (m.id == messageId) {
-                                    applyPendingToMessage(m, pending, newTokens)
-                                } else m
-                            },
-                            lastMessage = pending.content,
-                            stats = SessionStats(
-                                totalTokens = updatedBilling.total,
-                                billing = updatedBilling
+            store.update { state ->
+                state.copy(
+                    sessions = state.sessions.map { s ->
+                        if (s.id == sessionId) {
+                            s.copy(
+                                messages = s.messages.map { m ->
+                                    if (m.id == messageId) {
+                                        applyPendingToMessage(m, pending, newTokens)
+                                    } else m
+                                },
+                                lastMessage = pending.content,
+                                stats = SessionStats(
+                                    totalTokens = updatedBilling.total,
+                                    billing = updatedBilling
+                                )
                             )
-                        )
-                    } else s
-                }
-            )
+                        } else s
+                    }
+                )
+            }
+            synchronized(stateLock) {
+                if (inFlightUiUpdates[key] === pending) inFlightUiUpdates.remove(key)
+            }
         }
     }
 
@@ -262,25 +313,144 @@ class MessageManager(
         loopCount = pending.loopCount ?: message.loopCount
     )
 
-    private fun debouncedDbUpdate(sessionId: String, messageId: String, updates: Map<String, Any?>) {
+    private fun debouncedDbUpdate(
+        sessionId: String,
+        messageId: String,
+        epoch: Long,
+        updates: Map<String, Any?>,
+    ) {
         val key = "$sessionId:$messageId"
+        val jobToStart = synchronized(stateLock) {
+            val lane = lanes.getOrPut(key) { MessageLane() }
+            if (lane.epoch != epoch) return
+            val existing = dbPendingUpdates[key]
+                ?.takeIf { it.epoch == epoch }
+                ?: DbPendingUpdate(epoch, mutableMapOf())
+            existing.updates.putAll(updates)
+            dbPendingUpdates[key] = existing
 
-        val existing = dbPendingUpdates[key] ?: mutableMapOf()
-        existing.putAll(updates)
-        dbPendingUpdates[key] = existing
+            dbDebounceJobs.remove(key)?.cancel()
+            scope.launch(start = CoroutineStart.LAZY) {
+                delay(DB_DEBOUNCE_MS)
+                flushDbUpdate(key, messageId, lane)
+            }.also { dbDebounceJobs[key] = it }
+        }
+        jobToStart.start()
+    }
 
-        dbDebounceJobs[key]?.cancel()
-        dbDebounceJobs[key] = scope.launch {
-            delay(DB_DEBOUNCE_MS)
-            val pendingUpdate = dbPendingUpdates.remove(key)
-            dbDebounceJobs.remove(key)
-            if (pendingUpdate != null) {
+    private suspend fun flushDbUpdate(key: String, messageId: String, lane: MessageLane) {
+        lane.mutex.withLock {
+            val pending = synchronized(stateLock) {
+                dbDebounceJobs.remove(key)
+                dbPendingUpdates.remove(key)?.takeIf { it.epoch == lane.epoch }
+            } ?: return
+            hooks.beforeDbWrite(key)
+            try {
+                messageRepository.updatePartial(messageId, pending.updates)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun PendingUpdate.toDbUpdates(): MutableMap<String, Any?> = buildMap<String, Any?> {
+        put("content", content)
+        tokens?.let { put("tokens", it) }
+        reasoning?.let { put("reasoning", it) }
+        thoughtSignature?.let { put("thoughtSignature", it) }
+        taskState?.let { put("planningTask", it) }
+        executionSteps?.let { put("executionSteps", it) }
+        pendingApprovalToolIds?.let { put("pendingApprovalToolIds", it) }
+        toolResults?.let { put("toolResults", it) }
+        toolCalls?.let { put("toolCalls", it) }
+        isError?.let { put("isError", it) }
+        errorMessage?.let { put("errorMessage", it) }
+    }.toMutableMap()
+
+    private fun clearRagFields(updates: MutableMap<String, Any?>) {
+        updates["ragProgress"] = null
+        updates["ragReferences"] = null
+        updates["kgPaths"] = null
+        updates["ragMetadata"] = null
+        updates["citations"] = null
+        updates["ragReferencesLoading"] = false
+    }
+
+    private fun applyPendingAndClearRag(
+        message: Message,
+        pending: PendingUpdate?,
+    ): Message {
+        val updated = if (pending == null) message else {
+            applyPendingToMessage(message, pending, pending.tokens ?: message.tokens ?: TokenUsage())
+        }
+        return updated.copy(
+            ragProgress = null,
+            ragReferences = null,
+            kgPaths = null,
+            ragMetadata = null,
+            citations = null,
+            ragReferencesLoading = false,
+        )
+    }
+
+    private fun clearMessageRagStateSerialized(
+        sessionId: String,
+        messageId: String,
+        key: String,
+        lane: MessageLane,
+        pendingUi: PendingUpdate?,
+        pendingDb: DbPendingUpdate?,
+    ) {
+        scope.launch {
+            lane.mutex.withLock {
+                val dbUpdates = pendingDb?.updates?.toMutableMap() ?: mutableMapOf()
+                pendingUi?.toDbUpdates()?.let(dbUpdates::putAll)
+                clearRagFields(dbUpdates)
                 try {
-                    messageRepository.updatePartial(messageId, pendingUpdate)
+                    hooks.beforeDbWrite(key)
+                    messageRepository.updatePartial(messageId, dbUpdates)
                 } catch (_: Exception) {
+                }
+
+                store.updateMessageInSession(sessionId, messageId) { message ->
+                    applyPendingAndClearRag(message, pendingUi)
                 }
             }
         }
+    }
+
+    private fun invalidateMessageStateLocked(key: String, lane: MessageLane) {
+        lane.epoch += 1
+        throttleJobs.remove(key)?.cancel()
+        dbDebounceJobs.remove(key)?.cancel()
+        pendingUpdates.remove(key)
+        inFlightUiUpdates.remove(key)
+        dbPendingUpdates.remove(key)
+    }
+
+    private suspend fun purgeMessageState(sessionId: String, messageIds: Collection<String>): Set<String> {
+        val keyedLanes = synchronized(stateLock) {
+            messageIds.distinct().associate { messageId ->
+                val key = "$sessionId:$messageId"
+                purgingKeys += key
+                val lane = lanes.getOrPut(key) { MessageLane() }
+                invalidateMessageStateLocked(key, lane)
+                key to lane
+            }
+        }
+        keyedLanes.forEach { (key, lane) ->
+            lane.mutex.withLock {
+                synchronized(stateLock) {
+                    // 等待在飞 flush 后再次失效，覆盖等锁期间已排队的任何旧 epoch 状态。
+                    invalidateMessageStateLocked(key, lane)
+                    if (lanes[key] === lane) lanes.remove(key)
+                }
+            }
+        }
+        return keyedLanes.keys
+    }
+
+    private fun finishPurge(keys: Set<String>) {
+        synchronized(stateLock) { purgingKeys.removeAll(keys) }
     }
 
     suspend fun deleteMessage(
@@ -299,19 +469,24 @@ class MessageManager(
             }
         }
 
+        val purgeKeys = purgeMessageState(sessionId, listOf(messageId))
         try {
-            messageRepository.delete(messageId)
-        } catch (_: Exception) {
-        }
+            try {
+                messageRepository.delete(messageId)
+            } catch (_: Exception) {
+            }
 
-        store.update { state ->
-            state.copy(
-                sessions = state.sessions.map { s ->
-                    if (s.id == sessionId) {
-                        s.copy(messages = s.messages.filter { it.id != messageId })
-                    } else s
-                }
-            )
+            store.update { state ->
+                state.copy(
+                    sessions = state.sessions.map { s ->
+                        if (s.id == sessionId) {
+                            s.copy(messages = s.messages.filter { it.id != messageId })
+                        } else s
+                    }
+                )
+            }
+        } finally {
+            finishPurge(purgeKeys)
         }
     }
 
@@ -325,19 +500,27 @@ class MessageManager(
             onAbortGeneration?.invoke(sessionId)
         }
 
+        val targetIds = store.getSession(sessionId)?.messages.orEmpty()
+            .filter { it.createdAt >= timestamp }
+            .map { it.id }
+        val purgeKeys = purgeMessageState(sessionId, targetIds)
         try {
-            messageRepository.deleteMessagesAfter(sessionId, timestamp)
-        } catch (_: Exception) {
-        }
+            try {
+                messageRepository.deleteMessagesAfter(sessionId, timestamp)
+            } catch (_: Exception) {
+            }
 
-        store.update { state ->
-            state.copy(
-                sessions = state.sessions.map { s ->
-                    if (s.id == sessionId) {
-                        s.copy(messages = s.messages.filter { it.createdAt < timestamp })
-                    } else s
-                }
-            )
+            store.update { state ->
+                state.copy(
+                    sessions = state.sessions.map { s ->
+                        if (s.id == sessionId) {
+                            s.copy(messages = s.messages.filter { it.createdAt < timestamp })
+                        } else s
+                    }
+                )
+            }
+        } finally {
+            finishPurge(purgeKeys)
         }
     }
 
@@ -348,30 +531,23 @@ class MessageManager(
     }
 
     fun clearMessageRagState(sessionId: String, messageId: String) {
-        scope.launch {
-            try {
-                messageRepository.updatePartial(
-                    messageId,
-                    mapOf(
-                        "ragProgress" to null,
-                        "ragReferences" to null,
-                        "ragMetadata" to null,
-                        "citations" to null,
-                        "ragReferencesLoading" to false
-                    )
-                )
-            } catch (_: Exception) {
-            }
+        val key = "$sessionId:$messageId"
+        val snapshot = synchronized(stateLock) {
+            val lane = lanes.getOrPut(key) { MessageLane() }
+            lane.epoch += 1
+            throttleJobs.remove(key)?.cancel()
+            dbDebounceJobs.remove(key)?.cancel()
+            val pendingUi = pendingUpdates.remove(key) ?: inFlightUiUpdates.remove(key)
+            Triple(lane, pendingUi, dbPendingUpdates.remove(key))
         }
-        store.updateMessageInSession(sessionId, messageId) { m ->
-            m.copy(
-                ragProgress = null,
-                ragReferences = null,
-                ragMetadata = null,
-                citations = null,
-                ragReferencesLoading = false
-            )
-        }
+        clearMessageRagStateSerialized(
+            sessionId = sessionId,
+            messageId = messageId,
+            key = key,
+            lane = snapshot.first,
+            pendingUi = snapshot.second,
+            pendingDb = snapshot.third,
+        )
     }
 
     fun updateMessageLayout(sessionId: String, messageId: String, height: Double) {
@@ -418,19 +594,34 @@ class MessageManager(
     }
 
     suspend fun clearMessages(sessionId: String) {
-        try {
-            messageRepository.deleteBySessionId(sessionId)
-        } catch (_: Exception) {
+        val prefix = "$sessionId:"
+        val coordinatedIds = synchronized(stateLock) {
+            (lanes.keys + pendingUpdates.keys + inFlightUiUpdates.keys + throttleJobs.keys +
+                dbPendingUpdates.keys + dbDebounceJobs.keys)
+                .asSequence()
+                .filter { it.startsWith(prefix) }
+                .map { it.removePrefix(prefix) }
+                .toSet()
         }
+        val targetIds = store.getSession(sessionId)?.messages.orEmpty().mapTo(coordinatedIds.toMutableSet()) { it.id }
+        val purgeKeys = purgeMessageState(sessionId, targetIds)
+        try {
+            try {
+                messageRepository.deleteBySessionId(sessionId)
+            } catch (_: Exception) {
+            }
 
-        store.update { state ->
-            state.copy(
-                sessions = state.sessions.map { s ->
-                    if (s.id == sessionId) {
-                        s.copy(messages = emptyList(), lastMessage = null)
-                    } else s
-                }
-            )
+            store.update { state ->
+                state.copy(
+                    sessions = state.sessions.map { s ->
+                        if (s.id == sessionId) {
+                            s.copy(messages = emptyList(), lastMessage = null)
+                        } else s
+                    }
+                )
+            }
+        } finally {
+            finishPurge(purgeKeys)
         }
     }
 
@@ -439,6 +630,20 @@ class MessageManager(
     }
 
     fun hasPendingUpdates(sessionId: String, messageId: String): Boolean {
-        return pendingUpdates.containsKey("$sessionId:$messageId")
+        return synchronized(stateLock) {
+            pendingUpdates.containsKey("$sessionId:$messageId")
+        }
+    }
+
+    internal fun coordinationState(): MessageCoordinationState = synchronized(stateLock) {
+        MessageCoordinationState(
+            lanes = lanes.size,
+            pendingUi = pendingUpdates.size,
+            inFlightUi = inFlightUiUpdates.size,
+            uiJobs = throttleJobs.size,
+            pendingDb = dbPendingUpdates.size,
+            dbJobs = dbDebounceJobs.size,
+            purging = purgingKeys.size,
+        )
     }
 }

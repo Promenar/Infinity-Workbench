@@ -41,6 +41,8 @@ data class MessageEntity(
     val citations: String? = null,
     @ColumnInfo(name = "rag_references")
     val ragReferences: String? = null,
+    @ColumnInfo(name = "kg_paths")
+    val kgPaths: String? = null,
     @ColumnInfo(name = "rag_progress")
     val ragProgress: String? = null,
     @ColumnInfo(name = "rag_metadata")

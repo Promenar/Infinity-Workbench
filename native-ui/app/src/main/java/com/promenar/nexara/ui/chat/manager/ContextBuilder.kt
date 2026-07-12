@@ -6,8 +6,10 @@ import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.TaskStep
+import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.serialization.encodeToString
 
 data class ContextBuilderResult(
     val searchContext: String,
@@ -146,17 +148,68 @@ class ContextBuilder(
      * 对 provider 返回的 paths 做嵌套防御性快照：复制每条 path 及其内部列表，
      * 使 provider 后续对内部可变集合的修改不影响 [ContextBuilderResult]。
      */
-    private fun snapshotKgPaths(
+    internal fun snapshotKgPaths(
         paths: List<com.promenar.nexara.data.model.KgPath>?
     ): List<com.promenar.nexara.data.model.KgPath> {
         if (paths.isNullOrEmpty()) return emptyList()
-        return paths.map { path ->
-            path.copy(
-                queryKeywords = path.queryKeywords.toList(),
-                nodes = path.nodes.toList(),
-                edges = path.edges.toList()
+        val accepted = mutableListOf<com.promenar.nexara.data.model.KgPath>()
+        for (path in paths.take(MAX_KG_PATHS)) {
+            val nodes = path.nodes.asSequence()
+                .take(MAX_KG_NODES_PER_PATH)
+                .map { node ->
+                    node.copy(
+                        id = node.id.bounded(MAX_KG_TEXT_CHARS),
+                        label = node.label.bounded(MAX_KG_TEXT_CHARS),
+                        type = node.type.bounded(MAX_KG_TEXT_CHARS),
+                        metadata = node.metadata?.bounded(MAX_KG_LONG_TEXT_CHARS),
+                    )
+                }
+                .toList()
+            val nodeIds = nodes.mapTo(hashSetOf()) { it.id }
+            val candidate = path.copy(
+                queryKeywords = path.queryKeywords.asSequence()
+                    .take(MAX_KG_KEYWORDS_PER_PATH)
+                    .map { it.bounded(MAX_KG_TEXT_CHARS) }
+                    .toList(),
+                nodes = nodes,
+                edges = path.edges.asSequence()
+                    .map { edge ->
+                        edge.copy(
+                            sourceId = edge.sourceId.bounded(MAX_KG_TEXT_CHARS),
+                            targetId = edge.targetId.bounded(MAX_KG_TEXT_CHARS),
+                            relation = edge.relation.bounded(MAX_KG_TEXT_CHARS),
+                        )
+                    }
+                    .filter { it.sourceId in nodeIds && it.targetId in nodeIds }
+                    .take(MAX_KG_EDGES_PER_PATH)
+                    .toList(),
+                reasoning = path.reasoning?.bounded(MAX_KG_LONG_TEXT_CHARS),
             )
+            val candidateSnapshot = accepted + candidate
+            if (json.encodeToString(candidateSnapshot).toByteArray(Charsets.UTF_8).size > MAX_KG_SERIALIZED_BYTES) {
+                break
+            }
+            accepted += candidate
         }
+        return accepted
+    }
+
+    private fun String.bounded(maxChars: Int): String {
+        if (length <= maxChars) return this
+        val safeEnd = if (
+            maxChars > 0 && this[maxChars - 1].isHighSurrogate() && this[maxChars].isLowSurrogate()
+        ) maxChars - 1 else maxChars
+        return substring(0, safeEnd)
+    }
+
+    private companion object {
+        const val MAX_KG_PATHS = 32
+        const val MAX_KG_KEYWORDS_PER_PATH = 32
+        const val MAX_KG_NODES_PER_PATH = 128
+        const val MAX_KG_EDGES_PER_PATH = 256
+        const val MAX_KG_TEXT_CHARS = 512
+        const val MAX_KG_LONG_TEXT_CHARS = 4096
+        const val MAX_KG_SERIALIZED_BYTES = 512 * 1024
     }
 
     private fun cleanSearchQuery(rawQuery: String): String {

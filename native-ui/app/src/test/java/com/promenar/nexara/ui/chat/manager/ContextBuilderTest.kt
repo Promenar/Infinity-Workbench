@@ -11,16 +11,110 @@ import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.TaskStep
+import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.repository.PlanPatchOp
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
 import org.junit.Test
 import kotlin.coroutines.cancellation.CancellationException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ContextBuilderTest {
     private val testScope = TestScope()
+
+    @Test
+    fun snapshotKgPathsAppliesStableStructuralLimitsWithoutDanglingEdges() {
+        val builder = ContextBuilder()
+        val paths = (0 until 40).map { pathIndex ->
+            val nodes = (0 until 140).map { nodeIndex ->
+                KgNode("p${pathIndex}n$nodeIndex", "node-$nodeIndex", "concept")
+            }
+            KgPath(
+                queryKeywords = (0 until 40).map { "keyword-$it" },
+                nodes = nodes,
+                edges = (0 until 300).map { edgeIndex ->
+                    if (edgeIndex == 0) {
+                        KgEdge(nodes.first().id, "discarded-node", "dangling")
+                    } else {
+                        KgEdge(nodes[edgeIndex % 128].id, nodes[(edgeIndex + 1) % 128].id, "edge-$edgeIndex")
+                    }
+                },
+                reasoning = "path-$pathIndex",
+            )
+        }
+
+        val snapshot = builder.snapshotKgPaths(paths)
+
+        assertThat(snapshot.size).isAtMost(32)
+        assertThat(snapshot.map { it.reasoning })
+            .containsExactlyElementsIn((0 until snapshot.size).map { "path-$it" }).inOrder()
+        assertThat(json.encodeToString(snapshot).toByteArray(Charsets.UTF_8).size).isAtMost(512 * 1024)
+        snapshot.forEach { path ->
+            assertThat(path.queryKeywords.size).isAtMost(32)
+            assertThat(path.nodes.size).isAtMost(128)
+            assertThat(path.edges.size).isAtMost(256)
+            val nodeIds = path.nodes.map { it.id }.toSet()
+            assertThat(path.edges.all { it.sourceId in nodeIds && it.targetId in nodeIds }).isTrue()
+        }
+    }
+
+    @Test
+    fun snapshotKgPathsStopsAtCompletePathBoundaryWithinSerializedByteLimit() {
+        val builder = ContextBuilder()
+        val small = KgPath(nodes = listOf(KgNode("n1", "N", "concept")), reasoning = "small")
+        val oversizedNodes = (0 until 128).map { index ->
+            KgNode(
+                id = "huge-$index",
+                label = "L".repeat(512),
+                type = "T".repeat(512),
+                metadata = "M".repeat(4096),
+            )
+        }
+        val oversized = KgPath(
+            nodes = oversizedNodes,
+            edges = (0 until 256).map { index ->
+                KgEdge(
+                    sourceId = oversizedNodes[index % 128].id,
+                    targetId = oversizedNodes[(index + 1) % 128].id,
+                    relation = "R".repeat(512),
+                )
+            },
+        )
+
+        val snapshot = builder.snapshotKgPaths(listOf(small, oversized, small.copy(reasoning = "after")))
+        val serializedBytes = json.encodeToString(snapshot).toByteArray(Charsets.UTF_8).size
+
+        assertThat(snapshot.map { it.reasoning }).containsExactly("small")
+        assertThat(serializedBytes).isAtMost(512 * 1024)
+    }
+
+    @Test
+    fun snapshotKgPathsTruncatesOversizedFieldsBeforeCopyingAndEncoding() {
+        val huge = "🚀".repeat(400_000)
+        val path = KgPath(
+            queryKeywords = listOf(huge),
+            nodes = listOf(KgNode(id = huge, label = huge, type = huge, metadata = huge)),
+            edges = listOf(KgEdge(sourceId = huge, targetId = huge, relation = huge)),
+            reasoning = huge,
+        )
+
+        val snapshot = ContextBuilder().snapshotKgPaths(listOf(path))
+
+        assertThat(snapshot).hasSize(1)
+        val trimmed = snapshot.single()
+        assertThat(trimmed.queryKeywords.single().length).isAtMost(512)
+        assertThat(trimmed.nodes.single().id.length).isAtMost(512)
+        assertThat(trimmed.nodes.single().label.length).isAtMost(512)
+        assertThat(trimmed.nodes.single().type.length).isAtMost(512)
+        assertThat(trimmed.nodes.single().metadata!!.length).isAtMost(4096)
+        assertThat(trimmed.edges.single().relation.length).isAtMost(512)
+        assertThat(trimmed.edges.single().sourceId).isEqualTo(trimmed.nodes.single().id)
+        assertThat(trimmed.edges.single().targetId).isEqualTo(trimmed.nodes.single().id)
+        assertThat(trimmed.reasoning!!.length).isAtMost(4096)
+        assertThat(json.encodeToString(snapshot).toByteArray(Charsets.UTF_8).size).isAtMost(512 * 1024)
+    }
 
     @Test
     fun buildContextWithNoProviders() = testScope.runTest {

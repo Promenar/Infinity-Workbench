@@ -143,6 +143,7 @@ class NexaraDatabaseBaselineTest {
         assertFileVersions(database)
         assertWorkspaceRoot(database)
         assertAgentCustomizationColumns(database)
+        assertMessageKgPathsColumn(database)
     }
 
     private fun assertIndices(database: SupportSQLiteDatabase, entity: ExportedEntity) {
@@ -234,6 +235,11 @@ class NexaraDatabaseBaselineTest {
         assertThat(columns).containsKey("description_customized")
         assertThat(columns.getValue("name_customized").notNull).isTrue()
         assertThat(columns.getValue("description_customized").notNull).isTrue()
+    }
+
+    private fun assertMessageKgPathsColumn(database: SupportSQLiteDatabase) {
+        val column = database.tableColumns("messages").getValue("kg_paths")
+        assertThat(column.notNull).isFalse()
     }
 
     private fun SupportSQLiteDatabase.tableColumns(table: String): Map<String, RuntimeColumn> =

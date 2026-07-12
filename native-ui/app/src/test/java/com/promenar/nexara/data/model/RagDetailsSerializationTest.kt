@@ -1,10 +1,12 @@
 package com.promenar.nexara.data.model
 
+import com.promenar.nexara.data.local.db.entity.MessageEntity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class RagDetailsSerializationTest {
@@ -88,5 +90,51 @@ class RagDetailsSerializationTest {
         val deserializedMessage = json.decodeFromString<Message>(jsonString)
         assertEquals(1, deserializedMessage.kgPaths?.size)
         assertEquals("A", deserializedMessage.kgPaths?.get(0)?.queryKeywords?.get(0))
+    }
+
+    @Test
+    fun `Message entity mapping preserves kgPaths JSON across database reload`() {
+        val path = KgPath(
+            queryKeywords = listOf("Nexara"),
+            nodes = listOf(KgNode("n1", "Nexara", "project")),
+            edges = listOf(KgEdge("n1", "n2", "uses")),
+            reasoning = "graph path",
+        )
+        val message = Message(
+            id = "msg-room",
+            role = MessageRole.ASSISTANT,
+            content = "answer",
+            kgPaths = listOf(path),
+        )
+
+        val entity = message.toEntity("session-1")
+        assertTrue(entity.kgPaths!!.contains("Nexara"))
+        assertEquals(listOf(path), entity.toDomain().kgPaths)
+    }
+
+    @Test
+    fun `malformed kgPaths JSON degrades only that field`() {
+        val entity = MessageEntity(
+            id = "malformed-kg",
+            sessionId = "session-1",
+            role = "assistant",
+            content = "answer remains readable",
+            reasoning = "reasoning remains readable",
+            kgPaths = "{not-valid-json",
+            createdAt = 1L,
+        )
+
+        val message = entity.toDomain()
+
+        assertEquals("answer remains readable", message.content)
+        assertEquals("reasoning remains readable", message.reasoning)
+        assertEquals(null, message.kgPaths)
+    }
+
+    @Test
+    fun `kgPaths decoder never swallows virtual machine errors`() {
+        assertThrows(OutOfMemoryError::class.java) {
+            decodeKgPathsOrNull("ignored") { throw OutOfMemoryError("simulated") }
+        }
     }
 }

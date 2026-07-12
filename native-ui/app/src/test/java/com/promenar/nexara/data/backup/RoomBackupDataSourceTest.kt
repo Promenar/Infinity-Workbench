@@ -18,6 +18,9 @@ import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.TagEntity
 import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
+import com.promenar.nexara.data.model.KgNode
+import com.promenar.nexara.data.model.KgPath
+import com.promenar.nexara.data.model.toDomain
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
@@ -38,6 +41,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -114,6 +118,15 @@ class RoomBackupDataSourceTest {
             sessionId = session.id,
             role = "user",
             content = "hello",
+            kgPaths = kotlinx.serialization.json.Json.encodeToString(
+                listOf(
+                    KgPath(
+                        queryKeywords = listOf("Nexara"),
+                        nodes = listOf(KgNode("n1", "Nexara", "project")),
+                        edges = emptyList(),
+                    )
+                )
+            ),
             createdAt = now,
         )
         val bytes = byteArrayOf(0, 1, 2, 127, -1)
@@ -168,6 +181,8 @@ class RoomBackupDataSourceTest {
         assertThat(db.agentDao().getAll()).containsExactly(agent)
         assertThat(db.sessionDao().getAll()).containsExactly(session.copy(workspacePath = restoredRoot().toString()))
         assertThat(db.messageDao().getBySession(session.id)).containsExactly(message)
+        assertThat(db.messageDao().getBySession(session.id).single().toDomain().kgPaths)
+            .containsExactlyElementsIn(message.toDomain().kgPaths)
         val restoredFile = db.fileEntryDao().getByUuid(file.workspaceRootUuid, file.uuid)!!
         assertThat(Path.of(restoredFile.physicalRootPath).startsWith(restoreParent)).isTrue()
         assertThat(Files.readAllBytes(Path.of(restoredFile.physicalRootPath).resolve("docs/a.bin"))).isEqualTo(bytes)

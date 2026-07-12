@@ -1275,7 +1275,7 @@ class RoomBackupDataSource(
 
     private companion object {
         const val DATABASE_SCHEMA_VERSION = 1
-        const val ROOM_SCHEMA_V1_IDENTITY_HASH = "6cd9d23201fddcd40667259b7212d7b2"
+        const val ROOM_SCHEMA_V1_IDENTITY_HASH = "69f64c60400b6cbd7e7116f6d7086b15"
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"
         const val OLD_CLEANUP_MARKER = ".restore-cleanup-owner"

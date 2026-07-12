@@ -6,6 +6,10 @@ import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -18,6 +22,8 @@ class MessageManagerTest {
     private lateinit var messageManager: MessageManager
     private val testScope = TestScope()
     private lateinit var sessionManager: SessionManager
+    private val partialUpdates = mutableListOf<Map<String, Any?>>()
+    private var persistedMessage: Message? = null
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {}
@@ -28,11 +34,31 @@ class MessageManagerTest {
     }
 
     private val stubMessageRepo = object : IMessageRepository {
-        override suspend fun insert(message: Message, sessionId: String) {}
-        override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {}
-        override suspend fun delete(messageId: String) {}
-        override suspend fun deleteBySessionId(sessionId: String) {}
-        override suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long) {}
+        override suspend fun insert(message: Message, sessionId: String) {
+            persistedMessage = message
+        }
+        override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
+            partialUpdates += updates
+            persistedMessage = persistedMessage?.let { current ->
+                current.copy(
+                    content = updates["content"] as? String ?: current.content,
+                    tokens = if ("tokens" in updates) updates["tokens"] as TokenUsage? else current.tokens,
+                    kgPaths = if ("kgPaths" in updates) {
+                        @Suppress("UNCHECKED_CAST")
+                        updates["kgPaths"] as List<KgPath>?
+                    } else current.kgPaths,
+                )
+            }
+        }
+        override suspend fun delete(messageId: String) {
+            if (persistedMessage?.id == messageId) persistedMessage = null
+        }
+        override suspend fun deleteBySessionId(sessionId: String) {
+            persistedMessage = null
+        }
+        override suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long) {
+            if ((persistedMessage?.createdAt ?: Long.MIN_VALUE) >= timestamp) persistedMessage = null
+        }
         override suspend fun getById(messageId: String): Message? = null
         override suspend fun getBySession(sessionId: String): List<Message> = emptyList()
         override suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Boolean?) {}
@@ -40,6 +66,8 @@ class MessageManagerTest {
 
     @Before
     fun setUp() {
+        partialUpdates.clear()
+        persistedMessage = null
         store = ChatStore()
         messageManager = MessageManager(store, stubMessageRepo, stubSessionRepo, testScope)
         sessionManager = SessionManager(store, stubSessionRepo)
@@ -198,6 +226,230 @@ class MessageManagerTest {
 
         val session = store.getSession("s1")!!
         assertThat(session.messages[0].reasoning).isEqualTo("thinking...")
+    }
+
+    @Test
+    fun kgPathsSurviveLaterStreamingUpdateAndFlushOnce() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(id = "m1", role = MessageRole.ASSISTANT, content = "", createdAt = 1000L),
+        )
+        advanceUntilIdle()
+        val path = KgPath(
+            queryKeywords = listOf("Nexara"),
+            nodes = listOf(KgNode("n1", "Nexara", "project")),
+            edges = emptyList(),
+        )
+
+        messageManager.updateMessageContent("s1", "m1", "", UpdateMessageOptions(kgPaths = listOf(path)))
+        messageManager.updateMessageContent("s1", "m1", "streamed answer")
+        advanceUntilIdle()
+
+        val message = store.getSession("s1")!!.messages.single()
+        assertThat(message.content).isEqualTo("streamed answer")
+        assertThat(message.kgPaths).containsExactly(path)
+        assertThat(partialUpdates.count { "kgPaths" in it }).isEqualTo(1)
+        assertThat(partialUpdates.single { "kgPaths" in it }["kgPaths"]).isEqualTo(listOf(path))
+    }
+
+    @Test
+    fun clearMessageRagStateExplicitlyClearsKgPathsInStoreAndRepository() = testScope.runTest {
+        seedSession()
+        val path = KgPath(
+            queryKeywords = listOf("Nexara"),
+            nodes = listOf(KgNode("n1", "Nexara", "project")),
+            edges = emptyList(),
+        )
+        messageManager.addMessage(
+            "s1",
+            Message(
+                id = "m1",
+                role = MessageRole.ASSISTANT,
+                content = "answer",
+                kgPaths = listOf(path),
+                createdAt = 1000L,
+            ),
+        )
+        advanceUntilIdle()
+
+        messageManager.clearMessageRagState("s1", "m1")
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.messages.single().kgPaths).isNull()
+        assertThat(partialUpdates.single { "kgPaths" in it }["kgPaths"]).isNull()
+    }
+
+    @Test
+    fun clearBeforeUiThrottlePreservesPendingContentAndTokensButInvalidatesKgPaths() = testScope.runTest {
+        seedSession()
+        val path = kgPath()
+        val tokens = TokenUsage(input = 5, output = 7, total = 12)
+        messageManager.addMessage("s1", assistantMessage())
+
+        messageManager.updateMessageContent(
+            "s1", "m1", "streamed",
+            UpdateMessageOptions(tokens = tokens, kgPaths = listOf(path)),
+        )
+        messageManager.clearMessageRagState("s1", "m1")
+        advanceUntilIdle()
+
+        assertClearedWithContent("streamed", tokens)
+    }
+
+    @Test
+    fun clearWhileUiFlushIsExtractedStillWinsWithoutLosingContent() = testScope.runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        messageManager = MessageManager(
+            store, stubMessageRepo, stubSessionRepo, testScope,
+            MessageManagerHooks(beforeUiApply = { entered.complete(Unit); release.await() }),
+        )
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        messageManager.updateMessageContent("s1", "m1", "streamed", UpdateMessageOptions(kgPaths = listOf(kgPath())))
+
+        advanceTimeBy(100)
+        runCurrent()
+        entered.await()
+        messageManager.clearMessageRagState("s1", "m1")
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertClearedWithContent("streamed", null)
+    }
+
+    @Test
+    fun clearBeforeDbDebounceCancelsStaleKgWriteAndPreservesFlushedContent() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        messageManager.updateMessageContent("s1", "m1", "streamed", UpdateMessageOptions(kgPaths = listOf(kgPath())))
+        advanceTimeBy(100)
+        runCurrent()
+
+        messageManager.clearMessageRagState("s1", "m1")
+        advanceUntilIdle()
+
+        assertClearedWithContent("streamed", null)
+    }
+
+    @Test
+    fun clearWhileDbUpdateIsInFlightSerializesNullAsTheLastWrite() = testScope.runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var firstWrite = true
+        messageManager = MessageManager(
+            store, stubMessageRepo, stubSessionRepo, testScope,
+            MessageManagerHooks(beforeDbWrite = {
+                if (firstWrite) {
+                    firstWrite = false
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }),
+        )
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        messageManager.updateMessageContent("s1", "m1", "streamed", UpdateMessageOptions(kgPaths = listOf(kgPath())))
+        advanceTimeBy(600)
+        runCurrent()
+        entered.await()
+
+        messageManager.clearMessageRagState("s1", "m1")
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertClearedWithContent("streamed", null)
+        assertThat(partialUpdates.last()["kgPaths"]).isNull()
+    }
+
+    @Test
+    fun deleteMessageWaitsForExtractedUiFlushAndMessageNeverRevives() = testScope.runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        messageManager = MessageManager(
+            store, stubMessageRepo, stubSessionRepo, testScope,
+            MessageManagerHooks(beforeUiApply = { entered.complete(Unit); release.await() }),
+        )
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        messageManager.updateMessageContent("s1", "m1", "late", UpdateMessageOptions(kgPaths = listOf(kgPath())))
+        advanceTimeBy(100)
+        runCurrent()
+        entered.await()
+
+        val deleteJob = launch { messageManager.deleteMessage("s1", "m1") }
+        runCurrent()
+        release.complete(Unit)
+        deleteJob.join()
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.messages).isEmpty()
+        assertThat(persistedMessage).isNull()
+    }
+
+    @Test
+    fun deleteMessagesAfterWaitsForInFlightDbWriteAndDeleteIsLast() = testScope.runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var firstWrite = true
+        messageManager = MessageManager(
+            store, stubMessageRepo, stubSessionRepo, testScope,
+            MessageManagerHooks(beforeDbWrite = {
+                if (firstWrite) {
+                    firstWrite = false
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }),
+        )
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        messageManager.updateMessageContent("s1", "m1", "late", UpdateMessageOptions(kgPaths = listOf(kgPath())))
+        advanceTimeBy(600)
+        runCurrent()
+        entered.await()
+
+        val deleteJob = launch { messageManager.deleteMessagesAfter("s1", 1000L) }
+        runCurrent()
+        release.complete(Unit)
+        deleteJob.join()
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.messages).isEmpty()
+        assertThat(persistedMessage).isNull()
+    }
+
+    @Test
+    fun clearMessagesPurgesEveryCoordinationLaneAndPendingJob() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage("s1", assistantMessage())
+        messageManager.updateMessageContent("s1", "m1", "pending", UpdateMessageOptions(kgPaths = listOf(kgPath())))
+
+        messageManager.clearMessages("s1")
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.messages).isEmpty()
+        assertThat(messageManager.coordinationState()).isEqualTo(MessageCoordinationState())
+    }
+
+    private fun assistantMessage(): Message =
+        Message(id = "m1", role = MessageRole.ASSISTANT, content = "", createdAt = 1000L)
+
+    private fun kgPath(): KgPath = KgPath(
+        queryKeywords = listOf("Nexara"),
+        nodes = listOf(KgNode("n1", "Nexara", "project")),
+        edges = emptyList(),
+    )
+
+    private fun assertClearedWithContent(expectedContent: String, expectedTokens: TokenUsage?) {
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.content).isEqualTo(expectedContent)
+        assertThat(stored.tokens).isEqualTo(expectedTokens ?: TokenUsage())
+        assertThat(stored.kgPaths).isNull()
+        assertThat(persistedMessage?.content).isEqualTo(expectedContent)
+        assertThat(persistedMessage?.tokens).isEqualTo(expectedTokens)
+        assertThat(persistedMessage?.kgPaths).isNull()
     }
 
     @Test
