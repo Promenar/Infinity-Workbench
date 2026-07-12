@@ -24,17 +24,27 @@ class MainActivityStartupGateWiringTest {
     }
 
     @Test
-    fun `share intents stay cached until startup becomes ready`() {
+    fun `share intents enter one queue path and stay cached until startup becomes ready`() {
         val onCreate = functionBody("override fun onCreate(savedInstanceState: Bundle?)")
         val onNewIntent = functionBody("override fun onNewIntent(intent: Intent)")
-        val consume = functionBody("private fun consumePendingIntentIfReady()")
+        val consume = functionBody("private fun consumeShareIntentsIfReady()")
 
-        assertThat(onCreate).contains("pendingIntent = intent")
-        assertThat(onCreate).doesNotContain("handleIntent(intent)")
-        assertThat(onNewIntent).contains("pendingIntent = intent")
-        assertThat(onNewIntent).doesNotContain("handleIntent(intent)")
+        assertThat(onCreate).contains("ShareIntentQueue.restore(savedInstanceState)")
+        assertThat(onCreate).contains("enqueueShareIntent(intent)")
+        assertThat(onNewIntent).contains("enqueueShareIntent(intent)")
         assertThat(consume).contains("BackupStartupState.Ready")
-        assertThat(consume).contains("handleIntent(pending)")
+        assertThat(consume).contains("shareIntentQueue.consumeAll")
+    }
+
+    @Test
+    fun `share queue is saved and activity share payload is replaced`() {
+        val save = functionBody("override fun onSaveInstanceState(outState: Bundle)")
+        val enqueue = functionBody("private fun enqueueShareIntent(candidate: Intent?)")
+
+        assertThat(save).contains("shareIntentQueue.save(outState)")
+        assertThat(enqueue).contains("ShareIntentQueue.fingerprint(candidate)")
+        assertThat(enqueue).contains("setIntent(Intent(this, MainActivity::class.java)")
+        assertThat(enqueue).contains("Intent.ACTION_MAIN")
     }
 
     private fun functionBody(signature: String): String {

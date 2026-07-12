@@ -21,7 +21,7 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.util.LocaleHelper
 
 class MainActivity : ComponentActivity() {
-    private var pendingIntent: Intent? = null
+    private lateinit var shareIntentQueue: ShareIntentQueue
 
     override fun attachBaseContext(newBase: Context) {
         val lang = LocaleHelper.getSavedLanguage(newBase)
@@ -31,13 +31,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        pendingIntent = intent
+        shareIntentQueue = ShareIntentQueue.restore(savedInstanceState)
+        enqueueShareIntent(intent)
         val app = application as NexaraApplication
         setContent {
             NexaraTheme {
                 val startupState by app.startupState.collectAsStateWithLifecycle()
                 LaunchedEffect(startupState) {
-                    if (startupState == BackupStartupState.Ready) consumePendingIntentIfReady()
+                    if (startupState == BackupStartupState.Ready) consumeShareIntentsIfReady()
                 }
                 StartupGate(
                     state = startupState,
@@ -64,33 +65,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
-        pendingIntent = intent
-        consumePendingIntentIfReady()
+        enqueueShareIntent(intent)
+        consumeShareIntentsIfReady()
     }
 
-    private fun consumePendingIntentIfReady() {
+    override fun onSaveInstanceState(outState: Bundle) {
+        shareIntentQueue.save(outState)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun enqueueShareIntent(candidate: Intent?) {
+        shareIntentQueue.enqueue(candidate)
+        if (candidate != null && ShareIntentQueue.fingerprint(candidate) != null) {
+            setIntent(Intent(this, MainActivity::class.java).apply { action = Intent.ACTION_MAIN })
+        }
+    }
+
+    private fun consumeShareIntentsIfReady() {
         val app = application as NexaraApplication
         if (app.startupState.value != BackupStartupState.Ready) return
-        val pending = pendingIntent ?: return
-        pendingIntent = null
-        handleIntent(pending)
-    }
-
-    private fun handleIntent(intent: Intent?) {
-        if (intent == null) return
-        val action = intent.action
-        val type = intent.type
-
-        if (Intent.ACTION_SEND == action && type != null) {
-            intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uri ->
-                importSharedFiles(listOf(uri))
-            }
-        } else if (Intent.ACTION_SEND_MULTIPLE == action && type != null) {
-            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris ->
-                importSharedFiles(uris)
-            }
-        }
+        shareIntentQueue.consumeAll { request -> importSharedFiles(request.uris) }
     }
 
     private fun importSharedFiles(uris: List<Uri>) {

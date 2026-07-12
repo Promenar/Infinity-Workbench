@@ -376,12 +376,11 @@ class VectorizationQueue(
         }
     }
 
-    suspend fun resumeInterruptedTasks() {
-        try {
+    suspend fun resumeInterruptedTasks(): Result<Unit> = runCatching {
             vectorizationTaskDao.markStaleAsInterrupted(System.currentTimeMillis() - 30_000)
             val interruptedTasks = vectorizationTaskDao.getRecoverableTasks()
 
-            if (interruptedTasks.isEmpty()) return
+            if (interruptedTasks.isEmpty()) return@runCatching
 
             val tasks = interruptedTasks.map { entity ->
                 VectorizationTask(
@@ -410,9 +409,6 @@ class VectorizationQueue(
             if (!isProcessing) {
                 scope.launch { processNext() }
             }
-        } catch (e: Exception) {
-            // Non-critical
-        }
     }
 
     private fun notifyStateChange() {

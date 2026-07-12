@@ -23,9 +23,13 @@ class BackupRuntimeWiringTest {
     }
 
     @Test
-    fun `all business writers live behind one ready-only initializer`() {
-        val initializer = functionBody("private fun initializeAfterRecovery()")
-        writerMarkers.forEach { marker -> assertThat(initializer).contains(marker) }
+    fun `all business writers live behind one transactional ready-only initializer`() {
+        val preflight = functionBody("private fun prepareStartupWriters(): PreparedStartupWriters")
+        val registrations = functionBody(
+            "private fun startupWriterRegistrations("
+        )
+        preflightMarkers.forEach { marker -> assertThat(preflight).contains(marker) }
+        registrationMarkers.forEach { marker -> assertThat(registrations).contains(marker) }
 
         val recovery = functionBody("private fun startBackupRecovery()")
         assertThat(recovery).contains("backupRuntime.recoverBeforeWriters()")
@@ -36,7 +40,9 @@ class BackupRuntimeWiringTest {
 
         val once = functionBody("private fun initializeAfterRecoveryOnce()")
         assertThat(once).contains("writersInitialized")
-        assertThat(once).contains("initializeAfterRecovery()")
+        assertThat(once).contains("createStartupWriterTransaction().commit()")
+        assertThat(once.indexOf("createStartupWriterTransaction().commit()"))
+            .isLessThan(once.indexOf("writersInitialized = true"))
     }
 
     @Test
@@ -62,12 +68,23 @@ class BackupRuntimeWiringTest {
     private companion object {
         val writerMarkers = listOf(
             "ProviderManager.init(this, secretStore)",
-            "providerManager.configurationChanges.collect",
             "ProcessLifecycleOwner.get().lifecycle.addObserver",
-            "localInferenceEngine.loadModel",
-            "vectorizationQueue.resumeInterruptedTasks()",
             "prefs.registerOnSharedPreferenceChangeListener(providerListener)",
-            "settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)",
+            "prepared.settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)",
+        )
+        val preflightMarkers = listOf(
+            "backupRuntime.requireWriterGate()",
+            "workSpaceDir.mkdirs()",
+            "ProviderManager.init(this, secretStore)",
+            "getSharedPreferences(\"nexara_settings\", MODE_PRIVATE)",
+        )
+        val registrationMarkers = listOf(
+            "ProcessLifecycleOwner.get().lifecycle.addObserver",
+            "prefs.registerOnSharedPreferenceChangeListener(providerListener)",
+            "prepared.settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)",
+            "prepared.providerManager.configurationChanges",
+            "prepared.inferenceEngine.loadModel",
+            "prepared.vectorizationQueue.resumeInterruptedTasks()",
         )
     }
 }

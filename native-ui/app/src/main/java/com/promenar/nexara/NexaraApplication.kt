@@ -27,6 +27,7 @@ import com.promenar.nexara.data.rag.RerankClient
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
+import com.promenar.nexara.data.rag.VectorizationQueue
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
 import com.promenar.nexara.data.security.SecretCatalog
@@ -82,6 +83,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
@@ -89,6 +91,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.promenar.nexara.startup.StartupBackgroundHealthMonitor
+import com.promenar.nexara.startup.StartupBackgroundTask
+import com.promenar.nexara.startup.StartupBackgroundTaskHealth
+import com.promenar.nexara.startup.StartupWriterRegistration
+import com.promenar.nexara.startup.StartupWriterSession
+import com.promenar.nexara.startup.StartupWriterTransaction
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
@@ -108,6 +116,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var startupRecoveryJob: Job? = null
     private var writersInitialized = false
+    private var startupWriterSession: StartupWriterSession<PreparedStartupWriters>? = null
+    private val startupBackgroundHealthMonitor = StartupBackgroundHealthMonitor { task, failure ->
+        NexaraLogger.logError("StartupBackground.${task.name}", failure)
+    }
+    val startupBackgroundHealth: StateFlow<Map<StartupBackgroundTask, StartupBackgroundTaskHealth>> =
+        startupBackgroundHealthMonitor.state
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
@@ -294,57 +308,165 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private fun initializeAfterRecoveryOnce() {
         if (writersInitialized) return
-        initializeAfterRecovery()
+        startupWriterSession = createStartupWriterTransaction().commit()
         writersInitialized = true
     }
 
-    private fun initializeAfterRecovery() {
+    private fun createStartupWriterTransaction() = StartupWriterTransaction(
+        preflight = ::prepareStartupWriters,
+        registrations = ::startupWriterRegistrations,
+    )
+
+    private fun prepareStartupWriters(): PreparedStartupWriters {
         backupRuntime.requireWriterGate()
-        // 恢复成功后才允许创建业务目录并启动任何持久化 writer/listener。
         val workSpaceDir = java.io.File(filesDir, "WorkSpace")
-        if (!workSpaceDir.exists()) {
-            workSpaceDir.mkdirs()
+        check((workSpaceDir.isDirectory || workSpaceDir.mkdirs()) && workSpaceDir.isDirectory) {
+            "workspace_directory_unavailable"
         }
 
-        // 初始化统一数据源（必须在 buildProviderFromPrefs 之前）
+        // ProviderManager 可能执行历史配置迁移，因此必须在任何可撤销注册之前完成。
         val providerManager = ProviderManager.init(this, secretStore)
-
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        hapticEnabled = settingsPrefs.getBoolean("haptic_enabled", true)
+        val nextHapticEnabled = settingsPrefs.getBoolean("haptic_enabled", true)
         val lastModelToLoad = if (
             settingsPrefs.getBoolean("local_models_enabled", false) &&
             settingsPrefs.getBoolean("local_auto_load", false)
         ) prefs.getString("last_local_model", null) else null
-
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+        val inferenceEngine = localInferenceEngine
+        val preparedVectorizationQueue = vectorizationQueue
+        val processObserver = object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
-                val mainPath = localInferenceEngine.mainSlot.value.modelPath
-                if (mainPath != null) {
+                inferenceEngine.mainSlot.value.modelPath?.let { mainPath ->
                     prefs.edit().putString("last_local_model", mainPath).apply()
                 }
             }
-        })
-        prefs.registerOnSharedPreferenceChangeListener(providerListener)
-        settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
-
-        startupScope.launch(Dispatchers.Default) {
-            providerManager.configurationChanges.collect {
-                _providerConfigurationVersion.value += 1
-                rebuildEmbeddingClient()
-                rebuildRerankClient()
-                _vectorizationQueue = null
-                _unifiedLlmClient = null
-            }
         }
-        if (lastModelToLoad != null) {
-            startupScope.launch(Dispatchers.IO) {
-                localInferenceEngine.loadModel(SlotType.MAIN, lastModelToLoad)
-            }
-        }
-        startupScope.launch(Dispatchers.IO) {
-            vectorizationQueue.resumeInterruptedTasks()
-        }
+        return PreparedStartupWriters(
+            providerManager = providerManager,
+            settingsPrefs = settingsPrefs,
+            hapticEnabled = nextHapticEnabled,
+            inferenceEngine = inferenceEngine,
+            vectorizationQueue = preparedVectorizationQueue,
+            lastModelToLoad = lastModelToLoad,
+            processObserver = processObserver,
+        )
     }
+
+    private fun startupWriterRegistrations(
+        prepared: PreparedStartupWriters,
+    ): List<StartupWriterRegistration> {
+        return listOfNotNull(
+            reversibleRegistration(
+                register = { ProcessLifecycleOwner.get().lifecycle.addObserver(prepared.processObserver) },
+                rollback = { ProcessLifecycleOwner.get().lifecycle.removeObserver(prepared.processObserver) },
+            ),
+            reversibleRegistration(
+                register = { prefs.registerOnSharedPreferenceChangeListener(providerListener) },
+                rollback = { prefs.unregisterOnSharedPreferenceChangeListener(providerListener) },
+            ),
+            reversibleRegistration(
+                register = {
+                    prepared.settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
+                },
+                rollback = {
+                    prepared.settingsPrefs.unregisterOnSharedPreferenceChangeListener(settingsListener)
+                },
+            ),
+            jobRegistration(prepared) {
+                startupBackgroundHealthMonitor.launch(
+                    scope = startupScope,
+                    task = StartupBackgroundTask.PROVIDER_CONFIGURATION,
+                    start = CoroutineStart.LAZY,
+                ) {
+                    startupBackgroundHealthMonitor.collectResilient(
+                        task = StartupBackgroundTask.PROVIDER_CONFIGURATION,
+                        events = prepared.providerManager.configurationChanges,
+                    ) {
+                        _providerConfigurationVersion.value += 1
+                        rebuildEmbeddingClient()
+                        rebuildRerankClient()
+                        _vectorizationQueue = null
+                        _unifiedLlmClient = null
+                    }
+                }
+            },
+            prepared.lastModelToLoad?.let { modelPath ->
+                jobRegistration(prepared) {
+                    startupBackgroundHealthMonitor.launch(
+                        scope = startupScope,
+                        task = StartupBackgroundTask.LOCAL_MODEL_AUTO_LOAD,
+                        start = CoroutineStart.LAZY,
+                    ) {
+                        prepared.inferenceEngine.loadModel(SlotType.MAIN, modelPath).getOrThrow()
+                    }
+                }
+            },
+            jobRegistration(prepared) {
+                startupBackgroundHealthMonitor.launch(
+                    scope = startupScope,
+                    task = StartupBackgroundTask.VECTOR_RESUME,
+                    start = CoroutineStart.LAZY,
+                ) {
+                    prepared.vectorizationQueue.resumeInterruptedTasks().getOrThrow()
+                }
+            },
+            reversibleRegistration(
+                register = { hapticEnabled = prepared.hapticEnabled },
+                rollback = { hapticEnabled = true },
+            ),
+        )
+    }
+
+    private fun reversibleRegistration(
+        register: () -> Unit,
+        rollback: () -> Unit,
+    ): StartupWriterRegistration {
+        var attempted = false
+        return StartupWriterRegistration(
+            register = {
+                attempted = true
+                register()
+            },
+            rollback = {
+                if (attempted) {
+                    attempted = false
+                    rollback()
+                }
+            },
+        )
+    }
+
+    private fun jobRegistration(
+        prepared: PreparedStartupWriters,
+        create: () -> Job,
+    ): StartupWriterRegistration {
+        var job: Job? = null
+        return reversibleRegistration(
+            register = {
+                create().also { created ->
+                    job = created
+                    prepared.jobs += created
+                    check(created.start()) { "startup_job_not_started" }
+                }
+            },
+            rollback = {
+                job?.cancel()
+                prepared.jobs.remove(job)
+                job = null
+            },
+        )
+    }
+
+    private data class PreparedStartupWriters(
+        val providerManager: ProviderManager,
+        val settingsPrefs: SharedPreferences,
+        val hapticEnabled: Boolean,
+        val inferenceEngine: LocalInferenceEngine,
+        val vectorizationQueue: VectorizationQueue,
+        val lastModelToLoad: String?,
+        val processObserver: DefaultLifecycleObserver,
+        val jobs: MutableList<Job> = mutableListOf(),
+    )
 
     /** 仅供测试应用替换 AndroidKeyStore/真实文件系统依赖；生产始终使用安全 runtime。 */
     protected open fun createBackupRuntime(): BackupRuntime =
